@@ -39,6 +39,18 @@ def _parse_time_limit_sec() -> Optional[float]:
         return None
 
 
+def _parse_heuristic_resize_max_side() -> Optional[int]:
+    """0 o vacío → None; valor válido → int. Evita ValueError si env está vacío."""
+    raw = os.getenv("HEURISTIC_RESIZE_MAX_SIDE", "0").strip()
+    if not raw:
+        return None
+    try:
+        v = int(raw)
+        return v if v > 0 else None
+    except ValueError:
+        return None
+
+
 class Settings(BaseModel):
     """Configuración del sistema de conteo de inventario por video.
     
@@ -113,6 +125,127 @@ class Settings(BaseModel):
         description="Tamaño de muestra para comparación en filtro de similitud (16 a 512).",
     )
 
+    # Sprint A: Detection, tracking, ROI, view selection
+    detector_mode: str = Field(
+        default_factory=lambda: os.getenv("DETECTOR_MODE", "stub").strip().lower(),
+        description="Modo del detector: stub, heuristic, synthetic. Env: DETECTOR_MODE.",
+    )
+    use_synthetic_detection: bool = Field(
+        default_factory=lambda: os.getenv("USE_SYNTHETIC_DETECTION", "").strip().lower() in ("1", "true", "yes"),
+        description="Si True, el detector devuelve 2 bboxes fijos por frame (para probar pipeline sin modelo). Env: USE_SYNTHETIC_DETECTION.",
+    )
+    detection_conf_threshold: float = Field(
+        default_factory=lambda: float(os.getenv("DETECTION_CONF_THRESHOLD", "0.5")),
+        ge=0.0,
+        le=1.0,
+        description="Umbral de confianza para detección de pallets (0 a 1).",
+    )
+    # Heuristic detector (detector_mode=heuristic)
+    heuristic_resize_max_side: Optional[int] = Field(
+        default_factory=lambda: _parse_heuristic_resize_max_side(),
+        description="Si > 0, redimensionar frame antes de detección heurística (lado mayor). 0 = no resize. Env: HEURISTIC_RESIZE_MAX_SIDE.",
+    )
+    heuristic_min_area_ratio: float = Field(
+        default_factory=lambda: float(os.getenv("HEURISTIC_MIN_AREA_RATIO", "0.05")),
+        ge=0.001,
+        le=0.5,
+        description="Área mínima del contorno como fracción del área del frame (heurística). Env: HEURISTIC_MIN_AREA_RATIO.",
+    )
+    heuristic_aspect_ratio_min: float = Field(
+        default_factory=lambda: float(os.getenv("HEURISTIC_ASPECT_RATIO_MIN", "0.6")),
+        ge=0.2,
+        le=5.0,
+        description="Aspect ratio mínimo (ancho/alto) para contornos. Env: HEURISTIC_ASPECT_RATIO_MIN.",
+    )
+    heuristic_aspect_ratio_max: float = Field(
+        default_factory=lambda: float(os.getenv("HEURISTIC_ASPECT_RATIO_MAX", "2.5")),
+        ge=0.2,
+        le=5.0,
+        description="Aspect ratio máximo (ancho/alto) para contornos. Env: HEURISTIC_ASPECT_RATIO_MAX.",
+    )
+    heuristic_max_detections_per_frame: int = Field(
+        default_factory=lambda: int(os.getenv("HEURISTIC_MAX_DETECTIONS_PER_FRAME", "3")),
+        ge=1,
+        le=20,
+        description="Máximo de bboxes por frame (heurística). Env: HEURISTIC_MAX_DETECTIONS_PER_FRAME.",
+    )
+    heuristic_iou_nms_threshold: float = Field(
+        default_factory=lambda: float(os.getenv("HEURISTIC_IOU_NMS_THRESHOLD", "0.5")),
+        ge=0.0,
+        le=1.0,
+        description="IoU umbral para NMS: suprimir detecciones con IoU mayor. Env: HEURISTIC_IOU_NMS_THRESHOLD.",
+    )
+    tracker_type: str = Field(
+        default_factory=lambda: os.getenv("TRACKER_TYPE", "bytetrack"),
+        description="Tipo de tracker: bytetrack o sort.",
+    )
+    tracker_min_hits: int = Field(
+        default_factory=lambda: int(os.getenv("TRACKER_MIN_HITS", "3")),
+        ge=1,
+        le=20,
+        description="Mínimo de hits para confirmar track.",
+    )
+    tracker_max_age: int = Field(
+        default_factory=lambda: int(os.getenv("TRACKER_MAX_AGE", "30")),
+        ge=1,
+        le=100,
+        description="Máximo de frames sin detección para mantener track.",
+    )
+    roi_padding_pct: float = Field(
+        default_factory=lambda: float(os.getenv("ROI_PADDING_PCT", "0.12")),
+        ge=0.0,
+        le=0.5,
+        description="Padding del ROI como fracción del lado mayor del bbox (0 a 0.5).",
+    )
+    roi_max_side: int = Field(
+        default_factory=lambda: int(os.getenv("ROI_MAX_SIDE", "1280")),
+        ge=320,
+        le=2048,
+        description="Lado máximo del ROI al redimensionar (320 a 2048).",
+    )
+    roi_jpeg_quality: int = Field(
+        default_factory=lambda: int(os.getenv("ROI_JPEG_QUALITY", "85")),
+        ge=1,
+        le=100,
+        description="Calidad JPEG del ROI (1 a 100).",
+    )
+    min_views: int = Field(
+        default_factory=lambda: int(os.getenv("MIN_VIEWS", "3")),
+        ge=1,
+        le=10,
+        description="Mínimo de vistas por track para enviar a Gemini.",
+    )
+    target_views: int = Field(
+        default_factory=lambda: int(os.getenv("TARGET_VIEWS", "4")),
+        ge=1,
+        le=10,
+        description="Vistas objetivo por track.",
+    )
+    max_views: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_VIEWS", "5")),
+        ge=1,
+        le=10,
+        description="Máximo de vistas por track.",
+    )
+    view_selection_blur_percentile: float = Field(
+        default_factory=lambda: float(os.getenv("VIEW_SELECTION_BLUR_PERCENTILE", "0.25")),
+        ge=0.0,
+        le=1.0,
+        description="Percentil de blur por debajo del cual se descartan observaciones (0 a 1).",
+    )
+    view_selection_min_frame_gap_diversity: int = Field(
+        default_factory=lambda: int(os.getenv("VIEW_SELECTION_MIN_FRAME_GAP_DIVERSITY", "3")),
+        ge=0,
+        le=30,
+        description="Mínimo salto en frame_idx para considerar vista distinta (diversidad). Env: VIEW_SELECTION_MIN_FRAME_GAP_DIVERSITY.",
+    )
+    view_selection_max_iou_suppress: float = Field(
+        default_factory=lambda: float(os.getenv("VIEW_SELECTION_MAX_IOU_SUPPRESS", "0.8")),
+        ge=0.0,
+        le=1.0,
+        description="Si dos vistas están muy cerca en tiempo y sus bboxes tienen IoU > este valor, se descarta una. 0 = desactivado. Env: VIEW_SELECTION_MAX_IOU_SUPPRESS.",
+    )
+
     # Output Configuration
     output_dir: str = Field(
         default_factory=lambda: os.getenv("OUTPUT_DIR", "output"),
@@ -162,6 +295,15 @@ class Settings(BaseModel):
             # No lanzamos error aquí, solo advertimos
             # El error se lanzará cuando se intente usar el cliente
             pass
+        return v
+
+    @field_validator("detector_mode")
+    @classmethod
+    def validate_detector_mode(cls, v: str) -> str:
+        """Acepta solo stub, heuristic, synthetic."""
+        v = (v or "stub").strip().lower()
+        if v not in ("stub", "heuristic", "synthetic"):
+            return "stub"
         return v
 
     @field_validator("output_dir")
