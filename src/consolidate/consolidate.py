@@ -8,7 +8,7 @@ de múltiples frames del mismo pallet/producto en una estimación final robusta.
 import math
 import statistics
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from src.consolidate.normalize import normalize_product_key
 from src.models.schemas import (
@@ -52,6 +52,8 @@ def consolidate(
     frame_results: List[LLMFrameResult],
     n_target: int = 8,
     mad_threshold: float = 3.0,
+    min_evidence_frames: int = 2,
+    min_confidence: float = 0.45,
 ) -> ConsolidatedResult:
     """Consolida resultados de múltiples frames usando MAD y mediana.
     
@@ -66,6 +68,8 @@ def consolidate(
         frame_results: Lista de resultados de frames individuales.
         n_target: Número objetivo de observaciones para cobertura completa.
         mad_threshold: Factor k para filtrado de outliers (default: 3.0).
+        min_evidence_frames: Mínimo de inliers para no descartar producto (default: 2).
+        min_confidence: Mínima confianza final para no descartar producto fantasma (default: 0.45).
     
     Returns:
         ConsolidatedResult con pallets y productos consolidados.
@@ -194,8 +198,6 @@ def consolidate(
             
             # Filtro de inclusión (mejora #8): descartar productos fantasmas
             # Solo aplicar si hay suficientes observaciones totales
-            min_evidence_frames = 2
-            min_confidence = 0.45
             if len(observations) >= 3:  # Solo filtrar si hay múltiples frames
                 if len(inliers) < min_evidence_frames and conf_final < min_confidence:
                     # Producto fantasma: saltar

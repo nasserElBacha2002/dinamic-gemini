@@ -17,50 +17,31 @@ from src.preprocess.image_ops import extract_frame_from_video, resize_image, sav
 
 def select_frames(
     frames: List[FrameRef],
-    strategy: Literal["uniform", "first_n", "distributed", "all"] = "all",
+    strategy: Literal["all"] = "all",
 ) -> List[FrameRef]:
-    """Selecciona frames de una lista según una estrategia.
+    """Selecciona frames de una lista.
+    
+    Actualmente solo se soporta "all" (todos los frames). Las estrategias
+    "uniform", "first_n" y "distributed" se eliminaron en Bloque 8.
     
     Args:
         frames: Lista de referencias a frames.
-        strategy: Estrategia de selección:
-            - "all": Retorna todos los frames (default, recomendado)
-            - "uniform": Distribución uniforme (deprecated, usa "all")
-            - "first_n": Primeros frames (deprecated, usa "all")
-            - "distributed": Similar a uniform (deprecated, usa "all")
+        strategy: Siempre "all" — retorna todos los frames.
     
     Returns:
-        List[FrameRef]: Lista de frames seleccionados.
+        List[FrameRef]: Lista de frames seleccionados (copia).
     
     Raises:
-        ValueError: Si strategy no es reconocida.
+        ValueError: Si strategy no es "all".
     """
     if not frames:
         return []
-    
-    # Por defecto, retornar todos los frames
-    if strategy == "all":
-        return frames.copy()
-    
-    # Estrategias legacy (deprecated, pero mantenidas por compatibilidad)
-    # En el futuro se pueden eliminar
-    if strategy == "first_n":
-        # Retornar todos (comportamiento legacy era limitar)
-        return frames.copy()
-    
-    elif strategy == "uniform":
-        # Retornar todos (comportamiento legacy era distribuir)
-        return frames.copy()
-    
-    elif strategy == "distributed":
-        # Retornar todos (comportamiento legacy era distribuir con primero/último)
-        return frames.copy()
-    
-    else:
+    if strategy != "all":
         raise ValueError(
             f"Estrategia no reconocida: {strategy}. "
-            f"Estrategias válidas: 'all', 'uniform', 'first_n', 'distributed'"
+            "Única estrategia válida: 'all'."
         )
+    return frames.copy()
 
 
 def prepare_frames_for_api(
