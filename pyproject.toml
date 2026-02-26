@@ -46,7 +46,20 @@ dev = [
 dinamic-gemini = "src.app:main"
 
 [tool.setuptools]
-packages = ["src", "src.models", "src.video", "src.preprocess", "src.llm", "src.consolidate", "src.io"]
+packages = [
+    "src",
+    "src.models",
+    "src.video",
+    "src.preprocess",
+    "src.llm",
+    "src.consolidate",
+    "src.io",
+    "src.detection",
+    "src.tracking",
+    "src.roi",
+    "src.view_selection",
+    "src.pipeline",
+]
 
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.md"]

@@ -10,7 +10,7 @@ Este módulo define todos los esquemas de datos usados en el sistema:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 # ----------------------------
@@ -59,6 +59,52 @@ class MinifiedFrameResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     pallets: List[MinifiedPallet] = Field(..., description="Lista de pallets detectados.")
+
+
+# ----------------------------
+# Sprint A: Detection, tracking, view selection
+# ----------------------------
+# BBox: (x1, y1, x2, y2, confidence) en píxeles; confidence en [0, 1]
+BBox = Tuple[float, float, float, float, float]
+
+
+class PalletObservation(BaseModel):
+    """Una observación de un pallet en un frame (Sprint A)."""
+    model_config = ConfigDict(extra="forbid")
+
+    frame_idx: int = Field(..., ge=0, description="Índice del frame.")
+    timestamp_seconds: float = Field(..., ge=0, description="Timestamp en segundos.")
+    bbox: Tuple[int, int, int, int] = Field(..., description="Bounding box (x1, y1, x2, y2).")
+    det_conf: float = Field(..., ge=0, le=1, description="Confianza de la detección.")
+    blur_score: Optional[float] = Field(default=None, description="Nitidez del ROI (Laplacian var).")
+    roi_path: Optional[str] = Field(default=None, description="Ruta al ROI guardado.")
+    track_id: str = Field(..., description="ID estable del track.")
+
+
+class PalletTrack(BaseModel):
+    """Track estable de un pallet a lo largo de frames (Sprint A)."""
+    model_config = ConfigDict(extra="forbid")
+
+    track_id: str = Field(..., description="ID único del track.")
+    observations: List[PalletObservation] = Field(..., description="Observaciones del pallet.")
+    start_frame: int = Field(..., ge=0, description="Primer frame del track.")
+    end_frame: int = Field(..., ge=0, description="Último frame del track.")
+
+    def best_views(self, k: int) -> List[PalletObservation]:
+        """Selecciona hasta k mejores vistas por blur_score y diversidad temporal (ordenadas)."""
+        if not self.observations or k <= 0:
+            return []
+        sorted_obs = sorted(
+            self.observations,
+            key=lambda o: (o.blur_score or 0.0, -(o.bbox[2] - o.bbox[0]) * (o.bbox[3] - o.bbox[1])),
+            reverse=True,
+        )
+        return sorted_obs[:k]
+
+    def roi_paths_for_views(self, k: int) -> List[str]:
+        """Rutas ROI de las k mejores vistas (excluye observaciones sin roi_path)."""
+        views = self.best_views(k)
+        return [o.roi_path for o in views if o.roi_path]
 
 
 # ----------------------------

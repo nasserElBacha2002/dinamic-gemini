@@ -29,6 +29,8 @@ from src.io.outputs import (
 )
 from src.io.sanitize import sanitize_video_id
 from src.llm.gemini_client import GeminiClient
+from src.models.schemas import FinalResult, PalletEstimate, ProductEstimate
+from src.pipeline.orchestrator import run_pipeline
 from src.preprocess.selectors import prepare_frames_for_api, select_frames
 from src.preprocess.similarity import filter_similar_frames_fast
 from src.video.frames import extract_frames
@@ -162,6 +164,26 @@ Ejemplos:
         help="Omitir consolidación: guardar solo lo que devuelve Gemini (un pallet por frame).",
     )
     parser.add_argument(
+        "--track-pipeline",
+        action="store_true",
+        help="Sprint A: usar pipeline por tracks (detección → tracking → 1 request por track).",
+    )
+    parser.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="Con --track-pipeline: usar 2 bboxes fijos por frame para probar pipeline sin detector real.",
+    )
+    parser.add_argument(
+        "--heuristic",
+        action="store_true",
+        help="Con --track-pipeline: usar detector heurístico OpenCV (sin ML) para pallets.",
+    )
+    parser.add_argument(
+        "--save-annotated",
+        action="store_true",
+        help="Con --track-pipeline: guardar ROIs y frames anotados (bbox + track_id) en rois_annotated/ y debug_frames_annotated/.",
+    )
+    parser.add_argument(
         "--no-summary",
         action="store_true",
         help="No mostrar resumen en consola",
@@ -253,7 +275,63 @@ def main() -> int:
             },
         )
         
-        # 2. Extraer frames
+        # Sprint A: pipeline por tracks (detección → tracking → 1 request/track)
+        if args.track_pipeline:
+            if args.synthetic:
+                settings = settings.model_copy(update={"use_synthetic_detection": True})
+                logger.info("🧪 Modo sintético: 2 bboxes fijos por frame (sin detector real)")
+            elif args.heuristic:
+                settings = settings.model_copy(update={"detector_mode": "heuristic"})
+                logger.info("🔍 Detector heurístico OpenCV activado (sin ML)")
+            extract_fps = args.extract_fps if args.extract_fps is not None else settings.extract_fps
+            logger.info("🛤️  Ejecutando pipeline por tracks (Sprint A)...")
+            track_results, summary = run_pipeline(
+                str(video_path),
+                video_id=video_id,
+                settings=settings,
+                output_dir=str(output_path),
+                run_id=run_id,
+                extract_fps=extract_fps,
+                prompt_profile=args.prompt_profile,
+                save_debug_frames=args.debug,
+                save_annotated_views=args.save_annotated,
+            )
+            pallets = []
+            for track_id, obs in track_results:
+                if obs is None:
+                    continue
+                products = [
+                    ProductEstimate(
+                        brand=p.brand,
+                        product=p.product,
+                        estimated_boxes=p.estimated_boxes,
+                        confidence=p.confidence,
+                    )
+                    for p in obs.products
+                ]
+                pallets.append(PalletEstimate(pallet_id=track_id, products=products))
+            final_result = FinalResult(
+                video_id=video_id,
+                pallets=pallets,
+                processing_summary={**summary, "track_pipeline": True},
+            )
+            run_output_dir = output_path / video_id / run_id
+            run_output_dir.mkdir(parents=True, exist_ok=True)
+            result_file = run_output_dir / "result.json"
+            save_result(final_result, str(result_file))
+            logger.info("💾 Resultado guardado: %s", result_file)
+            logger.info(
+                "📊 tracks_detected=%s tracks_ok=%s",
+                summary.get("tracks_detected", 0),
+                summary.get("tracks_ok", 0),
+            )
+            if not args.no_summary:
+                print()
+                print_summary(final_result)
+            logger.info("✅ Procesamiento (track-pipeline) completado")
+            return 0
+        
+        # 2. Extraer frames (pipeline frame-based)
         extract_fps = args.extract_fps if args.extract_fps is not None else settings.extract_fps
         logger.info(f"🎬 Extrayendo frames (target_fps={extract_fps})...")
         frames = extract_frames(str(video_path), target_fps=extract_fps)

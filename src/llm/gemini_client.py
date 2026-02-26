@@ -30,6 +30,9 @@ from src.models.schemas import (
 )
 from src.llm.prompts import get_prompt_profile
 
+# Perfil por defecto para 1 request por track (Sprint A)
+DEFAULT_TRACK_PROMPT_PROFILE = "multi_view_per_track"
+
 
 # Nota: _expand_json_schema ya no es necesario con el nuevo SDK
 # El nuevo SDK acepta clases Pydantic directamente sin necesidad de limpiar el schema
@@ -405,3 +408,90 @@ class GeminiClient:
                 model_name=self.model_name,
             )
         ]
+
+    def analyze_track(
+        self,
+        track_id: str,
+        roi_paths: List[str],
+        prompt_profile: str = DEFAULT_TRACK_PROMPT_PROFILE,
+    ) -> Optional[LLMPalletObservation]:
+        """Envía las vistas de un track a Gemini (1 request por track). Sprint A.
+
+        Args:
+            track_id: ID estable del track.
+            roi_paths: Rutas a las imágenes ROI (3-5 vistas).
+            prompt_profile: Perfil de prompt (default: multi_view_per_track).
+
+        Returns:
+            Primera pallet de la respuesta (id=track_id) o None si fallo/empty.
+        """
+        if not roi_paths:
+            return None
+        images: List = []
+        load_errors: List[str] = []
+        for path in roi_paths:
+            try:
+                img = self._load_image(path)
+                images.append(img)
+            except Exception as e:
+                load_errors.append(f"{path}: {e}")
+                logger.error("Error cargando ROI para track %s: %s", track_id, e)
+        if load_errors:
+            logger.error("No se envía request para track %s: %d fallos de carga", track_id, len(load_errors))
+            return None
+
+        profile = get_prompt_profile(prompt_profile)
+        system_prompt = profile["system"]
+        user_prompt = profile["user"]
+        logger.info(
+            "Gemini request: profile=%s system_len=%d user_len=%d images=%d user_preview=%s",
+            prompt_profile,
+            len(system_prompt),
+            len(user_prompt),
+            len(images),
+            (user_prompt[:200] + "..." if len(user_prompt) > 200 else user_prompt),
+        )
+        safe_schema = self._get_safe_schema(MinifiedFrameResult)
+        generation_config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=safe_schema,
+            temperature=0.0,
+            system_instruction=system_prompt,
+            safety_settings=self.safety_settings,
+        )
+        contents = images + [user_prompt]
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=generation_config,
+                )
+                raw_text = response.text
+                minified_data = TypeAdapter(MinifiedFrameResult).validate_json(raw_text)
+                if not minified_data.pallets:
+                    return None
+                m_pallet = minified_data.pallets[0]
+                products = [
+                    LLMProductObservation(
+                        brand=p.b,
+                        product=p.n,
+                        estimated_boxes=p.q,
+                        confidence=p.c,
+                        reasoning=p.r,
+                    )
+                    for p in m_pallet.p
+                ]
+                return LLMPalletObservation(
+                    pallet_id=track_id,
+                    products=products,
+                )
+            except Exception as e:
+                last_error = str(e)
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    time.sleep(self.retry_delay)
+        logger.error("Track %s: ERROR tras %d intentos: %s", track_id, self.max_retries, last_error)
+        return None

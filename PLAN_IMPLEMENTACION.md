@@ -6,13 +6,31 @@
 
 - **Unidad de procesamiento:** Cambio fundamental de `frame` → `pallet_track`. El costo escala con `#pallets únicos`, no con `#frames`.
 
+---
+
+## Production MVP — Scope prioritario
+
+El proyecto prioriza una **versión Production MVP** con estos pilares:
+
+1. **Procesar TODO el video** — Sin límites artificiales de frames; el análisis cubre todo el recorrido.
+2. **Detectar pallets y construir `pallet_track_id` estables** — Tracking estable por pallet.
+3. **Seleccionar vistas de calidad por track** — Nitidez, diversidad temporal, área ROI.
+4. **Enviar 1 request por track a Gemini** — Costo controlado por pallets únicos.
+5. **Validación post-modelo** — Determinismo y reglas de negocio (segregación, evidencia suficiente).
+
+**Sprint 6 (Re-ID con pHash/CLIP + DSU merge) es OPCIONAL.** Solo se implementará si la cobertura real del tracking no alcanza (p. ej. doble conteo o cortes frecuentes de tracks). En el roadmap figura como **"Sprint 6 (Optional / Phase 2)"** y **no es bloqueante** para el MVP.
+
+---
+
+## Invariantes no negociables
+
 - **Invariantes no negociables:**
   - **Segregación 100%:** Un pallet lógico nunca puede contener múltiples SKUs distintos. Si se detecta mezcla → `ERROR: MIXED_SKUS`.
   - **Conteo determinista:** Si la evidencia visual no es suficiente para un conteo exacto → `ERROR: INSUFFICIENT_EVIDENCE`. No se permite estimar.
 
 - **Arquitectura de costo:**
   - **Sprint A/B:** `requests_sent ≈ pallet_tracks_detected` (1 request por track con 3-5 ROIs).
-  - **Sprint C:** Re-ID agrega costo de CLIP solo para candidatos filtrados (pHash + gating temporal/espacial).
+  - **Sprint 6 (Optional):** Re-ID agrega costo de CLIP solo para candidatos filtrados (pHash + gating temporal/espacial).
 
 - **Pipeline principal:**
   1. Video → Extracción de frames
@@ -24,7 +42,7 @@
   7. Validación post-LLM (Python): segregación + determinismo
   8. Export: `final_result.json` (OK) + `errors.json` (ERROR)
 
-- **Sprint C (Re-ID):**
+- **Sprint 6 (Optional / Phase 2 — Re-ID):** No bloqueante para MVP. Solo si el tracking no alcanza:
   - Firma por track (2-3 ROIs mejores: pHash + CLIP embedding)
   - Gating: temporal (`MAX_GAP=8s`) + espacial (`dx≤0.20`, `dy≤0.25`)
   - Filtro pHash (Hamming ≤10) → candidatos para CLIP
@@ -34,6 +52,21 @@
 - **Modo estricto:** El sistema falla correctamente. Si no puede garantizar segregación o determinismo → `ERROR` explícito. No inventa números.
 
 - **Observabilidad:** Métricas principales: `tracks_detected`, `tracks_analyzed`, `tracks_ok`, `tracks_error_mixed_skus`, `tracks_error_insufficient_evidence`, `error_rate`, `avg_views_per_track`, `requests_sent`.
+
+---
+
+## Resumen de ajustes de scope y Sprint A (última actualización)
+
+| Qué | Dónde / Cómo |
+|-----|----------------|
+| **Scope MVP** | Nueva sección "Production MVP — Scope prioritario": procesar todo el video, track estable, 1 request/track, validación post-modelo. |
+| **Sprint 6 Optional** | Sprint 6 (Re-ID) etiquetado como "Optional / Phase 2"; no bloqueante para MVP. Misma sección renombrada a "Sprint 6 (Optional / Phase 2)" en Implementation Plan. |
+| **Sprint A — Redundancia (prompt)** | Task A8b en Sprint A; bloque en `src/llm/prompts.py`: `USER_PROMPT_MULTI_VIEW_REDUNDANCY` + texto integrado en `USER_PROMPT_MULTI_FRAME`. |
+| **Sprint A — Plan B** | Párrafo "Sprint A — Plan B": filtrado determinístico pre-Gemini solo si el prompt no alcanza; heurísticas bbox/área/centroide/timestamp; opcional pHash por ROI en mismo track. |
+| **Sprint A — YOLO incremental** | Párrafo "Sprint A — YOLO incremental": contrato data capture, `model_version` en outputs/logs, estructura dataset evolution. |
+| **DoD Sprint A** | Puntos 8–10 añadidos: prompt redundancia, YOLO incremental (contrato + model_version + dataset evolution), Plan B documentado como opcional. |
+
+**Archivos tocados en esta actualización:** `PLAN_IMPLEMENTACION.md`, `src/llm/prompts.py`.
 
 ---
 
@@ -408,6 +441,62 @@ class ProcessingSummary(BaseModel):
    - **File:** `src/llm/prompts.py` (MODIFY)
    - **Add:** `PROMPT_MULTI_VIEW_ANTI_SUM` (Sprint A version, sin reglas estrictas todavía)
 
+8b. **A8b: Mejora del prompt multi-view — manejo de redundancia (Sprint A)**
+   - **Problema:** Se envían varias imágenes muy parecidas del mismo pallet (mismo ángulo/composición) → más costo, poca evidencia extra, riesgo de confundir el conteo.
+   - **File:** `src/llm/prompts.py` (MODIFY)
+   - **Add:** Bloque explícito en el prompt multi-view que:
+     - Anticipa que puede haber imágenes repetidas o muy similares.
+     - Instruye a Gemini a **ignorar vistas redundantes** si detecta alta similitud (mismo ángulo, mismo encuadre, mismo patrón visual).
+     - Instruye a **priorizar la vista más óptima** (más nítida, más completa, menos oclusión) y basar la decisión principalmente en esas vistas.
+     - Refuerza: **no asumir "más imágenes = sumar"**; mantener regla anti-suma y usar solo diversidad real.
+   - **Entregable:** Prompt actualizado + ejemplo de request donde 2 de 5 vistas son casi iguales y el modelo debe omitir la redundante y usar la mejor.
+
+**Ejemplo de comportamiento esperado (2 de 5 vistas similares):** Request con 5 imágenes para el mismo pallet; imágenes 2 y 4 son casi idénticas (mismo ángulo, mismo encuadre). Comportamiento esperado: Gemini trata vistas 2 y 4 como una sola evidencia, elige la de mejor nitidez/completitud, y basa el conteo en la diversidad real (p. ej. vistas 1, 2, 3, 5). No suma evidencia por la duplicada; el output final refleja un conteo basado en vistas efectivamente distintas.
+
+**Sprint A — Plan B (solo si el prompt no alcanza):** Filtrado determinístico pre-Gemini.
+   - El pipeline analiza TODO el video y construye todos los tracks.
+   - Al preparar vistas por track: detectar vistas redundantes/parecidas y eliminar duplicadas manteniendo la mejor.
+   - **"Mejor"** = mayor blur_score + mayor área ROI + menor oclusión (heurística simple).
+   - **Primera implementación (simple):** Heurísticas con bboxes normalizados, área, centroides y proximidad temporal para marcar redundancia; opcional: métrica ligera tipo pHash por ROI solo dentro del mismo track.
+   - **Se implementa SOLO si el prompt no resuelve** el problema de imágenes repetidas.
+
+---
+
+### Historias de usuario — Sprint A Plan B (Opción B)
+
+Feature: **Filtrado determinístico de vistas redundantes antes de enviar a Gemini** (solo si el prompt multi-view no resuelve imágenes repetidas). Ubicación en pipeline: **view selection** (después de selección inicial por track, antes de Gemini).
+
+| ID | Historia de usuario | Criterios de aceptación |
+|----|---------------------|-------------------------|
+| **US-A-B.1** | **Como** operador del pipeline, **quiero** que las vistas enviadas a Gemini por track no incluyan pares redundantes (mismo ángulo/encuadre) **para** reducir costo y evitar confusión en el conteo. | CA-A-B.1: Con el flag/config activo, el número de vistas por track enviadas a Gemini es ≤ al de vistas seleccionadas inicialmente; vistas marcadas como redundantes se descartan y se conserva una por grupo (la “mejor”). |
+| **US-A-B.2** | **Como** desarrollador, **quiero** que la “mejor” vista de un grupo redundante se elija por heurísticas objetivas **para** que el comportamiento sea reproducible y auditable. | CA-A-B.2: Criterio documentado y configurable: combinación de blur_score (mayor mejor), área ROI (mayor mejor) y oclusión (menor mejor); orden de desempate definido (p. ej. timestamp más central). |
+| **US-A-B.3** | **Como** operador, **quiero** activar el filtrado de redundancia solo cuando lo necesite **para** no cambiar el comportamiento por defecto si el prompt ya resuelve el problema. | CA-A-B.3: Parámetro de config/CLI (p. ej. `VIEW_DEDUP_ENABLED` o `--view-dedup`); default desactivado; cuando está activo se aplica la deduplicación antes de Gemini. |
+| **US-A-B.4** | **Como** desarrollador, **quiero** que la redundancia se marque primero con heurísticas ligeras (bbox, área, centroide, tiempo) **para** no depender de pHash/CLIP en la primera versión. | CA-A-B.4: Implementación inicial usa solo bbox normalizado, área, centroide y proximidad temporal; umbrales configurables; pHash por ROI dentro del mismo track es opcional y documentado como extensión. |
+| **US-A-B.5** | **Como** operador, **quiero** que el pipeline siga analizando todo el video y construyendo todos los tracks **para** no perder cobertura al activar Plan B. | CA-A-B.5: El filtrado de redundancia solo afecta la lista de vistas por track enviadas a Gemini; la extracción de frames, detección y tracking son idénticos con y sin Plan B. |
+| **US-A-B.6** | **Como** desarrollador, **quiero** métricas que indiquen cuántas vistas se descartaron por redundancia **para** poder ajustar umbrales y validar el ahorro. | CA-A-B.6: `processing_summary` (o logs) incluyen, cuando Plan B está activo: p. ej. `views_deduped_per_track`, `views_before_dedup`, `views_after_dedup`; al menos un log por track cuando se descartan vistas. |
+
+**Scope & no-goals:** Dentro: deduplicación por track con heurísticas (y opcional pHash); config/CLI; métricas. Fuera: Re-ID entre tracks (Sprint 6); cambio del esquema de salida de Gemini; detección de oclusión compleja (solo heurística simple o fija).
+
+**Archivos impactados (referencia):** `src/view_selection/selector.py` (o nuevo `src/view_selection/dedup.py`), `src/config.py`, `src/pipeline/orchestrator.py`, `tests/test_view_selection.py`. Config: `VIEW_DEDUP_ENABLED`, `VIEW_DEDUP_SIMILARITY_THRESHOLD` (y parámetros de heurística), opcional `VIEW_DEDUP_USE_PHASH`.
+
+**Orden sugerido de tareas:** (1) Config y flag; (2) Función de similitud heurística (bbox/área/centroide/tiempo); (3) Integración en selector/orchestrator conservando “mejor” vista por grupo; (4) Métricas y logs; (5) Tests unitarios; (6) Opcional: pHash por ROI en mismo track.
+
+**Criterios de aceptación (Definition of Done) Plan B:**  
+- Config/CLI para activar desactivar; default off.  
+- Heurísticas documentadas y configurables; “mejor” vista = f(blur_score, área, oclusión).  
+- Con Plan B activo, vistas enviadas a Gemini sin pares redundantes según umbral; cobertura del video sin recortes.  
+- Métricas o logs que permitan ver vistas descartadas por redundancia.  
+- Tests que verifiquen: con vistas sintéticamente redundantes, se conserva una por grupo y es la “mejor” según criterio.
+
+---
+
+**Sprint A — YOLO incremental (aprendizaje continuo):**
+   - El modelo YOLO debe ser **incremental**: el sistema debe soportar un ciclo de mejora continua (detectar errores/FP/FN, almacenar ejemplos, re-entrenamiento periódico, versionar modelo y comparar métricas).
+   - En Sprint A no hace falta automatizar todo, pero sí:
+     - **Definir el contrato de "data capture":** qué se guarda, dónde, con qué nombre (ROIs + metadata).
+     - **Registrar `model_version`** en outputs y logs.
+     - **Preparar estructura mínima de dataset evolution:** carpetas / manifest / metadata para futuras iteraciones.
+
 9. **A9: Integrar pipeline en orchestrator**
    - **File:** `src/pipeline/orchestrator.py` (NEW)
    - **Function:** `run_pipeline(video_path: str, config: Config) -> ProcessingResult`
@@ -479,7 +568,7 @@ MAX_VIEWS: int = 5
 VIEW_SELECTION_BLUR_PERCENTILE: float = 0.25
 ```
 
-#### Definition of Done
+#### Definition of Done (Sprint A)
 
 1. ✅ Pipeline produce `PalletTrack` estables para video largo con múltiples pallets.
 2. ✅ Para cada track se generan ROIs y se seleccionan 3-5 vistas determinísticas.
@@ -488,16 +577,19 @@ VIEW_SELECTION_BLUR_PERCENTILE: float = 0.25
 5. ✅ `processing_summary` refleja: `tracks_detected`, `tracks_analyzed`, `views_selected_total`, `requests_sent`.
 6. ✅ `requests_sent ≈ pallet_tracks_detected` (métrica clave).
 7. ✅ Tests unitarios: detección, tracking, ROI, view selection.
+8. ✅ **Prompt multi-view con manejo de redundancia:** el prompt instruye a ignorar vistas redundantes, priorizar nitidez/completitud y no asumir "más imágenes = sumar". Documentado ejemplo con 2 de 5 vistas similares.
+9. ✅ **YOLO incremental (contrato):** contrato de data capture definido (qué/dónde/nombre); `model_version` en outputs y logs; estructura mínima de dataset evolution (carpetas/manifest/metadata).
+10. ✅ **Plan B** documentado como opcional; implementación solo si el prompt no resuelve redundancia.
 
 #### Risks + Mitigations
 
 | Risk | Mitigation |
 |------|------------|
 | Detector no detecta pallets bien | Opción A: agrupar cajas por cluster (MVP). Opción B: entrenar detector específico. |
-| Tracker rompe IDs | Aceptable en Sprint A; Re-ID es Sprint C. Log `track_id` flips para análisis. |
+| Tracker rompe IDs | Aceptable en Sprint A; Re-ID es Sprint 6 (Optional). Log `track_id` flips para análisis. |
 | ROI mal recortado | Padding + clamp + QA check: ROI mantiene pallet completo. |
 | Vistas redundantes | Selección por segmentos temporales + filtro blur. |
-| Costo CLIP alto (si se usa) | No usar CLIP en Sprint A. Solo pHash/CLIP en Sprint C Re-ID. |
+| Costo CLIP alto (si se usa) | No usar CLIP en Sprint A. Solo pHash/CLIP en Sprint 6 (Optional) Re-ID. |
 
 #### KPIs to Track
 
@@ -647,9 +739,9 @@ ALLOW_INFER_DEPTH: bool = False
 
 ---
 
-### Sprint C — Robustez y Escalabilidad Real en Pasillos
+### Sprint 6 (Optional / Phase 2) — Re-ID: robustez ante cortes de tracking
 
-**Objective:** Mejorar robustez y capacidad anti-doble-conteo mediante Re-ID para manejar fallos de tracking en videos largos/pasillos.
+**Objective:** Mejorar robustez y capacidad anti-doble-conteo mediante Re-ID para manejar fallos de tracking en videos largos/pasillos. **No bloqueante para MVP.** Solo se implementa si la cobertura del tracking no alcanza (doble conteo, cortes frecuentes de tracks).
 
 **Scope:** Generación de firma por track, gating de candidatos (temporal/espacial), filtro pHash, verificación CLIP, estrategia de merge (Union-Find).
 
