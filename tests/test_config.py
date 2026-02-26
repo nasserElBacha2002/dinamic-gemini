@@ -27,13 +27,22 @@ def test_settings_default_values():
     with patch.dict(os.environ, {}, clear=True):
         settings = Settings()
         assert settings.extract_fps == 1.0
-        assert settings.max_frames_to_send == 10
+        assert settings.max_frames_to_send is None  # default: sin límite (procesar todo el video)
+        assert settings.frame_stride == 1
+        assert settings.time_limit_sec is None
         assert settings.resize_max_side == 1280
+        assert settings.jpeg_quality == 85
+        assert settings.similarity_sample_size == 100
         # output_dir se normaliza a path absoluto
         assert Path(settings.output_dir).resolve() == Path("output").resolve()
         assert settings.debug_save_frames is False
         assert settings.gemini_model_name == "gemini-2.0-flash-exp"
+        assert settings.gemini_max_retries == 3
+        assert settings.gemini_retry_delay == 1.0
         assert settings.gemini_api_key == ""
+        assert settings.consolidation_mad_threshold == 3.0
+        assert settings.consolidation_min_evidence_frames == 2
+        assert settings.consolidation_min_confidence == 0.45
 
 
 def test_settings_from_env():
@@ -46,6 +55,15 @@ def test_settings_from_env():
         "OUTPUT_DIR": "/tmp/test_output",
         "DEBUG_SAVE_FRAMES": "true",
         "GEMINI_MODEL_NAME": "gemini-pro",
+        "GEMINI_MAX_RETRIES": "5",
+        "GEMINI_RETRY_DELAY": "2.0",
+        "CONSOLIDATION_MAD_THRESHOLD": "2.5",
+        "CONSOLIDATION_MIN_EVIDENCE_FRAMES": "3",
+        "CONSOLIDATION_MIN_CONFIDENCE": "0.5",
+        "JPEG_QUALITY": "75",
+        "SIMILARITY_SAMPLE_SIZE": "64",
+        "FRAME_STRIDE": "5",
+        "TIME_LIMIT_SEC": "60.5",
     }
     
     with patch.dict(os.environ, env_vars, clear=True):
@@ -53,10 +71,19 @@ def test_settings_from_env():
         assert settings.gemini_api_key == "test_api_key_123"
         assert settings.extract_fps == 2.5
         assert settings.max_frames_to_send == 20
+        assert settings.frame_stride == 5
+        assert settings.time_limit_sec == 60.5
         assert settings.resize_max_side == 1920
+        assert settings.jpeg_quality == 75
+        assert settings.similarity_sample_size == 64
         assert settings.output_dir == "/tmp/test_output"
         assert settings.debug_save_frames is True
         assert settings.gemini_model_name == "gemini-pro"
+        assert settings.gemini_max_retries == 5
+        assert settings.gemini_retry_delay == 2.0
+        assert settings.consolidation_mad_threshold == 2.5
+        assert settings.consolidation_min_evidence_frames == 3
+        assert settings.consolidation_min_confidence == 0.5
 
 
 # ----------------------------
@@ -77,19 +104,27 @@ def test_extract_fps_validation():
         Settings(extract_fps=100.0)
 
 
+def test_max_frames_to_send_from_env_empty_or_zero_is_none():
+    """MAX_FRAMES_TO_SEND '' o '0' = sin límite (procesar todo el video)."""
+    for env_val in ("", "0", "  "):
+        with patch.dict(os.environ, {"MAX_FRAMES_TO_SEND": env_val}, clear=False):
+            settings = Settings()
+            assert settings.max_frames_to_send is None
+
+
 def test_max_frames_to_send_validation():
-    """Test de validación de max_frames_to_send."""
+    """Test de validación de max_frames_to_send (None/0 = sin límite)."""
     # Valor válido
     settings = Settings(max_frames_to_send=15)
     assert settings.max_frames_to_send == 15
-    
-    # Valor fuera de rango (muy bajo)
+    # 0 se normaliza a None (sin límite)
+    settings0 = Settings(max_frames_to_send=0)
+    assert settings0.max_frames_to_send is None
+    # Fuera de rango (1..10000)
     with pytest.raises(Exception):
-        Settings(max_frames_to_send=0)
-    
-    # Valor fuera de rango (muy alto)
+        Settings(max_frames_to_send=10001)
     with pytest.raises(Exception):
-        Settings(max_frames_to_send=200)
+        Settings(max_frames_to_send=-1)
 
 
 def test_resize_max_side_validation():
@@ -105,6 +140,46 @@ def test_resize_max_side_validation():
     # Valor fuera de rango (muy alto)
     with pytest.raises(Exception):
         Settings(resize_max_side=5000)
+
+
+def test_jpeg_quality_validation():
+    """Test de validación de jpeg_quality (Bloque 7)."""
+    settings = Settings(jpeg_quality=90)
+    assert settings.jpeg_quality == 90
+    with pytest.raises(Exception):
+        Settings(jpeg_quality=0)
+    with pytest.raises(Exception):
+        Settings(jpeg_quality=101)
+
+
+def test_similarity_sample_size_validation():
+    """Test de validación de similarity_sample_size (Bloque 7)."""
+    settings = Settings(similarity_sample_size=128)
+    assert settings.similarity_sample_size == 128
+    with pytest.raises(Exception):
+        Settings(similarity_sample_size=8)
+    with pytest.raises(Exception):
+        Settings(similarity_sample_size=1024)
+
+
+def test_gemini_max_retries_validation():
+    """Test de validación de gemini_max_retries (Bloque 8)."""
+    settings = Settings(gemini_max_retries=5)
+    assert settings.gemini_max_retries == 5
+    with pytest.raises(Exception):
+        Settings(gemini_max_retries=0)
+    with pytest.raises(Exception):
+        Settings(gemini_max_retries=11)
+
+
+def test_gemini_retry_delay_validation():
+    """Test de validación de gemini_retry_delay (Bloque 8)."""
+    settings = Settings(gemini_retry_delay=2.0)
+    assert settings.gemini_retry_delay == 2.0
+    with pytest.raises(Exception):
+        Settings(gemini_retry_delay=0.05)
+    with pytest.raises(Exception):
+        Settings(gemini_retry_delay=61.0)
 
 
 def test_debug_save_frames_boolean():

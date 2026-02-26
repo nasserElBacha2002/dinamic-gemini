@@ -6,6 +6,13 @@ Responsabilidades:
 - Aplicar ROI (región de interés)
 - Comprimir imágenes
 - Guardar y cargar frames
+
+Convención de color (Bloque 7 / US-7.1):
+- Entrada: los frames vienen en BGR (OpenCV).
+- save_frame: escribe el array tal cual (BGR en disco); visores estándar pueden
+  mostrar R/B intercambiados si asumen RGB.
+- compress_image: convierte BGR→RGB antes de codificar; los bytes JPEG son RGB.
+- load_frame: carga con OpenCV → devuelve BGR.
 """
 
 from pathlib import Path
@@ -101,12 +108,15 @@ def apply_roi(
 def compress_image(frame: np.ndarray, quality: int = 85) -> bytes:
     """Comprime una imagen a JPEG.
     
+    Entrada en BGR (OpenCV). Convierte a RGB antes de codificar para que
+    los bytes JPEG sean estándar (visores muestran colores correctos).
+    
     Args:
         frame: Imagen como array de numpy (H, W, C) en formato BGR.
         quality: Calidad JPEG (0-100, mayor = mejor calidad).
     
     Returns:
-        bytes: Imagen comprimida como bytes.
+        bytes: Imagen comprimida como bytes (canales RGB).
     
     Raises:
         ValueError: Si quality está fuera de rango o frame está vacío.
@@ -138,6 +148,9 @@ def save_frame(
     frame: np.ndarray, output_path: str, quality: int = 85
 ) -> str:
     """Guarda un frame como imagen JPEG.
+    
+    Escribe el array tal cual (BGR). Coherente con el pipeline OpenCV;
+    algunos visores que asumen RGB pueden mostrar R/B intercambiados.
     
     Args:
         frame: Imagen como array de numpy (H, W, C) en formato BGR.
@@ -194,6 +207,23 @@ def load_frame(image_path: str) -> np.ndarray:
     return frame
 
 
+def read_frame_at(cap: cv2.VideoCapture, frame_idx: int) -> Optional[np.ndarray]:
+    """Lee un frame por índice desde un VideoCapture ya abierto (Bloque 5).
+    
+    Útil para leer muchos frames sin abrir/cerrar el video en cada lectura.
+    
+    Args:
+        cap: VideoCapture abierto.
+        frame_idx: Índice del frame (0-based).
+    
+    Returns:
+        Frame leído, o None si no se pudo leer.
+    """
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+    ret, frame = cap.read()
+    return frame if ret else None
+
+
 def extract_frame_from_video(
     video_path: str, frame_idx: int
 ) -> Optional[np.ndarray]:
@@ -214,16 +244,6 @@ def extract_frame_from_video(
         raise RuntimeError(f"No se pudo abrir el video: {video_path}")
     
     try:
-        # Posicionar en el frame deseado
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-        
-        # Leer frame
-        ret, frame = cap.read()
-        
-        if not ret:
-            return None
-        
-        return frame
-    
+        return read_frame_at(cap, frame_idx)
     finally:
         cap.release()

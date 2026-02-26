@@ -7,14 +7,52 @@ y guardarlos en diferentes formatos.
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from src.models.schemas import (
     ConsolidatedResult,
     FinalResult,
+    LLMFrameResult,
     PalletEstimate,
     ProductEstimate,
 )
+
+
+def frame_results_to_final_result(
+    frame_results: List[LLMFrameResult],
+    video_id: str,
+    processing_summary: Optional[dict] = None,
+) -> FinalResult:
+    """Convierte los resultados crudos de Gemini a FinalResult sin consolidación.
+
+    Un pallet por frame (pallet_id = frame_N), con los productos que Gemini
+    devolvió para ese frame. Útil con --raw-gemini para omitir consolidate.
+    """
+    pallets: List[PalletEstimate] = []
+    for fr in frame_results:
+        frame_idx = fr.frame.frame_idx
+        products_flat = []
+        for pll in fr.pallets:
+            for obs in pll.products:
+                products_flat.append(
+                    ProductEstimate(
+                        brand=obs.brand,
+                        product=obs.product,
+                        estimated_boxes=obs.estimated_boxes,
+                        confidence=obs.confidence,
+                    )
+                )
+        pallets.append(
+            PalletEstimate(
+                pallet_id=f"frame_{frame_idx}",
+                products=products_flat,
+            )
+        )
+    return FinalResult(
+        video_id=video_id,
+        pallets=pallets,
+        processing_summary=processing_summary,
+    )
 
 
 def to_final_result(
@@ -71,12 +109,15 @@ def to_final_result(
     )
 
 
-def save_result_json(result: FinalResult, output_path: str) -> None:
+def save_result_json(result: FinalResult, output_path: str) -> Path:
     """Guarda un FinalResult como archivo JSON.
     
     Args:
         result: Resultado final a guardar.
         output_path: Ruta donde guardar el archivo JSON.
+    
+    Returns:
+        Path al archivo guardado.
     
     Raises:
         IOError: Si no se puede escribir el archivo.
@@ -84,6 +125,7 @@ def save_result_json(result: FinalResult, output_path: str) -> None:
     Examples:
         >>> result = FinalResult(video_id="VID_001", pallets=[])
         >>> save_result_json(result, "output/result.json")
+        PosixPath('output/result.json')
     """
     output_file = Path(output_path)
     

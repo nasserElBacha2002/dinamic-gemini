@@ -6,13 +6,13 @@ Responsabilidades:
 - Filtrar frames redundantes antes de enviar a API
 """
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
 
 from src.models.schemas import FrameRef
-from src.preprocess.image_ops import extract_frame_from_video
+from src.preprocess.image_ops import read_frame_at
 
 
 def calculate_frame_similarity(frame1: np.ndarray, frame2: np.ndarray) -> float:
@@ -51,6 +51,45 @@ def calculate_frame_similarity(frame1: np.ndarray, frame2: np.ndarray) -> float:
     return float(similarity)
 
 
+def _filter_similar_frames_with_cap(
+    cap: cv2.VideoCapture,
+    frames: List[FrameRef],
+    similarity_threshold: float,
+    sample_size: Optional[int],
+) -> List[FrameRef]:
+    """Lógica común de filtrado con un VideoCapture ya abierto (Bloque 5)."""
+    if not frames or len(frames) == 1:
+        return frames.copy() if frames else []
+
+    filtered = [frames[0]]
+    prev_frame = read_frame_at(cap, frames[0].frame_idx)
+    if prev_frame is None:
+        return frames.copy()
+
+    prev_frame_small = (
+        cv2.resize(prev_frame, (sample_size, sample_size))
+        if sample_size
+        else prev_frame
+    )
+
+    for current_frame_ref in frames[1:]:
+        current_frame = read_frame_at(cap, current_frame_ref.frame_idx)
+        if current_frame is None:
+            continue
+        current_small = (
+            cv2.resize(current_frame, (sample_size, sample_size))
+            if sample_size
+            else current_frame
+        )
+        similarity = calculate_frame_similarity(prev_frame_small, current_small)
+        if similarity < similarity_threshold:
+            filtered.append(current_frame_ref)
+            prev_frame = current_frame
+            prev_frame_small = current_small
+
+    return filtered
+
+
 def filter_similar_frames(
     frames: List[FrameRef],
     video_path: str,
@@ -60,6 +99,7 @@ def filter_similar_frames(
     
     Compara cada frame con el anterior y lo descarta si la similitud
     es mayor al threshold. Esto evita enviar frames casi idénticos a la API.
+    Abre el video una sola vez (Bloque 5).
     
     Args:
         frames: Lista de referencias a frames.
@@ -76,38 +116,18 @@ def filter_similar_frames(
     """
     if not frames:
         return []
-    
     if len(frames) == 1:
         return frames.copy()
-    
-    # Extraer primer frame como referencia
-    filtered = [frames[0]]
-    prev_frame = extract_frame_from_video(video_path, frames[0].frame_idx)
-    
-    if prev_frame is None:
-        # Si no se puede extraer el primer frame, retornar todos
-        return frames.copy()
-    
-    # Comparar cada frame con el anterior
-    for current_frame_ref in frames[1:]:
-        current_frame = extract_frame_from_video(
-            video_path, current_frame_ref.frame_idx
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"No se pudo abrir el video: {video_path}")
+    try:
+        return _filter_similar_frames_with_cap(
+            cap, frames, similarity_threshold, sample_size=None
         )
-        
-        if current_frame is None:
-            # Si no se puede extraer, saltar
-            continue
-        
-        # Calcular similitud
-        similarity = calculate_frame_similarity(prev_frame, current_frame)
-        
-        # Si la similitud es menor al threshold, es un frame único
-        if similarity < similarity_threshold:
-            filtered.append(current_frame_ref)
-            prev_frame = current_frame
-        # Si es muy similar, lo descartamos (no actualizamos prev_frame)
-    
-    return filtered
+    finally:
+        cap.release()
 
 
 def filter_similar_frames_fast(
@@ -117,6 +137,8 @@ def filter_similar_frames_fast(
     sample_size: int = 100,
 ) -> List[FrameRef]:
     """Versión optimizada que compara frames redimensionados más pequeños.
+    
+    Abre el video una sola vez (Bloque 5 / US-5.1).
     
     Args:
         frames: Lista de referencias a frames.
@@ -129,39 +151,15 @@ def filter_similar_frames_fast(
     """
     if not frames:
         return []
-    
     if len(frames) == 1:
         return frames.copy()
-    
-    # Extraer primer frame como referencia
-    filtered = [frames[0]]
-    prev_frame = extract_frame_from_video(video_path, frames[0].frame_idx)
-    
-    if prev_frame is None:
-        return frames.copy()
-    
-    # Redimensionar para comparación rápida
-    prev_frame_small = cv2.resize(prev_frame, (sample_size, sample_size))
-    
-    # Comparar cada frame con el anterior
-    for current_frame_ref in frames[1:]:
-        current_frame = extract_frame_from_video(
-            video_path, current_frame_ref.frame_idx
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"No se pudo abrir el video: {video_path}")
+    try:
+        return _filter_similar_frames_with_cap(
+            cap, frames, similarity_threshold, sample_size=sample_size
         )
-        
-        if current_frame is None:
-            continue
-        
-        # Redimensionar para comparación
-        current_frame_small = cv2.resize(current_frame, (sample_size, sample_size))
-        
-        # Calcular similitud
-        similarity = calculate_frame_similarity(prev_frame_small, current_frame_small)
-        
-        # Si la similitud es menor al threshold, es un frame único
-        if similarity < similarity_threshold:
-            filtered.append(current_frame_ref)
-            prev_frame = current_frame
-            prev_frame_small = current_frame_small
-    
-    return filtered
+    finally:
+        cap.release()

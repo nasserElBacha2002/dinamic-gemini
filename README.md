@@ -58,7 +58,7 @@ Sistema en Python que procesa videos de depósito, extrae fotogramas estratégic
 
 3. **Configurar otros parámetros (opcional):**
    - `EXTRACT_FPS`: Frames por segundo a extraer (default: 1.0)
-   - `MAX_FRAMES_TO_SEND`: Máximo de frames a enviar a Gemini (default: 10)
+   - `MAX_FRAMES_TO_SEND`: Máximo de frames a procesar (vacío/0 = sin límite; opcional para debug, ej. 200). `FRAME_STRIDE`: cada cuántos frames tomar (default: 1).
    - `RESIZE_MAX_SIDE`: Tamaño máximo de lado para redimensionar (default: 1280)
    - `OUTPUT_DIR`: Directorio de salida (default: output)
    - `DEBUG_SAVE_FRAMES`: Guardar frames procesados para debug (default: false)
@@ -189,7 +189,7 @@ mypy src/
 - Asegúrate de que OpenCV puede leer el archivo
 
 ### Error: Rate limit de Gemini API
-- Reduce `MAX_FRAMES_TO_SEND`
+- Usa `--max-frames 200` o `MAX_FRAMES_TO_SEND=200` para limitar frames
 - Espera unos minutos antes de reintentar
 - Considera usar un modelo diferente o aumentar el tiempo entre requests
 

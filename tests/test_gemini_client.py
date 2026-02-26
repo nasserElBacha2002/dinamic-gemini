@@ -174,6 +174,36 @@ def test_analyze_frames_empty():
             assert len(results) == 0
 
 
+def test_analyze_frames_image_load_failure_returns_error_no_api_call():
+    """Bloque 6 / US-6.1: Si alguna imagen falla al cargar, no se envía request a Gemini."""
+    mock_client_instance = MagicMock()
+    with patch("src.llm.gemini_client.genai.Client", return_value=mock_client_instance):
+        client = GeminiClient(api_key="test_key")
+        frames = [
+            FrameRef(frame_idx=0, timestamp_seconds=0.0),
+            FrameRef(frame_idx=1, timestamp_seconds=0.1),
+        ]
+
+        def load_side_effect(path):
+            if "missing" in path:
+                raise FileNotFoundError(f"Imagen no encontrada: {path}")
+            return MagicMock()
+
+        with patch.object(client, "_load_image", side_effect=load_side_effect):
+            results = client.analyze_frames(
+                frames,
+                ["/path/to/frame0.jpg", "/path/to/missing.jpg"],
+            )
+
+        assert len(results) == 1
+        assert results[0].pallets == []
+        assert "ERROR" in results[0].raw_text
+        assert "No se pudieron cargar todas las imágenes" in results[0].raw_text
+        assert "missing" in results[0].raw_text or "Imagen no encontrada" in results[0].raw_text
+        # No se debe haber llamado a la API de Gemini
+        mock_client_instance.models.generate_content.assert_not_called()
+
+
 # ----------------------------
 # Tests de prompts
 # ----------------------------

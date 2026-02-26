@@ -13,6 +13,7 @@ from typing import Optional
 
 def setup_logger(
     output_dir: str,
+    video_id: str,
     run_id: str,
     log_level: int = logging.INFO,
     console: bool = True,
@@ -20,10 +21,12 @@ def setup_logger(
     """Configura un logger estructurado para el sistema.
     
     Crea un logger que escribe tanto a archivo como a consola (opcional).
-    Los logs se guardan en `output_dir/<run_id>/processing.log`.
+    Los logs se guardan en `output_dir/<video_id>/<run_id>/processing.log`
+    (mismo directorio de run que result.json). Bloque 4 / US-4.1.
     
     Args:
         output_dir: Directorio base donde guardar los logs.
+        video_id: ID del video (segmento de path).
         run_id: ID único de la ejecución.
         log_level: Nivel de logging (default: INFO).
         console: Si True, también escribe a consola (default: True).
@@ -32,7 +35,7 @@ def setup_logger(
         Logger configurado.
     
     Examples:
-        >>> logger = setup_logger("output", "20240225_120000_abc123")
+        >>> logger = setup_logger("output", "VID_001", "20240225_120000_abc123")
         >>> logger.info("Procesando video...")
     """
     logger = logging.getLogger(f"dinamic_gemini_{run_id}")
@@ -48,8 +51,8 @@ def setup_logger(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     
-    # Handler para archivo
-    log_dir = Path(output_dir) / run_id
+    # Handler para archivo: mismo directorio de run que result.json
+    log_dir = Path(output_dir) / video_id / run_id
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "processing.log"
     
@@ -81,7 +84,7 @@ def log_metrics(
         metrics: Diccionario con métricas a registrar.
     
     Examples:
-        >>> logger = setup_logger("output", "run_001")
+        >>> logger = setup_logger("output", "VID", "run_001")
         >>> log_metrics(logger, "frame_extraction", {
         ...     "frames_extracted": 10,
         ...     "duration_seconds": 2.5

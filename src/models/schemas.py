@@ -129,7 +129,10 @@ class FinalResult(BaseModel):
     # opcional pero útil para debug/observabilidad
     processing_summary: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Resumen del procesamiento (tiempos, frames procesados, etc.)."
+        description=(
+            "Resumen del procesamiento (tiempos, frames, etc.). "
+            "Nota: 'frames_analyzed' = número de frames enviados a Gemini (puede ser menor que frames_selected si max_frames_to_send trunca)."
+        ),
     )
 
 

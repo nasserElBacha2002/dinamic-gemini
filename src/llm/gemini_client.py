@@ -10,9 +10,12 @@ Responsabilidades:
 """
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 import google.genai as genai
 from google.genai import types
@@ -288,31 +291,41 @@ class GeminiClient:
         
         if not frames:
             return []
-        
-        print(f"  Enviando {len(frames)} frames en una sola llamada a Gemini...")
-        
-        # Usar el primer frame como referencia para el resultado
+
         reference_frame = frames[0]
-        
-        # Cargar todas las imágenes
-        images = []
-        for image_path in image_paths:
+
+        # Cargar todas las imágenes; si alguna falla, no enviar a Gemini (Bloque 6 / US-6.1)
+        images: List = []
+        load_errors: List[str] = []
+        for i, image_path in enumerate(image_paths):
             try:
                 image = self._load_image(image_path)
                 images.append(image)
             except Exception as e:
-                print(f"  ⚠️  Error cargando imagen {image_path}: {e}")
-                continue
-        
-        if not images:
+                msg = f"{image_path}: {e}"
+                load_errors.append(msg)
+                logger.error("Error cargando imagen para Gemini: %s", msg)
+
+        if load_errors:
+            error_detail = "; ".join(load_errors[:3])
+            if len(load_errors) > 3:
+                error_detail += f" (+{len(load_errors) - 3} más)"
+            raw_msg = f"ERROR: No se pudieron cargar todas las imágenes: {error_detail}"
+            logger.error(
+                "No se envía request a Gemini: %d imagen(es) fallaron. %s",
+                len(load_errors),
+                error_detail,
+            )
             return [
                 LLMFrameResult(
                     frame=reference_frame,
                     pallets=[],
-                    raw_text="ERROR: No se pudieron cargar las imágenes",
+                    raw_text=raw_msg,
                     model_name=self.model_name,
                 )
             ]
+
+        logger.info("Enviando %d frames en una sola llamada a Gemini...", len(frames))
         
         # Obtener prompts del perfil
         profile = get_prompt_profile(prompt_profile)

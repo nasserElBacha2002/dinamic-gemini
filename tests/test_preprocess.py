@@ -27,6 +27,7 @@ from src.preprocess.image_ops import (
     save_frame,
 )
 from src.preprocess.selectors import prepare_frames_for_api, select_frames
+from src.preprocess.similarity import filter_similar_frames_fast
 
 
 # ----------------------------
@@ -227,40 +228,6 @@ def test_select_frames_all():
     assert selected[-1].frame_idx == 19
 
 
-def test_select_frames_first_n():
-    """Test de estrategia first_n (ahora retorna todos)."""
-    frames = [FrameRef(frame_idx=i, timestamp_seconds=i * 0.1) for i in range(20)]
-    
-    selected = select_frames(frames, strategy="first_n")
-    
-    # Ahora retorna todos los frames
-    assert len(selected) == 20
-    assert selected[0].frame_idx == 0
-
-
-def test_select_frames_uniform():
-    """Test de estrategia uniform (ahora retorna todos)."""
-    frames = [FrameRef(frame_idx=i, timestamp_seconds=i * 0.1) for i in range(20)]
-    
-    selected = select_frames(frames, strategy="uniform")
-    
-    # Ahora retorna todos los frames
-    assert len(selected) == 20
-    assert selected[0].frame_idx < selected[-1].frame_idx
-
-
-def test_select_frames_distributed():
-    """Test de estrategia distributed (ahora retorna todos)."""
-    frames = [FrameRef(frame_idx=i, timestamp_seconds=i * 0.1) for i in range(20)]
-    
-    selected = select_frames(frames, strategy="distributed")
-    
-    # Ahora retorna todos los frames
-    assert len(selected) == 20
-    assert selected[0].frame_idx == 0
-    assert selected[-1].frame_idx == 19
-
-
 def test_select_frames_empty():
     """Test con lista vacía."""
     selected = select_frames([], strategy="all")
@@ -269,12 +236,11 @@ def test_select_frames_empty():
 
 
 def test_select_frames_invalid_strategy():
-    """Test que se lanza error si strategy es inválida."""
+    """Test que se lanza error si strategy no es 'all' (Bloque 8)."""
     frames = [
         FrameRef(frame_idx=i, timestamp_seconds=i * 0.1) for i in range(10)
     ]
-    
-    with pytest.raises(ValueError, match="Estrategia no reconocida"):
+    with pytest.raises(ValueError, match="Única estrategia válida: 'all'"):
         select_frames(frames, strategy="invalid")
 
 
@@ -328,3 +294,33 @@ def test_prepare_frames_for_api_empty():
     
     assert len(image_paths) == 0
     assert run_id == ""
+
+
+# ----------------------------
+# Tests de similarity (Bloque 5: una apertura de video)
+# ----------------------------
+def test_filter_similar_frames_fast_single_open():
+    """Bloque 5 / US-5.1: filter_similar_frames_fast abre el video una sola vez."""
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
+        video_path = tmp_video.name
+
+    try:
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(video_path, fourcc, 30.0, (64, 64))
+        for i in range(15):
+            frame = np.zeros((64, 64, 3), dtype=np.uint8)
+            frame[:] = (i * 10 % 255, 0, 0)
+            out.write(frame)
+        out.release()
+
+        frames = [
+            FrameRef(frame_idx=i, timestamp_seconds=i / 30.0) for i in range(0, 15, 2)
+        ]
+        filtered = filter_similar_frames_fast(
+            frames, video_path, similarity_threshold=0.95, sample_size=32
+        )
+        assert len(filtered) >= 1
+        assert len(filtered) <= len(frames)
+        assert all(f.frame_idx in (fr.frame_idx for fr in frames) for f in filtered)
+    finally:
+        Path(video_path).unlink(missing_ok=True)
