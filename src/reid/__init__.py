@@ -98,6 +98,8 @@ def run_reid_pipeline(
         metrics["reid_merge_map"] = get_merge_map(tracks, confirmed_pairs)
 
         return merged_tracks, metrics
+    except (KeyboardInterrupt, SystemExit):
+        raise
     except Exception as e:
         logger.warning("Re-ID pipeline error, returning original tracks: %s", e)
         metrics["reid_error"] = str(e)
