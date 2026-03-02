@@ -234,7 +234,11 @@ def main() -> int:
     if not validate_video_file(str(video_path)):
         print(f"❌ Error: Archivo de video inválido: {video_path}", file=sys.stderr)
         return 1
-    
+
+    if getattr(args, "reid_enabled", False) and not getattr(args, "track_pipeline", False):
+        print("❌ Error: --reid-enabled requiere --track-pipeline.", file=sys.stderr)
+        return 2
+
     # Obtener video ID y sanitizar para evitar path traversal (Bloque 1 / US-1.1)
     raw_video_id = get_video_id(str(video_path), args.video_id)
     video_id = sanitize_video_id(raw_video_id)
