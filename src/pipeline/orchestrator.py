@@ -30,6 +30,7 @@ from src.tracking.tracker import MultiObjectTracker
 from src.video.frames import extract_frames
 from src.video.ingest import load_video_metadata
 from src.view_selection.selector import select_views_per_track
+from src.reid import run_reid_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +218,27 @@ def run_pipeline(
         cap2.release()
     tracks = updated_tracks
 
+    # 3b. Re-ID (Sprint 6B): opcional después de ROI+blur, antes de view selection
+    if getattr(settings, "reid_enabled", False):
+        tracks, reid_metrics = run_reid_pipeline(
+            tracks,
+            settings,
+            video_width=getattr(metadata, "width", None),
+            video_height=getattr(metadata, "height", None),
+        )
+        pipeline_debug.update(reid_metrics)
+        logger.info(
+            "Re-ID pipeline: tracks_before_reid=%s tracks_after_reid=%s tracks_merged_count=%s candidates=%s pairs_after_phash=%s pairs_confirmed=%s",
+            reid_metrics.get("tracks_before_reid"),
+            reid_metrics.get("tracks_after_reid"),
+            reid_metrics.get("tracks_merged_count"),
+            reid_metrics.get("reid_candidates_generated"),
+            reid_metrics.get("reid_pairs_after_phash"),
+            reid_metrics.get("reid_pairs_confirmed"),
+        )
+    else:
+        reid_metrics = None
+
     # Frames anotados (bbox + track_id por frame) para auditoría
     if save_annotated_views:
         frame_to_boxes: Dict[int, List[Tuple[Tuple[int, int, int, int], str]]] = {}
@@ -366,6 +388,22 @@ def run_pipeline(
     pipeline_debug["tracks_requests_sent"] = tracks_requests_sent
     pipeline_debug["tracks_llm_ok"] = tracks_llm_ok
     pipeline_debug["tracks_llm_failed"] = tracks_llm_failed
+    summary_kw: Dict[str, Any] = {
+        "pipeline_debug": pipeline_debug,
+        "tracks_with_observations": len(tracks),
+        "tracks_with_min_views": tracks_with_min_views,
+        "tracks_requests_sent": tracks_requests_sent,
+        "tracks_llm_ok": tracks_llm_ok,
+        "tracks_llm_failed": tracks_llm_failed,
+    }
+    if reid_metrics is not None:
+        summary_kw["tracks_before_reid"] = reid_metrics.get("tracks_before_reid")
+        summary_kw["tracks_after_reid"] = reid_metrics.get("tracks_after_reid")
+        summary_kw["tracks_merged_count"] = reid_metrics.get("tracks_merged_count")
+        summary_kw["reid_candidates_generated"] = reid_metrics.get("reid_candidates_generated")
+        summary_kw["reid_pairs_after_phash"] = reid_metrics.get("reid_pairs_after_phash")
+        summary_kw["reid_pairs_confirmed"] = reid_metrics.get("reid_pairs_confirmed")
+        summary_kw["clip_verifications_run"] = reid_metrics.get("clip_verifications_run")
     summary = _make_summary(
         len(frame_refs),
         tracks_detected,
@@ -373,13 +411,8 @@ def run_pipeline(
         views_selected_total,
         tracks_llm_ok,
         start_time,
-        pipeline_debug=pipeline_debug,
-        tracks_with_observations=len(tracks),
-        tracks_with_min_views=tracks_with_min_views,
-        tracks_requests_sent=tracks_requests_sent,
-        tracks_llm_ok=tracks_llm_ok,
-        tracks_llm_failed=tracks_llm_failed,
         requests_sent=tracks_requests_sent,
+        **summary_kw,
     )
     return track_results, summary
 
@@ -391,16 +424,19 @@ def _make_summary(
     views_selected_total: int,
     tracks_ok: int,
     start_time: float,
+    *,
+    requests_sent: Optional[int] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
     elapsed = time.time() - start_time
+    sent = requests_sent if requests_sent is not None else tracks_analyzed
     return {
         "frames_extracted": frames_extracted,
         "tracks_detected": tracks_detected,
         "tracks_analyzed": tracks_analyzed,
         "views_selected_total": views_selected_total,
         "tracks_ok": tracks_ok,
-        "requests_sent": tracks_analyzed,
+        "requests_sent": sent,
         "latency_total_seconds": elapsed,
         **extra,
     }

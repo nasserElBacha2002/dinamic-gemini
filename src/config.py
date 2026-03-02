@@ -246,6 +246,48 @@ class Settings(BaseModel):
         description="Si dos vistas están muy cerca en tiempo y sus bboxes tienen IoU > este valor, se descarta una. 0 = desactivado. Env: VIEW_SELECTION_MAX_IOU_SUPPRESS.",
     )
 
+    # Sprint 6B: Re-ID (optional, default off)
+    reid_enabled: bool = Field(
+        default_factory=lambda: os.getenv("REID_ENABLED", "false").strip().lower() in ("1", "true", "yes"),
+        description="Activar Re-ID (pHash/CLIP + DSU merge) después de tracking, antes de view selection. Env: REID_ENABLED.",
+    )
+    reid_signature_k: int = Field(
+        default_factory=lambda: int(os.getenv("REID_SIGNATURE_K", "2")),
+        ge=1,
+        le=5,
+        description="Número de ROIs por track para firma Re-ID (1 a 5). Env: REID_SIGNATURE_K.",
+    )
+    reid_max_gap_frames: int = Field(
+        default_factory=lambda: int(os.getenv("REID_MAX_GAP_FRAMES", "240")),
+        ge=0,
+        le=10000,
+        description="Gap máximo en frames entre tracks para candidatos Re-ID (~8s a 30fps). Env: REID_MAX_GAP_FRAMES.",
+    )
+    reid_dx_max: float = Field(
+        default_factory=lambda: float(os.getenv("REID_DX_MAX", "0.20")),
+        ge=0.0,
+        le=1.0,
+        description="Diferencia máxima en x normalizada (0..1) entre end_centroid de un track y start_centroid del otro. Env: REID_DX_MAX.",
+    )
+    reid_dy_max: float = Field(
+        default_factory=lambda: float(os.getenv("REID_DY_MAX", "0.25")),
+        ge=0.0,
+        le=1.0,
+        description="Diferencia máxima en y normalizada (0..1) para gating espacial Re-ID. Env: REID_DY_MAX.",
+    )
+    phash_max_dist: int = Field(
+        default_factory=lambda: int(os.getenv("PHASH_MAX_DIST", "10")),
+        ge=0,
+        le=64,
+        description="Distancia Hamming máxima entre pHash de ROIs para considerar par como candidato Re-ID. Env: PHASH_MAX_DIST.",
+    )
+    clip_min_sim: float = Field(
+        default_factory=lambda: float(os.getenv("CLIP_MIN_SIM", "0.92")),
+        ge=0.0,
+        le=1.0,
+        description="Similitud coseno mínima CLIP para confirmar merge de tracks (0 a 1). Env: CLIP_MIN_SIM.",
+    )
+
     # Output Configuration
     output_dir: str = Field(
         default_factory=lambda: os.getenv("OUTPUT_DIR", "output"),
