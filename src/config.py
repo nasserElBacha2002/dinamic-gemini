@@ -325,6 +325,18 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("OUTPUT_DIR", "output"),
         description="Directorio donde se guardarán los resultados.",
     )
+
+    # API Server (Stage 7)
+    api_key: str = Field(
+        default_factory=lambda: os.getenv("API_KEY", ""),
+        description="API key for server auth (header X-API-Key). Empty = no auth (dev only).",
+    )
+    max_upload_size_mb: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_UPLOAD_SIZE_MB", "500")),
+        ge=1,
+        le=2048,
+        description="Max upload file size in MB (1 to 2048).",
+    )
     debug_save_frames: bool = Field(
         default_factory=lambda: os.getenv("DEBUG_SAVE_FRAMES", "false").lower()
         in ("true", "1", "yes"),

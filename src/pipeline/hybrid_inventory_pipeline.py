@@ -7,7 +7,7 @@ Hybrid: una llamada global a Gemini, frames representativos, lista de Pallet.
 
 import json
 from pathlib import Path
-from typing import Any, List
+from typing import Any, Callable, List, Optional
 
 import numpy as np
 
@@ -77,9 +77,19 @@ class HybridInventoryPipeline:
         output_path: Path,
         run_id: str,
         logger: Any,
+        confidence_threshold: Optional[float] = None,
+        progress_callback: Optional[Callable[[str, int], None]] = None,
         **_: object,
     ) -> int:
         """Flujo hybrid: extraer frames → una llamada Gemini → parsear → lista de Pallet."""
+        progress_cb = progress_callback
+        def _report(stage: str, percent: int) -> None:
+            if callable(progress_cb):
+                try:
+                    progress_cb(stage, percent)
+                except Exception:
+                    pass
+        _report("extract_frames", 10)
         logger.info("Hybrid mode: análisis global (una llamada por video)")
         try:
             frames, metadata = extract_representative_frames(
@@ -104,6 +114,7 @@ class HybridInventoryPipeline:
             max_retries=settings.gemini_max_retries,
             retry_delay=settings.gemini_retry_delay,
         )
+        _report("gemini_global_call", 50)
         analyzer = GeminiGlobalAnalyzer(client)
         try:
             data = analyzer.analyze_video_frames(frames, logger=logger)
@@ -123,12 +134,13 @@ class HybridInventoryPipeline:
             return 1
         logger.info("Pallets detectados (hybrid): %d", len(pallets))
 
+        threshold = confidence_threshold if confidence_threshold is not None else DEFAULT_CONFIDENCE_THRESHOLD
         pallets_with_mode = [assign_processing_mode(p) for p in pallets]
         fallback_analyzer = VisualFallbackAnalyzer(client)
         fallback_attempts = 0
         fallback_success = 0
         for pallet in pallets_with_mode:
-            if should_trigger_fallback(pallet, DEFAULT_CONFIDENCE_THRESHOLD):
+            if should_trigger_fallback(pallet, threshold):
                 fallback_frames = select_fallback_frames(frames, FALLBACK_FRAMES_SUBSET)
                 fallback_attempts += 1
                 try:
@@ -140,6 +152,7 @@ class HybridInventoryPipeline:
                 except (VisualFallbackError, RuntimeError) as e:
                     logger.warning("Fallback para pallet %s falló: %s", pallet.pallet_id, e)
 
+        _report("fallback_calls", 70)
         global_calls = 1
         total_calls = global_calls + fallback_attempts
         metrics = {
@@ -154,9 +167,10 @@ class HybridInventoryPipeline:
             frames_selected=len(frames),
             prompt_version="global_min_v1",
             metrics=metrics,
-            confidence_threshold=DEFAULT_CONFIDENCE_THRESHOLD,
+            confidence_threshold=threshold,
         )
 
+        _report("write_artifacts", 90)
         run_dir = output_path / video_id / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         report_path = run_dir / "hybrid_report.json"
@@ -193,4 +207,5 @@ class HybridInventoryPipeline:
                 ensure_ascii=False,
             )
         logger.info("Debug hybrid guardado: %s", debug_path)
+        _report("done", 100)
         return 0

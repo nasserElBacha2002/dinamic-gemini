@@ -32,6 +32,8 @@ dependencies = [
     "numpy>=1.24.0",
     "pillow>=10.0.0",
     "imagehash>=4.3.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.22.0",
 ]
 
 [project.optional-dependencies]
@@ -61,6 +63,10 @@ packages = [
     "src.view_selection",
     "src.reid",
     "src.pipeline",
+    "src.api",
+    "src.api.schemas",
+    "src.api.routes",
+    "src.jobs",
 ]
 
 [tool.setuptools.package-data]
