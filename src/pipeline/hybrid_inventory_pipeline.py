@@ -7,7 +7,9 @@ Hybrid: una llamada global a Gemini, frames representativos, lista de Pallet.
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, List
+
+import numpy as np
 
 from src.config import Settings
 from src.decision.processing_mode import assign_processing_mode
@@ -15,15 +17,37 @@ from src.exceptions.global_analysis_exceptions import (
     GlobalAnalysisParsingError,
     GlobalAnalysisValidationError,
 )
+from src.fallback.fallback_policy import DEFAULT_CONFIDENCE_THRESHOLD, should_trigger_fallback
+from src.fallback.visual_fallback_analyzer import VisualFallbackAnalyzer, VisualFallbackError
 from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_global_analysis
 from src.pipeline.legacy_visual_pipeline import LegacyVisualPipeline
 from src.reporting.artifacts import write_csv, write_json
 from src.reporting.hybrid_report import build_hybrid_report
-from src.video.frames import extract_representative_frames
+from src.video.frames import STRATEGY_OPTIMIZED, extract_representative_frames
+
+FALLBACK_FRAMES_SUBSET = 3
 
 HYBRID_MAX_FRAMES = 25
+
+
+def select_fallback_frames(frames: List[np.ndarray], k: int) -> List[np.ndarray]:
+    """Select up to k frames spread across the list (first, mid, last for k=3). Deterministic."""
+    if not frames or k <= 0:
+        return []
+    n = len(frames)
+    if n <= k:
+        return list(frames)
+    if k == 1:
+        return [frames[0]]
+    # k=3: first, mid, last; else evenly spread
+    if k == 3:
+        indices = [0, n // 2, n - 1]
+    else:
+        indices = [int(i * (n - 1) / (k - 1)) for i in range(k)]
+        indices = [min(max(i, 0), n - 1) for i in indices]
+    return [frames[i] for i in indices]
 
 
 class HybridInventoryPipeline:
@@ -61,7 +85,7 @@ class HybridInventoryPipeline:
             frames, metadata = extract_representative_frames(
                 video_path,
                 max_frames=HYBRID_MAX_FRAMES,
-                strategy="uniform",
+                strategy=STRATEGY_OPTIMIZED,
             )
         except (RuntimeError, ValueError) as e:
             logger.exception("Error extrayendo frames representativos: %s", e)
@@ -100,11 +124,37 @@ class HybridInventoryPipeline:
         logger.info("Pallets detectados (hybrid): %d", len(pallets))
 
         pallets_with_mode = [assign_processing_mode(p) for p in pallets]
+        fallback_analyzer = VisualFallbackAnalyzer(client)
+        fallback_attempts = 0
+        fallback_success = 0
+        for pallet in pallets_with_mode:
+            if should_trigger_fallback(pallet, DEFAULT_CONFIDENCE_THRESHOLD):
+                fallback_frames = select_fallback_frames(frames, FALLBACK_FRAMES_SUBSET)
+                fallback_attempts += 1
+                try:
+                    count, conf = fallback_analyzer.count_visible_boxes(fallback_frames)
+                    pallet.final_quantity = count
+                    pallet.fallback_used = True
+                    pallet.confidence = conf
+                    fallback_success += 1
+                except (VisualFallbackError, RuntimeError) as e:
+                    logger.warning("Fallback para pallet %s falló: %s", pallet.pallet_id, e)
+
+        global_calls = 1
+        total_calls = global_calls + fallback_attempts
+        metrics = {
+            "global_calls": global_calls,
+            "fallback_attempts": fallback_attempts,
+            "fallback_success": fallback_success,
+            "total_calls": total_calls,
+        }
         report = build_hybrid_report(
             video_path=video_path,
             pallets=pallets_with_mode,
             frames_selected=len(frames),
             prompt_version="global_min_v1",
+            metrics=metrics,
+            confidence_threshold=DEFAULT_CONFIDENCE_THRESHOLD,
         )
 
         run_dir = output_path / video_id / run_id

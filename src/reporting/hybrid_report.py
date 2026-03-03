@@ -2,10 +2,11 @@
 Stage 4 — Build deterministic hybrid report dict.
 
 Includes low-confidence flagging (no behavior change; flag only).
+Stage 6: metrics (global_calls, fallback_attempts, fallback_success, total_calls) and confidence_threshold.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from src.domain.pallet import Pallet
 
@@ -17,6 +18,8 @@ def build_hybrid_report(
     pallets: List[Pallet],
     frames_selected: int,
     prompt_version: str = "global_min_v1",
+    metrics: Optional[Dict[str, int]] = None,
+    confidence_threshold: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Build the authoritative hybrid report dict.
 
@@ -25,11 +28,12 @@ def build_hybrid_report(
         pallets: List of pallets with processing_mode/final_quantity/source set.
         frames_selected: Number of representative frames sent to Gemini.
         prompt_version: Prompt version identifier.
+        metrics: Optional dict with global_calls, fallback_attempts, fallback_success, total_calls (Stage 6).
+        confidence_threshold: Optional threshold used for fallback trigger (Stage 6).
 
     Returns:
         Report dict with video, mode, prompt_version, frames_selected,
-        total_pallets_detected, pallets, flags (low_confidence_pallets;
-        no_pallets_detected when pallets is empty).
+        total_pallets_detected, pallets, flags; optionally metrics and confidence_threshold.
     """
     path_obj = Path(video_path)
     low_confidence = [
@@ -40,7 +44,7 @@ def build_hybrid_report(
     if not pallets:
         flags["no_pallets_detected"] = True
 
-    return {
+    report: Dict[str, Any] = {
         "video": {"path": video_path, "name": path_obj.name},
         "mode": "hybrid",
         "prompt_version": prompt_version,
@@ -61,3 +65,8 @@ def build_hybrid_report(
         ],
         "flags": flags,
     }
+    if metrics is not None:
+        report["metrics"] = metrics
+    if confidence_threshold is not None:
+        report["confidence_threshold"] = confidence_threshold
+    return report
