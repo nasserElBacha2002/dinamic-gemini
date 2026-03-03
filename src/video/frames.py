@@ -5,11 +5,13 @@ Responsabilidades:
 - Generar frames según estrategia configurable
 - Controlar densidad de muestreo
 - Retornar referencias a frames con metadata
+- (v2.0) Extracción de frames representativos para análisis global
 """
 
-from typing import List
+from typing import List, Tuple
 
 import cv2
+import numpy as np
 
 from src.models.schemas import FrameRef
 
@@ -153,5 +155,69 @@ def extract_frames_uniform(
         
         return frames
     
+    finally:
+        cap.release()
+
+
+def extract_representative_frames(
+    video_path: str,
+    max_frames: int = 25,
+    strategy: str = "uniform",
+) -> Tuple[List[np.ndarray], dict]:
+    """Extrae frames representativos del video para análisis global (v2.0 hybrid).
+
+    Muestreo uniforme a lo largo de la duración. Retorna arrays de píxeles en memoria
+    y metadata (fps, frame_indices).
+
+    frame_indices contiene solo los índices de frames que se leyeron correctamente;
+    len(frame_indices) == len(frames) siempre. Si un frame falla al leer, no se
+    añade a frames ni su índice a frame_indices.
+
+    Args:
+        video_path: Ruta al archivo de video.
+        max_frames: Número máximo de frames a extraer.
+        strategy: Estrategia de muestreo; solo "uniform" soportado.
+
+    Returns:
+        (frames, metadata): frames es List[np.ndarray] (BGR), metadata tiene
+        "fps", "frame_indices" (índices realmente leídos, uno por frame).
+
+    Raises:
+        RuntimeError: Si no se puede abrir el video.
+        ValueError: Si max_frames o strategy son inválidos.
+    """
+    if max_frames <= 0:
+        raise ValueError(f"max_frames debe ser mayor que 0, recibido: {max_frames}")
+    if strategy != "uniform":
+        raise ValueError(f"Estrategia no soportada: {strategy!r}")
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"No se pudo abrir el video: {video_path}")
+
+    try:
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        if video_fps <= 0:
+            video_fps = 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames <= 0:
+            return [], {"fps": video_fps, "frame_indices": []}
+
+        if max_frames >= total_frames:
+            indices_to_try = list(range(total_frames))
+        else:
+            step = total_frames / max_frames
+            indices_to_try = [int(i * step) for i in range(max_frames)]
+
+        frames: List[np.ndarray] = []
+        picked_indices: List[int] = []
+        for idx in indices_to_try:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                continue
+            frames.append(frame.copy())
+            picked_indices.append(idx)
+        return frames, {"fps": video_fps, "frame_indices": picked_indices}
     finally:
         cap.release()
