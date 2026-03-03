@@ -189,6 +189,11 @@ Ejemplos:
         help="Sprint 6B: activar Re-ID (pHash/CLIP + DSU merge) después de tracking. Requiere --track-pipeline. Default: off.",
     )
     parser.add_argument(
+        "--debug-view-selection",
+        action="store_true",
+        help="Sprint 6B.9: activar debug de selección de vistas (pipeline_debug.view_selection_debug y manifest con reasons). Requiere --track-pipeline.",
+    )
+    parser.add_argument(
         "--no-summary",
         action="store_true",
         help="No mostrar resumen en consola",
@@ -295,6 +300,9 @@ def main() -> int:
             if args.reid_enabled:
                 settings = settings.model_copy(update={"reid_enabled": True})
                 logger.info("🔗 Re-ID habilitado (Sprint 6B): firma → gating → pHash → CLIP → merge.")
+            if getattr(args, "debug_view_selection", False):
+                settings = settings.model_copy(update={"debug_view_selection": True})
+                logger.info("🔍 Debug de selección de vistas activado (view_selection_debug + manifest reasons).")
             extract_fps = args.extract_fps if args.extract_fps is not None else settings.extract_fps
             logger.info("🛤️  Ejecutando pipeline por tracks (Sprint A)...")
             track_results, summary = run_pipeline(
