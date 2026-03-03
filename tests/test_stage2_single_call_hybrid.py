@@ -153,7 +153,7 @@ def test_hybrid_run_returns_success_and_writes_result():
                 logger=mock_logger,
                 args=MagicMock(),
             )
-            result_file = out / "vid" / "run1" / "hybrid_result.json"
+            result_file = out / "vid" / "run1" / "hybrid_debug.json"
             assert code == 0
             assert result_file.exists()
             with open(result_file, encoding="utf-8") as f:

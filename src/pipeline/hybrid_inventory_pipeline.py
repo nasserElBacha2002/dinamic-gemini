@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config import Settings
+from src.decision.processing_mode import assign_processing_mode
 from src.exceptions.global_analysis_exceptions import (
     GlobalAnalysisParsingError,
     GlobalAnalysisValidationError,
@@ -18,6 +19,8 @@ from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_global_analysis
 from src.pipeline.legacy_visual_pipeline import LegacyVisualPipeline
+from src.reporting.artifacts import write_csv, write_json
+from src.reporting.hybrid_report import build_hybrid_report
 from src.video.frames import extract_representative_frames
 
 HYBRID_MAX_FRAMES = 25
@@ -96,27 +99,48 @@ class HybridInventoryPipeline:
             return 1
         logger.info("Pallets detectados (hybrid): %d", len(pallets))
 
+        pallets_with_mode = [assign_processing_mode(p) for p in pallets]
+        report = build_hybrid_report(
+            video_path=video_path,
+            pallets=pallets_with_mode,
+            frames_selected=len(frames),
+            prompt_version="global_min_v1",
+        )
+
         run_dir = output_path / video_id / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        report = {
-            "video_id": video_id,
-            "mode": "hybrid",
-            "total_pallets_detected": len(pallets),
-            "pallets": [
+        report_path = run_dir / "hybrid_report.json"
+        write_json(report_path, report)
+        logger.info("Reporte hybrid guardado: %s", report_path)
+        write_csv(run_dir / "hybrid_report.csv", pallets_with_mode)
+
+        # Debug artifact only — NOT the public contract. Use hybrid_report.json for integration.
+        debug_path = run_dir / "hybrid_debug.json"
+        with open(debug_path, "w", encoding="utf-8") as f:
+            json.dump(
                 {
-                    "pallet_id": p.pallet_id,
-                    "has_label": p.has_label,
-                    "internal_code": p.internal_code,
-                    "quantity": p.quantity,
-                    "estimated_visible_boxes": p.estimated_visible_boxes,
-                    "confidence": p.confidence,
-                }
-                for p in pallets
-            ],
-            "metadata": metadata,
-        }
-        result_file = run_dir / "hybrid_result.json"
-        with open(result_file, "w", encoding="utf-8") as f:
-            json.dump(report, f, indent=2, ensure_ascii=False)
-        logger.info("Resultado hybrid guardado: %s", result_file)
+                    "video_id": video_id,
+                    "mode": "hybrid",
+                    "total_pallets_detected": len(pallets),
+                    "pallets": [
+                        {
+                            "pallet_id": p.pallet_id,
+                            "has_label": p.has_label,
+                            "internal_code": p.internal_code,
+                            "quantity": p.quantity,
+                            "final_quantity": p.final_quantity,
+                            "source": p.source,
+                            "estimated_visible_boxes": p.estimated_visible_boxes,
+                            "confidence": p.confidence,
+                            "fallback_used": p.fallback_used,
+                        }
+                        for p in pallets_with_mode
+                    ],
+                    "metadata": metadata,
+                },
+                f,
+                indent=2,
+                ensure_ascii=False,
+            )
+        logger.info("Debug hybrid guardado: %s", debug_path)
         return 0
