@@ -34,6 +34,7 @@ dependencies = [
     "imagehash>=4.3.0",
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.22.0",
+    "pyodbc>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -66,6 +67,7 @@ packages = [
     "src.api",
     "src.api.schemas",
     "src.api.routes",
+    "src.database",
     "src.jobs",
 ]
 

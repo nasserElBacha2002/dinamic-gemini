@@ -1,12 +1,15 @@
-"""Stage 7 — Background worker: pull jobs from queue and run inventory engine."""
+"""Stage 7 — Background worker: pull jobs from queue and run inventory engine.
+Stage 8 — When SQL Server enabled, push status/progress/outputs/pallet_results/events to DB.
+"""
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from src.config import load_settings
-from src.jobs.models import JobRecord, JobStatus
-from src.jobs.job_store import get_job, update_job
+from src.jobs.job_store import _db_repos, get_job, update_job
+from src.jobs.models import JobStatus
 from src.jobs.queue import dequeue
 from src.io.logging import setup_logger
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
@@ -36,6 +39,57 @@ def _make_fake_args() -> Any:
         resize_max_side = None
         raw_gemini = False
     return Args()
+
+
+def _push_success_to_db(
+    job_id: str,
+    report_json_path: Path,
+    report_csv_path: Optional[Path],
+    artifacts_dir: str,
+) -> None:
+    """When DB enabled: load report, set_job_outputs, insert pallet_results, insert events."""
+    repos = _db_repos()
+    if repos is None:
+        return
+    jobs_repo, pallet_repo, events_repo = repos
+    report_data: Optional[dict] = None
+    if report_json_path.exists():
+        try:
+            with open(report_json_path, encoding="utf-8") as f:
+                report_data = json.load(f)
+        except Exception as e:
+            logger.warning("Could not load report for DB push: %s", e)
+    frames_count = None
+    gemini_calls = None
+    prompt_version = None
+    pallets_list: list = []
+    metrics: dict = {}
+    if report_data:
+        frames_count = report_data.get("frames_selected")
+        prompt_version = report_data.get("prompt_version")
+        metrics = report_data.get("metrics") or {}
+        gemini_calls = metrics.get("total_calls")
+        pallets_list = report_data.get("pallets") or []
+
+    try:
+        jobs_repo.set_job_outputs(
+            job_id,
+            report_json_path=str(report_json_path) if report_json_path.exists() else None,
+            report_csv_path=str(report_csv_path) if report_csv_path and report_csv_path.exists() else None,
+            artifacts_dir=artifacts_dir,
+            frames_count_sent=frames_count,
+            gemini_calls=gemini_calls,
+            prompt_version=prompt_version,
+        )
+        if pallets_list:
+            pallet_repo.insert_pallet_results(job_id, pallets_list)
+        events_repo.insert_event(job_id, "FRAMES_SELECTED", {"count": frames_count})
+        events_repo.insert_event(job_id, "GEMINI_GLOBAL_CALL", {})
+        if metrics.get("fallback_attempts", 0) > 0:
+            events_repo.insert_event(job_id, "FALLBACK_RUN", {"attempts": metrics.get("fallback_attempts")})
+        events_repo.insert_event(job_id, "REPORT_WRITTEN", {"path": str(report_json_path)})
+    except Exception as e:
+        logger.warning("DB push after success failed: %s", e)
 
 
 def run_job(base_path: Path, job_id: str) -> None:
@@ -112,6 +166,7 @@ def run_job(base_path: Path, job_id: str) -> None:
             },
             error=None,
         )
+        _push_success_to_db(job_id, report_json, report_csv, str(job_dir))
     except Exception as e:
         logger.exception("Job %s failed: %s", job_id, e)
         update_job(
@@ -121,6 +176,13 @@ def run_job(base_path: Path, job_id: str) -> None:
             error=str(e),
             progress={"stage": "done", "percent": 100},
         )
+        repos = _db_repos()
+        if repos is not None:
+            try:
+                _, _, events_repo = repos
+                events_repo.insert_event(job_id, "ERROR", {"message": str(e)})
+            except Exception:
+                pass
 
 
 def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> None:

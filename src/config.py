@@ -51,6 +51,35 @@ def _parse_heuristic_resize_max_side() -> Optional[int]:
         return None
 
 
+def _get_available_sqlserver_driver() -> str:
+    """Return first ODBC driver name that contains 'SQL Server', or '' if none (e.g. not installed on macOS)."""
+    try:
+        import pyodbc
+        for name in pyodbc.drivers():
+            if "SQL Server" in name:
+                return name
+    except Exception:
+        pass
+    return ""
+
+
+def _build_sqlserver_connection_string() -> str:
+    """Connection string from env. Prefer SQLSERVER_CONNECTION_STRING; else build from SQLSERVER_SERVER, DATABASE, UID, PWD (credentials only in env)."""
+    raw = (os.getenv("SQLSERVER_CONNECTION_STRING") or "").strip()
+    if raw:
+        return raw
+    server = (os.getenv("SQLSERVER_SERVER") or "").strip()
+    database = (os.getenv("SQLSERVER_DATABASE") or "").strip()
+    uid = (os.getenv("SQLSERVER_UID") or "").strip()
+    pwd = (os.getenv("SQLSERVER_PWD") or "").strip()
+    driver = (os.getenv("SQLSERVER_DRIVER") or "").strip()
+    if not driver:
+        driver = _get_available_sqlserver_driver()
+    if server and database and uid and pwd and driver:
+        return f"DRIVER={{{driver}}};SERVER={server};DATABASE={database};UID={uid};PWD={pwd};TrustServerCertificate=yes"
+    return ""
+
+
 class Settings(BaseModel):
     """Configuración del sistema de conteo de inventario por video.
     
@@ -336,6 +365,19 @@ class Settings(BaseModel):
         ge=1,
         le=2048,
         description="Max upload file size in MB (1 to 2048).",
+    )
+    # Stage 8 — SQL Server persistence (optional). Credentials only from env.
+    sqlserver_enabled: bool = Field(
+        default_factory=lambda: os.getenv("SQLSERVER_ENABLED", "true").strip().lower() in ("1", "true", "yes"),
+        description="Use SQL Server as source of truth for jobs, pallet_results, job_events. Default True; set to false to use only filesystem.",
+    )
+    sqlserver_connection_string: str = Field(
+        default_factory=lambda: _build_sqlserver_connection_string(),
+        description="ODBC connection string; built from SQLSERVER_* env vars (credentials only in env).",
+    )
+    engine_version: str = Field(
+        default_factory=lambda: os.getenv("ENGINE_VERSION", "v2.0"),
+        description="Engine version identifier for job records.",
     )
     debug_save_frames: bool = Field(
         default_factory=lambda: os.getenv("DEBUG_SAVE_FRAMES", "false").lower()
