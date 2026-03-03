@@ -63,6 +63,14 @@ Sistema en Python que procesa videos de depósito, extrae fotogramas estratégic
    - `OUTPUT_DIR`: Directorio de salida (default: output)
    - `DEBUG_SAVE_FRAMES`: Guardar frames procesados para debug (default: false)
 
+4. **SQL Server (Stage 8, opcional):** Si usas la API con persistencia en base de datos, configura en `.env` las variables `SQLSERVER_SERVER`, `SQLSERVER_DATABASE`, `SQLSERVER_UID`, `SQLSERVER_PWD`. En **macOS** hace falta instalar el driver ODBC para SQL Server; si no está instalado, la app usará solo el filesystem (sin errores). Para instalar el driver en macOS:
+   ```bash
+   brew tap microsoft/mssql-release https://github.com/Microsoft/homebrew-mssql-release
+   brew update
+   brew install msodbcsql18 mssql-tools18
+   ```
+   (Acepta la licencia cuando lo pida.) Si prefieres el driver 17: `brew install msodbcsql17`. La app usará automáticamente el primer driver "SQL Server" que encuentre instalado.
+
 ## 📖 Uso
 
 ### Uso básico desde CLI

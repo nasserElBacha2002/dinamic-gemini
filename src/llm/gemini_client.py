@@ -495,3 +495,49 @@ class GeminiClient:
                     time.sleep(self.retry_delay)
         logger.error("Track %s: ERROR tras %d intentos: %s", track_id, self.max_retries, last_error)
         return None
+
+    def generate_global_analysis_raw(
+        self,
+        images: List,
+        prompt: str,
+    ) -> str:
+        """Una llamada a Gemini con varias imágenes y un prompt; devuelve JSON en crudo (v2.0 hybrid).
+
+        No usa response_schema; la respuesta debe ser JSON válido según el prompt.
+
+        Args:
+            images: Lista de imágenes PIL (o compatibles con el SDK).
+            prompt: Prompt de usuario (texto).
+
+        Returns:
+            response.text (string JSON).
+
+        Raises:
+            RuntimeError: Si fallan todos los reintentos.
+        """
+        if not images:
+            raise ValueError("images no puede estar vacía")
+        generation_config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.0,
+            safety_settings=self.safety_settings,
+        )
+        contents = list(images) + [prompt]
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=generation_config,
+                )
+                return response.text or "{}"
+            except Exception as e:
+                last_error = str(e)
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    time.sleep(self.retry_delay)
+        raise RuntimeError(
+            f"generate_global_analysis_raw falló tras {self.max_retries} intentos: {last_error}"
+        )
