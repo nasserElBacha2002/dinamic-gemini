@@ -116,7 +116,7 @@ def get_job(base_path: Path, job_id: str) -> Optional[JobRecord]:
 
 
 def update_job(base_path: Path, job_id: str, **updates: object) -> Optional[JobRecord]:
-    """Update job record; when DB enabled, push status/progress/error to DB. Then persist to FS. Returns updated record or None."""
+    """Update job record; when DB enabled, push status/progress/error to DB (output paths and metrics are written by the worker via set_job_outputs, not here). Then persist to FS. Returns updated record or None."""
     record = get_job(base_path, job_id)
     if record is None:
         return None

@@ -1,6 +1,7 @@
 """Stage 7 — Job endpoints. Stage 8 — DB as source of truth when sqlserver_enabled."""
 
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -16,6 +17,7 @@ from src.config import load_settings
 from src.jobs.job_store import create_job, get_job, get_pallet_results, list_artifacts
 from src.jobs.queue import enqueue
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/inventory/jobs", tags=["jobs"])
 
 _db_repos_cache: Optional[Tuple[Any, Any, Any]] = None
@@ -46,7 +48,8 @@ def _get_db_repos() -> Optional[Tuple[Any, Any, Any]]:
             JobEventsRepository(client),
         )
         return _db_repos_cache
-    except Exception:
+    except Exception as e:
+        logger.warning("DB repos init failed: %s", e)
         return None
 
 
@@ -162,8 +165,8 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
                     progress=progress,
                     created_at=data.get("created_at", ""),
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("DB path failed for get_job_status, using FS: %s", e)
     record = get_job(base, job_id)
     if record is None:
         raise HTTPException(404, "Job not found")
@@ -223,13 +226,13 @@ async def get_job_result(job_id: str) -> Any:
                         report["frames_selected"] = file_report.get("frames_selected")
                         report["flags"] = file_report.get("flags", {})
                         report["metrics"] = file_report.get("metrics")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Enrich report from file failed: %s", e)
                 return report
         except HTTPException:
             raise
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("DB path failed for get_job_result, using FS: %s", e)
 
     record = get_job(base, job_id)
     if record is None:
@@ -271,8 +274,8 @@ async def get_job_result(job_id: str) -> Any:
                 report["frames_selected"] = file_report.get("frames_selected")
                 report["flags"] = file_report.get("flags", {})
                 report["metrics"] = file_report.get("metrics")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Enrich report from file failed: %s", e)
         return report
 
     report_path = getattr(out, "report_json_path", None) if out is not None else None
@@ -319,8 +322,8 @@ async def get_job_artifacts(job_id: str) -> ArtifactsResponse:
                 job_dir = Path(artifacts_dir) if artifacts_dir else base / job_id
                 names = _list_artifacts_under(job_dir)
                 return ArtifactsResponse(job_id=job_id, artifacts=[ArtifactItem(name=n, path=n) for n in names])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("DB path failed for get_job_artifacts, using FS: %s", e)
     record = get_job(base, job_id)
     if record is None:
         raise HTTPException(404, "Job not found")

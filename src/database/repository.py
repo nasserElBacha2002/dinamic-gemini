@@ -170,9 +170,12 @@ class JobsRepository:
                 "report_csv_path": report_csv,
                 "artifacts_dir": artifacts_dir,
             }
-        error_msg = getattr(row, "error_message", None)
-        if getattr(row, "error_code", None):
-            error_msg = (getattr(row, "error_code", "") or "") + ": " + (error_msg or "")
+        code = getattr(row, "error_code", None)
+        msg = getattr(row, "error_message", None)
+        if code and msg:
+            error_msg = f"{code}: {msg}"
+        else:
+            error_msg = msg or code
         return {
             "job_id": row.id,
             "input": {

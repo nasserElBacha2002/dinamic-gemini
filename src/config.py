@@ -51,16 +51,24 @@ def _parse_heuristic_resize_max_side() -> Optional[int]:
         return None
 
 
+_sqlserver_driver_cache: Optional[str] = None
+
+
 def _get_available_sqlserver_driver() -> str:
-    """Return first ODBC driver name that contains 'SQL Server', or '' if none (e.g. not installed on macOS)."""
+    """Return first ODBC driver name that contains 'SQL Server', or '' if none (e.g. not installed on macOS). Cached per process."""
+    global _sqlserver_driver_cache
+    if _sqlserver_driver_cache is not None:
+        return _sqlserver_driver_cache
     try:
         import pyodbc
         for name in pyodbc.drivers():
             if "SQL Server" in name:
-                return name
+                _sqlserver_driver_cache = name
+                return _sqlserver_driver_cache
     except Exception:
         pass
-    return ""
+    _sqlserver_driver_cache = ""
+    return _sqlserver_driver_cache
 
 
 def _build_sqlserver_connection_string() -> str:
