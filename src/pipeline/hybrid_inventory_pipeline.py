@@ -7,10 +7,13 @@ Hybrid: una llamada global a Gemini, frames representativos, lista de Pallet.
 
 import json
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from src.config import Settings
-from src.domain.pallet import Pallet
+from src.exceptions.global_analysis_exceptions import (
+    GlobalAnalysisParsingError,
+    GlobalAnalysisValidationError,
+)
 from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_global_analysis
@@ -76,12 +79,15 @@ class HybridInventoryPipeline:
         )
         analyzer = GeminiGlobalAnalyzer(client)
         try:
-            data = analyzer.analyze_video_frames(frames)
+            data = analyzer.analyze_video_frames(frames, logger=logger)
         except (RuntimeError, ValueError) as e:
             logger.exception("Error en análisis global Gemini: %s", e)
             return 1
-        except json.JSONDecodeError as e:
-            logger.exception("Respuesta de Gemini no es JSON válido: %s", e)
+        except GlobalAnalysisParsingError as e:
+            logger.exception("Respuesta de Gemini no es JSON válido (parsing): %s", e)
+            return 1
+        except GlobalAnalysisValidationError as e:
+            logger.exception("Respuesta de Gemini no cumple schema (validación): %s", e)
             return 1
         try:
             pallets = parse_global_analysis(data)
