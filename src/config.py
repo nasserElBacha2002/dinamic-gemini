@@ -245,6 +245,80 @@ class Settings(BaseModel):
         le=1.0,
         description="Si dos vistas están muy cerca en tiempo y sus bboxes tienen IoU > este valor, se descarta una. 0 = desactivado. Env: VIEW_SELECTION_MAX_IOU_SUPPRESS.",
     )
+    view_selection_enable_diversity: bool = Field(
+        default_factory=lambda: os.getenv("VIEW_SELECTION_ENABLE_DIVERSITY", "true").strip().lower() in ("1", "true", "yes"),
+        description="Usar selección en 2 fases (anchors + greedy diversidad) con phash/centroid dedup. Env: VIEW_SELECTION_ENABLE_DIVERSITY.",
+    )
+    view_selection_phash_near_dup_thr: int = Field(
+        default_factory=lambda: int(os.getenv("VIEW_SELECTION_PHASH_NEAR_DUP_THR", "4")),
+        ge=0,
+        le=64,
+        description="Distancia Hamming pHash: si min dist a seleccionados <= este valor, se descarta candidato. Env: VIEW_SELECTION_PHASH_NEAR_DUP_THR.",
+    )
+    view_selection_centroid_near_dup_thr: float = Field(
+        default_factory=lambda: float(os.getenv("VIEW_SELECTION_CENTROID_NEAR_DUP_THR", "0.03")),
+        ge=0.0,
+        le=1.0,
+        description="Distancia euclídea entre centroides normalizados: si <= este valor, se descarta candidato. Env: VIEW_SELECTION_CENTROID_NEAR_DUP_THR.",
+    )
+    view_selection_anchor_window_frames: int = Field(
+        default_factory=lambda: int(os.getenv("VIEW_SELECTION_ANCHOR_WINDOW_FRAMES", "15")),
+        ge=0,
+        le=100,
+        description="Ventana en frames (±N) para elegir anchor en cada segmento temporal. Env: VIEW_SELECTION_ANCHOR_WINDOW_FRAMES.",
+    )
+    view_selection_diversity_weight: float = Field(
+        default_factory=lambda: float(os.getenv("VIEW_SELECTION_DIVERSITY_WEIGHT", "0.35")),
+        ge=0.0,
+        le=1.0,
+        description="Peso del bonus de diversidad en fase greedy (0.35 = 35%%). Env: VIEW_SELECTION_DIVERSITY_WEIGHT.",
+    )
+    debug_view_selection: bool = Field(
+        default_factory=lambda: os.getenv("DEBUG_VIEW_SELECTION", "false").strip().lower() in ("1", "true", "yes"),
+        description="Incluir view_selection_debug en pipeline_debug y reasons en manifest. Env: DEBUG_VIEW_SELECTION.",
+    )
+
+    # Sprint 6B: Re-ID (optional, default off)
+    reid_enabled: bool = Field(
+        default_factory=lambda: os.getenv("REID_ENABLED", "false").strip().lower() in ("1", "true", "yes"),
+        description="Activar Re-ID (pHash/CLIP + DSU merge) después de tracking, antes de view selection. Env: REID_ENABLED.",
+    )
+    reid_signature_k: int = Field(
+        default_factory=lambda: int(os.getenv("REID_SIGNATURE_K", "2")),
+        ge=1,
+        le=5,
+        description="Número de ROIs por track para firma Re-ID (1 a 5). Env: REID_SIGNATURE_K.",
+    )
+    reid_max_gap_frames: int = Field(
+        default_factory=lambda: int(os.getenv("REID_MAX_GAP_FRAMES", "240")),
+        ge=0,
+        le=10000,
+        description="Gap máximo en frames entre tracks para candidatos Re-ID (~8s a 30fps). Env: REID_MAX_GAP_FRAMES.",
+    )
+    reid_dx_max: float = Field(
+        default_factory=lambda: float(os.getenv("REID_DX_MAX", "0.20")),
+        ge=0.0,
+        le=1.0,
+        description="Diferencia máxima en x normalizada (0..1) entre end_centroid de un track y start_centroid del otro. Env: REID_DX_MAX.",
+    )
+    reid_dy_max: float = Field(
+        default_factory=lambda: float(os.getenv("REID_DY_MAX", "0.25")),
+        ge=0.0,
+        le=1.0,
+        description="Diferencia máxima en y normalizada (0..1) para gating espacial Re-ID. Env: REID_DY_MAX.",
+    )
+    phash_max_dist: int = Field(
+        default_factory=lambda: int(os.getenv("PHASH_MAX_DIST", "10")),
+        ge=0,
+        le=64,
+        description="Distancia Hamming máxima entre pHash de ROIs para considerar par como candidato Re-ID. Env: PHASH_MAX_DIST.",
+    )
+    clip_min_sim: float = Field(
+        default_factory=lambda: float(os.getenv("CLIP_MIN_SIM", "0.92")),
+        ge=0.0,
+        le=1.0,
+        description="Similitud coseno mínima CLIP para confirmar merge de tracks (0 a 1). Env: CLIP_MIN_SIM.",
+    )
 
     # Output Configuration
     output_dir: str = Field(

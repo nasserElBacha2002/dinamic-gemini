@@ -7,6 +7,7 @@ Ejecuta: extraer frames → detectar → track → ROI → blur → seleccionar 
 import json
 import logging
 import time
+from datetime import datetime
 from itertools import groupby
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -30,6 +31,7 @@ from src.tracking.tracker import MultiObjectTracker
 from src.video.frames import extract_frames
 from src.video.ingest import load_video_metadata
 from src.view_selection.selector import select_views_per_track
+from src.reid import run_reid_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +219,27 @@ def run_pipeline(
         cap2.release()
     tracks = updated_tracks
 
+    # 3b. Re-ID (Sprint 6B): opcional después de ROI+blur, antes de view selection
+    if getattr(settings, "reid_enabled", False):
+        tracks, reid_metrics = run_reid_pipeline(
+            tracks,
+            settings,
+            video_width=getattr(metadata, "width", None),
+            video_height=getattr(metadata, "height", None),
+        )
+        pipeline_debug.update(reid_metrics)
+        logger.info(
+            "Re-ID pipeline: tracks_before_reid=%s tracks_after_reid=%s tracks_merged_count=%s candidates=%s pairs_after_phash=%s pairs_confirmed=%s",
+            reid_metrics.get("tracks_before_reid"),
+            reid_metrics.get("tracks_after_reid"),
+            reid_metrics.get("tracks_merged_count"),
+            reid_metrics.get("reid_candidates_generated"),
+            reid_metrics.get("reid_pairs_after_phash"),
+            reid_metrics.get("reid_pairs_confirmed"),
+        )
+    else:
+        reid_metrics = None
+
     # Frames anotados (bbox + track_id por frame) para auditoría
     if save_annotated_views:
         frame_to_boxes: Dict[int, List[Tuple[Tuple[int, int, int, int], str]]] = {}
@@ -259,13 +282,17 @@ def run_pipeline(
     def _bbox_area(bbox: Tuple[int, int, int, int]) -> float:
         return float(max(0, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])))
 
+    if getattr(settings, "debug_view_selection", False):
+        pipeline_debug["view_selection_debug"] = {}
+
     tracks_with_min_views = 0
     tracks_requests_sent = 0
     tracks_llm_ok = 0
     tracks_llm_failed = 0
 
     for track in tracks:
-        views = select_views_per_track(
+        view_selection_debug: Optional[Dict[str, Any]] = None
+        views, view_selection_debug = select_views_per_track(
             track,
             min_views=settings.min_views,
             target_views=settings.target_views,
@@ -273,20 +300,52 @@ def run_pipeline(
             blur_percentile=settings.view_selection_blur_percentile,
             min_frame_gap_diversity=settings.view_selection_min_frame_gap_diversity,
             max_iou_suppress=settings.view_selection_max_iou_suppress,
+            frame_width=getattr(metadata, "width", None),
+            frame_height=getattr(metadata, "height", None),
+            enable_diversity=getattr(settings, "view_selection_enable_diversity", True),
+            phash_near_dup_thr=getattr(settings, "view_selection_phash_near_dup_thr", 4),
+            centroid_near_dup_thr=getattr(settings, "view_selection_centroid_near_dup_thr", 0.03),
+            anchor_window_frames=getattr(settings, "view_selection_anchor_window_frames", 15),
+            diversity_weight=getattr(settings, "view_selection_diversity_weight", 0.35),
+            return_debug=getattr(settings, "debug_view_selection", False),
         )
+        if view_selection_debug is not None and pipeline_debug.get("view_selection_debug") is not None:
+            pipeline_debug["view_selection_debug"][track.track_id] = view_selection_debug
         views_set = set(id(o) for o in views)
         all_observations = []
+        selected_by_frame: Dict[int, Dict[str, Any]] = {}
+        if view_selection_debug and "selected" in view_selection_debug:
+            for s in view_selection_debug["selected"]:
+                selected_by_frame[s["frame_idx"]] = s
+        candidates_by_frame: Dict[int, Dict[str, Any]] = {}
+        if view_selection_debug and "candidates" in view_selection_debug:
+            for c in view_selection_debug["candidates"]:
+                candidates_by_frame[c["frame_idx"]] = c
         for o in track.observations:
             selected = id(o) in views_set
-            all_observations.append({
+            reason = "selected" if selected else "discarded"
+            metrics: Optional[Dict[str, Any]] = None
+            if view_selection_debug:
+                if o.frame_idx in selected_by_frame:
+                    s = selected_by_frame[o.frame_idx]
+                    reason = s.get("reason", reason)
+                    metrics = {k: v for k, v in s.items() if k in ("min_phash_dist_to_selected", "min_centroid_dist_to_selected", "min_frame_gap_to_selected")}
+                elif o.frame_idx in candidates_by_frame:
+                    c = candidates_by_frame[o.frame_idx]
+                    reason = "discarded"
+                    metrics = {"base_score": c.get("base_score"), "blur": c.get("blur"), "area": c.get("area"), "centroid": c.get("centroid"), "phash": c.get("phash")}
+            ob_dict: Dict[str, Any] = {
                 "frame_idx": o.frame_idx,
                 "bbox": list(o.bbox),
                 "roi_path": o.roi_path,
                 "blur_score": o.blur_score,
                 "area": _bbox_area(o.bbox),
                 "selected": selected,
-                "selection_reason": "selected" if selected else "discarded",
-            })
+                "selection_reason": reason,
+            }
+            if metrics is not None:
+                ob_dict["selection_metrics"] = metrics
+            all_observations.append(ob_dict)
         roi_paths = [o.roi_path for o in views if o.roi_path]
         views_selected_total += len(roi_paths)
 
@@ -366,6 +425,22 @@ def run_pipeline(
     pipeline_debug["tracks_requests_sent"] = tracks_requests_sent
     pipeline_debug["tracks_llm_ok"] = tracks_llm_ok
     pipeline_debug["tracks_llm_failed"] = tracks_llm_failed
+    summary_kw: Dict[str, Any] = {
+        "pipeline_debug": pipeline_debug,
+        "tracks_with_observations": len(tracks),
+        "tracks_with_min_views": tracks_with_min_views,
+        "tracks_requests_sent": tracks_requests_sent,
+        "tracks_llm_ok": tracks_llm_ok,
+        "tracks_llm_failed": tracks_llm_failed,
+    }
+    if reid_metrics is not None:
+        summary_kw["tracks_before_reid"] = reid_metrics.get("tracks_before_reid")
+        summary_kw["tracks_after_reid"] = reid_metrics.get("tracks_after_reid")
+        summary_kw["tracks_merged_count"] = reid_metrics.get("tracks_merged_count")
+        summary_kw["reid_candidates_generated"] = reid_metrics.get("reid_candidates_generated")
+        summary_kw["reid_pairs_after_phash"] = reid_metrics.get("reid_pairs_after_phash")
+        summary_kw["reid_pairs_confirmed"] = reid_metrics.get("reid_pairs_confirmed")
+        summary_kw["clip_verifications_run"] = reid_metrics.get("clip_verifications_run")
     summary = _make_summary(
         len(frame_refs),
         tracks_detected,
@@ -373,13 +448,8 @@ def run_pipeline(
         views_selected_total,
         tracks_llm_ok,
         start_time,
-        pipeline_debug=pipeline_debug,
-        tracks_with_observations=len(tracks),
-        tracks_with_min_views=tracks_with_min_views,
-        tracks_requests_sent=tracks_requests_sent,
-        tracks_llm_ok=tracks_llm_ok,
-        tracks_llm_failed=tracks_llm_failed,
         requests_sent=tracks_requests_sent,
+        **summary_kw,
     )
     return track_results, summary
 
@@ -391,16 +461,24 @@ def _make_summary(
     views_selected_total: int,
     tracks_ok: int,
     start_time: float,
+    *,
+    requests_sent: Optional[int] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
     elapsed = time.time() - start_time
+    sent = requests_sent if requests_sent is not None else tracks_analyzed
+    # Tiempos de ejecución (para auditoría y métricas)
+    start_dt = datetime.fromtimestamp(start_time)
+    end_dt = datetime.fromtimestamp(start_time + elapsed)
     return {
         "frames_extracted": frames_extracted,
         "tracks_detected": tracks_detected,
         "tracks_analyzed": tracks_analyzed,
         "views_selected_total": views_selected_total,
         "tracks_ok": tracks_ok,
-        "requests_sent": tracks_analyzed,
+        "requests_sent": sent,
         "latency_total_seconds": elapsed,
+        "start_datetime": start_dt.isoformat(),
+        "end_datetime": end_dt.isoformat(),
         **extra,
     }
