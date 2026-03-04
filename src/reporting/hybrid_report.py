@@ -1,49 +1,125 @@
 """
 Stage 4 — Build deterministic hybrid report dict.
 
-Includes low-confidence flagging (no behavior change; flag only).
-Stage 6: metrics (global_calls, fallback_attempts, fallback_success, total_calls) and confidence_threshold.
+Standard report: report_version 2.1, mode hybrid_v2.1, summary block, entities.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from src.domain.pallet import Pallet
+from src.domain.entity import Entity
 
-LOW_CONFIDENCE_FLAG_THRESHOLD = 0.50
+if TYPE_CHECKING:
+    from src.domain.pallet import Pallet
+
+
+def _build_summary_from_entities(entities: List[Entity]) -> Dict[str, int]:
+    """Compute summary counts from entity list."""
+    summary = {
+        "total_entities": len(entities),
+        "pallets": 0,
+        "empty_pallets": 0,
+        "loose_boxes": 0,
+        "counted": 0,
+        "needs_review": 0,
+        "not_countable": 0,
+        "invalid_structure": 0,
+    }
+    for e in entities:
+        if e.entity_type == "PALLET":
+            summary["pallets"] += 1
+        elif e.entity_type == "EMPTY_PALLET":
+            summary["empty_pallets"] += 1
+        elif e.entity_type == "LOOSE_BOXES":
+            summary["loose_boxes"] += 1
+        if e.count_status == "COUNTED":
+            summary["counted"] += 1
+        elif e.count_status == "NEEDS_REVIEW":
+            summary["needs_review"] += 1
+        elif e.count_status == "NOT_COUNTABLE":
+            summary["not_countable"] += 1
+        elif e.count_status == "EMPTY":
+            pass  # empty_pallets already counted by type
+        elif e.count_status == "INVALID_STRUCTURE":
+            summary["invalid_structure"] += 1
+    return summary
 
 
 def build_hybrid_report(
     video_path: str,
-    pallets: List[Pallet],
+    entities: List[Entity],
+    frames_selected: int,
+    frame_indices: Optional[List[int]] = None,
+) -> Dict[str, Any]:
+    """Build the authoritative hybrid report (report_version 2.1, summary, entities).
+
+    Args:
+        video_path: Path to the source video.
+        entities: List of Entity with count_status, final_quantity, entity_quality_score set.
+        frames_selected: Number of representative frames sent to Gemini.
+        frame_indices: Optional list of video frame indices (audit/debug).
+
+    Returns:
+        Report dict with report_version 2.1, mode hybrid_v2.1, summary, entities.
+    """
+    path_obj = Path(video_path)
+    summary = _build_summary_from_entities(entities)
+
+    entity_dicts = []
+    for e in entities:
+        entity_dicts.append({
+            "entity_uid": e.entity_uid,
+            "entity_type": e.entity_type,
+            "model_entity_id": e.model_entity_id,
+            "pallet_id": e.pallet_id,
+            "pallet_id_method": e.pallet_id_method,
+            "position_barcode": e.position_barcode,
+            "position_label_bbox": e.position_label_bbox,
+            "internal_code": e.internal_code,
+            "product_label_quantity": e.product_label_quantity,
+            "product_label_bbox": e.product_label_bbox,
+            "has_boxes": e.has_boxes,
+            "confidence": e.confidence,
+            "count_status": e.count_status,
+            "final_quantity": e.final_quantity,
+            "conflict_flag": e.conflict_flag,
+            "conflict_reason": e.conflict_reason,
+            "entity_quality_score": e.entity_quality_score,
+        })
+
+    report: Dict[str, Any] = {
+        "report_version": "2.1",
+        "mode": "hybrid_v2.1",
+        "video": {"path": video_path, "name": path_obj.name},
+        "frames_selected": frames_selected,
+        "summary": summary,
+        "entities": entity_dicts,
+    }
+    if frame_indices is not None:
+        report["frame_indices"] = frame_indices
+    return report
+
+
+def build_hybrid_report_legacy(
+    video_path: str,
+    pallets: List["Pallet"],
     frames_selected: int,
     prompt_version: str = "global_min_v1",
     metrics: Optional[Dict[str, int]] = None,
     confidence_threshold: Optional[float] = None,
+    frame_indices: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
-    """Build the authoritative hybrid report dict.
+    """Legacy pallet-based report (mode hybrid, total_pallets_detected, pallets). Kept for tests only."""
+    from src.domain.pallet import Pallet
 
-    Args:
-        video_path: Path to the source video.
-        pallets: List of pallets with processing_mode/final_quantity/source set.
-        frames_selected: Number of representative frames sent to Gemini.
-        prompt_version: Prompt version identifier.
-        metrics: Optional dict with global_calls, fallback_attempts, fallback_success, total_calls (Stage 6).
-        confidence_threshold: Optional threshold used for fallback trigger (Stage 6).
-
-    Returns:
-        Report dict with video, mode, prompt_version, frames_selected,
-        total_pallets_detected, pallets, flags; optionally metrics and confidence_threshold.
-    """
     path_obj = Path(video_path)
     low_confidence = [
         p.pallet_id for p in pallets
-        if p.confidence < LOW_CONFIDENCE_FLAG_THRESHOLD
+        if p.confidence < 0.50
     ]
     flags: Dict[str, Any] = {"low_confidence_pallets": low_confidence}
     if not pallets:
         flags["no_pallets_detected"] = True
-
     report: Dict[str, Any] = {
         "video": {"path": video_path, "name": path_obj.name},
         "mode": "hybrid",
@@ -69,4 +145,6 @@ def build_hybrid_report(
         report["metrics"] = metrics
     if confidence_threshold is not None:
         report["confidence_threshold"] = confidence_threshold
+    if frame_indices is not None:
+        report["frame_indices"] = frame_indices
     return report

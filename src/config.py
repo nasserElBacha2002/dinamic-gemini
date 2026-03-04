@@ -28,6 +28,18 @@ def _parse_max_frames_to_send() -> Optional[int]:
         return None
 
 
+def _parse_hybrid_max_frames() -> Optional[int]:
+    """None o vacío = sin límite en modo hybrid. Valor válido 1..10000."""
+    raw = (os.getenv("HYBRID_MAX_FRAMES") or "").strip()
+    if raw in ("", "0"):
+        return None
+    try:
+        n = int(raw)
+        return n if 1 <= n <= 10000 else None
+    except ValueError:
+        return None
+
+
 def _parse_time_limit_sec() -> Optional[float]:
     raw = os.getenv("TIME_LIMIT_SEC", "").strip()
     if not raw:
@@ -140,6 +152,10 @@ class Settings(BaseModel):
     time_limit_sec: Optional[float] = Field(
         default_factory=_parse_time_limit_sec,
         description="Procesar solo frames con timestamp_seconds <= este valor. Env: TIME_LIMIT_SEC. None = sin límite.",
+    )
+    hybrid_max_frames: Optional[int] = Field(
+        default_factory=_parse_hybrid_max_frames,
+        description="Máximo de frames representativos en modo hybrid (None = sin límite). Env: HYBRID_MAX_FRAMES ('' o '0' = sin límite, 1..10000).",
     )
 
     # Image Preprocessing (Bloque 7)

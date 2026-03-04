@@ -1,12 +1,14 @@
 """
-Parseo y validación de la respuesta de análisis global (v2.0).
+Parseo y validación de la respuesta de análisis global (v2.0 y v2.1).
 
-Convierte el dict JSON en lista de Pallet y aplica validaciones mínimas.
+v2.0: convierte el dict JSON en lista de Pallet.
+v2.1: convierte el dict JSON en lista de Entity con entity_uid y original_index.
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+from src.domain.entity import Entity
 from src.domain.pallet import Pallet
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,108 @@ def parse_global_analysis(data: Dict[str, Any]) -> List[Pallet]:
                 estimated_visible_boxes=est_boxes_int,
                 confidence=c,
                 processing_mode=None,
+            )
+        )
+    return result
+
+
+def _safe_str(v: Any) -> Optional[str]:
+    """Return string or None; empty string becomes None."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s if s else None
+
+
+def _safe_int(v: Any) -> Optional[int]:
+    """Coerce to int or None."""
+    if v is None:
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_bbox(v: Any) -> Optional[List[float]]:
+    """Return [x1,y1,x2,y2] as list of float or None. Preserves float precision (normalized coords)."""
+    if v is None:
+        return None
+    if not isinstance(v, list) or len(v) != 4:
+        return None
+    try:
+        return [float(x) for x in v]
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_entities(data: Dict[str, Any], job_id: str = "") -> List[Entity]:
+    """Convert v2.1 global analysis dict into list of Entity.
+
+    Call after validate_global_analysis_structure_v21. Sets entity_uid from
+    job_id + model_entity_id and original_index from list position for
+    deterministic ordering.
+
+    Args:
+        data: Dict with total_entities_detected and entities (validated).
+        job_id: Job identifier for stable entity_uid (default "").
+
+    Returns:
+        List of Entity with entity_uid, original_index, and all parsed fields.
+    """
+    if not isinstance(data, dict):
+        raise GlobalAnalysisParseError("Response must be a JSON object")
+    entities_raw = data.get("entities")
+    if not isinstance(entities_raw, list):
+        raise GlobalAnalysisParseError("'entities' must be an array")
+
+    result: List[Entity] = []
+    for i, e in enumerate(entities_raw):
+        if not isinstance(e, dict):
+            raise GlobalAnalysisParseError(f"entities[{i}] must be an object")
+
+        model_entity_id = e.get("model_entity_id")
+        if model_entity_id is None:
+            raise GlobalAnalysisParseError(f"entities[{i}] missing 'model_entity_id'")
+        entity_uid = f"{job_id}_{model_entity_id}" if job_id else str(model_entity_id)
+
+        entity_type = e.get("entity_type", "PALLET")
+        if entity_type not in ("PALLET", "EMPTY_PALLET", "LOOSE_BOXES"):
+            raise GlobalAnalysisParseError(
+                f"entities[{i}].entity_type invalid: {entity_type!r}"
+            )
+
+        confidence = 0.0
+        c = e.get("confidence")
+        if c is not None:
+            try:
+                confidence = float(c)
+            except (TypeError, ValueError):
+                pass
+        confidence = max(0.0, min(1.0, confidence))
+
+        qty = _safe_int(e.get("product_label_quantity"))
+
+        result.append(
+            Entity(
+                entity_uid=entity_uid,
+                entity_type=entity_type,
+                model_entity_id=str(model_entity_id),
+                position_barcode=_safe_str(e.get("position_barcode")),
+                position_label_bbox=_safe_bbox(e.get("position_label_bbox")),
+                internal_code=_safe_str(e.get("internal_code")),
+                product_label_quantity=qty,
+                product_label_bbox=_safe_bbox(e.get("product_label_bbox")),
+                has_boxes=bool(e.get("has_boxes", False)),
+                confidence=confidence,
+                pallet_id=None,
+                pallet_id_method=None,
+                count_status=None,
+                final_quantity=None,
+                conflict_flag=False,
+                conflict_reason=None,
+                entity_quality_score=0.0,
+                original_index=i,
             )
         )
     return result

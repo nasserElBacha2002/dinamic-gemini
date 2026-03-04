@@ -69,7 +69,21 @@ def _push_success_to_db(
         prompt_version = report_data.get("prompt_version")
         metrics = report_data.get("metrics") or {}
         gemini_calls = metrics.get("total_calls")
-        pallets_list = report_data.get("pallets") or []
+        # Report v2.1 has "entities"; legacy has "pallets"
+        if report_data.get("report_version") == "2.1" or report_data.get("mode") == "hybrid_v2.1":
+            entities = report_data.get("entities") or []
+            for ent in entities:
+                pallets_list.append({
+                    "pallet_id": ent.get("pallet_id") or "",
+                    "internal_code": ent.get("internal_code"),
+                    "final_quantity": ent.get("final_quantity"),
+                    "quantity": ent.get("product_label_quantity"),
+                    "source": "gemini",
+                    "confidence": ent.get("confidence"),
+                    "fallback_used": False,
+                })
+        else:
+            pallets_list = report_data.get("pallets") or []
 
     try:
         jobs_repo.set_job_outputs(

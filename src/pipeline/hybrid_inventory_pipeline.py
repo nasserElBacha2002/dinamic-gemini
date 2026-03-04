@@ -1,53 +1,55 @@
 """
-Hybrid inventory pipeline (v2.0 controller).
+Hybrid inventory pipeline (v2.1).
 
 Dispatches to legacy or hybrid path based on --mode.
-Hybrid: una llamada global a Gemini, frames representativos, lista de Pallet.
+Hybrid: una llamada global a Gemini (Structured Output), frames representativos, entidades v2.1.
 """
 
-import json
 from pathlib import Path
 from typing import Any, Callable, List, Optional
 
+import cv2
 import numpy as np
 
 from src.config import Settings
-from src.decision.processing_mode import assign_processing_mode
+from src.decision.count_status import assign_count_status
+from src.decision.entity_order import sort_entities_deterministically
+from src.decision.pallet_id import resolve_pallet_id
+from src.decision.quality_score import compute_entity_quality_score
 from src.exceptions.global_analysis_exceptions import (
     GlobalAnalysisParsingError,
     GlobalAnalysisValidationError,
 )
-from src.fallback.fallback_policy import DEFAULT_CONFIDENCE_THRESHOLD, should_trigger_fallback
-from src.fallback.visual_fallback_analyzer import VisualFallbackAnalyzer, VisualFallbackError
 from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
-from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_global_analysis
+from src.llm.global_pallet_analysis_prompt import GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
+from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_entities
 from src.pipeline.legacy_visual_pipeline import LegacyVisualPipeline
-from src.reporting.artifacts import write_csv, write_json
+from src.reporting.artifacts import write_json
 from src.reporting.hybrid_report import build_hybrid_report
+from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 from src.video.frames import STRATEGY_OPTIMIZED, extract_representative_frames
 
-FALLBACK_FRAMES_SUBSET = 3
+# When hybrid_max_frames is None (env empty), no limit
+HYBRID_MAX_FRAMES_NO_LIMIT = 10000
 
-HYBRID_MAX_FRAMES = 25
 
-
-def select_fallback_frames(frames: List[np.ndarray], k: int) -> List[np.ndarray]:
-    """Select up to k frames spread across the list (first, mid, last for k=3). Deterministic."""
-    if not frames or k <= 0:
-        return []
-    n = len(frames)
-    if n <= k:
-        return list(frames)
-    if k == 1:
-        return [frames[0]]
-    # k=3: first, mid, last; else evenly spread
-    if k == 3:
-        indices = [0, n // 2, n - 1]
-    else:
-        indices = [int(i * (n - 1) / (k - 1)) for i in range(k)]
-        indices = [min(max(i, 0), n - 1) for i in indices]
-    return [frames[i] for i in indices]
+def _save_frames_sent_to_gemini(
+    run_dir: Path,
+    frames: List[np.ndarray],
+    frame_indices: Optional[List[int]] = None,
+) -> None:
+    """Save the frames that were sent to Gemini as JPGs under run_dir/frames_sent/ (when DEBUG_SAVE_FRAMES=true)."""
+    if not frames:
+        return
+    out_dir = run_dir / "frames_sent"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    indices = frame_indices if frame_indices is not None and len(frame_indices) == len(frames) else list(range(len(frames)))
+    for i, (frame, idx) in enumerate(zip(frames, indices)):
+        path = out_dir / f"frame_{idx:06d}.jpg"
+        if not cv2.imwrite(str(path), frame):
+            path = out_dir / f"frame_{i:04d}.jpg"
+            cv2.imwrite(str(path), frame)
 
 
 class HybridInventoryPipeline:
@@ -90,11 +92,12 @@ class HybridInventoryPipeline:
                 except Exception:
                     pass
         _report("extract_frames", 10)
-        logger.info("Hybrid mode: análisis global (una llamada por video)")
+        max_frames = getattr(settings, "hybrid_max_frames", None) or HYBRID_MAX_FRAMES_NO_LIMIT
+        logger.info("Hybrid mode: análisis global (una llamada por video), max_frames=%s", max_frames)
         try:
             frames, metadata = extract_representative_frames(
                 video_path,
-                max_frames=HYBRID_MAX_FRAMES,
+                max_frames=max_frames,
                 strategy=STRATEGY_OPTIMIZED,
             )
         except (RuntimeError, ValueError) as e:
@@ -115,6 +118,9 @@ class HybridInventoryPipeline:
             retry_delay=settings.gemini_retry_delay,
         )
         _report("gemini_global_call", 50)
+        run_dir = output_path / video_id / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
         analyzer = GeminiGlobalAnalyzer(client)
         try:
             data = analyzer.analyze_video_frames(frames, logger=logger)
@@ -125,87 +131,33 @@ class HybridInventoryPipeline:
             logger.exception("Respuesta de Gemini no es JSON válido (parsing): %s", e)
             return 1
         except GlobalAnalysisValidationError as e:
-            logger.exception("Respuesta de Gemini no cumple schema (validación): %s", e)
+            logger.exception("Respuesta de Gemini no cumple schema v2.1: %s", e)
             return 1
         try:
-            pallets = parse_global_analysis(data)
+            entities = parse_entities(data, job_id=video_id)
         except GlobalAnalysisParseError as e:
-            logger.exception("Error validando respuesta global: %s", e)
+            logger.exception("Error parseando entidades: %s", e)
             return 1
-        logger.info("Pallets detectados (hybrid): %d", len(pallets))
+        logger.info("Entidades detectadas (hybrid v2.1): %d", len(entities))
 
-        threshold = confidence_threshold if confidence_threshold is not None else DEFAULT_CONFIDENCE_THRESHOLD
-        pallets_with_mode = [assign_processing_mode(p) for p in pallets]
-        fallback_analyzer = VisualFallbackAnalyzer(client)
-        fallback_attempts = 0
-        fallback_success = 0
-        for pallet in pallets_with_mode:
-            if should_trigger_fallback(pallet, threshold):
-                fallback_frames = select_fallback_frames(frames, FALLBACK_FRAMES_SUBSET)
-                fallback_attempts += 1
-                try:
-                    count, conf = fallback_analyzer.count_visible_boxes(fallback_frames)
-                    pallet.final_quantity = count
-                    pallet.fallback_used = True
-                    pallet.confidence = conf
-                    fallback_success += 1
-                except (VisualFallbackError, RuntimeError) as e:
-                    logger.warning("Fallback para pallet %s falló: %s", pallet.pallet_id, e)
+        sort_entities_deterministically(entities)
+        resolve_pallet_id(entities)
+        for e in entities:
+            assign_count_status(e)
+        for e in entities:
+            compute_entity_quality_score(e)
 
-        _report("fallback_calls", 70)
-        global_calls = 1
-        total_calls = global_calls + fallback_attempts
-        metrics = {
-            "global_calls": global_calls,
-            "fallback_attempts": fallback_attempts,
-            "fallback_success": fallback_success,
-            "total_calls": total_calls,
-        }
         report = build_hybrid_report(
             video_path=video_path,
-            pallets=pallets_with_mode,
+            entities=entities,
             frames_selected=len(frames),
-            prompt_version="global_min_v1",
-            metrics=metrics,
-            confidence_threshold=threshold,
+            frame_indices=metadata.get("frame_indices"),
         )
-
         _report("write_artifacts", 90)
-        run_dir = output_path / video_id / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
+        if getattr(settings, "debug_save_frames", False):
+            _save_frames_sent_to_gemini(run_dir, frames, metadata.get("frame_indices"))
         report_path = run_dir / "hybrid_report.json"
         write_json(report_path, report)
-        logger.info("Reporte hybrid guardado: %s", report_path)
-        write_csv(run_dir / "hybrid_report.csv", pallets_with_mode)
-
-        # Debug artifact only — NOT the public contract. Use hybrid_report.json for integration.
-        debug_path = run_dir / "hybrid_debug.json"
-        with open(debug_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "video_id": video_id,
-                    "mode": "hybrid",
-                    "total_pallets_detected": len(pallets),
-                    "pallets": [
-                        {
-                            "pallet_id": p.pallet_id,
-                            "has_label": p.has_label,
-                            "internal_code": p.internal_code,
-                            "quantity": p.quantity,
-                            "final_quantity": p.final_quantity,
-                            "source": p.source,
-                            "estimated_visible_boxes": p.estimated_visible_boxes,
-                            "confidence": p.confidence,
-                            "fallback_used": p.fallback_used,
-                        }
-                        for p in pallets_with_mode
-                    ],
-                    "metadata": metadata,
-                },
-                f,
-                indent=2,
-                ensure_ascii=False,
-            )
-        logger.info("Debug hybrid guardado: %s", debug_path)
+        logger.info("Reporte hybrid v2.1 guardado: %s", report_path)
         _report("done", 100)
         return 0

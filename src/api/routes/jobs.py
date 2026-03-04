@@ -14,7 +14,7 @@ from src.api.schemas.responses import (
     JobStatusResponse,
 )
 from src.config import load_settings
-from src.jobs.job_store import create_job, get_job, get_pallet_results, list_artifacts
+from src.jobs.job_store import create_job, get_job, list_artifacts
 from src.jobs.queue import enqueue
 
 logger = logging.getLogger(__name__)
@@ -178,13 +178,28 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
     )
 
 
+def _merge_report_metadata(report: dict, job_id: str, status: str, mode: str, confidence_threshold: float) -> dict:
+    """Merge job metadata into report dict (in place)."""
+    out = dict(report)
+    out["job_id"] = job_id
+    out["status"] = status
+    out["mode"] = mode
+    out["confidence_threshold"] = confidence_threshold
+    return out
+
+
 @router.get("/{job_id}/result")
 async def get_job_result(job_id: str) -> Any:
-    """Return authoritative report JSON if succeeded. When DB enabled, build from job + pallet_results."""
+    """Return authoritative report JSON if succeeded. Report file is the source of truth (standard v2.1 format)."""
     base = _base_path()
+    report_path = None
+    job_id_val = job_id
+    status_str = "succeeded"
+    input_data: dict = {}
+
     repos = _get_db_repos()
     if repos is not None:
-        jobs_repo, pallet_repo, _ = repos
+        jobs_repo, _pallet_repo, _ = repos
         try:
             job_data = jobs_repo.get_job(job_id)
             if job_data is not None:
@@ -195,40 +210,22 @@ async def get_job_result(job_id: str) -> Any:
                 out = job_data.get("output")
                 if not out:
                     raise HTTPException(404, "No result")
-                pallets_data = pallet_repo.get_pallet_results(job_id)
+                report_path = out.get("report_json_path") if isinstance(out, dict) else getattr(out, "report_json_path", None)
                 input_data = job_data.get("input") or {}
-                report = {
-                    "job_id": job_id,
-                    "status": status_str,
-                    "mode": input_data.get("mode", "legacy"),
-                    "confidence_threshold": input_data.get("confidence_threshold", 0.70),
-                    "total_pallets_detected": len(pallets_data),
-                    "pallets": [
-                        {
-                            "pallet_id": p.get("pallet_id"),
-                            "internal_code": p.get("internal_code"),
-                            "quantity": p.get("quantity"),
-                            "source": p.get("source"),
-                            "confidence": p.get("confidence"),
-                            "fallback_used": p.get("fallback_used", False),
-                            "estimated_visible_boxes": p.get("raw_estimated_visible_boxes"),
-                        }
-                        for p in pallets_data
-                    ],
-                }
-                report_json_path = out.get("report_json_path") if isinstance(out, dict) else getattr(out, "report_json_path", None)
-                if report_json_path and Path(report_json_path).exists():
+                if report_path and Path(report_path).exists():
                     try:
-                        with open(report_json_path, encoding="utf-8") as f:
+                        with open(report_path, encoding="utf-8") as f:
                             file_report = json.load(f)
-                        report["video"] = file_report.get("video")
-                        report["prompt_version"] = file_report.get("prompt_version")
-                        report["frames_selected"] = file_report.get("frames_selected")
-                        report["flags"] = file_report.get("flags", {})
-                        report["metrics"] = file_report.get("metrics")
+                        return _merge_report_metadata(
+                            file_report,
+                            job_id_val,
+                            status_str,
+                            input_data.get("mode", "hybrid_v2.1"),
+                            input_data.get("confidence_threshold", 0.70),
+                        )
                     except Exception as e:
-                        logger.debug("Enrich report from file failed: %s", e)
-                return report
+                        logger.debug("Load report file failed: %s", e)
+                raise HTTPException(404, "Report file not found")
         except HTTPException:
             raise
         except Exception as e:
@@ -243,41 +240,6 @@ async def get_job_result(job_id: str) -> Any:
     if not out:
         raise HTTPException(404, "No result")
 
-    pallets_data = get_pallet_results(job_id)
-    if pallets_data is not None:
-        report_json_path = getattr(out, "report_json_path", None) if out is not None else None
-        if report_json_path is None and isinstance(out, dict):
-            report_json_path = out.get("report_json_path")
-        report = {
-            "mode": record.input.mode,
-            "confidence_threshold": record.input.confidence_threshold,
-            "total_pallets_detected": len(pallets_data),
-            "pallets": [
-                {
-                    "pallet_id": p.get("pallet_id"),
-                    "internal_code": p.get("internal_code"),
-                    "quantity": p.get("quantity"),
-                    "source": p.get("source"),
-                    "confidence": p.get("confidence"),
-                    "fallback_used": p.get("fallback_used", False),
-                    "estimated_visible_boxes": p.get("raw_estimated_visible_boxes"),
-                }
-                for p in pallets_data
-            ],
-        }
-        if report_json_path and Path(report_json_path).exists():
-            try:
-                with open(report_json_path, encoding="utf-8") as f:
-                    file_report = json.load(f)
-                report["video"] = file_report.get("video")
-                report["prompt_version"] = file_report.get("prompt_version")
-                report["frames_selected"] = file_report.get("frames_selected")
-                report["flags"] = file_report.get("flags", {})
-                report["metrics"] = file_report.get("metrics")
-            except Exception as e:
-                logger.debug("Enrich report from file failed: %s", e)
-        return report
-
     report_path = getattr(out, "report_json_path", None) if out is not None else None
     if report_path is None and isinstance(out, dict):
         report_path = out.get("report_json_path")
@@ -287,7 +249,14 @@ async def get_job_result(job_id: str) -> Any:
     if not path.exists():
         raise HTTPException(404, "Report file not found")
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    return _merge_report_metadata(
+        data,
+        job_id_val,
+        record.status.value,
+        record.input.mode,
+        record.input.confidence_threshold,
+    )
 
 
 def _list_artifacts_under(job_dir: Path) -> list:

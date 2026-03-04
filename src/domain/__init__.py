@@ -1,5 +1,6 @@
-"""Dominio v2.0: entidades de negocio (pallet-level)."""
+"""Dominio v2.0 (Pallet) y v2.1 (Entity)."""
 
+from src.domain.entity import Entity
 from src.domain.pallet import Pallet
 
-__all__ = ["Pallet"]
+__all__ = ["Entity", "Pallet"]
