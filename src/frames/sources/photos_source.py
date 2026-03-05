@@ -1,13 +1,17 @@
 """Stage 2.2.B — PhotosFrameSource: frames from input_manifest.json (uploaded photos).
+Stage 2.2.C — Prefer normalized paths (input_photos_normalized/) when present.
 
 Uses job_input.input_manifest_path and job_input.photos_dir when provided;
 fallback: run_dir/input_manifest.json and run_dir/input_photos/.
+When manifest has stored_normalized_filename for all photos and normalized dir exists,
+returns paths from run_dir/input_photos_normalized/.
 """
 
 import json
 import logging
 from pathlib import Path
 
+from src.frames.normalize import photos_use_normalized, validate_relative_path
 from src.frames.types import FramesBundle
 from src.jobs.models import JobInput
 
@@ -17,16 +21,20 @@ logger = logging.getLogger(__name__)
 def _resolve_manifest_path(run_dir: Path, job_input: JobInput) -> Path:
     """Manifest path: job_input.input_manifest_path (relative to job_dir) or run_dir/input_manifest.json."""
     run_dir = Path(run_dir)
-    if job_input.input_manifest_path and str(job_input.input_manifest_path).strip():
-        return run_dir.parent / job_input.input_manifest_path.strip()
+    raw = (job_input.input_manifest_path or "").strip()
+    if raw:
+        safe = validate_relative_path(raw, "input_manifest_path")
+        return run_dir.parent / safe
     return run_dir / "input_manifest.json"
 
 
 def _resolve_photos_dir(run_dir: Path, job_input: JobInput) -> Path:
     """Photos dir: job_input.photos_dir (relative to job_dir) or run_dir/input_photos."""
     run_dir = Path(run_dir)
-    if job_input.photos_dir and str(job_input.photos_dir).strip():
-        return run_dir.parent / job_input.photos_dir.strip()
+    raw = (job_input.photos_dir or "").strip()
+    if raw:
+        safe = validate_relative_path(raw, "photos_dir")
+        return run_dir.parent / safe
     return run_dir / "input_photos"
 
 
@@ -65,10 +73,18 @@ class PhotosFrameSource:
             raise FileNotFoundError(
                 f"photos directory not found: {photos_dir} (missing input_photos/)"
             )
+        # Stage 2.2.C: prefer normalized paths when present (all entries have stored_normalized_filename and files exist)
+        use_normalized = photos_use_normalized(run_dir, manifest)
+        if use_normalized:
+            normalized_dir = run_dir / "input_photos_normalized"
+            photos_dir = normalized_dir
         frames: list[Path] = []
         frame_refs: list[str] = []
         for entry in sorted(photos_list, key=lambda x: x.get("index", 0)):
-            stored = entry.get("stored_filename") or ""
+            if use_normalized:
+                stored = entry.get("stored_normalized_filename") or entry.get("stored_filename") or ""
+            else:
+                stored = entry.get("stored_filename") or ""
             if not stored:
                 raise ValueError("manifest photo entry missing stored_filename")
             path = photos_dir / stored

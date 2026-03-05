@@ -240,6 +240,10 @@ def test_pipeline_runs_with_photos_frames(tmp_path):
     settings.gemini_max_retries = 1
     settings.gemini_retry_delay = 0.1
     settings.debug_save_frames = False
+    # Stage 2.2.C: normalization runs for photos; set min_side so 64x64 test images pass
+    settings.photo_resize_max_side = 1280
+    settings.photo_jpeg_quality = 85
+    settings.photos_min_side = 64
 
     with patch("src.pipeline.hybrid_inventory_pipeline.GeminiClient"):
         with patch("src.pipeline.hybrid_inventory_pipeline.GeminiGlobalAnalyzer") as MockAnalyzer:
@@ -293,6 +297,10 @@ def test_pipeline_truncates_frames_to_hybrid_max_frames(tmp_path):
     settings.gemini_retry_delay = 0.1
     settings.debug_save_frames = False
     settings.hybrid_max_frames = None
+    # Stage 2.2.C: normalization runs for photos; allow 32x32 test images
+    settings.photo_resize_max_side = 1280
+    settings.photo_jpeg_quality = 85
+    settings.photos_min_side = 32
 
     with patch("src.pipeline.hybrid_inventory_pipeline.GeminiClient"):
         with patch("src.pipeline.hybrid_inventory_pipeline.GeminiGlobalAnalyzer") as MockAnalyzer:
@@ -308,5 +316,6 @@ def test_pipeline_truncates_frames_to_hybrid_max_frames(tmp_path):
                 job_input=job_input,
             )
             call_args = MockAnalyzer.return_value.analyze_video_frames.call_args
+            assert call_args is not None
             frames_passed = call_args[0][0]
     assert len(frames_passed) == HYBRID_MAX_FRAMES_LOAD_CAP

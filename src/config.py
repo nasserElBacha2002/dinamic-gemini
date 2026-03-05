@@ -63,6 +63,18 @@ def _parse_heuristic_resize_max_side() -> Optional[int]:
         return None
 
 
+def _parse_photos_max_single_bytes() -> Optional[int]:
+    """Unset or empty → None; else int (e.g. 10*1024*1024)."""
+    raw = (os.getenv("PHOTOS_MAX_SINGLE_BYTES") or "").strip()
+    if not raw:
+        return None
+    try:
+        v = int(raw)
+        return v if v > 0 else None
+    except ValueError:
+        return None
+
+
 _sqlserver_driver_cache: Optional[str] = None
 
 
@@ -406,6 +418,33 @@ class Settings(BaseModel):
         ge=1024,
         le=200 * 1024 * 1024,
         description="Max total decoded bytes for all photos in one job (default 25 MB). Env: PHOTOS_MAX_TOTAL_BYTES.",
+    )
+    # Stage 2.2.C — Photo normalization (resize + JPEG re-encode before LLM/evidence)
+    photo_resize_max_side: int = Field(
+        default_factory=lambda: int(os.getenv("PHOTO_RESIZE_MAX_SIDE", "1280")),
+        ge=320,
+        le=4096,
+        description="Max side (px) for photo normalization resize. Env: PHOTO_RESIZE_MAX_SIDE.",
+    )
+    photo_jpeg_quality: int = Field(
+        default_factory=lambda: int(os.getenv("PHOTO_JPEG_QUALITY", "85")),
+        ge=1,
+        le=100,
+        description="JPEG quality (1-100) for normalized photos. Env: PHOTO_JPEG_QUALITY.",
+    )
+    photos_keep_originals: bool = Field(
+        default_factory=lambda: os.getenv("PHOTOS_KEEP_ORIGINALS", "false").strip().lower() in ("1", "true", "yes"),
+        description="If true, keep originals in input_photos (normalized still written). Env: PHOTOS_KEEP_ORIGINALS.",
+    )
+    photos_min_side: int = Field(
+        default_factory=lambda: int(os.getenv("PHOTOS_MIN_SIDE", "320")),
+        ge=64,
+        le=2048,
+        description="Min side (px) for photos; smaller images fail. Env: PHOTOS_MIN_SIDE.",
+    )
+    photos_max_single_bytes: Optional[int] = Field(
+        default_factory=lambda: _parse_photos_max_single_bytes(),
+        description="Max bytes per single original photo (optional). Env: PHOTOS_MAX_SINGLE_BYTES. Unset = no limit.",
     )
     # Stage 8 — SQL Server persistence (optional). Credentials only from env.
     sqlserver_enabled: bool = Field(

@@ -18,6 +18,7 @@ from src.exceptions.global_analysis_exceptions import (
     GlobalAnalysisParsingError,
     GlobalAnalysisValidationError,
 )
+from src.frames.normalize import normalize_photos_for_job, validate_relative_path
 from src.frames.sources.factory import get_frame_source
 from src.jobs.models import JobInput
 from src.llm.gemini_client import GeminiClient
@@ -99,6 +100,33 @@ class HybridInventoryPipeline:
             job_input = JobInput(video_path=video_path or "", mode="hybrid", input_type="video")
         run_dir = output_path / video_id / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
+
+        # Stage 2.2.C: normalize photos before get_frames so pipeline consumes only normalized images
+        if getattr(job_input, "input_type", "video") == "photos":
+            try:
+                raw_manifest = (job_input.input_manifest_path or "").strip()
+                raw_photos = (job_input.photos_dir or "").strip()
+                if raw_manifest:
+                    manifest_rel = validate_relative_path(raw_manifest, "input_manifest_path")
+                    manifest_path = run_dir.parent / manifest_rel
+                else:
+                    manifest_path = run_dir / "input_manifest.json"
+                if raw_photos:
+                    photos_rel = validate_relative_path(raw_photos, "photos_dir")
+                    photos_dir = run_dir.parent / photos_rel
+                else:
+                    photos_dir = run_dir / "input_photos"
+                normalize_photos_for_job(
+                    run_dir,
+                    settings,
+                    manifest_path=manifest_path,
+                    photos_dir=photos_dir,
+                    normalized_dir=run_dir / "input_photos_normalized",
+                )
+            except (FileNotFoundError, ValueError) as e:
+                logger.exception("Photo normalization failed: %s", e)
+                return 1
+
         try:
             frame_source = get_frame_source(job_input.input_type)
             bundle = frame_source.get_frames(video_id, run_dir, job_input)
@@ -119,6 +147,10 @@ class HybridInventoryPipeline:
             logger.warning("No frames could be loaded from bundle (frame_count=%s)", bundle.metadata.get("frame_count"))
             return 1
         metadata = {**bundle.metadata, "frame_count": len(frames_nd)}
+        if "frame_indices" in metadata and isinstance(metadata.get("frame_indices"), list):
+            idx_list = metadata["frame_indices"]
+            if len(idx_list) > len(frames_nd):
+                metadata["frame_indices"] = idx_list[: len(frames_nd)]
         logger.info("Frames loaded: %d (source=%s)", len(frames_nd), metadata.get("source", "unknown"))
 
         if not settings.gemini_api_key:
