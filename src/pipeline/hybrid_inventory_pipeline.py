@@ -1,8 +1,6 @@
 """
 Hybrid inventory pipeline (v2.1).
-
-Dispatches to legacy or hybrid path based on --mode.
-Hybrid: una llamada global a Gemini (Structured Output), frames representativos, entidades v2.1.
+Stage 2.2.B: frames obtained via FrameSource (video or photos); pipeline input-agnostic.
 """
 
 from pathlib import Path
@@ -20,6 +18,8 @@ from src.exceptions.global_analysis_exceptions import (
     GlobalAnalysisParsingError,
     GlobalAnalysisValidationError,
 )
+from src.frames.sources.factory import get_frame_source
+from src.jobs.models import JobInput
 from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.llm.global_pallet_analysis_prompt import GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
@@ -29,10 +29,11 @@ from src.evidence.evidence_pack import generate_evidence_pack
 from src.reporting.artifacts import write_json
 from src.reporting.hybrid_report import build_hybrid_report
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
-from src.video.frames import STRATEGY_OPTIMIZED, extract_representative_frames
 
-# When hybrid_max_frames is None (env empty), no limit
-HYBRID_MAX_FRAMES_NO_LIMIT = 10000
+# Default max frames when hybrid_max_frames is None (kept for test imports)
+# Hard cap for loading into RAM when env is unset (avoid unbounded memory)
+HYBRID_MAX_FRAMES = 10000
+HYBRID_MAX_FRAMES_LOAD_CAP = 48
 
 
 def _save_frames_sent_to_gemini(
@@ -82,9 +83,10 @@ class HybridInventoryPipeline:
         logger: Any,
         confidence_threshold: Optional[float] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
+        job_input: Optional[JobInput] = None,
         **_: object,
     ) -> int:
-        """Flujo hybrid: extraer frames → una llamada Gemini → parsear → lista de Pallet."""
+        """Hybrid flow: get frames via FrameSource → one Gemini call → parse → entities (v2.1)."""
         progress_cb = progress_callback
         def _report(stage: str, percent: int) -> None:
             if callable(progress_cb):
@@ -93,21 +95,31 @@ class HybridInventoryPipeline:
                 except Exception:
                     pass
         _report("extract_frames", 10)
-        max_frames = getattr(settings, "hybrid_max_frames", None) or HYBRID_MAX_FRAMES_NO_LIMIT
-        logger.info("Hybrid mode: análisis global (una llamada por video), max_frames=%s", max_frames)
+        if job_input is None:
+            job_input = JobInput(video_path=video_path or "", mode="hybrid", input_type="video")
+        run_dir = output_path / video_id / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
         try:
-            frames, metadata = extract_representative_frames(
-                video_path,
-                max_frames=max_frames,
-                strategy=STRATEGY_OPTIMIZED,
-            )
-        except (RuntimeError, ValueError) as e:
-            logger.exception("Error extrayendo frames representativos: %s", e)
+            frame_source = get_frame_source(job_input.input_type)
+            bundle = frame_source.get_frames(video_id, run_dir, job_input)
+        except (ValueError, FileNotFoundError, RuntimeError) as e:
+            logger.exception("Error obtaining frames (FrameSource): %s", e)
             return 1
-        if not frames:
-            logger.warning("No se extrajeron frames del video")
+        # Hard cap on frames loaded into RAM (settings.hybrid_max_frames or safe default)
+        max_load = getattr(settings, "hybrid_max_frames", None)
+        if max_load is None or not isinstance(max_load, (int, float)) or max_load <= 0:
+            max_load = HYBRID_MAX_FRAMES_LOAD_CAP
+        frames_to_load = bundle.frames[: int(max_load)]
+        frames_nd: List[np.ndarray] = []
+        for p in frames_to_load:
+            img = cv2.imread(str(p))
+            if img is not None:
+                frames_nd.append(img)
+        if not frames_nd:
+            logger.warning("No frames could be loaded from bundle (frame_count=%s)", bundle.metadata.get("frame_count"))
             return 1
-        logger.info("Frames representativos: %d (fps=%s)", len(frames), metadata.get("fps"))
+        metadata = {**bundle.metadata, "frame_count": len(frames_nd)}
+        logger.info("Frames loaded: %d (source=%s)", len(frames_nd), metadata.get("source", "unknown"))
 
         if not settings.gemini_api_key:
             logger.error("GEMINI_API_KEY no configurada")
@@ -124,7 +136,7 @@ class HybridInventoryPipeline:
 
         analyzer = GeminiGlobalAnalyzer(client)
         try:
-            data = analyzer.analyze_video_frames(frames, logger=logger)
+            data = analyzer.analyze_video_frames(frames_nd, logger=logger)
         except (RuntimeError, ValueError) as e:
             logger.exception("Error en análisis global Gemini: %s", e)
             return 1
@@ -152,20 +164,20 @@ class HybridInventoryPipeline:
         generate_evidence_pack(
             job_id=video_id,
             run_dir=run_dir,
-            frames=frames,
+            frames=frames_nd,
             metadata=metadata,
             entities=entities,
         )
-
+        report_video_path = video_path or (f"photos_{video_id}" if job_input.input_type == "photos" else "")
         report = build_hybrid_report(
-            video_path=video_path,
+            video_path=report_video_path,
             entities=entities,
-            frames_selected=len(frames),
+            frames_selected=len(frames_nd),
             frame_indices=metadata.get("frame_indices"),
         )
         _report("write_artifacts", 90)
         if getattr(settings, "debug_save_frames", False):
-            _save_frames_sent_to_gemini(run_dir, frames, metadata.get("frame_indices"))
+            _save_frames_sent_to_gemini(run_dir, frames_nd, metadata.get("frame_indices"))
         report_path = run_dir / "hybrid_report.json"
         write_json(report_path, report)
         logger.info("Reporte hybrid v2.1 guardado: %s", report_path)

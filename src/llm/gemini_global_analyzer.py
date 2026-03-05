@@ -66,6 +66,18 @@ class GeminiGlobalAnalyzer:
         except json.JSONDecodeError as e:
             log.warning("Global analysis parsing failed (invalid JSON): %s", e)
             raise GlobalAnalysisParsingError(f"Invalid JSON: {e}") from e
+
+        # Normalize Gemini count mismatch: trust len(entities) as source of truth (deterministic, auditable)
+        total = data.get("total_entities_detected")
+        entities = data.get("entities") or []
+        if isinstance(entities, list) and isinstance(total, (int, float)) and total != len(entities):
+            log.warning(
+                "Gemini count mismatch: total_entities_detected=%s vs len(entities)=%d; normalizing to len(entities)",
+                total,
+                len(entities),
+            )
+            data["total_entities_detected"] = len(entities)
+
         try:
             validate_global_analysis_structure_v21(data)
         except GlobalAnalysisValidationError as e:

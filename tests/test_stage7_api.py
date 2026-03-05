@@ -392,8 +392,8 @@ def test_create_job_photos_mode_legacy_422(client, output_dir):
     assert "video" in str(r.json().get("detail", "")).lower()
 
 
-def test_worker_photos_job_marked_failed(output_dir):
-    """Worker marks photos jobs as FAILED with clear error until 2.2.B."""
+def test_worker_photos_job_fails_when_manifest_missing(output_dir):
+    """Photos job without run_dir/manifest fails with clear error (FrameSource raises)."""
     create_job(
         output_dir,
         "job_photos_test",
@@ -408,4 +408,24 @@ def test_worker_photos_job_marked_failed(output_dir):
     record = get_job(output_dir, "job_photos_test")
     assert record is not None
     assert record.status == JobStatus.FAILED
-    assert "not implemented" in (record.error or "").lower() or "processing" in (record.error or "").lower()
+    err = (record.error or "").lower()
+    # Worker stores generic "Pipeline exited with code 1"; FrameSource may log "manifest not found"
+    assert "manifest" in err or "not found" in err or "frame" in err or "code 1" in err or "pipeline" in err
+
+
+def test_worker_photos_with_legacy_mode_rejected(output_dir):
+    """When input_type=photos and mode=legacy, worker marks job FAILED with clear error (no pipeline run)."""
+    create_job(
+        output_dir,
+        "job_photos_legacy",
+        video_path="",
+        mode="legacy",
+        confidence_threshold=0.7,
+        input_type="photos",
+    )
+    run_job(Path(output_dir), "job_photos_legacy")
+    record = get_job(output_dir, "job_photos_legacy")
+    assert record is not None
+    assert record.status == JobStatus.FAILED
+    assert "legacy" in (record.error or "").lower()
+    assert "video" in (record.error or "").lower()

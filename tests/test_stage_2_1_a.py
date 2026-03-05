@@ -61,6 +61,34 @@ def test_validate_v21_total_mismatch_raises():
         validate_global_analysis_structure_v21(data)
 
 
+def test_analyzer_v21_count_mismatch_normalized():
+    """When Gemini returns total_entities_detected != len(entities), analyzer normalizes count and passes validation."""
+    from unittest.mock import MagicMock
+    import json
+    import numpy as np
+    from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
+
+    # Gemini-like mismatch: says 5 but only 4 entities
+    payload = {
+        "total_entities_detected": 5,
+        "entities": [
+            {"entity_type": "PALLET", "model_entity_id": "E1", "has_boxes": True, "confidence": 0.9},
+            {"entity_type": "PALLET", "model_entity_id": "E2", "has_boxes": True, "confidence": 0.85},
+            {"entity_type": "EMPTY_PALLET", "model_entity_id": "E3", "has_boxes": False, "confidence": 0.8},
+            {"entity_type": "PALLET", "model_entity_id": "E4", "has_boxes": True, "confidence": 0.75},
+        ],
+    }
+    mock_client = MagicMock()
+    mock_client.generate_global_analysis_structured.return_value = json.dumps(payload)
+    analyzer = GeminiGlobalAnalyzer(mock_client)
+    one_frame = [np.zeros((64, 64, 3), dtype=np.uint8)]
+
+    result = analyzer.analyze_video_frames(one_frame)
+
+    assert result["total_entities_detected"] == 4
+    assert len(result["entities"]) == 4
+
+
 def test_validate_v21_entity_type_invalid_raises():
     data = {
         "total_entities_detected": 1,
