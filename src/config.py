@@ -143,6 +143,23 @@ class Settings(BaseModel):
         le=60.0,
         description="Espera inicial entre reintentos en segundos (0.1 a 60).",
     )
+    # Stage 2.2.D — LLM provider strategy (gemini | openai | fake)
+    llm_provider: str = Field(
+        default_factory=lambda: (os.getenv("LLM_PROVIDER", "gemini") or "gemini").strip().lower(),
+        description="LLM provider: gemini, openai, or fake. Env: LLM_PROVIDER.",
+    )
+    openai_api_key: str = Field(
+        default_factory=lambda: os.getenv("OPENAI_API_KEY", ""),
+        description="OpenAI API key (used when llm_provider=openai). Env: OPENAI_API_KEY.",
+    )
+    openai_model: str = Field(
+        default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o"),
+        description="OpenAI model name (used when llm_provider=openai). Env: OPENAI_MODEL.",
+    )
+    fake_llm_fixture_path: Optional[str] = Field(
+        default_factory=lambda: (os.getenv("FAKE_LLM_FIXTURE_PATH") or "").strip() or None,
+        description="Path to JSON fixture for fake provider (optional). Env: FAKE_LLM_FIXTURE_PATH.",
+    )
 
     # Frame Extraction Settings
     extract_fps: float = Field(
@@ -544,6 +561,15 @@ class Settings(BaseModel):
         v = (v or "stub").strip().lower()
         if v not in ("stub", "heuristic", "synthetic"):
             return "stub"
+        return v
+
+    @field_validator("llm_provider")
+    @classmethod
+    def validate_llm_provider(cls, v: str) -> str:
+        """Provider must be gemini, openai, or fake."""
+        v = (v or "gemini").strip().lower()
+        if v not in ("gemini", "openai", "fake"):
+            raise ValueError("llm_provider must be one of: gemini, openai, fake")
         return v
 
     @field_validator("output_dir")

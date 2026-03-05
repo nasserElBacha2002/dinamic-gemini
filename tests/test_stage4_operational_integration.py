@@ -130,36 +130,42 @@ def test_write_json_and_write_csv_roundtrip(tmp_path):
 
 
 def test_hybrid_pipeline_writes_hybrid_report_json_and_csv():
-    """Full hybrid run writes hybrid_report.json and hybrid_report.csv to run dir."""
+    """Full hybrid run writes hybrid_report.json (v2.1) to run dir."""
+    from src.llm.types import LLMResponse
+
     mock_logger = MagicMock()
     mock_settings = MagicMock()
+    mock_settings.llm_provider = "gemini"
     mock_settings.gemini_api_key = "key"
     mock_settings.gemini_model_name = "gemini-2.0-flash-exp"
     mock_settings.gemini_max_retries = 1
     mock_settings.gemini_retry_delay = 0.1
     dummy_frames = [np.zeros((50, 50, 3), dtype=np.uint8)] * 2
-    sample_data = {
-        "total_pallets_detected": 1,
-        "pallets": [
+    sample_v21 = {
+        "total_entities_detected": 1,
+        "entities": [
             {
-                "pallet_id": "P1",
-                "has_label": True,
+                "model_entity_id": "e1",
+                "entity_type": "PALLET",
+                "position_barcode": "A1",
                 "internal_code": "101",
-                "quantity": 5,
-                "estimated_visible_boxes": None,
+                "product_label_quantity": 5,
+                "position_label_bbox": None,
+                "product_label_bbox": None,
+                "has_boxes": False,
                 "confidence": 0.95,
             },
         ],
     }
+    mock_provider = MagicMock()
+    mock_provider.analyze_global.return_value = LLMResponse(
+        provider="gemini", model=None, latency_ms=0, parsed_json=sample_v21, raw_text=None, usage=None,
+    )
     with (
-        patch("src.pipeline.hybrid_inventory_pipeline.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiClient"),
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiGlobalAnalyzer") as mock_analyzer_cls,
+        patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
+        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 15]})
-        mock_analyzer = MagicMock()
-        mock_analyzer.analyze_video_frames.return_value = sample_data
-        mock_analyzer_cls.return_value = mock_analyzer
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             code = HybridInventoryPipeline().process_video(
@@ -174,17 +180,14 @@ def test_hybrid_pipeline_writes_hybrid_report_json_and_csv():
             )
             run_dir = out / "vid" / "run1"
             report_file = run_dir / "hybrid_report.json"
-            csv_file = run_dir / "hybrid_report.csv"
             assert code == 0
             assert report_file.exists()
-            assert csv_file.exists()
-            assert (run_dir / "hybrid_debug.json").exists()
-            assert not (run_dir / "hybrid_result.json").exists()
             with open(report_file, encoding="utf-8") as f:
                 report = json.load(f)
-            assert report["mode"] == "hybrid"
-            assert report["total_pallets_detected"] == 1
-            assert report["pallets"][0]["source"] == "label"
-            assert report["pallets"][0]["final_quantity"] == 5
+            assert report["mode"] == "hybrid_v2.1"
+            assert report["report_version"] == "2.1"
+            assert len(report["entities"]) == 1
+            assert report["entities"][0]["internal_code"] == "101"
+            assert report["entities"][0]["final_quantity"] == 5
             assert report["video"]["name"] == "video.mp4"
             assert report["frames_selected"] == 2

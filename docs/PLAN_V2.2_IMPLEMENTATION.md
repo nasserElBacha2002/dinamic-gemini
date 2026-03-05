@@ -444,6 +444,12 @@ Decouple the pipeline from the concrete LLM (Gemini) by introducing a provider i
 5. Pipeline: create LLMRequest from FramesBundle and job metadata; get provider from factory; call analyze_global; on success use response.parsed_json for existing validate/parse flow; on error map to LLMProviderError and fail job with clear status.
 6. FakeProvider: return fixture JSON for tests; optionally simulate errors.
 
+### LLM_PROVIDER and FakeProvider usage (implemented)
+
+- **`LLM_PROVIDER`** (env): `gemini` (default), `openai`, or `fake`. Validated in `src/config.py`; factory uses it to select the provider.
+- **FakeProvider:** Used for tests and CI (no network). When `LLM_PROVIDER=fake`, the pipeline runs end-to-end and produces `hybrid_report.json` and `evidence_index.json`. Optional **`FAKE_LLM_FIXTURE_PATH`** (env): path to a JSON file with v2.1-shaped content (`total_entities_detected`, `entities`); if unset, the provider returns a minimal default `{"total_entities_detected": 0, "entities": []}`.
+- **Tests:** Set `settings.llm_provider = "fake"` (and optionally `settings.fake_llm_fixture_path`) so the pipeline uses FakeProvider; no Gemini/OpenAI API keys or network required.
+
 ## Risks and Mitigations
 
 | Risk | Mitigation |

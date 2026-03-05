@@ -14,16 +14,13 @@ from src.decision.count_status import assign_count_status
 from src.decision.entity_order import sort_entities_deterministically
 from src.decision.pallet_id import resolve_pallet_id
 from src.decision.quality_score import compute_entity_quality_score
-from src.exceptions.global_analysis_exceptions import (
-    GlobalAnalysisParsingError,
-    GlobalAnalysisValidationError,
-)
 from src.frames.normalize import normalize_photos_for_job, validate_relative_path
 from src.frames.sources.factory import get_frame_source
 from src.jobs.models import JobInput
-from src.llm.gemini_client import GeminiClient
-from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
+from src.llm.errors import LLMProviderError
 from src.llm.global_pallet_analysis_prompt import GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
+from src.llm.providers.factory import get_llm_provider
+from src.llm.types import LLMRequest
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_entities
 from src.pipeline.legacy_visual_pipeline import LegacyVisualPipeline
 from src.evidence.evidence_pack import generate_evidence_pack
@@ -153,30 +150,26 @@ class HybridInventoryPipeline:
                 metadata["frame_indices"] = idx_list[: len(frames_nd)]
         logger.info("Frames loaded: %d (source=%s)", len(frames_nd), metadata.get("source", "unknown"))
 
-        if not settings.gemini_api_key:
-            logger.error("GEMINI_API_KEY no configurada")
-            return 1
-        client = GeminiClient(
-            api_key=settings.gemini_api_key,
-            model_name=settings.gemini_model_name,
-            max_retries=settings.gemini_max_retries,
-            retry_delay=settings.gemini_retry_delay,
-        )
         _report("gemini_global_call", 50)
         run_dir = output_path / video_id / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        analyzer = GeminiGlobalAnalyzer(client)
+        provider = get_llm_provider(settings)
+        frame_refs_truncated = (bundle.frame_refs or [])[: len(frames_nd)]
+        llm_request = LLMRequest(
+            job_id=video_id,
+            frames=frames_to_load,
+            frame_refs=frame_refs_truncated,
+            prompt=GLOBAL_ENTITY_ANALYSIS_PROMPT_V21,
+            schema_version="v2.1",
+            metadata=metadata,
+            frames_nd=frames_nd,
+        )
         try:
-            data = analyzer.analyze_video_frames(frames_nd, logger=logger)
-        except (RuntimeError, ValueError) as e:
-            logger.exception("Error en análisis global Gemini: %s", e)
-            return 1
-        except GlobalAnalysisParsingError as e:
-            logger.exception("Respuesta de Gemini no es JSON válido (parsing): %s", e)
-            return 1
-        except GlobalAnalysisValidationError as e:
-            logger.exception("Respuesta de Gemini no cumple schema v2.1: %s", e)
+            response = provider.analyze_global(llm_request)
+            data = response.parsed_json
+        except LLMProviderError as e:
+            logger.exception("LLM provider failed [%s]: %s", e.code, e.message)
             return 1
         try:
             entities = parse_entities(data, job_id=video_id)

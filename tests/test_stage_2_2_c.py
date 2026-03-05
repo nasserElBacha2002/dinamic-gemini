@@ -401,11 +401,13 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
         assert "input_photos_normalized" in str(p)
         assert p.exists()
 
-    # Run pipeline _run_hybrid with mock analyzer and confirm it loads from bundle (normalized)
+    # Run pipeline _run_hybrid with mock provider and confirm it loads from bundle (normalized)
+    from src.llm.types import LLMResponse
     from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
     v21_response = {"total_entities_detected": 0, "entities": []}
     logger = MagicMock()
+    settings.llm_provider = "gemini"
     settings.gemini_api_key = "test-key"
     settings.gemini_model_name = "gemini-2.0-flash-exp"
     settings.gemini_max_retries = 1
@@ -413,22 +415,23 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
     settings.debug_save_frames = False
     settings.hybrid_max_frames = None
 
-    with patch("src.pipeline.hybrid_inventory_pipeline.GeminiClient"):
-        with patch("src.pipeline.hybrid_inventory_pipeline.GeminiGlobalAnalyzer") as MockAnalyzer:
-            MockAnalyzer.return_value.analyze_video_frames.return_value = v21_response
-            pipe = HybridInventoryPipeline()
-            code = pipe._run_hybrid(
-                "",
-                settings=settings,
-                video_id="job_photos",
-                output_path=tmp_path,
-                run_id="run",
-                logger=logger,
-                job_input=job_input,
-            )
+    mock_provider = MagicMock()
+    mock_provider.analyze_global.return_value = LLMResponse(
+        provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
+    )
+    with patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider):
+        pipe = HybridInventoryPipeline()
+        code = pipe._run_hybrid(
+            "",
+            settings=settings,
+            video_id="job_photos",
+            output_path=tmp_path,
+            run_id="run",
+            logger=logger,
+            job_input=job_input,
+        )
     assert code == 0
-    # Pipeline would have called get_frames (which returns normalized paths after we ran normalize_photos_for_job in _run_hybrid)
-    # So the frames loaded and sent to the mock analyzer came from normalized dir
-    call_args = MockAnalyzer.return_value.analyze_video_frames.call_args
-    frames_passed = call_args[0][0]
-    assert len(frames_passed) == 2
+    # Pipeline loads from bundle (normalized paths) and passes them to the provider
+    call_args = mock_provider.analyze_global.call_args
+    request = call_args[0][0]
+    assert len(request.frames) == 2

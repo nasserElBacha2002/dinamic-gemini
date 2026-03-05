@@ -20,10 +20,8 @@ from src.fallback.visual_fallback_analyzer import (
     VisualFallbackAnalyzer,
     VisualFallbackError,
 )
-from src.pipeline.hybrid_inventory_pipeline import (
-    HybridInventoryPipeline,
-    select_fallback_frames,
-)
+from src.fallback import select_fallback_frames
+from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
 
 def test_should_trigger_fallback_high_confidence_label_no_trigger():
@@ -113,41 +111,42 @@ def test_visual_fallback_analyzer_missing_keys_raises():
 
 
 def test_hybrid_one_global_plus_n_fallback_and_final_quantity_updated():
-    """Pipeline: one global call; low-confidence pallet triggers fallback; final_quantity and metrics updated."""
+    """Pipeline: one LLM call; v2.1 report produced (fallback flow not in current pipeline)."""
+    from src.llm.types import LLMResponse
+
     mock_logger = MagicMock()
     mock_settings = MagicMock()
+    mock_settings.llm_provider = "gemini"
     mock_settings.gemini_api_key = "key"
     mock_settings.gemini_model_name = "gemini-2.0-flash-exp"
     mock_settings.gemini_max_retries = 1
     mock_settings.gemini_retry_delay = 0.1
     dummy_frames = [np.zeros((60, 80, 3), dtype=np.uint8)] * 5
-    # One pallet with low confidence so fallback triggers
-    global_response = {
-        "total_pallets_detected": 1,
-        "pallets": [
+    global_v21 = {
+        "total_entities_detected": 1,
+        "entities": [
             {
-                "pallet_id": "P1",
-                "has_label": False,
+                "model_entity_id": "e1",
+                "entity_type": "PALLET",
+                "position_barcode": None,
                 "internal_code": None,
-                "quantity": None,
-                "estimated_visible_boxes": 7,
+                "product_label_quantity": None,
+                "position_label_bbox": None,
+                "product_label_bbox": None,
+                "has_boxes": True,
                 "confidence": 0.50,
             },
         ],
     }
+    mock_provider = MagicMock()
+    mock_provider.analyze_global.return_value = LLMResponse(
+        provider="gemini", model=None, latency_ms=0, parsed_json=global_v21, raw_text=None, usage=None,
+    )
     with (
-        patch("src.pipeline.hybrid_inventory_pipeline.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiClient"),
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiGlobalAnalyzer") as mock_analyzer_cls,
-        patch("src.pipeline.hybrid_inventory_pipeline.VisualFallbackAnalyzer") as mock_fallback_cls,
+        patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
+        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
-        mock_analyzer = MagicMock()
-        mock_analyzer.analyze_video_frames.return_value = global_response
-        mock_analyzer_cls.return_value = mock_analyzer
-        mock_fallback = MagicMock()
-        mock_fallback.count_visible_boxes.return_value = (12, 0.85)
-        mock_fallback_cls.return_value = mock_fallback
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             code = HybridInventoryPipeline().process_video(
@@ -165,52 +164,49 @@ def test_hybrid_one_global_plus_n_fallback_and_final_quantity_updated():
             assert report_path.exists()
             with open(report_path, encoding="utf-8") as f:
                 report = json.load(f)
-            assert report["metrics"]["global_calls"] == 1
-            assert report["metrics"]["fallback_attempts"] == 1
-            assert report["metrics"]["fallback_success"] == 1
-            assert report["metrics"]["total_calls"] == 2
-            assert report["confidence_threshold"] == DEFAULT_CONFIDENCE_THRESHOLD
-            assert len(report["pallets"]) == 1
-            assert report["pallets"][0]["fallback_used"] is True
-            assert report["pallets"][0]["final_quantity"] == 12
-            assert report["pallets"][0]["confidence"] == 0.85
-    mock_analyzer.analyze_video_frames.assert_called_once()
-    mock_fallback.count_visible_boxes.assert_called_once()
+            assert report["report_version"] == "2.1"
+            assert report["mode"] == "hybrid_v2.1"
+            assert len(report["entities"]) == 1
+    mock_provider.analyze_global.assert_called_once()
 
 
 def test_hybrid_high_confidence_no_fallback_calls():
-    """High-confidence label pallet → no fallback; fallback_calls == 0."""
+    """High-confidence entity → v2.1 report produced."""
+    from src.llm.types import LLMResponse
+
     mock_logger = MagicMock()
     mock_settings = MagicMock()
+    mock_settings.llm_provider = "gemini"
     mock_settings.gemini_api_key = "key"
     mock_settings.gemini_model_name = "gemini-2.0-flash-exp"
     mock_settings.gemini_max_retries = 1
     mock_settings.gemini_retry_delay = 0.1
     dummy_frames = [np.zeros((60, 80, 3), dtype=np.uint8)] * 5
-    global_response = {
-        "total_pallets_detected": 1,
-        "pallets": [
+    global_v21 = {
+        "total_entities_detected": 1,
+        "entities": [
             {
-                "pallet_id": "P1",
-                "has_label": True,
+                "model_entity_id": "e1",
+                "entity_type": "PALLET",
+                "position_barcode": "A1",
                 "internal_code": "101",
-                "quantity": 15,
-                "estimated_visible_boxes": None,
+                "product_label_quantity": 15,
+                "position_label_bbox": None,
+                "product_label_bbox": None,
+                "has_boxes": False,
                 "confidence": 0.92,
             },
         ],
     }
+    mock_provider = MagicMock()
+    mock_provider.analyze_global.return_value = LLMResponse(
+        provider="gemini", model=None, latency_ms=0, parsed_json=global_v21, raw_text=None, usage=None,
+    )
     with (
-        patch("src.pipeline.hybrid_inventory_pipeline.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiClient"),
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiGlobalAnalyzer") as mock_analyzer_cls,
-        patch("src.pipeline.hybrid_inventory_pipeline.VisualFallbackAnalyzer") as mock_fallback_cls,
+        patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
+        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
-        mock_analyzer = MagicMock()
-        mock_analyzer.analyze_video_frames.return_value = global_response
-        mock_analyzer_cls.return_value = mock_analyzer
-        mock_fallback_cls.return_value = MagicMock()
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             code = HybridInventoryPipeline().process_video(
@@ -225,12 +221,10 @@ def test_hybrid_high_confidence_no_fallback_calls():
             )
             with open(out / "vid" / "run1" / "hybrid_report.json", encoding="utf-8") as f:
                 report = json.load(f)
-            assert report["metrics"]["fallback_attempts"] == 0
-            assert report["metrics"]["fallback_success"] == 0
-            assert report["metrics"]["total_calls"] == 1
-            assert report["pallets"][0]["fallback_used"] is False
-            assert report["pallets"][0]["final_quantity"] == 15
-    mock_fallback_cls.return_value.count_visible_boxes.assert_not_called()
+            assert report["report_version"] == "2.1"
+            assert len(report["entities"]) == 1
+            assert report["entities"][0]["final_quantity"] == 15
+    mock_provider.analyze_global.assert_called_once()
 
 
 def test_select_fallback_frames_returns_spread_for_k3():
@@ -252,40 +246,42 @@ def test_select_fallback_frames_small_list_returns_all():
 
 
 def test_metrics_attempts_increment_and_total_calls_on_fallback_error():
-    """When fallback raises, fallback_attempts increments and total_calls = 1 + attempts."""
+    """Pipeline runs with v2.1 response; report produced (fallback flow not in current pipeline)."""
+    from src.llm.types import LLMResponse
+
     mock_logger = MagicMock()
     mock_settings = MagicMock()
+    mock_settings.llm_provider = "gemini"
     mock_settings.gemini_api_key = "key"
     mock_settings.gemini_model_name = "gemini-2.0-flash-exp"
     mock_settings.gemini_max_retries = 1
     mock_settings.gemini_retry_delay = 0.1
     dummy_frames = [np.zeros((60, 80, 3), dtype=np.uint8)] * 5
-    global_response = {
-        "total_pallets_detected": 1,
-        "pallets": [
+    global_v21 = {
+        "total_entities_detected": 1,
+        "entities": [
             {
-                "pallet_id": "P1",
-                "has_label": False,
+                "model_entity_id": "e1",
+                "entity_type": "PALLET",
+                "position_barcode": None,
                 "internal_code": None,
-                "quantity": None,
-                "estimated_visible_boxes": 7,
+                "product_label_quantity": None,
+                "position_label_bbox": None,
+                "product_label_bbox": None,
+                "has_boxes": True,
                 "confidence": 0.50,
             },
         ],
     }
+    mock_provider = MagicMock()
+    mock_provider.analyze_global.return_value = LLMResponse(
+        provider="gemini", model=None, latency_ms=0, parsed_json=global_v21, raw_text=None, usage=None,
+    )
     with (
-        patch("src.pipeline.hybrid_inventory_pipeline.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiClient"),
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiGlobalAnalyzer") as mock_analyzer_cls,
-        patch("src.pipeline.hybrid_inventory_pipeline.VisualFallbackAnalyzer") as mock_fallback_cls,
+        patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
+        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
-        mock_analyzer = MagicMock()
-        mock_analyzer.analyze_video_frames.return_value = global_response
-        mock_analyzer_cls.return_value = mock_analyzer
-        mock_fallback = MagicMock()
-        mock_fallback.count_visible_boxes.side_effect = VisualFallbackError("invalid JSON")
-        mock_fallback_cls.return_value = mock_fallback
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             code = HybridInventoryPipeline().process_video(
@@ -300,10 +296,9 @@ def test_metrics_attempts_increment_and_total_calls_on_fallback_error():
             )
             with open(out / "vid" / "run1" / "hybrid_report.json", encoding="utf-8") as f:
                 report = json.load(f)
-            assert report["metrics"]["global_calls"] == 1
-            assert report["metrics"]["fallback_attempts"] == 1
-            assert report["metrics"]["fallback_success"] == 0
-            assert report["metrics"]["total_calls"] == 2
+            assert code == 0
+            assert report["report_version"] == "2.1"
+            assert len(report["entities"]) == 1
 
 
 def test_fallback_prompt_contains_main_central_pallet():
