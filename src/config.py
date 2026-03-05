@@ -409,6 +409,38 @@ class Settings(BaseModel):
         description="Si es True, guarda los frames procesados para debug.",
     )
 
+    # Stage 2.1.D — Evidence pack
+    evidence_k_overview: int = Field(
+        default_factory=lambda: int(os.getenv("EVIDENCE_K_OVERVIEW", "3")),
+        ge=1,
+        le=20,
+        description="Mejores frames de overview por entidad. Env: EVIDENCE_K_OVERVIEW.",
+    )
+    evidence_k_pos_candidates: int = Field(
+        default_factory=lambda: int(os.getenv("EVIDENCE_K_POS_CANDIDATES", "5")),
+        ge=1,
+        le=20,
+        description="Candidatos de crop de etiqueta de posición. Env: EVIDENCE_K_POS_CANDIDATES.",
+    )
+    evidence_k_prod_candidates: int = Field(
+        default_factory=lambda: int(os.getenv("EVIDENCE_K_PROD_CANDIDATES", "5")),
+        ge=1,
+        le=20,
+        description="Candidatos de crop de etiqueta de producto. Env: EVIDENCE_K_PROD_CANDIDATES.",
+    )
+    evidence_max_images_per_pallet: int = Field(
+        default_factory=lambda: int(os.getenv("EVIDENCE_MAX_IMAGES_PER_PALLET", "25")),
+        ge=1,
+        le=100,
+        description="Límite total de imágenes por entidad. Env: EVIDENCE_MAX_IMAGES_PER_PALLET.",
+    )
+    evidence_jpeg_quality: int = Field(
+        default_factory=lambda: int(os.getenv("EVIDENCE_JPEG_QUALITY", "85")),
+        ge=1,
+        le=100,
+        description="Calidad JPEG para evidencia. Env: EVIDENCE_JPEG_QUALITY.",
+    )
+
     # Consolidation (Bloque 3)
     consolidation_mad_threshold: float = Field(
         default_factory=lambda: float(os.getenv("CONSOLIDATION_MAD_THRESHOLD", "3.0")),
@@ -461,10 +493,8 @@ class Settings(BaseModel):
     @field_validator("output_dir")
     @classmethod
     def validate_output_dir(cls, v: str) -> str:
-        """Normaliza el path del directorio de salida."""
-        # Convertir a Path y luego a string para normalizar
-        path = Path(v).expanduser().resolve()
-        return str(path)
+        """Normalize output_dir: expanduser only (preserve relative paths if given)."""
+        return str(Path(v).expanduser())
 
     def ensure_output_dir(self) -> Path:
         """Asegura que el directorio de salida existe y lo crea si es necesario.

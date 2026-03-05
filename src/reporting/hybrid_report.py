@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def _build_summary_from_entities(entities: List[Entity]) -> Dict[str, int]:
-    """Compute summary counts from entity list."""
+    """Compute summary counts from entity list (includes counted_manual)."""
     summary = {
         "total_entities": len(entities),
         "pallets": 0,
@@ -24,6 +24,7 @@ def _build_summary_from_entities(entities: List[Entity]) -> Dict[str, int]:
         "needs_review": 0,
         "not_countable": 0,
         "invalid_structure": 0,
+        "counted_manual": 0,
     }
     for e in entities:
         if e.entity_type == "PALLET":
@@ -34,6 +35,8 @@ def _build_summary_from_entities(entities: List[Entity]) -> Dict[str, int]:
             summary["loose_boxes"] += 1
         if e.count_status == "COUNTED":
             summary["counted"] += 1
+        elif e.count_status == "COUNTED_MANUAL":
+            summary["counted_manual"] += 1
         elif e.count_status == "NEEDS_REVIEW":
             summary["needs_review"] += 1
         elif e.count_status == "NOT_COUNTABLE":
@@ -85,6 +88,8 @@ def build_hybrid_report(
             "conflict_flag": e.conflict_flag,
             "conflict_reason": e.conflict_reason,
             "entity_quality_score": e.entity_quality_score,
+            "evidence_path": e.evidence_path,
+            "evidence_localization": e.evidence_localization,
         })
 
     report: Dict[str, Any] = {

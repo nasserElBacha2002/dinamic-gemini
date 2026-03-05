@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from src.api.routes.entities import router as entities_router
 from src.api.routes.jobs import router as jobs_router
 from src.api.schemas.responses import HealthResponse
 from src.config import load_settings
@@ -22,6 +23,7 @@ app = FastAPI(title="Inventory Engine API", version="2.0.0")
 
 # Include routers
 app.include_router(jobs_router)
+app.include_router(entities_router)
 
 
 @app.middleware("http")

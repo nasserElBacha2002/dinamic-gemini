@@ -25,6 +25,7 @@ from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.llm.global_pallet_analysis_prompt import GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_entities
 from src.pipeline.legacy_visual_pipeline import LegacyVisualPipeline
+from src.evidence.evidence_pack import generate_evidence_pack
 from src.reporting.artifacts import write_json
 from src.reporting.hybrid_report import build_hybrid_report
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
@@ -146,6 +147,15 @@ class HybridInventoryPipeline:
             assign_count_status(e)
         for e in entities:
             compute_entity_quality_score(e)
+
+        _report("evidence_pack", 85)
+        generate_evidence_pack(
+            job_id=video_id,
+            run_dir=run_dir,
+            frames=frames,
+            metadata=metadata,
+            entities=entities,
+        )
 
         report = build_hybrid_report(
             video_path=video_path,

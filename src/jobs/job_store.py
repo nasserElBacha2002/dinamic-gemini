@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 from src.jobs.models import JobInput, JobRecord, JobStatus
+from src.utils.validation import validate_job_id
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ def create_job(
     video_filename: Optional[str] = None,
 ) -> JobRecord:
     """Create job dir and job.json; when DB enabled, insert job row. Return record."""
+    job_id = validate_job_id(job_id)
     from datetime import datetime
     now = datetime.utcnow().isoformat() + "Z"
     record = JobRecord(
@@ -95,6 +97,7 @@ def create_job(
 
 def get_job(base_path: Path, job_id: str) -> Optional[JobRecord]:
     """Load job record from DB when enabled, else from FS. Return None if not found."""
+    job_id = validate_job_id(job_id)
     repos = _db_repos()
     if repos is not None:
         jobs_repo, _, _ = repos
@@ -117,6 +120,7 @@ def get_job(base_path: Path, job_id: str) -> Optional[JobRecord]:
 
 def update_job(base_path: Path, job_id: str, **updates: object) -> Optional[JobRecord]:
     """Update job record; when DB enabled, push status/progress/error to DB (output paths and metrics are written by the worker via set_job_outputs, not here). Then persist to FS. Returns updated record or None."""
+    job_id = validate_job_id(job_id)
     record = get_job(base_path, job_id)
     if record is None:
         return None
@@ -184,6 +188,7 @@ def get_pallet_results(job_id: str) -> Optional[List[dict]]:
 
 def list_artifacts(base_path: Path, job_id: str) -> List[str]:
     """List artifact filenames under output/<job_id>/ (sanitized; no path traversal)."""
+    job_id = validate_job_id(job_id)
     job_dir = _job_dir(base_path, job_id)
     if not job_dir.exists() or not job_dir.is_dir():
         return []

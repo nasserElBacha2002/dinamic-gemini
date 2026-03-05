@@ -47,5 +47,8 @@ class Entity:
     conflict_reason: Optional[str] = None
     # Local quality score [0..1] (set by compute_entity_quality_score)
     entity_quality_score: float = 0.0
+    # Evidence pack (set by generate_evidence_pack)
+    evidence_path: Optional[str] = None  # relative path to run/evidence/<slug>/
+    evidence_localization: Optional[str] = None  # "LOCALIZED" | "UNLOCALIZED"
     # Original JSON index for deterministic sort tie-breaker
     original_index: int = 0
