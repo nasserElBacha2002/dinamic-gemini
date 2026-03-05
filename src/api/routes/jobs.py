@@ -1,4 +1,4 @@
-"""Stage 7 — Job endpoints. Stage 8 — DB as source of truth when sqlserver_enabled."""
+"""Stage 7 — Job endpoints. Stage 8 — DB as source of truth when sqlserver_enabled. Stage 2.2.A — video or photos input."""
 
 import json
 import logging
@@ -6,9 +6,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-
+from src.api.photos_handler import persist_photos_from_uploads
 from src.review import load_reviews, merge_resolved_report
 from src.api.schemas.responses import (
     ArtifactItem,
@@ -97,30 +97,17 @@ async def _save_upload_streaming(
         raise
 
 
-@router.post("", response_model=JobCreateResponse, status_code=202)
-async def create_inventory_job(
-    video: UploadFile = File(..., description="Video file"),
-    mode: str = Form("legacy"),
-    confidence_threshold: float = Form(0.70),
-    metadata: Optional[str] = Form(None),
+async def _create_job_video(
+    video: UploadFile,
+    mode: str,
+    confidence_threshold: float,
+    meta: Optional[dict],
+    settings: Any,
+    base: Path,
+    job_id: str,
 ) -> JobCreateResponse:
-    """Upload video and create an async job. Returns 202 with job_id."""
-    if mode not in ("legacy", "hybrid"):
-        raise HTTPException(422, "mode must be 'legacy' or 'hybrid'")
-    if not (0.0 <= confidence_threshold <= 1.0):
-        raise HTTPException(422, "confidence_threshold must be between 0 and 1")
-    if metadata is not None and metadata.strip():
-        try:
-            meta = json.loads(metadata)
-        except json.JSONDecodeError as e:
-            raise HTTPException(422, f"metadata must be valid JSON: {e}") from e
-    else:
-        meta = None
-
-    settings = load_settings()
+    """Create job from multipart video upload (existing behavior)."""
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    job_id = _job_id()
-    base = _base_path()
     job_dir = base / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     input_dir = job_dir / "input"
@@ -132,7 +119,6 @@ async def create_inventory_job(
         video_filename = Path(video_filename).name
     video_path = input_dir / video_filename
     await _save_upload_streaming(video, video_path, max_bytes)
-
     create_job(
         base,
         job_id,
@@ -141,6 +127,7 @@ async def create_inventory_job(
         confidence_threshold=confidence_threshold,
         metadata=meta,
         video_filename=video_filename,
+        input_type="video",
     )
     enqueue(job_id)
     return JobCreateResponse(
@@ -149,6 +136,134 @@ async def create_inventory_job(
         mode=mode,
         confidence_threshold=confidence_threshold,
     )
+
+
+async def _create_job_photos_form(
+    form: Any,
+    settings: Any,
+    base: Path,
+    job_id: str,
+) -> JobCreateResponse:
+    """Create job from multipart form with input_type=photos and multiple 'photos' files."""
+    if not getattr(settings, "enable_photos_input", True):
+        raise HTTPException(422, "photos input is disabled (ENABLE_PHOTOS_INPUT=false)")
+    mode = form.get("mode", "hybrid")
+    if isinstance(mode, bytes):
+        mode = mode.decode("utf-8", errors="replace")
+    mode = (mode or "hybrid").strip()
+    if mode == "legacy":
+        raise HTTPException(422, "legacy mode requires video input")
+    if mode not in ("legacy", "hybrid"):
+        raise HTTPException(422, "mode must be 'legacy' or 'hybrid'")
+    ct = form.get("confidence_threshold", 0.70)
+    if isinstance(ct, (bytes, str)):
+        try:
+            confidence_threshold = float(ct)
+        except (TypeError, ValueError):
+            confidence_threshold = 0.70
+    else:
+        confidence_threshold = float(ct) if ct is not None else 0.70
+    if not (0.0 <= confidence_threshold <= 1.0):
+        raise HTTPException(422, "confidence_threshold must be between 0 and 1")
+    metadata_raw = form.get("metadata")
+    meta = None
+    if metadata_raw is not None and str(metadata_raw).strip():
+        try:
+            meta = json.loads(metadata_raw if isinstance(metadata_raw, str) else metadata_raw.decode("utf-8"))
+        except json.JSONDecodeError as e:
+            raise HTTPException(422, f"metadata must be valid JSON: {e}") from e
+
+    photos_list = form.getlist("photos")
+    uploads = [p for p in photos_list if hasattr(p, "read") and callable(getattr(p, "read"))]
+    if not uploads:
+        raise HTTPException(422, "at least one photo file is required (field 'photos')")
+    max_photos = getattr(settings, "max_photos_per_job", 12)
+    if len(uploads) > max_photos:
+        raise HTTPException(422, f"too many photos: {len(uploads)} (max {max_photos})")
+    max_total_bytes = getattr(settings, "photos_max_total_bytes", 25 * 1024 * 1024)
+
+    job_dir = base / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        _manifest, input_manifest_path, photos_dir = await persist_photos_from_uploads(
+            job_dir, uploads, max_total_bytes
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+    create_job(
+        base,
+        job_id,
+        video_path="",
+        mode=mode,
+        confidence_threshold=confidence_threshold,
+        metadata=meta,
+        video_filename=None,
+        input_type="photos",
+        input_manifest_path=input_manifest_path,
+        photos_dir=photos_dir,
+    )
+    enqueue(job_id)
+    return JobCreateResponse(
+        job_id=job_id,
+        status="queued",
+        mode=mode,
+        confidence_threshold=confidence_threshold,
+    )
+
+
+@router.post("", response_model=JobCreateResponse, status_code=202)
+async def create_inventory_job(request: Request) -> JobCreateResponse:
+    """Create job from video or photos (both via multipart/form-data). Returns 202 with job_id."""
+    content_type = (request.headers.get("content-type") or "").strip().lower()
+    if "multipart/form-data" not in content_type:
+        raise HTTPException(415, "content-type must be multipart/form-data")
+
+    form = await request.form()
+    input_type_raw = form.get("input_type")
+    if isinstance(input_type_raw, bytes):
+        input_type_raw = input_type_raw.decode("utf-8", errors="replace")
+    input_type = (input_type_raw or "").strip().lower()
+
+    if input_type == "photos":
+        settings = load_settings()
+        job_id = _job_id()
+        base = _base_path()
+        return await _create_job_photos_form(form, settings, base, job_id)
+
+    # Video (default): require 'video' file
+    video = form.get("video")
+    if video is None:
+        raise HTTPException(422, "video file is required (field 'video'); for photos use input_type=photos and field 'photos'")
+    if not hasattr(video, "read") or not callable(getattr(video, "read")):
+        raise HTTPException(422, "video must be a file upload")
+    mode = form.get("mode", "legacy")
+    if isinstance(mode, bytes):
+        mode = mode.decode("utf-8", errors="replace")
+    mode = (mode or "legacy").strip()
+    ct = form.get("confidence_threshold", 0.70)
+    if isinstance(ct, (bytes, str)):
+        try:
+            confidence_threshold = float(ct)
+        except (TypeError, ValueError):
+            confidence_threshold = 0.70
+    else:
+        confidence_threshold = float(ct) if ct is not None else 0.70
+    metadata_raw = form.get("metadata")
+    meta = None
+    if metadata_raw is not None and str(metadata_raw).strip():
+        try:
+            meta = json.loads(metadata_raw if isinstance(metadata_raw, str) else metadata_raw.decode("utf-8"))
+        except json.JSONDecodeError as e:
+            raise HTTPException(422, f"metadata must be valid JSON: {e}") from e
+    if mode not in ("legacy", "hybrid"):
+        raise HTTPException(422, "mode must be 'legacy' or 'hybrid'")
+    if not (0.0 <= confidence_threshold <= 1.0):
+        raise HTTPException(422, "confidence_threshold must be between 0 and 1")
+    settings = load_settings()
+    job_id = _job_id()
+    base = _base_path()
+    return await _create_job_video(video, mode, confidence_threshold, meta, settings, base, job_id)
 
 
 def _parse_iso_to_timestamp(iso_str: str) -> Optional[float]:

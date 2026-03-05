@@ -51,6 +51,9 @@ class JobsRepository:
         video_filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         engine_version: str = "v2.0",
+        input_type: str = "video",
+        input_manifest_path: Optional[str] = None,
+        photos_dir: Optional[str] = None,
     ) -> None:
         now = now_utc()
         meta_str = _serialize_metadata(metadata)
@@ -59,8 +62,9 @@ class JobsRepository:
                 """
                 INSERT INTO jobs (
                     id, created_at, updated_at, status, mode, confidence_threshold,
-                    video_filename, video_path, engine_version, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    video_filename, video_path, engine_version, metadata,
+                    input_type, input_manifest_path, photos_dir
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -73,6 +77,9 @@ class JobsRepository:
                     video_path,
                     engine_version,
                     meta_str,
+                    input_type,
+                    input_manifest_path,
+                    photos_dir,
                 ),
             )
 
@@ -147,7 +154,8 @@ class JobsRepository:
                 """
                 SELECT id, created_at, updated_at, status, mode, confidence_threshold,
                        video_path, metadata, progress_stage, progress_percent,
-                       error_code, error_message, report_json_path, report_csv_path, artifacts_dir
+                       error_code, error_message, report_json_path, report_csv_path, artifacts_dir,
+                       input_type, input_manifest_path, photos_dir
                 FROM jobs WHERE id = ?
                 """,
                 (job_id,),
@@ -176,6 +184,9 @@ class JobsRepository:
             error_msg = f"{code}: {msg}"
         else:
             error_msg = msg or code
+        input_type = getattr(row, "input_type", None) or "video"
+        input_manifest_path = getattr(row, "input_manifest_path", None)
+        photos_dir = getattr(row, "photos_dir", None)
         return {
             "job_id": row.id,
             "input": {
@@ -183,6 +194,9 @@ class JobsRepository:
                 "mode": row.mode or "legacy",
                 "confidence_threshold": float(row.confidence_threshold or 0.70),
                 "metadata": meta,
+                "input_type": input_type,
+                "input_manifest_path": input_manifest_path,
+                "photos_dir": photos_dir,
             },
             "status": row.status,
             "progress": {"stage": progress_stage, "percent": progress_percent},

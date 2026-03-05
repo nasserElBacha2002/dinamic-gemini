@@ -390,6 +390,23 @@ class Settings(BaseModel):
         le=2048,
         description="Max upload file size in MB (1 to 2048).",
     )
+    # Stage 2.2.A — Photos input (create job with N photos instead of video)
+    enable_photos_input: bool = Field(
+        default_factory=lambda: os.getenv("ENABLE_PHOTOS_INPUT", "true").strip().lower() in ("1", "true", "yes"),
+        description="If False, POST with input_type=photos returns 422. Env: ENABLE_PHOTOS_INPUT (default true).",
+    )
+    max_photos_per_job: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_PHOTOS_PER_JOB", "12")),
+        ge=1,
+        le=100,
+        description="Max number of photos per create-job when input_type=photos. Env: MAX_PHOTOS_PER_JOB.",
+    )
+    photos_max_total_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("PHOTOS_MAX_TOTAL_BYTES", str(25 * 1024 * 1024))),
+        ge=1024,
+        le=200 * 1024 * 1024,
+        description="Max total decoded bytes for all photos in one job (default 25 MB). Env: PHOTOS_MAX_TOTAL_BYTES.",
+    )
     # Stage 8 — SQL Server persistence (optional). Credentials only from env.
     sqlserver_enabled: bool = Field(
         default_factory=lambda: os.getenv("SQLSERVER_ENABLED", "true").strip().lower() in ("1", "true", "yes"),

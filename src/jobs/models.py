@@ -14,11 +14,14 @@ class JobStatus(str, Enum):
 
 
 class JobInput(BaseModel):
-    """Input payload for a job."""
-    video_path: str
+    """Input payload for a job. Stage 2.2.A: video_path empty when input_type=photos."""
+    video_path: str = ""
     mode: str = "legacy"
     confidence_threshold: float = 0.70
     metadata: Optional[Dict[str, Any]] = None
+    input_type: str = "video"
+    input_manifest_path: Optional[str] = None
+    photos_dir: Optional[str] = None
 
 
 class JobProgress(BaseModel):

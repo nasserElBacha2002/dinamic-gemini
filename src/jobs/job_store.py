@@ -46,13 +46,17 @@ def _job_file(base: Path, job_id: str) -> Path:
 def create_job(
     base_path: Path,
     job_id: str,
-    video_path: str,
+    video_path: str = "",
     mode: str = "legacy",
     confidence_threshold: float = 0.70,
     metadata: Optional[dict] = None,
     video_filename: Optional[str] = None,
+    input_type: str = "video",
+    input_manifest_path: Optional[str] = None,
+    photos_dir: Optional[str] = None,
 ) -> JobRecord:
-    """Create job dir and job.json; when DB enabled, insert job row. Return record."""
+    """Create job dir and job.json; when DB enabled, insert job row. Return record.
+    Stage 2.2.A: for photos jobs, video_path='', input_type='photos', input_manifest_path and photos_dir set."""
     job_id = validate_job_id(job_id)
     from datetime import datetime
     now = datetime.utcnow().isoformat() + "Z"
@@ -63,6 +67,9 @@ def create_job(
             mode=mode,
             confidence_threshold=confidence_threshold,
             metadata=metadata,
+            input_type=input_type,
+            input_manifest_path=input_manifest_path,
+            photos_dir=photos_dir,
         ),
         status=JobStatus.QUEUED,
         progress={"stage": "", "percent": 0},
@@ -86,9 +93,12 @@ def create_job(
                 video_path=video_path,
                 mode=mode,
                 confidence_threshold=confidence_threshold,
-                video_filename=video_filename or Path(video_path).name,
+                video_filename=video_filename or (Path(video_path).name if video_path else None),
                 metadata=metadata,
                 engine_version=engine_version,
+                input_type=input_type,
+                input_manifest_path=input_manifest_path,
+                photos_dir=photos_dir,
             )
         except Exception as e:
             logger.warning("DB create_job failed (FS record created): %s", e)

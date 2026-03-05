@@ -116,6 +116,18 @@ def run_job(base_path: Path, job_id: str) -> None:
         logger.warning("Job %s not queued (status=%s), skip", job_id, record.status)
         return
 
+    # Stage 2.2.A: photos processing not implemented until 2.2.B (FrameSource)
+    input_type = getattr(record.input, "input_type", "video")
+    if input_type == "photos":
+        update_job(
+            base_path,
+            job_id,
+            status=JobStatus.FAILED,
+            error="photos input accepted but processing not implemented yet",
+        )
+        logger.info("Job %s: photos input rejected by worker (Stage 2.2.B required)", job_id)
+        return
+
     settings = load_settings()
     job_dir = base_path / job_id
     run_id = "run"
