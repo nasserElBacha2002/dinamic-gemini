@@ -10,7 +10,7 @@ Este módulo define todos los esquemas de datos usados en el sistema:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 # ----------------------------
@@ -59,6 +59,35 @@ class MinifiedFrameResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     pallets: List[MinifiedPallet] = Field(..., description="Lista de pallets detectados.")
+
+
+# ----------------------------
+# v2.1 Global entity analysis (Structured Output — schema en API, prompt más corto)
+# ----------------------------
+EntityTypeV21 = Literal["PALLET", "EMPTY_PALLET", "LOOSE_BOXES"]
+
+
+class EntityV21(BaseModel):
+    """Una entidad logística en la respuesta global v2.1 (Structured Output)."""
+    model_config = ConfigDict(extra="forbid")
+
+    entity_type: EntityTypeV21 = Field(..., description="PALLET, EMPTY_PALLET o LOOSE_BOXES.")
+    model_entity_id: str = Field(..., description="Id único del modelo, e.g. E1, E2.")
+    position_barcode: Optional[str] = Field(None, description="Código de barras de posición si visible.")
+    position_label_bbox: Optional[List[float]] = Field(None, description="[x1,y1,x2,y2] normalizado 0..1, x1<x2, y1<y2.")
+    internal_code: Optional[str] = Field(None, description="Código interno del producto (corto), no texto largo de etiqueta.")
+    product_label_quantity: Optional[int] = Field(None, description="Cantidad en etiqueta de producto.")
+    product_label_bbox: Optional[List[float]] = Field(None, description="[x1,y1,x2,y2] normalizado 0..1.")
+    has_boxes: bool = Field(..., description="True si hay cajas visibles.")
+    confidence: float = Field(..., ge=0, le=1, description="Confianza de la detección en [0,1].")
+
+
+class GlobalEntityResponseV21(BaseModel):
+    """Respuesta del análisis global v2.1 (Structured Output)."""
+    model_config = ConfigDict(extra="forbid")
+
+    total_entities_detected: int = Field(..., ge=0, description="Número de entidades en la lista.")
+    entities: List[EntityV21] = Field(..., description="Lista de entidades detectadas.")
 
 
 # ----------------------------

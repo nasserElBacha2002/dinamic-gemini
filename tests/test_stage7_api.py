@@ -202,3 +202,10 @@ def test_create_job_422_invalid_metadata(client, output_dir):
             )
     assert r.status_code == 422
     assert "json" in str(r.json().get("detail", "")).lower()
+
+
+def test_get_job_status_400_invalid_job_id_path_traversal(client):
+    """Invalid job_id (path traversal) must return 400."""
+    r = client.get("/api/v1/inventory/jobs/..")
+    assert r.status_code == 400
+    assert "detail" in r.json()

@@ -16,7 +16,7 @@ from src.decision.processing_mode import assign_processing_mode
 from src.domain.pallet import Pallet
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, HYBRID_MAX_FRAMES
 from src.reporting.artifacts import write_csv, write_json
-from src.reporting.hybrid_report import build_hybrid_report
+from src.reporting.hybrid_report import build_hybrid_report_legacy
 
 
 def test_assign_processing_mode_label_when_has_label_and_code_and_quantity():
@@ -74,7 +74,7 @@ def test_build_hybrid_report_structure_and_total_count():
         Pallet("P1", True, "C1", 10, None, 0.9, "label", 10, False, "label"),
         Pallet("P2", False, None, None, 5, 0.7, "visual_fallback", 5, False, "visual_fallback"),
     ]
-    report = build_hybrid_report("/path/to/video.mp4", pallets, frames_selected=20)
+    report = build_hybrid_report_legacy("/path/to/video.mp4", pallets, frames_selected=20)
     assert report["mode"] == "hybrid"
     assert report["video"]["path"] == "/path/to/video.mp4"
     assert report["video"]["name"] == "video.mp4"
@@ -94,14 +94,14 @@ def test_build_hybrid_report_low_confidence_flags():
         Pallet("P1", False, None, None, 3, 0.6, "visual_fallback", 3, False, "visual_fallback"),
         Pallet("P2", False, None, None, 2, 0.4, "visual_fallback", 2, False, "visual_fallback"),
     ]
-    report = build_hybrid_report("/v.mp4", pallets, frames_selected=10)
+    report = build_hybrid_report_legacy("/v.mp4", pallets, frames_selected=10)
     assert report["flags"]["low_confidence_pallets"] == ["P2"]
     assert report["flags"].get("no_pallets_detected") is not True
 
 
 def test_build_hybrid_report_zero_pallets_sets_no_pallets_detected():
     """Empty pallets list produces report with flags.no_pallets_detected=true."""
-    report = build_hybrid_report("/v.mp4", [], frames_selected=25)
+    report = build_hybrid_report_legacy("/v.mp4", [], frames_selected=25)
     assert report["total_pallets_detected"] == 0
     assert report["pallets"] == []
     assert report["flags"]["no_pallets_detected"] is True

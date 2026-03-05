@@ -6,7 +6,10 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+
+from src.review import load_reviews, merge_resolved_report
 from src.api.schemas.responses import (
     ArtifactItem,
     ArtifactsResponse,
@@ -14,8 +17,9 @@ from src.api.schemas.responses import (
     JobStatusResponse,
 )
 from src.config import load_settings
-from src.jobs.job_store import create_job, get_job, get_pallet_results, list_artifacts
+from src.jobs.job_store import create_job, get_job, list_artifacts
 from src.jobs.queue import enqueue
+from src.utils.validation import validate_job_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/inventory/jobs", tags=["jobs"])
@@ -147,9 +151,39 @@ async def create_inventory_job(
     )
 
 
+def _parse_iso_to_timestamp(iso_str: str) -> Optional[float]:
+    """Parse ISO 8601 string to Unix timestamp (seconds). Returns None on parse error."""
+    if not iso_str:
+        return None
+    try:
+        from datetime import datetime, timezone
+        s = (iso_str or "").strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _execution_time_seconds(created_at: str, updated_at: str, status: str) -> Optional[float]:
+    """Return execution duration in seconds when job has finished (succeeded/failed)."""
+    if status not in ("succeeded", "failed"):
+        return None
+    t0 = _parse_iso_to_timestamp(created_at)
+    t1 = _parse_iso_to_timestamp(updated_at)
+    if t0 is None or t1 is None or t1 < t0:
+        return None
+    return round(t1 - t0, 2)
+
+
 @router.get("/{job_id}", response_model=JobStatusResponse)
 async def get_job_status(job_id: str) -> JobStatusResponse:
     """Get job status and progress. When DB enabled, read from JobsRepository."""
+    try:
+        job_id = validate_job_id(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     base = _base_path()
     repos = _get_db_repos()
     if repos is not None:
@@ -158,12 +192,16 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
             data = jobs_repo.get_job(job_id)
             if data is not None:
                 status = data.get("status", "queued")
+                status_str = status if isinstance(status, str) else getattr(status, "value", str(status))
                 progress = data.get("progress") or {"stage": "", "percent": 0}
+                created_at = data.get("created_at", "")
+                updated_at = data.get("updated_at", "")
                 return JobStatusResponse(
                     job_id=data.get("job_id", job_id),
-                    status=status if isinstance(status, str) else getattr(status, "value", str(status)),
+                    status=status_str,
                     progress=progress,
-                    created_at=data.get("created_at", ""),
+                    created_at=created_at,
+                    execution_time_seconds=_execution_time_seconds(created_at, updated_at, status_str),
                 )
         except Exception as e:
             logger.debug("DB path failed for get_job_status, using FS: %s", e)
@@ -175,65 +213,48 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
         status=record.status.value,
         progress=_progress_dict(record),
         created_at=record.created_at,
+        execution_time_seconds=_execution_time_seconds(record.created_at, record.updated_at, record.status.value),
     )
 
 
-@router.get("/{job_id}/result")
-async def get_job_result(job_id: str) -> Any:
-    """Return authoritative report JSON if succeeded. When DB enabled, build from job + pallet_results."""
+def _merge_report_metadata(report: dict, job_id: str, status: str, mode: str, confidence_threshold: float) -> dict:
+    """Merge job metadata into report. Prefer report['mode'] when present (e.g. hybrid_v2.1)."""
+    out = dict(report)
+    out["job_id"] = job_id
+    out["status"] = status
+    out["mode"] = report.get("mode") or mode
+    out["confidence_threshold"] = confidence_threshold
+    return out
+
+
+def _resolve_report_and_run_dir(job_id: str) -> Tuple[Path, Path]:
+    """Return (report_path, run_dir) for a succeeded job. Raises HTTPException 404/409 if not found or not succeeded."""
     base = _base_path()
     repos = _get_db_repos()
     if repos is not None:
-        jobs_repo, pallet_repo, _ = repos
+        jobs_repo, _, _ = repos
         try:
             job_data = jobs_repo.get_job(job_id)
-            if job_data is not None:
-                status = job_data.get("status", "")
-                status_str = status if isinstance(status, str) else getattr(status, "value", str(status))
-                if status_str != "succeeded":
-                    raise HTTPException(409, f"Job not succeeded (status={status_str})")
-                out = job_data.get("output")
-                if not out:
-                    raise HTTPException(404, "No result")
-                pallets_data = pallet_repo.get_pallet_results(job_id)
-                input_data = job_data.get("input") or {}
-                report = {
-                    "job_id": job_id,
-                    "status": status_str,
-                    "mode": input_data.get("mode", "legacy"),
-                    "confidence_threshold": input_data.get("confidence_threshold", 0.70),
-                    "total_pallets_detected": len(pallets_data),
-                    "pallets": [
-                        {
-                            "pallet_id": p.get("pallet_id"),
-                            "internal_code": p.get("internal_code"),
-                            "quantity": p.get("quantity"),
-                            "source": p.get("source"),
-                            "confidence": p.get("confidence"),
-                            "fallback_used": p.get("fallback_used", False),
-                            "estimated_visible_boxes": p.get("raw_estimated_visible_boxes"),
-                        }
-                        for p in pallets_data
-                    ],
-                }
-                report_json_path = out.get("report_json_path") if isinstance(out, dict) else getattr(out, "report_json_path", None)
-                if report_json_path and Path(report_json_path).exists():
-                    try:
-                        with open(report_json_path, encoding="utf-8") as f:
-                            file_report = json.load(f)
-                        report["video"] = file_report.get("video")
-                        report["prompt_version"] = file_report.get("prompt_version")
-                        report["frames_selected"] = file_report.get("frames_selected")
-                        report["flags"] = file_report.get("flags", {})
-                        report["metrics"] = file_report.get("metrics")
-                    except Exception as e:
-                        logger.debug("Enrich report from file failed: %s", e)
-                return report
+            if job_data is None:
+                raise HTTPException(404, "Job not found")
+            status = job_data.get("status", "")
+            status_str = status if isinstance(status, str) else getattr(status, "value", str(status))
+            if status_str != "succeeded":
+                raise HTTPException(409, f"Job not succeeded (status={status_str})")
+            out = job_data.get("output")
+            if not out:
+                raise HTTPException(404, "No result")
+            report_path = out.get("report_json_path") if isinstance(out, dict) else getattr(out, "report_json_path", None)
+            if not report_path:
+                raise HTTPException(404, "Report path not set")
+            path = Path(report_path)
+            if not path.exists():
+                raise HTTPException(404, "Report file not found")
+            return (path, path.parent)
         except HTTPException:
             raise
         except Exception as e:
-            logger.debug("DB path failed for get_job_result, using FS: %s", e)
-
+            logger.debug("DB path failed for _resolve_report_and_run_dir: %s", e)
     record = get_job(base, job_id)
     if record is None:
         raise HTTPException(404, "Job not found")
@@ -242,42 +263,6 @@ async def get_job_result(job_id: str) -> Any:
     out = record.output
     if not out:
         raise HTTPException(404, "No result")
-
-    pallets_data = get_pallet_results(job_id)
-    if pallets_data is not None:
-        report_json_path = getattr(out, "report_json_path", None) if out is not None else None
-        if report_json_path is None and isinstance(out, dict):
-            report_json_path = out.get("report_json_path")
-        report = {
-            "mode": record.input.mode,
-            "confidence_threshold": record.input.confidence_threshold,
-            "total_pallets_detected": len(pallets_data),
-            "pallets": [
-                {
-                    "pallet_id": p.get("pallet_id"),
-                    "internal_code": p.get("internal_code"),
-                    "quantity": p.get("quantity"),
-                    "source": p.get("source"),
-                    "confidence": p.get("confidence"),
-                    "fallback_used": p.get("fallback_used", False),
-                    "estimated_visible_boxes": p.get("raw_estimated_visible_boxes"),
-                }
-                for p in pallets_data
-            ],
-        }
-        if report_json_path and Path(report_json_path).exists():
-            try:
-                with open(report_json_path, encoding="utf-8") as f:
-                    file_report = json.load(f)
-                report["video"] = file_report.get("video")
-                report["prompt_version"] = file_report.get("prompt_version")
-                report["frames_selected"] = file_report.get("frames_selected")
-                report["flags"] = file_report.get("flags", {})
-                report["metrics"] = file_report.get("metrics")
-            except Exception as e:
-                logger.debug("Enrich report from file failed: %s", e)
-        return report
-
     report_path = getattr(out, "report_json_path", None) if out is not None else None
     if report_path is None and isinstance(out, dict):
         report_path = out.get("report_json_path")
@@ -286,8 +271,81 @@ async def get_job_result(job_id: str) -> Any:
     path = Path(report_path)
     if not path.exists():
         raise HTTPException(404, "Report file not found")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    return (path, path.parent)
+
+
+def _job_input_from_record_or_data(record: Optional[Any], job_data: Optional[dict]) -> dict:
+    """Get mode and confidence_threshold from JobRecord or DB job_data."""
+    if record is not None:
+        return {"mode": record.input.mode, "confidence_threshold": record.input.confidence_threshold}
+    if job_data:
+        inp = job_data.get("input") or {}
+        return {"mode": inp.get("mode", "hybrid_v2.1"), "confidence_threshold": inp.get("confidence_threshold", 0.70)}
+    return {"mode": "hybrid_v2.1", "confidence_threshold": 0.70}
+
+
+@router.get("/{job_id}/result")
+async def get_job_result(job_id: str) -> Any:
+    """Return authoritative report JSON if succeeded. Report file is the source of truth (standard v2.1 format)."""
+    try:
+        job_id = validate_job_id(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    report_path, _run_dir = _resolve_report_and_run_dir(job_id)
+    record = get_job(_base_path(), job_id)
+    job_data = None
+    if _get_db_repos() is not None:
+        try:
+            job_data = _get_db_repos()[0].get_job(job_id) if _get_db_repos() else None
+        except Exception:
+            pass
+    inp = _job_input_from_record_or_data(record, job_data)
+    with open(report_path, encoding="utf-8") as f:
+        data = json.load(f)
+    return _merge_report_metadata(
+        data,
+        job_id,
+        "succeeded",
+        inp["mode"],
+        inp["confidence_threshold"],
+    )
+
+
+@router.get("/{job_id}/report")
+async def get_job_report(job_id: str, resolved: bool = False) -> Any:
+    """Return report JSON. When resolved=true, merge with reviews and recompute summary (does not modify file)."""
+    try:
+        job_id = validate_job_id(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    report_path, run_dir = _resolve_report_and_run_dir(job_id)
+    record = get_job(_base_path(), job_id)
+    job_data = None
+    if _get_db_repos() is not None:
+        try:
+            job_data = _get_db_repos()[0].get_job(job_id) if _get_db_repos() else None
+        except Exception:
+            pass
+    inp = _job_input_from_record_or_data(record, job_data)
+    with open(report_path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not resolved:
+        return _merge_report_metadata(
+            data,
+            job_id,
+            "succeeded",
+            inp["mode"],
+            inp["confidence_threshold"],
+        )
+    reviews = load_reviews(run_dir)
+    merged = merge_resolved_report(data, reviews)
+    return _merge_report_metadata(
+        merged,
+        job_id,
+        "succeeded",
+        inp["mode"],
+        inp["confidence_threshold"],
+    )
 
 
 def _list_artifacts_under(job_dir: Path) -> list:
@@ -310,6 +368,10 @@ def _list_artifacts_under(job_dir: Path) -> list:
 @router.get("/{job_id}/artifacts", response_model=ArtifactsResponse)
 async def get_job_artifacts(job_id: str) -> ArtifactsResponse:
     """List artifact filenames and relative paths. When DB enabled, use artifacts_dir from DB if set."""
+    try:
+        job_id = validate_job_id(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     base = _base_path()
     repos = _get_db_repos()
     if repos is not None:

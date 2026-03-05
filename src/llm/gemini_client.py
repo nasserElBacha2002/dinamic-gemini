@@ -142,12 +142,16 @@ class GeminiClient:
                 
                 # Arreglamos los Optional (anyOf -> nullable)
                 if "anyOf" in obj:
-                    types_list = [t.get("type") for t in obj["anyOf"] if isinstance(t, dict) and "type" in t]
-                    if "null" in types_list:
-                        types_list.remove("null")
+                    variants = [t for t in obj["anyOf"] if isinstance(t, dict)]
+                    non_null = [v for v in variants if v.get("type") != "null"]
+                    if len(variants) != len(non_null):
                         obj["nullable"] = True
-                    if types_list:
-                        obj["type"] = types_list[0]
+                    if non_null:
+                        chosen = non_null[0]
+                        obj["type"] = chosen.get("type")
+                        # Preservar "items" para arrays (Gemini lo exige)
+                        if chosen.get("type") == "array" and "items" in chosen:
+                            obj["items"] = clean_node(chosen["items"].copy())
                     del obj["anyOf"]
                     
                 return {k: clean_node(v) for k, v in obj.items()}
@@ -540,4 +544,52 @@ class GeminiClient:
                     time.sleep(self.retry_delay)
         raise RuntimeError(
             f"generate_global_analysis_raw falló tras {self.max_retries} intentos: {last_error}"
+        )
+
+    def generate_global_analysis_structured(
+        self,
+        images: List,
+        prompt: str,
+        response_schema_model: type,
+    ) -> str:
+        """Una llamada a Gemini con structured output (response_schema). Más barata y JSON garantizado.
+
+        Usa response_mime_type="application/json" y response_schema para que Gemini devuelva
+        siempre JSON válido según el schema, reduciendo tokens del prompt y coste.
+
+        Args:
+            images: Lista de imágenes PIL (o compatibles con el SDK).
+            prompt: Prompt de usuario (solo instrucciones; el schema va en la API).
+            response_schema_model: Clase Pydantic del objeto raíz (ej. GlobalEntityResponseV21).
+
+        Returns:
+            response.text (string JSON que cumple el schema).
+        """
+        if not images:
+            raise ValueError("images no puede estar vacía")
+        safe_schema = self._get_safe_schema(response_schema_model)
+        generation_config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=safe_schema,
+            temperature=0.0,
+            safety_settings=self.safety_settings,
+        )
+        contents = list(images) + [prompt]
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=generation_config,
+                )
+                return response.text or "{}"
+            except Exception as e:
+                last_error = str(e)
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    time.sleep(self.retry_delay)
+        raise RuntimeError(
+            f"generate_global_analysis_structured falló tras {self.max_retries} intentos: {last_error}"
         )
