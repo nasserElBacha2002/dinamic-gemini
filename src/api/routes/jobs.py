@@ -260,10 +260,6 @@ async def create_inventory_job(request: Request) -> JobCreateResponse:
             meta = json.loads(metadata_raw if isinstance(metadata_raw, str) else metadata_raw.decode("utf-8"))
         except json.JSONDecodeError as e:
             raise HTTPException(422, f"metadata must be valid JSON: {e}") from e
-    if mode == "legacy":
-        raise HTTPException(422, "legacy mode has been removed as of v2.2; use mode='hybrid'.")
-    if mode != "hybrid":
-        raise HTTPException(422, "mode must be 'hybrid'")
     if not (0.0 <= confidence_threshold <= 1.0):
         raise HTTPException(422, "confidence_threshold must be between 0 and 1")
     settings = load_settings()

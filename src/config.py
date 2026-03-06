@@ -575,8 +575,13 @@ class Settings(BaseModel):
     @field_validator("output_dir")
     @classmethod
     def validate_output_dir(cls, v: str) -> str:
-        """Normalize output_dir: expanduser only (preserve relative paths if given)."""
-        return str(Path(v).expanduser())
+        """Normalize output_dir: strip, remove trailing slashes, expanduser. Relative paths stay relative."""
+        if not v or not isinstance(v, str):
+            return "output"
+        s = v.strip().rstrip("/\\")
+        if not s:
+            return "output"
+        return str(Path(s).expanduser())
 
     def ensure_output_dir(self) -> Path:
         """Asegura que el directorio de salida existe y lo crea si es necesario.

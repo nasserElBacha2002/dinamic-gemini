@@ -127,8 +127,8 @@ def test_parse_bbox_to_pixels_invalid_returns_none():
     assert parse_bbox_to_pixels(None, 100, 100) is None
     assert parse_bbox_to_pixels([], 100, 100) is None
     assert parse_bbox_to_pixels([0.1, 0.2], 100, 100) is None
-    assert parse_bbox_to_pixels([0.5, 0.2, 0.1, 0.6], 100, 100) is not None  # fixed to x2>x1
-    assert parse_bbox_to_pixels([0.1, 0.6, 0.5, 0.2], 100, 100) is not None  # fixed to y2>y1
+    assert parse_bbox_to_pixels([0.5, 0.2, 0.1, 0.6], 100, 100) is None  # x1 >= x2 degenerate
+    assert parse_bbox_to_pixels([0.1, 0.6, 0.5, 0.2], 100, 100) is None  # y1 >= y2 degenerate
     assert parse_bbox_to_pixels([0.1, 0.2, 0.5, 0.6], 0, 100) is None
     assert parse_bbox_to_pixels([0.1, 0.2, 0.5, 0.6], 100, 0) is None
 
@@ -248,6 +248,24 @@ def test_evidence_unlocalized_when_bbox_invalid():
     assert entity.evidence_localization == EVIDENCE_UNLOCALIZED
     assert "overview" in index["entities"][0]["evidence"]
     assert "position_label_best" not in index["entities"][0]["evidence"]
+
+
+def test_evidence_unlocalized_when_bbox_degenerate():
+    """Degenerate bbox (x1==x2 or y1==y2) yields no pixel crop -> UNLOCALIZED, overview only."""
+    run_dir = Path(tempfile.mkdtemp())
+    frames = [np.ones((100, 100, 3), dtype=np.uint8) * 128]
+    entity = Entity(
+        entity_uid="job_degen_E1",
+        entity_type="PALLET",
+        model_entity_id="E1",
+        position_label_bbox=[0.5, 0.5, 0.5, 0.5],
+        product_label_bbox=None,
+    )
+    index = generate_evidence_pack("job_degen", run_dir, frames, {}, [entity])
+    assert entity.evidence_localization == EVIDENCE_UNLOCALIZED
+    assert "overview" in index["entities"][0]["evidence"]
+    assert index["entities"][0]["evidence"].get("position_label_best") is None
+    assert "position_label_candidates" not in index["entities"][0]["evidence"] or not index["entities"][0]["evidence"]["position_label_candidates"]
 
 
 # --- evidence_index.json structure ---

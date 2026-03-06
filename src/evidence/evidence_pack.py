@@ -50,11 +50,7 @@ def parse_bbox_to_pixels(
         y1_px = max(0, min(frame_h, int(y1)))
         x2_px = max(0, min(frame_w, int(x2)))
         y2_px = max(0, min(frame_h, int(y2)))
-    if x1_px >= x2_px:
-        x2_px = min(frame_w, x1_px + 1)
-    if y1_px >= y2_px:
-        y2_px = min(frame_h, y1_px + 1)
-    if x2_px <= x1_px or y2_px <= y1_px:
+    if x1_px >= x2_px or y1_px >= y2_px:
         return None
     return (x1_px, y1_px, x2_px, y2_px)
 
@@ -110,13 +106,15 @@ def generate_evidence_pack(
     """Generate evidence pack per entity and write run/evidence/ and run/evidence_index.json.
 
     - Overview: sharpness + dedupe, limit K_OVERVIEW.
-    - If position_label_bbox/product_label_bbox present: localized crops; evidence_localization = LOCALIZED.
-    - Else: only overview; evidence_localization = UNLOCALIZED (no label crops).
+    - If position_label_bbox/product_label_bbox present and parse_bbox_to_pixels returns
+      valid pixel coords: localized crops; evidence_localization = LOCALIZED.
+    - Else (bbox missing, invalid, or degenerate): only overview; evidence_localization = UNLOCALIZED.
     - Enforce EVIDENCE_MAX_IMAGES_PER_PALLET per entity.
     - Mutates each entity: evidence_path, evidence_localization.
 
     Returns:
-        Evidence index dict (job_id, mode, entities with evidence paths).
+        Evidence index dict (job_id, mode, entities with evidence paths). All paths inside
+        the index are relative to run_dir (same directory as evidence_index.json).
     """
     settings = load_settings()
     k_overview = getattr(settings, "evidence_k_overview", 3)
@@ -224,6 +222,7 @@ def generate_evidence_pack(
     index = {
         "job_id": job_id,
         "mode": "hybrid_v2.1",
+        "paths_relative_to": "run_dir",
         "entities": index_entities,
     }
     index_path = run_dir / "evidence_index.json"
