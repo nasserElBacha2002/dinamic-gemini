@@ -5,12 +5,9 @@ Standard report: report_version 2.1, mode hybrid_v2.1, summary block, entities.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from src.domain.entity import Entity
-
-if TYPE_CHECKING:
-    from src.domain.pallet import Pallet
 
 
 def _build_summary_from_entities(entities: List[Entity]) -> Dict[str, int]:
@@ -105,51 +102,3 @@ def build_hybrid_report(
     return report
 
 
-def build_hybrid_report_legacy(
-    video_path: str,
-    pallets: List["Pallet"],
-    frames_selected: int,
-    prompt_version: str = "global_min_v1",
-    metrics: Optional[Dict[str, int]] = None,
-    confidence_threshold: Optional[float] = None,
-    frame_indices: Optional[List[int]] = None,
-) -> Dict[str, Any]:
-    """Legacy pallet-based report (mode hybrid, total_pallets_detected, pallets). Kept for tests only."""
-    from src.domain.pallet import Pallet
-
-    path_obj = Path(video_path)
-    low_confidence = [
-        p.pallet_id for p in pallets
-        if p.confidence < 0.50
-    ]
-    flags: Dict[str, Any] = {"low_confidence_pallets": low_confidence}
-    if not pallets:
-        flags["no_pallets_detected"] = True
-    report: Dict[str, Any] = {
-        "video": {"path": video_path, "name": path_obj.name},
-        "mode": "hybrid",
-        "prompt_version": prompt_version,
-        "frames_selected": frames_selected,
-        "total_pallets_detected": len(pallets),
-        "pallets": [
-            {
-                "pallet_id": p.pallet_id,
-                "has_label": p.has_label,
-                "internal_code": p.internal_code,
-                "quantity": p.quantity,
-                "final_quantity": p.final_quantity,
-                "source": p.source,
-                "confidence": p.confidence,
-                "fallback_used": p.fallback_used,
-            }
-            for p in pallets
-        ],
-        "flags": flags,
-    }
-    if metrics is not None:
-        report["metrics"] = metrics
-    if confidence_threshold is not None:
-        report["confidence_threshold"] = confidence_threshold
-    if frame_indices is not None:
-        report["frame_indices"] = frame_indices
-    return report

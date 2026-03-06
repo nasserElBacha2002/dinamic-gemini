@@ -19,10 +19,40 @@ import pytest
 
 from src.domain.pallet import Pallet
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
+from src.llm.types import LLMResponse
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_global_analysis
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, HYBRID_MAX_FRAMES
 from src.video.frames import extract_representative_frames
 
+
+# v2.1 shape for pipeline (parse_entities); legacy shape for parse_global_analysis tests
+SAMPLE_V21_RESPONSE = {
+    "total_entities_detected": 2,
+    "entities": [
+        {
+            "model_entity_id": "e1",
+            "entity_type": "PALLET",
+            "position_barcode": None,
+            "internal_code": "10145317",
+            "product_label_quantity": 15,
+            "position_label_bbox": None,
+            "product_label_bbox": None,
+            "has_boxes": False,
+            "confidence": 0.94,
+        },
+        {
+            "model_entity_id": "e2",
+            "entity_type": "PALLET",
+            "position_barcode": None,
+            "internal_code": None,
+            "product_label_quantity": None,
+            "position_label_bbox": None,
+            "product_label_bbox": None,
+            "has_boxes": True,
+            "confidence": 0.78,
+        },
+    ],
+}
 
 SAMPLE_GLOBAL_RESPONSE = {
     "total_pallets_detected": 2,
@@ -89,23 +119,27 @@ def test_parse_global_analysis_confidence_out_of_range_raises():
         parse_global_analysis(bad)
 
 
-def test_hybrid_mode_calls_gemini_analyzer_once():
+def test_hybrid_mode_calls_llm_provider_once():
+    """Hybrid path uses get_llm_provider; provider.analyze_global called once."""
     pipeline = HybridInventoryPipeline()
     mock_logger = MagicMock()
     mock_settings = MagicMock()
+    mock_settings.llm_provider = "gemini"
     mock_settings.gemini_api_key = "test-key"
     mock_settings.gemini_model_name = "gemini-2.0-flash-exp"
     mock_settings.gemini_max_retries = 1
     mock_settings.gemini_retry_delay = 0.1
     dummy_frames = [np.zeros((100, 100, 3), dtype=np.uint8)] * 3
+    mock_provider = MagicMock()
+    mock_provider.analyze_global.return_value = LLMResponse(
+        provider="gemini", model="gemini-2.0-flash-exp", latency_ms=100,
+        parsed_json=SAMPLE_V21_RESPONSE, raw_text=None, usage=None,
+    )
     with (
-        patch("src.pipeline.hybrid_inventory_pipeline.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiGlobalAnalyzer") as mock_analyzer_cls,
+        patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
+        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 10, 20]})
-        mock_analyzer = MagicMock()
-        mock_analyzer.analyze_video_frames.return_value = SAMPLE_GLOBAL_RESPONSE
-        mock_analyzer_cls.return_value = mock_analyzer
         with tempfile.TemporaryDirectory() as tmp:
             code = pipeline.process_video(
                 "video.mp4",
@@ -118,29 +152,31 @@ def test_hybrid_mode_calls_gemini_analyzer_once():
                 args=MagicMock(),
             )
     assert code == 0
-    mock_analyzer.analyze_video_frames.assert_called_once()
-    call_frames = mock_analyzer.analyze_video_frames.call_args[0][0]
-    assert len(call_frames) == 3
+    mock_provider.analyze_global.assert_called_once()
+    call_request = mock_provider.analyze_global.call_args[0][0]
+    assert len(call_request.frames) == 3
 
 
 def test_hybrid_run_returns_success_and_writes_result():
     pipeline = HybridInventoryPipeline()
     mock_logger = MagicMock()
     mock_settings = MagicMock()
+    mock_settings.llm_provider = "gemini"
     mock_settings.gemini_api_key = "key"
     mock_settings.gemini_model_name = "gemini-2.0-flash-exp"
     mock_settings.gemini_max_retries = 1
     mock_settings.gemini_retry_delay = 0.1
     dummy_frames = [np.zeros((50, 50, 3), dtype=np.uint8)] * 2
+    mock_provider = MagicMock()
+    mock_provider.analyze_global.return_value = LLMResponse(
+        provider="gemini", model="gemini-2.0-flash-exp", latency_ms=100,
+        parsed_json=SAMPLE_V21_RESPONSE, raw_text=None, usage=None,
+    )
     with (
-        patch("src.pipeline.hybrid_inventory_pipeline.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiClient") as mock_client_cls,
-        patch("src.pipeline.hybrid_inventory_pipeline.GeminiGlobalAnalyzer") as mock_analyzer_cls,
+        patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
+        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 15]})
-        mock_analyzer = MagicMock()
-        mock_analyzer.analyze_video_frames.return_value = SAMPLE_GLOBAL_RESPONSE
-        mock_analyzer_cls.return_value = mock_analyzer
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             code = pipeline.process_video(
@@ -153,16 +189,16 @@ def test_hybrid_run_returns_success_and_writes_result():
                 logger=mock_logger,
                 args=MagicMock(),
             )
-            result_file = out / "vid" / "run1" / "hybrid_debug.json"
+            result_file = out / "vid" / "run1" / "hybrid_report.json"
             assert code == 0
             assert result_file.exists()
             with open(result_file, encoding="utf-8") as f:
                 report = json.load(f)
-            assert report["mode"] == "hybrid"
-            assert report["total_pallets_detected"] == 2
-            assert len(report["pallets"]) == 2
-            assert report["pallets"][0]["pallet_id"] == "P1"
-            assert report["pallets"][0]["quantity"] == 15
+            assert report["mode"] == "hybrid_v2.1"
+            assert report["report_version"] == "2.1"
+            assert len(report["entities"]) == 2
+            assert report["entities"][0]["model_entity_id"] == "e1"
+            assert report["entities"][0].get("internal_code") == "10145317"
 
 
 def test_extract_representative_frames_indices_match_when_one_read_fails():
@@ -197,18 +233,14 @@ def test_extract_representative_frames_indices_match_when_one_read_fails():
         assert idx != fail_at_index
 
 
-def test_gemini_global_analyzer_parses_json_with_prefix_and_suffix():
-    """Analyzer extracts and parses JSON when Gemini returns text before and after the JSON."""
-    raw_response = (
-        "Here is the analysis you requested:\n"
-        '{"total_pallets_detected": 0, "pallets": []}\n'
-        "End of response."
-    )
+def test_gemini_global_analyzer_parses_structured_json():
+    """Analyzer returns parsed dict when client returns JSON string (structured output)."""
+    json_response = '{"total_entities_detected": 0, "entities": []}'
     mock_client = MagicMock()
-    mock_client.generate_global_analysis_raw.return_value = raw_response
+    mock_client.generate_global_analysis_structured.return_value = json_response
     analyzer = GeminiGlobalAnalyzer(mock_client)
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
     result = analyzer.analyze_video_frames(one_frame)
 
-    assert result == {"total_pallets_detected": 0, "pallets": []}
+    assert result == {"total_entities_detected": 0, "entities": []}

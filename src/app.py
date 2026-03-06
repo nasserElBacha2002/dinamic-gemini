@@ -52,9 +52,9 @@ Ejemplos:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["legacy", "hybrid"],
-        default="legacy",
-        help="Modo de ejecución: legacy (actual) o hybrid (por ahora delega a legacy). Default: legacy.",
+        choices=["hybrid"],
+        default="hybrid",
+        help="Modo de ejecución (v2.2: solo hybrid).",
     )
     return parser.parse_args()
 

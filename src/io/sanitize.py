@@ -2,11 +2,12 @@
 Utilidades de sanitización para rutas e identificadores.
 
 Evita path traversal y caracteres inseguros en valores usados para
-construir rutas de salida (p. ej. video_id).
+construir rutas de salida (p. ej. video_id). Stage 2.2.A: photo stored filenames.
 """
 
 import logging
 import re
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -73,3 +74,26 @@ def sanitize_video_id(value: str, fallback: str = "video") -> str:
         return fallback
 
     return safe
+
+
+def photo_stored_filename(original_filename: str, index: int) -> str:
+    """Return a safe, deterministic stored filename for a photo: {index:04d}_{slug}.jpg.
+
+    Uses only the basename of original_filename; no path traversal (.., /, \\).
+    Slug is alphanumeric + underscore/hyphen; empty slug becomes "image".
+
+    Args:
+        original_filename: Client-provided filename (may contain path or unsafe chars).
+        index: 1-based photo index.
+
+    Returns:
+        Stored filename e.g. 0001_my_photo.jpg, 0002_image.jpg.
+    """
+    from src.evidence.paths import slug
+    base = Path(original_filename or "").name.strip()
+    if not base or ".." in base or "\\" in base or "/" in base:
+        base = "image"
+    slug_part = slug(base)
+    if not slug_part:
+        slug_part = "image"
+    return f"{index:04d}_{slug_part}.jpg"

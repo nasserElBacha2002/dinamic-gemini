@@ -1,9 +1,31 @@
 """Evidence scoring utilities: sharpness (Laplacian) and deduplication (dHash)."""
 
-from typing import List, Tuple
+from typing import Callable, List, TypeVar, Tuple
 
 import cv2
 import numpy as np
+
+T = TypeVar("T")
+
+
+def _dedupe_by_hash_set(
+    items: List[T],
+    get_hash: Callable[[T], int],
+    threshold: int = 10,
+) -> List[T]:
+    """Set-based dedupe: keep item only if its hash is > threshold Hamming distance from ALL already selected.
+    Deterministic (order preserved; first occurrence wins). Single implementation for all callers."""
+    if not items:
+        return []
+    out: List[T] = [items[0]]
+    selected_hashes: List[int] = [get_hash(items[0])]
+    for i in range(1, len(items)):
+        h = get_hash(items[i])
+        min_d = min(hamming_distance(h, sh) for sh in selected_hashes)
+        if min_d > threshold:
+            out.append(items[i])
+            selected_hashes.append(h)
+    return out
 
 
 def score_frame_sharpness(frame: np.ndarray) -> float:
@@ -48,17 +70,7 @@ def dedupe_by_hash(
     Returns:
         Subset of images with duplicates removed (order preserved).
     """
-    if not images:
-        return []
-    out: List[np.ndarray] = [images[0]]
-    selected_hashes: List[int] = [dhash_int(images[0])]
-    for i in range(1, len(images)):
-        h = dhash_int(images[i])
-        min_d = min(hamming_distance(h, sh) for sh in selected_hashes)
-        if min_d > threshold:
-            out.append(images[i])
-            selected_hashes.append(h)
-    return out
+    return _dedupe_by_hash_set(images, dhash_int, threshold)
 
 
 def dedupe_indexed_by_hash(
@@ -74,14 +86,4 @@ def dedupe_indexed_by_hash(
     Returns:
         Subset with duplicates removed, order preserved.
     """
-    if not items:
-        return []
-    out: List[Tuple[int, np.ndarray]] = [items[0]]
-    selected_hashes: List[int] = [dhash_int(items[0][1])]
-    for idx, frame in items[1:]:
-        h = dhash_int(frame)
-        min_d = min(hamming_distance(h, sh) for sh in selected_hashes)
-        if min_d > threshold:
-            out.append((idx, frame))
-            selected_hashes.append(h)
-    return out
+    return _dedupe_by_hash_set(items, lambda item: dhash_int(item[1]), threshold)

@@ -29,6 +29,15 @@ BEGIN
 END;
 GO
 
+-- Stage 2.2.A — Photos input (optional columns; add if missing)
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'input_type')
+    ALTER TABLE jobs ADD input_type VARCHAR(16) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'input_manifest_path')
+    ALTER TABLE jobs ADD input_manifest_path NVARCHAR(1024) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'photos_dir')
+    ALTER TABLE jobs ADD photos_dir NVARCHAR(1024) NULL;
+GO
+
 -- Pallet results per job (one row per pallet)
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'pallet_results')
 BEGIN

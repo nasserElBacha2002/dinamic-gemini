@@ -1,6 +1,6 @@
-"""Path-safe validation for job_id and entity_uid to prevent path traversal.
+"""Path-safe validation for job_id, entity_uid, and relative paths to prevent path traversal.
 
-Allowed format: ^[a-zA-Z0-9_-]+$
+Allowed format for ids: ^[a-zA-Z0-9_-]+$
 Rejects: .., /, \\, and any other non-alphanumeric except underscore and hyphen.
 """
 
@@ -49,4 +49,19 @@ def validate_entity_uid(entity_uid: Optional[str]) -> str:
         raise ValueError(
             "entity_uid must contain only letters, digits, underscore, and hyphen"
         )
+    return s
+
+
+def validate_relative_path(value: str, name: str = "path") -> str:
+    """Reject unsafe path components; return stripped value.
+
+    Raises ValueError if value contains '..', is absolute (starts with /), or contains backslash.
+    """
+    if not value or not isinstance(value, str):
+        raise ValueError(f"{name} must be a non-empty string")
+    s = value.strip()
+    if ".." in s:
+        raise ValueError(f"{name} must not contain '..'")
+    if s.startswith("/") or "\\" in s:
+        raise ValueError(f"{name} must be a relative path without backslashes")
     return s

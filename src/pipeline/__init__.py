@@ -1,9 +1,5 @@
-"""
-Orquestación del pipeline track-based (Sprint A).
+"""Pipeline package. v2.2: single hybrid flow only."""
 
-Flujo: extracción → detección → tracking → ROI → blur → selección de vistas → Gemini (1 request/track).
-"""
+from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
-from src.pipeline.orchestrator import run_pipeline
-
-__all__ = ["run_pipeline"]
+__all__ = ["HybridInventoryPipeline"]
