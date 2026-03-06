@@ -137,7 +137,7 @@ def test_api_key_missing_returns_403_when_configured(client, output_dir):
         mock_load.return_value = MagicMock(api_key="secret-key", output_dir=str(output_dir))
         r = client.post(
             "/api/v1/inventory/jobs",
-            data={"mode": "legacy"},
+            data={"mode": "hybrid"},
             files={"video": ("x.mp4", b"x", "video/mp4")},
         )
     assert r.status_code == 403
@@ -154,7 +154,7 @@ def test_api_key_valid_passes(client, output_dir):
             with patch("src.api.routes.jobs.enqueue"):
                 r = client.post(
                     "/api/v1/inventory/jobs",
-                    data={"mode": "legacy"},
+                    data={"mode": "hybrid"},
                     files={"video": ("x.mp4", b"x", "video/mp4")},
                     headers={"X-API-Key": "secret-key"},
                 )
@@ -172,7 +172,7 @@ def test_create_job_413_when_upload_exceeds_limit(client, output_dir):
         with patch("src.api.routes.jobs.enqueue"):
             r = client.post(
                 "/api/v1/inventory/jobs",
-                data={"mode": "legacy", "confidence_threshold": "0.5"},
+                data={"mode": "hybrid", "confidence_threshold": "0.5"},
                 files={"video": ("big.mp4", b"more_than_one_byte", "video/mp4")},
             )
     assert r.status_code == 413
@@ -198,7 +198,8 @@ def test_create_job_422_invalid_mode(client, output_dir):
                 files={"video": ("x.mp4", b"x", "video/mp4")},
             )
     assert r.status_code == 422
-    assert "legacy" in str(r.json().get("detail", ""))
+    detail = str(r.json().get("detail", ""))
+    assert "mode" in detail.lower() or "hybrid" in detail
 
 
 def test_create_job_422_invalid_metadata(client, output_dir):
@@ -211,7 +212,7 @@ def test_create_job_422_invalid_metadata(client, output_dir):
         with patch("src.api.routes.jobs.enqueue"):
             r = client.post(
                 "/api/v1/inventory/jobs",
-                data={"mode": "legacy", "confidence_threshold": "0.7", "metadata": "not valid json"},
+                data={"mode": "hybrid", "confidence_threshold": "0.7", "metadata": "not valid json"},
                 files={"video": ("x.mp4", b"x", "video/mp4")},
             )
     assert r.status_code == 422
@@ -374,7 +375,7 @@ def test_create_job_photos_disabled_422(client, output_dir):
 
 
 def test_create_job_photos_mode_legacy_422(client, output_dir):
-    """Photos job with mode=legacy must be rejected (legacy requires video)."""
+    """Request with mode=legacy must be rejected (legacy removed as of v2.2)."""
     jpeg = _minimal_jpeg_bytes()
     data = {"input_type": "photos", "mode": "legacy"}
     files = [("photos", ("a.jpg", jpeg, "image/jpeg"))]
@@ -389,7 +390,7 @@ def test_create_job_photos_mode_legacy_422(client, output_dir):
         r = client.post("/api/v1/inventory/jobs", data=data, files=files)
     assert r.status_code == 422
     assert "legacy" in str(r.json().get("detail", "")).lower()
-    assert "video" in str(r.json().get("detail", "")).lower()
+    assert "hybrid" in str(r.json().get("detail", "")).lower()
 
 
 def test_worker_photos_job_fails_when_manifest_missing(output_dir):
@@ -414,7 +415,7 @@ def test_worker_photos_job_fails_when_manifest_missing(output_dir):
 
 
 def test_worker_photos_with_legacy_mode_rejected(output_dir):
-    """When input_type=photos and mode=legacy, worker marks job FAILED with clear error (no pipeline run)."""
+    """When job has mode=legacy, worker marks job FAILED with clear error (no pipeline run)."""
     create_job(
         output_dir,
         "job_photos_legacy",
@@ -428,4 +429,5 @@ def test_worker_photos_with_legacy_mode_rejected(output_dir):
     assert record is not None
     assert record.status == JobStatus.FAILED
     assert "legacy" in (record.error or "").lower()
+    assert "hybrid" in (record.error or "").lower()
     assert "video" in (record.error or "").lower()

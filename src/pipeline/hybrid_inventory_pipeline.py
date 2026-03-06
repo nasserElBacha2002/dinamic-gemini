@@ -22,7 +22,6 @@ from src.llm.global_pallet_analysis_prompt import GLOBAL_ENTITY_ANALYSIS_PROMPT_
 from src.llm.providers.factory import get_llm_provider
 from src.llm.types import LLMRequest
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_entities
-from src.pipeline.legacy_visual_pipeline import LegacyVisualPipeline
 from src.evidence.evidence_pack import generate_evidence_pack
 from src.reporting.artifacts import write_json
 from src.reporting.hybrid_report import build_hybrid_report
@@ -53,22 +52,20 @@ def _save_frames_sent_to_gemini(
 
 
 class HybridInventoryPipeline:
-    """Controller: runs legacy or hybrid path based on mode."""
+    """Single hybrid flow: FrameSource → (normalize if photos) → LLMProvider → v2.1 parse/evidence/report."""
 
     def __init__(self) -> None:
-        self.legacy_pipeline = LegacyVisualPipeline()
+        pass
 
     def process_video(
         self,
         video_path: str,
-        mode: str = "legacy",
+        mode: str = "hybrid",
         **kwargs: object,
     ) -> int:
-        if mode == "legacy":
-            return self.legacy_pipeline.run(video_path, **kwargs)
-        if mode == "hybrid":
-            return self._run_hybrid(video_path, **kwargs)
-        raise ValueError(f"Invalid mode: {mode!r}")
+        if mode != "hybrid":
+            raise ValueError(f"Invalid mode: {mode!r}; only 'hybrid' is supported as of v2.2.")
+        return self._run_hybrid(video_path, **kwargs)
 
     def _run_hybrid(
         self,

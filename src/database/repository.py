@@ -46,7 +46,7 @@ class JobsRepository:
         self,
         job_id: str,
         video_path: str,
-        mode: str = "legacy",
+        mode: str = "hybrid",
         confidence_threshold: float = 0.70,
         video_filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -191,7 +191,7 @@ class JobsRepository:
             "job_id": row.id,
             "input": {
                 "video_path": row.video_path or "",
-                "mode": row.mode or "legacy",
+                "mode": row.mode or "hybrid",
                 "confidence_threshold": float(row.confidence_threshold or 0.70),
                 "metadata": meta,
                 "input_type": input_type,

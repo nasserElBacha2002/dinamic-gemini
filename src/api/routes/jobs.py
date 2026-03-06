@@ -152,9 +152,9 @@ async def _create_job_photos_form(
         mode = mode.decode("utf-8", errors="replace")
     mode = (mode or "hybrid").strip()
     if mode == "legacy":
-        raise HTTPException(422, "legacy mode requires video input")
-    if mode not in ("legacy", "hybrid"):
-        raise HTTPException(422, "mode must be 'legacy' or 'hybrid'")
+        raise HTTPException(422, "legacy mode has been removed as of v2.2; use mode='hybrid'.")
+    if mode != "hybrid":
+        raise HTTPException(422, "mode must be 'hybrid'")
     ct = form.get("confidence_threshold", 0.70)
     if isinstance(ct, (bytes, str)):
         try:
@@ -237,10 +237,14 @@ async def create_inventory_job(request: Request) -> JobCreateResponse:
         raise HTTPException(422, "video file is required (field 'video'); for photos use input_type=photos and field 'photos'")
     if not hasattr(video, "read") or not callable(getattr(video, "read")):
         raise HTTPException(422, "video must be a file upload")
-    mode = form.get("mode", "legacy")
+    mode = form.get("mode", "hybrid")
     if isinstance(mode, bytes):
         mode = mode.decode("utf-8", errors="replace")
-    mode = (mode or "legacy").strip()
+    mode = (mode or "hybrid").strip()
+    if mode == "legacy":
+        raise HTTPException(422, "legacy mode has been removed as of v2.2; use mode='hybrid'.")
+    if mode != "hybrid":
+        raise HTTPException(422, "mode must be 'hybrid'")
     ct = form.get("confidence_threshold", 0.70)
     if isinstance(ct, (bytes, str)):
         try:
@@ -256,8 +260,10 @@ async def create_inventory_job(request: Request) -> JobCreateResponse:
             meta = json.loads(metadata_raw if isinstance(metadata_raw, str) else metadata_raw.decode("utf-8"))
         except json.JSONDecodeError as e:
             raise HTTPException(422, f"metadata must be valid JSON: {e}") from e
-    if mode not in ("legacy", "hybrid"):
-        raise HTTPException(422, "mode must be 'legacy' or 'hybrid'")
+    if mode == "legacy":
+        raise HTTPException(422, "legacy mode has been removed as of v2.2; use mode='hybrid'.")
+    if mode != "hybrid":
+        raise HTTPException(422, "mode must be 'hybrid'")
     if not (0.0 <= confidence_threshold <= 1.0):
         raise HTTPException(422, "confidence_threshold must be between 0 and 1")
     settings = load_settings()

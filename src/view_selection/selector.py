@@ -2,7 +2,7 @@
 Selector de vistas por track (Sprint A + 6B.9).
 
 Elige 3-5 vistas por PalletTrack: claridad (blur), área, y diversidad real
-(temporal + phash + centroide). Soporta modo legacy (segmentos) y modo
+(temporal + phash + centroide). Soporta selección por segmentos y modo
 2 fases (anchors + greedy diversidad) cuando enable_diversity=True.
 """
 
@@ -99,7 +99,7 @@ def _centroid_normalized(
     return (min(1.0, cx / max(1, bbox[2] - bbox[0])), min(1.0, cy / max(1, bbox[3] - bbox[1])))
 
 
-def _legacy_select_views(
+def _segment_select_views(
     track: PalletTrack,
     min_views: int,
     target_views: int,
@@ -326,7 +326,7 @@ def _diversity_select_views(
         reasons[best_cand["frame_idx"]] = best_cand["reason"]
         need -= 1
 
-    # Apply max_iou_suppress / min_frame_gap on final list (same as legacy)
+    # Apply max_iou_suppress / min_frame_gap on final list (same as segment-based)
     selected_obs.sort(key=lambda o: o.frame_idx)
     if max_iou_suppress > 0 and min_frame_gap_diversity >= 0 and len(selected_obs) > 1:
         kept: List[PalletObservation] = []
@@ -396,13 +396,13 @@ def select_views_per_track(
 
     Con enable_diversity=True (default): selección en 2 fases (anchors early/mid/late
     + greedy diversidad) con dedup por phash y centroide. Con enable_diversity=False
-    usa el algoritmo legacy por segmentos temporales.
+    usa el algoritmo por segmentos temporales.
 
     Returns:
         (views, debug_opt): lista de hasta max_views observaciones; debug_opt no None solo si return_debug=True.
     """
     if not enable_diversity:
-        views = _legacy_select_views(
+        views = _segment_select_views(
             track, min_views, target_views, max_views,
             blur_percentile, min_frame_gap_diversity, max_iou_suppress,
         )

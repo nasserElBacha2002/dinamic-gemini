@@ -92,20 +92,8 @@ def encode_jpeg(img: np.ndarray, quality: int) -> bytes:
     return buf.tobytes()
 
 
-def validate_relative_path(value: str, name: str = "path") -> str:
-    """Reject unsafe path components; return stripped value.
-
-    Raises ValueError if value contains '..', is absolute (starts with /), or contains backslash.
-    """
-    if not value or not isinstance(value, str):
-        raise ValueError(f"{name} must be a non-empty string")
-    s = value.strip()
-    if ".." in s:
-        raise ValueError(f"{name} must not contain '..'")
-    if s.startswith("/") or "\\" in s:
-        raise ValueError(f"{name} must be a relative path without backslashes")
-    return s
-
+# Re-export so callers that import from frames.normalize keep working
+from src.utils.validation import validate_relative_path  # noqa: F401
 
 def normalize_photo_file(
     src_path: Path,

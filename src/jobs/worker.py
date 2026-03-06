@@ -17,30 +17,6 @@ from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 logger = logging.getLogger(__name__)
 
 
-def _make_fake_args() -> Any:
-    """Minimal args namespace for legacy pipeline (all defaults)."""
-    class Args:
-        track_pipeline = False
-        synthetic = False
-        heuristic = False
-        reid_enabled = False
-        debug_view_selection = False
-        extract_fps = None
-        prompt_profile = "multi_frame_consolidated"
-        debug = False
-        save_annotated = False
-        no_summary = True
-        frame_stride = None
-        max_frames = None
-        time_limit_sec = None
-        filter_similar = False
-        similarity_threshold = 0.95
-        strategy = "all"
-        resize_max_side = None
-        raw_gemini = False
-    return Args()
-
-
 def _push_success_to_db(
     job_id: str,
     report_json_path: Path,
@@ -69,21 +45,18 @@ def _push_success_to_db(
         prompt_version = report_data.get("prompt_version")
         metrics = report_data.get("metrics") or {}
         gemini_calls = metrics.get("total_calls")
-        # Report v2.1 has "entities"; legacy has "pallets"
-        if report_data.get("report_version") == "2.1" or report_data.get("mode") == "hybrid_v2.1":
-            entities = report_data.get("entities") or []
-            for ent in entities:
-                pallets_list.append({
-                    "pallet_id": ent.get("pallet_id") or "",
-                    "internal_code": ent.get("internal_code"),
-                    "final_quantity": ent.get("final_quantity"),
-                    "quantity": ent.get("product_label_quantity"),
-                    "source": "gemini",
-                    "confidence": ent.get("confidence"),
-                    "fallback_used": False,
-                })
-        else:
-            pallets_list = report_data.get("pallets") or []
+        # v2.2 only produces v2.1-style reports with "entities"
+        entities = report_data.get("entities") or []
+        for ent in entities:
+            pallets_list.append({
+                "pallet_id": ent.get("pallet_id") or "",
+                "internal_code": ent.get("internal_code"),
+                "final_quantity": ent.get("final_quantity"),
+                "quantity": ent.get("product_label_quantity"),
+                "source": "gemini",
+                "confidence": ent.get("confidence"),
+                "fallback_used": False,
+            })
 
     try:
         jobs_repo.set_job_outputs(
@@ -107,7 +80,7 @@ def _push_success_to_db(
 
 
 def run_job(base_path: Path, job_id: str) -> None:
-    """Load job, run engine (legacy or hybrid), update status and output."""
+    """Load job, run hybrid pipeline, update status and output."""
     record = get_job(base_path, job_id)
     if record is None:
         logger.warning("Job %s not found", job_id)
@@ -116,29 +89,25 @@ def run_job(base_path: Path, job_id: str) -> None:
         logger.warning("Job %s not queued (status=%s), skip", job_id, record.status)
         return
 
+    mode = (record.input.mode or "hybrid").strip()
+    if mode == "legacy":
+        update_job(
+            base_path,
+            job_id,
+            status=JobStatus.FAILED,
+            error="legacy mode has been removed as of v2.2; use mode='hybrid'.",
+            progress={"stage": "done", "percent": 100},
+        )
+        logger.info("Job %s: legacy mode rejected", job_id)
+        return
+
     settings = load_settings()
     job_dir = base_path / job_id
     run_id = "run"
     log = setup_logger(str(job_dir), job_id, run_id, console=False)
     output_path = base_path
     video_path = record.input.video_path
-    mode = record.input.mode or "legacy"
     confidence_threshold = record.input.confidence_threshold
-
-    # Photos jobs: legacy not supported; force hybrid
-    input_type = getattr(record.input, "input_type", "video")
-    if input_type == "photos":
-        if mode == "legacy":
-            update_job(
-                base_path,
-                job_id,
-                status=JobStatus.FAILED,
-                error="legacy mode requires video input",
-                progress={"stage": "done", "percent": 100},
-            )
-            logger.info("Job %s: photos input with mode=legacy rejected", job_id)
-            return
-        mode = "hybrid"
 
     def progress_cb(stage: str, percent: int) -> None:
         update_job(base_path, job_id, progress={"stage": stage, "percent": percent})
@@ -146,29 +115,18 @@ def run_job(base_path: Path, job_id: str) -> None:
     update_job(base_path, job_id, status=JobStatus.RUNNING, progress={"stage": "extract_frames", "percent": 10})
     try:
         pipeline = HybridInventoryPipeline()
-        if mode == "legacy":
-            code = pipeline.legacy_pipeline.run(
-                video_path,
-                settings=settings,
-                video_id=job_id,
-                output_path=output_path,
-                run_id=run_id,
-                logger=log,
-                args=_make_fake_args(),
-            )
-        else:
-            code = pipeline.process_video(
-                video_path,
-                mode="hybrid",
-                settings=settings,
-                video_id=job_id,
-                output_path=output_path,
-                run_id=run_id,
-                logger=log,
-                confidence_threshold=confidence_threshold,
-                progress_callback=progress_cb,
-                job_input=record.input,
-            )
+        code = pipeline.process_video(
+            video_path,
+            mode="hybrid",
+            settings=settings,
+            video_id=job_id,
+            output_path=output_path,
+            run_id=run_id,
+            logger=log,
+            confidence_threshold=confidence_threshold,
+            progress_callback=progress_cb,
+            job_input=record.input,
+        )
         if code != 0:
             update_job(
                 base_path,
@@ -181,9 +139,6 @@ def run_job(base_path: Path, job_id: str) -> None:
         run_dir = output_path / job_id / run_id
         report_json = run_dir / "hybrid_report.json"
         report_csv = run_dir / "hybrid_report.csv"
-        if mode == "legacy":
-            report_json = run_dir / "result.json"
-            report_csv = None
         update_job(
             base_path,
             job_id,

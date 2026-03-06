@@ -16,7 +16,7 @@ class JobStatus(str, Enum):
 class JobInput(BaseModel):
     """Input payload for a job. Stage 2.2.A: video_path empty when input_type=photos."""
     video_path: str = ""
-    mode: str = "legacy"
+    mode: str = "hybrid"
     confidence_threshold: float = 0.70
     metadata: Optional[Dict[str, Any]] = None
     input_type: str = "video"

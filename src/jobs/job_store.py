@@ -47,7 +47,7 @@ def create_job(
     base_path: Path,
     job_id: str,
     video_path: str = "",
-    mode: str = "legacy",
+    mode: str = "hybrid",
     confidence_threshold: float = 0.70,
     metadata: Optional[dict] = None,
     video_filename: Optional[str] = None,

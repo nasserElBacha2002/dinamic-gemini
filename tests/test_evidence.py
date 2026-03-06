@@ -326,5 +326,5 @@ def test_jobs_result_prefer_report_mode():
     out = _merge_report_metadata(report, "job_1", "succeeded", "hybrid", 0.7)
     assert out["mode"] == "hybrid_v2.1"
     report2 = {"summary": {}}
-    out2 = _merge_report_metadata(report2, "job_2", "succeeded", "legacy", 0.5)
-    assert out2["mode"] == "legacy"
+    out2 = _merge_report_metadata(report2, "job_2", "succeeded", "hybrid", 0.5)
+    assert out2["mode"] == "hybrid"

@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 
 class JobCreateForm(BaseModel):
-    """Parsed form fields for POST /jobs."""
-    mode: str = Field(default="legacy", pattern="^(legacy|hybrid)$")
+    """Parsed form fields for POST /jobs. v2.2: only hybrid is supported (legacy removed)."""
+    mode: str = Field(default="hybrid", pattern="^hybrid$")
     confidence_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
     metadata: Optional[Any] = None
 
