@@ -1,6 +1,7 @@
 """
 Hybrid inventory pipeline (v2.1).
 Stage 2.2.B: frames obtained via FrameSource (video or photos); pipeline input-agnostic.
+v2.3.A: RunContext, PipelineStage, InputPreparationStage (minimal refactor).
 """
 
 from pathlib import Path
@@ -14,7 +15,6 @@ from src.decision.count_status import assign_count_status
 from src.decision.entity_order import sort_entities_deterministically
 from src.decision.pallet_id import resolve_pallet_id
 from src.decision.quality_score import compute_entity_quality_score
-from src.frames.normalize import normalize_photos_for_job, validate_relative_path
 from src.frames.sources.factory import get_frame_source
 from src.jobs.models import JobInput
 from src.llm.errors import LLMProviderError
@@ -25,7 +25,8 @@ from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_e
 from src.evidence.evidence_pack import generate_evidence_pack
 from src.reporting.artifacts import write_json
 from src.reporting.hybrid_report import build_hybrid_report
-from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
+from src.pipeline.context.run_context import RunContext
+from src.pipeline.stages.input_preparation_stage import InputPreparationStage
 
 # Default max frames when hybrid_max_frames is None (kept for test imports)
 # Hard cap for loading into RAM when env is unset (avoid unbounded memory)
@@ -54,9 +55,6 @@ def _save_frames_sent_to_gemini(
 class HybridInventoryPipeline:
     """Single hybrid flow: FrameSource → (normalize if photos) → LLMProvider → v2.1 parse/evidence/report."""
 
-    def __init__(self) -> None:
-        pass
-
     def process_video(
         self,
         video_path: str,
@@ -81,7 +79,35 @@ class HybridInventoryPipeline:
         job_input: Optional[JobInput] = None,
         **_: object,
     ) -> int:
-        """Hybrid flow: get frames via FrameSource → one Gemini call → parse → entities (v2.1)."""
+        """Hybrid flow: get frames via FrameSource → one Gemini call → parse → entities (v2.1). v2.3.A: RunContext + InputPreparationStage."""
+        # For compatibility, the caller passes video_id as the job/execution identifier (worker uses job_id).
+        execution_id = video_id
+        if job_input is None:
+            job_input = JobInput(video_path=video_path or "", mode="hybrid", input_type="video")
+        workspace_path = output_path
+        run_dir = output_path / execution_id / run_id
+        context = RunContext(
+            job_id=execution_id,
+            run_id=run_id,
+            workspace_path=workspace_path,
+            run_dir=run_dir,
+            job_input=job_input,
+            settings=settings,
+            logger=logger,
+            progress_callback=progress_callback,
+            metadata={},
+        )
+        input_stage = InputPreparationStage()
+        try:
+            prepared = input_stage.run(context, None)
+        except (FileNotFoundError, ValueError) as e:
+            logger.exception(
+                "Stage failure: InputPreparationStage (job_id=%s): %s",
+                context.job_id,
+                e,
+            )
+            return 1
+
         progress_cb = progress_callback
         def _report(stage: str, percent: int) -> None:
             if callable(progress_cb):
@@ -90,40 +116,10 @@ class HybridInventoryPipeline:
                 except Exception:
                     pass
         _report("extract_frames", 10)
-        if job_input is None:
-            job_input = JobInput(video_path=video_path or "", mode="hybrid", input_type="video")
-        run_dir = output_path / video_id / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-
-        # Stage 2.2.C: normalize photos before get_frames so pipeline consumes only normalized images
-        if getattr(job_input, "input_type", "video") == "photos":
-            try:
-                raw_manifest = (job_input.input_manifest_path or "").strip()
-                raw_photos = (job_input.photos_dir or "").strip()
-                if raw_manifest:
-                    manifest_rel = validate_relative_path(raw_manifest, "input_manifest_path")
-                    manifest_path = run_dir.parent / manifest_rel
-                else:
-                    manifest_path = run_dir / "input_manifest.json"
-                if raw_photos:
-                    photos_rel = validate_relative_path(raw_photos, "photos_dir")
-                    photos_dir = run_dir.parent / photos_rel
-                else:
-                    photos_dir = run_dir / "input_photos"
-                normalize_photos_for_job(
-                    run_dir,
-                    settings,
-                    manifest_path=manifest_path,
-                    photos_dir=photos_dir,
-                    normalized_dir=run_dir / "input_photos_normalized",
-                )
-            except (FileNotFoundError, ValueError) as e:
-                logger.exception("Photo normalization failed: %s", e)
-                return 1
 
         try:
-            frame_source = get_frame_source(job_input.input_type)
-            bundle = frame_source.get_frames(video_id, run_dir, job_input)
+            frame_source = get_frame_source(prepared.job_input.input_type)
+            bundle = frame_source.get_frames(video_id, context.run_dir, prepared.job_input)
         except (ValueError, FileNotFoundError, RuntimeError) as e:
             logger.exception("Error obtaining frames (FrameSource): %s", e)
             return 1
@@ -148,8 +144,6 @@ class HybridInventoryPipeline:
         logger.info("Frames loaded: %d (source=%s)", len(frames_nd), metadata.get("source", "unknown"))
 
         _report("gemini_global_call", 50)
-        run_dir = output_path / video_id / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
 
         provider = get_llm_provider(settings)
         frame_refs_truncated = (bundle.frame_refs or [])[: len(frames_nd)]
@@ -185,12 +179,12 @@ class HybridInventoryPipeline:
         _report("evidence_pack", 85)
         generate_evidence_pack(
             job_id=video_id,
-            run_dir=run_dir,
+            run_dir=context.run_dir,
             frames=frames_nd,
             metadata=metadata,
             entities=entities,
         )
-        report_video_path = video_path or (f"photos_{video_id}" if job_input.input_type == "photos" else "")
+        report_video_path = video_path or (f"photos_{video_id}" if prepared.job_input.input_type == "photos" else "")
         report = build_hybrid_report(
             video_path=report_video_path,
             entities=entities,
@@ -199,8 +193,8 @@ class HybridInventoryPipeline:
         )
         _report("write_artifacts", 90)
         if getattr(settings, "debug_save_frames", False):
-            _save_frames_sent_to_gemini(run_dir, frames_nd, metadata.get("frame_indices"))
-        report_path = run_dir / "hybrid_report.json"
+            _save_frames_sent_to_gemini(context.run_dir, frames_nd, metadata.get("frame_indices"))
+        report_path = context.run_dir / "hybrid_report.json"
         write_json(report_path, report)
         logger.info("Reporte hybrid v2.1 guardado: %s", report_path)
         _report("done", 100)
