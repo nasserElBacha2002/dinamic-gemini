@@ -96,7 +96,7 @@ def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path) -> None:
     settings = _make_fake_settings(str(GLOBAL_ANALYSIS_OK))
     job_input = JobInput(video_path="/dummy/video.mp4", mode="hybrid", input_type="video")
 
-    with patch("src.pipeline.hybrid_inventory_pipeline.get_frame_source") as mock_src:
+    with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_source = MagicMock()
         mock_source.get_frames.return_value = bundle
         mock_src.return_value = mock_source
