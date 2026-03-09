@@ -1,7 +1,6 @@
 """
 Hybrid inventory pipeline (v2.1).
-Stage 2.2.B: frames obtained via FrameSource (video or photos); pipeline input-agnostic.
-v2.3.A: RunContext, PipelineStage, InputPreparationStage (minimal refactor).
+Stage 2.2.B: frames via FrameSource; v2.3.A: RunContext, InputPreparationStage; v2.3.B: AnalysisProvider port.
 """
 
 from pathlib import Path
@@ -18,14 +17,13 @@ from src.decision.quality_score import compute_entity_quality_score
 from src.frames.sources.factory import get_frame_source
 from src.jobs.models import JobInput
 from src.llm.errors import LLMProviderError
-from src.llm.global_pallet_analysis_prompt import GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
-from src.llm.providers.factory import get_llm_provider
-from src.llm.types import LLMRequest
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_entities
 from src.evidence.evidence_pack import generate_evidence_pack
 from src.reporting.artifacts import write_json
 from src.reporting.hybrid_report import build_hybrid_report
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.ports.analysis_provider import AnalysisProvider
+from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
 from src.pipeline.stages.input_preparation_stage import InputPreparationStage
 
 # Default max frames when hybrid_max_frames is None (kept for test imports)
@@ -53,7 +51,13 @@ def _save_frames_sent_to_gemini(
 
 
 class HybridInventoryPipeline:
-    """Single hybrid flow: FrameSource → (normalize if photos) → LLMProvider → v2.1 parse/evidence/report."""
+    """Single hybrid flow: FrameSource → (normalize if photos) → AnalysisProvider → v2.1 parse/evidence/report."""
+
+    def __init__(self, analysis_provider: Optional[AnalysisProvider] = None) -> None:
+        """Optional analysis_provider; when None, uses GeminiAnalysisProvider (current behavior)."""
+        self._analysis_provider: AnalysisProvider = (
+            analysis_provider if analysis_provider is not None else GeminiAnalysisProvider()
+        )
 
     def process_video(
         self,
@@ -145,20 +149,16 @@ class HybridInventoryPipeline:
 
         _report("gemini_global_call", 50)
 
-        provider = get_llm_provider(settings)
         frame_refs_truncated = (bundle.frame_refs or [])[: len(frames_nd)]
-        llm_request = LLMRequest(
-            job_id=video_id,
-            frames=frames_to_load,
-            frame_refs=frame_refs_truncated,
-            prompt=GLOBAL_ENTITY_ANALYSIS_PROMPT_V21,
-            schema_version="v2.1",
-            metadata=metadata,
-            frames_nd=frames_nd,
-        )
         try:
-            response = provider.analyze_global(llm_request)
-            data = response.parsed_json
+            result = self._analysis_provider.analyze(
+                context,
+                frames_nd,
+                frames_to_load,
+                frame_refs_truncated,
+                metadata,
+            )
+            data = result.parsed_json
         except LLMProviderError as e:
             logger.exception("LLM provider failed [%s]: %s", e.code, e.message)
             return 1
