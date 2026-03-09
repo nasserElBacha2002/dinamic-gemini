@@ -14,7 +14,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from src.llm.global_pallet_analysis_prompt import GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
+from src.llm.prompts import get_hybrid_prompt
 from src.llm.providers.factory import get_llm_provider
 from src.llm.types import LLMRequest
 from src.pipeline.context.run_context import RunContext
@@ -41,11 +41,12 @@ class GeminiAnalysisProvider:
         settings = context.settings
         job_id = context.job_id
         provider = get_llm_provider(settings)
+        prompt_text = get_hybrid_prompt(getattr(settings, "hybrid_prompt", "global_v21"))
         request = LLMRequest(
             job_id=job_id,
             frames=frame_paths,
             frame_refs=frame_refs,
-            prompt=GLOBAL_ENTITY_ANALYSIS_PROMPT_V21,
+            prompt=prompt_text,
             schema_version="v2.1",
             metadata=metadata,
             frames_nd=frames_nd,

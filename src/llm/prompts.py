@@ -1,15 +1,31 @@
 """
-Módulo de prompts para Gemini API.
-Define los prompts del sistema y usuario para diferentes perfiles de análisis.
+Módulo unificado de prompts para Gemini API.
+
+Todos los prompts viven en el diccionario PROMPTS. El pipeline híbrido usa
+get_hybrid_prompt() con la variable de entorno HYBRID_PROMPT (default: global_v21).
+Valores del diccionario: str (prompt único) o dict con "system"/"user" (legacy).
 """
 
-from typing import Dict, Final
+from typing import Dict, Final, Union
 
-# ----------------------------
-# Prompt Profile: Pallet Counting (Single & Multi-frame)
-# ----------------------------
+# Textos base (referenciados por PROMPTS)
+_GLOBAL_V21: Final[str] = """\
+Analyze the frames from a warehouse aisle video. Detect all distinct logistic entities (one per entity).
 
-SYSTEM_PROMPT_PALLET_COUNT: Final[str] = """\
+Entity types:
+- PALLET: pallet structure, may have boxes and position/product labels.
+- EMPTY_PALLET: pallet structure with no boxes on top.
+- LOOSE_BOXES: grouped boxes without pallet (do NOT count as pallet).
+
+Rules:
+- One entity per detection. Do NOT duplicate or merge. Do NOT infer hidden entities.
+- Do not invent values. Use null if not clearly readable.
+- model_entity_id: unique string (e.g. E1, E2). confidence: 0 to 1.
+- Bbox: if you provide position_label_bbox or product_label_bbox, use NORMALIZED coords only: [x1,y1,x2,y2] with floats in [0,1], x1<x2, y1<y2. Use null if region unknown.
+- has_boxes: true if boxes visible on pallet or for LOOSE_BOXES.
+"""
+
+_SYSTEM_PALLET_COUNT: Final[str] = """\
 You are an expert in computer vision for logistics inventory management.
 Your task is to analyze warehouse images, identify distinct pallets, and count boxes per product.
 
@@ -28,19 +44,18 @@ Rules:
 - Assign confidence (0.0 to 1.0).
 """
 
-USER_PROMPT_PALLET_COUNT: Final[str] = """\
+_USER_PALLET_COUNT: Final[str] = """\
 Analyze the attached image(s). Identify all visible distinct pallets, distinguish the products and calculate the total number of boxes conservatively.
 """
 
-# Bloque Sprint A: manejo de redundancia (imágenes repetidas o muy similares)
-USER_PROMPT_MULTI_VIEW_REDUNDANCY: Final[str] = """\
+_USER_MULTI_VIEW_REDUNDANCY: Final[str] = """\
 REDUNDANCY AND VIEW SELECTION (Sprint A):
 - Some images may be repeated or highly similar (same angle, same framing, same visual pattern). If you detect that two or more views are redundant, IGNORE the duplicates and base your analysis on the single best view among them.
 - PRIORITIZE the most useful view: sharpest (least blur), most complete (least occlusion), and with the clearest view of labels/boxes.
 - Use multiple views ONLY when they add genuinely different evidence (e.g. different angle revealing hidden layers). Do NOT assume "more images = sum counts"; maintain anti-double-counting and rely on real diversity.
 """
 
-USER_PROMPT_MULTI_FRAME: Final[str] = """\
+_USER_MULTI_FRAME: Final[str] = """\
 Analyze the attached sequence of images. 
 CRITICAL: These images may show multiple angles of the SAME pallet, AND/OR entirely DIFFERENT pallets.
 
@@ -53,8 +68,7 @@ Your specific tasks:
 REDUNDANCY (Sprint A): There may be repeated or very similar images (same angle/framing). If two or more views are redundant, ignore the duplicates and use only the best one (sharpest, most complete, least occlusion). Use multiple views only when they add genuinely different evidence; do not assume "more images = sum".
 """
 
-# Sprint A: 1 request por track (vistas del MISMO pallet)
-USER_PROMPT_MULTI_VIEW_ANTI_SUM: Final[str] = """\
+_USER_MULTI_VIEW_ANTI_SUM: Final[str] = """\
 The attached images are multiple views of the SAME pallet (one physical pallet).
 Your task: MERGE evidence across views into ONE consolidated count.
 
@@ -77,29 +91,38 @@ Output:
 """
 
 # ----------------------------
-# Perfiles de prompt
+# Diccionario unificado de prompts
+# Valores: str = prompt único (híbrido) | dict con "system"/"user" = legacy
 # ----------------------------
 
-PROMPT_PROFILES: Dict[str, Dict[str, str]] = {
-    "pallet_count_simple": {
-        "system": SYSTEM_PROMPT_PALLET_COUNT,
-        "user": USER_PROMPT_PALLET_COUNT,
-    },
-    "multi_frame_consolidated": {
-        "system": SYSTEM_PROMPT_PALLET_COUNT,
-        "user": USER_PROMPT_MULTI_FRAME,
-    },
+PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
+    # Híbrido (una llamada por video; HYBRID_PROMPT)
+    "global_v21": _GLOBAL_V21,
+    # Legacy (system + user; no usados por el flujo híbrido único)
+    "pallet_count_simple": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_PALLET_COUNT},
+    "multi_frame_consolidated": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_MULTI_FRAME},
     "multi_view_per_track": {
-        "system": SYSTEM_PROMPT_PALLET_COUNT,
-        "user": USER_PROMPT_MULTI_VIEW_ANTI_SUM + "\n\n" + USER_PROMPT_MULTI_VIEW_REDUNDANCY,
+        "system": _SYSTEM_PALLET_COUNT,
+        "user": _USER_MULTI_VIEW_ANTI_SUM + "\n\n" + _USER_MULTI_VIEW_REDUNDANCY,
     },
 }
 
-def get_prompt_profile(profile_name: str = "pallet_count_simple") -> Dict[str, str]:
-    if profile_name not in PROMPT_PROFILES:
-        available = ", ".join(PROMPT_PROFILES.keys())
-        raise ValueError(
-            f"Perfil de prompt '{profile_name}' no encontrado. "
-            f"Perfiles disponibles: {available}"
-        )
-    return PROMPT_PROFILES[profile_name].copy()
+# Compatibilidad: nombres usados en tests y documentación
+GLOBAL_ENTITY_ANALYSIS_PROMPT_V21: Final[str] = _GLOBAL_V21
+HYBRID_PROMPTS: Dict[str, str] = {k: v for k, v in PROMPTS.items() if isinstance(v, str)}
+
+
+def get_hybrid_prompt(profile_name: str = "global_v21") -> str:
+    """Devuelve el prompt de análisis global para el pipeline híbrido.
+
+    El perfil se elige con la variable de entorno HYBRID_PROMPT. Solo perfiles
+    con valor str en PROMPTS son válidos para híbrido; si no existe o es legacy, se usa global_v21.
+
+    Args:
+        profile_name: Nombre del perfil (ej. global_v21).
+
+    Returns:
+        Texto del prompt.
+    """
+    raw = PROMPTS.get(profile_name, PROMPTS["global_v21"])
+    return raw if isinstance(raw, str) else PROMPTS["global_v21"]
