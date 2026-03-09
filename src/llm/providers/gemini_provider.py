@@ -13,6 +13,7 @@ from src.exceptions.global_analysis_exceptions import (
 from src.llm.errors import LLMProviderError
 from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
+from src.llm.prompts import get_hybrid_prompt
 from src.llm.types import LLMRequest, LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,8 @@ class GeminiProvider:
             max_retries=getattr(self._settings, "gemini_max_retries", 3),
             retry_delay=getattr(self._settings, "gemini_retry_delay", 1.0),
         )
-        analyzer = GeminiGlobalAnalyzer(client)
+        prompt_text = get_hybrid_prompt(getattr(self._settings, "hybrid_prompt", "global_v21"))
+        analyzer = GeminiGlobalAnalyzer(client, prompt_text=prompt_text)
         try:
             data = analyzer.analyze_video_frames(frames_nd, logger=logger)
         except GlobalAnalysisParsingError as e:

@@ -160,6 +160,10 @@ class Settings(BaseModel):
         default_factory=lambda: (os.getenv("FAKE_LLM_FIXTURE_PATH") or "").strip() or None,
         description="Path to JSON fixture for fake provider (optional). Env: FAKE_LLM_FIXTURE_PATH.",
     )
+    hybrid_prompt: str = Field(
+        default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
+        description="Perfil de prompt para el pipeline híbrido (ej. global_v21). Env: HYBRID_PROMPT.",
+    )
 
     # Frame Extraction Settings
     extract_fps: float = Field(

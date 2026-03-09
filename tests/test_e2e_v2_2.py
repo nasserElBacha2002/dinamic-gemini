@@ -141,7 +141,7 @@ def test_e2e_video_job_generates_report_and_evidence(tmp_path):
     )
 
     settings = make_fake_settings(fake_llm_fixture_path=str(GLOBAL_ANALYSIS_OK))
-    with patch("src.pipeline.hybrid_inventory_pipeline.get_frame_source") as mock_src:
+    with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_source = MagicMock()
         mock_source.get_frames.return_value = bundle
         mock_src.return_value = mock_source
@@ -272,7 +272,7 @@ def test_e2e_evidence_localization_modes(tmp_path):
 
     # 1) With bboxes -> LOCALIZED
     settings_ok = make_fake_settings(fake_llm_fixture_path=str(GLOBAL_ANALYSIS_OK))
-    with patch("src.pipeline.hybrid_inventory_pipeline.get_frame_source") as mock_src:
+    with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle
         from src.jobs.models import JobInput
 
@@ -307,7 +307,7 @@ def test_e2e_evidence_localization_modes(tmp_path):
         metadata={"source": "video", "frame_count": 2, "selected_by": "video_sampling", "frame_indices": [0, 1]},
     )
     settings_u = make_fake_settings(fake_llm_fixture_path=str(GLOBAL_ANALYSIS_UNLOCALIZED))
-    with patch("src.pipeline.hybrid_inventory_pipeline.get_frame_source") as mock_src:
+    with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle2
         job_input2 = JobInput(video_path="", mode="hybrid", input_type="video")
         code2 = run_pipeline_sync(tmp_path, job_id2, run_id, settings=settings_u, job_input=job_input2)
@@ -444,7 +444,7 @@ def test_pipeline_uses_fake_provider_no_network(tmp_path):
         gemini_constructor_called.append(1)
         raise RuntimeError("GeminiClient must not be used when provider is fake")
 
-    with patch("src.pipeline.hybrid_inventory_pipeline.get_frame_source") as mock_src:
+    with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle
         with patch("src.llm.providers.gemini_provider.GeminiClient", side_effect=_track_gemini):
             from src.jobs.models import JobInput

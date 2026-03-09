@@ -1,42 +1,36 @@
 """
 Hybrid inventory pipeline (v2.1).
-Stage 2.2.B: frames obtained via FrameSource (video or photos); pipeline input-agnostic.
+Stage 2.2.B: frames via FrameSource; v2.3.A: RunContext, InputPreparationStage; v2.3.B: AnalysisProvider; v2.3.C: staged orchestration.
 """
 
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Optional
 
 import cv2
 import numpy as np
 
 from src.config import Settings
-from src.decision.count_status import assign_count_status
-from src.decision.entity_order import sort_entities_deterministically
-from src.decision.pallet_id import resolve_pallet_id
-from src.decision.quality_score import compute_entity_quality_score
-from src.frames.normalize import normalize_photos_for_job, validate_relative_path
-from src.frames.sources.factory import get_frame_source
 from src.jobs.models import JobInput
 from src.llm.errors import LLMProviderError
-from src.llm.global_pallet_analysis_prompt import GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
-from src.llm.providers.factory import get_llm_provider
-from src.llm.types import LLMRequest
-from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_entities
-from src.evidence.evidence_pack import generate_evidence_pack
-from src.reporting.artifacts import write_json
-from src.reporting.hybrid_report import build_hybrid_report
-from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
+from src.parsing.global_analysis_parser import GlobalAnalysisParseError
+from src.pipeline.context.run_context import RunContext
+from src.pipeline.ports.analysis_provider import AnalysisProvider
+from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
+from src.pipeline.stages.input_preparation_stage import InputPreparationStage, PreparedInput
+from src.pipeline.stages.frame_acquisition_stage import FrameAcquisitionStage, AcquiredFrames
+from src.pipeline.stages.analysis_stage import AnalysisStage
+from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage
+from src.pipeline.stages.evidence_stage import EvidenceStage, EvidenceStageInput
+from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageInput
 
 # Default max frames when hybrid_max_frames is None (kept for test imports)
-# Hard cap for loading into RAM when env is unset (avoid unbounded memory)
 HYBRID_MAX_FRAMES = 10000
-HYBRID_MAX_FRAMES_LOAD_CAP = 48
 
 
 def _save_frames_sent_to_gemini(
     run_dir: Path,
-    frames: List[np.ndarray],
-    frame_indices: Optional[List[int]] = None,
+    frames: list,
+    frame_indices: Optional[list] = None,
 ) -> None:
     """Save the frames that were sent to Gemini as JPGs under run_dir/frames_sent/ (when DEBUG_SAVE_FRAMES=true)."""
     if not frames:
@@ -52,10 +46,19 @@ def _save_frames_sent_to_gemini(
 
 
 class HybridInventoryPipeline:
-    """Single hybrid flow: FrameSource → (normalize if photos) → LLMProvider → v2.1 parse/evidence/report."""
+    """Staged hybrid flow: InputPreparation → FrameAcquisition → Analysis → EntityResolution → Evidence → Reporting."""
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, analysis_provider: Optional[AnalysisProvider] = None) -> None:
+        """Optional analysis_provider; when None, uses GeminiAnalysisProvider (current behavior)."""
+        self._analysis_provider: AnalysisProvider = (
+            analysis_provider if analysis_provider is not None else GeminiAnalysisProvider()
+        )
+        self._input_stage = InputPreparationStage()
+        self._frame_acquisition_stage = FrameAcquisitionStage()
+        self._analysis_stage = AnalysisStage(self._analysis_provider)
+        self._entity_resolution_stage = EntityResolutionStage()
+        self._evidence_stage = EvidenceStage()
+        self._reporting_stage = ReportingStage()
 
     def process_video(
         self,
@@ -81,127 +84,87 @@ class HybridInventoryPipeline:
         job_input: Optional[JobInput] = None,
         **_: object,
     ) -> int:
-        """Hybrid flow: get frames via FrameSource → one Gemini call → parse → entities (v2.1)."""
+        """Orchestrate staged pipeline; preserve exit codes and progress semantics."""
+        execution_id = video_id
+        if job_input is None:
+            job_input = JobInput(video_path=video_path or "", mode="hybrid", input_type="video")
+        workspace_path = output_path
+        run_dir = output_path / execution_id / run_id
+        context = RunContext(
+            job_id=execution_id,
+            run_id=run_id,
+            workspace_path=workspace_path,
+            run_dir=run_dir,
+            job_input=job_input,
+            settings=settings,
+            logger=logger,
+            progress_callback=progress_callback,
+            metadata={},
+        )
+
         progress_cb = progress_callback
+
         def _report(stage: str, percent: int) -> None:
             if callable(progress_cb):
                 try:
                     progress_cb(stage, percent)
                 except Exception:
                     pass
-        _report("extract_frames", 10)
-        if job_input is None:
-            job_input = JobInput(video_path=video_path or "", mode="hybrid", input_type="video")
-        run_dir = output_path / video_id / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-
-        # Stage 2.2.C: normalize photos before get_frames so pipeline consumes only normalized images
-        if getattr(job_input, "input_type", "video") == "photos":
-            try:
-                raw_manifest = (job_input.input_manifest_path or "").strip()
-                raw_photos = (job_input.photos_dir or "").strip()
-                if raw_manifest:
-                    manifest_rel = validate_relative_path(raw_manifest, "input_manifest_path")
-                    manifest_path = run_dir.parent / manifest_rel
-                else:
-                    manifest_path = run_dir / "input_manifest.json"
-                if raw_photos:
-                    photos_rel = validate_relative_path(raw_photos, "photos_dir")
-                    photos_dir = run_dir.parent / photos_rel
-                else:
-                    photos_dir = run_dir / "input_photos"
-                normalize_photos_for_job(
-                    run_dir,
-                    settings,
-                    manifest_path=manifest_path,
-                    photos_dir=photos_dir,
-                    normalized_dir=run_dir / "input_photos_normalized",
-                )
-            except (FileNotFoundError, ValueError) as e:
-                logger.exception("Photo normalization failed: %s", e)
-                return 1
 
         try:
-            frame_source = get_frame_source(job_input.input_type)
-            bundle = frame_source.get_frames(video_id, run_dir, job_input)
+            prepared: PreparedInput = self._input_stage.run(context, None)
+        except (FileNotFoundError, ValueError) as e:
+            logger.exception("Stage failure: InputPreparationStage (job_id=%s): %s", context.job_id, e)
+            return 1
+
+        _report("extract_frames", 10)
+        try:
+            acquired: AcquiredFrames = self._frame_acquisition_stage.run(context, prepared)
         except (ValueError, FileNotFoundError, RuntimeError) as e:
-            logger.exception("Error obtaining frames (FrameSource): %s", e)
+            logger.exception("Stage failure: FrameAcquisitionStage (job_id=%s): %s", context.job_id, e)
             return 1
-        # Hard cap on frames loaded into RAM (settings.hybrid_max_frames or safe default)
-        max_load = getattr(settings, "hybrid_max_frames", None)
-        if max_load is None or not isinstance(max_load, (int, float)) or max_load <= 0:
-            max_load = HYBRID_MAX_FRAMES_LOAD_CAP
-        frames_to_load = bundle.frames[: int(max_load)]
-        frames_nd: List[np.ndarray] = []
-        for p in frames_to_load:
-            img = cv2.imread(str(p))
-            if img is not None:
-                frames_nd.append(img)
-        if not frames_nd:
-            logger.warning("No frames could be loaded from bundle (frame_count=%s)", bundle.metadata.get("frame_count"))
-            return 1
-        metadata = {**bundle.metadata, "frame_count": len(frames_nd)}
-        if "frame_indices" in metadata and isinstance(metadata.get("frame_indices"), list):
-            idx_list = metadata["frame_indices"]
-            if len(idx_list) > len(frames_nd):
-                metadata["frame_indices"] = idx_list[: len(frames_nd)]
-        logger.info("Frames loaded: %d (source=%s)", len(frames_nd), metadata.get("source", "unknown"))
 
         _report("gemini_global_call", 50)
-        run_dir = output_path / video_id / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-
-        provider = get_llm_provider(settings)
-        frame_refs_truncated = (bundle.frame_refs or [])[: len(frames_nd)]
-        llm_request = LLMRequest(
-            job_id=video_id,
-            frames=frames_to_load,
-            frame_refs=frame_refs_truncated,
-            prompt=GLOBAL_ENTITY_ANALYSIS_PROMPT_V21,
-            schema_version="v2.1",
-            metadata=metadata,
-            frames_nd=frames_nd,
-        )
         try:
-            response = provider.analyze_global(llm_request)
-            data = response.parsed_json
+            analysis_result = self._analysis_stage.run(context, acquired)
         except LLMProviderError as e:
-            logger.exception("LLM provider failed [%s]: %s", e.code, e.message)
+            logger.exception("Stage failure: AnalysisStage (job_id=%s): %s", context.job_id, e)
             return 1
-        try:
-            entities = parse_entities(data, job_id=video_id)
-        except GlobalAnalysisParseError as e:
-            logger.exception("Error parseando entidades: %s", e)
-            return 1
-        logger.info("Entidades detectadas (hybrid v2.1): %d", len(entities))
 
-        sort_entities_deterministically(entities)
-        resolve_pallet_id(entities)
-        for e in entities:
-            assign_count_status(e)
-        for e in entities:
-            compute_entity_quality_score(e)
+        try:
+            resolved = self._entity_resolution_stage.run(context, analysis_result)
+        except GlobalAnalysisParseError as e:
+            logger.exception("Stage failure: EntityResolutionStage (job_id=%s): %s", context.job_id, e)
+            return 1
 
         _report("evidence_pack", 85)
-        generate_evidence_pack(
-            job_id=video_id,
-            run_dir=run_dir,
-            frames=frames_nd,
-            metadata=metadata,
-            entities=entities,
+        try:
+            evidence_input = EvidenceStageInput(
+                entities=resolved.entities,
+                frames_nd=acquired.frames_nd,
+                metadata=acquired.metadata,
+            )
+            self._evidence_stage.run(context, evidence_input)
+        except Exception as e:
+            logger.exception("Stage failure: EvidenceStage (job_id=%s): %s", context.job_id, e)
+            return 1
+
+        video_path_for_report = video_path or (
+            f"photos_{video_id}" if prepared.job_input.input_type == "photos" else ""
         )
-        report_video_path = video_path or (f"photos_{video_id}" if job_input.input_type == "photos" else "")
-        report = build_hybrid_report(
-            video_path=report_video_path,
-            entities=entities,
-            frames_selected=len(frames_nd),
-            frame_indices=metadata.get("frame_indices"),
+        reporting_input = ReportingStageInput(
+            entities=resolved.entities,
+            frames_count=len(acquired.frames_nd),
+            frame_indices=acquired.metadata.get("frame_indices"),
+            video_path_for_report=video_path_for_report,
         )
         _report("write_artifacts", 90)
         if getattr(settings, "debug_save_frames", False):
-            _save_frames_sent_to_gemini(run_dir, frames_nd, metadata.get("frame_indices"))
-        report_path = run_dir / "hybrid_report.json"
-        write_json(report_path, report)
-        logger.info("Reporte hybrid v2.1 guardado: %s", report_path)
+            _save_frames_sent_to_gemini(context.run_dir, acquired.frames_nd, acquired.metadata.get("frame_indices"))
+        try:
+            self._reporting_stage.run(context, reporting_input)
+        except Exception as e:
+            logger.exception("Stage failure: ReportingStage (job_id=%s): %s", context.job_id, e)
+            return 1
         _report("done", 100)
         return 0

@@ -289,10 +289,8 @@ def test_pipeline_truncates_frames_to_hybrid_max_frames(tmp_path):
     v21_response = {"total_entities_detected": 0, "entities": []}
 
     from src.llm.types import LLMResponse
-    from src.pipeline.hybrid_inventory_pipeline import (
-        HYBRID_MAX_FRAMES_LOAD_CAP,
-        HybridInventoryPipeline,
-    )
+    from src.pipeline.stages.frame_acquisition_stage import HYBRID_MAX_FRAMES_LOAD_CAP
+    from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
     logger = MagicMock()
     settings = MagicMock()
