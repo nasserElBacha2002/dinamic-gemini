@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
+from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import InventoryRepository
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -44,8 +46,8 @@ def test_get_inventory_returns_entity_when_found() -> None:
     assert result.name == "Test"
 
 
-def test_get_inventory_returns_none_when_not_found() -> None:
+def test_get_inventory_raises_when_not_found() -> None:
     repo = StubInventoryRepo()
     use_case = GetInventoryUseCase(inventory_repo=repo)
-    result = use_case.execute("nonexistent")
-    assert result is None
+    with pytest.raises(InventoryNotFoundError):
+        use_case.execute("nonexistent")

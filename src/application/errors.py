@@ -30,3 +30,7 @@ class UnsupportedAssetTypeError(Exception):
 
 class EmptyUploadError(Exception):
     """Raised when no files are provided for an aisle asset upload."""
+
+
+class PositionNotFoundError(Exception):
+    """Raised when the position does not exist or does not belong to the given aisle."""

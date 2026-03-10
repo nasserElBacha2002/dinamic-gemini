@@ -89,7 +89,9 @@ class PositionRepository(ABC):
         page: int = 1,
         page_size: int = 25,
     ) -> Sequence[Position]:
-        """List positions for an aisle with optional filters and pagination (§9.7)."""
+        """List positions for an aisle with optional filters and pagination (§9.7).
+        sku_filter: when set, only positions that have at least one product_record with
+        sku containing this string (substring match) are returned. In-memory impl may ignore it."""
         ...
 
     @abstractmethod

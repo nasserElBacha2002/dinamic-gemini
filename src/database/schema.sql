@@ -144,3 +144,62 @@ BEGIN
     CREATE INDEX IX_source_assets_aisle_id ON source_assets(aisle_id);
 END;
 GO
+
+-- v3.0 — Positions (Épica 6, Documento técnico §7.4)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'positions')
+BEGIN
+    CREATE TABLE positions (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        aisle_id VARCHAR(36) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        confidence FLOAT NOT NULL,
+        needs_review BIT NOT NULL,
+        primary_evidence_id VARCHAR(36) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        detected_summary_json NVARCHAR(MAX) NULL,
+        corrected_summary_json NVARCHAR(MAX) NULL,
+        CONSTRAINT FK_positions_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id)
+    );
+    CREATE INDEX IX_positions_aisle_id ON positions(aisle_id);
+END;
+GO
+
+-- v3.0 — Product records (Épica 6, Documento técnico §7.5)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'product_records')
+BEGIN
+    CREATE TABLE product_records (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        position_id VARCHAR(36) NOT NULL,
+        sku NVARCHAR(128) NOT NULL,
+        description NVARCHAR(512) NULL,
+        detected_quantity INT NOT NULL,
+        corrected_quantity INT NULL,
+        confidence FLOAT NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_product_records_position FOREIGN KEY (position_id) REFERENCES positions(id)
+    );
+    CREATE INDEX IX_product_records_position_id ON product_records(position_id);
+END;
+GO
+
+-- v3.0 — Evidences (Épica 6, Documento técnico §7.6)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'evidences')
+BEGIN
+    CREATE TABLE evidences (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        entity_type VARCHAR(32) NOT NULL,
+        entity_id VARCHAR(36) NOT NULL,
+        type VARCHAR(32) NOT NULL,
+        storage_path NVARCHAR(1024) NOT NULL,
+        source_asset_id VARCHAR(36) NULL,
+        is_primary BIT NOT NULL DEFAULT 0,
+        frame_index INT NULL,
+        timestamp_ms INT NULL,
+        bbox_json NVARCHAR(MAX) NULL,
+        quality_score FLOAT NULL
+    );
+    CREATE INDEX IX_evidences_entity ON evidences(entity_type, entity_id);
+END;
+GO

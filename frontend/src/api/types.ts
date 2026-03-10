@@ -27,6 +27,21 @@ export type AisleStatus = (typeof AISLE_STATUSES)[number];
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
+/** Backend position status values (result model — Épica 6). */
+export const POSITION_STATUSES = ['detected', 'reviewed', 'corrected', 'deleted'] as const;
+export type PositionStatus = (typeof POSITION_STATUSES)[number];
+
+/** Backend evidence type values (result model — Épica 6). */
+export const EVIDENCE_TYPES = [
+  'original_image',
+  'video_frame',
+  'position_crop',
+  'product_crop',
+  'label_crop',
+  'annotated_image',
+] as const;
+export type EvidenceType = (typeof EVIDENCE_TYPES)[number];
+
 export interface Inventory {
   id: string;
   name: string;
@@ -87,6 +102,60 @@ export interface CreateInventoryRequest {
 
 export interface CreateAisleRequest {
   code: string;
+}
+
+/** Position summary (list item) — Épica 6. */
+export interface PositionSummary {
+  id: string;
+  aisle_id: string;
+  status: PositionStatus | string;
+  confidence: number;
+  needs_review: boolean;
+  primary_evidence_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  detected_summary_json?: Record<string, unknown> | null;
+}
+
+/** Response for GET .../aisles/{aisle_id}/positions. */
+export interface PositionListResponse {
+  positions: PositionSummary[];
+}
+
+/** Product record within a position. */
+export interface ProductRecordSummary {
+  id: string;
+  position_id: string;
+  sku: string;
+  description?: string | null;
+  detected_quantity: number;
+  corrected_quantity?: number | null;
+  confidence: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Evidence (crop/media) for a position. */
+export interface EvidenceSummary {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  type: EvidenceType | string;
+  storage_path: string;
+  /** Backend may return null when evidence is not linked to a source asset. */
+  source_asset_id?: string | null;
+  is_primary: boolean;
+  frame_index?: number | null;
+  timestamp_ms?: number | null;
+  bbox_json?: Record<string, unknown> | null;
+  quality_score?: number | null;
+}
+
+/** Response for GET .../aisles/{aisle_id}/positions/{position_id}. */
+export interface PositionDetailResponse {
+  position: PositionSummary;
+  products: ProductRecordSummary[];
+  evidences: EvidenceSummary[];
 }
 
 export interface ApiErrorDetail {

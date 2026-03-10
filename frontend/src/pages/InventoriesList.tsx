@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -28,7 +28,7 @@ export default function InventoriesList() {
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -40,11 +40,11 @@ export default function InventoriesList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const handleCreateSuccess = (created: Inventory) => {
     setCreateOpen(false);
@@ -62,7 +62,16 @@ export default function InventoriesList() {
       </Typography>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setError(null)}
+          action={
+            <Button color="inherit" size="small" onClick={() => load()}>
+              Retry
+            </Button>
+          }
+        >
           {error}
         </Alert>
       )}

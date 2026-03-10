@@ -12,6 +12,8 @@ import type {
   ProcessAisleResponse,
   SourceAssetSummary,
   UploadAisleAssetsResponse,
+  PositionListResponse,
+  PositionDetailResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -130,4 +132,27 @@ export async function getAisleAssets(
   );
   const data = await handleResponse<SourceAssetSummary[]>(response);
   return Array.isArray(data) ? data : [];
+}
+
+/** List positions (results) for an aisle — Épica 6. */
+export async function getAislePositions(
+  inventoryId: string,
+  aisleId: string
+): Promise<PositionListResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions`
+  );
+  return handleResponse<PositionListResponse>(response);
+}
+
+/** Get position detail with products and evidences — Épica 6. */
+export async function getPositionDetail(
+  inventoryId: string,
+  aisleId: string,
+  positionId: string
+): Promise<PositionDetailResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}`
+  );
+  return handleResponse<PositionDetailResponse>(response);
 }

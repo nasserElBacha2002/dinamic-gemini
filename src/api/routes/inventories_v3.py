@@ -17,7 +17,9 @@ from src.api.dependencies import (
     get_create_inventory_use_case,
     get_get_aisle_processing_status_use_case,
     get_get_inventory_use_case,
+    get_get_position_detail_use_case,
     get_list_aisle_assets_use_case,
+    get_list_aisle_positions_use_case,
     get_list_aisles_with_status_use_case,
     get_list_inventories_use_case,
     get_start_aisle_processing_use_case,
@@ -27,7 +29,14 @@ from src.api.schemas.aisle_schemas import CreateAisleRequest, AisleResponse, Ais
 from src.api.schemas.asset_schemas import SourceAssetResponse, UploadAisleAssetsResponse
 from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary, ProcessAisleResponse
 from src.api.schemas.inventory_schemas import CreateInventoryRequest, InventoryResponse
-from src.application.errors import ActiveJobExistsError, AisleNotFoundError, DuplicateAisleCodeError, EmptyUploadError, InventoryNotFoundError, UnsupportedAssetTypeError
+from src.api.schemas.position_schemas import (
+    EvidenceResponse,
+    PositionDetailResponse,
+    PositionListResponse,
+    PositionSummaryResponse,
+    ProductRecordResponse,
+)
+from src.application.errors import ActiveJobExistsError, AisleNotFoundError, DuplicateAisleCodeError, EmptyUploadError, InventoryNotFoundError, PositionNotFoundError, UnsupportedAssetTypeError
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
 from src.application.use_cases.get_aisle_processing_status import (
@@ -37,12 +46,17 @@ from src.application.use_cases.get_aisle_processing_status import (
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
+from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
+from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
+from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
+from src.domain.positions.entities import Position
+from src.domain.products.entities import ProductRecord
 from src.domain.jobs.entities import Job
 
 router = APIRouter(prefix="/api/v3/inventories", tags=["inventories-v3"])
@@ -108,6 +122,50 @@ def _asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
     )
 
 
+def _position_to_summary(p: Position) -> PositionSummaryResponse:
+    return PositionSummaryResponse(
+        id=p.id,
+        aisle_id=p.aisle_id,
+        status=p.status.value,
+        confidence=p.confidence,
+        needs_review=p.needs_review,
+        primary_evidence_id=p.primary_evidence_id,
+        created_at=p.created_at,
+        updated_at=p.updated_at,
+        detected_summary_json=p.detected_summary_json,
+    )
+
+
+def _product_to_response(pr: ProductRecord) -> ProductRecordResponse:
+    return ProductRecordResponse(
+        id=pr.id,
+        position_id=pr.position_id,
+        sku=pr.sku,
+        description=pr.description,
+        detected_quantity=pr.detected_quantity,
+        corrected_quantity=pr.corrected_quantity,
+        confidence=pr.confidence,
+        created_at=pr.created_at,
+        updated_at=pr.updated_at,
+    )
+
+
+def _evidence_to_response(e: Evidence) -> EvidenceResponse:
+    return EvidenceResponse(
+        id=e.id,
+        entity_type=e.entity_type,
+        entity_id=e.entity_id,
+        type=e.type.value,
+        storage_path=e.storage_path,
+        source_asset_id=e.source_asset_id,
+        is_primary=e.is_primary,
+        frame_index=e.frame_index,
+        timestamp_ms=e.timestamp_ms,
+        bbox_json=e.bbox_json,
+        quality_score=e.quality_score,
+    )
+
+
 @router.post("", response_model=InventoryResponse, status_code=201)
 def create_inventory(
     payload: CreateInventoryRequest,
@@ -133,10 +191,11 @@ def get_inventory(
     use_case: GetInventoryUseCase = Depends(get_get_inventory_use_case),
 ) -> InventoryResponse:
     """Get a single inventory by id (v3.0). Returns 404 if not found."""
-    inventory = use_case.execute(inventory_id)
-    if inventory is None:
+    try:
+        inventory = use_case.execute(inventory_id)
+        return _inventory_to_response(inventory)
+    except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
-    return _inventory_to_response(inventory)
 
 
 @router.post("/{inventory_id}/aisles", response_model=AisleResponse, status_code=201)
@@ -247,3 +306,49 @@ def list_aisle_assets(
         return [_asset_to_response(a) for a in assets]
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.get("/{inventory_id}/aisles/{aisle_id}/positions", response_model=PositionListResponse)
+def list_aisle_positions(
+    inventory_id: str,
+    aisle_id: str,
+    use_case: ListAislePositionsUseCase = Depends(get_list_aisle_positions_use_case),
+) -> PositionListResponse:
+    """List processing result positions for an aisle (Épica 6)."""
+    try:
+        positions = use_case.execute(
+            ListAislePositionsCommand(inventory_id=inventory_id, aisle_id=aisle_id)
+        )
+        return PositionListResponse(
+            positions=[_position_to_summary(p) for p in positions]
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/positions/{position_id}",
+    response_model=PositionDetailResponse,
+)
+def get_position_detail(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    use_case: GetPositionDetailUseCase = Depends(get_get_position_detail_use_case),
+) -> PositionDetailResponse:
+    """Get position detail with products and evidences (Épica 6)."""
+    try:
+        result = use_case.execute(inventory_id, aisle_id, position_id)
+        return PositionDetailResponse(
+            position=_position_to_summary(result.position),
+            products=[_product_to_response(pr) for pr in result.products],
+            evidences=[_evidence_to_response(e) for e in result.evidences],
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except PositionNotFoundError:
+        raise HTTPException(status_code=404, detail="Position not found or does not belong to this aisle")

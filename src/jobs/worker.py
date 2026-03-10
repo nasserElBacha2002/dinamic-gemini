@@ -1,5 +1,6 @@
 """Stage 7 — Background worker: pull jobs from queue and run inventory engine.
 Stage 8 — When SQL Server enabled, push status/progress/outputs/pallet_results/events to DB.
+Épica 6 — Try v3 process_aisle job first; fall back to legacy job record.
 """
 
 import json
@@ -15,6 +16,35 @@ from src.io.logging import setup_logger
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
 logger = logging.getLogger(__name__)
+
+
+def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
+    """If job_id is a v3 process_aisle job, run it and return True. Otherwise return False."""
+    try:
+        from src.runtime.v3_deps import (
+            get_aisle_repo,
+            get_clock,
+            get_evidence_repo,
+            get_job_repo,
+            get_position_repo,
+            get_product_record_repo,
+            get_source_asset_repo,
+        )
+        from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
+
+        executor = V3JobExecutor(
+            job_repo=get_job_repo(),
+            aisle_repo=get_aisle_repo(),
+            source_asset_repo=get_source_asset_repo(),
+            position_repo=get_position_repo(),
+            product_record_repo=get_product_record_repo(),
+            evidence_repo=get_evidence_repo(),
+            clock=get_clock(),
+        )
+        return executor.execute(base_path, job_id)
+    except Exception as e:
+        logger.warning("v3 process_aisle attempt failed (will try legacy): %s", e)
+        return False
 
 
 def _push_success_to_db(
@@ -80,7 +110,9 @@ def _push_success_to_db(
 
 
 def run_job(base_path: Path, job_id: str) -> None:
-    """Load job, run hybrid pipeline, update status and output."""
+    """Load job, run hybrid pipeline, update status and output. Try v3 process_aisle first."""
+    if _try_v3_process_aisle(base_path, job_id):
+        return
     record = get_job(base_path, job_id)
     if record is None:
         logger.warning("Job %s not found", job_id)

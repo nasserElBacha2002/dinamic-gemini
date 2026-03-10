@@ -27,8 +27,8 @@ class Evidence:
     entity_id: str
     type: EvidenceType
     storage_path: str
-    source_asset_id: str
     is_primary: bool
+    source_asset_id: Optional[str] = None
     frame_index: Optional[int] = None
     timestamp_ms: Optional[int] = None
     bbox_json: Optional[Dict[str, Any]] = None

@@ -20,7 +20,9 @@ import type { Inventory, Aisle } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { getJobStatusLabel, getJobStatusColor } from '../utils/jobStatus';
+import { getAisleStatusLabel, getAisleStatusColor } from '../utils/aisleStatus';
 import { formatDate } from '../utils/formatDate';
+import { pathToAislePositions } from '../utils/resultRoutes';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 
 /** Fetches asset counts for the given aisle IDs; used to keep the Assets column in sync. */
@@ -76,6 +78,58 @@ export default function InventoryDetail() {
   const [assetCountByAisleId, setAssetCountByAisleId] = useState<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
+  const cancelledRef = useRef(false);
+
+  const loadInitial = useCallback(async () => {
+    if (!inventoryId) return;
+    cancelledRef.current = false;
+    setInventoryError(null);
+    setAislesError(null);
+    setInventoryLoading(true);
+    let inventoryLoaded = false;
+    try {
+      const inv = await getInventory(inventoryId);
+      if (cancelledRef.current) return;
+      inventoryLoaded = true;
+      setInventory(inv);
+      setInventoryLoading(false);
+      setAislesLoading(true);
+      const aislesData = await getAisles(inventoryId);
+      if (cancelledRef.current) return;
+      const list = aislesData ?? [];
+      setAisles(list);
+      if (list.length > 0) {
+        const counts = await fetchAssetCountsForAisles(inventoryId, list.map((a) => a.id));
+        if (!cancelledRef.current) setAssetCountByAisleId(counts);
+      } else {
+        setAssetCountByAisleId({});
+      }
+    } catch (e) {
+      if (cancelledRef.current) return;
+      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      setInventoryLoading(false);
+      setAislesLoading(false);
+      if (!inventoryLoaded) {
+        if (err.status === 404) {
+          setInventoryError('Inventory not found');
+          setInventory(null);
+        } else {
+          setInventoryError(getApiErrorMessage(err, 'Failed to load inventory'));
+        }
+      } else {
+        setAislesError(getApiErrorMessage(err, 'Failed to load aisles'));
+      }
+    } finally {
+      if (!cancelledRef.current) setAislesLoading(false);
+    }
+  }, [inventoryId]);
+
+  useEffect(() => {
+    loadInitial();
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [loadInitial]);
 
   const loadAisles = useCallback(async () => {
     if (!inventoryId) return;
@@ -95,59 +149,6 @@ export default function InventoryDetail() {
     } finally {
       setAislesLoading(false);
     }
-  }, [inventoryId]);
-
-  useEffect(() => {
-    if (!inventoryId) return;
-    let cancelled = false;
-    let inventoryLoaded = false;
-    setInventoryError(null);
-    setAislesError(null);
-    setInventoryLoading(true);
-    getInventory(inventoryId)
-      .then((inv) => {
-        if (cancelled) return;
-        inventoryLoaded = true;
-        setInventory(inv);
-        setInventoryLoading(false);
-        setAislesLoading(true);
-        return getAisles(inventoryId);
-      })
-      .then((aislesData) => {
-        if (cancelled) return;
-        const list = aislesData ?? [];
-        setAisles(list);
-        if (list.length === 0) {
-          setAssetCountByAisleId({});
-          return;
-        }
-        return fetchAssetCountsForAisles(inventoryId, list.map((a) => a.id));
-      })
-      .then((counts) => {
-        if (!cancelled && counts) setAssetCountByAisleId(counts);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        const err = e instanceof ApiError ? e : new ApiError(String(e));
-        setInventoryLoading(false);
-        setAislesLoading(false);
-        if (!inventoryLoaded) {
-          if (err.status === 404) {
-            setInventoryError('Inventory not found');
-            setInventory(null);
-          } else {
-            setInventoryError(getApiErrorMessage(err, 'Failed to load inventory'));
-          }
-        } else {
-          setAislesError(getApiErrorMessage(err, 'Failed to load aisles'));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setAislesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [inventoryId]);
 
   const handleCreateAisleSuccess = () => {
@@ -217,7 +218,16 @@ export default function InventoryDetail() {
   if (inventoryError && !inventory) {
     return (
       <Box sx={{ p: 3 }}>
-        <Alert severity="error">{inventoryError}</Alert>
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" size="small" onClick={() => loadInitial()}>
+              Retry
+            </Button>
+          }
+        >
+          {inventoryError}
+        </Alert>
         <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
           Back to list
         </Button>
@@ -274,7 +284,16 @@ export default function InventoryDetail() {
           )}
 
           {aislesError && (
-            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setAislesError(null)}>
+            <Alert
+              severity="error"
+              sx={{ mb: 2 }}
+              onClose={() => setAislesError(null)}
+              action={
+                <Button color="inherit" size="small" onClick={() => loadAisles()}>
+                  Retry
+                </Button>
+              }
+            >
               {aislesError}
             </Alert>
           )}
@@ -304,6 +323,7 @@ export default function InventoryDetail() {
                     <TableCell>Status</TableCell>
                     <TableCell>Assets</TableCell>
                     <TableCell>Job</TableCell>
+                    <TableCell>Results</TableCell>
                     <TableCell>Created</TableCell>
                     <TableCell>Error</TableCell>
                     <TableCell align="right">Actions</TableCell>
@@ -314,7 +334,11 @@ export default function InventoryDetail() {
                     <TableRow key={aisle.id}>
                       <TableCell>{aisle.code}</TableCell>
                       <TableCell>
-                        <Chip label={aisle.status} size="small" />
+                        <Chip
+                          label={getAisleStatusLabel(aisle.status)}
+                          size="small"
+                          color={getAisleStatusColor(aisle.status)}
+                        />
                       </TableCell>
                       <TableCell>
                         {assetCountByAisleId[aisle.id] != null
@@ -329,6 +353,19 @@ export default function InventoryDetail() {
                             variant="outlined"
                             color={getJobStatusColor(aisle.latest_job.status)}
                           />
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {(aisle.status === 'processed' || aisle.status === 'in_review' || aisle.status === 'completed' || aisle.latest_job?.status === 'succeeded') ? (
+                          <Button
+                            variant="text"
+                            size="small"
+                            onClick={() => navigate(pathToAislePositions(inventoryId ?? '', aisle.id))}
+                          >
+                            View results
+                          </Button>
                         ) : (
                           '—'
                         )}
