@@ -46,6 +46,12 @@ class AisleRepository(ABC):
 
     @abstractmethod
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
+        """Return aisles for the given inventory. Order is implementation-defined (SQL impl: created_at DESC)."""
+        ...
+
+    @abstractmethod
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+        """Return the aisle with the given code in the given inventory, or None. Used for duplicate checks."""
         ...
 
 

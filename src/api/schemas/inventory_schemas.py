@@ -1,5 +1,8 @@
 """v3.0 Inventory API schemas (request/response)."""
 
+from datetime import datetime
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -13,3 +16,4 @@ class InventoryResponse(BaseModel):
     id: str
     name: str
     status: str
+    created_at: Optional[datetime] = None

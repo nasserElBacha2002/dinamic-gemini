@@ -1,8 +1,8 @@
 """
-Central dependency provisioning for v3 API — Épica 2.
+Central dependency provisioning for v3 API — Épica 2 + Épica 3.
 
-Provides InventoryRepository (SQL when sqlserver_enabled, else in-memory), Clock,
-and use cases. Route modules depend on these; no infrastructure types in route code.
+Provides InventoryRepository, AisleRepository (SQL when sqlserver_enabled, else in-memory),
+Clock, and use cases. Route modules depend on these; no infrastructure types in route code.
 
 Fallback: when SQL is enabled but connection fails, behavior is controlled by
 V3_ALLOW_IN_MEMORY_FALLBACK (env). If "false" / "0" / "no", fail fast (re-raise).
@@ -19,13 +19,18 @@ from typing import Optional
 from fastapi import Depends
 
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import InventoryRepository
-from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
+from src.application.ports.repositories import AisleRepository, InventoryRepository
+from src.application.use_cases.create_aisle import CreateAisleUseCase
+from src.application.use_cases.create_inventory import CreateInventoryUseCase
+from src.application.use_cases.get_inventory import GetInventoryUseCase
+from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 
 logger = logging.getLogger(__name__)
 
 _inventory_repo: Optional[InventoryRepository] = None
+_aisle_repo: Optional[AisleRepository] = None
+_v3_sql_client = None  # SqlServerClient when DB enabled; shared by inventory and aisle repos
 
 
 def _v3_allow_in_memory_fallback() -> bool:
@@ -43,6 +48,20 @@ def _v3_db_enabled() -> bool:
     )
 
 
+def _get_v3_sql_client():
+    """Return shared SQL client for v3 repos; verify connectivity. Cached per process. Raises on failure."""
+    global _v3_sql_client
+    if _v3_sql_client is not None:
+        return _v3_sql_client
+    from src.config import load_settings
+    from src.database.sqlserver import SqlServerClient
+    client = SqlServerClient(load_settings().sqlserver_connection_string)
+    with client.cursor() as cur:
+        cur.execute("SELECT 1")
+    _v3_sql_client = client
+    return _v3_sql_client
+
+
 def get_inventory_repo() -> InventoryRepository:
     """Return SQL-backed repo when DB is enabled, else in-memory. Cached per process."""
     global _inventory_repo
@@ -50,13 +69,8 @@ def get_inventory_repo() -> InventoryRepository:
         return _inventory_repo
     if _v3_db_enabled():
         try:
-            from src.config import load_settings
-            from src.database.sqlserver import SqlServerClient
+            client = _get_v3_sql_client()
             from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
-            client = SqlServerClient(load_settings().sqlserver_connection_string)
-            # Verify connectivity before using SQL repo; fall back to memory if unreachable
-            with client.cursor() as cur:
-                cur.execute("SELECT 1")
             _inventory_repo = SqlInventoryRepository(client)
             logger.info("v3 InventoryRepository: using SQL backend")
         except Exception as e:
@@ -70,6 +84,30 @@ def get_inventory_repo() -> InventoryRepository:
         from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
         _inventory_repo = MemoryInventoryRepository()
     return _inventory_repo
+
+
+def get_aisle_repo() -> AisleRepository:
+    """Return SQL-backed repo when DB is enabled, else in-memory. Cached per process. Shares SQL client with inventory repo."""
+    global _aisle_repo
+    if _aisle_repo is not None:
+        return _aisle_repo
+    if _v3_db_enabled():
+        try:
+            client = _get_v3_sql_client()
+            from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
+            _aisle_repo = SqlAisleRepository(client)
+            logger.info("v3 AisleRepository: using SQL backend")
+        except Exception as e:
+            if not _v3_allow_in_memory_fallback():
+                logger.error("v3 SQL aisle repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
+                raise
+            logger.warning("v3 SQL aisle repo init failed, falling back to in-memory: %s", e)
+            from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+            _aisle_repo = MemoryAisleRepository()
+    else:
+        from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+        _aisle_repo = MemoryAisleRepository()
+    return _aisle_repo
 
 
 def get_clock() -> Clock:
@@ -89,3 +127,31 @@ def get_list_inventories_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> ListInventoriesUseCase:
     return ListInventoriesUseCase(inventory_repo=repo)
+
+
+def get_get_inventory_use_case(
+    repo: InventoryRepository = Depends(get_inventory_repo),
+) -> GetInventoryUseCase:
+    return GetInventoryUseCase(inventory_repo=repo)
+
+
+def get_create_aisle_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    clock: Clock = Depends(get_clock),
+) -> CreateAisleUseCase:
+    return CreateAisleUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        clock=clock,
+    )
+
+
+def get_list_aisles_by_inventory_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+) -> ListAislesByInventoryUseCase:
+    return ListAislesByInventoryUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+    )

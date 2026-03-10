@@ -23,6 +23,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Node (frontend / root)
+node_modules/
+
 # Virtual Environments
 venv/
 env/
@@ -50,6 +53,8 @@ output/
 *.json
 !package.json
 !package-lock.json
+!tsconfig.json
+!tsconfig.node.json
 
 # Data files (videos de prueba, etc.)
 data/
