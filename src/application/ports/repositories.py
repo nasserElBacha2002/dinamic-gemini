@@ -7,7 +7,7 @@ Use cases depend on these abstractions; infrastructure provides SQL (or other) i
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional, Sequence
+from typing import Dict, Optional, Sequence
 
 from src.application.ports.contracts import PositionListQuery
 from src.domain.aisle.entities import Aisle
@@ -155,4 +155,11 @@ class JobRepository(ABC):
     @abstractmethod
     def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
         """Return the most recently updated (or created) job for the given target, or None."""
+        ...
+
+    @abstractmethod
+    def get_latest_by_targets(
+        self, target_type: str, target_ids: Sequence[str]
+    ) -> Dict[str, Job]:
+        """Return the latest job per target_id for the given target_type. Keys are target_id; only one job per target (the latest by updated_at, then created_at). Missing targets are omitted from the dict."""
         ...

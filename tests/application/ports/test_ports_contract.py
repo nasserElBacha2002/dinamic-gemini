@@ -54,6 +54,12 @@ class StubAisleRepository(AisleRepository):
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+        for a in self._store.values():
+            if a.inventory_id == inventory_id and a.code == code.strip():
+                return a
+        return None
+
 
 def test_inventory_repository_contract() -> None:
     """Stub satisfies InventoryRepository: save, get_by_id, list_all."""

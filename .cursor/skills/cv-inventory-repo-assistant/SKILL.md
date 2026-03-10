@@ -1,32 +1,33 @@
 ---
 name: cv-inventory-repo-assistant
-description: Guides implementation and maintenance of the video inventory (depot/retail) project. Covers pipeline architecture (detection → tracking → identification → consolidation → reports), sprint planning, user stories, code review, and repo conventions. Use when the user mentions sprints, plan, roadmap, user stories, requirements, pipeline, detection, tracking, identification, consolidation, reports, performance, optimization, auditability, logs, outputs, or when editing files under src/ related to the main flow.
+description: Guides implementation and maintenance of the Dinamic Inventory product — a v3 operational platform (inventories, aisles, jobs, API, persistence, frontend) with an integrated computer vision processing subsystem. Covers backend clean architecture, v3 API contracts, frontend (React + TypeScript + MUI), full-stack epics, and the CV pipeline (detection → tracking → identification → consolidation → reporting). Use when the user mentions sprints, plan, roadmap, user stories, requirements, API, frontend, inventories, aisles, jobs, pipeline, detection, tracking, identification, consolidation, reports, performance, optimization, auditability, or when editing files under src/ or frontend/src/.
 ---
 
-# CV Inventory Repo Assistant
+# Dinamic Inventory — Repo Assistant
 
 ## Purpose and scope
 
-- **Do:** Implement and maintain the video inventory project with consistent, reviewable code. Respect pipeline architecture, generate sprint plans and user stories when asked, perform code review, maintain outputs/config/logging and modular structure.
+- **Do:** Implement and maintain the product with consistent, reviewable code. Support both the **operational platform** (API, use cases, persistence, frontend) and the **CV processing subsystem** (pipeline, detection, tracking, identification, reporting). Respect clean architecture, generate sprint plans and user stories when asked, perform code review, maintain clear contracts and modular structure.
 - **Do not:** Invent datasets, change stack, or perform large refactors without explicit request.
 
-## Pipeline architecture
+## Product = two connected parts
 
-The processing unit is **pallet_track** (not frame). Flow:
+### 1. Operational inventory platform (v3)
 
-1. Video → frame extraction
-2. Detection (pallets per frame)
-3. Tracking (stable `pallet_track_id`)
-4. ROI cropping + view selection (3–5 views per track)
-5. LLM (Gemini): one request per track, multi-view
-6. Post-LLM validation (segregation + determinism)
-7. Export: `final_result.json` (OK) + `errors.json` (ERROR)
+- **Backend:** Clean layers — `api` (routes, schemas, dependencies) → `application` (use cases, ports) → `domain` (entities) → `infrastructure` (repositories, queue, storage). No business logic in routes; use cases depend only on ports.
+- **Domain entities:** Inventory, Aisle, Job (v3), SourceAsset, Position, ProductRecord, Evidence, ReviewAction. Status enums and transitions are explicit.
+- **API:** v3 endpoints under `/api/v3/` — inventories, aisles, process, status. Thin routes: parse → call use case → serialize. Errors mapped to HTTP (404, 409, 422).
+- **Persistence:** SQL (inventories, aisles, v3_jobs) with repository implementations; optional in-memory fallback. Schema and migrations in `src/database/`.
+- **Jobs:** v3 job flow for aisle processing (create job, enqueue, persist, status). Legacy job system (`src/jobs/`, legacy `jobs` table) remains for existing pipeline; v3 uses `v3_jobs` and application ports.
+- **Frontend:** React + TypeScript + Material UI in `frontend/`. Centralized API client, typed DTOs, pages (list, detail), dialogs (create inventory, create aisle). Loading/error states and contract alignment with backend.
 
-**Invariants:** One product per pallet (no mixed SKUs → `ERROR: MIXED_SKUS`). If evidence is insufficient for exact count → `ERROR: INSUFFICIENT_EVIDENCE` (never guess).
+### 2. Computer vision / processing subsystem
 
-Module boundaries to respect: detector / tracker / identifier (LLM) / consolidation / reporting (io). Keep separation; avoid hardcoded thresholds—prefer `src/config.py` or env/config files.
+- **Pipeline unit:** pallet_track (not frame). Flow: video → frames → detection → tracking (stable pallet_track_id) → ROI + view selection → LLM (e.g. Gemini) per track → validation → export (final_result.json, errors.json).
+- **Invariants:** One product per pallet (no mixed SKUs → ERROR). If evidence insufficient → UNKNOWN or ERROR: INSUFFICIENT_EVIDENCE (never guess).
+- **Module boundaries:** detector / tracker / identifier (LLM) / consolidation / reporting. Keep separation; config-driven thresholds (`src/config.py` or env).
 
-For full module map and data contracts, see [reference.md](reference.md).
+For module map and contracts, see [reference.md](reference.md).
 
 ## Planning output format
 
@@ -37,36 +38,37 @@ When generating **sprint plans**, **user stories**, or **technical tasks**, use 
 - **Criterios de aceptación**
 - **Riesgos** (optional)
 
-Keep tasks small and iterative; no “big bang” scope.
+Keep tasks small and iterative. For full-stack epics, call out backend vs frontend vs pipeline work explicitly.
 
 ## Code review format
 
-When reviewing code under `src/`:
+When reviewing code under `src/` or `frontend/src/`:
 
-1. **Checklist** (concise): correctness, edge cases, config-driven behavior, determinism/traceability, logging.
-2. **Per-file suggestions:** list file path and concrete change (e.g. “move magic number to config”).
-3. Severity: Critical (must fix) / Suggestion / Nice-to-have.
+1. **Checklist (concise):** correctness, edge cases, architecture (layers, routes vs use cases), API/contract alignment, config-driven behavior where relevant, determinism/traceability for processing, logging.
+2. **Per-file suggestions:** file path and concrete change (e.g. “move magic number to config”, “route should not call repository directly”).
+3. **Severity:** Critical (must fix) / Suggestion / Nice-to-have.
 
-Prefer: determinism and traceability (use `UNKNOWN` or explicit errors when evidence is insufficient), configurable thresholds, small incremental changes.
+Prefer: determinism and traceability in processing (UNKNOWN when evidence insufficient), configurable thresholds, thin routes and use-case-driven backend, typed frontend and aligned contracts, small incremental changes.
 
 ## Outputs and contracts
 
-- **Outputs:** Describe schemas (JSON/CSV) clearly and in a versionable way (e.g. in `src/models/schemas.py` or a dedicated contracts doc). Main exports: `final_result.json`, `errors.json`.
-- **Config:** All tunables via `Settings` (config.py) or YAML/TOML/JSON; no hardcoding.
+- **Platform:** API request/response schemas in `src/api/schemas/`; frontend types in `frontend/src/api/types.ts` aligned with backend. Domain entities in `src/domain/`.
+- **CV pipeline:** Output schemas (e.g. `src/models/schemas.py`); main exports: `final_result.json`, `errors.json`. Config via Settings (config.py) or YAML/TOML/JSON; no hardcoding.
 
 ## Conventions
 
 | Rule | Example |
 |------|--------|
-| Config-driven | `Settings.resize_max_side`, env vars; no literals for thresholds. |
-| Determinism | Insufficient evidence → `UNKNOWN` or `ERROR: INSUFFICIENT_EVIDENCE`. |
-| Modularity | Do not mix detector/tracker/identifier/consolidation responsibilities in one module. |
-| Iterative changes | Prefer small PRs; avoid large refactors unless requested. |
-| Stack | Python, CLI, configs (yaml/toml/json). Add dependencies only when clearly needed. |
+| Config-driven | Thresholds and limits in Settings or env; no literals for tunables. |
+| Determinism (processing) | Insufficient evidence → UNKNOWN or ERROR: INSUFFICIENT_EVIDENCE. |
+| Backend layers | Routes → use cases → ports; no SQL or infra in application/domain. |
+| Frontend contracts | Types match backend responses; handle loading/error/empty. |
+| Modularity | Do not mix pipeline stages or mix route logic with use cases. |
+| Iterative changes | Small PRs; avoid large refactors unless requested. |
 
 ## Quick reference
 
-- **Planning:** Markdown with Objetivo, Alcance, Supuestos, Tareas, Criterios de aceptación, Riesgos.
-- **Review:** Checklist + per-file suggestions; Critical / Suggestion / Nice-to-have.
-- **Outputs:** Clear, versioned schema; `final_result.json` + `errors.json`.
-- **Code:** Python + config; modular; deterministic; no big refactors unrequested.
+- **Planning:** Markdown with Objetivo, Alcance, Supuestos, Tareas, Criterios de aceptación, Riesgos. For full-stack: call out API, frontend, pipeline.
+- **Review:** Checklist + per-file suggestions; Critical / Suggestion / Nice-to-have; apply to both platform and pipeline code.
+- **Platform:** api → application → domain → infrastructure; v3 API and frontend aligned.
+- **Pipeline:** detection → tracking → identification → consolidation → reporting; config-driven; deterministic outputs.

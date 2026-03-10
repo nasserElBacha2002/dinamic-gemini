@@ -19,17 +19,21 @@ from typing import Optional
 from fastapi import Depends
 
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import AisleRepository, InventoryRepository
+from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.application.use_cases.create_aisle import CreateAisleUseCase
 from src.application.use_cases.create_inventory import CreateInventoryUseCase
+from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
+from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
+from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
 
 logger = logging.getLogger(__name__)
 
 _inventory_repo: Optional[InventoryRepository] = None
 _aisle_repo: Optional[AisleRepository] = None
+_job_repo: Optional[JobRepository] = None
 _v3_sql_client = None  # SqlServerClient when DB enabled; shared by inventory and aisle repos
 
 
@@ -110,6 +114,36 @@ def get_aisle_repo() -> AisleRepository:
     return _aisle_repo
 
 
+def get_job_repo() -> JobRepository:
+    """Return SQL-backed JobRepository when DB is enabled, else in-memory. Cached per process."""
+    global _job_repo
+    if _job_repo is not None:
+        return _job_repo
+    if _v3_db_enabled():
+        try:
+            client = _get_v3_sql_client()
+            from src.infrastructure.repositories.sql_job_repository import SqlJobRepository
+            _job_repo = SqlJobRepository(client)
+            logger.info("v3 JobRepository: using SQL backend")
+        except Exception as e:
+            if not _v3_allow_in_memory_fallback():
+                logger.error("v3 SQL job repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
+                raise
+            logger.warning("v3 SQL job repo init failed, falling back to in-memory: %s", e)
+            from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+            _job_repo = MemoryJobRepository()
+    else:
+        from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+        _job_repo = MemoryJobRepository()
+    return _job_repo
+
+
+def get_job_queue():
+    """Return v3 JobQueue adapter (enqueue(job_type, payload) -> job_id). Stateless."""
+    from src.infrastructure.queue.v3_job_queue_adapter import V3JobQueueAdapter
+    return V3JobQueueAdapter()
+
+
 def get_clock() -> Clock:
     """Return UTC clock. Stateless, new instance per call."""
     from src.infrastructure.adapters.clock import UtcClock
@@ -154,4 +188,40 @@ def get_list_aisles_by_inventory_use_case(
     return ListAislesByInventoryUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+    )
+
+
+def get_list_aisles_with_status_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+) -> ListAislesWithStatusUseCase:
+    return ListAislesWithStatusUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+    )
+
+
+def get_start_aisle_processing_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    job_queue=Depends(get_job_queue),
+    clock: Clock = Depends(get_clock),
+) -> StartAisleProcessingUseCase:
+    return StartAisleProcessingUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        job_queue=job_queue,
+        clock=clock,
+    )
+
+
+def get_get_aisle_processing_status_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+) -> GetAisleProcessingStatusUseCase:
+    return GetAisleProcessingStatusUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
     )

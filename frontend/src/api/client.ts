@@ -9,10 +9,34 @@ import type {
   CreateInventoryRequest,
   CreateAisleRequest,
   ApiErrorDetail,
+  ProcessAisleResponse,
 } from './types';
 import { ApiError } from './types';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
+
+/** FastAPI validation error item shape. */
+interface ValidationDetailItem {
+  msg?: string;
+  loc?: unknown;
+  type?: string;
+}
+
+function messageFromErrorDetail(
+  detail: unknown,
+  fallback: string
+): string {
+  if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0];
+    if (first && typeof first === 'object' && typeof (first as ValidationDetailItem).msg === 'string') {
+      const msg = (first as ValidationDetailItem).msg!.trim();
+      if (msg) return msg;
+    }
+    return 'Validation error';
+  }
+  return fallback;
+}
 
 async function handleResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
@@ -23,13 +47,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
     data = {} as ApiErrorDetail & T;
   }
   if (!response.ok) {
-    const detail = data.detail;
-    const message =
-      typeof detail === 'string'
-        ? detail
-        : text && text.length < 200
-          ? text
-          : response.statusText || 'Request failed';
+    const message = messageFromErrorDetail(
+      data.detail,
+      text && text.length < 200 ? text : response.statusText || 'Request failed'
+    );
     throw new ApiError(message, response.status, data);
   }
   return data as T;
@@ -71,4 +92,15 @@ export async function createAisle(
     body: JSON.stringify(body),
   });
   return handleResponse<Aisle>(response);
+}
+
+export async function startAisleProcessing(
+  inventoryId: string,
+  aisleId: string
+): Promise<ProcessAisleResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/process`,
+    { method: 'POST' }
+  );
+  return handleResponse<ProcessAisleResponse>(response);
 }

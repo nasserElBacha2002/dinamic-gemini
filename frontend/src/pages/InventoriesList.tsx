@@ -17,6 +17,7 @@ import {
 import { getInventories } from '../api/client';
 import type { Inventory } from '../api/types';
 import { ApiError } from '../api/types';
+import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
 
@@ -35,9 +36,7 @@ export default function InventoriesList() {
       setInventories(data);
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setError(
-        typeof err.data?.detail === 'string' ? err.data.detail : err.message || 'Failed to load inventories'
-      );
+      setError(getApiErrorMessage(err, 'Failed to load inventories'));
     } finally {
       setLoading(false);
     }

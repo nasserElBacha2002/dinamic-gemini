@@ -104,6 +104,25 @@ BEGIN
         CONSTRAINT FK_aisles_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
         CONSTRAINT UQ_aisles_inventory_code UNIQUE (inventory_id, code)
     );
-    CREATE INDEX IX_aisles_inventory_id ON aisles(inventory_id);
+        CREATE INDEX IX_aisles_inventory_id ON aisles(inventory_id);
+END;
+GO
+
+-- v3.0 — Jobs (Épica 4; domain Job entity, distinct from legacy jobs table)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'v3_jobs')
+BEGIN
+    CREATE TABLE v3_jobs (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        target_type VARCHAR(32) NOT NULL,
+        target_id VARCHAR(36) NOT NULL,
+        job_type VARCHAR(64) NOT NULL,
+        status VARCHAR(16) NOT NULL,
+        payload_json NVARCHAR(MAX) NULL,
+        result_json NVARCHAR(MAX) NULL,
+        error_message NVARCHAR(2048) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL
+    );
+    CREATE INDEX IX_v3_jobs_target ON v3_jobs(target_type, target_id);
 END;
 GO

@@ -11,6 +11,13 @@ class CreateAisleRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=64)
 
 
+class AisleJobSummary(BaseModel):
+    """Latest job summary for an aisle (optional in list response)."""
+    id: str
+    status: str
+    updated_at: datetime
+
+
 class AisleResponse(BaseModel):
     """Single aisle in list or create response."""
     id: str
@@ -21,3 +28,4 @@ class AisleResponse(BaseModel):
     updated_at: datetime
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+    latest_job: Optional[AisleJobSummary] = None

@@ -11,6 +11,7 @@ import {
 import { createInventory } from '../api/client';
 import type { Inventory } from '../api/types';
 import { ApiError } from '../api/types';
+import { getApiErrorMessage } from '../utils/apiErrors';
 
 export interface CreateInventoryDialogProps {
   open: boolean;
@@ -60,8 +61,7 @@ export default function CreateInventoryDialog({
       handleClose();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      const msg =
-        typeof err.data?.detail === 'string' ? err.data.detail : err.message || 'Failed to create inventory';
+      const msg = getApiErrorMessage(err, 'Failed to create inventory');
       setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
       onError(null);
     } finally {

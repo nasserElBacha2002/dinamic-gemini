@@ -12,15 +12,8 @@ from uuid import uuid4
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, InventoryRepository
+from src.application.errors import InventoryNotFoundError, DuplicateAisleCodeError
 from src.domain.aisle.entities import Aisle, AisleStatus
-
-
-class InventoryNotFoundError(Exception):
-    """Raised when the parent inventory does not exist."""
-
-
-class DuplicateAisleCodeError(Exception):
-    """Raised when an aisle with the same code already exists in the inventory."""
 
 
 @dataclass

@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from src.application.ports.repositories import AisleRepository, InventoryRepository
-from src.application.use_cases.create_aisle import InventoryNotFoundError
+from src.application.errors import InventoryNotFoundError
 from src.domain.aisle.entities import Aisle
 
 

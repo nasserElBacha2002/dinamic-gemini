@@ -1,92 +1,88 @@
 # review
 
-You are a senior software architect reviewing a production-ready computer vision inventory system.
+You are a senior software architect reviewing a production-ready system that includes an **operational platform** (v3 API, use cases, persistence, frontend) and a **computer vision pipeline**.
 
-Run an exhaustive code review of this repository.
+**Task:** Run an exhaustive code review of this repository.
 
-How to proceed:
-1) First, scan the repo structure and identify the main entrypoints (CLI, pipeline runner, src/ modules).
-2) Map the pipeline flow end-to-end (detection → tracking → identification → consolidation → reporting).
-3) Review the codebase focusing on production risks, correctness, determinism, and scalability.
-4) For every issue, include: severity (CRITICAL/HIGH/MED/LOW), file path(s), and a concrete fix suggestion.
-5) Prefer minimal, incremental changes. Do NOT rewrite the project.
+**How to proceed:**  
+1. Scan the repo structure and identify:
+   - **Platform entrypoints:** API routes (`src/api/`), dependency wiring, frontend app (`frontend/src/`).  
+   - **Application layer:** use cases, ports, domain entities.  
+   - **Pipeline:** entrypoints (e.g. hybrid_inventory_pipeline), stages (detection → tracking → identification → consolidation → reporting).  
+2. Map **platform flow:** API request → route → use case → ports → infrastructure (repos, queue). Frontend: pages → API client → backend.  
+3. Map **pipeline flow** (if present): video input → decode → detection → tracking → … → reporting outputs.  
+4. Review the codebase for production risks, correctness, determinism, and scalability in **both** platform and pipeline.  
+5. For every issue: severity (CRITICAL / HIGH / MED / LOW), file path(s), and a concrete fix suggestion.  
+6. Prefer minimal, incremental changes. Do **not** rewrite the project.
 
-Review dimensions (must cover all):
-A. Architecture & boundaries
-- Module responsibilities and coupling
-- Clear interfaces between pipeline stages
-- Avoid hidden dependencies and implicit globals
+**Review dimensions (must cover all that apply):**
 
-B. Correctness & edge cases
-- Failure modes (missing frames, empty detections, tracker drift, duplicates)
-- Handling UNKNOWN / ambiguous cases
-- Off-by-one, indexing, frame ranges, coordinate transforms
+**A. Architecture & boundaries**  
+- **Platform:** Module responsibilities; api → use cases → ports → infrastructure; no business logic in routes; clear API contracts and frontend alignment.  
+- **Pipeline:** Clear interfaces between stages; no hidden dependencies or implicit globals.
 
-C. Determinism & auditability
-- Config-driven thresholds (no hardcoded magic numbers)
-- Reproducible decisions
-- Traceable outputs (track_id → evidence → final decision)
-- Logging quality and event consistency
+**B. Correctness & edge cases**  
+- **Platform:** Validation in use cases; 404/409/422 handling; frontend loading/error/empty states; type safety.  
+- **Pipeline:** Failure modes (missing frames, empty detections, tracker drift, duplicates); UNKNOWN / ambiguous cases; off-by-one, indexing, coordinate transforms.
 
-D. Performance & resource use
-- Avoid repeated model initialization
-- Batch inference opportunities
-- Caching (embeddings, hashes, per-track computed features)
-- I/O hotspots (writing crops/frames by default)
-- Memory spikes on long videos
+**C. Determinism & auditability**  
+- Config-driven thresholds (no hardcoded magic numbers).  
+- Reproducible decisions.  
+- Traceable outputs (e.g. job/aisle status; or track_id → evidence → decision).  
+- Logging quality and event consistency.
 
-E. Scalability & maintainability
-- Works with longer videos, bigger SKU catalogs, multiple runs
-- Extension points for new detectors/identifiers
-- Clear configuration system
-- Error handling strategy (fail-fast vs best-effort)
-- Code readability and type safety
+**D. Performance & resource use**  
+- **Platform:** API/DB N+1, frontend bundle and re-renders.  
+- **Pipeline:** Repeated model init, batching, caching, I/O hotspots, memory on long videos.
 
-F. Testing & CI readiness
-- Missing unit/integration tests
-- Where tests should be added first
-- Suggested minimal test plan for the pipeline
+**E. Scalability & maintainability**  
+- Longer runs, more data, multiple clients.  
+- Extension points (new use cases, new pipeline stages).  
+- Clear configuration; error-handling strategy; readability and type safety.
 
-G. Security & safety (basic)
-- Path traversal / unsafe file writes
-- Handling untrusted inputs
-- Sensitive data in logs
-- Dependency risks (if visible)
+**F. Testing & CI readiness**  
+- Missing unit/integration tests (use cases, API, repos, frontend, pipeline).  
+- Where to add tests first.  
+- Minimal test plan for platform and/or pipeline.
 
-Output format (strict):
+**G. Security & safety (basic)**  
+- Path traversal / unsafe file writes.  
+- Untrusted inputs (API, uploads).  
+- Sensitive data in logs.  
+- Dependency risks if visible.
+
+**Output format (strict):**
+
 # Deep Repo Review
 
-## 0) Repo Map
-- Entrypoints
-- Key modules
-- Data / outputs layout
+## 0) Repo Map  
+- Platform: entrypoints, key modules, data/API layout, frontend structure.  
+- Pipeline (if present): entrypoints, stages, outputs.
 
-## 1) Pipeline Trace (as implemented)
+## 1) Platform Trace (as implemented)  
+Bullet list from API request to response and frontend to backend, referencing actual modules/files.
+
+## 2) Pipeline Trace (as implemented, if present)  
 Bullet list from video input to final outputs, referencing actual modules/files.
 
-## 2) Findings
-### CRITICAL
-- [Issue] (file:line if possible) → [Why it matters] → [Fix]
+## 3) Findings  
+### CRITICAL  
+- [Issue] (file:line if possible) → [Why it matters] → [Fix]  
+### HIGH / MED / LOW  
+- ...
 
-### HIGH
-...
+## 4) Top 10 Fix Plan (ordered)  
+Prioritized list for biggest production reliability gain.
 
-### MED
-...
-
-### LOW
-...
-
-## 3) Top 10 Fix Plan (ordered)
-A prioritized list of changes that gives the biggest production reliability gain first.
-
-## 4) Quick Wins (≤ 1 day)
+## 5) Quick Wins (≤ 1 day)  
 Small changes with high ROI.
 
-## 5) Suggested Test Plan
-Minimal tests to add next, by module.
+## 6) Suggested Test Plan  
+Minimal tests to add next, by module/layer.
 
-Important constraints:
-- Keep recommendations realistic for this repo stage.
-- Do not invent files that don't exist; reference only what you can find.
-- Do not propose big refactors unless necessary for correctness.with /review
+**Constraints:**  
+- Keep recommendations realistic for this repo stage.  
+- Do not invent files; reference only what you can find.  
+- Do not propose big refactors unless necessary for correctness.
+
+This command will be available in chat with /review

@@ -10,13 +10,15 @@ import {
 } from '@mui/material';
 import { createAisle } from '../api/client';
 import { ApiError } from '../api/types';
+import { getApiErrorMessage } from '../utils/apiErrors';
 
 export interface CreateAisleDialogProps {
   open: boolean;
   inventoryId: string;
   onClose: () => void;
   onSuccess: () => void;
-  onError: (message: string | null) => void;
+  /** Optional. Called with a message when the parent should show an error (e.g. global snackbar). */
+  onError?: (message: string | null) => void;
 }
 
 export default function CreateAisleDialog({
@@ -58,14 +60,14 @@ export default function CreateAisleDialog({
     }
     setSubmitting(true);
     setValidationError('');
-    onError(null);
+    onError?.(null);
     try {
       await createAisle(inventoryId, { code: trimmed });
       onSuccess();
       handleClose();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      const msg = typeof err.data?.detail === 'string' ? err.data.detail : err.message || 'Failed to create aisle';
+      const msg = getApiErrorMessage(err, 'Failed to create aisle');
       if (err.status === 409) {
         setValidationError(
           typeof msg === 'string' ? msg : 'An aisle with this code already exists in this inventory.'
@@ -73,7 +75,7 @@ export default function CreateAisleDialog({
       } else {
         setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
       }
-      onError(null);
+      onError?.(null);
     } finally {
       setSubmitting(false);
     }
