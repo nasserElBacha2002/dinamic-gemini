@@ -291,3 +291,66 @@ def test_list_aisle_assets_aisle_not_found_returns_404() -> None:
         f"/api/v3/inventories/{inv_id}/aisles/nonexistent-aisle/assets"
     )
     assert response.status_code == 404
+
+
+# --- Épica 7: result consultation (positions list / detail) ---
+
+
+def test_list_aisle_positions_returns_200_and_empty_list() -> None:
+    """List positions returns 200 and positions array (empty when no results)."""
+    create_resp = client.post("/api/v3/inventories", json={"name": "For Positions List"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "POS-01"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+
+    response = client.get(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/positions"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "positions" in data
+    assert isinstance(data["positions"], list)
+    assert len(data["positions"]) == 0
+
+
+def test_list_aisle_positions_inventory_not_found_returns_404() -> None:
+    response = client.get(
+        "/api/v3/inventories/nonexistent-inv-id/aisles/some-aisle-id/positions"
+    )
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_list_aisle_positions_aisle_not_found_returns_404() -> None:
+    create_resp = client.post("/api/v3/inventories", json={"name": "For Positions 404"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+
+    response = client.get(
+        f"/api/v3/inventories/{inv_id}/aisles/nonexistent-aisle-id/positions"
+    )
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_get_position_detail_not_found_returns_404() -> None:
+    create_resp = client.post("/api/v3/inventories", json={"name": "For Detail 404"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "D-01"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+
+    response = client.get(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/positions/nonexistent-position-id"
+    )
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()

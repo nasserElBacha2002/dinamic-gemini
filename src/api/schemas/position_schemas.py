@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 
 class PositionSummaryResponse(BaseModel):
-    """Summary of a position in list responses."""
+    """Summary of a position in list responses. Includes optional sku and detected_quantity when derivable from the result summary."""
     id: str
     aisle_id: str
     status: str
@@ -17,6 +17,8 @@ class PositionSummaryResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     detected_summary_json: Optional[Dict[str, Any]] = None
+    sku: Optional[str] = None
+    detected_quantity: Optional[int] = None
 
 
 class PositionListResponse(BaseModel):

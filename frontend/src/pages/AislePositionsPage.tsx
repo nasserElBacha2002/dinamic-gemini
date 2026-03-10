@@ -23,8 +23,15 @@ import { formatDate } from '../utils/formatDate';
 import { getPositionStatusLabel, getPositionStatusColor } from '../utils/positionStatus';
 import { pathToPositionDetail } from '../utils/resultRoutes';
 
-/** Read SKU from position list item (detected_summary_json.internal_code). Safe fallback. */
-function getPositionSku(p: PositionSummary): string {
+/**
+ * Table display helpers: prefer first-class sku and detected_quantity from the API.
+ * Fall back to detected_summary_json only for backward compatibility with older responses.
+ * This compatibility fallback can be removed once all backends return summary fields.
+ */
+
+/** Prefer p.sku; fall back to legacy internal_code in detected_summary_json. */
+function displaySku(p: PositionSummary): string {
+  if (p.sku != null && p.sku.trim() !== '') return p.sku.trim();
   const code = p.detected_summary_json && typeof p.detected_summary_json === 'object' && 'internal_code' in p.detected_summary_json
     ? p.detected_summary_json.internal_code
     : undefined;
@@ -32,8 +39,12 @@ function getPositionSku(p: PositionSummary): string {
   return '—';
 }
 
-/** Read detected quantity from position list item (detected_summary_json). Safe fallback. */
-function getPositionDetectedQuantity(p: PositionSummary): string {
+/** Prefer p.detected_quantity; fall back to legacy final_quantity / product_label_quantity in detected_summary_json. */
+function displayDetectedQuantity(p: PositionSummary): string {
+  const q = p.detected_quantity;
+  if (q != null && typeof q === 'number' && !Number.isNaN(q) && q >= 0) {
+    return String(q);
+  }
   const j = p.detected_summary_json;
   if (!j || typeof j !== 'object') return '—';
   const raw = (j as Record<string, unknown>).final_quantity ?? (j as Record<string, unknown>).product_label_quantity;
@@ -140,8 +151,8 @@ export default function AislePositionsPage() {
                   <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
                     {p.id.slice(0, 8)}…
                   </TableCell>
-                  <TableCell>{getPositionSku(p)}</TableCell>
-                  <TableCell>{getPositionDetectedQuantity(p)}</TableCell>
+                  <TableCell>{displaySku(p)}</TableCell>
+                  <TableCell>{displayDetectedQuantity(p)}</TableCell>
                   <TableCell>
                     <Chip
                       label={getPositionStatusLabel(p.status)}

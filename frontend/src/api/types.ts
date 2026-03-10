@@ -104,7 +104,7 @@ export interface CreateAisleRequest {
   code: string;
 }
 
-/** Position summary (list item) — Épica 6. */
+/** Position summary for list responses. Prefer optional sku and detected_quantity when present; detected_summary_json is retained for backward compatibility. */
 export interface PositionSummary {
   id: string;
   aisle_id: string;
@@ -115,6 +115,8 @@ export interface PositionSummary {
   created_at: string;
   updated_at: string;
   detected_summary_json?: Record<string, unknown> | null;
+  sku?: string | null;
+  detected_quantity?: number | null;
 }
 
 /** Response for GET .../aisles/{aisle_id}/positions. */

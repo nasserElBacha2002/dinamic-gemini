@@ -8,7 +8,7 @@ Dependencies (repo, clock, use cases) provided by api.dependencies.
 from __future__ import annotations
 
 from io import BytesIO
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
@@ -122,7 +122,48 @@ def _asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
     )
 
 
+def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str], Optional[int]]:
+    """Derive display summary (sku, detected_quantity) from position.detected_summary_json.
+
+    This is a summary-extraction path for list responses only. The authoritative source of
+    truth for product data is ProductRecord; we derive from detected_summary_json here to
+    avoid loading product records in the list flow. Prefer final_quantity then
+    product_label_quantity (same precedence as the pipeline mapper).
+    """
+    j = p.detected_summary_json
+    if not j or not isinstance(j, dict):
+        return None, None
+    sku_raw = j.get("internal_code")
+    sku = None
+    if sku_raw is not None and isinstance(sku_raw, str) and sku_raw.strip():
+        sku = sku_raw.strip()
+    # Prefer final_quantity (resolved count), then product_label_quantity (raw from pipeline).
+    q_raw = j.get("final_quantity") if j.get("final_quantity") is not None else j.get("product_label_quantity")
+    qty = _parse_summary_quantity(q_raw)
+    return sku, qty
+
+
+def _parse_summary_quantity(raw: Any) -> Optional[int]:
+    """Parse quantity from summary JSON: int/float or numeric string; invalid or negative -> None."""
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        try:
+            v = int(raw)
+            return v if v >= 0 else None
+        except (TypeError, ValueError):
+            return None
+    if isinstance(raw, str) and raw.strip():
+        try:
+            v = int(raw.strip())
+            return v if v >= 0 else None
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 def _position_to_summary(p: Position) -> PositionSummaryResponse:
+    sku, detected_quantity = _summary_sku_and_quantity_from_position(p)
     return PositionSummaryResponse(
         id=p.id,
         aisle_id=p.aisle_id,
@@ -133,6 +174,8 @@ def _position_to_summary(p: Position) -> PositionSummaryResponse:
         created_at=p.created_at,
         updated_at=p.updated_at,
         detected_summary_json=p.detected_summary_json,
+        sku=sku,
+        detected_quantity=detected_quantity,
     )
 
 
@@ -314,7 +357,7 @@ def list_aisle_positions(
     aisle_id: str,
     use_case: ListAislePositionsUseCase = Depends(get_list_aisle_positions_use_case),
 ) -> PositionListResponse:
-    """List processing result positions for an aisle (Épica 6)."""
+    """List result positions for an aisle. Response includes summary sku and detected_quantity when available."""
     try:
         positions = use_case.execute(
             ListAislePositionsCommand(inventory_id=inventory_id, aisle_id=aisle_id)
