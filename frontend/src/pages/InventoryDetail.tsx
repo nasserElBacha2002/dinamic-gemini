@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -15,13 +15,49 @@ import {
   Alert,
   Chip,
 } from '@mui/material';
-import { getInventory, getAisles, startAisleProcessing } from '../api/client';
+import { getInventory, getAisles, startAisleProcessing, uploadAisleAssets, getAisleAssets } from '../api/client';
 import type { Inventory, Aisle } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { getJobStatusLabel, getJobStatusColor } from '../utils/jobStatus';
 import { formatDate } from '../utils/formatDate';
 import CreateAisleDialog from '../components/CreateAisleDialog';
+
+/** Fetches asset counts for the given aisle IDs; used to keep the Assets column in sync. */
+async function fetchAssetCountsForAisles(
+  inventoryId: string,
+  aisleIds: string[]
+): Promise<Record<string, number>> {
+  if (aisleIds.length === 0) return {};
+  const results = await Promise.all(
+    aisleIds.map(async (id) => ({ id, count: (await getAisleAssets(inventoryId, id)).length }))
+  );
+  return Object.fromEntries(results.map((r) => [r.id, r.count]));
+}
+
+function getUploadContextFromInput(
+  e: React.ChangeEvent<HTMLInputElement>,
+  pendingAisleIdRef: React.MutableRefObject<string | null>
+): { files: File[]; aisleId: string } | null {
+  const aisleId = pendingAisleIdRef.current;
+  const files = e.target.files;
+  if (!aisleId || !files?.length) return null;
+  return { files: Array.from(files), aisleId };
+}
+
+async function executeAisleUpload(
+  inventoryId: string,
+  aisleId: string,
+  files: File[]
+): Promise<{ ok: true; count: number } | { ok: false; message: string }> {
+  try {
+    const result = await uploadAisleAssets(inventoryId, aisleId, files);
+    return { ok: true, count: result.assets.length };
+  } catch (err) {
+    const apiErr = err instanceof ApiError ? err : new ApiError(String(err));
+    return { ok: false, message: getApiErrorMessage(apiErr, 'Upload failed') };
+  }
+}
 
 export default function InventoryDetail() {
   const { inventoryId } = useParams<{ inventoryId: string }>();
@@ -35,6 +71,11 @@ export default function InventoryDetail() {
   const [createAisleOpen, setCreateAisleOpen] = useState(false);
   const [processingAisleId, setProcessingAisleId] = useState<string | null>(null);
   const [processMessage, setProcessMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [assetCountByAisleId, setAssetCountByAisleId] = useState<Record<string, number>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingUploadAisleIdRef = useRef<string | null>(null);
 
   const loadAisles = useCallback(async () => {
     if (!inventoryId) return;
@@ -43,6 +84,11 @@ export default function InventoryDetail() {
     try {
       const data = await getAisles(inventoryId);
       setAisles(data);
+      const counts =
+        data.length > 0
+          ? await fetchAssetCountsForAisles(inventoryId, data.map((a) => a.id))
+          : {};
+      setAssetCountByAisleId(counts);
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       setAislesError(getApiErrorMessage(err, 'Failed to load aisles'));
@@ -69,7 +115,16 @@ export default function InventoryDetail() {
       })
       .then((aislesData) => {
         if (cancelled) return;
-        setAisles(aislesData ?? []);
+        const list = aislesData ?? [];
+        setAisles(list);
+        if (list.length === 0) {
+          setAssetCountByAisleId({});
+          return;
+        }
+        return fetchAssetCountsForAisles(inventoryId, list.map((a) => a.id));
+      })
+      .then((counts) => {
+        if (!cancelled && counts) setAssetCountByAisleId(counts);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -122,6 +177,33 @@ export default function InventoryDetail() {
   const isAisleProcessingDisabled = (aisle: Aisle): boolean => {
     const status = (aisle.status || '').toLowerCase();
     return status === 'queued' || status === 'processing' || processingAisleId === aisle.id;
+  };
+
+  const handleUploadClick = (aisleId: string) => {
+    setUploadMessage(null);
+    pendingUploadAisleIdRef.current = aisleId;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const ctx = getUploadContextFromInput(e, pendingUploadAisleIdRef);
+    pendingUploadAisleIdRef.current = null;
+    e.target.value = '';
+    if (!inventoryId || !ctx) return;
+
+    setUploadMessage(null);
+    setUploadingAisleId(ctx.aisleId);
+    const result = await executeAisleUpload(inventoryId, ctx.aisleId, ctx.files);
+    if (result.ok) {
+      await loadAisles();
+      setUploadMessage({
+        type: 'success',
+        text: `${result.count} asset(s) uploaded. List refreshed.`,
+      });
+    } else {
+      setUploadMessage({ type: 'error', text: result.message });
+    }
+    setUploadingAisleId(null);
   };
 
   if (inventoryLoading && !inventory) {
@@ -181,6 +263,16 @@ export default function InventoryDetail() {
             </Alert>
           )}
 
+          {uploadMessage && (
+            <Alert
+              severity={uploadMessage.type}
+              sx={{ mb: 2 }}
+              onClose={() => setUploadMessage(null)}
+            >
+              {uploadMessage.text}
+            </Alert>
+          )}
+
           {aislesError && (
             <Alert severity="error" sx={{ mb: 2 }} onClose={() => setAislesError(null)}>
               {aislesError}
@@ -197,15 +289,24 @@ export default function InventoryDetail() {
             </Paper>
           ) : (
             <TableContainer component={Paper}>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*,video/*"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleFileInputChange}
+              />
               <Table>
                 <TableHead>
                   <TableRow>
                     <TableCell>Code</TableCell>
                     <TableCell>Status</TableCell>
+                    <TableCell>Assets</TableCell>
                     <TableCell>Job</TableCell>
                     <TableCell>Created</TableCell>
                     <TableCell>Error</TableCell>
-                    <TableCell align="right">Action</TableCell>
+                    <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -214,6 +315,11 @@ export default function InventoryDetail() {
                       <TableCell>{aisle.code}</TableCell>
                       <TableCell>
                         <Chip label={aisle.status} size="small" />
+                      </TableCell>
+                      <TableCell>
+                        {assetCountByAisleId[aisle.id] != null
+                          ? `${assetCountByAisleId[aisle.id]} file(s)`
+                          : '—'}
                       </TableCell>
                       <TableCell>
                         {aisle.latest_job ? (
@@ -238,6 +344,15 @@ export default function InventoryDetail() {
                         )}
                       </TableCell>
                       <TableCell align="right">
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          sx={{ mr: 1 }}
+                          disabled={uploadingAisleId === aisle.id}
+                          onClick={() => handleUploadClick(aisle.id)}
+                        >
+                          {uploadingAisleId === aisle.id ? 'Uploading…' : 'Upload'}
+                        </Button>
                         <Button
                           variant="outlined"
                           size="small"

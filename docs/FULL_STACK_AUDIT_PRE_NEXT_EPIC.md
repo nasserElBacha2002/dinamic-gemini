@@ -1,8 +1,8 @@
 # Full Stack Audit — Pre-next-epic Review
 
-**Dinamic Inventory v3.0**  
-**Scope:** Backend (v3 inventories, aisles, processing, jobs) + Frontend (React/TS/MUI, inventory detail, aisle processing UI).  
-**Audit style:** Evidence-based; strict on architecture and maintainability; no approval by default.
+**Date:** Pre-next-epic (post–Épica 4, asset upload/list in place)  
+**Scope:** Backend (domain, application, api, infrastructure, schema, tests) and frontend (API client, types, InventoryDetail, upload/processing UI, utils).  
+**Objective:** Assess whether the implementation is architecturally correct, coherent end-to-end, robust enough for the current product stage, and ready for the next epic (deeper processing/job lifecycle, result views, review flows, evidence visualization).
 
 ---
 
@@ -10,69 +10,75 @@
 
 **READY WITH MINOR FIXES**
 
-The current slice respects the intended architecture end-to-end: thin API routes, framework-agnostic use cases, clear ports and infrastructure, and a simple frontend with centralized error handling and typed models. Aisle processing flows (start job, batch job loading, conflict handling) are correct and tested. The main gaps are a small inconsistency in where application exceptions live and a few low-severity items that should be fixed or documented before the next epic so the base stays clean. None of these are blocking for moving forward if addressed in a short follow-up.
+The current full-stack slice respects the intended architecture (api → application/use_cases → ports → infrastructure on the backend; React + TypeScript + centralized API and local state on the frontend). Routes are thin, use cases are framework-agnostic, persistence and storage are behind ports, and error handling (404, 409, 400, 422) is consistent. Upload/list asset flows, aisle processing, and inventory/aisle CRUD behave correctly; tests cover use cases and API wiring for success and key failure cases. Frontend loading states, empty states, and error presentation are coherent, and API contracts align with backend responses.
+
+No critical defects were found. The main follow-up is the **N+1 asset-count pattern** on the frontend (one GET assets call per aisle when loading or refreshing the list). This is acceptable at current scale but should be revisited when inventories grow (e.g. bulk count endpoint or batch loading). A few medium/low items (use-case consistency for “not found”, upload-route file-skip behavior, CreateAisleDialog typings) are documented below as deferrable improvements. Proceeding to the next epic is reasonable; address the minor items in the backlog or as part of the next epic where relevant.
 
 ---
 
 ## 2. What is correct
 
 **Backend**
-- **Layering:** `api → application/use_cases → ports → infrastructure` is respected. Routes only depend on use cases and domain/schema types; they do not touch repositories or infrastructure directly.
-- **Thin routes:** `inventories_v3` handlers: call one use case, map result via `_inventory_to_response` / `_aisle_to_response` / `_status_response_from_result`, map application exceptions to HTTP (404/409). No business logic in the route module.
-- **Use cases:** No FastAPI or HTTP imports. They depend only on ports (repositories, JobQueue, Clock) and domain entities; orchestration and exception semantics are clear (e.g. `StartAisleProcessingUseCase`, `ListAislesWithStatusUseCase`).
-- **Persistence:** Repositories are behind ports. SQL and in-memory implementations for Inventory, Aisle, and Job exist; v3_jobs and aisles/inventories schema are consistent with domain. Batch `get_latest_by_targets` is implemented in both SQL (ROW_NUMBER) and memory, avoiding N+1 in list aisles.
-- **Processing flow:** Start aisle processing: load aisle, validate inventory ownership, check for active job (QUEUED/RUNNING), enqueue, persist Job, mark aisle queued, save aisle. Conflict and not-found cases raise application exceptions and are mapped to 404/409 in the route.
-- **Response composition:** Response DTOs (InventoryResponse, AisleResponse, AisleJobSummary, JobSummary, AisleStatusResponse) are built in the route from domain/result types; composition is localized and consistent.
-- **Queue adapter:** V3JobQueueAdapter implements JobQueue port; docstrings state that only job_id is enqueued and v3 consumption is deferred; structured logging is in place.
+
+- **Layered architecture:** Clear separation: routes depend on use cases and DTOs; use cases depend only on ports (repositories, ArtifactStorage, JobQueue, Clock). No framework types in domain or use cases.
+- **Thin routes:** `inventories_v3` limits itself to request/response mapping, dependency injection, and exception → HTTP status (404, 409, 400, 422). Business rules live in use cases.
+- **Use cases:** Upload, list assets, start processing, list aisles with status, create inventory/aisle, get inventory — all take simple parameters or commands and return domain entities or raise application errors. No FastAPI or request objects.
+- **Persistence:** Repositories are behind ports; SQL and in-memory implementations share the same contract. Schema (inventories, aisles, v3_jobs, source_assets) has appropriate FKs and indexes. SourceAssetRepository validates `uploaded_at` before SQL; storage adapter uses streaming copy and path-traversal checks.
+- **Dependency wiring:** Single place in `api/dependencies.py`; SQL vs in-memory and fallback behavior are explicit. Use cases receive repos and services via FastAPI Depends.
+- **Error model:** Dedicated application errors (AisleNotFoundError, InventoryNotFoundError, DuplicateAisleCodeError, ActiveJobExistsError, UnsupportedAssetTypeError, EmptyUploadError) mapped consistently in routes.
+- **Upload flow:** Non-atomic behavior is documented; partial-upload logging exists; content-type validation and aisle/inventory checks are in place.
 
 **Frontend**
-- **Structure:** Clear separation: API client, types, utils (apiErrors, jobStatus, formatDate), pages, dialogs. No heavy state management; local state and callbacks are sufficient for the current flows.
-- **Error handling:** `getApiErrorMessage(error, fallback)` centralizes extraction for string detail, FastAPI validation array `[{ msg }]`, and generic errors. Used in InventoryDetail, InventoriesList, CreateAisleDialog, CreateInventoryDialog.
-- **Typing:** `JobStatus` and `JOB_STATUSES` align with backend; `AisleJobSummary` and `JobSummary` use `JobStatus | string`. Inventory and Aisle types match API responses (optional dates, status as string).
-- **Processing UX:** Success message is shown only after both `startAisleProcessing()` and `loadAisles()` succeed; on refresh failure the error path runs and no success is shown.
-- **Optional onError:** CreateAisleDialog has optional `onError`; callers that do not need parent-level error handling do not pass it (e.g. InventoryDetail).
-- **Status display:** `getJobStatusLabel` and `getJobStatusColor` give consistent job status chips; aisle status remains a simple Chip for now.
+
+- **Structure:** Centralized API client and types; shared utils (apiErrors, jobStatus, formatDate); page-level state in InventoryDetail; CreateAisleDialog for create flow. Responsibilities are clear.
+- **Upload UX:** Helpers (`fetchAssetCountsForAisles`, `getUploadContextFromInput`, `executeAisleUpload`) keep the handler readable; only the row in progress shows “Uploading…” and is disabled.
+- **Asset counts:** Counts are loaded for all aisles when the list is loaded or refreshed, avoiding a mixed “— / N file(s)” state when backend has data.
+- **Error handling:** `getApiErrorMessage` and `ApiError` used consistently; process and upload errors shown in alerts; 404/409 surfaced appropriately.
+- **TypeScript:** Typed API responses and request bodies; status types aligned with backend (InventoryStatus, AisleStatus, JobStatus); SourceAssetSummary documents `storage_path` as backend-only.
 
 **End-to-end**
-- API contracts: Backend returns ISO datetimes, string statuses; frontend types use string for dates and status. Process endpoint returns `{ job_id }`; list aisles returns aisles with optional `latest_job` (id, status, updated_at). Frontend does not call GET aisle status; list + latest_job is sufficient for current UI.
-- Error semantics: 404/409/422 and `detail` (string or validation array) are consumable by the frontend via `getApiErrorMessage` and `ApiError.data`.
 
-**Tests**
-- Backend: API wiring tests cover get/list/create inventory, get/list/create aisle, 404/409/422, start process (202, 404, 409), get aisle status, list aisles with latest_job. Use case tests cover StartAisleProcessing (success, aisle not found, wrong inventory, active job), GetAisleProcessingStatus, ListAislesWithStatus (with and without jobs, inventory not found). Repository tests exist for SQL and in-memory where relevant.
+- **Contracts:** Process returns `job_id`; upload returns `assets`; list aisles includes `latest_job`; list assets returns array. Frontend types match.
+- **Tests:** Use-case tests for upload (success, not found, wrong inventory, unsupported type, empty) and list assets; API tests for create/get/list inventories and aisles, process (202/404/409), status, upload (201/404), list assets (200/404), duplicate code, validation. Coverage is meaningful for the current slice.
 
 ---
 
 ## 3. Issues found
 
 ### Critical
+
 - **None.**
 
 ### High
-- **None.**
+
+- **N+1 asset count requests (frontend)**  
+  - **What:** When the aisle list is loaded (initial or refresh), the frontend calls `getAisleAssets(inventoryId, aisleId)` once per aisle (`fetchAssetCountsForAisles`). For large inventories (e.g. 50+ aisles) this means many parallel requests and slower load.  
+  - **Why it matters:** As the product scales, this will increase latency and server load without a clear UX benefit.  
+  - **Recommendation:** In a future epic, add a backend endpoint that returns asset counts per aisle for an inventory in one call (e.g. `GET .../inventories/{id}/aisles/asset-counts`), or batch the current GETs with a cap. Not blocking for the next epic; document as a backlog item.
 
 ### Medium
 
-**M1. Application exception location inconsistency**  
-- **What:** `InventoryNotFoundError` (and `DuplicateAisleCodeError`) are defined in `src/application/use_cases/create_aisle.py`, while `AisleNotFoundError` and `ActiveJobExistsError` are in `src/application/errors.py`. Two use cases (`list_aisles_by_inventory`, `list_aisles_with_status`) import `InventoryNotFoundError` from `create_aisle`. The route imports `InventoryNotFoundError` and `DuplicateAisleCodeError` from `create_aisle` and `AisleNotFoundError`/`ActiveJobExistsError` from `application.errors`.  
-- **Why it matters:** Two sources of “application errors” make it harder to see the full set of API-mapped exceptions and to evolve them (e.g. adding codes or logging) in one place.  
-- **Recommendation:** Move `InventoryNotFoundError` and `DuplicateAisleCodeError` into `src/application/errors.py`, re-export or import them from there in `create_aisle` for backward compatibility, and update all imports (routes, list_aisles_by_inventory, list_aisles_with_status) to use `application.errors`. No change to behavior or HTTP mapping.
+- **GetInventoryUseCase returns Optional instead of raising**  
+  - **What:** `GetInventoryUseCase.execute` returns `Optional[Inventory]`; the route maps `None` to 404. Other use cases (e.g. list assets, create aisle) raise `InventoryNotFoundError` or `AisleNotFoundError` when an entity is missing.  
+  - **Why it matters:** Inconsistent “not found” handling: some use cases return None, others raise. Uniform “raise XNotFoundError” would simplify the API layer and make behavior more predictable.  
+  - **Recommendation:** Consider changing GetInventoryUseCase to raise `InventoryNotFoundError` when `get_by_id` returns None, and have the route catch it like the others. Deferrable; current behavior is correct.
+
+- **Upload route skips files with no filename and no content_type**  
+  - **What:** In `upload_aisle_assets`, the loop `for u in files` appends to `uploaded` only when `u.filename or getattr(u, "content_type", None)` is truthy. Files that have neither are dropped silently.  
+  - **Why it matters:** Malformed or empty parts could be ignored without feedback, making debugging harder.  
+  - **Recommendation:** Log when a part is skipped, or document that only parts with filename or content_type are accepted. Small change; deferrable.
 
 ### Low
 
-**L1. Client `handleResponse` message when `detail` is an array**  
-- **What:** In `frontend/src/api/client.ts`, when `response.ok` is false and `data.detail` is not a string (e.g. FastAPI validation array), the thrown `ApiError` gets `message` from `text` (first 200 chars) or `statusText`, so `ApiError.message` can be unhelpful.  
-- **Why it matters:** Any code that only reads `err.message` would see raw JSON or “Unprocessable Entity” instead of the first validation message.  
-- **Recommendation:** Either extend `handleResponse` to set a first validation message when `detail` is an array (e.g. `detail[0]?.msg`), or document that consumers must use `getApiErrorMessage(err, fallback)` for user-facing text. Current usage uses `getApiErrorMessage` everywhere in the touched UI, so behavior is correct; this is a robustness/documentation improvement.
+- **CreateAisleDialog has no TypeScript declaration**  
+  - **What:** The component is implemented in `.jsx`; the linter reports a missing declaration file for the module.  
+  - **Why it matters:** Weaker type checking at the boundary and no IDE support for the component’s props.  
+  - **Recommendation:** Add a minimal `.d.ts` or convert to `.tsx` when next touching that component. Non-blocking.
 
-**L2. Unused type `AisleStatusResponse` in frontend**  
-- **What:** `frontend/src/api/types.ts` still defines `AisleStatusResponse`; the client no longer has `getAisleStatus()` so the type is unused.  
-- **Why it matters:** Dead type surface; minor.  
-- **Recommendation:** Keep the type if the next epic will add status polling or a status view; otherwise remove it. Document the decision in a short comment.
-
-**L3. No frontend automated tests**  
-- **What:** There are no unit or integration tests for the React components or the API client.  
-- **Why it matters:** Refactors and new features have no safety net on the frontend.  
-- **Recommendation:** Deferrable. Add at least API client or key-page tests when the next epic expands UI or API usage.
+- **Frontend does not call GET aisle status**  
+  - **What:** The backend exposes `GET .../aisles/{aisle_id}/status` (AisleStatusResponse); the frontend only uses the list-aisles endpoint, which already includes `latest_job` per aisle.  
+  - **Why it matters:** The status endpoint is unused by the UI; the frontend type `AisleStatusResponse` was removed as dead. If the next epic adds per-aisle status polling, the type/endpoint can be reintroduced.  
+  - **Recommendation:** None for now; keep backend endpoint for future use.
 
 ---
 
@@ -80,12 +86,12 @@ The current slice respects the intended architecture end-to-end: thin API routes
 
 The backend is in good shape for the next epic.
 
-- **Architecture:** Clear separation of API, application, and infrastructure; use cases are pure orchestration; persistence and queue are behind ports. Response composition is contained in the route module.
-- **Correctness:** Aisle processing (start, conflict, not-found), list aisles with latest job (batch load), and status endpoint behave as intended. Repositories handle empty inputs and ordering; SQL job repo uses a single batch query for `get_latest_by_targets`.
-- **Schema and persistence:** v3_jobs and aisles/inventories match domain; constraints (e.g. UNIQUE inventory_id+code) support business rules. Job status values are consistent (queued/running/succeeded/failed).
-- **Tests:** API and use case tests cover success and failure paths; no critical gap for the current slice.
+- **Architecture:** The flow api → application/use_cases → ports → infrastructure is respected. Domain entities are framework-agnostic; use cases orchestrate via ports; infrastructure implements repositories and adapters (storage, job queue, clock).  
+- **Correctness:** Upload/list assets validate aisle and inventory, enforce content types, persist metadata and files with clear ownership of timestamps. Aisle processing checks for active jobs and enqueues correctly. Not-found, duplicate-code, and active-job-conflict cases are mapped to the right HTTP status codes.  
+- **Persistence and storage:** Schema is consistent with the domain (inventories, aisles, v3_jobs, source_assets). Repositories validate required fields (e.g. `uploaded_at`) and use ordered list where needed (e.g. `list_by_aisle` by `uploaded_at ASC`). Storage adapter uses streaming write and path-traversal protection.  
+- **Response composition:** All response building is in the route module via small mappers (`_inventory_to_response`, `_aisle_to_response`, `_asset_to_response`, `_status_response_from_result`). No business logic in DTO construction.
 
-The main improvement is to centralize application exceptions (M1) so the next epic can extend error handling or logging in one place without hunting across modules.
+The main improvement to carry into the next epic is **uniform not-found handling** (use-case raises vs route mapping None) and **observability** (logging of skipped upload parts). Neither blocks progression.
 
 ---
 
@@ -93,12 +99,13 @@ The main improvement is to centralize application exceptions (M1) so the next ep
 
 The frontend is a credible and maintainable base for the next epic.
 
-- **Simplicity:** Single-page flows, local state, no unnecessary abstractions. Pages own loading/error state; dialogs are self-contained with optional callbacks.
-- **Responsibilities:** API client is the only place that talks to the backend; types reflect API contracts; utils (apiErrors, jobStatus, formatDate) are focused and reused.
-- **UX and state:** Loading states (inventory, aisles, process button) are clear; empty state (“No aisles yet”) is distinct from errors; process success is shown only after a successful refresh; API errors are shown via a single helper.
-- **TypeScript:** Typed responses and requests; `JobStatus` and status helpers improve safety and consistency. No critical typing gaps in the audited flow.
+- **Simplicity:** Single main page (InventoryDetail) for the current flow; dialogs for create; no heavy state management. API client and types are centralized; helpers keep the page readable.  
+- **InventoryDetail:** The component handles inventory load, aisle list, asset counts, create aisle, process, and upload. The upload path is factored into helpers (`getUploadContextFromInput`, `executeAisleUpload`, `fetchAssetCountsForAisles`). For the current feature set this is acceptable; if the next epic adds more actions (e.g. review, result views), consider splitting the table/actions into a sub-component or a small hook for “aisle actions.”  
+- **Loading and empty states:** Full-page loading for initial inventory; inline loading for aisles; “No aisles yet” is distinct from error alerts. Process and upload show per-row “Starting…” / “Uploading…” and then a single success/error message.  
+- **Errors:** `getApiErrorMessage` and `ApiError` are used consistently; alerts are used for process, upload, and aisle load errors without duplication.  
+- **TypeScript:** Typed API responses and status enums; `storage_path` documented as backend-only. No dead surface after removing the unused `AisleStatusResponse` from frontend types.
 
-Adding frontend tests (L3) in a later epic will improve confidence as the UI grows.
+The main follow-up is **reducing N+1 asset-count requests** when the number of aisles grows; this can be done in a later epic with a bulk endpoint or batched loading.
 
 ---
 
@@ -106,47 +113,44 @@ Adding frontend tests (L3) in a later epic will improve confidence as the UI gro
 
 Frontend and backend are aligned well enough to continue safely.
 
-- **Contracts:** Endpoints used by the frontend (inventories CRUD, aisles CRUD, POST process) return shapes that match the frontend types (ids, status strings, optional `latest_job` with id/status/updated_at, `job_id` for process). GET aisle status is implemented and tested on the backend but not called from the client by design.
-- **Status values:** Backend job status enum (queued, running, succeeded, failed) matches frontend `JOB_STATUSES` and status helpers. Aisle and inventory statuses are string-based on both sides.
-- **Errors:** 404/409/422 and `detail` (string or validation array) are handled by `getApiErrorMessage`; the frontend can show consistent messages.
-- **No contract mismatch** was found that would block the next epic. Keeping `AisleStatusResponse` or removing it (L2) is a small, local decision.
+- **Endpoints and DTOs:** List inventories, get/create inventory, list/create aisles, start process, get status, upload assets, list assets — all have matching frontend client methods and types. Process returns `job_id`; upload returns `assets`; list aisles includes `latest_job`; list assets returns an array of source assets.  
+- **Status and errors:** Backend returns status as strings (e.g. from enums); frontend uses `InventoryStatus | string`, `AisleStatus | string`, `JobStatus | string` and status helpers. HTTP 404, 409, 400, 422 are thrown as `ApiError` with status and detail; the frontend extracts messages consistently.  
+- **Dates:** Backend sends datetime as ISO strings; frontend treats them as `string` (e.g. `created_at`, `updated_at`, `uploaded_at`) and uses `formatDate` for display.  
+- **Gaps:** None that block the next epic. The frontend does not use GET aisle status; that endpoint remains available for future polling or detail views.
 
 ---
 
 ## 7. Readiness checklist
 
 | Criterion | Answer | Justification |
-|----------|--------|----------------|
-| Backend architecture is stable enough | **Yes** | Clear layers, thin routes, use cases and ports in place. |
-| Backend behavior is correct enough | **Yes** | Processing, conflicts, not-found, and list-with-job are correct and tested. |
-| Frontend structure is maintainable | **Yes** | Clear separation of client, types, utils, pages, dialogs. |
-| Frontend UX/state handling is coherent enough | **Yes** | Loading, errors, empty state, and process feedback are consistent. |
-| API contracts are aligned enough | **Yes** | Types and responses match; error semantics are usable. |
-| Tests are sufficient for this stage | **Yes** | Backend API and use cases are well covered; frontend tests deferred. |
-| No blocking issues remain | **Yes** | Only medium (M1) and low (L1–L3) items; none block the next epic. |
-| Safe to continue to next epic | **Yes** | After addressing M1 (and optionally L1/L2), the base is clean to build on. |
+|-----------|--------|----------------|
+| Backend architecture is stable enough | **Yes** | Clear layers, thin routes, ports-based use cases, no framework in domain. |
+| Backend behavior is correct enough | **Yes** | Upload/list/process and CRUD behave correctly; errors mapped; repos and storage robust for current stage. |
+| Frontend structure is maintainable | **Yes** | Central client/types/utils; page state and helpers; no unnecessary complexity. |
+| Frontend UX/state handling is coherent enough | **Yes** | Loading, empty, and error states are distinct; process/upload feedback is accurate. |
+| API contracts are aligned enough | **Yes** | Request/response shapes and status/error semantics match. |
+| Tests are sufficient for this stage | **Yes** | Use-case and API tests cover main flows and important failure cases. |
+| No blocking issues remain | **Yes** | No critical or high-severity blockers; N+1 asset count is acceptable for current scale. |
+| Safe to continue to next epic | **Yes** | Base is solid; minor fixes can be scheduled in backlog or next epic. |
 
 ---
 
 ## 8. Blocking fixes before next epic
 
-**None.** The verdict is READY WITH MINOR FIXES; no change is strictly blocking. Recommended before or at the very start of the next epic:
-
-- **M1:** Move `InventoryNotFoundError` and `DuplicateAisleCodeError` to `src/application/errors.py` and update all imports so all application exceptions live in one module.
+**None.** The implementation is ready to proceed. Any of the items below can be done in parallel or early in the next epic if desired.
 
 ---
 
 ## 9. Deferrable improvements
 
-- **L1:** Improve `handleResponse` so that when `detail` is a validation array, `ApiError.message` is set to the first validation message (or document that `getApiErrorMessage` must be used for display).
-- **L2:** Decide whether to keep or remove `AisleStatusResponse` and add a one-line comment explaining the decision.
-- **L3:** Add frontend tests (e.g. API client or critical paths) when the next epic adds features or refactors UI.
-- **Optional:** Expose `retryable` on the aisle in the API if the next epic needs it for UX (e.g. “Retry” visibility); domain and schema already support it.
+1. **Backend:** Have `GetInventoryUseCase` raise `InventoryNotFoundError` when inventory is missing, and handle it in the route like other not-found cases.  
+2. **Backend:** Log (or document) when an upload request part is skipped due to missing filename and content_type.  
+3. **Frontend:** Add a bulk asset-count endpoint (or batch loading) and use it when loading/refreshing the aisle list, and add a backlog item for this when scaling.  
+4. **Frontend:** Add a `.d.ts` for CreateAisleDialog (or convert to `.tsx`) when next modifying that component.  
+5. **Frontend:** If InventoryDetail grows significantly in the next epic (e.g. review, result views), extract aisle table/actions into a sub-component or hook to keep the page maintainable.
 
 ---
 
 ## 10. Final recommendation
 
-- **Proceed to the next epic**, with a short follow-up to apply **M1** (centralize application exceptions in `application/errors.py`). That keeps the codebase consistent and makes it easier to extend error handling or logging later.
-- Optionally do **L1** and **L2** in the same pass; **L3** can wait until the next epic adds more frontend behavior.
-- No need to hold the next epic for these items; they can be done in parallel or in the first sprint of the new epic.
+**Proceed to the next epic.** The full-stack slice is architecturally sound, behavior is correct, and contracts are aligned. Address the N+1 asset-count pattern when scaling (e.g. bulk endpoint or batch loading) and treat the other items as backlog or small improvements during the next epic. No blocking fixes are required before continuing.

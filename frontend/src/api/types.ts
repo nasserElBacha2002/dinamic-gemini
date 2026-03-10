@@ -56,17 +56,29 @@ export interface ProcessAisleResponse {
   job_id: string;
 }
 
-export interface AisleStatusResponse {
-  aisle: Aisle;
-  latest_job: JobSummary | null;
-}
-
 export interface JobSummary {
   id: string;
   status: JobStatus | string;
   created_at: string;
   updated_at: string;
   error_message?: string | null;
+}
+
+/** Source asset (photo/video) for an aisle — Épica 4. */
+export interface SourceAssetSummary {
+  id: string;
+  aisle_id: string;
+  type: 'photo' | 'video';
+  original_filename: string;
+  /** Backend storage path; not used by current UI (reserved for future evidence/media views). */
+  storage_path: string;
+  mime_type: string;
+  uploaded_at: string;
+}
+
+/** Response for POST .../aisles/{aisle_id}/assets. */
+export interface UploadAisleAssetsResponse {
+  assets: SourceAssetSummary[];
 }
 
 export interface CreateInventoryRequest {

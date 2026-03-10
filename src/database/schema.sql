@@ -126,3 +126,21 @@ BEGIN
     CREATE INDEX IX_v3_jobs_target ON v3_jobs(target_type, target_id);
 END;
 GO
+
+-- v3.0 — Source assets (Épica 4, Documento técnico §7.3)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'source_assets')
+BEGIN
+    CREATE TABLE source_assets (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        aisle_id VARCHAR(36) NOT NULL,
+        type VARCHAR(16) NOT NULL,
+        original_filename NVARCHAR(512) NOT NULL,
+        storage_path NVARCHAR(1024) NOT NULL,
+        mime_type VARCHAR(128) NOT NULL,
+        uploaded_at DATETIME2 NOT NULL,
+        metadata_json NVARCHAR(MAX) NULL,
+        CONSTRAINT FK_source_assets_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id)
+    );
+    CREATE INDEX IX_source_assets_aisle_id ON source_assets(aisle_id);
+END;
+GO

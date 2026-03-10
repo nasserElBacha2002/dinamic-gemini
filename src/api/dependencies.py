@@ -16,24 +16,29 @@ import logging
 import os
 from typing import Optional
 
+from pathlib import Path
+
 from fastapi import Depends
 
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository, SourceAssetRepository
 from src.application.use_cases.create_aisle import CreateAisleUseCase
 from src.application.use_cases.create_inventory import CreateInventoryUseCase
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
+from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
+from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
 
 logger = logging.getLogger(__name__)
 
 _inventory_repo: Optional[InventoryRepository] = None
 _aisle_repo: Optional[AisleRepository] = None
 _job_repo: Optional[JobRepository] = None
+_asset_repo: Optional[SourceAssetRepository] = None
 _v3_sql_client = None  # SqlServerClient when DB enabled; shared by inventory and aisle repos
 
 
@@ -138,6 +143,39 @@ def get_job_repo() -> JobRepository:
     return _job_repo
 
 
+def get_source_asset_repo() -> SourceAssetRepository:
+    """Return SQL-backed SourceAssetRepository when DB is enabled, else in-memory. Cached per process."""
+    global _asset_repo
+    if _asset_repo is not None:
+        return _asset_repo
+    if _v3_db_enabled():
+        try:
+            client = _get_v3_sql_client()
+            from src.infrastructure.repositories.sql_source_asset_repository import SqlSourceAssetRepository
+            _asset_repo = SqlSourceAssetRepository(client)
+            logger.info("v3 SourceAssetRepository: using SQL backend")
+        except Exception as e:
+            if not _v3_allow_in_memory_fallback():
+                logger.error("v3 SQL source_asset repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
+                raise
+            logger.warning("v3 SQL source_asset repo init failed, falling back to in-memory: %s", e)
+            from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+            _asset_repo = MemorySourceAssetRepository()
+    else:
+        from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+        _asset_repo = MemorySourceAssetRepository()
+    return _asset_repo
+
+
+def get_artifact_storage():
+    """Return v3 ArtifactStorage adapter for aisle uploads. Base path: output_dir/v3_uploads."""
+    from src.config import load_settings
+    from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+    base = Path(load_settings().output_dir) / "v3_uploads"
+    base.mkdir(parents=True, exist_ok=True)
+    return V3ArtifactStorageAdapter(base)
+
+
 def get_job_queue():
     """Return v3 JobQueue adapter (enqueue(job_type, payload) -> job_id). Stateless."""
     from src.infrastructure.queue.v3_job_queue_adapter import V3JobQueueAdapter
@@ -224,4 +262,28 @@ def get_get_aisle_processing_status_use_case(
     return GetAisleProcessingStatusUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
+    )
+
+
+def get_upload_aisle_assets_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    artifact_storage=Depends(get_artifact_storage),
+    clock: Clock = Depends(get_clock),
+) -> UploadAisleAssetsUseCase:
+    return UploadAisleAssetsUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        artifact_storage=artifact_storage,
+        clock=clock,
+    )
+
+
+def get_list_aisle_assets_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+) -> ListAisleAssetsUseCase:
+    return ListAisleAssetsUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
     )

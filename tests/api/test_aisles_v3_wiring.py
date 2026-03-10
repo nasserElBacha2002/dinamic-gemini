@@ -218,3 +218,76 @@ def test_list_aisles_includes_latest_job_when_present() -> None:
     assert aisles2[0]["latest_job"] is not None
     assert aisles2[0]["latest_job"]["status"] == "queued"
     assert aisles2[0]["status"] == "queued"
+
+
+def test_upload_aisle_assets_returns_201_and_assets() -> None:
+    create_resp = client.post("/api/v3/inventories", json={"name": "For Upload"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "UP-01"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+
+    response = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets",
+        files=[("files", ("test.jpg", b"fake_jpeg_content", "image/jpeg"))],
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert "assets" in data
+    assert len(data["assets"]) == 1
+    assert data["assets"][0]["aisle_id"] == aisle_id
+    assert data["assets"][0]["type"] == "photo"
+    assert data["assets"][0]["original_filename"] == "test.jpg"
+
+
+def test_upload_aisle_assets_aisle_not_found_returns_404() -> None:
+    create_resp = client.post("/api/v3/inventories", json={"name": "For 404 Assets"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+
+    response = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/nonexistent-aisle-id/assets",
+        files=[("files", ("x.jpg", b"x", "image/jpeg"))],
+    )
+    assert response.status_code == 404
+
+
+def test_list_aisle_assets_returns_list() -> None:
+    create_resp = client.post("/api/v3/inventories", json={"name": "For List Assets"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "LA-01"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+
+    list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets")
+    assert list_resp.status_code == 200
+    assert list_resp.json() == []
+
+    client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets",
+        files=[("files", ("a.jpg", b"a", "image/jpeg"))],
+    )
+    list_resp2 = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets")
+    assert list_resp2.status_code == 200
+    assets = list_resp2.json()
+    assert len(assets) == 1
+    assert assets[0]["original_filename"] == "a.jpg"
+
+
+def test_list_aisle_assets_aisle_not_found_returns_404() -> None:
+    create_resp = client.post("/api/v3/inventories", json={"name": "For List 404"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+
+    response = client.get(
+        f"/api/v3/inventories/{inv_id}/aisles/nonexistent-aisle/assets"
+    )
+    assert response.status_code == 404

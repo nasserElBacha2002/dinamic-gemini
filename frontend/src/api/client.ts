@@ -10,6 +10,8 @@ import type {
   CreateAisleRequest,
   ApiErrorDetail,
   ProcessAisleResponse,
+  SourceAssetSummary,
+  UploadAisleAssetsResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -103,4 +105,29 @@ export async function startAisleProcessing(
     { method: 'POST' }
   );
   return handleResponse<ProcessAisleResponse>(response);
+}
+
+export async function uploadAisleAssets(
+  inventoryId: string,
+  aisleId: string,
+  files: File[]
+): Promise<UploadAisleAssetsResponse> {
+  const form = new FormData();
+  files.forEach((file) => form.append('files', file));
+  const response = await fetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/assets`,
+    { method: 'POST', body: form }
+  );
+  return handleResponse<UploadAisleAssetsResponse>(response);
+}
+
+export async function getAisleAssets(
+  inventoryId: string,
+  aisleId: string
+): Promise<SourceAssetSummary[]> {
+  const response = await fetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/assets`
+  );
+  const data = await handleResponse<SourceAssetSummary[]>(response);
+  return Array.isArray(data) ? data : [];
 }

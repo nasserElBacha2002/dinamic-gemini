@@ -22,3 +22,11 @@ class InventoryNotFoundError(Exception):
 
 class DuplicateAisleCodeError(Exception):
     """Raised when an aisle with the same code already exists in the inventory."""
+
+
+class UnsupportedAssetTypeError(Exception):
+    """Raised when an uploaded file has a content type that is not image/* or video/*."""
+
+
+class EmptyUploadError(Exception):
+    """Raised when no files are provided for an aisle asset upload."""

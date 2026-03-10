@@ -7,23 +7,27 @@ Dependencies (repo, clock, use cases) provided by api.dependencies.
 
 from __future__ import annotations
 
+from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from src.api.dependencies import (
     get_create_aisle_use_case,
     get_create_inventory_use_case,
     get_get_aisle_processing_status_use_case,
     get_get_inventory_use_case,
+    get_list_aisle_assets_use_case,
     get_list_aisles_with_status_use_case,
     get_list_inventories_use_case,
     get_start_aisle_processing_use_case,
+    get_upload_aisle_assets_use_case,
 )
 from src.api.schemas.aisle_schemas import CreateAisleRequest, AisleResponse, AisleJobSummary
+from src.api.schemas.asset_schemas import SourceAssetResponse, UploadAisleAssetsResponse
 from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary, ProcessAisleResponse
 from src.api.schemas.inventory_schemas import CreateInventoryRequest, InventoryResponse
-from src.application.errors import ActiveJobExistsError, AisleNotFoundError, DuplicateAisleCodeError, InventoryNotFoundError
+from src.application.errors import ActiveJobExistsError, AisleNotFoundError, DuplicateAisleCodeError, EmptyUploadError, InventoryNotFoundError, UnsupportedAssetTypeError
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
 from src.application.use_cases.get_aisle_processing_status import (
@@ -31,10 +35,13 @@ from src.application.use_cases.get_aisle_processing_status import (
     GetAisleProcessingStatusUseCase,
 )
 from src.application.use_cases.get_inventory import GetInventoryUseCase
+from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
+from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
 from src.domain.aisle.entities import Aisle
+from src.domain.assets.entities import SourceAsset
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
 
@@ -86,6 +93,18 @@ def _status_response_from_result(result: AisleProcessingStatusResult) -> AisleSt
     return AisleStatusResponse(
         aisle=_aisle_to_response(result.aisle, result.latest_job),
         latest_job=job_summary,
+    )
+
+
+def _asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
+    return SourceAssetResponse(
+        id=asset.id,
+        aisle_id=asset.aisle_id,
+        type=asset.type.value,
+        original_filename=asset.original_filename,
+        storage_path=asset.storage_path,
+        mime_type=asset.mime_type,
+        uploaded_at=asset.uploaded_at,
     )
 
 
@@ -173,5 +192,58 @@ def get_aisle_status(
     try:
         result = use_case.execute(inventory_id, aisle_id)
         return _status_response_from_result(result)
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/assets",
+    response_model=UploadAisleAssetsResponse,
+    status_code=201,
+)
+async def upload_aisle_assets(
+    inventory_id: str,
+    aisle_id: str,
+    files: List[UploadFile] = File(..., description="One or more image or video files"),
+    use_case: UploadAisleAssetsUseCase = Depends(get_upload_aisle_assets_use_case),
+) -> UploadAisleAssetsResponse:
+    """Upload one or more assets (photos/videos) to an aisle. Aisle transitions to assets_uploaded."""
+    if not files:
+        raise HTTPException(status_code=422, detail="At least one file is required")
+    uploaded: List[UploadedFile] = []
+    for u in files:
+        if not u.filename and not getattr(u, "content_type", None):
+            continue
+        content = await u.read()
+        uploaded.append(
+            UploadedFile(
+                original_filename=u.filename or "file",
+                file_obj=BytesIO(content),
+                content_type=u.content_type or "application/octet-stream",
+            )
+        )
+    if not uploaded:
+        raise HTTPException(status_code=422, detail="At least one file is required")
+    try:
+        created = use_case.execute(inventory_id, aisle_id, uploaded)
+        return UploadAisleAssetsResponse(assets=[_asset_to_response(a) for a in created])
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except EmptyUploadError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except UnsupportedAssetTypeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{inventory_id}/aisles/{aisle_id}/assets", response_model=List[SourceAssetResponse])
+def list_aisle_assets(
+    inventory_id: str,
+    aisle_id: str,
+    use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
+) -> List[SourceAssetResponse]:
+    """List source assets for an aisle."""
+    try:
+        assets = use_case.execute(inventory_id, aisle_id)
+        return [_asset_to_response(a) for a in assets]
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
