@@ -1,7 +1,9 @@
-"""Stage 2.1.D — Evidence pack generation.
+"""
+Evidence pack generation — pipeline infrastructure (Stage 2.1.D).
 
 Overview frames and localized label crops (when bbox present);
 UNLOCALIZED (overview only) when bbox missing.
+For the v3.0 domain entity Evidence (business concept), see src.domain.evidence.
 """
 
 from src.evidence.evidence_pack import generate_evidence_pack
