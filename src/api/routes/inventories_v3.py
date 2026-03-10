@@ -13,8 +13,10 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from src.api.dependencies import (
+    get_confirm_position_use_case,
     get_create_aisle_use_case,
     get_create_inventory_use_case,
+    get_delete_position_use_case,
     get_get_aisle_processing_status_use_case,
     get_get_inventory_use_case,
     get_get_position_detail_use_case,
@@ -23,6 +25,8 @@ from src.api.dependencies import (
     get_list_aisles_with_status_use_case,
     get_list_inventories_use_case,
     get_start_aisle_processing_use_case,
+    get_update_product_quantity_use_case,
+    get_update_product_sku_use_case,
     get_upload_aisle_assets_use_case,
 )
 from src.api.schemas.aisle_schemas import CreateAisleRequest, AisleResponse, AisleJobSummary
@@ -35,8 +39,20 @@ from src.api.schemas.position_schemas import (
     PositionListResponse,
     PositionSummaryResponse,
     ProductRecordResponse,
+    ReviewActionRequest,
+    ReviewActionResponse,
 )
-from src.application.errors import ActiveJobExistsError, AisleNotFoundError, DuplicateAisleCodeError, EmptyUploadError, InventoryNotFoundError, PositionNotFoundError, UnsupportedAssetTypeError
+from src.application.errors import (
+    ActiveJobExistsError,
+    AisleNotFoundError,
+    DuplicateAisleCodeError,
+    EmptyUploadError,
+    InventoryNotFoundError,
+    PositionDeletedError,
+    PositionNotFoundError,
+    ProductNotFoundError,
+    UnsupportedAssetTypeError,
+)
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
 from src.application.use_cases.get_aisle_processing_status import (
@@ -51,6 +67,10 @@ from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
+from src.application.use_cases.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
+from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
+from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
@@ -58,8 +78,87 @@ from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.jobs.entities import Job
+from src.domain.reviews.entities import ReviewAction
 
 router = APIRouter(prefix="/api/v3/inventories", tags=["inventories-v3"])
+
+
+def _review_exception_to_http(e: Exception) -> HTTPException:
+    """Map application exceptions from review use cases to HTTP responses."""
+    if isinstance(e, InventoryNotFoundError):
+        return HTTPException(status_code=404, detail="Inventory not found")
+    if isinstance(e, AisleNotFoundError):
+        return HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    if isinstance(e, PositionNotFoundError):
+        return HTTPException(status_code=404, detail="Position not found or does not belong to this aisle")
+    if isinstance(e, ProductNotFoundError):
+        return HTTPException(status_code=404, detail="Product not found or does not belong to this position")
+    if isinstance(e, PositionDeletedError):
+        return HTTPException(status_code=409, detail=str(e))
+    if isinstance(e, ValueError):
+        return HTTPException(status_code=422, detail=str(e))
+    raise e
+
+
+def _handle_confirm(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    confirm_uc: ConfirmPositionUseCase,
+) -> None:
+    try:
+        confirm_uc.execute(inventory_id, aisle_id, position_id)
+    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ValueError, PositionDeletedError) as e:
+        raise _review_exception_to_http(e)
+
+
+def _handle_update_quantity(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    body: ReviewActionRequest,
+    update_quantity_uc: UpdateProductQuantityUseCase,
+) -> None:
+    product_id = (body.product_id or "").strip()
+    if not product_id:
+        raise HTTPException(status_code=422, detail="product_id is required for update_quantity")
+    if body.corrected_quantity is None:
+        raise HTTPException(status_code=422, detail="corrected_quantity is required for update_quantity")
+    try:
+        update_quantity_uc.execute(inventory_id, aisle_id, position_id, product_id, body.corrected_quantity)
+    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ProductNotFoundError, ValueError, PositionDeletedError) as e:
+        raise _review_exception_to_http(e)
+
+
+def _handle_update_sku(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    body: ReviewActionRequest,
+    update_sku_uc: UpdateProductSkuUseCase,
+) -> None:
+    product_id = (body.product_id or "").strip()
+    if not product_id:
+        raise HTTPException(status_code=422, detail="product_id is required for update_sku")
+    sku = (body.sku or "").strip() if body.sku is not None else ""
+    if not sku:
+        raise HTTPException(status_code=422, detail="sku is required for update_sku")
+    try:
+        update_sku_uc.execute(inventory_id, aisle_id, position_id, product_id, sku, body.description)
+    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ProductNotFoundError, ValueError, PositionDeletedError) as e:
+        raise _review_exception_to_http(e)
+
+
+def _handle_delete_position(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    delete_uc: DeletePositionUseCase,
+) -> None:
+    try:
+        delete_uc.execute(inventory_id, aisle_id, position_id)
+    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, PositionDeletedError) as e:
+        raise _review_exception_to_http(e)
 
 
 def _inventory_to_response(inv: Inventory) -> InventoryResponse:
@@ -206,6 +305,19 @@ def _evidence_to_response(e: Evidence) -> EvidenceResponse:
         timestamp_ms=e.timestamp_ms,
         bbox_json=e.bbox_json,
         quality_score=e.quality_score,
+    )
+
+
+def _review_to_response(r: ReviewAction) -> ReviewActionResponse:
+    return ReviewActionResponse(
+        id=r.id,
+        position_id=r.position_id,
+        action_type=r.action_type.value,
+        before_json=r.before_json,
+        after_json=r.after_json,
+        created_at=r.created_at,
+        user_id=r.user_id,
+        comment=r.comment,
     )
 
 
@@ -388,6 +500,7 @@ def get_position_detail(
             position=_position_to_summary(result.position),
             products=[_product_to_response(pr) for pr in result.products],
             evidences=[_evidence_to_response(e) for e in result.evidences],
+            review_actions=[_review_to_response(ra) for ra in result.review_actions],
         )
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
@@ -395,3 +508,32 @@ def get_position_detail(
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
     except PositionNotFoundError:
         raise HTTPException(status_code=404, detail="Position not found or does not belong to this aisle")
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/positions/{position_id}/reviews",
+    status_code=204,
+)
+def submit_review_action(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    body: ReviewActionRequest,
+    confirm_uc: ConfirmPositionUseCase = Depends(get_confirm_position_use_case),
+    update_quantity_uc: UpdateProductQuantityUseCase = Depends(get_update_product_quantity_use_case),
+    update_sku_uc: UpdateProductSkuUseCase = Depends(get_update_product_sku_use_case),
+    delete_uc: DeletePositionUseCase = Depends(get_delete_position_use_case),
+) -> None:
+    """Submit a manual review action (confirm, update_quantity, update_sku, delete_position). Épica 8."""
+    if body.action_type == "confirm":
+        _handle_confirm(inventory_id, aisle_id, position_id, confirm_uc)
+        return
+    if body.action_type == "update_quantity":
+        _handle_update_quantity(inventory_id, aisle_id, position_id, body, update_quantity_uc)
+        return
+    if body.action_type == "update_sku":
+        _handle_update_sku(inventory_id, aisle_id, position_id, body, update_sku_uc)
+        return
+    if body.action_type == "delete_position":
+        _handle_delete_position(inventory_id, aisle_id, position_id, delete_uc)
+        return

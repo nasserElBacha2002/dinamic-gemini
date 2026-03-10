@@ -153,11 +153,38 @@ export interface EvidenceSummary {
   quality_score?: number | null;
 }
 
+/** Backend review action type values. */
+export const REVIEW_ACTION_TYPES = ['confirm', 'update_quantity', 'update_sku', 'delete_position'] as const;
+export type ReviewActionType = (typeof REVIEW_ACTION_TYPES)[number];
+
+/** Single review action in audit history — Épica 8. */
+export interface ReviewActionSummary {
+  id: string;
+  position_id: string;
+  action_type: ReviewActionType;
+  before_json: Record<string, unknown>;
+  after_json: Record<string, unknown>;
+  created_at: string;
+  user_id?: string | null;
+  comment?: string | null;
+}
+
+/** Request body for POST .../positions/{position_id}/reviews. */
+export interface ReviewActionRequest {
+  action_type: ReviewActionType;
+  product_id?: string | null;
+  corrected_quantity?: number | null;
+  sku?: string | null;
+  description?: string | null;
+}
+
 /** Response for GET .../aisles/{aisle_id}/positions/{position_id}. */
 export interface PositionDetailResponse {
   position: PositionSummary;
   products: ProductRecordSummary[];
   evidences: EvidenceSummary[];
+  /** Review audit history — Épica 8. */
+  review_actions?: ReviewActionSummary[];
 }
 
 export interface ApiErrorDetail {

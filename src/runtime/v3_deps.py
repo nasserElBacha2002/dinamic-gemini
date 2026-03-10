@@ -18,6 +18,7 @@ from src.application.ports.repositories import (
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
+    ReviewActionRepository,
     SourceAssetRepository,
 )
 
@@ -30,6 +31,7 @@ _asset_repo: Optional[SourceAssetRepository] = None
 _position_repo: Optional[PositionRepository] = None
 _product_record_repo: Optional[ProductRecordRepository] = None
 _evidence_repo: Optional[EvidenceRepository] = None
+_review_action_repo: Optional[ReviewActionRepository] = None
 _v3_sql_client = None
 
 
@@ -219,6 +221,29 @@ def get_evidence_repo() -> EvidenceRepository:
         from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
         _evidence_repo = MemoryEvidenceRepository()
     return _evidence_repo
+
+
+def get_review_action_repo() -> ReviewActionRepository:
+    global _review_action_repo
+    if _review_action_repo is not None:
+        return _review_action_repo
+    if _v3_db_enabled():
+        try:
+            client = _get_v3_sql_client()
+            from src.infrastructure.repositories.sql_review_action_repository import SqlReviewActionRepository
+            _review_action_repo = SqlReviewActionRepository(client)
+            logger.info("v3 ReviewActionRepository: using SQL backend")
+        except Exception as e:
+            if not _v3_allow_in_memory_fallback():
+                logger.error("v3 SQL review_action repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
+                raise
+            logger.warning("v3 SQL review_action repo init failed, falling back to in-memory: %s", e)
+            from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+            _review_action_repo = MemoryReviewActionRepository()
+    else:
+        from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+        _review_action_repo = MemoryReviewActionRepository()
+    return _review_action_repo
 
 
 def get_clock() -> Clock:

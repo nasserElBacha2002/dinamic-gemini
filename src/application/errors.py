@@ -34,3 +34,11 @@ class EmptyUploadError(Exception):
 
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
+
+
+class PositionDeletedError(Exception):
+    """Raised when a review action is attempted on a position that is already logically deleted."""
+
+
+class ProductNotFoundError(Exception):
+    """Raised when the product does not exist or does not belong to the given position."""

@@ -16,11 +16,13 @@ from src.application.ports.repositories import (
     InventoryRepository,
     PositionRepository,
     ProductRecordRepository,
+    ReviewActionRepository,
 )
-from src.application.errors import AisleNotFoundError, InventoryNotFoundError, PositionNotFoundError
+from src.application.use_cases.review_validation import resolve_position
 from src.domain.evidence.entities import Evidence
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
+from src.domain.reviews.entities import ReviewAction
 
 
 @dataclass
@@ -28,6 +30,7 @@ class PositionDetailResult:
     position: Position
     products: Sequence[ProductRecord]
     evidences: Sequence[Evidence]
+    review_actions: Sequence[ReviewAction]
 
 
 class GetPositionDetailUseCase:
@@ -38,12 +41,14 @@ class GetPositionDetailUseCase:
         position_repo: PositionRepository,
         product_record_repo: ProductRecordRepository,
         evidence_repo: EvidenceRepository,
+        review_repo: ReviewActionRepository,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
         self._evidence_repo = evidence_repo
+        self._review_repo = review_repo
 
     def execute(
         self,
@@ -51,27 +56,20 @@ class GetPositionDetailUseCase:
         aisle_id: str,
         position_id: str,
     ) -> PositionDetailResult:
-        inv = self._inventory_repo.get_by_id(inventory_id)
-        if inv is None:
-            raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
-        aisle = self._aisle_repo.get_by_id(aisle_id)
-        if aisle is None:
-            raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
-        if aisle.inventory_id != inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {aisle_id} does not belong to inventory {inventory_id}"
-            )
-        position = self._position_repo.get_by_id(position_id)
-        if position is None:
-            raise PositionNotFoundError(f"Position not found: {position_id}")
-        if position.aisle_id != aisle_id:
-            raise PositionNotFoundError(
-                f"Position {position_id} does not belong to aisle {aisle_id}"
-            )
+        position = resolve_position(
+            self._inventory_repo,
+            self._aisle_repo,
+            self._position_repo,
+            inventory_id,
+            aisle_id,
+            position_id,
+        )
         products = self._product_record_repo.list_by_position(position_id)
         evidences = self._evidence_repo.list_by_entity("position", position_id)
+        review_actions = self._review_repo.list_by_position(position_id)
         return PositionDetailResult(
             position=position,
             products=products,
             evidences=evidences,
+            review_actions=review_actions,
         )

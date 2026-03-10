@@ -200,6 +200,23 @@ BEGIN
         bbox_json NVARCHAR(MAX) NULL,
         quality_score FLOAT NULL
     );
-    CREATE INDEX IX_evidences_entity ON evidences(entity_type, entity_id);
+END;
+GO
+
+-- v3.0 — Review actions (Épica 8, Documento técnico §7.7)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'review_actions')
+BEGIN
+    CREATE TABLE review_actions (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        position_id VARCHAR(36) NOT NULL,
+        action_type VARCHAR(32) NOT NULL,
+        before_json NVARCHAR(MAX) NOT NULL,
+        after_json NVARCHAR(MAX) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        user_id VARCHAR(64) NULL,
+        comment NVARCHAR(512) NULL,
+        CONSTRAINT FK_review_actions_position FOREIGN KEY (position_id) REFERENCES positions(id)
+    );
+    CREATE INDEX IX_review_actions_position_id ON review_actions(position_id);
 END;
 GO

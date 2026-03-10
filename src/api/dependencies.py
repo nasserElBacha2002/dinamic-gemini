@@ -23,6 +23,7 @@ from src.application.ports.repositories import (
     EvidenceRepository,
     PositionRepository,
     ProductRecordRepository,
+    ReviewActionRepository,
 )
 from src.runtime.v3_deps import (
     get_aisle_repo,
@@ -32,6 +33,7 @@ from src.runtime.v3_deps import (
     get_job_repo,
     get_position_repo,
     get_product_record_repo,
+    get_review_action_repo,
     get_source_asset_repo,
 )
 from src.application.use_cases.create_aisle import CreateAisleUseCase
@@ -44,6 +46,10 @@ from src.application.use_cases.list_aisles_with_status import ListAislesWithStat
 from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
+from src.application.use_cases.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
+from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
+from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.application.use_cases.persist_aisle_result import PersistAisleResultUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
@@ -185,6 +191,7 @@ def get_get_position_detail_use_case(
     position_repo: PositionRepository = Depends(get_position_repo),
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     evidence_repo: EvidenceRepository = Depends(get_evidence_repo),
+    review_repo: ReviewActionRepository = Depends(get_review_action_repo),
 ) -> GetPositionDetailUseCase:
     return GetPositionDetailUseCase(
         inventory_repo=inventory_repo,
@@ -192,4 +199,73 @@ def get_get_position_detail_use_case(
         position_repo=position_repo,
         product_record_repo=product_record_repo,
         evidence_repo=evidence_repo,
+        review_repo=review_repo,
+    )
+
+
+def get_confirm_position_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    review_repo: ReviewActionRepository = Depends(get_review_action_repo),
+    clock: Clock = Depends(get_clock),
+) -> ConfirmPositionUseCase:
+    return ConfirmPositionUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        review_repo=review_repo,
+        clock=clock,
+    )
+
+
+def get_update_product_quantity_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    review_repo: ReviewActionRepository = Depends(get_review_action_repo),
+    clock: Clock = Depends(get_clock),
+) -> UpdateProductQuantityUseCase:
+    return UpdateProductQuantityUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        review_repo=review_repo,
+        clock=clock,
+    )
+
+
+def get_update_product_sku_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    review_repo: ReviewActionRepository = Depends(get_review_action_repo),
+    clock: Clock = Depends(get_clock),
+) -> UpdateProductSkuUseCase:
+    return UpdateProductSkuUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        review_repo=review_repo,
+        clock=clock,
+    )
+
+
+def get_delete_position_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    review_repo: ReviewActionRepository = Depends(get_review_action_repo),
+    clock: Clock = Depends(get_clock),
+) -> DeletePositionUseCase:
+    return DeletePositionUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        review_repo=review_repo,
+        clock=clock,
     )

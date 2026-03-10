@@ -14,6 +14,7 @@ import type {
   UploadAisleAssetsResponse,
   PositionListResponse,
   PositionDetailResponse,
+  ReviewActionRequest,
 } from './types';
 import { ApiError } from './types';
 
@@ -42,6 +43,15 @@ function messageFromErrorDetail(
   return fallback;
 }
 
+/** Throws ApiError for non-OK responses; shared by handleResponse and submitReviewAction. */
+function throwApiErrorIfNotOk(response: Response, text: string, data: ApiErrorDetail): never {
+  const message = messageFromErrorDetail(
+    data.detail,
+    text && text.length < 200 ? text : response.statusText || 'Request failed'
+  );
+  throw new ApiError(message, response.status, data);
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
   let data: ApiErrorDetail & T;
@@ -51,11 +61,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
     data = {} as ApiErrorDetail & T;
   }
   if (!response.ok) {
-    const message = messageFromErrorDetail(
-      data.detail,
-      text && text.length < 200 ? text : response.statusText || 'Request failed'
-    );
-    throw new ApiError(message, response.status, data);
+    throwApiErrorIfNotOk(response, text, data);
   }
   return data as T;
 }
@@ -155,4 +161,31 @@ export async function getPositionDetail(
     `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}`
   );
   return handleResponse<PositionDetailResponse>(response);
+}
+
+/** Submit a manual review action — Épica 8. */
+export async function submitReviewAction(
+  inventoryId: string,
+  aisleId: string,
+  positionId: string,
+  body: ReviewActionRequest
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}/reviews`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  );
+  const text = await response.text();
+  let data: ApiErrorDetail;
+  try {
+    data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+  } catch {
+    data = {};
+  }
+  if (!response.ok) {
+    throwApiErrorIfNotOk(response, text, data);
+  }
 }

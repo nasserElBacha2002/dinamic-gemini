@@ -1,9 +1,9 @@
 """v3.0 Position/result API schemas — Épica 6."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PositionSummaryResponse(BaseModel):
@@ -54,8 +54,34 @@ class EvidenceResponse(BaseModel):
     quality_score: Optional[float] = None
 
 
+class ReviewActionResponse(BaseModel):
+    """Single review action in audit history."""
+    id: str
+    position_id: str
+    action_type: str
+    before_json: Dict[str, Any]
+    after_json: Dict[str, Any]
+    created_at: datetime
+    user_id: Optional[str] = None
+    comment: Optional[str] = None
+
+
 class PositionDetailResponse(BaseModel):
     """Response for GET .../aisles/{aisle_id}/positions/{position_id}."""
     position: PositionSummaryResponse
     products: List[ProductRecordResponse]
     evidences: List[EvidenceResponse]
+    review_actions: List[ReviewActionResponse] = Field(default_factory=list)
+
+
+ReviewActionTypeLiteral = Literal["confirm", "update_quantity", "update_sku", "delete_position"]
+
+
+class ReviewActionRequest(BaseModel):
+    """Request body for POST .../positions/{position_id}/reviews. Fields required depend on action_type.
+    user_id and comment are reserved for future use (not used in Épica 8)."""
+    action_type: ReviewActionTypeLiteral
+    product_id: Optional[str] = None
+    corrected_quantity: Optional[int] = None
+    sku: Optional[str] = None
+    description: Optional[str] = None
