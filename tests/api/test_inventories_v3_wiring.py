@@ -27,3 +27,13 @@ def test_get_inventories_returns_list_and_includes_created() -> None:
     assert isinstance(data, list)
     ids = [item["id"] for item in data]
     assert created_id in ids
+
+
+def test_post_inventories_empty_name_returns_422() -> None:
+    response = client.post("/api/v3/inventories", json={"name": ""})
+    assert response.status_code == 422
+
+
+def test_post_inventories_name_too_long_returns_422() -> None:
+    response = client.post("/api/v3/inventories", json={"name": "x" * 256})
+    assert response.status_code == 422

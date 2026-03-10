@@ -72,3 +72,38 @@ BEGIN
     CREATE INDEX IX_job_events_job_id_timestamp ON job_events(job_id, [timestamp]);
 END;
 GO
+
+-- v3.0 — Inventories (Épica 2, Documento técnico §7.1)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'inventories')
+BEGIN
+    CREATE TABLE inventories (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        name NVARCHAR(255) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        completed_at DATETIME2 NULL
+    );
+END;
+GO
+
+-- v3.0 — Aisles (Épica 2, Documento técnico §7.2; FK for future AisleRepository)
+-- Domain assumption: one code per inventory (UNIQUE inventory_id, code).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'aisles')
+BEGIN
+    CREATE TABLE aisles (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        inventory_id VARCHAR(36) NOT NULL,
+        code VARCHAR(64) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        error_code VARCHAR(64) NULL,
+        error_message NVARCHAR(512) NULL,
+        retryable BIT NULL,
+        CONSTRAINT FK_aisles_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT UQ_aisles_inventory_code UNIQUE (inventory_id, code)
+    );
+    CREATE INDEX IX_aisles_inventory_id ON aisles(inventory_id);
+END;
+GO
