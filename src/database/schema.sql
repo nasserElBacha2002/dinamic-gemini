@@ -58,6 +58,15 @@ BEGIN
 END;
 GO
 
+-- Epic 3.1.B — Traceability (source_image_id, traceability_status)
+-- Each row = one pipeline entity (one counted result). source_image_id = single source image for that entity.
+-- Allowed traceability_status values: valid, missing, invalid, unvalidated (application-enforced; no CHECK to keep migrations safe).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('pallet_results') AND name = 'source_image_id')
+    ALTER TABLE pallet_results ADD source_image_id NVARCHAR(64) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('pallet_results') AND name = 'traceability_status')
+    ALTER TABLE pallet_results ADD traceability_status NVARCHAR(32) NULL;
+GO
+
 -- Job events (audit timeline)
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'job_events')
 BEGIN

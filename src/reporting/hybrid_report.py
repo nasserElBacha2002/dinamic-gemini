@@ -87,6 +87,10 @@ def build_hybrid_report(
             "entity_quality_score": e.entity_quality_score,
             "evidence_path": e.evidence_path,
             "evidence_localization": e.evidence_localization,
+            # Epic 3.1.B: traceability (traceability_warning is report-only diagnostic, not persisted to pallet_results)
+            "source_image_id": getattr(e, "source_image_id", None),
+            "traceability_status": getattr(e, "traceability_status", None),
+            "traceability_warning": getattr(e, "traceability_warning", None),
         })
 
     report: Dict[str, Any] = {

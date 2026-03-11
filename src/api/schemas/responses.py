@@ -1,8 +1,12 @@
 """Stage 7 — Response schemas."""
 
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from pydantic import BaseModel, Field
+
+# Epic 3.1.B: constrained traceability status (backward compatible: optional)
+TraceabilityStatusLiteral = Literal["valid", "missing", "invalid", "unvalidated"]
+TRACEABILITY_STATUS_VALUES = frozenset({"valid", "missing", "invalid", "unvalidated"})
 
 
 class ProgressDict(TypedDict):
@@ -53,6 +57,15 @@ class EntityListItem(BaseModel):
     count_status: Optional[str] = None
     entity_quality_score: Optional[float] = None
     evidence_ref: Optional[str] = Field(None, description="evidence_path or ref to evidence.")
+    source_image_id: Optional[str] = Field(None, description="Epic 3.1.B: image_id of source image for this entity.")
+    traceability_status: Optional[TraceabilityStatusLiteral] = Field(
+        None,
+        description="Epic 3.1.B: valid | missing | invalid | unvalidated.",
+    )
+    traceability_warning: Optional[str] = Field(
+        None,
+        description="Epic 3.1.B: diagnostic only (e.g. reason when status is invalid); not persisted to DB.",
+    )
 
 
 class EntitiesListResponse(BaseModel):

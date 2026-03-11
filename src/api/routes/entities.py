@@ -14,6 +14,7 @@ from src.api.schemas.responses import (
     EntitiesListResponse,
     EntityListItem,
     ReviewSubmitResponse,
+    TRACEABILITY_STATUS_VALUES,
 )
 from src.review import get_entity_audit, load_reviews, save_review
 from src.review.review_merge import ACTIONS
@@ -70,6 +71,8 @@ async def list_entities(
         entities = [e for e in entities if (e.get("entity_type") or "") == entity_type.strip()]
     out: List[EntityListItem] = []
     for e in entities:
+        raw_status = e.get("traceability_status")
+        traceability_status = raw_status if raw_status in TRACEABILITY_STATUS_VALUES else None
         out.append(
             EntityListItem(
                 entity_uid=str(e.get("entity_uid") or ""),
@@ -78,6 +81,9 @@ async def list_entities(
                 count_status=e.get("count_status"),
                 entity_quality_score=e.get("entity_quality_score"),
                 evidence_ref=e.get("evidence_path"),
+                source_image_id=e.get("source_image_id"),
+                traceability_status=traceability_status,
+                traceability_warning=e.get("traceability_warning"),
             )
         )
     return EntitiesListResponse(entities=out)

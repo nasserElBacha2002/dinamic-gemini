@@ -80,6 +80,7 @@ class EntityV21(BaseModel):
     product_label_bbox: Optional[List[float]] = Field(None, description="[x1,y1,x2,y2] normalizado 0..1.")
     has_boxes: bool = Field(..., description="True si hay cajas visibles.")
     confidence: float = Field(..., ge=0, le=1, description="Confianza de la detección en [0,1].")
+    source_image_id: Optional[str] = Field(None, description="Epic 3.1.B: image_id of source image for this entity.")
 
 
 class GlobalEntityResponseV21(BaseModel):
