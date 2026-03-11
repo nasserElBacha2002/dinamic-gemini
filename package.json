@@ -1,0 +1,13 @@
+{
+  "name": "dinamic-gemini",
+  "private": true,
+  "description": "Run frontend and backend together for local development",
+  "scripts": {
+    "dev": "concurrently -n be,fe -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "node scripts/run-backend.js",
+    "dev:frontend": "cd frontend && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

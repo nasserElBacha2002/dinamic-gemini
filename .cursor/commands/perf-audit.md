@@ -1,29 +1,37 @@
 # perf-audit
 
-You are a performance-focused senior engineer auditing a computer vision video pipeline for production.
+You are a performance-focused senior engineer auditing a repository that includes an **operational platform** (v3 API, use cases, persistence, frontend) and a **computer vision pipeline** (decode → detection → tracking → identification → reporting).
 
-Task: Audit this repository for performance and scalability bottlenecks.
+**Task:** Audit this repository for performance and scalability bottlenecks across both platform and pipeline.
 
-What to analyze:
-1) Runtime flow: where time is spent (decode, detection, tracking, cropping, identification, reporting).
-2) Model lifecycle: repeated loads, device placement, batching opportunities.
-3) Data flow: unnecessary conversions/copies, image resizing, crop generation overhead.
-4) I/O: writing crops/frames/logs, sync I/O in hot paths.
-5) Caching: embeddings, hashes, per-track features, repeated computations.
-6) Memory: frame buffering, large arrays, leaks, unbounded lists, long-video behavior.
-7) Concurrency: safe parallelism (decode vs infer), queueing, backpressure.
-8) Config: batch size, frame stride, image sizes, thresholds that affect compute.
+**What to analyze**
 
-For each finding, include:
-- Severity (HIGH/MED/LOW)
-- Location (file path; line if possible)
-- Why it matters (cost)
-- Concrete optimization (minimal change preferred)
+**Platform**  
+1. **API:** Request/response size, N+1 queries, slow endpoints, serialization cost.  
+2. **Persistence:** Query patterns, indexes, connection usage, large result sets.  
+3. **Frontend:** Bundle size, unnecessary re-renders, large lists without virtualization, API call patterns (e.g. N+1 from list + detail).
 
-Output format (strict):
+**Pipeline**  
+4. **Runtime flow:** Where time is spent (decode, detection, tracking, cropping, identification, reporting).  
+5. **Model lifecycle:** Repeated loads, device placement, batching opportunities.  
+6. **Data flow:** Unnecessary conversions/copies, image resizing, crop generation overhead.  
+7. **I/O:** Writing crops/frames/logs, sync I/O in hot paths.  
+8. **Caching:** Embeddings, hashes, per-track features, repeated computations.  
+9. **Memory:** Frame buffering, large arrays, leaks, unbounded lists, long-video behavior.  
+10. **Concurrency:** Safe parallelism (decode vs infer), queueing, backpressure.  
+11. **Config:** Batch size, frame stride, image sizes, thresholds that affect compute.
+
+For each finding include:
+- **Severity** (HIGH / MED / LOW)
+- **Location** (file path; line if possible)
+- **Why it matters** (cost)
+- **Concrete optimization** (minimal change preferred)
+
+**Output format (strict):**
+
 # Performance Audit
 
-## Repo Hot Path Map
+## Repo Hot Path Map (platform + pipeline)
 ## Top Bottlenecks (ranked)
 ## Findings
 ### HIGH
@@ -38,9 +46,9 @@ Output format (strict):
 ## Profiling Plan (what to measure next)
 ## Performance Guardrails (future-proof rules)
 
-Constraints:
-- Do not propose new frameworks unless unavoidable.
-- Prefer batching + caching + I/O reduction first.
-- Keep recommendations compatible with current architecture.
+**Constraints:**  
+- Do not propose new frameworks unless unavoidable.  
+- Prefer batching + caching + I/O reduction first.  
+- Keep recommendations compatible with current architecture (backend layers, frontend patterns, pipeline stages).
 
 This command will be available in chat with /perf-audit
