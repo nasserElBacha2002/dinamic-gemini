@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -19,9 +19,7 @@ import {
   DialogActions,
   Stack,
 } from '@mui/material';
-import { getPositionDetail, submitReviewAction } from '../api/client';
 import type {
-  PositionDetailResponse,
   PositionSummary,
   ProductRecordSummary,
   ReviewActionSummary,
@@ -31,6 +29,7 @@ import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { getPositionStatusLabel, getPositionStatusColor } from '../utils/positionStatus';
 import { pathToAislePositions } from '../utils/resultRoutes';
+import { usePositionDetail, useSubmitReviewAction } from '../hooks';
 
 /** Per-product quantity and SKU correction forms. */
 function ProductReviewForms({
@@ -203,78 +202,69 @@ export default function PositionDetailPage() {
     positionId: string;
   }>();
   const navigate = useNavigate();
-  const cancelledRef = useRef(false);
-  const [data, setData] = useState<PositionDetailResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!inventoryId || !aisleId || !positionId) return;
-    cancelledRef.current = false;
-    setError(null);
-    setLoading(true);
-    try {
-      const res = await getPositionDetail(inventoryId, aisleId, positionId);
-      if (!cancelledRef.current) {
-        setData(res);
-        setActionError(null);
-      }
-    } catch (e) {
-      if (!cancelledRef.current) {
-        const err = e instanceof ApiError ? e : new ApiError(String(e));
-        setError(getApiErrorMessage(err, 'Failed to load position'));
-      }
-    } finally {
-      if (!cancelledRef.current) setLoading(false);
-    }
-  }, [inventoryId, aisleId, positionId]);
+  const detailQuery = usePositionDetail(inventoryId, aisleId, positionId);
+  const reviewMutation = useSubmitReviewAction(
+    inventoryId ?? '',
+    aisleId ?? '',
+    positionId ?? ''
+  );
+
+  const data = detailQuery.data ?? null;
+  const loading = detailQuery.isLoading;
+  const error =
+    detailQuery.isError && detailQuery.error
+      ? detailQuery.error instanceof ApiError
+        ? getApiErrorMessage(detailQuery.error, 'Failed to load position')
+        : String(detailQuery.error)
+      : null;
+  const actionLoading = reviewMutation.isPending;
+  const displayActionError =
+    actionError ??
+    (reviewMutation.isError && reviewMutation.error
+      ? reviewMutation.error instanceof ApiError
+        ? getApiErrorMessage(reviewMutation.error, 'Review action failed')
+        : String(reviewMutation.error)
+      : null);
 
   const runAction = useCallback(
     async (fn: () => Promise<void>) => {
-      if (!inventoryId || !aisleId || !positionId) return;
       setActionError(null);
-      setActionLoading(true);
       try {
         await fn();
-        if (!cancelledRef.current) await load();
       } catch (e) {
-        if (!cancelledRef.current) {
-          const err = e instanceof ApiError ? e : new ApiError(String(e));
-          setActionError(getApiErrorMessage(err, 'Review action failed'));
-        }
-      } finally {
-        if (!cancelledRef.current) setActionLoading(false);
+        const err = e instanceof ApiError ? e : new ApiError(String(e));
+        setActionError(getApiErrorMessage(err, 'Review action failed'));
       }
     },
-    [inventoryId, aisleId, positionId, load]
+    []
   );
 
   const handleConfirm = useCallback(() => {
     runAction(() =>
-      submitReviewAction(inventoryId!, aisleId!, positionId!, { action_type: 'confirm' })
+      reviewMutation.mutateAsync({ action_type: 'confirm' })
     );
-  }, [runAction, inventoryId, aisleId, positionId]);
+  }, [runAction, reviewMutation]);
 
   const handleUpdateQuantity = useCallback(
     (productId: string, corrected_quantity: number) => {
       runAction(() =>
-        submitReviewAction(inventoryId!, aisleId!, positionId!, {
+        reviewMutation.mutateAsync({
           action_type: 'update_quantity',
           product_id: productId,
           corrected_quantity,
         })
       );
     },
-    [runAction, inventoryId, aisleId, positionId]
+    [runAction, reviewMutation]
   );
 
   const handleUpdateSku = useCallback(
     (productId: string, sku: string, description?: string) => {
       runAction(() =>
-        submitReviewAction(inventoryId!, aisleId!, positionId!, {
+        reviewMutation.mutateAsync({
           action_type: 'update_sku',
           product_id: productId,
           sku,
@@ -282,7 +272,7 @@ export default function PositionDetailPage() {
         })
       );
     },
-    [runAction, inventoryId, aisleId, positionId]
+    [runAction, reviewMutation]
   );
 
   const handleDeleteClick = useCallback(() => setDeleteConfirmOpen(true), []);
@@ -291,20 +281,9 @@ export default function PositionDetailPage() {
   const handleDeleteConfirm = useCallback(() => {
     setDeleteConfirmOpen(false);
     runAction(() =>
-      submitReviewAction(inventoryId!, aisleId!, positionId!, { action_type: 'delete_position' })
+      reviewMutation.mutateAsync({ action_type: 'delete_position' })
     );
-  }, [runAction, inventoryId, aisleId, positionId]);
-
-  useEffect(() => {
-    if (!inventoryId || !aisleId || !positionId) {
-      setLoading(false);
-      return;
-    }
-    load();
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, [load, inventoryId, aisleId, positionId]);
+  }, [runAction, reviewMutation]);
 
   const handleBack = useCallback(() => {
     navigate(pathToAislePositions(inventoryId ?? '', aisleId ?? ''));
@@ -333,7 +312,7 @@ export default function PositionDetailPage() {
         <Alert
           severity="error"
           action={
-            <Button color="inherit" size="small" onClick={() => load()}>
+            <Button color="inherit" size="small" onClick={() => detailQuery.refetch()}>
               Retry
             </Button>
           }
@@ -365,9 +344,9 @@ export default function PositionDetailPage() {
 
       <PositionSummaryCard position={position} />
 
-      {actionError && (
+      {displayActionError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
-          {actionError}
+          {displayActionError}
         </Alert>
       )}
 

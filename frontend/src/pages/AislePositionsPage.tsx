@@ -1,4 +1,3 @@
-import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -15,21 +14,14 @@ import {
   Alert,
   Chip,
 } from '@mui/material';
-import { getAislePositions } from '../api/client';
 import type { PositionSummary } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { getPositionStatusLabel, getPositionStatusColor } from '../utils/positionStatus';
 import { pathToPositionDetail } from '../utils/resultRoutes';
+import { useAislePositions } from '../hooks';
 
-/**
- * Table display helpers: prefer first-class sku and detected_quantity from the API.
- * Fall back to detected_summary_json only for backward compatibility with older responses.
- * This compatibility fallback can be removed once all backends return summary fields.
- */
-
-/** Prefer p.sku; fall back to legacy internal_code in detected_summary_json. */
 function displaySku(p: PositionSummary): string {
   if (p.sku != null && p.sku.trim() !== '') return p.sku.trim();
   const code = p.detected_summary_json && typeof p.detected_summary_json === 'object' && 'internal_code' in p.detected_summary_json
@@ -39,18 +31,13 @@ function displaySku(p: PositionSummary): string {
   return '—';
 }
 
-/** Prefer p.detected_quantity; fall back to legacy final_quantity / product_label_quantity in detected_summary_json. */
 function displayDetectedQuantity(p: PositionSummary): string {
   const q = p.detected_quantity;
-  if (q != null && typeof q === 'number' && !Number.isNaN(q) && q >= 0) {
-    return String(q);
-  }
+  if (q != null && typeof q === 'number' && !Number.isNaN(q) && q >= 0) return String(q);
   const j = p.detected_summary_json;
   if (!j || typeof j !== 'object') return '—';
   const raw = (j as Record<string, unknown>).final_quantity ?? (j as Record<string, unknown>).product_label_quantity;
-  if (raw !== null && raw !== undefined && typeof raw === 'number' && !Number.isNaN(raw) && raw >= 0) {
-    return String(raw);
-  }
+  if (raw !== null && raw !== undefined && typeof raw === 'number' && !Number.isNaN(raw) && raw >= 0) return String(raw);
   if (typeof raw === 'string' && raw.trim() !== '') {
     const n = Number.parseInt(raw, 10);
     if (!Number.isNaN(n) && n >= 0) return String(n);
@@ -61,28 +48,15 @@ function displayDetectedQuantity(p: PositionSummary): string {
 export default function AislePositionsPage() {
   const { inventoryId, aisleId } = useParams<{ inventoryId: string; aisleId: string }>();
   const navigate = useNavigate();
-  const [positions, setPositions] = useState<PositionSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!inventoryId || !aisleId) return;
-    setError(null);
-    setLoading(true);
-    try {
-      const res = await getAislePositions(inventoryId, aisleId);
-      setPositions(res.positions ?? []);
-    } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setError(getApiErrorMessage(err, 'Failed to load positions'));
-    } finally {
-      setLoading(false);
-    }
-  }, [inventoryId, aisleId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { data, isLoading, isError, error, refetch } = useAislePositions(inventoryId, aisleId);
+  const positions = data?.positions ?? [];
+  const errorMessage =
+    isError && error
+      ? error instanceof ApiError
+        ? getApiErrorMessage(error, 'Failed to load positions')
+        : String(error)
+      : null;
 
   const handleBack = () => navigate(`/inventories/${inventoryId}`);
 
@@ -105,22 +79,21 @@ export default function AislePositionsPage() {
         Aisle results — Positions
       </Typography>
 
-      {error && (
+      {errorMessage && (
         <Alert
           severity="error"
           sx={{ mb: 2 }}
-          onClose={() => setError(null)}
           action={
-            <Button color="inherit" size="small" onClick={() => load()}>
+            <Button color="inherit" size="small" onClick={() => refetch()}>
               Retry
             </Button>
           }
         >
-          {error}
+          {errorMessage}
         </Alert>
       )}
 
-      {loading ? (
+      {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
           <CircularProgress />
         </Box>
