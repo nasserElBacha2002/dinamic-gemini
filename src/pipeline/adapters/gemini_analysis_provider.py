@@ -14,7 +14,8 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from src.llm.prompts import get_hybrid_prompt
+from src.jobs.image_identity import load_job_images_from_manifest
+from src.llm.prompts import enrich_prompt_with_image_ids, get_hybrid_prompt
 from src.llm.providers.factory import get_llm_provider
 from src.llm.types import LLMRequest
 from src.pipeline.context.run_context import RunContext
@@ -42,6 +43,19 @@ class GeminiAnalysisProvider:
         job_id = context.job_id
         provider = get_llm_provider(settings)
         prompt_text = get_hybrid_prompt(getattr(settings, "hybrid_prompt", "global_v21"))
+
+        # Epic 3.1.A: for photos jobs, enrich prompt with image IDs so provider can reference them
+        job_input = getattr(context, "job_input", None)
+        if job_input and getattr(job_input, "input_type", "") == "photos":
+            manifest_rel = (getattr(job_input, "input_manifest_path", None) or "").strip()
+            photos_dir_rel = (getattr(job_input, "photos_dir", None) or "").strip()
+            if manifest_rel and photos_dir_rel:
+                job_dir = context.run_dir.parent
+                manifest_path = job_dir / manifest_rel
+                images = load_job_images_from_manifest(manifest_path, photos_dir_rel)
+                if images:
+                    prompt_text = enrich_prompt_with_image_ids(prompt_text, images)
+
         request = LLMRequest(
             job_id=job_id,
             frames=frame_paths,

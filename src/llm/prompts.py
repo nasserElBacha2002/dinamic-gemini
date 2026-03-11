@@ -6,7 +6,9 @@ get_hybrid_prompt() con la variable de entorno HYBRID_PROMPT (default: global_v2
 Valores del diccionario: str (prompt único) o dict con "system"/"user" (legacy).
 """
 
-from typing import Dict, Final, Union
+from typing import Dict, Final, List, Union
+
+from src.jobs.image_identity import JobImage
 
 # Textos base (referenciados por PROMPTS)
 _GLOBAL_V21: Final[str] = """\
@@ -126,3 +128,37 @@ def get_hybrid_prompt(profile_name: str = "global_v21") -> str:
     """
     raw = PROMPTS.get(profile_name, PROMPTS["global_v21"])
     return raw if isinstance(raw, str) else PROMPTS["global_v21"]
+
+
+# Epic 3.1.A — Enrich prompt with image identity for traceability (provider receives image IDs)
+_TRACEABILITY_INSTRUCTION: Final[str] = """
+
+TRACEABILITY (v3.1): Each input image has a unique identifier below. For every entity or counted result you return, you MUST include the exact source_image_id of the image used as evidence for that result. Do not invent IDs. Only use image IDs from the list below.
+"""
+
+
+def enrich_prompt_with_image_ids(
+    base_prompt: str,
+    images: List[JobImage],
+) -> str:
+    """Append image list and traceability instruction to the base prompt (Epic 3.1.A).
+
+    The provider receives explicit image identifiers so it can return source_image_id
+    per result in a future epic. No response parsing in Epic A.
+
+    Args:
+        base_prompt: Existing analysis prompt text.
+        images: List of JobImage (order must match frame order). upload_order is 1-based.
+
+    Returns:
+        base_prompt + image list block + traceability instruction.
+    """
+    if not images:
+        return base_prompt
+    lines = ["\n\nInput images (use these exact IDs as source_image_id per result):"]
+    for img in images:
+        lines.append(
+            f"- {img.image_id} (upload_order={img.upload_order}, original_filename={img.original_filename!r})"
+        )
+    block = "\n".join(lines)
+    return base_prompt.rstrip() + "\n" + block + _TRACEABILITY_INSTRUCTION

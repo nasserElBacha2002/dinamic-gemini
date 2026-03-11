@@ -80,7 +80,9 @@ class PhotosFrameSource:
             photos_dir = normalized_dir
         frames: list[Path] = []
         frame_refs: list[str] = []
-        for entry in sorted(photos_list, key=lambda x: x.get("index", 0)):
+        for position_1based, entry in enumerate(
+            sorted(photos_list, key=lambda x: x.get("index", 0)), start=1
+        ):
             if use_normalized:
                 stored = entry.get("stored_normalized_filename") or entry.get("stored_filename") or ""
             else:
@@ -93,8 +95,14 @@ class PhotosFrameSource:
                     f"missing input photo: {path} (listed in input_manifest.json)"
                 )
             frames.append(path)
-            idx = entry.get("index", len(frames))
-            frame_refs.append(f"photo_{idx:04d}")
+            # Epic 3.1.A: use image_id as frame_ref when present; else 1-based fallback (no 0-based leakage)
+            image_id = entry.get("image_id") if isinstance(entry.get("image_id"), str) else None
+            frame_ref = (
+                (image_id.strip() or f"photo_{position_1based:04d}")
+                if image_id
+                else f"photo_{position_1based:04d}"
+            )
+            frame_refs.append(frame_ref)
         metadata = {
             "source": "photos",
             "frame_count": len(frames),
