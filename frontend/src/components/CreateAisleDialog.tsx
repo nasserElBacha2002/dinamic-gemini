@@ -9,6 +9,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { createAisle } from '../api/client';
+import type { CreateAisleRequest } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 
@@ -19,6 +20,8 @@ export interface CreateAisleDialogProps {
   onSuccess: () => void;
   /** Optional. Called with a message when the parent should show an error (e.g. global snackbar). */
   onError?: (message: string | null) => void;
+  /** If provided, used instead of direct createAisle (e.g. TanStack Query mutation). */
+  createAisleFn?: (body: CreateAisleRequest) => Promise<unknown>;
 }
 
 export default function CreateAisleDialog({
@@ -27,7 +30,9 @@ export default function CreateAisleDialog({
   onClose,
   onSuccess,
   onError,
+  createAisleFn,
 }: CreateAisleDialogProps) {
+  const doCreate = createAisleFn ?? ((body: CreateAisleRequest) => createAisle(inventoryId, body));
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
@@ -62,7 +67,7 @@ export default function CreateAisleDialog({
     setValidationError('');
     onError?.(null);
     try {
-      await createAisle(inventoryId, { code: trimmed });
+      await doCreate({ code: trimmed });
       onSuccess();
       handleClose();
     } catch (e) {

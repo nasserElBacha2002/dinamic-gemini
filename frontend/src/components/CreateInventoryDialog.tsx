@@ -9,7 +9,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { createInventory } from '../api/client';
-import type { Inventory } from '../api/types';
+import type { Inventory, CreateInventoryRequest } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 
@@ -18,6 +18,8 @@ export interface CreateInventoryDialogProps {
   onClose: () => void;
   onSuccess: (created: Inventory) => void;
   onError: (message: string | null) => void;
+  /** If provided, used instead of direct createInventory (e.g. TanStack Query mutation). */
+  createInventoryFn?: (body: CreateInventoryRequest) => Promise<Inventory>;
 }
 
 export default function CreateInventoryDialog({
@@ -25,7 +27,9 @@ export default function CreateInventoryDialog({
   onClose,
   onSuccess,
   onError,
+  createInventoryFn,
 }: CreateInventoryDialogProps) {
+  const doCreate = createInventoryFn ?? createInventory;
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
@@ -56,14 +60,14 @@ export default function CreateInventoryDialog({
     setValidationError('');
     onError(null);
     try {
-      const created = await createInventory({ name: trimmed });
+      const created = await doCreate({ name: trimmed });
       onSuccess(created);
       handleClose();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       const msg = getApiErrorMessage(err, 'Failed to create inventory');
       setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
-      onError(null);
+      onError(msg);
     } finally {
       setSubmitting(false);
     }

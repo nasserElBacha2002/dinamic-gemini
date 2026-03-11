@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -11,85 +11,56 @@ import {
   TableHead,
   TableRow,
   Typography,
-  CircularProgress,
-  Alert,
 } from '@mui/material';
-import { getInventories } from '../api/client';
 import type { Inventory } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
+import { PageLayout, LoadingBlock, EmptyState, ErrorAlert } from '../components/ui';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
+import { useInventoriesList, useCreateInventory } from '../hooks';
 
 export default function InventoriesList() {
   const navigate = useNavigate();
-  const [inventories, setInventories] = useState<Inventory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getInventories();
-      setInventories(data);
-    } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setError(getApiErrorMessage(err, 'Failed to load inventories'));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { data: inventories = [], isLoading, isError, error, refetch } = useInventoriesList();
+  const createMutation = useCreateInventory();
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const errorMessage =
+    isError && error ? (error instanceof ApiError ? getApiErrorMessage(error, 'Failed to load inventories') : String(error)) : null;
 
   const handleCreateSuccess = (created: Inventory) => {
     setCreateOpen(false);
+    setCreateError(null);
     if (created.id) {
       navigate(`/inventories/${created.id}`);
     } else {
-      load();
+      refetch();
     }
   };
 
   return (
-    <Box sx={{ p: 3, maxWidth: 900, mx: 'auto' }}>
+    <PageLayout>
       <Typography variant="h5" sx={{ mb: 2 }}>
         Dinamic Inventory v3
       </Typography>
 
-      {error && (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-          onClose={() => setError(null)}
-          action={
-            <Button color="inherit" size="small" onClick={() => load()}>
-              Retry
-            </Button>
-          }
-        >
-          {error}
-        </Alert>
+      {errorMessage && (
+        <ErrorAlert message={errorMessage} onRetry={() => refetch()} />
       )}
 
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button variant="contained" onClick={() => setCreateOpen(true)}>
+        <Button variant="contained" onClick={() => { setCreateError(null); setCreateOpen(true); }}>
           Create inventory
         </Button>
       </Box>
 
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
+      {isLoading ? (
+        <LoadingBlock />
       ) : inventories.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: 'center' }}>
-          <Typography color="text.secondary">No inventories yet. Create one to get started.</Typography>
-        </Paper>
+        <EmptyState message="No inventories yet. Create one to get started." padding={4} />
       ) : (
         <TableContainer component={Paper}>
           <Table>
@@ -119,12 +90,21 @@ export default function InventoriesList() {
         </TableContainer>
       )}
 
+      {createError && (
+        <ErrorAlert
+          message={createError}
+          onRetry={() => { setCreateError(null); refetch(); }}
+          onClose={() => setCreateError(null)}
+        />
+      )}
+
       <CreateInventoryDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onSuccess={handleCreateSuccess}
-        onError={setError}
+        onError={setCreateError}
+        createInventoryFn={createMutation.mutateAsync}
       />
-    </Box>
+    </PageLayout>
   );
 }

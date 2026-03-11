@@ -1,8 +1,14 @@
 """Stage 7 — Response schemas."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
 from pydantic import BaseModel, Field
+
+
+class ProgressDict(TypedDict):
+    """Job progress: stage name and percent (0–100). Used in JobStatusResponse."""
+    stage: str
+    percent: int
 
 
 class JobCreateResponse(BaseModel):
@@ -17,7 +23,7 @@ class JobStatusResponse(BaseModel):
     """GET /jobs/{job_id} response."""
     job_id: str
     status: str
-    progress: Dict[str, Any] = Field(default_factory=dict)
+    progress: ProgressDict = Field(default_factory=lambda: {"stage": "", "percent": 0})
     created_at: str = ""
     execution_time_seconds: Optional[float] = Field(default=None, description="Tiempo de ejecución en segundos (cuando el trabajo ha terminado).")
 
@@ -51,16 +57,25 @@ class EntityListItem(BaseModel):
 
 class EntitiesListResponse(BaseModel):
     """GET /jobs/{job_id}/entities response."""
-    entities: List[Dict[str, Any]] = Field(default_factory=list)
+    entities: List[EntityListItem] = Field(default_factory=list)
 
 
 class EntityEvidenceResponse(BaseModel):
-    """GET /jobs/{job_id}/entities/{entity_uid}/evidence response."""
+    """GET /jobs/{job_id}/entities/{entity_uid}/evidence response.
+    evidence: flexible dict (paths/refs per entity); shape may evolve with pipeline."""
     entity_uid: str
     evidence: Dict[str, Any] = Field(default_factory=dict)
 
 
 class EntityAuditResponse(BaseModel):
-    """GET /jobs/{job_id}/entities/{entity_uid}/audit response."""
+    """GET /jobs/{job_id}/entities/{entity_uid}/audit response.
+    events: list of review event dicts (timestamp, actor, action, before, after, notes); kept flexible for audit schema evolution."""
     entity_uid: str
     events: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ReviewSubmitResponse(BaseModel):
+    """POST /jobs/{job_id}/entities/{entity_uid}/review response."""
+    entity_uid: str
+    action: str
+    message: str

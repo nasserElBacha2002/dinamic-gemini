@@ -26,7 +26,8 @@ class ArtifactStorage(ABC):
 
 
 class JobQueue(ABC):
-    """Port for enqueueing jobs. Returns job id from the queue. Payload for process_aisle: ProcessAislePayload."""
+    """Port for enqueueing jobs. Returns job id from the queue.
+    For job_type 'process_aisle', payload must be ProcessAislePayload (see application.ports.contracts)."""
 
     @abstractmethod
     def enqueue(self, job_type: str, payload: Dict[str, Any]) -> str:
