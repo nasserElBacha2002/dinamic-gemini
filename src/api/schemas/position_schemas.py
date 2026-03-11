@@ -19,6 +19,10 @@ class PositionSummaryResponse(BaseModel):
     detected_summary_json: Optional[Dict[str, Any]] = None
     sku: Optional[str] = None
     detected_quantity: Optional[int] = None
+    """Epic 3.1.B: image_id of source image for this position (from report entity)."""
+    source_image_id: Optional[str] = None
+    """Epic 3.1.B: valid | missing | invalid | unvalidated (from report entity)."""
+    traceability_status: Optional[str] = None
 
 
 class PositionListResponse(BaseModel):

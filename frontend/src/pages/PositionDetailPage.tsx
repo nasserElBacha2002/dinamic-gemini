@@ -107,8 +107,10 @@ function ProductReviewForms({
 
 /** Compact summary card for a position (ID, status, confidence, needs review, summary-level traceability when present, updated). */
 function PositionSummaryCard({ position }: { position: PositionSummary }) {
-  const hasSourceImage =
-    position.source_image_id != null && String(position.source_image_id).trim() !== '';
+  const sourceImageValue =
+    position.source_image_id != null && String(position.source_image_id).trim() !== ''
+      ? String(position.source_image_id).trim()
+      : null;
 
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
@@ -130,11 +132,9 @@ function PositionSummaryCard({ position }: { position: PositionSummary }) {
           <TraceabilityChip status={position.traceability_status} />
         )}
       </Box>
-      {hasSourceImage && (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          Source image (summary): {position.source_image_id!.trim()}
-        </Typography>
-      )}
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+        Source image: {sourceImageValue ?? '—'}
+      </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
         Updated: {formatDate(position.updated_at)}
       </Typography>

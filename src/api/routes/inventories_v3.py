@@ -7,10 +7,15 @@ Dependencies (repo, clock, use cases) provided by api.dependencies.
 
 from __future__ import annotations
 
+import json
+import logging
 from io import BytesIO
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+
+from src.config import load_settings
 
 from src.api.dependencies import (
     get_confirm_position_use_case,
@@ -83,6 +88,8 @@ from src.domain.jobs.entities import Job
 from src.domain.reviews.entities import ReviewAction
 
 router = APIRouter(prefix="/api/v3/inventories", tags=["inventories-v3"])
+
+logger = logging.getLogger(__name__)
 
 
 def _review_exception_to_http(e: Exception) -> HTTPException:
@@ -263,8 +270,54 @@ def _parse_summary_quantity(raw: object) -> Optional[int]:
     return None
 
 
+def _enrich_position_traceability_from_report(p: Position) -> Tuple[Optional[str], Optional[str]]:
+    """When position has entity_uid but missing source_image_id/traceability_status, try to load from hybrid_report.json.
+
+    entity_uid format is {job_id}_{model_entity_id} (e.g. 79ea44b5-9609-4d83-8b41-2974c58d35c8_E1).
+    Report path: output_dir / job_id / run / hybrid_report.json. Returns (source_image_id, traceability_status).
+    """
+    summary = p.detected_summary_json or {}
+    entity_uid = summary.get("entity_uid") if isinstance(summary.get("entity_uid"), str) else None
+    if not entity_uid or "_" not in entity_uid:
+        return None, None
+    parts = entity_uid.rsplit("_", 1)
+    if len(parts) != 2:
+        return None, None
+    job_id, _model_entity_id = parts
+    try:
+        base = Path(load_settings().output_dir)
+        report_path = base / job_id / "run" / "hybrid_report.json"
+        if not report_path.is_file():
+            return None, None
+        with open(report_path, encoding="utf-8") as f:
+            report = json.load(f)
+        entities = report.get("entities") or []
+        for ent in entities:
+            if isinstance(ent, dict) and ent.get("entity_uid") == entity_uid:
+                sid = ent.get("source_image_id")
+                ts = ent.get("traceability_status")
+                return (
+                    sid if sid is not None and str(sid).strip() else None,
+                    ts if ts is not None and str(ts).strip() else None,
+                )
+        return None, None
+    except Exception as e:
+        logger.debug("Enrich position traceability from report failed (entity_uid=%s): %s", entity_uid, e)
+        return None, None
+
+
 def _position_to_summary(p: Position) -> PositionSummaryResponse:
     sku, detected_quantity = _summary_sku_and_quantity_from_position(p)
+    summary_json = p.detected_summary_json or {}
+    source_image_id = summary_json.get("source_image_id") or None
+    traceability_status = summary_json.get("traceability_status") or None
+    # Fallback: if position was persisted before we stored traceability in summary, load from report
+    if (source_image_id is None or traceability_status is None) and summary_json.get("entity_uid"):
+        sid_from_report, ts_from_report = _enrich_position_traceability_from_report(p)
+        if source_image_id is None and sid_from_report is not None:
+            source_image_id = sid_from_report
+        if traceability_status is None and ts_from_report is not None:
+            traceability_status = ts_from_report
     return PositionSummaryResponse(
         id=p.id,
         aisle_id=p.aisle_id,
@@ -277,6 +330,8 @@ def _position_to_summary(p: Position) -> PositionSummaryResponse:
         detected_summary_json=p.detected_summary_json,
         sku=sku,
         detected_quantity=detected_quantity,
+        source_image_id=source_image_id,
+        traceability_status=traceability_status,
     )
 
 

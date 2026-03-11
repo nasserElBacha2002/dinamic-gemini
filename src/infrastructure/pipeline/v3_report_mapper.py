@@ -61,6 +61,13 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
         "product_label_quantity": entity.get("product_label_quantity"),
         "count_status": entity.get("count_status"),
     }
+    # Epic 3.1.B: expose in position so API/frontend can show source image and traceability status
+    sid = entity.get("source_image_id")
+    if sid is not None:
+        out["source_image_id"] = sid if isinstance(sid, str) else str(sid)
+    ts = entity.get("traceability_status")
+    if ts is not None:
+        out["traceability_status"] = ts if isinstance(ts, str) else str(ts)
     if audit:
         out["_audit"] = audit
     return out
