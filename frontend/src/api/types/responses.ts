@@ -159,7 +159,16 @@ export interface PositionDetailResponse {
   review_actions?: ReviewActionSummary[];
 }
 
-// ─── v1 Job entities (Epic 3.1.B) ───────────────────────────────────────────
+// ─── v1 Job entities (Epic 3.1.B / 3.1.C) ───────────────────────────────────────────
+
+/** Epic 3.1.C — Job-level traceability counts (full job, not filtered subset). */
+export interface TraceabilitySummary {
+  total_entities: number;
+  valid: number;
+  missing: number;
+  invalid: number;
+  unvalidated: number;
+}
 
 /** Single entity in GET /api/v1/inventory/jobs/{job_id}/entities response. */
 export interface JobEntityListItem {
@@ -177,7 +186,9 @@ export interface JobEntityListItem {
   traceability_warning?: string | null;
 }
 
-/** Response for GET /api/v1/inventory/jobs/{job_id}/entities. */
+/** Response for GET /api/v1/inventory/jobs/{job_id}/entities. Epic 3.1.C: optional traceability_summary (full-job counts). */
 export interface JobEntitiesListResponse {
   entities: JobEntityListItem[];
+  /** When present, always full-job summary regardless of filter. Omitted for legacy reports. */
+  traceability_summary?: TraceabilitySummary | null;
 }

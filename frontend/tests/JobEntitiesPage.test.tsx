@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import JobEntitiesPage from '../src/pages/JobEntitiesPage';
@@ -44,7 +44,7 @@ describe('JobEntitiesPage', () => {
     mockGetJobEntities.mockResolvedValue({ entities: [] });
     renderWithProviders();
     await screen.findByText(/no count results for this job yet/i);
-    expect(mockGetJobEntities).toHaveBeenCalledWith('job-123');
+    expect(mockGetJobEntities).toHaveBeenCalledWith('job-123', { traceability_status: undefined });
   });
 
   it('shows error state when request fails', async () => {
@@ -79,9 +79,89 @@ describe('JobEntitiesPage', () => {
     renderWithProviders();
     await screen.findByText('e1');
     expect(screen.getByText('img_001')).toBeInTheDocument();
-    expect(screen.getByText('Valid')).toBeInTheDocument();
-    expect(screen.getByText('Missing')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Valid' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Missing' })).toBeInTheDocument();
+    const validChips = screen.getAllByText('Valid');
+    expect(validChips.length).toBeGreaterThanOrEqual(1);
+    const missingLabels = screen.getAllByText('Missing');
+    expect(missingLabels.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('e2')).toBeInTheDocument();
+  });
+
+  it('renders traceability summary block when backend returns traceability_summary', async () => {
+    mockGetJobEntities.mockResolvedValue({
+      entities: [
+        { entity_uid: 'e1', entity_type: 'PALLET', traceability_status: 'valid' },
+      ],
+      traceability_summary: {
+        total_entities: 3,
+        valid: 1,
+        missing: 1,
+        invalid: 1,
+        unvalidated: 0,
+      },
+    });
+    renderWithProviders();
+    await screen.findByText('e1');
+    expect(screen.getByText(/Traceability \(job total\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Total 3/)).toBeInTheDocument();
+    expect(screen.getByText(/Valid 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Missing 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Invalid 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Unvalidated 0/)).toBeInTheDocument();
+  });
+
+  it('does not render traceability summary when absent (legacy response)', async () => {
+    mockGetJobEntities.mockResolvedValue({
+      entities: [{ entity_uid: 'e1', entity_type: 'PALLET' }],
+    });
+    renderWithProviders();
+    await screen.findByText('e1');
+    expect(screen.queryByText(/Traceability \(job total\)/i)).not.toBeInTheDocument();
+  });
+
+  it('calls getJobEntities with traceability_status when filter tab is selected', async () => {
+    mockGetJobEntities.mockResolvedValue({ entities: [] });
+    renderWithProviders();
+    await screen.findByText(/no count results/i);
+    expect(mockGetJobEntities).toHaveBeenCalledWith('job-123', { traceability_status: undefined });
+    mockGetJobEntities.mockClear();
+    const missingTab = screen.getByRole('tab', { name: /missing/i });
+    missingTab.click();
+    await waitFor(() => {
+      expect(mockGetJobEntities).toHaveBeenCalledWith('job-123', { traceability_status: 'missing' });
+    });
+  });
+
+  it('shows traceability_warning as tooltip on Invalid chip when present', async () => {
+    const warningText = 'source_image_id not in job';
+    mockGetJobEntities.mockResolvedValue({
+      entities: [
+        {
+          entity_uid: 'e1',
+          entity_type: 'PALLET',
+          traceability_status: 'invalid',
+          traceability_warning: warningText,
+        },
+      ],
+    });
+    renderWithProviders();
+    await screen.findByText('e1');
+    const invalidChips = screen.getAllByText('Invalid');
+    const tableChip = invalidChips.find((el) => el.closest('table') !== null) ?? invalidChips[0];
+    fireEvent.mouseOver(tableChip);
+    await waitFor(() => {
+      expect(screen.getByRole('tooltip')).toHaveTextContent(warningText);
+    });
+  });
+
+  it('shows filter-specific empty message when filter is applied and no entities match', async () => {
+    mockGetJobEntities.mockResolvedValue({ entities: [] });
+    renderWithProviders();
+    await screen.findByText(/no count results/i);
+    const missingTab = screen.getByRole('tab', { name: /missing/i });
+    missingTab.click();
+    await screen.findByText(/no entities match the selected traceability filter/i);
   });
 
   it('renders legacy entities without traceability (shows em dash)', async () => {

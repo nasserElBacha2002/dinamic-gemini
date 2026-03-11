@@ -1,8 +1,10 @@
 /**
- * Epic 3.1.B — Job count results page (v1 API).
- * Lists counted items for a job with source image and traceability status.
+ * Epic 3.1.B / 3.1.C — Job count results page (v1 API).
+ * Lists counted items with source image and traceability status.
+ * Epic 3.1.C: traceability summary block, filter by traceability_status, clearer diagnostics.
  */
 
+import { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Button,
@@ -15,9 +17,13 @@ import {
   TableRow,
   Typography,
   Link,
+  Box,
+  Tabs,
+  Tab,
 } from '@mui/material';
-import type { JobEntityListItem } from '../api/types';
+import type { JobEntityListItem, TraceabilitySummary } from '../api/types';
 import { ApiError } from '../api/types';
+import { TRACEABILITY_STATUSES, type TraceabilityStatus } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { isTraceabilityStatus } from '../utils/traceability';
 import { PageLayout, LoadingBlock, EmptyState, ErrorAlert, TraceabilityChip } from '../components/ui';
@@ -28,11 +34,59 @@ function displayOptional(value: string | null | undefined): string {
   return String(value).trim();
 }
 
+const TRACEABILITY_FILTER_ALL = 'all';
+
+/** Epic 3.1.C — Compact summary row when backend provides traceability_summary. */
+function TraceabilitySummaryBlock({ summary }: { summary: TraceabilitySummary }) {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 2,
+        alignItems: 'center',
+        mb: 2,
+        p: 1.5,
+        borderRadius: 1,
+        bgcolor: 'action.hover',
+      }}
+    >
+      <Typography variant="body2" color="text.secondary" sx={{ mr: 1 }}>
+        Traceability (job total):
+      </Typography>
+      <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
+        Total {summary.total_entities}
+      </Typography>
+      <Typography component="span" variant="body2" color="success.main">
+        Valid {summary.valid}
+      </Typography>
+      <Typography component="span" variant="body2" color="text.secondary">
+        Missing {summary.missing}
+      </Typography>
+      <Typography component="span" variant="body2" color="error.main">
+        Invalid {summary.invalid}
+      </Typography>
+      <Typography component="span" variant="body2" color="info.main">
+        Unvalidated {summary.unvalidated}
+      </Typography>
+    </Box>
+  );
+}
+
 export default function JobEntitiesPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
-  const { data, isLoading, isError, error, refetch } = useJobEntities(jobId);
+  const [traceabilityFilter, setTraceabilityFilter] = useState<string>(TRACEABILITY_FILTER_ALL);
+
+  const traceabilityStatusParam: string | undefined =
+    traceabilityFilter === TRACEABILITY_FILTER_ALL ? undefined : traceabilityFilter;
+
+  const { data, isLoading, isError, error, refetch } = useJobEntities(jobId, {
+    traceability_status: traceabilityStatusParam,
+  });
+
   const entities = data?.entities ?? [];
+  const traceabilitySummary = data?.traceability_summary ?? undefined;
   const errorMessage =
     isError && error
       ? error instanceof ApiError
@@ -41,6 +95,9 @@ export default function JobEntitiesPage() {
       : null;
 
   const handleBack = () => navigate(-1);
+  const handleFilterChange = useCallback((_e: React.SyntheticEvent, value: string) => {
+    setTraceabilityFilter(value);
+  }, []);
 
   if (!jobId?.trim()) {
     return (
@@ -66,12 +123,31 @@ export default function JobEntitiesPage() {
         Count results — Job {jobId.slice(0, 8)}{jobId.length > 8 ? '…' : ''}
       </Typography>
 
+      {traceabilitySummary != null && (
+        <TraceabilitySummaryBlock summary={traceabilitySummary} />
+      )}
+
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tabs value={traceabilityFilter} onChange={handleFilterChange} variant="scrollable" scrollButtons="auto">
+          <Tab label="All" value={TRACEABILITY_FILTER_ALL} />
+          {(TRACEABILITY_STATUSES as readonly string[]).map((status) => (
+            <Tab key={status} label={status.charAt(0).toUpperCase() + status.slice(1)} value={status} />
+          ))}
+        </Tabs>
+      </Box>
+
       {isLoading && !data ? (
         <LoadingBlock message="Loading count results…" />
       ) : errorMessage ? (
         <ErrorAlert message={errorMessage} onRetry={() => refetch()} />
       ) : entities.length === 0 ? (
-        <EmptyState message="No count results for this job yet. Run processing on the aisle, or check back once the job has finished." />
+        <EmptyState
+          message={
+            traceabilityStatusParam
+              ? 'No entities match the selected traceability filter.'
+              : 'No count results for this job yet. Run processing on the aisle, or check back once the job has finished.'
+          }
+        />
       ) : (
         <TableContainer component={Paper}>
           <Table size="small">
@@ -96,7 +172,7 @@ export default function JobEntitiesPage() {
                   <TableCell>
                     {isTraceabilityStatus(entity.traceability_status) ? (
                       <TraceabilityChip
-                        status={entity.traceability_status}
+                        status={entity.traceability_status as TraceabilityStatus}
                         tooltip={entity.traceability_warning ?? undefined}
                       />
                     ) : (
