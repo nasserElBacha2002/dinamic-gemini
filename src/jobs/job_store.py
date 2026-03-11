@@ -7,7 +7,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.jobs.models import JobInput, JobRecord, JobStatus
 from src.utils.validation import validate_job_id
@@ -49,7 +49,7 @@ def create_job(
     video_path: str = "",
     mode: str = "hybrid",
     confidence_threshold: float = 0.70,
-    metadata: Optional[dict] = None,
+    metadata: Optional[Dict[str, Any]] = None,
     video_filename: Optional[str] = None,
     input_type: str = "video",
     input_manifest_path: Optional[str] = None,
@@ -183,7 +183,7 @@ def _write_record(path: Path, record: JobRecord) -> None:
         raise
 
 
-def get_pallet_results(job_id: str) -> Optional[List[dict]]:
+def get_pallet_results(job_id: str) -> Optional[List[Dict[str, Any]]]:
     """When SQL Server enabled, return pallet_results for job_id from DB; else None (caller should use report file)."""
     repos = _db_repos()
     if repos is None:

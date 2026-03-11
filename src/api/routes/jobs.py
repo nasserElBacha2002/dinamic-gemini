@@ -17,7 +17,9 @@ from src.api.schemas.responses import (
     JobStatusResponse,
 )
 from src.config import load_settings
+from src.database.repository import JobRecordDict
 from src.jobs.job_store import create_job, get_job, list_artifacts
+from src.jobs.models import JobRecord
 from src.jobs.queue import enqueue
 from src.utils.validation import validate_job_id
 
@@ -391,7 +393,7 @@ def _resolve_report_and_run_dir(job_id: str) -> Tuple[Path, Path]:
     return (path, path.parent)
 
 
-def _job_input_from_record_or_data(record: Optional[Any], job_data: Optional[dict]) -> dict:
+def _job_input_from_record_or_data(record: Optional[JobRecord], job_data: Optional[JobRecordDict]) -> dict[str, Any]:
     """Get mode and confidence_threshold from JobRecord or DB job_data."""
     if record is not None:
         return {"mode": record.input.mode, "confidence_threshold": record.input.confidence_threshold}
@@ -402,7 +404,7 @@ def _job_input_from_record_or_data(record: Optional[Any], job_data: Optional[dic
 
 
 @router.get("/{job_id}/result")
-async def get_job_result(job_id: str) -> Any:
+async def get_job_result(job_id: str) -> dict[str, Any]:
     """Return authoritative report JSON if succeeded. Report file is the source of truth (standard v2.1 format)."""
     try:
         job_id = validate_job_id(job_id)
@@ -429,7 +431,7 @@ async def get_job_result(job_id: str) -> Any:
 
 
 @router.get("/{job_id}/report")
-async def get_job_report(job_id: str, resolved: bool = False) -> Any:
+async def get_job_report(job_id: str, resolved: bool = False) -> dict[str, Any]:
     """Return report JSON. When resolved=true, merge with reviews and recompute summary (does not modify file)."""
     try:
         job_id = validate_job_id(job_id)
@@ -465,7 +467,7 @@ async def get_job_report(job_id: str, resolved: bool = False) -> Any:
     )
 
 
-def _list_artifacts_under(job_dir: Path) -> list:
+def _list_artifacts_under(job_dir: Path) -> list[str]:
     """List relative paths of files under job_dir (no path traversal)."""
     if not job_dir.exists() or not job_dir.is_dir():
         return []
@@ -511,7 +513,7 @@ async def get_job_artifacts(job_id: str) -> ArtifactsResponse:
     return ArtifactsResponse(job_id=job_id, artifacts=items)
 
 
-def _progress_dict(record: Any) -> dict:
+def _progress_dict(record: JobRecord) -> dict[str, Any]:
     p = record.progress
     if hasattr(p, "model_dump"):
         return p.model_dump()

@@ -8,7 +8,7 @@ Dependencies (repo, clock, use cases) provided by api.dependencies.
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
@@ -244,7 +244,7 @@ def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str],
     return sku, qty
 
 
-def _parse_summary_quantity(raw: Any) -> Optional[int]:
+def _parse_summary_quantity(raw: object) -> Optional[int]:
     """Parse quantity from summary JSON: int/float or numeric string; invalid or negative -> None."""
     if raw is None:
         return None

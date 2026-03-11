@@ -2,11 +2,23 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
 from src.database.sqlserver import SqlServerClient, now_utc
 
 logger = logging.getLogger(__name__)
+
+
+class JobRecordDict(TypedDict, total=False):
+    """Dict shape returned by JobsRepository.get_job. Compatible with JobRecord.model_validate()."""
+    job_id: str
+    input: Dict[str, Any]
+    status: str
+    progress: Dict[str, Any]
+    output: Optional[Dict[str, Any]]
+    error: Optional[str]
+    created_at: str
+    updated_at: str
 
 
 def _serialize_metadata(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -147,7 +159,7 @@ class JobsRepository:
                 (now_utc(), "failed", error_code, error_message, job_id),
             )
 
-    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def get_job(self, job_id: str) -> Optional[JobRecordDict]:
         """Return job as dict compatible with JobRecord (input, status, progress, output, error, created_at, updated_at)."""
         with self._client.cursor() as cur:
             cur.execute(

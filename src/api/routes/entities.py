@@ -8,7 +8,13 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 
 from src.api.schemas.requests import ReviewSubmitBody
-from src.api.schemas.responses import EntityAuditResponse, EntityEvidenceResponse, EntitiesListResponse
+from src.api.schemas.responses import (
+    EntityAuditResponse,
+    EntityEvidenceResponse,
+    EntitiesListResponse,
+    EntityListItem,
+    ReviewSubmitResponse,
+)
 from src.review import get_entity_audit, load_reviews, save_review
 from src.review.review_merge import ACTIONS
 from src.utils.validation import validate_entity_uid, validate_job_id
@@ -62,16 +68,18 @@ async def list_entities(
         entities = [e for e in entities if (e.get("count_status") or "") == status.strip()]
     if entity_type is not None and entity_type.strip():
         entities = [e for e in entities if (e.get("entity_type") or "") == entity_type.strip()]
-    out = []
+    out: List[EntityListItem] = []
     for e in entities:
-        out.append({
-            "entity_uid": e.get("entity_uid"),
-            "pallet_id": e.get("pallet_id"),
-            "entity_type": e.get("entity_type"),
-            "count_status": e.get("count_status"),
-            "entity_quality_score": e.get("entity_quality_score"),
-            "evidence_ref": e.get("evidence_path"),
-        })
+        out.append(
+            EntityListItem(
+                entity_uid=str(e.get("entity_uid") or ""),
+                pallet_id=e.get("pallet_id"),
+                entity_type=str(e.get("entity_type") or ""),
+                count_status=e.get("count_status"),
+                entity_quality_score=e.get("entity_quality_score"),
+                evidence_ref=e.get("evidence_path"),
+            )
+        )
     return EntitiesListResponse(entities=out)
 
 
@@ -120,8 +128,8 @@ def _build_review_event(
     }
 
 
-@router.post("/{job_id}/entities/{entity_uid}/review")
-async def submit_review(job_id: str, entity_uid: str, body: ReviewSubmitBody) -> dict:
+@router.post("/{job_id}/entities/{entity_uid}/review", response_model=ReviewSubmitResponse)
+async def submit_review(job_id: str, entity_uid: str, body: ReviewSubmitBody) -> ReviewSubmitResponse:
     """Submit a manual review action. Actions: SET_COUNT, MARK_EMPTY, MARK_INVALID."""
     try:
         job_id = validate_job_id(job_id)
@@ -162,7 +170,7 @@ async def submit_review(job_id: str, entity_uid: str, body: ReviewSubmitBody) ->
 
     event = _build_review_event(action, before, after, body.actor or "", body.notes)
     save_review(run_dir, uid, event)
-    return {"entity_uid": uid, "action": action, "message": "Review saved"}
+    return ReviewSubmitResponse(entity_uid=uid, action=action, message="Review saved")
 
 
 @router.get("/{job_id}/entities/{entity_uid}/audit", response_model=EntityAuditResponse)

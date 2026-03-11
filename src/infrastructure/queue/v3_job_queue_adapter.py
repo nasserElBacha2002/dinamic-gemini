@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Any, Dict
 
 from src.jobs.queue import enqueue as legacy_enqueue
 
@@ -24,7 +25,7 @@ class V3JobQueueAdapter:
     the legacy worker. Full v3 job consumption is deferred.
     """
 
-    def enqueue(self, job_type: str, payload: dict) -> str:
+    def enqueue(self, job_type: str, payload: Dict[str, Any]) -> str:
         job_id = str(uuid.uuid4())
         payload_summary = list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__
         logger.info(
