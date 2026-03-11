@@ -51,7 +51,11 @@ def _confidence_from_entity(entity: Dict[str, Any]) -> tuple[float, bool]:
 
 
 def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str, Any]:
-    """Build detected_summary_json for traceability; include audit flags for missing/invalid data."""
+    """Build detected_summary_json for traceability; include audit flags for missing/invalid data.
+
+    Includes position_barcode and review_display_label so the list API can show a sku fallback
+    when internal_code is missing (aligns with derive_review_display_label: internal_code else position_barcode).
+    """
     out = {
         "entity_uid": entity.get("entity_uid"),
         "entity_type": entity.get("entity_type"),
@@ -61,6 +65,13 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
         "product_label_quantity": entity.get("product_label_quantity"),
         "count_status": entity.get("count_status"),
     }
+    # Fallback display fields for list API when internal_code is null (see BUG_INVESTIGATION_POSITIONS_SKU_QUANTITY_NULL).
+    pos_barcode = entity.get("position_barcode")
+    if pos_barcode is not None:
+        out["position_barcode"] = pos_barcode if isinstance(pos_barcode, str) else str(pos_barcode)
+    rdl = entity.get("review_display_label")
+    if rdl is not None:
+        out["review_display_label"] = rdl if isinstance(rdl, str) else str(rdl)
     # Epic 3.1.B: expose in position so API/frontend can show source image and traceability status
     sid = entity.get("source_image_id")
     if sid is not None:

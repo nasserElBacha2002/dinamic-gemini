@@ -1,6 +1,7 @@
 """Stage 2.2.D — Gemini LLM provider (wraps existing client + analyzer)."""
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -13,7 +14,7 @@ from src.exceptions.global_analysis_exceptions import (
 from src.llm.errors import LLMProviderError
 from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
-from src.llm.prompts import enrich_prompt_with_product_label_association, get_hybrid_prompt
+from src.llm.prompts import get_hybrid_prompt
 from src.llm.types import LLMRequest, LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,8 @@ class GeminiProvider:
                 message="No frames could be loaded",
                 details={"paths_count": len(request.frames)},
             )
-        # Epic 3.1.A: use adapter-provided prompt when non-empty; otherwise fallback (no later override)
+        # Epic 3.1.A: use adapter-provided prompt when non-empty; otherwise base prompt only (no Epic D
+        # product/label block — that block caused Gemini to return null for internal_code/product_label_quantity).
         use_request_prompt = (
             request.prompt.strip()
             if (request.prompt and request.prompt.strip())
@@ -63,9 +65,7 @@ class GeminiProvider:
         prompt_text = (
             use_request_prompt
             if use_request_prompt is not None
-            else enrich_prompt_with_product_label_association(
-                get_hybrid_prompt(getattr(self._settings, "hybrid_prompt", "global_v21"))
-            )
+            else get_hybrid_prompt(getattr(self._settings, "hybrid_prompt", "global_v21"))
         )
         client = GeminiClient(
             api_key=self._settings.gemini_api_key,
@@ -74,8 +74,10 @@ class GeminiProvider:
             retry_delay=getattr(self._settings, "gemini_retry_delay", 1.0),
         )
         analyzer = GeminiGlobalAnalyzer(client, prompt_text=prompt_text)
+        run_dir = request.metadata.get("run_dir")
+        save_raw_to_path = Path(run_dir) / "gemini_raw_response.json" if run_dir else None
         try:
-            data = analyzer.analyze_video_frames(frames_nd, logger=logger)
+            data = analyzer.analyze_video_frames(frames_nd, logger=logger, save_raw_to_path=save_raw_to_path)
         except GlobalAnalysisParsingError as e:
             raise LLMProviderError(
                 code="INVALID_JSON",

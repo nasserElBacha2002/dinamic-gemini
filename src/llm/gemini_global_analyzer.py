@@ -4,6 +4,7 @@ Análisis global de video con una sola llamada a Gemini (hybrid v2.1, Structured
 
 import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
@@ -13,7 +14,7 @@ from src.exceptions.global_analysis_exceptions import (
     GlobalAnalysisValidationError,
 )
 from src.llm.gemini_client import GeminiClient
-from src.llm.prompts import enrich_prompt_with_product_label_association, get_hybrid_prompt
+from src.llm.prompts import get_hybrid_prompt
 from src.models.schemas import GlobalEntityResponseV21
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
@@ -62,11 +63,17 @@ class GeminiGlobalAnalyzer:
         prompt = (
             self._prompt_text
             if self._prompt_text is not None
-            else enrich_prompt_with_product_label_association(get_hybrid_prompt())
+            else get_hybrid_prompt()
         )
         log.info("Enviando %d frames a Gemini (análisis global v2.1 structured)...", len(frames))
         raw = self.client.generate_global_analysis_structured(images, prompt, GlobalEntityResponseV21)
         cleaned = raw.strip()
+        save_raw_to_path = kwargs.get("save_raw_to_path")
+        if save_raw_to_path is not None:
+            p = Path(save_raw_to_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(cleaned, encoding="utf-8")
+            log.info("Respuesta cruda de Gemini guardada en %s", p)
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError as e:

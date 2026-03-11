@@ -238,6 +238,9 @@ def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str],
     truth for product data is ProductRecord; we derive from detected_summary_json here to
     avoid loading product records in the list flow. Prefer final_quantity then
     product_label_quantity (same precedence as the pipeline mapper).
+
+    sku: internal_code if present; else review_display_label; else position_barcode; else pallet_id (empty → None).
+    pallet_id is always in the summary so existing positions show at least pallet id when internal_code is null.
     """
     j = p.detected_summary_json
     if not j or not isinstance(j, dict):
@@ -246,9 +249,20 @@ def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str],
     sku = None
     if sku_raw is not None and isinstance(sku_raw, str) and sku_raw.strip():
         sku = sku_raw.strip()
+    if sku is None:
+        fallback = (
+            j.get("review_display_label")
+            or j.get("position_barcode")
+            or j.get("pallet_id")
+        )
+        if fallback is not None and isinstance(fallback, str) and fallback.strip():
+            sku = fallback.strip()
     # Prefer final_quantity (resolved count), then product_label_quantity (raw from pipeline).
     q_raw = j.get("final_quantity") if j.get("final_quantity") is not None else j.get("product_label_quantity")
     qty = _parse_summary_quantity(q_raw)
+    # Business rule: always show a counted quantity. When unresolved (both null), use 0 so the frontend never gets null.
+    if qty is None:
+        qty = 0
     return sku, qty
 
 
