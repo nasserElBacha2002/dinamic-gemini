@@ -1,7 +1,8 @@
 /**
- * Epic 3.1.B / 3.1.C — Job count results page (v1 API).
+ * Epic 3.1.B / 3.1.C / Epic 4 — Job count results page (v1 API).
  * Lists counted items with source image and traceability status.
  * Epic 3.1.C: traceability summary block, filter by traceability_status, clearer diagnostics.
+ * Epic 4: review-oriented "Review label" column (review_display_label / product_display_label).
  */
 
 import { useState, useCallback } from 'react';
@@ -32,6 +33,11 @@ import { useJobEntities } from '../hooks';
 function displayOptional(value: string | null | undefined): string {
   if (value == null || String(value).trim() === '') return '—';
   return String(value).trim();
+}
+
+/** Epic 4: review-oriented display label. Prefers review_display_label; falls back to product_display_label for legacy responses. Normalization (empty/whitespace → —) is done by displayOptional. */
+function getEntityDisplayLabel(entity: JobEntityListItem): string | null | undefined {
+  return entity.review_display_label ?? entity.product_display_label;
 }
 
 const TRACEABILITY_FILTER_ALL = 'all';
@@ -154,6 +160,7 @@ export default function JobEntitiesPage() {
             <TableHead>
               <TableRow>
                 <TableCell>Item</TableCell>
+                <TableCell>Review label</TableCell>
                 <TableCell>Pallet</TableCell>
                 <TableCell>Type</TableCell>
                 <TableCell>Count status</TableCell>
@@ -165,6 +172,7 @@ export default function JobEntitiesPage() {
               {entities.map((entity: JobEntityListItem) => (
                 <TableRow key={entity.entity_uid}>
                   <TableCell>{displayOptional(entity.entity_uid)}</TableCell>
+                  <TableCell>{displayOptional(getEntityDisplayLabel(entity))}</TableCell>
                   <TableCell>{displayOptional(entity.pallet_id)}</TableCell>
                   <TableCell>{displayOptional(entity.entity_type)}</TableCell>
                   <TableCell>{displayOptional(entity.count_status)}</TableCell>

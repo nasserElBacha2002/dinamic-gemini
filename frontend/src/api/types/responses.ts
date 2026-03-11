@@ -184,6 +184,10 @@ export interface JobEntityListItem {
   traceability_status?: TraceabilityStatus | null;
   /** Epic 3.1.B: diagnostic only (e.g. reason when status is invalid). */
   traceability_warning?: string | null;
+  /** Epic 3.1.D / Epic 4: review-oriented display label (prefers product/SKU, fallback position/pallet). Not guaranteed product-only. */
+  review_display_label?: string | null;
+  /** Epic 3.1.D: deprecated alias, same value as review_display_label. Kept for backward compatibility. */
+  product_display_label?: string | null;
 }
 
 /** Response for GET /api/v1/inventory/jobs/{job_id}/entities. Epic 3.1.C: optional traceability_summary (full-job counts). */

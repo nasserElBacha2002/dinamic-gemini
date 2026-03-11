@@ -1,6 +1,6 @@
 /**
- * Epic 3.1.B — Job entities page and traceability display tests.
- * Covers loading, empty, error, populated, and legacy (optional fields absent).
+ * Epic 3.1.B / Epic 4 — Job entities page and traceability display tests.
+ * Covers loading, empty, error, populated, legacy (optional fields absent), and Epic 4 display-label fallback behavior.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -64,6 +64,7 @@ describe('JobEntitiesPage', () => {
           source_image_id: 'img_001',
           traceability_status: 'valid',
           traceability_warning: null,
+          review_display_label: 'SKU-001',
         },
         {
           entity_uid: 'e2',
@@ -73,11 +74,13 @@ describe('JobEntitiesPage', () => {
           source_image_id: null,
           traceability_status: 'missing',
           traceability_warning: null,
+          review_display_label: null,
         },
       ],
     });
     renderWithProviders();
     await screen.findByText('e1');
+    expect(screen.getByText('SKU-001')).toBeInTheDocument();
     expect(screen.getByText('img_001')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Valid' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Missing' })).toBeInTheDocument();
@@ -183,6 +186,70 @@ describe('JobEntitiesPage', () => {
     const cells = screen.getAllByRole('cell');
     const traceabilityCells = cells.filter((c) => c.textContent === '—');
     expect(traceabilityCells.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Epic 4: shows Review label column with review_display_label when present', async () => {
+    mockGetJobEntities.mockResolvedValue({
+      entities: [
+        {
+          entity_uid: 'ent-1',
+          entity_type: 'PALLET',
+          review_display_label: 'SKU-XYZ',
+          product_display_label: 'SKU-XYZ',
+        },
+      ],
+    });
+    renderWithProviders();
+    await screen.findByText('ent-1');
+    expect(screen.getByRole('columnheader', { name: /review label/i })).toBeInTheDocument();
+    expect(screen.getByText('SKU-XYZ')).toBeInTheDocument();
+  });
+
+  it('Epic 4: prefers review_display_label over product_display_label when both present', async () => {
+    mockGetJobEntities.mockResolvedValue({
+      entities: [
+        {
+          entity_uid: 'ent-1a',
+          entity_type: 'PALLET',
+          review_display_label: 'PREFERRED',
+          product_display_label: 'LEGACY-VAL',
+        },
+      ],
+    });
+    renderWithProviders();
+    await screen.findByText('ent-1a');
+    expect(screen.getByText('PREFERRED')).toBeInTheDocument();
+    expect(screen.queryByText('LEGACY-VAL')).not.toBeInTheDocument();
+  });
+
+  it('Epic 4: falls back to product_display_label when review_display_label absent (legacy)', async () => {
+    mockGetJobEntities.mockResolvedValue({
+      entities: [
+        {
+          entity_uid: 'ent-2',
+          entity_type: 'PALLET',
+          product_display_label: 'LEGACY-POS',
+        },
+      ],
+    });
+    renderWithProviders();
+    await screen.findByText('ent-2');
+    expect(screen.getByText('LEGACY-POS')).toBeInTheDocument();
+  });
+
+  it('Epic 4: shows em dash for Review label when both fields absent or empty', async () => {
+    mockGetJobEntities.mockResolvedValue({
+      entities: [
+        { entity_uid: 'ent-3', entity_type: 'PALLET' },
+        { entity_uid: 'ent-4', entity_type: 'PALLET', review_display_label: '', product_display_label: null },
+      ],
+    });
+    renderWithProviders();
+    await screen.findByText('ent-3');
+    await screen.findByText('ent-4');
+    const cells = screen.getAllByRole('cell');
+    const emDashes = cells.filter((c) => c.textContent === '—');
+    expect(emDashes.length).toBeGreaterThanOrEqual(2);
   });
 
   it('shows Inventories link for back fallback', async () => {
