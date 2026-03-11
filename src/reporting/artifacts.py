@@ -4,6 +4,10 @@ Stage 4 — Write hybrid report artifacts (JSON and CSV).
 Epic 3.1.C: write_report_csv writes entity-based CSV with traceability columns
 (source_image_id, traceability_status, traceability_warning). CSV is always generated
 when the reporting stage runs (no optional flag); see ReportingStage.
+
+Epic 3.1.D: Additive column review_display_label — single display label for review/export
+(derived via derive_review_display_label: internal_code else position_barcode). Intentional
+contract evolution for Epic D; backward compatible (entities without the field get derived value).
 """
 
 import csv
@@ -12,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from src.domain.pallet import Pallet
+from src.reporting.display_label import derive_review_display_label
 
 
 def write_json(path: Path, data: Dict[str, Any]) -> None:
@@ -22,11 +27,13 @@ def write_json(path: Path, data: Dict[str, Any]) -> None:
 
 
 def write_report_csv(path: Path, report: Dict[str, Any]) -> None:
-    """Write report entities to CSV with traceability columns (Epic 3.1.C).
+    """Write report entities to CSV with traceability (Epic 3.1.C) and review_display_label (Epic 3.1.D).
 
     Columns: entity_uid, pallet_id, entity_type, count_status, final_quantity,
-    internal_code, confidence, source_image_id, traceability_status, traceability_warning.
-    Backward compatible: entities without traceability fields get empty cells.
+    internal_code, confidence, source_image_id, traceability_status, traceability_warning,
+    review_display_label.
+    Value for review_display_label is derived via derive_review_display_label (internal_code else
+    position_barcode); empty/whitespace normalized. Backward compatible: legacy reports get derived values.
     """
     entities = report.get("entities") or []
     if not entities:
@@ -36,6 +43,7 @@ def write_report_csv(path: Path, report: Dict[str, Any]) -> None:
             w.writerow([
                 "entity_uid", "pallet_id", "entity_type", "count_status", "final_quantity",
                 "internal_code", "confidence", "source_image_id", "traceability_status", "traceability_warning",
+                "review_display_label",
             ])
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,8 +52,10 @@ def write_report_csv(path: Path, report: Dict[str, Any]) -> None:
         w.writerow([
             "entity_uid", "pallet_id", "entity_type", "count_status", "final_quantity",
             "internal_code", "confidence", "source_image_id", "traceability_status", "traceability_warning",
+            "review_display_label",
         ])
         for e in entities:
+            rdl = derive_review_display_label(e.get("internal_code"), e.get("position_barcode"))
             w.writerow([
                 e.get("entity_uid") or "",
                 e.get("pallet_id") or "",
@@ -57,6 +67,7 @@ def write_report_csv(path: Path, report: Dict[str, Any]) -> None:
                 e.get("source_image_id") or "",
                 e.get("traceability_status") or "",
                 e.get("traceability_warning") or "",
+                rdl if rdl is not None else "",
             ])
 
 

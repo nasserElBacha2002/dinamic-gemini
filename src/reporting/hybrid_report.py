@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from src.domain.entity import Entity
 from src.domain.traceability import compute_traceability_summary
+from src.reporting.display_label import derive_review_display_label
 
 
 def _build_summary_from_entities(entities: List[Entity]) -> Dict[str, int]:
@@ -94,6 +95,8 @@ def build_hybrid_report(
             "source_image_id": getattr(e, "source_image_id", None),
             "traceability_status": getattr(e, "traceability_status", None),
             "traceability_warning": getattr(e, "traceability_warning", None),
+            # Epic 3.1.D: single review/export display label (internal_code else position_barcode; centralized derivation)
+            "review_display_label": derive_review_display_label(e.internal_code, e.position_barcode),
         })
 
     report: Dict[str, Any] = {

@@ -27,9 +27,11 @@ class Entity:
     entity_type: str  # PALLET | EMPTY_PALLET | LOOSE_BOXES
     model_entity_id: str
     # Position (no position_label_text: Gemini no lo devuelve para reducir coste/tokens)
+    # Epic 3.1.D: position_barcode = position/pallet barcode only (location or pallet identifier).
     position_barcode: Optional[str] = None
     position_label_bbox: Optional[List[float]] = None  # [x1, y1, x2, y2] normalized 0..1
     # Product (internal code replaces long product label text)
+    # Epic 3.1.D: internal_code = product/SKU from product label only (not position barcode).
     internal_code: Optional[str] = None
     product_label_quantity: Optional[int] = None
     product_label_bbox: Optional[List[float]] = None  # [x1, y1, x2, y2] normalized 0..1

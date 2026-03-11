@@ -66,6 +66,14 @@ class EntityListItem(BaseModel):
         None,
         description="Epic 3.1.B: diagnostic only (e.g. reason when status is invalid); not persisted to DB.",
     )
+    review_display_label: Optional[str] = Field(
+        None,
+        description="Epic 3.1.D: single display label for review/export. Prefers internal_code (product/SKU), then position_barcode (position/pallet). Not guaranteed to be product-only.",
+    )
+    product_display_label: Optional[str] = Field(
+        None,
+        description="(Deprecated alias) Same as review_display_label. Kept for backward compatibility.",
+    )
 
 
 class TraceabilitySummary(BaseModel):

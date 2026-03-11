@@ -115,25 +115,53 @@ HYBRID_PROMPTS: Dict[str, str] = {k: v for k, v in PROMPTS.items() if isinstance
 
 
 def get_hybrid_prompt(profile_name: str = "global_v21") -> str:
-    """Devuelve el prompt de análisis global para el pipeline híbrido.
+    """Return the base analysis prompt for the hybrid pipeline (no Epic D enrichment).
 
-    El perfil se elige con la variable de entorno HYBRID_PROMPT. Solo perfiles
-    con valor str en PROMPTS son válidos para híbrido; si no existe o es legacy, se usa global_v21.
+    Profile is selected via HYBRID_PROMPT env. Only str-valued entries in PROMPTS
+    are valid for hybrid; legacy or missing profile falls back to global_v21.
+
+    Does not append product/label association. Call enrich_prompt_with_product_label_association
+    at the request-building layer where Epic D behavior is intended.
 
     Args:
-        profile_name: Nombre del perfil (ej. global_v21).
+        profile_name: Profile name (e.g. global_v21).
 
     Returns:
-        Texto del prompt.
+        Base prompt text only.
     """
     raw = PROMPTS.get(profile_name, PROMPTS["global_v21"])
-    return raw if isinstance(raw, str) else PROMPTS["global_v21"]
+    base = raw if isinstance(raw, str) else PROMPTS["global_v21"]
+    return base.rstrip()
+
+
+def enrich_prompt_with_product_label_association(base_prompt: str) -> str:
+    """Append Epic 3.1.D product/label association instructions to the base prompt.
+
+    Call this explicitly at the request-building layer (e.g. pipeline adapter) where
+    Epic D behavior is intended. Do not modify get_hybrid_prompt to append this globally.
+
+    Clarifies: internal_code = product/SKU from product label; position_barcode =
+    position/pallet barcode. Provider should not mix them.
+
+    Args:
+        base_prompt: Base analysis prompt (e.g. from get_hybrid_prompt()).
+
+    Returns:
+        base_prompt + product/label association block.
+    """
+    return base_prompt.rstrip() + _PRODUCT_LABEL_ASSOCIATION
 
 
 # Epic 3.1.A — Enrich prompt with image identity for traceability (provider receives image IDs)
 _TRACEABILITY_INSTRUCTION: Final[str] = """
 
 TRACEABILITY (v3.1): Each input image has a unique identifier below. For every entity or counted result you return, you MUST include the exact source_image_id of the image used as evidence for that result. Do not invent IDs. Only use image IDs from the list below.
+"""
+
+# Epic 3.1.D — Product/label association: clarify internal_code vs position_barcode
+_PRODUCT_LABEL_ASSOCIATION: Final[str] = """
+
+PRODUCT AND LABEL ASSOCIATION (v3.1.D): For each entity, use internal_code ONLY for the product/SKU code from the product label (the label on the boxes or product). Use position_barcode ONLY for the position or pallet barcode/label (location or pallet identifier). Do not mix them: internal_code = product identifier, position_barcode = position/pallet identifier.
 """
 
 

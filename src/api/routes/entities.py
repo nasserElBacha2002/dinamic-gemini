@@ -21,6 +21,7 @@ from src.api.schemas.responses import (
 )
 from src.review import get_entity_audit, load_reviews, save_review
 from src.review.review_merge import ACTIONS
+from src.reporting.display_label import derive_review_display_label
 from src.utils.validation import validate_entity_uid, validate_job_id
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,11 @@ async def list_entities(
         raw_status = e.get("traceability_status")
         want = (raw_status or "").strip().lower()
         traceability_status_val = want if want in TRACEABILITY_STATUS_VALUES else None
+        # Epic 3.1.D: single source of truth for display label (centralized derivation; empty/whitespace normalized)
+        review_display_label = derive_review_display_label(
+            e.get("internal_code"),
+            e.get("position_barcode"),
+        )
         out.append(
             EntityListItem(
                 entity_uid=str(e.get("entity_uid") or ""),
@@ -122,6 +128,8 @@ async def list_entities(
                 source_image_id=e.get("source_image_id"),
                 traceability_status=traceability_status_val,
                 traceability_warning=e.get("traceability_warning"),
+                review_display_label=review_display_label,
+                product_display_label=review_display_label,  # backward-compat alias
             )
         )
     return EntitiesListResponse(entities=out, traceability_summary=summary_model)

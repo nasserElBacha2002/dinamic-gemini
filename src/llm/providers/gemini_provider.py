@@ -13,7 +13,7 @@ from src.exceptions.global_analysis_exceptions import (
 from src.llm.errors import LLMProviderError
 from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
-from src.llm.prompts import get_hybrid_prompt
+from src.llm.prompts import enrich_prompt_with_product_label_association, get_hybrid_prompt
 from src.llm.types import LLMRequest, LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,9 @@ class GeminiProvider:
         prompt_text = (
             use_request_prompt
             if use_request_prompt is not None
-            else get_hybrid_prompt(getattr(self._settings, "hybrid_prompt", "global_v21"))
+            else enrich_prompt_with_product_label_association(
+                get_hybrid_prompt(getattr(self._settings, "hybrid_prompt", "global_v21"))
+            )
         )
         client = GeminiClient(
             api_key=self._settings.gemini_api_key,
