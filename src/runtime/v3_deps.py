@@ -21,6 +21,7 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
     SourceAssetRepository,
 )
+from src.application.ports.services import MetricsCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ _position_repo: Optional[PositionRepository] = None
 _product_record_repo: Optional[ProductRecordRepository] = None
 _evidence_repo: Optional[EvidenceRepository] = None
 _review_action_repo: Optional[ReviewActionRepository] = None
+_metrics_calculator: Optional[MetricsCalculator] = None
 _v3_sql_client = None
 
 
@@ -244,6 +246,18 @@ def get_review_action_repo() -> ReviewActionRepository:
         from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
         _review_action_repo = MemoryReviewActionRepository()
     return _review_action_repo
+
+
+def get_metrics_calculator() -> MetricsCalculator:
+    global _metrics_calculator
+    if _metrics_calculator is not None:
+        return _metrics_calculator
+    from src.infrastructure.services.inventory_metrics_service import InventoryMetricsService
+    _metrics_calculator = InventoryMetricsService(
+        aisle_repo=get_aisle_repo(),
+        position_repo=get_position_repo(),
+    )
+    return _metrics_calculator
 
 
 def get_clock() -> Clock:

@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
+  Card,
+  CardContent,
+  Grid,
   Paper,
   Table,
   TableBody,
@@ -15,8 +18,8 @@ import {
   Alert,
   Chip,
 } from '@mui/material';
-import { getInventory, getAisles, startAisleProcessing, uploadAisleAssets, getAisleAssets } from '../api/client';
-import type { Inventory, Aisle } from '../api/types';
+import { getInventory, getAisles, startAisleProcessing, uploadAisleAssets, getAisleAssets, getInventoryMetrics } from '../api/client';
+import type { Inventory, Aisle, InventoryMetrics } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { getJobStatusLabel, getJobStatusColor } from '../utils/jobStatus';
@@ -76,6 +79,9 @@ export default function InventoryDetail() {
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [assetCountByAisleId, setAssetCountByAisleId] = useState<Record<string, number>>({});
+  const [metrics, setMetrics] = useState<InventoryMetrics | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
   const cancelledRef = useRef(false);
@@ -85,6 +91,7 @@ export default function InventoryDetail() {
     cancelledRef.current = false;
     setInventoryError(null);
     setAislesError(null);
+    setMetricsError(null);
     setInventoryLoading(true);
     let inventoryLoaded = false;
     try {
@@ -103,6 +110,23 @@ export default function InventoryDetail() {
         if (!cancelledRef.current) setAssetCountByAisleId(counts);
       } else {
         setAssetCountByAisleId({});
+      }
+      setAislesLoading(false);
+      setMetricsLoading(true);
+      try {
+        const m = await getInventoryMetrics(inventoryId);
+        if (!cancelledRef.current) {
+          setMetrics(m);
+          setMetricsError(null);
+        }
+      } catch (metricsErr) {
+        if (!cancelledRef.current) {
+          const err = metricsErr instanceof ApiError ? metricsErr : new ApiError(String(metricsErr));
+          setMetricsError(getApiErrorMessage(err, 'Failed to load metrics'));
+          setMetrics(null);
+        }
+      } finally {
+        if (!cancelledRef.current) setMetricsLoading(false);
       }
     } catch (e) {
       if (cancelledRef.current) return;
@@ -143,6 +167,18 @@ export default function InventoryDetail() {
           ? await fetchAssetCountsForAisles(inventoryId, data.map((a) => a.id))
           : {};
       setAssetCountByAisleId(counts);
+      setMetricsLoading(true);
+      try {
+        const m = await getInventoryMetrics(inventoryId);
+        setMetrics(m);
+        setMetricsError(null);
+      } catch (e) {
+        const err = e instanceof ApiError ? e : new ApiError(String(e));
+        setMetricsError(getApiErrorMessage(err, 'Failed to load metrics'));
+        setMetrics(null);
+      } finally {
+        setMetricsLoading(false);
+      }
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       setAislesError(getApiErrorMessage(err, 'Failed to load aisles'));
@@ -250,6 +286,73 @@ export default function InventoryDetail() {
               {formatDate(inventory.created_at ?? undefined)}
             </Typography>
           </Paper>
+
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            Metrics
+          </Typography>
+          {metricsLoading ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <CircularProgress size={24} />
+              <Typography variant="body2" color="text.secondary">Loading metrics…</Typography>
+            </Box>
+          ) : metricsError ? (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setMetricsError(null)}>
+              {metricsError}
+            </Alert>
+          ) : metrics ? (
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Total positions</Typography>
+                    <Typography variant="h6">{metrics.total_positions}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Reviewed</Typography>
+                    <Typography variant="h6">{metrics.total_reviewed_positions}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Auto accepted</Typography>
+                    <Typography variant="h6">{metrics.auto_accepted_positions}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Corrected</Typography>
+                    <Typography variant="h6">{metrics.corrected_positions}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Deleted</Typography>
+                    <Typography variant="h6">{metrics.deleted_positions}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Success rate</Typography>
+                    <Typography variant="h6">{metrics.success_rate}%</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>No metrics available.</Typography>
+          )}
 
           <Typography variant="h6" sx={{ mb: 1 }}>
             Aisles

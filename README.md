@@ -161,6 +161,10 @@ pytest --cov=src --cov-report=html
 
 ## 📝 Desarrollo
 
+### Desarrollo local (full-stack)
+
+Para levantar backend (Python) y frontend (React) con un solo comando desde la raíz del repo, usa **`./dev.sh`** (recomendado) o `npm run dev`. Detalles: [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md).
+
 ### Formateo de código
 
 ```bash

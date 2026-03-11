@@ -25,12 +25,14 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     ReviewActionRepository,
 )
+from src.application.ports.services import MetricsCalculator
 from src.runtime.v3_deps import (
     get_aisle_repo,
     get_clock,
     get_evidence_repo,
     get_inventory_repo,
     get_job_repo,
+    get_metrics_calculator,
     get_position_repo,
     get_product_record_repo,
     get_review_action_repo,
@@ -40,6 +42,7 @@ from src.application.use_cases.create_aisle import CreateAisleUseCase
 from src.application.use_cases.create_inventory import CreateInventoryUseCase
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
+from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
@@ -89,6 +92,16 @@ def get_get_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> GetInventoryUseCase:
     return GetInventoryUseCase(inventory_repo=repo)
+
+
+def get_get_inventory_metrics_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    metrics_calculator: MetricsCalculator = Depends(get_metrics_calculator),
+) -> GetInventoryMetricsUseCase:
+    return GetInventoryMetricsUseCase(
+        inventory_repo=inventory_repo,
+        metrics_calculator=metrics_calculator,
+    )
 
 
 def get_create_aisle_use_case(

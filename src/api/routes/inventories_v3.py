@@ -18,6 +18,7 @@ from src.api.dependencies import (
     get_create_inventory_use_case,
     get_delete_position_use_case,
     get_get_aisle_processing_status_use_case,
+    get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
     get_get_position_detail_use_case,
     get_list_aisle_assets_use_case,
@@ -32,7 +33,7 @@ from src.api.dependencies import (
 from src.api.schemas.aisle_schemas import CreateAisleRequest, AisleResponse, AisleJobSummary
 from src.api.schemas.asset_schemas import SourceAssetResponse, UploadAisleAssetsResponse
 from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary, ProcessAisleResponse
-from src.api.schemas.inventory_schemas import CreateInventoryRequest, InventoryResponse
+from src.api.schemas.inventory_schemas import CreateInventoryRequest, InventoryResponse, InventoryMetricsResponse
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
     PositionDetailResponse,
@@ -60,6 +61,7 @@ from src.application.use_cases.get_aisle_processing_status import (
     GetAisleProcessingStatusUseCase,
 )
 from src.application.use_cases.get_inventory import GetInventoryUseCase
+from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
@@ -349,6 +351,19 @@ def get_inventory(
     try:
         inventory = use_case.execute(inventory_id)
         return _inventory_to_response(inventory)
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+
+
+@router.get("/{inventory_id}/metrics", response_model=InventoryMetricsResponse)
+def get_inventory_metrics(
+    inventory_id: str,
+    use_case: GetInventoryMetricsUseCase = Depends(get_get_inventory_metrics_use_case),
+) -> InventoryMetricsResponse:
+    """Get canonical inventory metrics (Épica 9, Documento técnico §9.6). Returns 404 if inventory not found."""
+    try:
+        metrics = use_case.execute(inventory_id)
+        return InventoryMetricsResponse(**metrics)
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
 

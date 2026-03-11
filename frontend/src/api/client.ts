@@ -15,6 +15,7 @@ import type {
   PositionListResponse,
   PositionDetailResponse,
   ReviewActionRequest,
+  InventoryMetrics,
 } from './types';
 import { ApiError } from './types';
 
@@ -75,6 +76,12 @@ export async function getInventories(): Promise<Inventory[]> {
 export async function getInventory(id: string): Promise<Inventory> {
   const response = await fetch(`${API_BASE}/api/v3/inventories/${id}`);
   return handleResponse<Inventory>(response);
+}
+
+/** Get inventory metrics — Épica 9 (§9.6). Returns 404 if inventory not found. */
+export async function getInventoryMetrics(inventoryId: string): Promise<InventoryMetrics> {
+  const response = await fetch(`${API_BASE}/api/v3/inventories/${inventoryId}/metrics`);
+  return handleResponse<InventoryMetrics>(response);
 }
 
 export async function createInventory(body: CreateInventoryRequest): Promise<Inventory> {

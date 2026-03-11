@@ -100,6 +100,18 @@ export interface CreateInventoryRequest {
   name: string;
 }
 
+/** GET /api/v3/inventories/{inventory_id}/metrics response — Épica 9 (§9.6). */
+export interface InventoryMetrics {
+  total_positions: number;
+  total_reviewed_positions: number;
+  auto_accepted_positions: number;
+  corrected_positions: number;
+  deleted_positions: number;
+  success_rate: number;
+  correction_rate: number;
+  deletion_rate: number;
+}
+
 export interface CreateAisleRequest {
   code: string;
 }

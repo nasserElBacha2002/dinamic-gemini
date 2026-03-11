@@ -43,7 +43,8 @@ class AnalysisResultPayload(TypedDict, total=False):
 
 
 class InventoryMetricsResult(TypedDict, total=False):
-    """Return type of MetricsCalculator.calculate_inventory_metrics (§9.6)."""
+    """Return type of MetricsCalculator.calculate_inventory_metrics (§9.6).
+    Implementations must return all keys so the API layer can serialize without validation errors."""
     total_reviewed_positions: int
     total_positions: int
     auto_accepted_positions: int
