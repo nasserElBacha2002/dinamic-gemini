@@ -10,9 +10,7 @@ import {
   TableHead,
   TableRow,
   Typography,
-  CircularProgress,
   Alert,
-  Chip,
 } from '@mui/material';
 import type { PositionSummary } from '../api/types';
 import { ApiError } from '../api/types';
@@ -20,6 +18,7 @@ import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { getPositionStatusLabel, getPositionStatusColor } from '../utils/positionStatus';
 import { pathToPositionDetail } from '../utils/resultRoutes';
+import { PageLayout, LoadingBlock, EmptyState, ErrorAlert, StatusChip } from '../components/ui';
 import { useAislePositions } from '../hooks';
 
 function displaySku(p: PositionSummary): string {
@@ -62,15 +61,15 @@ export default function AislePositionsPage() {
 
   if (!inventoryId || !aisleId) {
     return (
-      <Box sx={{ p: 3 }}>
+      <PageLayout>
         <Alert severity="warning">Missing inventory or aisle.</Alert>
         <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>Back to list</Button>
-      </Box>
+      </PageLayout>
     );
   }
 
   return (
-    <Box sx={{ p: 3, maxWidth: 900, mx: 'auto' }}>
+    <PageLayout>
       <Button sx={{ mb: 2 }} onClick={handleBack}>
         ← Back to inventory
       </Button>
@@ -80,29 +79,13 @@ export default function AislePositionsPage() {
       </Typography>
 
       {errorMessage && (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-          action={
-            <Button color="inherit" size="small" onClick={() => refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {errorMessage}
-        </Alert>
+        <ErrorAlert message={errorMessage} onRetry={() => refetch()} />
       )}
 
       {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-          <CircularProgress />
-        </Box>
+        <LoadingBlock py={3} />
       ) : positions.length === 0 ? (
-        <Paper sx={{ p: 3 }}>
-          <Typography color="text.secondary">
-            No positions yet. Run processing on this aisle to see results.
-          </Typography>
-        </Paper>
+        <EmptyState message="No positions yet. Run processing on this aisle to see results." />
       ) : (
         <TableContainer component={Paper}>
           <Table size="small">
@@ -127,9 +110,8 @@ export default function AislePositionsPage() {
                   <TableCell>{displaySku(p)}</TableCell>
                   <TableCell>{displayDetectedQuantity(p)}</TableCell>
                   <TableCell>
-                    <Chip
+                    <StatusChip
                       label={getPositionStatusLabel(p.status)}
-                      size="small"
                       color={getPositionStatusColor(p.status)}
                       variant="outlined"
                     />
@@ -154,6 +136,6 @@ export default function AislePositionsPage() {
           </Table>
         </TableContainer>
       )}
-    </Box>
+    </PageLayout>
   );
 }

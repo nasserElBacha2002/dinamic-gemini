@@ -11,13 +11,12 @@ import {
   TableHead,
   TableRow,
   Typography,
-  CircularProgress,
-  Alert,
 } from '@mui/material';
 import type { Inventory } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
+import { PageLayout, LoadingBlock, EmptyState, ErrorAlert } from '../components/ui';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
 import { useInventoriesList, useCreateInventory } from '../hooks';
 
@@ -43,23 +42,13 @@ export default function InventoriesList() {
   };
 
   return (
-    <Box sx={{ p: 3, maxWidth: 900, mx: 'auto' }}>
+    <PageLayout>
       <Typography variant="h5" sx={{ mb: 2 }}>
         Dinamic Inventory v3
       </Typography>
 
       {errorMessage && (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-          action={
-            <Button color="inherit" size="small" onClick={() => refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {errorMessage}
-        </Alert>
+        <ErrorAlert message={errorMessage} onRetry={() => refetch()} />
       )}
 
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
@@ -69,13 +58,9 @@ export default function InventoriesList() {
       </Box>
 
       {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
+        <LoadingBlock />
       ) : inventories.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: 'center' }}>
-          <Typography color="text.secondary">No inventories yet. Create one to get started.</Typography>
-        </Paper>
+        <EmptyState message="No inventories yet. Create one to get started." padding={4} />
       ) : (
         <TableContainer component={Paper}>
           <Table>
@@ -106,18 +91,11 @@ export default function InventoriesList() {
       )}
 
       {createError && (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
+        <ErrorAlert
+          message={createError}
+          onRetry={() => { setCreateError(null); refetch(); }}
           onClose={() => setCreateError(null)}
-          action={
-            <Button color="inherit" size="small" onClick={() => { setCreateError(null); refetch(); }}>
-              Retry
-            </Button>
-          }
-        >
-          {createError}
-        </Alert>
+        />
       )}
 
       <CreateInventoryDialog
@@ -127,6 +105,6 @@ export default function InventoriesList() {
         onError={setCreateError}
         createInventoryFn={createMutation.mutateAsync}
       />
-    </Box>
+    </PageLayout>
   );
 }

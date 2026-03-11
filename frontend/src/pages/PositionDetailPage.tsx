@@ -5,9 +5,7 @@ import {
   Button,
   Paper,
   Typography,
-  CircularProgress,
   Alert,
-  Chip,
   List,
   ListItem,
   ListItemText,
@@ -29,6 +27,7 @@ import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { getPositionStatusLabel, getPositionStatusColor } from '../utils/positionStatus';
 import { pathToAislePositions } from '../utils/resultRoutes';
+import { PageLayout, LoadingBlock, ErrorAlert, StatusChip } from '../components/ui';
 import { usePositionDetail, useSubmitReviewAction } from '../hooks';
 
 /** Per-product quantity and SKU correction forms. */
@@ -116,14 +115,13 @@ function PositionSummaryCard({ position }: { position: PositionSummary }) {
         {position.id}
       </Typography>
       <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
-        <Chip
+        <StatusChip
           label={getPositionStatusLabel(position.status)}
-          size="small"
           color={getPositionStatusColor(position.status)}
           variant="outlined"
         />
-        <Chip label={`${(position.confidence * 100).toFixed(0)}% confidence`} size="small" variant="outlined" />
-        {position.needs_review && <Chip label="Needs review" size="small" color="warning" />}
+        <StatusChip label={`${(position.confidence * 100).toFixed(0)}% confidence`} variant="outlined" />
+        {position.needs_review && <StatusChip label="Needs review" color="warning" />}
       </Box>
       <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
         Updated: {formatDate(position.updated_at)}
@@ -291,36 +289,27 @@ export default function PositionDetailPage() {
 
   if (!inventoryId || !aisleId || !positionId) {
     return (
-      <Box sx={{ p: 3 }}>
+      <PageLayout>
         <Alert severity="warning">Missing inventory, aisle, or position.</Alert>
         <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>Back to list</Button>
-      </Box>
+      </PageLayout>
     );
   }
 
   if (loading && !data) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-        <CircularProgress />
-      </Box>
+      <PageLayout>
+        <LoadingBlock />
+      </PageLayout>
     );
   }
 
   if (error && !data) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Alert
-          severity="error"
-          action={
-            <Button color="inherit" size="small" onClick={() => detailQuery.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {error}
-        </Alert>
+      <PageLayout>
+        <ErrorAlert message={error} onRetry={() => detailQuery.refetch()} />
         <Button sx={{ mt: 2 }} onClick={handleBack}>Back to positions</Button>
-      </Box>
+      </PageLayout>
     );
   }
 
@@ -333,7 +322,7 @@ export default function PositionDetailPage() {
   const isDeleted = (position.status ?? '').toString().toLowerCase() === 'deleted';
 
   return (
-    <Box sx={{ p: 3, maxWidth: 700, mx: 'auto' }}>
+    <PageLayout maxWidth={700}>
       <Button sx={{ mb: 2 }} onClick={handleBack}>
         ← Back to positions
       </Button>
@@ -345,9 +334,10 @@ export default function PositionDetailPage() {
       <PositionSummaryCard position={position} />
 
       {displayActionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
-          {displayActionError}
-        </Alert>
+        <ErrorAlert
+          message={displayActionError}
+          onClose={() => setActionError(null)}
+        />
       )}
 
       {!isDeleted && (
@@ -459,6 +449,6 @@ export default function PositionDetailPage() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </PageLayout>
   );
 }

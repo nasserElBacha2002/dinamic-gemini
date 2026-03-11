@@ -3,8 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
-  Card,
-  CardContent,
   Grid,
   Paper,
   Table,
@@ -14,9 +12,6 @@ import {
   TableHead,
   TableRow,
   Typography,
-  CircularProgress,
-  Alert,
-  Chip,
 } from '@mui/material';
 import type { Aisle } from '../api/types';
 import { ApiError } from '../api/types';
@@ -25,6 +20,14 @@ import { getJobStatusLabel, getJobStatusColor } from '../utils/jobStatus';
 import { getAisleStatusLabel, getAisleStatusColor } from '../utils/aisleStatus';
 import { formatDate } from '../utils/formatDate';
 import { pathToAislePositions } from '../utils/resultRoutes';
+import {
+  PageLayout,
+  LoadingBlock,
+  EmptyState,
+  ErrorAlert,
+  StatCard,
+  StatusChip,
+} from '../components/ui';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import {
   useInventoryDetail,
@@ -146,34 +149,25 @@ export default function InventoryDetail() {
 
   if (inventoryLoading && !inventory) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-        <CircularProgress />
-      </Box>
+      <PageLayout>
+        <LoadingBlock />
+      </PageLayout>
     );
   }
 
   if (inventoryError && !inventory) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Alert
-          severity="error"
-          action={
-            <Button color="inherit" size="small" onClick={() => inventoryQuery.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {inventoryError}
-        </Alert>
+      <PageLayout>
+        <ErrorAlert message={inventoryError} onRetry={() => inventoryQuery.refetch()} />
         <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
           Back to list
         </Button>
-      </Box>
+      </PageLayout>
     );
   }
 
   return (
-    <Box sx={{ p: 3, maxWidth: 900, mx: 'auto' }}>
+    <PageLayout>
       <Button sx={{ mb: 2 }} onClick={() => navigate('/')}>
         ← Back to inventories
       </Button>
@@ -183,7 +177,7 @@ export default function InventoryDetail() {
           <Paper sx={{ p: 2, mb: 3 }}>
             <Typography variant="h6">{inventory.name}</Typography>
             <Typography variant="body2" color="text.secondary">
-              Status: <Chip label={inventory.status} size="small" /> — Created:{' '}
+              Status: <StatusChip label={inventory.status} color={getAisleStatusColor(inventory.status)} /> — Created:{' '}
               {formatDate(inventory.created_at ?? undefined)}
             </Typography>
           </Paper>
@@ -192,63 +186,28 @@ export default function InventoryDetail() {
             Metrics
           </Typography>
           {metricsLoading ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <CircularProgress size={24} />
-              <Typography variant="body2" color="text.secondary">Loading metrics…</Typography>
-            </Box>
+            <LoadingBlock message="Loading metrics…" size={24} py={2} sx={{ mb: 2 }} />
           ) : metricsError ? (
-            <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={() => metricsQuery.refetch()}>Retry</Button>}>
-              {metricsError}
-            </Alert>
+            <ErrorAlert message={metricsError} onRetry={() => metricsQuery.refetch()} />
           ) : metrics ? (
             <Grid container spacing={2} sx={{ mb: 3 }}>
               <Grid item xs={12} sm={6} md={3}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="body2" color="text.secondary">Total positions</Typography>
-                    <Typography variant="h6">{metrics.total_positions}</Typography>
-                  </CardContent>
-                </Card>
+                <StatCard label="Total positions" value={metrics.total_positions} />
               </Grid>
               <Grid item xs={12} sm={6} md={3}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="body2" color="text.secondary">Reviewed</Typography>
-                    <Typography variant="h6">{metrics.total_reviewed_positions}</Typography>
-                  </CardContent>
-                </Card>
+                <StatCard label="Reviewed" value={metrics.total_reviewed_positions} />
               </Grid>
               <Grid item xs={12} sm={6} md={3}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="body2" color="text.secondary">Auto accepted</Typography>
-                    <Typography variant="h6">{metrics.auto_accepted_positions}</Typography>
-                  </CardContent>
-                </Card>
+                <StatCard label="Auto accepted" value={metrics.auto_accepted_positions} />
               </Grid>
               <Grid item xs={12} sm={6} md={3}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="body2" color="text.secondary">Corrected</Typography>
-                    <Typography variant="h6">{metrics.corrected_positions}</Typography>
-                  </CardContent>
-                </Card>
+                <StatCard label="Corrected" value={metrics.corrected_positions} />
               </Grid>
               <Grid item xs={12} sm={6} md={3}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="body2" color="text.secondary">Deleted</Typography>
-                    <Typography variant="h6">{metrics.deleted_positions}</Typography>
-                  </CardContent>
-                </Card>
+                <StatCard label="Deleted" value={metrics.deleted_positions} />
               </Grid>
               <Grid item xs={12} sm={6} md={3}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="body2" color="text.secondary">Success rate</Typography>
-                    <Typography variant="h6">{metrics.success_rate}%</Typography>
-                  </CardContent>
-                </Card>
+                <StatCard label="Success rate" value={`${metrics.success_rate}%`} />
               </Grid>
             </Grid>
           ) : (
@@ -288,27 +247,13 @@ export default function InventoryDetail() {
           )}
 
           {aislesError && (
-            <Alert
-              severity="error"
-              sx={{ mb: 2 }}
-              action={
-                <Button color="inherit" size="small" onClick={() => aislesQuery.refetch()}>
-                  Retry
-                </Button>
-              }
-            >
-              {aislesError}
-            </Alert>
+            <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} />
           )}
 
           {aislesLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-              <CircularProgress size={28} />
-            </Box>
+            <LoadingBlock py={3} />
           ) : aisles.length === 0 ? (
-            <Paper sx={{ p: 3 }}>
-              <Typography color="text.secondary">No aisles yet. Create one to get started.</Typography>
-            </Paper>
+            <EmptyState message="No aisles yet. Create one to get started." />
           ) : (
             <TableContainer component={Paper}>
               <input
@@ -337,9 +282,8 @@ export default function InventoryDetail() {
                     <TableRow key={aisle.id}>
                       <TableCell>{aisle.code}</TableCell>
                       <TableCell>
-                        <Chip
+                        <StatusChip
                           label={getAisleStatusLabel(aisle.status)}
-                          size="small"
                           color={getAisleStatusColor(aisle.status)}
                         />
                       </TableCell>
@@ -350,11 +294,10 @@ export default function InventoryDetail() {
                       </TableCell>
                       <TableCell>
                         {aisle.latest_job ? (
-                          <Chip
+                          <StatusChip
                             label={getJobStatusLabel(aisle.latest_job.status)}
-                            size="small"
-                            variant="outlined"
                             color={getJobStatusColor(aisle.latest_job.status)}
+                            variant="outlined"
                           />
                         ) : (
                           '—'
@@ -418,6 +361,6 @@ export default function InventoryDetail() {
         onSuccess={handleCreateAisleSuccess}
         createAisleFn={createAisleMutation.mutateAsync}
       />
-    </Box>
+    </PageLayout>
   );
 }
