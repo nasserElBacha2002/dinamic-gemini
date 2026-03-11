@@ -4,8 +4,9 @@
  */
 
 import { Chip } from '@mui/material';
+import type { ChipColorType } from './types';
 
-export type StatusChipColor = 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning';
+export type StatusChipColor = ChipColorType;
 
 export interface StatusChipProps {
   label: string;

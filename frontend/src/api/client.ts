@@ -16,6 +16,7 @@ import type {
   PositionDetailResponse,
   ReviewActionRequest,
   InventoryMetrics,
+  JobEntitiesListResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -195,4 +196,12 @@ export async function submitReviewAction(
   if (!response.ok) {
     throwApiErrorIfNotOk(response, text, data);
   }
+}
+
+/** Get job entities (v1 API) — Epic 3.1.B. Returns entities with source_image_id and traceability_status. */
+export async function getJobEntities(jobId: string): Promise<JobEntitiesListResponse> {
+  const response = await fetch(`${API_BASE}/api/v1/inventory/jobs/${encodeURIComponent(jobId)}/entities`);
+  const data = await handleResponse<JobEntitiesListResponse>(response);
+  const entities = Array.isArray(data?.entities) ? data.entities : [];
+  return { ...data, entities };
 }

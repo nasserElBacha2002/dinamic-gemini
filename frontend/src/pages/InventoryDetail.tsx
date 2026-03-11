@@ -20,7 +20,7 @@ import { getApiErrorMessage } from '../utils/apiErrors';
 import { getJobStatusLabel, getJobStatusColor } from '../utils/jobStatus';
 import { getAisleStatusLabel, getAisleStatusColor } from '../utils/aisleStatus';
 import { formatDate } from '../utils/formatDate';
-import { pathToAislePositions } from '../utils/resultRoutes';
+import { pathToAislePositions, pathToJobEntities } from '../utils/resultRoutes';
 import {
   PageLayout,
   LoadingBlock,
@@ -306,13 +306,24 @@ export default function InventoryDetail() {
                       </TableCell>
                       <TableCell>
                         {(aisle.status === 'processed' || aisle.status === 'in_review' || aisle.status === 'completed' || aisle.latest_job?.status === 'succeeded') ? (
-                          <Button
-                            variant="text"
-                            size="small"
-                            onClick={() => navigate(pathToAislePositions(inventoryId ?? '', aisle.id))}
-                          >
-                            View results
-                          </Button>
+                          <Box component="span" sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <Button
+                              variant="text"
+                              size="small"
+                              onClick={() => navigate(pathToAislePositions(inventoryId ?? '', aisle.id))}
+                            >
+                              View results
+                            </Button>
+                            {aisle.latest_job?.status === 'succeeded' && (
+                              <Button
+                                variant="text"
+                                size="small"
+                                onClick={() => navigate(pathToJobEntities(aisle.latest_job!.id))}
+                              >
+                                View entities
+                              </Button>
+                            )}
+                          </Box>
                         ) : (
                           '—'
                         )}

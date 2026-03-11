@@ -27,7 +27,8 @@ import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { getPositionStatusLabel, getPositionStatusColor } from '../utils/positionStatus';
 import { pathToAislePositions } from '../utils/resultRoutes';
-import { PageLayout, LoadingBlock, ErrorAlert, StatusChip } from '../components/ui';
+import { PageLayout, LoadingBlock, ErrorAlert, StatusChip, TraceabilityChip } from '../components/ui';
+import { isTraceabilityStatus } from '../utils/traceability';
 import { usePositionDetail, useSubmitReviewAction } from '../hooks';
 
 /** Per-product quantity and SKU correction forms. */
@@ -104,8 +105,11 @@ function ProductReviewForms({
   );
 }
 
-/** Compact summary card for a position (ID, status, confidence, needs review, updated). */
+/** Compact summary card for a position (ID, status, confidence, needs review, summary-level traceability when present, updated). */
 function PositionSummaryCard({ position }: { position: PositionSummary }) {
+  const hasSourceImage =
+    position.source_image_id != null && String(position.source_image_id).trim() !== '';
+
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
       <Typography variant="subtitle2" color="text.secondary">
@@ -122,7 +126,15 @@ function PositionSummaryCard({ position }: { position: PositionSummary }) {
         />
         <StatusChip label={`${(position.confidence * 100).toFixed(0)}% confidence`} variant="outlined" />
         {position.needs_review && <StatusChip label="Needs review" color="warning" />}
+        {isTraceabilityStatus(position.traceability_status) && (
+          <TraceabilityChip status={position.traceability_status} />
+        )}
       </Box>
+      {hasSourceImage && (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          Source image (summary): {position.source_image_id!.trim()}
+        </Typography>
+      )}
       <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
         Updated: {formatDate(position.updated_at)}
       </Typography>

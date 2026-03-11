@@ -19,4 +19,7 @@ export const queryKeys = {
     positionDetail: (inventoryId: string, aisleId: string, positionId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'positions', aisleId, 'detail', positionId] as const,
   },
+
+  /** v1 job entities (Epic 3.1.B). */
+  jobEntities: (jobId: string) => ['v1', 'jobs', jobId, 'entities'] as const,
 } as const;
