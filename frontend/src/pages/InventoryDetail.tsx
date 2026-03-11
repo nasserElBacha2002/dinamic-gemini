@@ -12,6 +12,7 @@ import {
   TableHead,
   TableRow,
   Typography,
+  Alert,
 } from '@mui/material';
 import type { Aisle } from '../api/types';
 import { ApiError } from '../api/types';
@@ -176,10 +177,10 @@ export default function InventoryDetail() {
         <>
           <Paper sx={{ p: 2, mb: 3 }}>
             <Typography variant="h6">{inventory.name}</Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Box sx={{ fontSize: '0.875rem', color: 'text.secondary', mt: 0.5 }}>
               Status: <StatusChip label={inventory.status} color={getAisleStatusColor(inventory.status)} /> — Created:{' '}
               {formatDate(inventory.created_at ?? undefined)}
-            </Typography>
+            </Box>
           </Paper>
 
           <Typography variant="h6" sx={{ mb: 1 }}>
