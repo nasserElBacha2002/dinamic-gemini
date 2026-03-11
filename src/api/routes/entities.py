@@ -66,6 +66,10 @@ async def list_entities(
 
     traceability_summary, when present, is always the full-job summary (all entities in the report),
     regardless of filters. Invalid traceability_status filter value returns 422.
+
+    Epic 5 — source_image_original_filename: Read from the report as-is. Only reports generated
+    after Epic 5 (photos jobs with image metadata at report-build time) contain this field; legacy
+    reports and video jobs do not. When absent in the report, the API returns null (no fallback).
     """
     try:
         job_id = validate_job_id(job_id)
@@ -117,6 +121,7 @@ async def list_entities(
             e.get("internal_code"),
             e.get("position_barcode"),
         )
+        # Epic 5: pass through from report; null for legacy reports or when not in report (no fallback).
         out.append(
             EntityListItem(
                 entity_uid=str(e.get("entity_uid") or ""),
@@ -128,6 +133,7 @@ async def list_entities(
                 source_image_id=e.get("source_image_id"),
                 traceability_status=traceability_status_val,
                 traceability_warning=e.get("traceability_warning"),
+                source_image_original_filename=e.get("source_image_original_filename"),
                 review_display_label=review_display_label,
                 product_display_label=review_display_label,  # backward-compat alias
             )

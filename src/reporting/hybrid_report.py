@@ -54,6 +54,7 @@ def build_hybrid_report(
     entities: List[Entity],
     frames_selected: int,
     frame_indices: Optional[List[int]] = None,
+    source_image_filename_map: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Build the authoritative hybrid report (report_version 2.1, summary, entities).
 
@@ -62,6 +63,9 @@ def build_hybrid_report(
         entities: List of Entity with count_status, final_quantity, entity_quality_score set.
         frames_selected: Number of representative frames sent to Gemini.
         frame_indices: Optional list of video frame indices (audit/debug).
+        source_image_filename_map: Optional map image_id -> original_filename (Epic 5; photos jobs only).
+            When None (e.g. video job) or when entity has no source_image_id, the field is not set.
+            When source_image_id is not in the map (e.g. incomplete manifest), value is None.
 
     Returns:
         Report dict with report_version 2.1, mode hybrid_v2.1, summary, entities.
@@ -95,6 +99,12 @@ def build_hybrid_report(
             "source_image_id": getattr(e, "source_image_id", None),
             "traceability_status": getattr(e, "traceability_status", None),
             "traceability_warning": getattr(e, "traceability_warning", None),
+            # Epic 5: original filename of source image when available (photos jobs; facilitates review/audit).
+            # Set only when entity has source_image_id and it exists in the map; otherwise None (video job,
+            # no map, or source_image_id not in map — explicit and stable).
+            "source_image_original_filename": (
+                (source_image_filename_map or {}).get(sid) if (sid := getattr(e, "source_image_id", None)) else None
+            ),
             # Epic 3.1.D: single review/export display label (internal_code else position_barcode; centralized derivation)
             "review_display_label": derive_review_display_label(e.internal_code, e.position_barcode),
         })

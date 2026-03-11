@@ -19,6 +19,7 @@ from src.decision.quality_score import compute_entity_quality_score
 from src.domain.entity import Entity
 from src.domain.traceability import apply_traceability_validation
 from src.jobs.image_identity import load_job_images_from_manifest
+from src.jobs.photos_paths import photos_dir_relative_for_manifest, resolve_manifest_path
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_entities
 from src.pipeline.stages.analysis_stage import AnalysisStageResult
 from src.pipeline.context.run_context import RunContext
@@ -54,16 +55,13 @@ class EntityResolutionStage:
         logger.info("Entidades detectadas (hybrid v2.1): %d", len(entities))
 
         # Epic 3.1.B: validate source_image_id against job images when input is photos.
-        # Reuse same path resolution as PhotosFrameSource so manifest location is consistent.
-        # When manifest is missing or not photos, valid_image_ids stays empty → status "unvalidated" for present refs (no false invalid).
+        # Use public path helpers so we do not depend on private frame-source helpers.
         valid_image_ids: frozenset[str] = frozenset()
         job_input = getattr(context, "job_input", None)
         if job_input and getattr(job_input, "input_type", "") == "photos":
-            from src.frames.sources.photos_source import _resolve_manifest_path
-
             run_dir = context.run_dir
-            manifest_path = _resolve_manifest_path(run_dir, job_input)
-            photos_dir_rel = (getattr(job_input, "photos_dir", None) or "").strip() or "run/input_photos"
+            manifest_path = resolve_manifest_path(run_dir, job_input)
+            photos_dir_rel = photos_dir_relative_for_manifest(job_input)
             job_images = load_job_images_from_manifest(manifest_path, photos_dir_rel)
             valid_image_ids = frozenset(img.image_id for img in job_images)
         apply_traceability_validation(entities, valid_image_ids)
