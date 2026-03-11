@@ -68,9 +68,28 @@ class EntityListItem(BaseModel):
     )
 
 
+class TraceabilitySummary(BaseModel):
+    """Epic 3.1.C: job-level traceability counts for review/audit. Always reflects the full job, not the filtered result set."""
+
+    total_entities: int = Field(..., description="Total number of entities in the job report.")
+    valid: int = Field(0, description="Entities with traceability_status=valid.")
+    missing: int = Field(0, description="Entities with traceability_status=missing or legacy/unknown.")
+    invalid: int = Field(0, description="Entities with traceability_status=invalid.")
+    unvalidated: int = Field(0, description="Entities with traceability_status=unvalidated.")
+
+
 class EntitiesListResponse(BaseModel):
-    """GET /jobs/{job_id}/entities response."""
+    """GET /jobs/{job_id}/entities response.
+
+    Epic 3.1.C: traceability_summary, when present, is always the full-job summary
+    (counts over all entities in the report), regardless of status/entity_type filters.
+    """
+
     entities: List[EntityListItem] = Field(default_factory=list)
+    traceability_summary: Optional[TraceabilitySummary] = Field(
+        None,
+        description="Full-job traceability counts (valid, missing, invalid, unvalidated). Omitted for legacy reports without traceability.",
+    )
 
 
 class EntityEvidenceResponse(BaseModel):

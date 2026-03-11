@@ -4,14 +4,14 @@ Traceability of counted results to source images (Epic 3.1.B).
 Validates source_image_id against the current job's registered images and
 assigns a structured traceability status to each entity.
 
-Semantics:
-- We only mark a reference as INVALID when we have a reliable validation context
-  (non-empty valid_image_ids). When context is missing (e.g. video job, manifest
-  unavailable), we use UNVALIDATED for present source_image_id to avoid false negatives.
+Diagnostic policy (Epic 3.1.C):
+- traceability_warning is diagnostic only: exposed in report and API (EntityListItem).
+- It is NOT persisted to pallet_results. Use it for review/audit and filtering.
+- Persisted fields: source_image_id, traceability_status only.
 """
 
 from enum import Enum
-from typing import List
+from typing import Any, Dict, List
 
 from src.domain.entity import Entity
 
@@ -69,3 +69,75 @@ def apply_traceability_validation(
         else:
             ent.traceability_status = TraceabilityStatus.UNVALIDATED.value
             ent.traceability_warning = None
+
+
+# Epic 3.1.C — Review/audit summary (counts by traceability status)
+ALL_TRACEABILITY_STATUSES = (
+    TraceabilityStatus.VALID.value,
+    TraceabilityStatus.MISSING.value,
+    TraceabilityStatus.INVALID.value,
+    TraceabilityStatus.UNVALIDATED.value,
+)
+
+
+def compute_traceability_summary(entities: List[Entity]) -> Dict[str, int]:
+    """Compute job-level traceability counts for review and audit.
+
+    Returns a dict with keys: total_entities, valid, missing, invalid, unvalidated.
+
+    Legacy/unknown policy: Entities without traceability_status, or with any value
+    not in (valid, missing, invalid, unvalidated), are counted as missing. This
+    ensures backward compatibility with pre-3.1.B jobs and avoids inflating
+    "invalid" when the field is absent or non-standard.
+    """
+    counts: Dict[str, int] = {
+        "total_entities": len(entities),
+        "valid": 0,
+        "missing": 0,
+        "invalid": 0,
+        "unvalidated": 0,
+    }
+    for ent in entities:
+        status = getattr(ent, "traceability_status", None) or ""
+        status = (status or "").strip().lower()
+        if status == TraceabilityStatus.VALID.value:
+            counts["valid"] += 1
+        elif status == TraceabilityStatus.MISSING.value:
+            counts["missing"] += 1
+        elif status == TraceabilityStatus.INVALID.value:
+            counts["invalid"] += 1
+        elif status == TraceabilityStatus.UNVALIDATED.value:
+            counts["unvalidated"] += 1
+        else:
+            counts["missing"] += 1  # legacy or unknown -> treat as missing (documented policy)
+    return counts
+
+
+def compute_traceability_summary_from_entity_dicts(
+    entity_dicts: List[Dict[str, Any]],
+) -> Dict[str, int]:
+    """Compute traceability summary from report-style entity dicts (no Domain Entity needed).
+
+    Same counts and legacy/unknown policy as compute_traceability_summary.
+    Use from API or report layer when only dict payloads are available.
+    """
+    counts: Dict[str, int] = {
+        "total_entities": len(entity_dicts),
+        "valid": 0,
+        "missing": 0,
+        "invalid": 0,
+        "unvalidated": 0,
+    }
+    for e in entity_dicts:
+        status = (e.get("traceability_status") or "").strip().lower()
+        if status == TraceabilityStatus.VALID.value:
+            counts["valid"] += 1
+        elif status == TraceabilityStatus.MISSING.value:
+            counts["missing"] += 1
+        elif status == TraceabilityStatus.INVALID.value:
+            counts["invalid"] += 1
+        elif status == TraceabilityStatus.UNVALIDATED.value:
+            counts["unvalidated"] += 1
+        else:
+            counts["missing"] += 1  # legacy or unknown -> treat as missing (documented policy)
+    return counts

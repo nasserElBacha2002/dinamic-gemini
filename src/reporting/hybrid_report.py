@@ -2,12 +2,15 @@
 Stage 4 — Build deterministic hybrid report dict.
 
 Standard report: report_version 2.1, mode hybrid_v2.1, summary block, entities.
+Epic 3.1.C: traceability_summary block (counts by traceability status) for review/audit.
+Traceability warning: report-only diagnostic (e.g. reason when status is invalid); not persisted to DB.
 """
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.domain.entity import Entity
+from src.domain.traceability import compute_traceability_summary
 
 
 def _build_summary_from_entities(entities: List[Entity]) -> Dict[str, int]:
@@ -99,6 +102,7 @@ def build_hybrid_report(
         "video": {"path": video_path, "name": path_obj.name},
         "frames_selected": frames_selected,
         "summary": summary,
+        "traceability_summary": compute_traceability_summary(entities),
         "entities": entity_dicts,
     }
     if frame_indices is not None:

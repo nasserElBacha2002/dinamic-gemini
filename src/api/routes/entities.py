@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 
+from pydantic import ValidationError
+
 from src.api.schemas.requests import ReviewSubmitBody
 from src.api.schemas.responses import (
     EntityAuditResponse,
@@ -15,6 +17,7 @@ from src.api.schemas.responses import (
     EntityListItem,
     ReviewSubmitResponse,
     TRACEABILITY_STATUS_VALUES,
+    TraceabilitySummary,
 )
 from src.review import get_entity_audit, load_reviews, save_review
 from src.review.review_merge import ACTIONS
@@ -56,23 +59,58 @@ async def list_entities(
     job_id: str,
     status: Optional[str] = None,
     entity_type: Optional[str] = None,
+    traceability_status: Optional[str] = None,
 ) -> EntitiesListResponse:
-    """List entities from report. Optional filters: status, entity_type."""
+    """List entities from report. Optional filters: status, entity_type, traceability_status (Epic 3.1.C).
+
+    traceability_summary, when present, is always the full-job summary (all entities in the report),
+    regardless of filters. Invalid traceability_status filter value returns 422.
+    """
     try:
         job_id = validate_job_id(job_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if traceability_status is not None and traceability_status.strip():
+        want = traceability_status.strip().lower()
+        if want not in TRACEABILITY_STATUS_VALUES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"traceability_status must be one of: {', '.join(sorted(TRACEABILITY_STATUS_VALUES))}",
+            )
     report_path, _run_dir = _resolve_report_and_run_dir(job_id)
     report = _load_report(report_path)
-    entities = report.get("entities") or []
+    full_entities = report.get("entities") or []
+    entities = list(full_entities)
     if status is not None and status.strip():
         entities = [e for e in entities if (e.get("count_status") or "") == status.strip()]
     if entity_type is not None and entity_type.strip():
         entities = [e for e in entities if (e.get("entity_type") or "") == entity_type.strip()]
+    if traceability_status is not None and traceability_status.strip():
+        want = traceability_status.strip().lower()
+        entities = [e for e in entities if (e.get("traceability_status") or "").lower() == want]
+    # Epic 3.1.C: full-job summary only (from report or computed from full entity list)
+    summary_dict = report.get("traceability_summary")
+    if summary_dict is None and full_entities:
+        from src.domain.traceability import compute_traceability_summary_from_entity_dicts
+        summary_dict = compute_traceability_summary_from_entity_dicts(full_entities)
+    summary_model = None
+    if isinstance(summary_dict, dict):
+        try:
+            summary_model = TraceabilitySummary(**summary_dict)
+        except ValidationError:
+            if full_entities:
+                from src.domain.traceability import compute_traceability_summary_from_entity_dicts
+                summary_dict = compute_traceability_summary_from_entity_dicts(full_entities)
+                summary_model = TraceabilitySummary(**summary_dict)
+                logger.warning(
+                    "Report traceability_summary invalid or malformed; recomputed from full entity list for job_id=%s",
+                    job_id,
+                )
     out: List[EntityListItem] = []
     for e in entities:
         raw_status = e.get("traceability_status")
-        traceability_status = raw_status if raw_status in TRACEABILITY_STATUS_VALUES else None
+        want = (raw_status or "").strip().lower()
+        traceability_status_val = want if want in TRACEABILITY_STATUS_VALUES else None
         out.append(
             EntityListItem(
                 entity_uid=str(e.get("entity_uid") or ""),
@@ -82,11 +120,11 @@ async def list_entities(
                 entity_quality_score=e.get("entity_quality_score"),
                 evidence_ref=e.get("evidence_path"),
                 source_image_id=e.get("source_image_id"),
-                traceability_status=traceability_status,
+                traceability_status=traceability_status_val,
                 traceability_warning=e.get("traceability_warning"),
             )
         )
-    return EntitiesListResponse(entities=out)
+    return EntitiesListResponse(entities=out, traceability_summary=summary_model)
 
 
 @router.get("/{job_id}/entities/{entity_uid}/evidence", response_model=EntityEvidenceResponse)
