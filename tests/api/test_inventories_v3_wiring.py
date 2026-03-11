@@ -37,3 +37,18 @@ def test_post_inventories_empty_name_returns_422() -> None:
 def test_post_inventories_name_too_long_returns_422() -> None:
     response = client.post("/api/v3/inventories", json={"name": "x" * 256})
     assert response.status_code == 422
+
+
+def test_get_aisle_asset_file_returns_404_when_asset_not_found() -> None:
+    """Reference image endpoint returns 404 when aisle has no such asset."""
+    create_resp = client.post("/api/v3/inventories", json={"name": "Ref Image Test"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "A1"})
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+
+    response = client.get(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/nonexistent-asset-id/file"
+    )
+    assert response.status_code == 404

@@ -100,6 +100,8 @@ export interface PositionSummary {
   detected_quantity?: number | null;
   /** Epic 3.1.B: optional; when present, summary-level result-to-image traceability for this position. */
   source_image_id?: string | null;
+  /** Epic 5: optional; original filename of the source image when available (photos jobs). May be absent until the v3 position API is extended to expose it. */
+  source_image_original_filename?: string | null;
   /** Epic 3.1.B: optional; summary-level traceability status when backend provides it. */
   traceability_status?: TraceabilityStatus | null;
 }
@@ -180,6 +182,8 @@ export interface JobEntityListItem {
   evidence_ref?: string | null;
   /** Epic 3.1.B: image_id of source image for this entity. */
   source_image_id?: string | null;
+  /** Epic 5: original filename of the source image when available (photos jobs; human-readable). */
+  source_image_original_filename?: string | null;
   /** Epic 3.1.B: valid | missing | invalid | unvalidated. */
   traceability_status?: TraceabilityStatus | null;
   /** Epic 3.1.B: diagnostic only (e.g. reason when status is invalid). */

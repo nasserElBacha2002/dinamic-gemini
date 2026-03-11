@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from src.config import load_settings
 
@@ -531,6 +532,40 @@ def list_aisle_assets(
         return [_asset_to_response(a) for a in assets]
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/assets/{asset_id}/file",
+    response_class=FileResponse,
+)
+def get_aisle_asset_file(
+    inventory_id: str,
+    aisle_id: str,
+    asset_id: str,
+    use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
+) -> FileResponse:
+    """Serve the reference image/file for an aisle asset. Used by Position Detail to open the source image.
+    Returns 404 if inventory/aisle/asset not found or file is missing. Safe for position.source_image_id (asset id)."""
+    try:
+        assets = use_case.execute(inventory_id, aisle_id)
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    asset = next((a for a in assets if a.id == asset_id), None)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    base = Path(load_settings().output_dir) / "v3_uploads"
+    file_path = (base / asset.storage_path).resolve()
+    try:
+        if not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Asset file not found")
+        file_path.relative_to(base.resolve())
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Asset path invalid")
+    return FileResponse(
+        path=str(file_path),
+        media_type=asset.mime_type or "application/octet-stream",
+        filename=asset.original_filename or "file",
+    )
 
 
 @router.get("/{inventory_id}/aisles/{aisle_id}/positions", response_model=PositionListResponse)

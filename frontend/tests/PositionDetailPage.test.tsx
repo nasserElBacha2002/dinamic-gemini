@@ -1,6 +1,6 @@
 /**
- * PositionDetailPage — source_image_id display and legacy-safe fallback.
- * Ensures Source image is shown with value when present and "—" when absent.
+ * PositionDetailPage — source_image_id and source_image_original_filename (Epic 5) display; legacy-safe fallback.
+ * Source image ID = internal traceability id; Source file = original filename when available.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -32,7 +32,13 @@ const mockProducts = [
 ];
 const mockEvidences: Array<{ id: string; entity_type: string; entity_id: string; type: string; storage_path: string; is_primary: boolean }> = [];
 
-function createDetailData(position: typeof basePosition & { source_image_id?: string | null; traceability_status?: string | null }) {
+function createDetailData(
+  position: typeof basePosition & {
+    source_image_id?: string | null;
+    source_image_original_filename?: string | null;
+    traceability_status?: string | null;
+  }
+) {
   return {
     position: { ...basePosition, ...position },
     products: mockProducts,
@@ -67,8 +73,8 @@ function renderPage(initialEntry = '/inventories/inv-1/aisles/aisle-1/positions/
   );
 }
 
-describe('PositionDetailPage source_image_id', () => {
-  it('shows Source image label and value when source_image_id is present', async () => {
+describe('PositionDetailPage source_image_id and Epic 5 source file', () => {
+  it('shows Source image ID label and value when source_image_id is present', async () => {
     vi.mocked(usePositionDetail).mockReturnValue({
       data: createDetailData({ ...basePosition, source_image_id: 'img_abc123' }),
       isLoading: false,
@@ -79,11 +85,11 @@ describe('PositionDetailPage source_image_id', () => {
 
     renderPage();
     await screen.findByText(/Position detail/);
-    expect(screen.getByText(/Source image:/)).toBeInTheDocument();
+    expect(screen.getByText(/Source image ID:/)).toBeInTheDocument();
     expect(screen.getByText(/img_abc123/)).toBeInTheDocument();
   });
 
-  it('shows Source image label with em dash when source_image_id is absent', async () => {
+  it('shows Source image ID label with em dash when source_image_id is absent', async () => {
     vi.mocked(usePositionDetail).mockReturnValue({
       data: createDetailData({ ...basePosition, source_image_id: undefined }),
       isLoading: false,
@@ -94,8 +100,8 @@ describe('PositionDetailPage source_image_id', () => {
 
     renderPage();
     await screen.findByText(/Position detail/);
-    expect(screen.getByText(/Source image:/)).toBeInTheDocument();
-    expect(document.body.textContent).toMatch(/Source image:\s*—/);
+    expect(screen.getByText(/Source image ID:/)).toBeInTheDocument();
+    expect(document.body.textContent).toMatch(/Source image ID:\s*—/);
   });
 
   it('shows em dash when source_image_id is null or empty string', async () => {
@@ -109,7 +115,69 @@ describe('PositionDetailPage source_image_id', () => {
 
     renderPage();
     await screen.findByText(/Position detail/);
-    expect(screen.getByText(/Source image:/)).toBeInTheDocument();
-    expect(document.body.textContent).toMatch(/Source image:\s*—/);
+    expect(screen.getByText(/Source image ID:/)).toBeInTheDocument();
+    expect(document.body.textContent).toMatch(/Source image ID:\s*—/);
+  });
+
+  it('Epic 5: shows Source file when source_image_original_filename is present', async () => {
+    vi.mocked(usePositionDetail).mockReturnValue({
+      data: createDetailData({
+        ...basePosition,
+        source_image_id: 'img_002',
+        source_image_original_filename: 'IMG_1024.JPG',
+      }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof usePositionDetail>);
+
+    renderPage();
+    await screen.findByText(/Position detail/);
+    expect(screen.getByText(/Source file:/)).toBeInTheDocument();
+    expect(screen.getByText(/IMG_1024.JPG/)).toBeInTheDocument();
+  });
+
+  it('Epic 5: Source file shows em dash when source_image_original_filename absent (legacy)', async () => {
+    vi.mocked(usePositionDetail).mockReturnValue({
+      data: createDetailData({ ...basePosition, source_image_id: 'img_001', source_image_original_filename: undefined }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof usePositionDetail>);
+
+    renderPage();
+    await screen.findByText(/Position detail/);
+    expect(screen.getByText(/Source file:/)).toBeInTheDocument();
+    expect(document.body.textContent).toMatch(/Source file:\s*—/);
+  });
+
+  it('shows View reference image button when source_image_id is present', async () => {
+    vi.mocked(usePositionDetail).mockReturnValue({
+      data: createDetailData({ ...basePosition, source_image_id: 'asset-uuid-123' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof usePositionDetail>);
+
+    renderPage('/inventories/inv-1/aisles/aisle-1/positions/pos-1');
+    await screen.findByText(/Position detail/);
+    expect(screen.getByRole('button', { name: /View reference image/i })).toBeInTheDocument();
+  });
+
+  it('does not show View reference image button when source_image_id is absent', async () => {
+    vi.mocked(usePositionDetail).mockReturnValue({
+      data: createDetailData({ ...basePosition, source_image_id: undefined }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof usePositionDetail>);
+
+    renderPage();
+    await screen.findByText(/Position detail/);
+    expect(screen.queryByRole('button', { name: /View reference image/i })).not.toBeInTheDocument();
   });
 });

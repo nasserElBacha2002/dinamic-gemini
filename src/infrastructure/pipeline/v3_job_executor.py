@@ -201,7 +201,13 @@ class V3JobExecutor:
             dst = photos_dir / stored
             if dst != src:
                 shutil.copy2(src, dst)
-            photos_list.append({"index": i, "stored_filename": stored})
+            # Expose image_id (asset.id) so pipeline/LLM use it as source_image_id; enables reference-image view.
+            photos_list.append({
+                "index": i + 1,  # 1-based for load_job_images_from_manifest
+                "image_id": asset.id,
+                "original_filename": asset.original_filename,
+                "stored_filename": stored,
+            })
 
         manifest_path = job_dir / "input_manifest.json"
         manifest = {

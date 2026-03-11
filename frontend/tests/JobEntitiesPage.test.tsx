@@ -1,6 +1,6 @@
 /**
- * Epic 3.1.B / Epic 4 — Job entities page and traceability display tests.
- * Covers loading, empty, error, populated, legacy (optional fields absent), and Epic 4 display-label fallback behavior.
+ * Epic 3.1.B / Epic 4 / Epic 5 — Job entities page and traceability display tests.
+ * Covers loading, empty, error, populated, legacy (optional fields absent), Epic 4 display-label fallback, and Epic 5 source_image_original_filename.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -62,6 +62,7 @@ describe('JobEntitiesPage', () => {
           entity_type: 'product',
           count_status: 'counted',
           source_image_id: 'img_001',
+          source_image_original_filename: 'photo_001.jpg',
           traceability_status: 'valid',
           traceability_warning: null,
           review_display_label: 'SKU-001',
@@ -72,6 +73,7 @@ describe('JobEntitiesPage', () => {
           entity_type: 'product',
           count_status: null,
           source_image_id: null,
+          source_image_original_filename: null,
           traceability_status: 'missing',
           traceability_warning: null,
           review_display_label: null,
@@ -82,6 +84,7 @@ describe('JobEntitiesPage', () => {
     await screen.findByText('e1');
     expect(screen.getByText('SKU-001')).toBeInTheDocument();
     expect(screen.getByText('img_001')).toBeInTheDocument();
+    expect(screen.getByText('photo_001.jpg')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Valid' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Missing' })).toBeInTheDocument();
     const validChips = screen.getAllByText('Valid');
@@ -257,5 +260,62 @@ describe('JobEntitiesPage', () => {
     renderWithProviders();
     await screen.findByText(/no count results/i);
     expect(screen.getByText('Inventories')).toBeInTheDocument();
+  });
+
+  it('Epic 5: shows Source image ID and Source file columns; Source file displays original filename when present', async () => {
+    mockGetJobEntities.mockResolvedValue({
+      entities: [
+        {
+          entity_uid: 'ep5-1',
+          entity_type: 'PALLET',
+          source_image_id: 'img_003',
+          source_image_original_filename: 'IMG_1024.JPG',
+        },
+      ],
+    });
+    renderWithProviders();
+    await screen.findByText('ep5-1');
+    expect(screen.getByRole('columnheader', { name: /Source image ID/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Source file/i })).toBeInTheDocument();
+    expect(screen.getByText('img_003')).toBeInTheDocument();
+    expect(screen.getByText('IMG_1024.JPG')).toBeInTheDocument();
+  });
+
+  it('Epic 5: Source file column shows em dash when source_image_original_filename absent (legacy/video job)', async () => {
+    mockGetJobEntities.mockResolvedValue({
+      entities: [
+        {
+          entity_uid: 'ep5-legacy',
+          entity_type: 'PALLET',
+          source_image_id: 'img_001',
+          source_image_original_filename: undefined,
+        },
+      ],
+    });
+    renderWithProviders();
+    await screen.findByText('ep5-legacy');
+    expect(screen.getByText('img_001')).toBeInTheDocument();
+    const cells = screen.getAllByRole('cell');
+    const emDashes = cells.filter((c) => c.textContent === '—');
+    expect(emDashes.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Epic 5: Source file column shows em dash when source_image_original_filename is empty string', async () => {
+    mockGetJobEntities.mockResolvedValue({
+      entities: [
+        {
+          entity_uid: 'ep5-empty',
+          entity_type: 'PALLET',
+          source_image_id: 'img_002',
+          source_image_original_filename: '',
+        },
+      ],
+    });
+    renderWithProviders();
+    await screen.findByText('ep5-empty');
+    expect(screen.getByText('img_002')).toBeInTheDocument();
+    const cells = screen.getAllByRole('cell');
+    const emDashes = cells.filter((c) => c.textContent === '—');
+    expect(emDashes.length).toBeGreaterThanOrEqual(1);
   });
 });

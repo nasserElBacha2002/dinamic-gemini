@@ -149,6 +149,19 @@ export async function getAisleAssets(
   return Array.isArray(data) ? data : [];
 }
 
+/**
+ * URL for the reference image file of an aisle asset (position.source_image_id).
+ * Use for &lt;img src&gt; or open in new tab. Backend returns 404 if asset/file missing.
+ */
+export function getReferenceImageFileUrl(
+  inventoryId: string,
+  aisleId: string,
+  assetId: string
+): string {
+  const base = import.meta.env.VITE_API_BASE_URL ?? '';
+  return `${base}/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/file`;
+}
+
 /** List positions (results) for an aisle — Épica 6. */
 export async function getAislePositions(
   inventoryId: string,

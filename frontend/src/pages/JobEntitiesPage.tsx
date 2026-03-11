@@ -1,8 +1,7 @@
 /**
- * Epic 3.1.B / 3.1.C / Epic 4 — Job count results page (v1 API).
- * Lists counted items with source image and traceability status.
- * Epic 3.1.C: traceability summary block, filter by traceability_status, clearer diagnostics.
- * Epic 4: review-oriented "Review label" column (review_display_label / product_display_label).
+ * Epic 3.1.B / 3.1.C / Epic 4 / Epic 5 — Job count results page (v1 API).
+ * Lists counted items with source image ID, source file (original filename), and traceability status.
+ * Epic 5: displays source_image_original_filename as "Source file" (distinct from internal "Source image ID").
  */
 
 import { useState, useCallback } from 'react';
@@ -164,7 +163,8 @@ export default function JobEntitiesPage() {
                 <TableCell>Pallet</TableCell>
                 <TableCell>Type</TableCell>
                 <TableCell>Count status</TableCell>
-                <TableCell>Source image</TableCell>
+                <TableCell>Source image ID</TableCell>
+                <TableCell>Source file</TableCell>
                 <TableCell>Traceability</TableCell>
               </TableRow>
             </TableHead>
@@ -177,6 +177,7 @@ export default function JobEntitiesPage() {
                   <TableCell>{displayOptional(entity.entity_type)}</TableCell>
                   <TableCell>{displayOptional(entity.count_status)}</TableCell>
                   <TableCell>{displayOptional(entity.source_image_id)}</TableCell>
+                  <TableCell>{displayOptional(entity.source_image_original_filename)}</TableCell>
                   <TableCell>
                     {isTraceabilityStatus(entity.traceability_status) ? (
                       <TraceabilityChip
