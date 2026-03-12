@@ -4,14 +4,14 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import type { TraceabilityStatus } from '../api/types';
+import type { ApiTraceabilityStatus } from '../api/types';
 import { getJobEntities } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 
 export interface UseJobEntitiesOptions {
   enabled?: boolean;
   /** Epic 3.1.C: filter by traceability_status (valid | missing | invalid | unvalidated). */
-  traceability_status?: TraceabilityStatus | null;
+  traceability_status?: ApiTraceabilityStatus | null;
 }
 
 export function useJobEntities(
@@ -20,7 +20,7 @@ export function useJobEntities(
 ) {
   const traceabilityStatus =
     options?.traceability_status != null && String(options.traceability_status).trim() !== ''
-      ? (String(options.traceability_status).trim() as TraceabilityStatus)
+      ? (String(options.traceability_status).trim() as ApiTraceabilityStatus)
       : undefined;
 
   return useQuery({

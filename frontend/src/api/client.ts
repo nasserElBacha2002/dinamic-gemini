@@ -17,7 +17,7 @@ import type {
   ReviewActionRequest,
   InventoryMetrics,
   JobEntitiesListResponse,
-  TraceabilityStatus,
+  ApiTraceabilityStatus,
 } from './types';
 import { ApiError } from './types';
 
@@ -215,7 +215,7 @@ export async function submitReviewAction(
 /** Get job entities (v1 API) — Epic 3.1.B/3.1.C. Optional filter by traceability_status. Returns entities and optional traceability_summary. */
 export async function getJobEntities(
   jobId: string,
-  params?: { traceability_status?: TraceabilityStatus | null }
+  params?: { traceability_status?: ApiTraceabilityStatus | null }
 ): Promise<JobEntitiesListResponse> {
   const url = new URL(`${API_BASE}/api/v1/inventory/jobs/${encodeURIComponent(jobId)}/entities`);
   if (params?.traceability_status != null && String(params.traceability_status).trim() !== '') {

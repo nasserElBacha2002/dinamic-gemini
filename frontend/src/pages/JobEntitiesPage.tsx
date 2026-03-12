@@ -23,7 +23,7 @@ import {
 } from '@mui/material';
 import type { JobEntityListItem, TraceabilitySummary } from '../api/types';
 import { ApiError } from '../api/types';
-import { TRACEABILITY_STATUSES, type TraceabilityStatus } from '../api/types';
+import { TRACEABILITY_STATUSES } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { isTraceabilityStatus } from '../utils/traceability';
 import { PageLayout, LoadingBlock, EmptyState, ErrorAlert, TraceabilityChip } from '../components/ui';
@@ -83,8 +83,10 @@ export default function JobEntitiesPage() {
   const navigate = useNavigate();
   const [traceabilityFilter, setTraceabilityFilter] = useState<string>(TRACEABILITY_FILTER_ALL);
 
-  const traceabilityStatusParam: string | undefined =
-    traceabilityFilter === TRACEABILITY_FILTER_ALL ? undefined : traceabilityFilter;
+  const traceabilityStatusParam =
+    traceabilityFilter === TRACEABILITY_FILTER_ALL
+      ? undefined
+      : (isTraceabilityStatus(traceabilityFilter) ? traceabilityFilter : undefined);
 
   const { data, isLoading, isError, error, refetch } = useJobEntities(jobId, {
     traceability_status: traceabilityStatusParam,
@@ -181,7 +183,7 @@ export default function JobEntitiesPage() {
                   <TableCell>
                     {isTraceabilityStatus(entity.traceability_status) ? (
                       <TraceabilityChip
-                        status={entity.traceability_status as TraceabilityStatus}
+                        status={entity.traceability_status}
                         tooltip={entity.traceability_warning ?? undefined}
                       />
                     ) : (

@@ -1,17 +1,16 @@
 /**
  * Epic 3.1.B — Centralized traceability helpers.
- * Single source for allowed values, type guard, and UI-safe conversion.
- * Re-exports backend-aligned types from API shared; add runtime/UI helpers here.
+ * Uses API-level traceability status (lowercase); for visible Result model use features/results.
  */
 
-import { TRACEABILITY_STATUSES, type TraceabilityStatus } from '../api/types';
+import { TRACEABILITY_STATUSES, type ApiTraceabilityStatus } from '../api/types';
 
-export { TRACEABILITY_STATUSES, type TraceabilityStatus };
+export { TRACEABILITY_STATUSES, type ApiTraceabilityStatus };
 
-/** Type guard: true if value is a known traceability status. */
+/** Type guard: true if value is a known API traceability status. */
 export function isTraceabilityStatus(
   value: string | null | undefined
-): value is TraceabilityStatus {
+): value is ApiTraceabilityStatus {
   return (
     value != null &&
     typeof value === 'string' &&
@@ -19,10 +18,10 @@ export function isTraceabilityStatus(
   );
 }
 
-/** Converts unknown backend value to TraceabilityStatus or null (UI-safe). */
+/** Converts unknown backend value to ApiTraceabilityStatus or null (UI-safe). */
 export function toTraceabilityStatus(
   value: unknown
-): TraceabilityStatus | null {
+): ApiTraceabilityStatus | null {
   if (value == null || typeof value !== 'string') return null;
   return isTraceabilityStatus(value) ? value : null;
 }

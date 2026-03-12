@@ -16,4 +16,4 @@ export type { StatCardProps } from './StatCard';
 export { default as StatusChip } from './StatusChip';
 export type { StatusChipProps, StatusChipColor } from './StatusChip';
 export { default as TraceabilityChip } from './TraceabilityChip';
-export type { TraceabilityChipProps, TraceabilityStatus } from './TraceabilityChip';
+export type { TraceabilityChipProps, ApiTraceabilityStatus } from './TraceabilityChip';

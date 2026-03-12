@@ -10,7 +10,7 @@ import type {
   PositionStatus,
   EvidenceType,
   ReviewActionType,
-  TraceabilityStatus,
+  ApiTraceabilityStatus,
 } from './shared';
 
 // ─── Inventory ─────────────────────────────────────────────────────────────
@@ -85,6 +85,12 @@ export interface UploadAisleAssetsResponse {
 
 // ─── Position / result ─────────────────────────────────────────────────────
 
+/**
+ * For the visible review model (v3.1.1+), prefer ResultSummary / ResultDetail and
+ * mappers from features/results. These API types remain the raw contract for the
+ * positions endpoints.
+ */
+
 /** Position summary for list responses. Prefer optional sku and detected_quantity when present; detected_summary_json is retained for backward compatibility. */
 export interface PositionSummary {
   id: string;
@@ -103,7 +109,7 @@ export interface PositionSummary {
   /** Epic 5: optional; original filename of the source image when available (photos jobs). May be absent until the v3 position API is extended to expose it. */
   source_image_original_filename?: string | null;
   /** Epic 3.1.B: optional; summary-level traceability status when backend provides it. */
-  traceability_status?: TraceabilityStatus | null;
+  traceability_status?: ApiTraceabilityStatus | null;
 }
 
 /** Response for GET .../aisles/{aisle_id}/positions. */
@@ -172,7 +178,11 @@ export interface TraceabilitySummary {
   unvalidated: number;
 }
 
-/** Single entity in GET /api/v1/inventory/jobs/{job_id}/entities response. */
+/**
+ * Single entity in GET /api/v1/inventory/jobs/{job_id}/entities response.
+ * @deprecated v3.1.1 — For the main review flow use Result (positions) and features/results types.
+ * This list remains for job-level traceability views; it is no longer the primary visible model.
+ */
 export interface JobEntityListItem {
   entity_uid: string;
   pallet_id?: string | null;
@@ -185,7 +195,7 @@ export interface JobEntityListItem {
   /** Epic 5: original filename of the source image when available (photos jobs; human-readable). */
   source_image_original_filename?: string | null;
   /** Epic 3.1.B: valid | missing | invalid | unvalidated. */
-  traceability_status?: TraceabilityStatus | null;
+  traceability_status?: ApiTraceabilityStatus | null;
   /** Epic 3.1.B: diagnostic only (e.g. reason when status is invalid). */
   traceability_warning?: string | null;
   /** Epic 3.1.D / Epic 4: review-oriented display label (prefers product/SKU, fallback position/pallet). Not guaranteed product-only. */
@@ -194,7 +204,8 @@ export interface JobEntityListItem {
   product_display_label?: string | null;
 }
 
-/** Response for GET /api/v1/inventory/jobs/{job_id}/entities. Epic 3.1.C: optional traceability_summary (full-job counts). */
+/** Response for GET /api/v1/inventory/jobs/{job_id}/entities. Epic 3.1.C: optional traceability_summary (full-job counts).
+ * @deprecated v3.1.1 — Primary review flow uses positions (Result); use features/results for the visible model. */
 export interface JobEntitiesListResponse {
   entities: JobEntityListItem[];
   /** When present, always full-job summary regardless of filter. Omitted for legacy reports. */

@@ -52,6 +52,8 @@ export const REVIEW_ACTION_TYPES = [
 ] as const;
 export type ReviewActionType = (typeof REVIEW_ACTION_TYPES)[number];
 
-/** Epic 3.1.B — Traceability status values from GET /jobs/{job_id}/entities. */
+/** Epic 3.1.B — Traceability status values from backend (GET /jobs/{job_id}/entities, position summary).
+ * Use this type for API params, response fields, and legacy entity/position views.
+ * For the visible Result model (uppercase), use features/results types. */
 export const TRACEABILITY_STATUSES = ['valid', 'missing', 'invalid', 'unvalidated'] as const;
-export type TraceabilityStatus = (typeof TRACEABILITY_STATUSES)[number];
+export type ApiTraceabilityStatus = (typeof TRACEABILITY_STATUSES)[number];
