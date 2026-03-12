@@ -178,7 +178,7 @@ describe('mapReviewActionToHistoryItem', () => {
 });
 
 describe('mapPositionDetailToResultDetail', () => {
-  it('maps full detail with products, evidences, review history', () => {
+  it('maps full detail with evidences and review history', () => {
     const data: PositionDetailResponse = {
       position: {
         id: 'pos-1',
@@ -191,6 +191,7 @@ describe('mapPositionDetailToResultDetail', () => {
         updated_at: '2024-01-02T00:00:00Z',
         sku: 'SKU-A',
         detected_quantity: 5,
+        corrected_quantity: 6,
         detected_summary_json: {
           entity_uid: 'job_E1',
           source_image_id: 'img-1',
@@ -199,18 +200,6 @@ describe('mapPositionDetailToResultDetail', () => {
         source_image_id: 'img-1',
         traceability_status: 'valid',
       },
-      products: [
-        {
-          id: 'prod-1',
-          position_id: 'pos-1',
-          sku: 'SKU-A',
-          detected_quantity: 5,
-          corrected_quantity: 6,
-          confidence: 0.9,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-02T00:00:00Z',
-        },
-      ],
       evidences: [
         {
           id: 'ev-1',
@@ -243,16 +232,13 @@ describe('mapPositionDetailToResultDetail', () => {
     expect(r.sourceFileName).toBe('photo.jpg');
     expect(r.evidence).toHaveLength(1);
     expect(r.evidence[0].role).toBe('PRIMARY');
-    expect(r.product).not.toBeNull();
-    expect(r.product?.sku).toBe('SKU-A');
-    expect(r.product?.correctedQty).toBe(6);
     expect(r.reviewHistory).toHaveLength(1);
     expect(r.reviewHistory[0].action).toBe('confirm');
     expect(r.technicalMetadata?.entityId).toBe('job_E1');
     expect(r.technicalMetadata?.primaryEvidenceId).toBe('ev-1');
   });
 
-  it('handles empty products, evidences, review_actions', () => {
+  it('handles empty evidences and review_actions', () => {
     const data: PositionDetailResponse = {
       position: {
         id: 'pos-2',
@@ -263,11 +249,9 @@ describe('mapPositionDetailToResultDetail', () => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
       },
-      products: [],
       evidences: [],
     };
     const r = mapPositionDetailToResultDetail(data);
-    expect(r.product).toBeNull();
     expect(r.evidence).toEqual([]);
     expect(r.reviewHistory).toEqual([]);
     expect(r.correctedQty).toBeNull();

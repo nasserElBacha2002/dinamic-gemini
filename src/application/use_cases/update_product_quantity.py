@@ -16,7 +16,12 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     ReviewActionRepository,
 )
-from src.application.use_cases.review_validation import resolve_position, resolve_product_for_position, ensure_position_not_deleted
+from src.application.use_cases.review_validation import (
+    resolve_position,
+    resolve_product_for_position,
+    resolve_single_product_for_position,
+    ensure_position_not_deleted,
+)
 from src.domain.positions.entities import PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
@@ -55,11 +60,19 @@ class UpdateProductQuantityUseCase:
             position_id,
         )
         ensure_position_not_deleted(position)
-        product = resolve_product_for_position(
-            self._product_record_repo,
-            position_id,
-            product_id,
-        )
+        pid = (product_id or "").strip()
+        if pid:
+            product = resolve_product_for_position(
+                self._product_record_repo,
+                position_id,
+                pid,
+            )
+        else:
+            product = resolve_single_product_for_position(
+                self._product_record_repo,
+                position_id,
+            )
+            pid = product.id
         if corrected_quantity < 0:
             raise ValueError("corrected_quantity must be non-negative")
 
@@ -77,8 +90,8 @@ class UpdateProductQuantityUseCase:
             id=str(uuid.uuid4()),
             position_id=position_id,
             action_type=ReviewActionType.UPDATE_QUANTITY,
-            before_json={"product_id": product_id, "corrected_quantity": before_quantity},
-            after_json={"product_id": product_id, "corrected_quantity": corrected_quantity},
+            before_json={"product_id": pid, "corrected_quantity": before_quantity},
+            after_json={"product_id": pid, "corrected_quantity": corrected_quantity},
             created_at=now,
         )
         self._review_repo.save(review)

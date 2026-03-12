@@ -104,6 +104,7 @@ export interface PositionSummary {
   detected_summary_json?: Record<string, unknown> | null;
   sku?: string | null;
   detected_quantity?: number | null;
+  corrected_quantity?: number | null;
   /** Epic 3.1.B: optional; when present, summary-level result-to-image traceability for this position. */
   source_image_id?: string | null;
   /** Epic 5: optional; original filename of the source image when available (photos jobs). May be absent until the v3 position API is extended to expose it. */
@@ -160,10 +161,9 @@ export interface ReviewActionSummary {
   comment?: string | null;
 }
 
-/** Response for GET .../aisles/{aisle_id}/positions/{position_id}. */
+/** Response for GET .../aisles/{aisle_id}/positions/{position_id}. v3.1.1: Result-centric; products are not returned. */
 export interface PositionDetailResponse {
   position: PositionSummary;
-  products: ProductRecordSummary[];
   evidences: EvidenceSummary[];
   /** Review audit history — Épica 8. */
   review_actions?: ReviewActionSummary[];

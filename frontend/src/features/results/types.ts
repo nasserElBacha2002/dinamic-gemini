@@ -44,14 +44,6 @@ export interface ResultEvidence {
   thumbnailUrl?: string | null;
 }
 
-/** Product info block in result detail (from product record). */
-export interface ResultProductInfo {
-  productId: string | null;
-  sku: string | null;
-  description?: string | null;
-  correctedQty?: number | null;
-}
-
 /** One review history entry (audit). */
 export interface ReviewHistoryItem {
   id: string;
@@ -75,7 +67,6 @@ export interface ResultDetail {
   sourceImageId: string | null;
   sourceFileName: string | null;
   evidence: ResultEvidence[];
-  product: ResultProductInfo | null;
   reviewHistory: ReviewHistoryItem[];
   technicalMetadata?: {
     entityId?: string | null;

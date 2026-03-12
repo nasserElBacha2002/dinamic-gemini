@@ -6,7 +6,6 @@ export {
   mapPositionSummaryToResultSummary,
   mapPositionDetailToResultDetail,
   mapEvidenceToResultEvidence,
-  mapProductToResultProductInfo,
   mapReviewActionToHistoryItem,
   mapTraceabilityToVisible,
   mapPositionStatusToReviewStatus,
