@@ -18,6 +18,9 @@ export const queryKeys = {
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'positions', aisleId] as const,
     positionDetail: (inventoryId: string, aisleId: string, positionId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'positions', aisleId, 'detail', positionId] as const,
+    /** Execution log for a job (v3.1.1). */
+    executionLog: (inventoryId: string, aisleId: string, jobId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'jobs', jobId, 'execution-log'] as const,
   },
 
   /** v1 job entities (Epic 3.1.B/3.1.C). Include filter in key so filtered results are cached separately. */

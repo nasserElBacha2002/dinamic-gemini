@@ -4,7 +4,7 @@
 
 import { useMemo } from 'react';
 import { useQuery, useQueries } from '@tanstack/react-query';
-import { getAisles, getAisleAssets, getInventoryMetrics } from '../api/client';
+import { getAisles, getAisleAssets, getInventoryMetrics, getExecutionLog } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 
 export function useInventoryMetrics(inventoryId: string | undefined, options?: { enabled?: boolean }) {
@@ -53,4 +53,25 @@ export function useAisleAssetCounts(inventoryId: string | undefined, aisleIds: s
       await Promise.all(queries.map((q) => q.refetch()));
     },
   };
+}
+
+/** Execution log for a job (v3.1.1). Enable when jobId is present to support "View log" on demand.
+ * refetchInterval: when dialog is open, use 4s so operators see log growth for running jobs. */
+export function useExecutionLog(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  jobId: string | undefined,
+  options?: { enabled?: boolean; refetchInterval?: number | false }
+) {
+  return useQuery({
+    queryKey: queryKeys.inventories.executionLog(
+      inventoryId ?? '',
+      aisleId ?? '',
+      jobId ?? ''
+    ),
+    queryFn: () => getExecutionLog(inventoryId!, aisleId!, jobId!),
+    enabled:
+      Boolean(inventoryId && aisleId && jobId) && (options?.enabled !== false),
+    refetchInterval: options?.refetchInterval,
+  });
 }

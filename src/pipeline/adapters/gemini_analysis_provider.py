@@ -67,8 +67,18 @@ class GeminiAnalysisProvider:
             metadata={**metadata, "run_dir": str(context.run_dir)},
             frames_nd=frames_nd,
         )
-        response = provider.analyze_global(request)
-        return AnalysisResult(
-            parsed_json=response.parsed_json,
-            provider_name=response.provider,
-        )
+        exec_log = getattr(context, "execution_log", None)
+        if exec_log:
+            exec_log.info("AnalysisStage", "Gemini analysis request started", payload={"frames_count": len(frames_nd)})
+        try:
+            response = provider.analyze_global(request)
+            if exec_log:
+                exec_log.info("AnalysisStage", "Gemini analysis request finished", payload={"provider": response.provider})
+            return AnalysisResult(
+                parsed_json=response.parsed_json,
+                provider_name=response.provider,
+            )
+        except Exception as e:
+            if exec_log:
+                exec_log.error("AnalysisStage", f"Gemini analysis request failed: {e}", payload={"error": str(e)[:500]})
+            raise

@@ -16,6 +16,7 @@ class AisleJobSummary(BaseModel):
     id: str
     status: str
     updated_at: datetime
+    error_message: Optional[str] = None
 
 
 class AisleResponse(BaseModel):

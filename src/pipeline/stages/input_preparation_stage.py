@@ -64,6 +64,7 @@ class InputPreparationStage:
 
         if input_type == "photos":
             try:
+                exec_log = getattr(context, "execution_log", None)
                 raw_manifest = (getattr(job_input, "input_manifest_path", None) or "").strip()
                 raw_photos = (getattr(job_input, "photos_dir", None) or "").strip()
                 # Workspace layout: output_path / job_id / run_id (run_dir). Job inputs may be
@@ -79,6 +80,18 @@ class InputPreparationStage:
                     photos_dir = run_dir.parent / photos_rel  # relative to job dir
                 else:
                     photos_dir = run_dir / "input_photos"
+                if exec_log:
+                    exec_log.info(
+                        "InputPreparationStage",
+                        "Manifest resolved",
+                        payload={
+                            "manifest_path": str(manifest_path),
+                            "manifest_exists": manifest_path.exists(),
+                            "photos_dir": str(photos_dir),
+                            "photos_dir_exists": photos_dir.exists(),
+                            "photos_dir_is_dir": photos_dir.is_dir() if photos_dir.exists() else False,
+                        },
+                    )
                 normalized_dir = run_dir / "input_photos_normalized"
                 normalize_photos_for_job(
                     run_dir,
@@ -86,6 +99,7 @@ class InputPreparationStage:
                     manifest_path=manifest_path,
                     photos_dir=photos_dir,
                     normalized_dir=normalized_dir,
+                    execution_log=getattr(context, "execution_log", None),
                 )
             except (FileNotFoundError, ValueError) as e:
                 context.logger.exception("Photo normalization failed: %s", e)

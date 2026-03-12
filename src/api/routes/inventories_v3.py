@@ -36,9 +36,17 @@ from src.api.dependencies import (
     get_update_product_sku_use_case,
     get_upload_aisle_assets_use_case,
 )
+from src.api.dependencies import get_aisle_repo, get_job_repo
+from src.application.ports.repositories import AisleRepository, JobRepository
 from src.api.schemas.aisle_schemas import CreateAisleRequest, AisleResponse, AisleJobSummary
 from src.api.schemas.asset_schemas import SourceAssetResponse, UploadAisleAssetsResponse
-from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary, ProcessAisleResponse
+from src.api.schemas.processing_schemas import (
+    AisleStatusResponse,
+    ExecutionLogEvent,
+    ExecutionLogResponse,
+    JobSummary,
+    ProcessAisleResponse,
+)
 from src.api.schemas.inventory_schemas import CreateInventoryRequest, InventoryResponse, InventoryMetricsResponse
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
@@ -85,6 +93,8 @@ from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
 from src.domain.jobs.entities import Job
 from src.domain.reviews.entities import ReviewAction
+from src.infrastructure.pipeline.v3_job_executor import RUN_ID
+from src.pipeline.execution_log import read_execution_log
 
 router = APIRouter(prefix="/api/v3/inventories", tags=["inventories-v3"])
 
@@ -192,6 +202,7 @@ def _aisle_to_response(a: Aisle, latest_job: Optional[Job] = None) -> AisleRespo
             id=latest_job.id,
             status=latest_job.status.value,
             updated_at=latest_job.updated_at,
+            error_message=latest_job.error_message,
         )
     return AisleResponse(
         id=a.id,
@@ -501,6 +512,34 @@ def get_aisle_status(
         return _status_response_from_result(result)
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/execution-log",
+    response_model=ExecutionLogResponse,
+)
+def get_job_execution_log(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+) -> ExecutionLogResponse:
+    """Return structured execution log for a job (v3.1.1). Job must belong to this aisle and inventory.
+    Run directory layout must match V3JobExecutor: output_dir / job_id / RUN_ID."""
+    job = job_repo.get_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.target_type != "aisle" or job.target_id != aisle_id:
+        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle")
+    aisle = aisle_repo.get_by_id(aisle_id)
+    if aisle is None or aisle.inventory_id != inventory_id:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    run_dir = Path(load_settings().output_dir) / job_id / RUN_ID
+    events = read_execution_log(run_dir)
+    return ExecutionLogResponse(
+        events=[ExecutionLogEvent.model_validate(e) for e in events],
+    )
 
 
 @router.post(

@@ -6,6 +6,7 @@
 import type {
   Inventory,
   Aisle,
+  AisleStatusResponse,
   CreateInventoryRequest,
   CreateAisleRequest,
   ApiErrorDetail,
@@ -18,6 +19,7 @@ import type {
   InventoryMetrics,
   JobEntitiesListResponse,
   ApiTraceabilityStatus,
+  ExecutionLogResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -122,6 +124,29 @@ export async function startAisleProcessing(
     { method: 'POST' }
   );
   return handleResponse<ProcessAisleResponse>(response);
+}
+
+/** Get aisle processing status (aisle + latest job). Use for polling or single-aisle status. */
+export async function getAisleStatus(
+  inventoryId: string,
+  aisleId: string
+): Promise<AisleStatusResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/status`
+  );
+  return handleResponse<AisleStatusResponse>(response);
+}
+
+/** Get execution log for a job (v3.1.1). Job must belong to the given aisle. */
+export async function getExecutionLog(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<ExecutionLogResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/execution-log`
+  );
+  return handleResponse<ExecutionLogResponse>(response);
 }
 
 export async function uploadAisleAssets(

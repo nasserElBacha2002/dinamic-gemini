@@ -1,5 +1,5 @@
 export { useInventoriesList, useInventoryDetail } from './useInventories';
-export { useInventoryMetrics, useAislesList, useAisleAssetCounts } from './useAisles';
+export { useInventoryMetrics, useAislesList, useAisleAssetCounts, useExecutionLog } from './useAisles';
 export { useAislePositions, usePositionDetail } from './usePositions';
 export {
   useCreateInventory,

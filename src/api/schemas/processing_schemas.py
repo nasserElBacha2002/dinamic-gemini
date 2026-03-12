@@ -1,7 +1,7 @@
 """v3.0 Processing API schemas (process, status)."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -26,4 +26,18 @@ class AisleStatusResponse(BaseModel):
     """Response for GET .../aisles/{aisle_id}/status."""
     aisle: AisleResponse
     latest_job: Optional[JobSummary] = None
+
+
+class ExecutionLogEvent(BaseModel):
+    """Single entry in the job execution log (v3.1.1)."""
+    ts: str
+    stage: str
+    level: str
+    message: str
+    payload: Optional[Dict[str, Any]] = None
+
+
+class ExecutionLogResponse(BaseModel):
+    """Response for GET .../aisles/{aisle_id}/jobs/{job_id}/execution-log."""
+    events: List[ExecutionLogEvent]
 

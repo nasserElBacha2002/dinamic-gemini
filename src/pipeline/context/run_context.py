@@ -21,9 +21,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from src.jobs.models import JobInput
+
+if TYPE_CHECKING:
+    from src.pipeline.execution_log import ExecutionLogWriter
 
 
 @dataclass
@@ -34,6 +37,7 @@ class RunContext:
     Passed to all pipeline stages. Read for paths, settings, logger, progress.
     Do not attach stage outputs here; use stage return values instead.
     metadata is only for tracing, metrics, or runtime diagnostics—not for stage results.
+    execution_log: optional writer for structured job execution log (v3.1.1).
     """
 
     job_id: str
@@ -45,3 +49,4 @@ class RunContext:
     logger: logging.Logger
     progress_callback: Optional[Callable[[str, int], None]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_log: Optional["ExecutionLogWriter"] = None

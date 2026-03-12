@@ -3,19 +3,54 @@
 Pure helpers for decoding, resizing, and encoding images. Used by
 normalize_photos_for_job to produce run_dir/input_photos_normalized/ and
 update the manifest so the pipeline consumes only normalized images for photos jobs.
+
+v3.1.1: HEIC/HEIF supported via pillow-heif; converted to pipeline-safe JPEG in normalization.
 """
 
+import io
 import json
 import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+HEIC_EXTENSIONS = (".heic", ".heif")
+
+_heif_opener_registered = False
+
+
+def _decode_heic_to_bgr(raw: bytes) -> np.ndarray:
+    """Decode HEIC/HEIF bytes to BGR ndarray using pillow-heif + Pillow.
+
+    Normalized output is always written as JPEG via encode_jpeg; downstream
+    stages consume run_dir/input_photos_normalized/*.jpg and manifest
+    stored_normalized_filename (e.g. 0001_<slug>.jpg).
+
+    Raises:
+        ImportError: If pillow_heif is not installed.
+        ValueError: If decode fails.
+    """
+    global _heif_opener_registered
+    try:
+        import pillow_heif  # noqa: F401
+        from PIL import Image
+    except ImportError as e:
+        raise ValueError(
+            "HEIC/HEIF conversion requires pillow-heif; install with: pip install pillow-heif"
+        ) from e
+    if not _heif_opener_registered:
+        pillow_heif.register_heif_opener()
+        _heif_opener_registered = True
+    img = Image.open(io.BytesIO(raw))
+    img = img.convert("RGB")
+    arr = np.array(img)
+    return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
 
 def decode_image_bytes(raw: bytes) -> np.ndarray:
@@ -37,6 +72,28 @@ def decode_image_bytes(raw: bytes) -> np.ndarray:
     if img is None:
         raise ValueError("decoded bytes are not a valid image")
     return img
+
+
+def decode_image_bytes_or_heic(raw: bytes, src_path: Optional[Path] = None) -> Tuple[np.ndarray, bool]:
+    """Decode image bytes to BGR ndarray. Tries OpenCV first; for .heic/.heif uses pillow-heif.
+
+    Returns:
+        (BGR ndarray, was_converted_from_heic).
+
+    Raises:
+        ValueError: If decode fails.
+    """
+    if not raw:
+        raise ValueError("empty image bytes")
+    nparr = np.frombuffer(raw, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is not None:
+        return img, False
+    suffix = (src_path.suffix or "").lower() if src_path else ""
+    if suffix in HEIC_EXTENSIONS:
+        img = _decode_heic_to_bgr(raw)
+        return img, True
+    raise ValueError("decoded bytes are not a valid image")
 
 
 def normalize_image(
@@ -123,6 +180,8 @@ def normalize_photo_file(
     """
     src_path = Path(src_path)
     dst_path = Path(dst_path)
+    if dst_path.suffix.lower() not in (".jpg", ".jpeg"):
+        raise ValueError(f"normalized output path must be .jpg/.jpeg for pipeline safety: {dst_path}")
     if not src_path.is_file():
         raise FileNotFoundError(f"photo file not found: {src_path}")
 
@@ -132,7 +191,7 @@ def normalize_photo_file(
         raise ValueError(
             f"photo size {original_bytes} bytes exceeds limit {max_single_bytes}"
         )
-    img = decode_image_bytes(raw)
+    img, converted_from_heic = decode_image_bytes_or_heic(raw, src_path)
     h, w = img.shape[:2]
 
     resized_img = normalize_image(img, max_side, min_side)
@@ -153,6 +212,9 @@ def normalize_photo_file(
         "normalized_w": nw,
         "normalized_h": nh,
         "resized": resized,
+        "converted_from_heic": converted_from_heic,
+        "original_filename": src_path.name,
+        "normalized_filename": dst_path.name,
     }
 
 
@@ -178,6 +240,7 @@ def normalize_photos_for_job(
     manifest_path: Optional[Path] = None,
     photos_dir: Optional[Path] = None,
     normalized_dir: Optional[Path] = None,
+    execution_log: Optional[Any] = None,
 ) -> None:
     """Read manifest, normalize each photo into input_photos_normalized/, update manifest.
 
@@ -186,6 +249,7 @@ def normalize_photos_for_job(
     total_bytes_normalized, normalization config snapshot, and per-photo
     stored_normalized_filename, normalized_bytes, normalized_w/h, resized.
     Manifest is written atomically (temp file then replace).
+    If execution_log is provided (ExecutionLogWriter), logs HEIC conversions.
 
     Raises:
         FileNotFoundError: Manifest or a listed photo missing.
@@ -264,6 +328,15 @@ def normalize_photos_for_job(
             )
         except ValueError as e:
             raise ValueError(f"photo {stored}: {e}") from e
+
+        if metrics.get("converted_from_heic") and execution_log:
+            orig_name = metrics.get("original_filename", stored)
+            norm_name = metrics.get("normalized_filename", stored_normalized)
+            execution_log.info(
+                "InputPreparationStage",
+                f"Converted HEIC to JPG | original={orig_name} normalized={norm_name}",
+                payload={"original": orig_name, "normalized": norm_name},
+            )
 
         total_bytes_normalized += metrics["normalized_bytes"]
         entry["stored_normalized_filename"] = stored_normalized

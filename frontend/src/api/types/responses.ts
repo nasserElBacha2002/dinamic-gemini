@@ -40,6 +40,7 @@ export interface AisleJobSummary {
   id: string;
   status: JobStatus | string;
   updated_at: string;
+  error_message?: string | null;
 }
 
 export interface Aisle {
@@ -54,6 +55,12 @@ export interface Aisle {
   latest_job?: AisleJobSummary | null;
 }
 
+/** GET .../aisles/{aisle_id}/status response. */
+export interface AisleStatusResponse {
+  aisle: Aisle;
+  latest_job: JobSummary | null;
+}
+
 export interface ProcessAisleResponse {
   job_id: string;
 }
@@ -64,6 +71,20 @@ export interface JobSummary {
   created_at: string;
   updated_at: string;
   error_message?: string | null;
+}
+
+/** Single execution log event (v3.1.1). */
+export interface ExecutionLogEvent {
+  ts: string;
+  stage: string;
+  level: string;
+  message: string;
+  payload?: Record<string, unknown> | null;
+}
+
+/** GET .../aisles/{aisle_id}/jobs/{job_id}/execution-log response. */
+export interface ExecutionLogResponse {
+  events: ExecutionLogEvent[];
 }
 
 /** Source asset (photo/video) for an aisle — Épica 4. */
