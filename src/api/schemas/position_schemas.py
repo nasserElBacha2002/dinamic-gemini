@@ -19,6 +19,7 @@ class PositionSummaryResponse(BaseModel):
     detected_summary_json: Optional[Dict[str, Any]] = None
     sku: Optional[str] = None
     detected_quantity: Optional[int] = None
+    corrected_quantity: Optional[int] = None
     """Epic 3.1.B: image_id of source image for this position (from report entity)."""
     source_image_id: Optional[str] = None
     """Epic 3.1.B: valid | missing | invalid | unvalidated (from report entity)."""
@@ -75,9 +76,9 @@ class ReviewActionResponse(BaseModel):
 
 
 class PositionDetailResponse(BaseModel):
-    """Response for GET .../aisles/{aisle_id}/positions/{position_id}."""
+    """Response for GET .../aisles/{aisle_id}/positions/{position_id}.
+    v3.1.1: Result is the only visible review object; products are no longer returned."""
     position: PositionSummaryResponse
-    products: List[ProductRecordResponse]
     evidences: List[EvidenceResponse]
     review_actions: List[ReviewActionResponse] = Field(default_factory=list)
 

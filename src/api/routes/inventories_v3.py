@@ -45,7 +45,6 @@ from src.api.schemas.position_schemas import (
     PositionDetailResponse,
     PositionListResponse,
     PositionSummaryResponse,
-    ProductRecordResponse,
     ReviewActionRequest,
     ReviewActionResponse,
 )
@@ -84,7 +83,6 @@ from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
-from src.domain.products.entities import ProductRecord
 from src.domain.jobs.entities import Job
 from src.domain.reviews.entities import ReviewAction
 
@@ -129,13 +127,16 @@ def _handle_update_quantity(
     body: ReviewActionRequest,
     update_quantity_uc: UpdateProductQuantityUseCase,
 ) -> None:
-    product_id = (body.product_id or "").strip()
-    if not product_id:
-        raise HTTPException(status_code=422, detail="product_id is required for update_quantity")
     if body.corrected_quantity is None:
         raise HTTPException(status_code=422, detail="corrected_quantity is required for update_quantity")
     try:
-        update_quantity_uc.execute(inventory_id, aisle_id, position_id, product_id, body.corrected_quantity)
+        update_quantity_uc.execute(
+            inventory_id,
+            aisle_id,
+            position_id,
+            (body.product_id or "").strip(),
+            body.corrected_quantity,
+        )
     except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ProductNotFoundError, ValueError, PositionDeletedError) as e:
         raise _review_exception_to_http(e)
 
@@ -147,14 +148,18 @@ def _handle_update_sku(
     body: ReviewActionRequest,
     update_sku_uc: UpdateProductSkuUseCase,
 ) -> None:
-    product_id = (body.product_id or "").strip()
-    if not product_id:
-        raise HTTPException(status_code=422, detail="product_id is required for update_sku")
     sku = (body.sku or "").strip() if body.sku is not None else ""
     if not sku:
         raise HTTPException(status_code=422, detail="sku is required for update_sku")
     try:
-        update_sku_uc.execute(inventory_id, aisle_id, position_id, product_id, sku, body.description)
+        update_sku_uc.execute(
+            inventory_id,
+            aisle_id,
+            position_id,
+            (body.product_id or "").strip(),
+            sku,
+            body.description,
+        )
     except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ProductNotFoundError, ValueError, PositionDeletedError) as e:
         raise _review_exception_to_http(e)
 
@@ -324,7 +329,10 @@ def _enrich_position_traceability_from_report(
         return None, None, None
 
 
-def _position_to_summary(p: Position) -> PositionSummaryResponse:
+def _position_to_summary(
+    p: Position,
+    corrected_quantity: Optional[int] = None,
+) -> PositionSummaryResponse:
     sku, detected_quantity = _summary_sku_and_quantity_from_position(p)
     summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
     source_image_id = summary_json.get("source_image_id") or None
@@ -356,24 +364,11 @@ def _position_to_summary(p: Position) -> PositionSummaryResponse:
         detected_summary_json=p.detected_summary_json,
         sku=sku,
         detected_quantity=detected_quantity,
+        corrected_quantity=corrected_quantity,
         source_image_id=source_image_id,
         traceability_status=traceability_status,
         has_evidence=has_evidence,
         source_image_original_filename=source_image_original_filename,
-    )
-
-
-def _product_to_response(pr: ProductRecord) -> ProductRecordResponse:
-    return ProductRecordResponse(
-        id=pr.id,
-        position_id=pr.position_id,
-        sku=pr.sku,
-        description=pr.description,
-        detected_quantity=pr.detected_quantity,
-        corrected_quantity=pr.corrected_quantity,
-        confidence=pr.confidence,
-        created_at=pr.created_at,
-        updated_at=pr.updated_at,
     )
 
 
@@ -625,12 +620,19 @@ def get_position_detail(
     position_id: str,
     use_case: GetPositionDetailUseCase = Depends(get_get_position_detail_use_case),
 ) -> PositionDetailResponse:
-    """Get position detail with products and evidences (Épica 6)."""
+    """Get position detail with evidences and review history (Épica 6).
+
+    v3.1.1: Result is the only visible review object. corrected_quantity is populated from
+    the primary product internally; products are no longer returned in the response.
+    """
     try:
         result = use_case.execute(inventory_id, aisle_id, position_id)
+        primary_product = result.products[0] if result.products else None
+        corrected_quantity = (
+            primary_product.corrected_quantity if primary_product is not None else None
+        )
         return PositionDetailResponse(
-            position=_position_to_summary(result.position),
-            products=[_product_to_response(pr) for pr in result.products],
+            position=_position_to_summary(result.position, corrected_quantity=corrected_quantity),
             evidences=[_evidence_to_response(e) for e in result.evidences],
             review_actions=[_review_to_response(ra) for ra in result.review_actions],
         )

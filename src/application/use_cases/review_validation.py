@@ -75,3 +75,22 @@ def resolve_product_for_position(
             f"Product {product_id} does not belong to position {position_id}"
         )
     return product
+
+
+def resolve_single_product_for_position(
+    product_repo: ProductRecordRepository,
+    position_id: str,
+) -> ProductRecord:
+    """Resolve the single product for a position when the API operates at Result/position level.
+
+    Assumes there is exactly one backing product record for the position.
+    Raises ProductNotFoundError when no product exists and ValueError when more than one exists.
+    """
+    products = product_repo.list_by_position(position_id)
+    if not products:
+        raise ProductNotFoundError(f"No products found for position {position_id}")
+    if len(products) > 1:
+        raise ValueError(
+            f"Ambiguous product for position {position_id}: multiple products exist"
+        )
+    return products[0]

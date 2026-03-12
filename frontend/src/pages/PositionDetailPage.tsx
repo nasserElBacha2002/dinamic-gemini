@@ -86,30 +86,29 @@ export default function PositionDetailPage() {
   }, [runAction, reviewMutation]);
 
   const handleUpdateQuantity = useCallback(
-    (productId: string, corrected_quantity: number) => {
+    (corrected_quantity: number) => {
+      if (!result) return;
       runAction(() =>
         reviewMutation.mutateAsync({
           action_type: 'update_quantity',
-          product_id: productId,
           corrected_quantity,
         })
       );
     },
-    [runAction, reviewMutation]
+    [runAction, reviewMutation, result]
   );
 
   const handleUpdateSku = useCallback(
-    (productId: string, sku: string, description?: string) => {
+    (sku: string) => {
+      if (!result) return;
       runAction(() =>
         reviewMutation.mutateAsync({
           action_type: 'update_sku',
-          product_id: productId,
           sku,
-          ...(description !== undefined && description !== '' ? { description } : {}),
         })
       );
     },
-    [runAction, reviewMutation]
+    [runAction, reviewMutation, result]
   );
 
   const handleDeleteClick = useCallback(() => setDeleteConfirmOpen(true), []);

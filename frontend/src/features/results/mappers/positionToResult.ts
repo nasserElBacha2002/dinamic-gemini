@@ -9,14 +9,12 @@ import type {
   PositionSummary,
   PositionDetailResponse,
   EvidenceSummary,
-  ProductRecordSummary,
   ReviewActionSummary,
 } from '../../../api/types';
 import type {
   ResultSummary,
   ResultDetail,
   ResultEvidence,
-  ResultProductInfo,
   ReviewHistoryItem,
   ReviewStatus,
   TraceabilityStatus,
@@ -102,18 +100,6 @@ export function mapEvidenceToResultEvidence(
   };
 }
 
-/** Map product record to ResultProductInfo (first product used as primary product block). */
-export function mapProductToResultProductInfo(
-  pr: ProductRecordSummary
-): ResultProductInfo {
-  return {
-    productId: pr.id,
-    sku: pr.sku,
-    description: pr.description ?? undefined,
-    correctedQty: pr.corrected_quantity ?? undefined,
-  };
-}
-
 /** Map review action to ReviewHistoryItem. */
 export function mapReviewActionToHistoryItem(
   a: ReviewActionSummary
@@ -132,7 +118,6 @@ export function mapPositionDetailToResultDetail(
   data: PositionDetailResponse
 ): ResultDetail {
   const position = data.position;
-  const products = data.products ?? [];
   const evidences = data.evidences ?? [];
   const review_actions = data.review_actions ?? [];
 
@@ -149,19 +134,13 @@ export function mapPositionDetailToResultDetail(
       ? position.source_image_original_filename.trim()
       : null);
 
-  const primaryProduct =
-    products.length > 0 ? mapProductToResultProductInfo(products[0]) : null;
-
   const entityId = getSummaryString(summaryJson, 'entity_uid');
 
   return {
     id: position.id,
     sku: position.sku ?? null,
     detectedQty: position.detected_quantity ?? null,
-    correctedQty:
-      primaryProduct?.correctedQty != null
-        ? primaryProduct.correctedQty
-        : null,
+    correctedQty: position.corrected_quantity ?? null,
     confidence: position.confidence ?? null,
     reviewStatus: mapPositionStatusToReviewStatus(
       position.status,
@@ -179,7 +158,6 @@ export function mapPositionDetailToResultDetail(
         ? sourceFileName
         : null,
     evidence: evidences.map(mapEvidenceToResultEvidence),
-    product: primaryProduct,
     reviewHistory: review_actions.map(mapReviewActionToHistoryItem),
     technicalMetadata: {
       entityId: entityId ?? undefined,

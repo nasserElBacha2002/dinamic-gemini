@@ -16,7 +16,12 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     ReviewActionRepository,
 )
-from src.application.use_cases.review_validation import resolve_position, resolve_product_for_position, ensure_position_not_deleted
+from src.application.use_cases.review_validation import (
+    resolve_position,
+    resolve_product_for_position,
+    resolve_single_product_for_position,
+    ensure_position_not_deleted,
+)
 from src.domain.positions.entities import PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
@@ -56,11 +61,19 @@ class UpdateProductSkuUseCase:
             position_id,
         )
         ensure_position_not_deleted(position)
-        product = resolve_product_for_position(
-            self._product_record_repo,
-            position_id,
-            product_id,
-        )
+        pid = (product_id or "").strip()
+        if pid:
+            product = resolve_product_for_position(
+                self._product_record_repo,
+                position_id,
+                pid,
+            )
+        else:
+            product = resolve_single_product_for_position(
+                self._product_record_repo,
+                position_id,
+            )
+            pid = product.id
         sku = (sku or "").strip()
         if not sku:
             raise ValueError("sku is required")
@@ -82,9 +95,9 @@ class UpdateProductSkuUseCase:
             id=str(uuid.uuid4()),
             position_id=position_id,
             action_type=ReviewActionType.UPDATE_SKU,
-            before_json={"product_id": product_id, "sku": before_sku, "description": before_description},
+            before_json={"product_id": pid, "sku": before_sku, "description": before_description},
             after_json={
-                "product_id": product_id,
+                "product_id": pid,
                 "sku": product.sku,
                 "description": product.description,
             },
