@@ -109,7 +109,7 @@ export default function ResultEvidencePanel({
             ) : null}
             {imageError && (
               <Typography color="error" sx={{ p: 2 }}>
-                Image could not be loaded.
+                Preview is not available for this image.
               </Typography>
             )}
           </Box>
@@ -149,7 +149,7 @@ export default function ResultEvidencePanel({
         <DialogContent>
           {imageError ? (
             <Typography color="error">
-              Image not available. It may have been removed or the file is missing.
+              Preview is not available for this image.
             </Typography>
           ) : (
             imageUrl && (

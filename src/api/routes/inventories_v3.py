@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from src.config import load_settings
+from src.utils.validation import validate_relative_path
 
 from src.api.dependencies import (
     get_confirm_position_use_case,
@@ -36,9 +37,17 @@ from src.api.dependencies import (
     get_update_product_sku_use_case,
     get_upload_aisle_assets_use_case,
 )
+from src.api.dependencies import get_aisle_repo, get_job_repo
+from src.application.ports.repositories import AisleRepository, JobRepository
 from src.api.schemas.aisle_schemas import CreateAisleRequest, AisleResponse, AisleJobSummary
 from src.api.schemas.asset_schemas import SourceAssetResponse, UploadAisleAssetsResponse
-from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary, ProcessAisleResponse
+from src.api.schemas.processing_schemas import (
+    AisleStatusResponse,
+    ExecutionLogEvent,
+    ExecutionLogResponse,
+    JobSummary,
+    ProcessAisleResponse,
+)
 from src.api.schemas.inventory_schemas import CreateInventoryRequest, InventoryResponse, InventoryMetricsResponse
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
@@ -85,10 +94,134 @@ from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
 from src.domain.jobs.entities import Job
 from src.domain.reviews.entities import ReviewAction
+from src.infrastructure.pipeline.v3_job_executor import RUN_ID
+from src.pipeline.execution_log import read_execution_log
 
 router = APIRouter(prefix="/api/v3/inventories", tags=["inventories-v3"])
 
 logger = logging.getLogger(__name__)
+
+# Extensions treated as HEIC/HEIF for browser-safe preview fallback
+_HEIC_EXTENSIONS = (".heic", ".heif")
+# Layout must match V3JobExecutor: job_dir = output_dir/job_id, manifest at job_dir/input_manifest.json,
+# run_dir = job_dir/RUN_ID, normalized photos under run_dir/input_photos_normalized/
+_NORMALIZED_SUBDIR = "input_photos_normalized"
+_MANIFEST_FILENAME = "input_manifest.json"
+
+
+def _resolve_normalized_asset_path(
+    output_dir: Path,
+    job_repo: JobRepository,
+    aisle_id: str,
+    asset_id: str,
+) -> Optional[Path]:
+    """Resolve the normalized (browser-safe) image path for an asset when the original is HEIC/HEIF.
+
+    Transitional limitation: uses the latest job for the aisle to locate the manifest. The result
+    being viewed may belong to an older job; if a newer job exists and does not contain this asset,
+    preview resolution will fail. A future improvement is to resolve by job_id when the caller
+    can provide it (e.g. from position/result context).
+
+    Manifest lookup: image_id in the manifest is set by V3JobExecutor to asset.id; we match by
+    entry.get("image_id") == asset_id for deterministic lookup.
+
+    Returns None if no job, no manifest, asset not in manifest, path unsafe, or file missing.
+    Path safety: resolved path must lie strictly under run_dir/input_photos_normalized/.
+    """
+    job = job_repo.get_latest_by_target("aisle", aisle_id)
+    if job is None:
+        logger.debug(
+            "HEIC preview: no latest job for aisle %s, cannot resolve normalized path for asset %s",
+            aisle_id,
+            asset_id,
+        )
+        return None
+    job_id = getattr(job, "id", None)
+    if not job_id:
+        logger.debug(
+            "HEIC preview: job for aisle %s has no id, cannot resolve normalized path for asset %s",
+            aisle_id,
+            asset_id,
+        )
+        return None
+    # Layout matches V3JobExecutor: run_dir = output_dir/job_id/RUN_ID, job_dir = run_dir.parent
+    run_dir = output_dir / job_id / RUN_ID
+    job_dir = run_dir.parent
+    manifest_path = job_dir / _MANIFEST_FILENAME
+    if not manifest_path.is_file():
+        logger.debug(
+            "HEIC preview: manifest missing at %s (job %s, aisle %s, asset %s)",
+            manifest_path,
+            job_id,
+            aisle_id,
+            asset_id,
+        )
+        return None
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.debug(
+            "HEIC preview: failed to load manifest %s: %s (job %s, aisle %s, asset %s)",
+            manifest_path,
+            e,
+            job_id,
+            aisle_id,
+            asset_id,
+        )
+        return None
+    photos = manifest.get("photos") or []
+    for entry in photos:
+        if entry.get("image_id") != asset_id:
+            continue
+        stored_normalized = entry.get("stored_normalized_filename") or ""
+        if not stored_normalized:
+            logger.debug(
+                "HEIC preview: manifest entry for asset %s has no stored_normalized_filename (job %s)",
+                asset_id,
+                job_id,
+            )
+            return None
+        try:
+            safe_filename = validate_relative_path(stored_normalized, "stored_normalized_filename")
+        except ValueError as e:
+            logger.debug(
+                "HEIC preview: invalid stored_normalized_filename for asset %s: %s (job %s)",
+                asset_id,
+                e,
+                job_id,
+            )
+            return None
+        normalized_base = run_dir / _NORMALIZED_SUBDIR
+        candidate = normalized_base / safe_filename
+        try:
+            candidate_resolved = candidate.resolve()
+            base_resolved = normalized_base.resolve()
+            candidate_resolved.relative_to(base_resolved)
+        except (ValueError, OSError):
+            logger.debug(
+                "HEIC preview: normalized path outside allowed directory for asset %s (job %s): %s",
+                asset_id,
+                job_id,
+                candidate,
+            )
+            return None
+        if not candidate_resolved.is_file():
+            logger.debug(
+                "HEIC preview: normalized file missing for asset %s (job %s): %s",
+                asset_id,
+                job_id,
+                candidate_resolved,
+            )
+            return None
+        return Path(candidate_resolved)
+    logger.debug(
+        "HEIC preview: asset %s not found in manifest photos (job %s, aisle %s)",
+        asset_id,
+        job_id,
+        aisle_id,
+    )
+    return None
 
 
 def _review_exception_to_http(e: Exception) -> HTTPException:
@@ -192,6 +325,7 @@ def _aisle_to_response(a: Aisle, latest_job: Optional[Job] = None) -> AisleRespo
             id=latest_job.id,
             status=latest_job.status.value,
             updated_at=latest_job.updated_at,
+            error_message=latest_job.error_message,
         )
     return AisleResponse(
         id=a.id,
@@ -503,6 +637,34 @@ def get_aisle_status(
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
 
 
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/execution-log",
+    response_model=ExecutionLogResponse,
+)
+def get_job_execution_log(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+) -> ExecutionLogResponse:
+    """Return structured execution log for a job (v3.1.1). Job must belong to this aisle and inventory.
+    Run directory layout must match V3JobExecutor: output_dir / job_id / RUN_ID."""
+    job = job_repo.get_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.target_type != "aisle" or job.target_id != aisle_id:
+        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle")
+    aisle = aisle_repo.get_by_id(aisle_id)
+    if aisle is None or aisle.inventory_id != inventory_id:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    run_dir = Path(load_settings().output_dir) / job_id / RUN_ID
+    events = read_execution_log(run_dir)
+    return ExecutionLogResponse(
+        events=[ExecutionLogEvent.model_validate(e) for e in events],
+    )
+
+
 @router.post(
     "/{inventory_id}/aisles/{aisle_id}/assets",
     response_model=UploadAisleAssetsResponse,
@@ -565,9 +727,12 @@ def get_aisle_asset_file(
     aisle_id: str,
     asset_id: str,
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
+    job_repo: JobRepository = Depends(get_job_repo),
 ) -> FileResponse:
     """Serve the reference image/file for an aisle asset. Used by Position Detail to open the source image.
-    Returns 404 if inventory/aisle/asset not found or file is missing. Safe for position.source_image_id (asset id)."""
+    For HEIC/HEIF originals, serves the normalized JPG when available so the browser can display it.
+    Returns 404 if inventory/aisle/asset not found or file is missing. For HEIC with no normalized
+    preview, returns 404 with detail 'Preview is not available for this image'. Safe for position.source_image_id (asset id)."""
     try:
         assets = use_case.execute(inventory_id, aisle_id)
     except AisleNotFoundError:
@@ -583,6 +748,23 @@ def get_aisle_asset_file(
         file_path.relative_to(base.resolve())
     except ValueError:
         raise HTTPException(status_code=404, detail="Asset path invalid")
+
+    suffix = file_path.suffix.lower()
+    if suffix in _HEIC_EXTENSIONS:
+        output_dir = Path(load_settings().output_dir)
+        normalized_path = _resolve_normalized_asset_path(output_dir, job_repo, aisle_id, asset_id)
+        if normalized_path is not None:
+            preview_filename = (asset.original_filename or "preview").rsplit(".", 1)[0] + ".jpg"
+            return FileResponse(
+                path=str(normalized_path),
+                media_type="image/jpeg",
+                filename=preview_filename,
+            )
+        raise HTTPException(
+            status_code=404,
+            detail="Preview is not available for this image",
+        )
+
     return FileResponse(
         path=str(file_path),
         media_type=asset.mime_type or "application/octet-stream",

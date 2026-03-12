@@ -32,6 +32,7 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.entities import Job, JobStatus
 from src.io.logging import setup_logger
 from src.jobs.models import JobInput
+from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
 logger = logging.getLogger(__name__)
@@ -129,34 +130,51 @@ class V3JobExecutor:
                 job_input=job_input,
             )
             if code != 0:
-                self._fail_job_and_aisle(
-                    job_id, aisle, f"Pipeline exited with code {code}"
-                )
+                last_error = read_last_stage_error(run_dir)
+                if last_error:
+                    error_message = f"{last_error} (exit code {code})"
+                else:
+                    error_message = f"Pipeline exited with code {code}"
+                self._fail_job_and_aisle(job_id, aisle, error_message)
                 return True
 
             report_path = run_dir / "hybrid_report.json"
             if not report_path.exists():
                 self._fail_job_and_aisle(
-                    job_id, aisle, "Pipeline did not produce hybrid_report.json"
+                    job_id, aisle, "Reporting error: Pipeline did not produce hybrid_report.json"
                 )
                 return True
 
             with open(report_path, encoding="utf-8") as f:
                 report = json.load(f)
 
-            self._persist_use_case.execute(
-                PersistAisleResultCommand(
-                    aisle_id=aisle_id,
-                    job_id=job_id,
-                    report=report,
-                    run_dir=run_dir,
-                    run_id=RUN_ID,
+            exec_log = ExecutionLogWriter(run_dir)
+            exec_log.info("Persist", "Persist started", payload={"aisle_id": aisle_id})
+            try:
+                self._persist_use_case.execute(
+                    PersistAisleResultCommand(
+                        aisle_id=aisle_id,
+                        job_id=job_id,
+                        report=report,
+                        run_dir=run_dir,
+                        run_id=RUN_ID,
+                    )
                 )
-            )
+                exec_log.info("Persist", "Persist completed")
+            except Exception as persist_e:
+                exec_log.error("Persist", f"Persist failed: {persist_e}", payload={"error": str(persist_e)[:500]})
+                raise
 
             self._mark_success(job_id, aisle, report_path, now)
         except Exception as e:
             logger.exception("v3 job %s failed: %s", job_id, e)
+            run_dir = base_path / job_id / RUN_ID
+            if run_dir.is_dir():
+                try:
+                    exec_log = ExecutionLogWriter(run_dir)
+                    exec_log.error("Pipeline", f"Job failed: {e}", payload={"error": str(e)[:500]})
+                except Exception:
+                    pass
             self._fail_job_and_aisle(job_id, aisle, str(e))
 
         return True

@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   Grid,
   Paper,
   Table,
@@ -30,10 +33,12 @@ import {
   StatusChip,
 } from '../components/ui';
 import CreateAisleDialog from '../components/CreateAisleDialog';
+import ExecutionLogPanel from '../components/ExecutionLogPanel';
 import {
   useInventoryDetail,
   useAislesList,
   useAisleAssetCounts,
+  useExecutionLog,
   useInventoryMetrics,
   useCreateAisle,
   useStartAisleProcessing,
@@ -58,8 +63,19 @@ export default function InventoryDetail() {
   const [processMessage, setProcessMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [logDialog, setLogDialog] = useState<{ aisleId: string; jobId: string; aisleCode: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
+
+  const executionLogQuery = useExecutionLog(
+    inventoryId ?? undefined,
+    logDialog?.aisleId,
+    logDialog?.jobId,
+    {
+      enabled: Boolean(logDialog),
+      refetchInterval: logDialog ? 4000 : false,
+    }
+  );
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, { enabled: Boolean(inventoryId && inventoryQuery.data) });
@@ -295,11 +311,33 @@ export default function InventoryDetail() {
                       </TableCell>
                       <TableCell>
                         {aisle.latest_job ? (
-                          <StatusChip
-                            label={getJobStatusLabel(aisle.latest_job.status)}
-                            color={getJobStatusColor(aisle.latest_job.status)}
-                            variant="outlined"
-                          />
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                              <StatusChip
+                                label={getJobStatusLabel(aisle.latest_job.status)}
+                                color={getJobStatusColor(aisle.latest_job.status)}
+                                variant="outlined"
+                              />
+                              <Button
+                              size="small"
+                              variant="text"
+                              onClick={() =>
+                                setLogDialog({
+                                  aisleId: aisle.id,
+                                  jobId: aisle.latest_job!.id,
+                                  aisleCode: aisle.code,
+                                })
+                              }
+                            >
+                              Log
+                            </Button>
+                            </Box>
+                            {aisle.latest_job.status === 'failed' && aisle.latest_job.error_message && (
+                              <Typography variant="caption" color="error" component="span" sx={{ display: 'block', maxWidth: 280 }} title={aisle.latest_job.error_message}>
+                                {aisle.latest_job.error_message}
+                              </Typography>
+                            )}
+                          </Box>
                         ) : (
                           '—'
                         )}
@@ -364,6 +402,36 @@ export default function InventoryDetail() {
         onSuccess={handleCreateAisleSuccess}
         createAisleFn={createAisleMutation.mutateAsync}
       />
+
+      <Dialog
+        open={Boolean(logDialog)}
+        onClose={() => setLogDialog(null)}
+        maxWidth="sm"
+        fullWidth
+        scroll="paper"
+      >
+        <DialogTitle>
+          Execution log {logDialog ? `— Aisle ${logDialog.aisleCode}` : ''}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => executionLogQuery.refetch()}
+              disabled={executionLogQuery.isFetching}
+            >
+              {executionLogQuery.isFetching ? 'Refreshing…' : 'Refresh'}
+            </Button>
+          </Box>
+          <ExecutionLogPanel
+            events={executionLogQuery.data?.events ?? []}
+            isLoading={executionLogQuery.isLoading}
+            error={executionLogQuery.error}
+            emptyMessage="No log entries yet. The job may not have started or the log file is not available."
+          />
+        </DialogContent>
+      </Dialog>
     </PageLayout>
   );
 }

@@ -14,6 +14,7 @@ from src.jobs.models import JobInput
 from src.llm.errors import LLMProviderError
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
 from src.pipeline.stages.input_preparation_stage import InputPreparationStage, PreparedInput
@@ -101,6 +102,9 @@ class HybridInventoryPipeline:
             progress_callback=progress_callback,
             metadata={},
         )
+        run_dir.mkdir(parents=True, exist_ok=True)
+        exec_log = ExecutionLogWriter(run_dir)
+        context.execution_log = exec_log
 
         progress_cb = progress_callback
 
@@ -111,43 +115,59 @@ class HybridInventoryPipeline:
                 except Exception:
                     pass
 
-        try:
-            prepared: PreparedInput = self._input_stage.run(context, None)
-        except (FileNotFoundError, ValueError) as e:
-            logger.exception("Stage failure: InputPreparationStage (job_id=%s): %s", context.job_id, e)
+        def _fail(stage: str, e: BaseException) -> int:
+            msg = str(e).strip() or repr(e)
+            exec_log.error(stage, f"{stage} failed: {msg}", payload={"error": msg[:500]})
+            exec_log.write_last_stage_error(stage, msg)
+            logger.exception("Stage failure: %s (job_id=%s): %s", stage, context.job_id, e)
             return 1
+
+        exec_log.info("Pipeline", "Job started", payload={"job_id": execution_id})
+        try:
+            exec_log.info("InputPreparationStage", "Input preparation started")
+            prepared: PreparedInput = self._input_stage.run(context, None)
+            exec_log.info("InputPreparationStage", "Input preparation completed")
+        except (FileNotFoundError, ValueError) as e:
+            return _fail("InputPreparationStage", e)
 
         _report("extract_frames", 10)
         try:
+            exec_log.info("FrameAcquisitionStage", "Frame acquisition started")
             acquired: AcquiredFrames = self._frame_acquisition_stage.run(context, prepared)
+            exec_log.info("FrameAcquisitionStage", "Frame acquisition completed", payload={"frames": len(acquired.frames_nd)})
         except (ValueError, FileNotFoundError, RuntimeError) as e:
-            logger.exception("Stage failure: FrameAcquisitionStage (job_id=%s): %s", context.job_id, e)
-            return 1
+            return _fail("FrameAcquisitionStage", e)
 
         _report("gemini_global_call", 50)
         try:
+            exec_log.info("AnalysisStage", "Gemini/LLM analysis started")
             analysis_result = self._analysis_stage.run(context, acquired)
+            exec_log.info("AnalysisStage", "Gemini/LLM analysis succeeded")
         except LLMProviderError as e:
+            exec_log.error("AnalysisStage", f"Gemini/LLM analysis failed: {e}", payload={"error": str(e)[:500]})
+            exec_log.write_last_stage_error("AnalysisStage", str(e))
             logger.exception("Stage failure: AnalysisStage (job_id=%s): %s", context.job_id, e)
             return 1
 
         try:
+            exec_log.info("EntityResolutionStage", "Entity resolution started")
             resolved = self._entity_resolution_stage.run(context, analysis_result)
+            exec_log.info("EntityResolutionStage", "Entity resolution completed")
         except GlobalAnalysisParseError as e:
-            logger.exception("Stage failure: EntityResolutionStage (job_id=%s): %s", context.job_id, e)
-            return 1
+            return _fail("EntityResolutionStage", e)
 
         _report("evidence_pack", 85)
         try:
+            exec_log.info("EvidenceStage", "Evidence generation started")
             evidence_input = EvidenceStageInput(
                 entities=resolved.entities,
                 frames_nd=acquired.frames_nd,
                 metadata=acquired.metadata,
             )
             self._evidence_stage.run(context, evidence_input)
+            exec_log.info("EvidenceStage", "Evidence generation completed")
         except Exception as e:
-            logger.exception("Stage failure: EvidenceStage (job_id=%s): %s", context.job_id, e)
-            return 1
+            return _fail("EvidenceStage", e)
 
         video_path_for_report = video_path or (
             f"photos_{video_id}" if prepared.job_input.input_type == "photos" else ""
@@ -162,9 +182,11 @@ class HybridInventoryPipeline:
         if getattr(settings, "debug_save_frames", False):
             _save_frames_sent_to_gemini(context.run_dir, acquired.frames_nd, acquired.metadata.get("frame_indices"))
         try:
+            exec_log.info("ReportingStage", "Reporting started")
             self._reporting_stage.run(context, reporting_input)
+            exec_log.info("ReportingStage", "Reporting completed")
         except Exception as e:
-            logger.exception("Stage failure: ReportingStage (job_id=%s): %s", context.job_id, e)
-            return 1
+            return _fail("ReportingStage", e)
+        exec_log.info("Pipeline", "Job completed successfully")
         _report("done", 100)
         return 0
