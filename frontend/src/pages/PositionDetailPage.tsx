@@ -1,16 +1,16 @@
 /**
  * Epic 4 — Result Detail page (Result-centric review detail).
- * Uses visible ResultDetail model and modular detail components.
+ * Epic 5 — Previous/next navigation from list context; preserve filter on back.
  */
 
-import { useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useCallback, useMemo } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Alert, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import { PageLayout } from '../components/ui';
-import { pathToAislePositions } from '../utils/resultRoutes';
+import { pathToAislePositions, pathToPositionDetail } from '../utils/resultRoutes';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { ApiError } from '../api/types';
-import { useResultDetail } from '../features/results';
+import { useResultDetail, getResultNavigationContext, parseResultDetailNavigationState } from '../features/results';
 import { useSubmitReviewAction } from '../hooks';
 import {
   ResultDetailHeader,
@@ -22,6 +22,7 @@ import {
   ResultDetailLoadingState,
   ResultDetailErrorState,
   ResultDetailEmptyState,
+  ResultDetailNavigation,
 } from '../features/results/components/detail';
 
 export default function PositionDetailPage() {
@@ -31,6 +32,19 @@ export default function PositionDetailPage() {
     positionId: string;
   }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navState = useMemo(
+    () => parseResultDetailNavigationState(location.state),
+    [location.state]
+  );
+  const navContext = useMemo(
+    () =>
+      navState && positionId
+        ? getResultNavigationContext(navState.resultIds, positionId)
+        : null,
+    [navState, positionId]
+  );
+
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
@@ -107,8 +121,23 @@ export default function PositionDetailPage() {
   }, [runAction, reviewMutation]);
 
   const handleBack = useCallback(() => {
-    navigate(pathToAislePositions(inventoryId ?? '', aisleId ?? ''));
-  }, [navigate, inventoryId, aisleId]);
+    // Only filter is restored on return; full list state is not preserved (e.g. scroll/order).
+    const returnState =
+      navState?.filter != null ? { filter: navState.filter } : undefined;
+    navigate(pathToAislePositions(inventoryId ?? '', aisleId ?? ''), {
+      state: returnState,
+    });
+  }, [navigate, inventoryId, aisleId, navState?.filter]);
+
+  const handleNavigateToResult = useCallback(
+    (resultId: string) => {
+      if (!inventoryId || !aisleId) return;
+      navigate(pathToPositionDetail(inventoryId, aisleId, resultId), {
+        state: navState ?? undefined,
+      });
+    },
+    [navigate, inventoryId, aisleId, navState]
+  );
 
   const errorMessage =
     isError && error
@@ -171,6 +200,13 @@ export default function PositionDetailPage() {
         onBack={handleBack}
         backLabel="Back to results"
       />
+
+      {navContext && (
+        <ResultDetailNavigation
+          context={navContext}
+          onNavigate={handleNavigateToResult}
+        />
+      )}
 
       <ResultSummaryCard result={result} />
 

@@ -4,7 +4,6 @@ import InventoriesList from './pages/InventoriesList';
 import InventoryDetail from './pages/InventoryDetail';
 import AislePositionsPage from './pages/AislePositionsPage';
 import PositionDetailPage from './pages/PositionDetailPage';
-import JobEntitiesPage from './pages/JobEntitiesPage';
 
 /**
  * Route elements are memoized so that parent re-renders (e.g. Router context updates
@@ -17,7 +16,6 @@ function App() {
   const detailEl = useMemo(() => <InventoryDetail />, []);
   const positionsEl = useMemo(() => <AislePositionsPage />, []);
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
-  const jobEntitiesEl = useMemo(() => <JobEntitiesPage />, []);
 
   return (
     <Routes>
@@ -25,7 +23,6 @@ function App() {
       <Route path="/inventories/:inventoryId" element={detailEl} />
       <Route path="/inventories/:inventoryId/aisles/:aisleId/positions" element={positionsEl} />
       <Route path="/inventories/:inventoryId/aisles/:aisleId/positions/:positionId" element={positionDetailEl} />
-      <Route path="/job-entities/:jobId" element={jobEntitiesEl} />
     </Routes>
   );
 }

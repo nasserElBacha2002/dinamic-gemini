@@ -1,5 +1,6 @@
 /**
  * Epic 4 — Result Detail components.
+ * Epic 5 — ResultDetailNavigation for previous/next.
  */
 
 export { default as ResultDetailHeader } from './ResultDetailHeader';
@@ -11,3 +12,4 @@ export { default as ResultTechnicalMetadata } from './ResultTechnicalMetadata';
 export { default as ResultDetailLoadingState } from './ResultDetailLoadingState';
 export { default as ResultDetailErrorState } from './ResultDetailErrorState';
 export { default as ResultDetailEmptyState } from './ResultDetailEmptyState';
+export { default as ResultDetailNavigation } from './ResultDetailNavigation';

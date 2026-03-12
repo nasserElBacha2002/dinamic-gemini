@@ -1,5 +1,6 @@
 /**
  * PositionDetailPage (Epic 4) — Result-centric detail; Evidence and source file display.
+ * Epic 5 — Previous/next navigation when navigation state is present.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -8,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PositionDetailPage from '../src/pages/PositionDetailPage';
 import { mapPositionDetailToResultDetail } from '../src/features/results/mappers/positionToResult';
+import type { ResultDetailNavigationState } from '../src/features/results';
 
 const basePosition = {
   id: 'pos-1',
@@ -53,9 +55,13 @@ function createDetailData(
   };
 }
 
-vi.mock('../src/features/results', () => ({
-  useResultDetail: vi.fn(),
-}));
+vi.mock('../src/features/results', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/features/results')>();
+  return {
+    ...actual,
+    useResultDetail: vi.fn(),
+  };
+});
 
 vi.mock('../src/hooks', () => ({
   useSubmitReviewAction: () => ({
@@ -66,11 +72,14 @@ vi.mock('../src/hooks', () => ({
   }),
 }));
 
-function renderPage(initialEntry = '/inventories/inv-1/aisles/aisle-1/positions/pos-1') {
+function renderPage(
+  initialEntry: string | { pathname: string; state?: ResultDetailNavigationState } = '/inventories/inv-1/aisles/aisle-1/positions/pos-1'
+) {
+  const entry = typeof initialEntry === 'string' ? initialEntry : initialEntry;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[initialEntry]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route
             path="/inventories/:inventoryId/aisles/:aisleId/positions/:positionId"
@@ -175,5 +184,146 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
     await screen.findByText('Result');
     expect(screen.getByText('Review actions')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Confirm result/i })).toBeInTheDocument();
+  });
+
+  it('Epic 5: shows Result X of Y and Previous/Next when navigation state is present', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    const navState: ResultDetailNavigationState = {
+      resultIds: ['pos-0', 'pos-1', 'pos-2'],
+      filter: 'all',
+    };
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-1',
+      state: navState,
+    });
+
+    await screen.findByText('Result');
+    expect(screen.getByText(/Result 2 of 3/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Previous result/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Next result/i })).toBeInTheDocument();
+  });
+
+  it('Epic 5: does not show prev/next when no navigation state', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderPage('/inventories/inv-1/aisles/aisle-1/positions/pos-1');
+
+    await screen.findByText('Result');
+    expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Previous result/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Next result/i })).not.toBeInTheDocument();
+  });
+
+  it('Epic 5: does not show prev/next when navigation state is malformed', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-1',
+      state: { resultIds: 'not-an-array' },
+    });
+
+    await screen.findByText('Result');
+    expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Previous result/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Next result/i })).not.toBeInTheDocument();
+  });
+
+  it('Epic 5: does not show prev/next when current result ID is not in resultIds', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    const navState: ResultDetailNavigationState = {
+      resultIds: ['other-1', 'other-2'],
+      filter: 'all',
+    };
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-1',
+      state: navState,
+    });
+
+    await screen.findByText('Result');
+    expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Previous result/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Next result/i })).not.toBeInTheDocument();
+  });
+
+  it('Epic 5: first result disables Previous button', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    const navState: ResultDetailNavigationState = {
+      resultIds: ['pos-1', 'pos-2', 'pos-3'],
+      filter: 'all',
+    };
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-1',
+      state: navState,
+    });
+
+    await screen.findByText('Result');
+    expect(screen.getByText(/Result 1 of 3/)).toBeInTheDocument();
+    const prevBtn = screen.getByRole('button', { name: /Previous result/i });
+    expect(prevBtn).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Next result/i })).not.toBeDisabled();
+  });
+
+  it('Epic 5: last result disables Next button', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    const navState: ResultDetailNavigationState = {
+      resultIds: ['pos-1', 'pos-2', 'pos-3'],
+      filter: 'all',
+    };
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-3',
+      state: navState,
+    });
+
+    await screen.findByText('Result');
+    expect(screen.getByText(/Result 3 of 3/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Previous result/i })).not.toBeDisabled();
+    const nextBtn = screen.getByRole('button', { name: /Next result/i });
+    expect(nextBtn).toBeDisabled();
   });
 });

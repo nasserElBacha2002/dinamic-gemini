@@ -1,21 +1,23 @@
 /**
  * Epic 3 — Results overview page (Result-centric review list).
- * Uses ResultSummary, KPI cards, quick filters, and a cleaner table.
+ * Epic 5 — Pass navigation state to detail for previous/next; restore filter when returning from detail.
  */
 
 import { useMemo, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Alert, Button } from '@mui/material';
 import { PageLayout } from '../components/ui';
 import { pathToPositionDetail } from '../utils/resultRoutes';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { ApiError } from '../api/types';
-import { useResultSummaries } from '../features/results';
 import {
+  useResultSummaries,
   computeResultsKpi,
   filterResults,
+  getInitialFilterFromReturnState,
+  type ResultDetailNavigationState,
   type ResultsFilterKind,
-} from '../features/results/selectors';
+} from '../features/results';
 import {
   ResultsOverviewHeader,
   ResultsKpiCards,
@@ -30,7 +32,10 @@ import {
 export default function AislePositionsPage() {
   const { inventoryId, aisleId } = useParams<{ inventoryId: string; aisleId: string }>();
   const navigate = useNavigate();
-  const [filter, setFilter] = useState<ResultsFilterKind>('all');
+  const location = useLocation();
+  const [filter, setFilter] = useState<ResultsFilterKind>(() =>
+    getInitialFilterFromReturnState(location.state)
+  );
 
   const { results, isLoading, isError, error, refetch } = useResultSummaries(
     inventoryId,
@@ -50,10 +55,16 @@ export default function AislePositionsPage() {
   const handleOpenDetail = useCallback(
     (resultId: string) => {
       if (inventoryId && aisleId) {
-        navigate(pathToPositionDetail(inventoryId, aisleId, resultId));
+        const navigationState: ResultDetailNavigationState = {
+          resultIds: filteredResults.map((r) => r.id),
+          filter,
+        };
+        navigate(pathToPositionDetail(inventoryId, aisleId, resultId), {
+          state: navigationState,
+        });
       }
     },
-    [navigate, inventoryId, aisleId]
+    [navigate, inventoryId, aisleId, filteredResults, filter]
   );
 
   const handleClearFilter = useCallback(() => setFilter('all'), []);

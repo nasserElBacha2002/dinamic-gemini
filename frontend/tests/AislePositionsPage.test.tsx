@@ -24,15 +24,19 @@ const mockResults: ResultSummary[] = [
   },
 ];
 
-vi.mock('../src/features/results', () => ({
-  useResultSummaries: () => ({
-    results: mockResults,
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: vi.fn(),
-  }),
-}));
+vi.mock('../src/features/results', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/features/results')>();
+  return {
+    ...actual,
+    useResultSummaries: () => ({
+      results: mockResults,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }),
+  };
+});
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

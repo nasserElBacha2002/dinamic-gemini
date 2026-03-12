@@ -32,3 +32,5 @@ export type { ResultsKpi, ResultsFilterKind } from './selectors';
 
 export { LOW_CONFIDENCE_THRESHOLD } from './constants';
 export { visibleTraceabilityToApiStatus } from './utils/traceabilityDisplay';
+export { getResultNavigationContext, parseResultDetailNavigationState, getInitialFilterFromReturnState } from './utils/navigationContext';
+export type { ResultDetailNavigationState, ResultNavigationContext } from './utils/navigationContext';
