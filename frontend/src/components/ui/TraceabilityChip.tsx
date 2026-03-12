@@ -1,31 +1,30 @@
 /**
  * Epic 3.1.B — Traceability status chip.
- * Shows valid/missing/invalid/unvalidated with semantic colors.
- * Use when displaying source_image_id traceability from backend.
+ * Uses API traceability status (lowercase). For visible Result model use features/results.
  */
 
 import { Chip, Tooltip } from '@mui/material';
-import type { TraceabilityStatus } from '../../api/types';
+import type { ApiTraceabilityStatus } from '../../api/types';
 import type { ChipColorType } from './types';
 
-const TRACEABILITY_COLOR: Record<TraceabilityStatus, ChipColorType> = {
+const TRACEABILITY_COLOR: Record<ApiTraceabilityStatus, ChipColorType> = {
   valid: 'success',
   missing: 'default',
   invalid: 'error',
   unvalidated: 'info',
 };
 
-const TRACEABILITY_LABEL: Record<TraceabilityStatus, string> = {
+const TRACEABILITY_LABEL: Record<ApiTraceabilityStatus, string> = {
   valid: 'Valid',
   missing: 'Missing',
   invalid: 'Invalid',
   unvalidated: 'Unvalidated',
 };
 
-export type { TraceabilityStatus };
+export type { ApiTraceabilityStatus };
 
 export interface TraceabilityChipProps {
-  status: TraceabilityStatus;
+  status: ApiTraceabilityStatus;
   size?: 'small' | 'medium';
   variant?: 'filled' | 'outlined';
   /** Optional tooltip (e.g. traceability_warning when status is invalid). */

@@ -99,6 +99,50 @@ def test_position_to_summary_includes_sku_and_detected_quantity() -> None:
     assert resp.detected_quantity == 10
     assert resp.id == "pos-4"
     assert resp.confidence == 0.92
+    assert resp.has_evidence is True
+    assert resp.source_image_original_filename is None
+
+
+def test_position_to_summary_has_evidence_false_when_no_primary_evidence() -> None:
+    """Epic 2: has_evidence is False when primary_evidence_id is None or empty."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-no-ev",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.5,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "X", "final_quantity": 0},
+    )
+    resp = _position_to_summary(p)
+    assert resp.has_evidence is False
+
+
+def test_position_to_summary_includes_source_image_original_filename_when_in_summary() -> None:
+    """Epic 2: source_image_original_filename is set from detected_summary_json when present."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-img",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "internal_code": "SKU",
+            "final_quantity": 1,
+            "source_image_id": "img-uuid",
+            "source_image_original_filename": "photo.jpg",
+        },
+    )
+    resp = _position_to_summary(p)
+    assert resp.source_image_original_filename == "photo.jpg"
+    assert resp.source_image_id == "img-uuid"
 
 
 def test_summary_quantity_parses_numeric_string() -> None:
@@ -279,3 +323,28 @@ def test_summary_sku_fallback_to_pallet_id_when_other_display_fields_null() -> N
     sku, qty = _summary_sku_and_quantity_from_position(p)
     assert sku == "1295612"
     assert qty == 0  # no quantity in summary → always show 0
+
+
+def test_position_to_summary_non_dict_detected_summary_json_no_raise() -> None:
+    """Epic 2 hardening: _position_to_summary treats non-dict detected_summary_json as {} (no runtime failure)."""
+    now = datetime.now(timezone.utc)
+    for bad_value in (None, [], "string", 1):
+        p = Position(
+            id="pos-bad",
+            aisle_id="aisle-1",
+            status=PositionStatus.DETECTED,
+            confidence=0.5,
+            needs_review=True,
+            primary_evidence_id=None,
+            created_at=now,
+            updated_at=now,
+            detected_summary_json=bad_value,
+        )
+        resp = _position_to_summary(p)
+        assert isinstance(resp, PositionSummaryResponse)
+        assert resp.id == "pos-bad"
+        assert resp.sku is None
+        assert resp.detected_quantity == 0
+        assert resp.has_evidence is False
+        assert resp.source_image_original_filename is None
+        assert resp.source_image_id is None

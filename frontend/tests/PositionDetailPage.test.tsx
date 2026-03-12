@@ -1,6 +1,6 @@
 /**
- * PositionDetailPage — source_image_id and source_image_original_filename (Epic 5) display; legacy-safe fallback.
- * Source image ID = internal traceability id; Source file = original filename when available.
+ * PositionDetailPage (Epic 4) — Result-centric detail; Evidence and source file display.
+ * Epic 5 — Previous/next navigation when navigation state is present.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -8,7 +8,8 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PositionDetailPage from '../src/pages/PositionDetailPage';
-import { usePositionDetail } from '../src/hooks';
+import { mapPositionDetailToResultDetail } from '../src/features/results/mappers/positionToResult';
+import type { ResultDetailNavigationState } from '../src/features/results';
 
 const basePosition = {
   id: 'pos-1',
@@ -30,7 +31,14 @@ const mockProducts = [
     created_at: '2024-01-01T00:00:00Z',
   },
 ];
-const mockEvidences: Array<{ id: string; entity_type: string; entity_id: string; type: string; storage_path: string; is_primary: boolean }> = [];
+const mockEvidences: Array<{
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  type: string;
+  storage_path: string;
+  is_primary: boolean;
+}> = [];
 
 function createDetailData(
   position: typeof basePosition & {
@@ -47,8 +55,15 @@ function createDetailData(
   };
 }
 
+vi.mock('../src/features/results', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/features/results')>();
+  return {
+    ...actual,
+    useResultDetail: vi.fn(),
+  };
+});
+
 vi.mock('../src/hooks', () => ({
-  usePositionDetail: vi.fn(),
   useSubmitReviewAction: () => ({
     mutateAsync: vi.fn(),
     isPending: false,
@@ -57,11 +72,14 @@ vi.mock('../src/hooks', () => ({
   }),
 }));
 
-function renderPage(initialEntry = '/inventories/inv-1/aisles/aisle-1/positions/pos-1') {
+function renderPage(
+  initialEntry: string | { pathname: string; state?: ResultDetailNavigationState } = '/inventories/inv-1/aisles/aisle-1/positions/pos-1'
+) {
+  const entry = typeof initialEntry === 'string' ? initialEntry : initialEntry;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[initialEntry]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route
             path="/inventories/:inventoryId/aisles/:aisleId/positions/:positionId"
@@ -73,111 +91,239 @@ function renderPage(initialEntry = '/inventories/inv-1/aisles/aisle-1/positions/
   );
 }
 
-describe('PositionDetailPage source_image_id and Epic 5 source file', () => {
-  it('shows Source image ID label and value when source_image_id is present', async () => {
-    vi.mocked(usePositionDetail).mockReturnValue({
-      data: createDetailData({ ...basePosition, source_image_id: 'img_abc123' }),
+function mockResultDetail(
+  overrides: Partial<ReturnType<typeof mapPositionDetailToResultDetail>> = {}
+) {
+  const data = createDetailData(basePosition);
+  const result = mapPositionDetailToResultDetail(data);
+  return { ...result, ...overrides };
+}
+
+describe('PositionDetailPage (Epic 4 Result-centric)', () => {
+  it('shows Result header when result loads', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
-    } as ReturnType<typeof usePositionDetail>);
+    } as ReturnType<typeof useResultDetail>);
 
     renderPage();
-    await screen.findByText(/Position detail/);
-    expect(screen.getByText(/Source image ID:/)).toBeInTheDocument();
-    expect(screen.getByText(/img_abc123/)).toBeInTheDocument();
+    await screen.findByText('Result');
+    expect(screen.getByText('Result')).toBeInTheDocument();
   });
 
-  it('shows Source image ID label with em dash when source_image_id is absent', async () => {
-    vi.mocked(usePositionDetail).mockReturnValue({
-      data: createDetailData({ ...basePosition, source_image_id: undefined }),
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    } as ReturnType<typeof usePositionDetail>);
-
-    renderPage();
-    await screen.findByText(/Position detail/);
-    expect(screen.getByText(/Source image ID:/)).toBeInTheDocument();
-    expect(document.body.textContent).toMatch(/Source image ID:\s*—/);
-  });
-
-  it('shows em dash when source_image_id is null or empty string', async () => {
-    vi.mocked(usePositionDetail).mockReturnValue({
-      data: createDetailData({ ...basePosition, source_image_id: null }),
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    } as ReturnType<typeof usePositionDetail>);
-
-    renderPage();
-    await screen.findByText(/Position detail/);
-    expect(screen.getByText(/Source image ID:/)).toBeInTheDocument();
-    expect(document.body.textContent).toMatch(/Source image ID:\s*—/);
-  });
-
-  it('Epic 5: shows Source file when source_image_original_filename is present', async () => {
-    vi.mocked(usePositionDetail).mockReturnValue({
-      data: createDetailData({
-        ...basePosition,
-        source_image_id: 'img_002',
-        source_image_original_filename: 'IMG_1024.JPG',
+  it('shows Evidence section with Source file when source_image_original_filename is present', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail({
+        sourceImageId: 'img_002',
+        sourceFileName: 'IMG_1024.JPG',
       }),
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
-    } as ReturnType<typeof usePositionDetail>);
+    } as ReturnType<typeof useResultDetail>);
 
     renderPage();
-    await screen.findByText(/Position detail/);
+    await screen.findByText('Result');
+    expect(screen.getByText('Evidence')).toBeInTheDocument();
     expect(screen.getByText(/Source file:/)).toBeInTheDocument();
     expect(screen.getByText(/IMG_1024.JPG/)).toBeInTheDocument();
   });
 
-  it('Epic 5: Source file shows em dash when source_image_original_filename absent (legacy)', async () => {
-    vi.mocked(usePositionDetail).mockReturnValue({
-      data: createDetailData({ ...basePosition, source_image_id: 'img_001', source_image_original_filename: undefined }),
+  it('shows View full image button when sourceImageId is present', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail({ sourceImageId: 'asset-uuid-123' }),
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
-    } as ReturnType<typeof usePositionDetail>);
+    } as ReturnType<typeof useResultDetail>);
 
     renderPage();
-    await screen.findByText(/Position detail/);
-    expect(screen.getByText(/Source file:/)).toBeInTheDocument();
-    expect(document.body.textContent).toMatch(/Source file:\s*—/);
+    await screen.findByText('Result');
+    expect(screen.getByRole('button', { name: /View full image/i })).toBeInTheDocument();
   });
 
-  it('shows View reference image button when source_image_id is present', async () => {
-    vi.mocked(usePositionDetail).mockReturnValue({
-      data: createDetailData({ ...basePosition, source_image_id: 'asset-uuid-123' }),
+  it('shows no-evidence state when sourceImageId and evidence are empty', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail({
+        sourceImageId: null,
+        sourceFileName: null,
+        evidence: [],
+      }),
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
-    } as ReturnType<typeof usePositionDetail>);
+    } as ReturnType<typeof useResultDetail>);
+
+    renderPage();
+    await screen.findByText('Result');
+    expect(screen.getByText('Evidence')).toBeInTheDocument();
+    expect(screen.getByText(/No evidence available/)).toBeInTheDocument();
+  });
+
+  it('shows Review actions and Confirm result button', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderPage();
+    await screen.findByText('Result');
+    expect(screen.getByText('Review actions')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Confirm result/i })).toBeInTheDocument();
+  });
+
+  it('Epic 5: shows Result X of Y and Previous/Next when navigation state is present', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    const navState: ResultDetailNavigationState = {
+      resultIds: ['pos-0', 'pos-1', 'pos-2'],
+      filter: 'all',
+    };
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-1',
+      state: navState,
+    });
+
+    await screen.findByText('Result');
+    expect(screen.getByText(/Result 2 of 3/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Previous result/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Next result/i })).toBeInTheDocument();
+  });
+
+  it('Epic 5: does not show prev/next when no navigation state', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
 
     renderPage('/inventories/inv-1/aisles/aisle-1/positions/pos-1');
-    await screen.findByText(/Position detail/);
-    expect(screen.getByRole('button', { name: /View reference image/i })).toBeInTheDocument();
+
+    await screen.findByText('Result');
+    expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Previous result/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Next result/i })).not.toBeInTheDocument();
   });
 
-  it('does not show View reference image button when source_image_id is absent', async () => {
-    vi.mocked(usePositionDetail).mockReturnValue({
-      data: createDetailData({ ...basePosition, source_image_id: undefined }),
+  it('Epic 5: does not show prev/next when navigation state is malformed', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
-    } as ReturnType<typeof usePositionDetail>);
+    } as ReturnType<typeof useResultDetail>);
 
-    renderPage();
-    await screen.findByText(/Position detail/);
-    expect(screen.queryByRole('button', { name: /View reference image/i })).not.toBeInTheDocument();
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-1',
+      state: { resultIds: 'not-an-array' },
+    });
+
+    await screen.findByText('Result');
+    expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Previous result/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Next result/i })).not.toBeInTheDocument();
+  });
+
+  it('Epic 5: does not show prev/next when current result ID is not in resultIds', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    const navState: ResultDetailNavigationState = {
+      resultIds: ['other-1', 'other-2'],
+      filter: 'all',
+    };
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-1',
+      state: navState,
+    });
+
+    await screen.findByText('Result');
+    expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Previous result/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Next result/i })).not.toBeInTheDocument();
+  });
+
+  it('Epic 5: first result disables Previous button', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    const navState: ResultDetailNavigationState = {
+      resultIds: ['pos-1', 'pos-2', 'pos-3'],
+      filter: 'all',
+    };
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-1',
+      state: navState,
+    });
+
+    await screen.findByText('Result');
+    expect(screen.getByText(/Result 1 of 3/)).toBeInTheDocument();
+    const prevBtn = screen.getByRole('button', { name: /Previous result/i });
+    expect(prevBtn).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Next result/i })).not.toBeDisabled();
+  });
+
+  it('Epic 5: last result disables Next button', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    const navState: ResultDetailNavigationState = {
+      resultIds: ['pos-1', 'pos-2', 'pos-3'],
+      filter: 'all',
+    };
+    renderPage({
+      pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-3',
+      state: navState,
+    });
+
+    await screen.findByText('Result');
+    expect(screen.getByText(/Result 3 of 3/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Previous result/i })).not.toBeDisabled();
+    const nextBtn = screen.getByRole('button', { name: /Next result/i });
+    expect(nextBtn).toBeDisabled();
   });
 });

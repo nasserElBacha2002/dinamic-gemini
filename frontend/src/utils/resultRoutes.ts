@@ -1,6 +1,5 @@
 /**
- * Centralized path builders for position-related routes.
- * Keeps navigation strings in one place and avoids typos.
+ * Centralized path builders for Result-centric routes (Epic 3–5).
  */
 
 export function pathToAislePositions(inventoryId: string, aisleId: string): string {
@@ -13,9 +12,4 @@ export function pathToPositionDetail(
   positionId: string
 ): string {
   return `/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}`;
-}
-
-/** Epic 3.1.B — Job entities (v1 API) by job ID. */
-export function pathToJobEntities(jobId: string): string {
-  return `/job-entities/${encodeURIComponent(jobId)}`;
 }
