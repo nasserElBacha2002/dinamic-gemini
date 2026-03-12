@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
+  Alert,
   Box,
   Button,
   Grid,
@@ -176,7 +177,7 @@ export default function InventoryDetail() {
         <>
           <Paper sx={{ p: 2, mb: 3 }}>
             <Typography variant="h6">{inventory.name}</Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography component="div" variant="body2" color="text.secondary">
               Status: <StatusChip label={inventory.status} color={getAisleStatusColor(inventory.status)} /> — Created:{' '}
               {formatDate(inventory.created_at ?? undefined)}
             </Typography>
