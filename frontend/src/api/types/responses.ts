@@ -110,6 +110,8 @@ export interface PositionSummary {
   source_image_original_filename?: string | null;
   /** Epic 3.1.B: optional; summary-level traceability status when backend provides it. */
   traceability_status?: ApiTraceabilityStatus | null;
+  /** Epic 2: explicit flag when backend sends it; frontend may derive from primary_evidence_id when absent. */
+  has_evidence?: boolean;
 }
 
 /** Response for GET .../aisles/{aisle_id}/positions. */

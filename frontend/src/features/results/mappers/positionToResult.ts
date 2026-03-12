@@ -66,10 +66,14 @@ export function mapPositionStatusToReviewStatus(
   }
 }
 
-/** Map list position (API) to ResultSummary. */
+/** Map list position (API) to ResultSummary. Prefers backend has_evidence when present (Epic 2). */
 export function mapPositionSummaryToResultSummary(
   p: PositionSummary
 ): ResultSummary {
+  const hasEvidence =
+    p.has_evidence ?? Boolean(
+      p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
+    );
   return {
     id: p.id,
     sku: p.sku ?? null,
@@ -79,9 +83,7 @@ export function mapPositionSummaryToResultSummary(
     traceabilityStatus: mapTraceabilityToVisible(p.traceability_status),
     needsReview: p.needs_review,
     updatedAt: p.updated_at,
-    hasEvidence: Boolean(
-      p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
-    ),
+    hasEvidence,
   };
 }
 

@@ -79,6 +79,10 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
     ts = entity.get("traceability_status")
     if ts is not None:
         out["traceability_status"] = ts if isinstance(ts, str) else str(ts)
+    # Epic 2 / Epic 5: persist so position API can expose source_image_original_filename at top level
+    sof = entity.get("source_image_original_filename")
+    if sof is not None and isinstance(sof, str) and sof.strip():
+        out["source_image_original_filename"] = sof.strip()
     if audit:
         out["_audit"] = audit
     return out

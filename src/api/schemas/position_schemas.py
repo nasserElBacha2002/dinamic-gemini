@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class PositionSummaryResponse(BaseModel):
-    """Summary of a position in list responses. Includes optional sku and detected_quantity when derivable from the result summary."""
+    """Summary of a position in list responses. Aligned with ResultSummary (v3.1.1 Epic 2)."""
     id: str
     aisle_id: str
     status: str
@@ -23,6 +23,10 @@ class PositionSummaryResponse(BaseModel):
     source_image_id: Optional[str] = None
     """Epic 3.1.B: valid | missing | invalid | unvalidated (from report entity)."""
     traceability_status: Optional[str] = None
+    """Epic 2: explicit flag so frontend does not infer from primary_evidence_id. True when primary_evidence_id is set."""
+    has_evidence: bool = False
+    """Epic 2 / Epic 5: original filename of source image when available (photos jobs). From report/summary."""
+    source_image_original_filename: Optional[str] = None
 
 
 class PositionListResponse(BaseModel):

@@ -101,6 +101,22 @@ describe('mapPositionSummaryToResultSummary', () => {
     expect(r.hasEvidence).toBe(false);
     expect(r.reviewStatus).toBe('CONFIRMED');
   });
+
+  it('prefers API has_evidence when present (Epic 2)', () => {
+    const p: PositionSummary = {
+      id: 'pos-3',
+      aisle_id: 'aisle-1',
+      status: 'detected',
+      confidence: 0.8,
+      needs_review: true,
+      primary_evidence_id: null,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      has_evidence: true,
+    };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.hasEvidence).toBe(true);
+  });
 });
 
 describe('mapEvidenceToResultEvidence', () => {
