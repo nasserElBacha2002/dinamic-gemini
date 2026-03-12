@@ -10,3 +10,5 @@ export { default as ResultsEmptyState } from './ResultsEmptyState';
 export { default as ResultsFilteredEmptyState } from './ResultsFilteredEmptyState';
 export { default as ResultsLoadingState } from './ResultsLoadingState';
 export { default as ResultsErrorState } from './ResultsErrorState';
+
+export * from './detail';

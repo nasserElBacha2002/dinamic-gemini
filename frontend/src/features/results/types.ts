@@ -1,11 +1,8 @@
 /**
  * v3.1.1 — Result-centric visible review model (Epic 1).
  *
- * These types define the primary frontend-visible contract for the review flow.
- * Prefer these over raw API Position/Entity types when building UI.
- *
- * Result is the single operational unit: SKU, detected quantity, traceability,
- * evidence, and review actions. Entity remains an internal/backend concept.
+ * Type definitions only. No runtime code, no React/MUI, no components.
+ * Use these types when building or refactoring the results list and result detail UI.
  */
 
 /** Traceability status for display (uppercase, aligned with backend valid | missing | invalid | unvalidated). */
