@@ -16,6 +16,8 @@ import type {
   PositionDetailResponse,
   ReviewActionRequest,
   InventoryMetrics,
+  JobEntitiesListResponse,
+  TraceabilityStatus,
 } from './types';
 import { ApiError } from './types';
 
@@ -147,6 +149,19 @@ export async function getAisleAssets(
   return Array.isArray(data) ? data : [];
 }
 
+/**
+ * URL for the reference image file of an aisle asset (position.source_image_id).
+ * Use for &lt;img src&gt; or open in new tab. Backend returns 404 if asset/file missing.
+ */
+export function getReferenceImageFileUrl(
+  inventoryId: string,
+  aisleId: string,
+  assetId: string
+): string {
+  const base = import.meta.env.VITE_API_BASE_URL ?? '';
+  return `${base}/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/file`;
+}
+
 /** List positions (results) for an aisle — Épica 6. */
 export async function getAislePositions(
   inventoryId: string,
@@ -195,4 +210,22 @@ export async function submitReviewAction(
   if (!response.ok) {
     throwApiErrorIfNotOk(response, text, data);
   }
+}
+
+/** Get job entities (v1 API) — Epic 3.1.B/3.1.C. Optional filter by traceability_status. Returns entities and optional traceability_summary. */
+export async function getJobEntities(
+  jobId: string,
+  params?: { traceability_status?: TraceabilityStatus | null }
+): Promise<JobEntitiesListResponse> {
+  const url = new URL(`${API_BASE}/api/v1/inventory/jobs/${encodeURIComponent(jobId)}/entities`);
+  if (params?.traceability_status != null && String(params.traceability_status).trim() !== '') {
+    url.searchParams.set('traceability_status', String(params.traceability_status).trim());
+  }
+  const response = await fetch(url.toString());
+  const data = await handleResponse<JobEntitiesListResponse>(response);
+  const entities = Array.isArray(data?.entities) ? data.entities : [];
+  return {
+    entities,
+    traceability_summary: data?.traceability_summary ?? undefined,
+  };
 }

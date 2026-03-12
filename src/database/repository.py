@@ -220,13 +220,19 @@ class JobsRepository:
 
 
 class PalletResultsRepository:
-    """Bulk insert and read pallet_results."""
+    """Bulk insert and read pallet_results.
+
+    Semantic (Epic 3.1.B): Each row corresponds to one pipeline entity (one counted
+    result). source_image_id is the single source image ID for that entity.
+    traceability_status is one of: valid, missing, invalid, unvalidated.
+    traceability_warning is not persisted here (diagnostic only, report/API).
+    """
 
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
 
     def insert_pallet_results(self, job_id: str, pallets: List[Any]) -> None:
-        """Bulk insert. Each pallet: dict or object with pallet_id, internal_code, quantity/final_quantity, source, confidence, fallback_used, estimated_visible_boxes (optional)."""
+        """Bulk insert. Each item: one entity result with pallet_id, internal_code, quantity/final_quantity, source, confidence, fallback_used, optional estimated_visible_boxes, source_image_id, traceability_status (Epic 3.1.B)."""
         if not pallets:
             return
         now = now_utc()
@@ -242,6 +248,8 @@ class PalletResultsRepository:
                     confidence = p.get("confidence")
                     fallback_used = bool(p.get("fallback_used", False))
                     raw_estimated_visible_boxes = p.get("estimated_visible_boxes")
+                    source_image_id = p.get("source_image_id")
+                    traceability_status = p.get("traceability_status")
                 else:
                     pallet_id = str(getattr(p, "pallet_id", ""))
                     internal_code = getattr(p, "internal_code", None)
@@ -252,19 +260,21 @@ class PalletResultsRepository:
                     confidence = getattr(p, "confidence", None)
                     fallback_used = bool(getattr(p, "fallback_used", False))
                     raw_estimated_visible_boxes = getattr(p, "estimated_visible_boxes", None)
+                    source_image_id = getattr(p, "source_image_id", None)
+                    traceability_status = getattr(p, "traceability_status", None)
                 cur.execute(
                     """
-                    INSERT INTO pallet_results (job_id, pallet_id, internal_code, quantity, source, confidence, fallback_used, raw_estimated_visible_boxes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO pallet_results (job_id, pallet_id, internal_code, quantity, source, confidence, fallback_used, raw_estimated_visible_boxes, source_image_id, traceability_status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (job_id, pallet_id, internal_code, quantity_to_store, source, confidence, fallback_used, raw_estimated_visible_boxes, now),
+                    (job_id, pallet_id, internal_code, quantity_to_store, source, confidence, fallback_used, raw_estimated_visible_boxes, source_image_id, traceability_status, now),
                 )
 
     def get_pallet_results(self, job_id: str) -> List[Dict[str, Any]]:
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT pallet_id, internal_code, quantity, source, confidence, fallback_used, raw_estimated_visible_boxes, created_at
+                SELECT pallet_id, internal_code, quantity, source, confidence, fallback_used, raw_estimated_visible_boxes, source_image_id, traceability_status, created_at
                 FROM pallet_results WHERE job_id = ? ORDER BY id
                 """,
                 (job_id,),
@@ -279,7 +289,9 @@ class PalletResultsRepository:
                 "source": row.source,
                 "confidence": row.confidence,
                 "fallback_used": bool(row.fallback_used),
-                "raw_estimated_visible_boxes": row.raw_estimated_visible_boxes,
+                "raw_estimated_visible_boxes": getattr(row, "raw_estimated_visible_boxes", None),
+                "source_image_id": getattr(row, "source_image_id", None),
+                "traceability_status": getattr(row, "traceability_status", None),
                 "created_at": _row_to_iso(row, "created_at"),
             })
         return out

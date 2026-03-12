@@ -4,6 +4,7 @@ Análisis global de video con una sola llamada a Gemini (hybrid v2.1, Structured
 
 import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
@@ -59,10 +60,20 @@ class GeminiGlobalAnalyzer:
         run_logger = kwargs.get("logger")
         log = run_logger if run_logger is not None else logger
         images = [_ndarray_to_pil(f) for f in frames]
-        prompt = self._prompt_text if self._prompt_text is not None else get_hybrid_prompt()
+        prompt = (
+            self._prompt_text
+            if self._prompt_text is not None
+            else get_hybrid_prompt()
+        )
         log.info("Enviando %d frames a Gemini (análisis global v2.1 structured)...", len(frames))
         raw = self.client.generate_global_analysis_structured(images, prompt, GlobalEntityResponseV21)
         cleaned = raw.strip()
+        save_raw_to_path = kwargs.get("save_raw_to_path")
+        if save_raw_to_path is not None:
+            p = Path(save_raw_to_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(cleaned, encoding="utf-8")
+            log.info("Respuesta cruda de Gemini guardada en %s", p)
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError as e:

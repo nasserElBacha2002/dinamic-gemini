@@ -73,13 +73,20 @@ class EntityV21(BaseModel):
 
     entity_type: EntityTypeV21 = Field(..., description="PALLET, EMPTY_PALLET o LOOSE_BOXES.")
     model_entity_id: str = Field(..., description="Id único del modelo, e.g. E1, E2.")
-    position_barcode: Optional[str] = Field(None, description="Código de barras de posición si visible.")
+    position_barcode: Optional[str] = Field(
+        None,
+        description="Código de barras de posición/pallet (Epic 3.1.D: solo etiqueta de posición, no producto).",
+    )
+    internal_code: Optional[str] = Field(
+        None,
+        description="Código interno del producto/SKU (Epic 3.1.D: solo etiqueta de producto, no posición).",
+    )
     position_label_bbox: Optional[List[float]] = Field(None, description="[x1,y1,x2,y2] normalizado 0..1, x1<x2, y1<y2.")
-    internal_code: Optional[str] = Field(None, description="Código interno del producto (corto), no texto largo de etiqueta.")
     product_label_quantity: Optional[int] = Field(None, description="Cantidad en etiqueta de producto.")
     product_label_bbox: Optional[List[float]] = Field(None, description="[x1,y1,x2,y2] normalizado 0..1.")
     has_boxes: bool = Field(..., description="True si hay cajas visibles.")
     confidence: float = Field(..., ge=0, le=1, description="Confianza de la detección en [0,1].")
+    source_image_id: Optional[str] = Field(None, description="Epic 3.1.B: image_id of source image for this entity.")
 
 
 class GlobalEntityResponseV21(BaseModel):

@@ -124,7 +124,7 @@ def test_summary_quantity_parses_numeric_string() -> None:
 
 
 def test_summary_quantity_rejects_negative_and_invalid() -> None:
-    """Negative or invalid quantity yields None."""
+    """Negative or invalid quantity yields 0 (business rule: always show a count)."""
     now = datetime.now(timezone.utc)
     p_neg = Position(
         id="pos-6",
@@ -138,7 +138,7 @@ def test_summary_quantity_rejects_negative_and_invalid() -> None:
         detected_summary_json={"internal_code": "Z", "final_quantity": -1},
     )
     _, qty_neg = _summary_sku_and_quantity_from_position(p_neg)
-    assert qty_neg is None
+    assert qty_neg == 0
 
     p_invalid = Position(
         id="pos-7",
@@ -152,4 +152,130 @@ def test_summary_quantity_rejects_negative_and_invalid() -> None:
         detected_summary_json={"internal_code": "W", "final_quantity": "not-a-number"},
     )
     _, qty_invalid = _summary_sku_and_quantity_from_position(p_invalid)
-    assert qty_invalid is None
+    assert qty_invalid == 0
+
+
+def test_summary_sku_fallback_to_review_display_label_when_internal_code_null() -> None:
+    """When internal_code is null, sku falls back to review_display_label (list API display)."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-f1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.8,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "internal_code": None,
+            "review_display_label": "P-001",
+            "position_barcode": "BC-001",
+            "final_quantity": None,
+            "product_label_quantity": 2,
+        },
+    )
+    sku, qty = _summary_sku_and_quantity_from_position(p)
+    assert sku == "P-001"
+    assert qty == 2
+
+
+def test_summary_sku_fallback_to_position_barcode_when_internal_code_and_rdl_null() -> None:
+    """When internal_code and review_display_label are null, sku falls back to position_barcode."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-f2",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.7,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "internal_code": None,
+            "review_display_label": None,
+            "position_barcode": "PALLET-42",
+            "final_quantity": None,
+            "product_label_quantity": None,
+        },
+    )
+    sku, qty = _summary_sku_and_quantity_from_position(p)
+    assert sku == "PALLET-42"
+    assert qty == 0  # no quantity in summary → always show 0
+
+
+def test_summary_sku_null_when_all_display_fields_missing() -> None:
+    """When internal_code, review_display_label, and position_barcode are null/empty, sku is None. Quantity always 0."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-f3",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.0,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "internal_code": None,
+            "review_display_label": None,
+            "position_barcode": None,
+            "final_quantity": None,
+            "product_label_quantity": None,
+            "count_status": "NEEDS_REVIEW",
+        },
+    )
+    sku, qty = _summary_sku_and_quantity_from_position(p)
+    assert sku is None
+    assert qty == 0  # no quantity in summary → always show 0
+
+
+def test_summary_sku_prefers_internal_code_over_fallbacks() -> None:
+    """internal_code takes precedence when present; fallbacks are not used."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-f4",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "internal_code": "SKU-REAL",
+            "review_display_label": "P-001",
+            "position_barcode": "BC-001",
+            "final_quantity": 1,
+        },
+    )
+    sku, qty = _summary_sku_and_quantity_from_position(p)
+    assert sku == "SKU-REAL"
+    assert qty == 1
+
+
+def test_summary_sku_fallback_to_pallet_id_when_other_display_fields_null() -> None:
+    """When internal_code, review_display_label, position_barcode are null, sku falls back to pallet_id (existing positions)."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-f5",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.96,
+        needs_review=True,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "entity_uid": "job_E7",
+            "pallet_id": "1295612",
+            "internal_code": None,
+            "final_quantity": None,
+            "product_label_quantity": None,
+            "count_status": "NEEDS_REVIEW",
+        },
+    )
+    sku, qty = _summary_sku_and_quantity_from_position(p)
+    assert sku == "1295612"
+    assert qty == 0  # no quantity in summary → always show 0

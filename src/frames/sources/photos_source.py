@@ -11,31 +11,12 @@ import json
 import logging
 from pathlib import Path
 
-from src.frames.normalize import photos_use_normalized, validate_relative_path
+from src.frames.normalize import photos_use_normalized
 from src.frames.types import FramesBundle
 from src.jobs.models import JobInput
+from src.jobs.photos_paths import resolve_manifest_path, resolve_photos_dir
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_manifest_path(run_dir: Path, job_input: JobInput) -> Path:
-    """Manifest path: job_input.input_manifest_path (relative to job_dir) or run_dir/input_manifest.json."""
-    run_dir = Path(run_dir)
-    raw = (job_input.input_manifest_path or "").strip()
-    if raw:
-        safe = validate_relative_path(raw, "input_manifest_path")
-        return run_dir.parent / safe
-    return run_dir / "input_manifest.json"
-
-
-def _resolve_photos_dir(run_dir: Path, job_input: JobInput) -> Path:
-    """Photos dir: job_input.photos_dir (relative to job_dir) or run_dir/input_photos."""
-    run_dir = Path(run_dir)
-    raw = (job_input.photos_dir or "").strip()
-    if raw:
-        safe = validate_relative_path(raw, "photos_dir")
-        return run_dir.parent / safe
-    return run_dir / "input_photos"
 
 
 class PhotosFrameSource:
@@ -49,7 +30,7 @@ class PhotosFrameSource:
     ) -> FramesBundle:
         """Read manifest (from job_input or run_dir), resolve photo paths, return bundle in index order."""
         run_dir = Path(run_dir)
-        manifest_path = _resolve_manifest_path(run_dir, job_input)
+        manifest_path = resolve_manifest_path(run_dir, job_input)
         if not manifest_path.exists():
             raise FileNotFoundError(
                 f"photos input manifest not found: {manifest_path} (missing input_manifest.json)"
@@ -68,7 +49,7 @@ class PhotosFrameSource:
                 frame_refs=[],
                 metadata={"source": "photos", "frame_count": 0, "selected_by": "uploaded_photos"},
             )
-        photos_dir = _resolve_photos_dir(run_dir, job_input)
+        photos_dir = resolve_photos_dir(run_dir, job_input)
         if not photos_dir.is_dir():
             raise FileNotFoundError(
                 f"photos directory not found: {photos_dir} (missing input_photos/)"
@@ -80,7 +61,9 @@ class PhotosFrameSource:
             photos_dir = normalized_dir
         frames: list[Path] = []
         frame_refs: list[str] = []
-        for entry in sorted(photos_list, key=lambda x: x.get("index", 0)):
+        for position_1based, entry in enumerate(
+            sorted(photos_list, key=lambda x: x.get("index", 0)), start=1
+        ):
             if use_normalized:
                 stored = entry.get("stored_normalized_filename") or entry.get("stored_filename") or ""
             else:
@@ -93,8 +76,14 @@ class PhotosFrameSource:
                     f"missing input photo: {path} (listed in input_manifest.json)"
                 )
             frames.append(path)
-            idx = entry.get("index", len(frames))
-            frame_refs.append(f"photo_{idx:04d}")
+            # Epic 3.1.A: use image_id as frame_ref when present; else 1-based fallback (no 0-based leakage)
+            image_id = entry.get("image_id") if isinstance(entry.get("image_id"), str) else None
+            frame_ref = (
+                (image_id.strip() or f"photo_{position_1based:04d}")
+                if image_id
+                else f"photo_{position_1based:04d}"
+            )
+            frame_refs.append(frame_ref)
         metadata = {
             "source": "photos",
             "frame_count": len(frames),

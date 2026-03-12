@@ -14,3 +14,8 @@ export function pathToPositionDetail(
 ): string {
   return `/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}`;
 }
+
+/** Epic 3.1.B — Job entities (v1 API) by job ID. */
+export function pathToJobEntities(jobId: string): string {
+  return `/job-entities/${encodeURIComponent(jobId)}`;
+}

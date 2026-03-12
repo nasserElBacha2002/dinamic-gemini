@@ -76,6 +76,7 @@ def _push_success_to_db(
         metrics = report_data.get("metrics") or {}
         gemini_calls = metrics.get("total_calls")
         # v2.2 only produces v2.1-style reports with "entities"
+        # Each entity → one pallet_results row. source_image_id/traceability_status per entity (Epic 3.1.B). traceability_warning not persisted to DB.
         entities = report_data.get("entities") or []
         for ent in entities:
             pallets_list.append({
@@ -86,6 +87,8 @@ def _push_success_to_db(
                 "source": "gemini",
                 "confidence": ent.get("confidence"),
                 "fallback_used": False,
+                "source_image_id": ent.get("source_image_id"),
+                "traceability_status": ent.get("traceability_status"),
             })
 
     try:

@@ -1,8 +1,12 @@
 """Stage 7 — Response schemas."""
 
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from pydantic import BaseModel, Field
+
+# Epic 3.1.B: constrained traceability status (backward compatible: optional)
+TraceabilityStatusLiteral = Literal["valid", "missing", "invalid", "unvalidated"]
+TRACEABILITY_STATUS_VALUES = frozenset({"valid", "missing", "invalid", "unvalidated"})
 
 
 class ProgressDict(TypedDict):
@@ -53,11 +57,52 @@ class EntityListItem(BaseModel):
     count_status: Optional[str] = None
     entity_quality_score: Optional[float] = None
     evidence_ref: Optional[str] = Field(None, description="evidence_path or ref to evidence.")
+    source_image_id: Optional[str] = Field(None, description="Epic 3.1.B: image_id of source image for this entity.")
+    traceability_status: Optional[TraceabilityStatusLiteral] = Field(
+        None,
+        description="Epic 3.1.B: valid | missing | invalid | unvalidated.",
+    )
+    traceability_warning: Optional[str] = Field(
+        None,
+        description="Epic 3.1.B: diagnostic only (e.g. reason when status is invalid); not persisted to DB.",
+    )
+    source_image_original_filename: Optional[str] = Field(
+        None,
+        description="Epic 5: original filename of the source image when source_image_id is set (photos jobs). "
+        "Only guaranteed for reports generated after Epic 5; legacy reports and video jobs return null.",
+    )
+    review_display_label: Optional[str] = Field(
+        None,
+        description="Epic 3.1.D: single display label for review/export. Prefers internal_code (product/SKU), then position_barcode (position/pallet). Not guaranteed to be product-only.",
+    )
+    product_display_label: Optional[str] = Field(
+        None,
+        description="(Deprecated alias) Same as review_display_label. Kept for backward compatibility.",
+    )
+
+
+class TraceabilitySummary(BaseModel):
+    """Epic 3.1.C: job-level traceability counts for review/audit. Always reflects the full job, not the filtered result set."""
+
+    total_entities: int = Field(..., description="Total number of entities in the job report.")
+    valid: int = Field(0, description="Entities with traceability_status=valid.")
+    missing: int = Field(0, description="Entities with traceability_status=missing or legacy/unknown.")
+    invalid: int = Field(0, description="Entities with traceability_status=invalid.")
+    unvalidated: int = Field(0, description="Entities with traceability_status=unvalidated.")
 
 
 class EntitiesListResponse(BaseModel):
-    """GET /jobs/{job_id}/entities response."""
+    """GET /jobs/{job_id}/entities response.
+
+    Epic 3.1.C: traceability_summary, when present, is always the full-job summary
+    (counts over all entities in the report), regardless of status/entity_type filters.
+    """
+
     entities: List[EntityListItem] = Field(default_factory=list)
+    traceability_summary: Optional[TraceabilitySummary] = Field(
+        None,
+        description="Full-job traceability counts (valid, missing, invalid, unvalidated). Omitted for legacy reports without traceability.",
+    )
 
 
 class EntityEvidenceResponse(BaseModel):

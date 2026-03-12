@@ -346,6 +346,29 @@ def _merge_report_metadata(report: dict, job_id: str, status: str, mode: str, co
     return out
 
 
+def _resolve_report_v3_fallback(job_id: str, base: Path) -> Optional[Tuple[Path, Path]]:
+    """When legacy job not found: try v3 job repo. If v3 job succeeded and has report_path, return (path, path.parent)."""
+    try:
+        from src.domain.jobs.entities import JobStatus
+        from src.runtime.v3_deps import get_job_repo
+        v3_job = get_job_repo().get_by_id(job_id)
+        if v3_job is None:
+            return None
+        if v3_job.status != JobStatus.SUCCEEDED:
+            return None
+        result = v3_job.result_json or {}
+        report_path_str = result.get("report_path") if isinstance(result, dict) else None
+        if not report_path_str:
+            return None
+        path = Path(report_path_str)
+        if not path.exists():
+            return None
+        return (path, path.parent)
+    except Exception as e:
+        logger.debug("v3 report fallback failed for job_id=%s: %s", job_id, e)
+        return None
+
+
 def _resolve_report_and_run_dir(job_id: str) -> Tuple[Path, Path]:
     """Return (report_path, run_dir) for a succeeded job. Raises HTTPException 404/409 if not found or not succeeded."""
     base = _base_path()
@@ -355,6 +378,9 @@ def _resolve_report_and_run_dir(job_id: str) -> Tuple[Path, Path]:
         try:
             job_data = jobs_repo.get_job(job_id)
             if job_data is None:
+                v3_result = _resolve_report_v3_fallback(job_id, base)
+                if v3_result is not None:
+                    return v3_result
                 raise HTTPException(404, "Job not found")
             status = job_data.get("status", "")
             status_str = status if isinstance(status, str) else getattr(status, "value", str(status))
@@ -376,6 +402,9 @@ def _resolve_report_and_run_dir(job_id: str) -> Tuple[Path, Path]:
             logger.debug("DB path failed for _resolve_report_and_run_dir: %s", e)
     record = get_job(base, job_id)
     if record is None:
+        v3_result = _resolve_report_v3_fallback(job_id, base)
+        if v3_result is not None:
+            return v3_result
         raise HTTPException(404, "Job not found")
     if record.status.value != "succeeded":
         raise HTTPException(409, f"Job not succeeded (status={record.status.value})")

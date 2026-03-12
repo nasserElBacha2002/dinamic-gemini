@@ -116,7 +116,37 @@ def test_map_hybrid_report_needs_review():
     assert result.evidences[0].source_asset_id is None
 
 
-def test_persist_aisle_result_use_case_saves_all():
+def test_map_hybrid_report_stores_position_barcode_and_review_display_label_for_sku_fallback():
+    """detected_summary_json includes position_barcode and review_display_label when present (list API sku fallback)."""
+    report = {
+        "entities": [
+            {
+                "entity_uid": "e3",
+                "internal_code": None,
+                "position_barcode": "PALLET-99",
+                "review_display_label": "Pallet PALLET-99",
+                "final_quantity": None,
+                "product_label_quantity": 1,
+                "confidence": 0.6,
+                "count_status": "NEEDS_REVIEW",
+            }
+        ]
+    }
+    now = datetime.now(timezone.utc)
+    result = map_hybrid_report_to_domain(
+        aisle_id="a",
+        report=report,
+        run_dir=Path("/run"),
+        run_id="run",
+        job_id="j",
+        now=now,
+    )
+    assert len(result.positions) == 1
+    summary = result.positions[0].detected_summary_json
+    assert summary is not None
+    assert summary.get("position_barcode") == "PALLET-99"
+    assert summary.get("review_display_label") == "Pallet PALLET-99"
+    assert summary.get("internal_code") is None
     """PersistAisleResultUseCase saves positions, products, evidences."""
     position_repo = MagicMock()
     product_repo = MagicMock()

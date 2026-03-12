@@ -1,4 +1,9 @@
-"""Stage 2.2.A — Validate and persist photo inputs (form-data uploads) for create-inventory."""
+"""Stage 2.2.A — Validate and persist photo inputs (form-data uploads) for create-inventory.
+
+Image identity (Epic 3.1.A): Each photo gets a 1-based index (manifest "index"),
+a unique image_id from generate_image_id(index), and upload_order = index.
+Image identity is stored only in the manifest; no separate DB table for Epic A.
+"""
 
 import json
 import logging
@@ -6,6 +11,7 @@ from pathlib import Path
 from typing import Any, List, Tuple
 
 from src.io.sanitize import photo_stored_filename
+from src.jobs.image_identity import generate_image_id
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +83,19 @@ async def persist_photos_from_uploads(
         stored_name = photo_stored_filename(original_filename.strip() or f"photo_{i}.jpg", i)
         out_path = input_photos_dir / stored_name
         out_path.write_bytes(raw)
+        # index and upload_order are 1-based (i from enumerate(uploads, start=1))
         manifest_photos.append({
             "index": i,
+            "upload_order": i,
+            "image_id": generate_image_id(i),
             "original_filename": original_filename,
             "stored_filename": stored_name,
             "bytes": len(raw),
         })
+    # Epic 3.1.A: backend-generated image_ids must be unique within the job
+    image_ids = [m["image_id"] for m in manifest_photos]
+    if len(image_ids) != len(set(image_ids)):
+        raise ValueError("internal error: duplicate image_id in batch")
     manifest = {
         "input_type": "photos",
         "total_photos": len(uploads),

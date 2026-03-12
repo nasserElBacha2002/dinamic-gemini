@@ -143,6 +143,11 @@ def parse_entities(data: Dict[str, Any], job_id: str = "") -> List[Entity]:
     job_id + model_entity_id and original_index from list position for
     deterministic ordering.
 
+    source_image_id (Epic 3.1.B): Normalized via _safe_str — leading/trailing
+    whitespace stripped, empty string becomes None. Casing is preserved.
+    Structural validation (e.g. allowed format) is left to the traceability
+    validation layer; parser only captures and normalizes.
+
     Args:
         data: Dict with total_entities_detected and entities (validated).
         job_id: Job identifier for stable entity_uid (default "").
@@ -203,6 +208,9 @@ def parse_entities(data: Dict[str, Any], job_id: str = "") -> List[Entity]:
                 conflict_reason=None,
                 entity_quality_score=0.0,
                 original_index=i,
+                source_image_id=_safe_str(e.get("source_image_id")),
+                traceability_status=None,
+                traceability_warning=None,
             )
         )
     return result

@@ -23,11 +23,13 @@ import type {
   ReviewActionSummary,
 } from '../api/types';
 import { ApiError } from '../api/types';
+import { getReferenceImageFileUrl } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { getPositionStatusLabel, getPositionStatusColor } from '../utils/positionStatus';
 import { pathToAislePositions } from '../utils/resultRoutes';
-import { PageLayout, LoadingBlock, ErrorAlert, StatusChip } from '../components/ui';
+import { PageLayout, LoadingBlock, ErrorAlert, StatusChip, TraceabilityChip } from '../components/ui';
+import { isTraceabilityStatus } from '../utils/traceability';
 import { usePositionDetail, useSubmitReviewAction } from '../hooks';
 
 /** Per-product quantity and SKU correction forms. */
@@ -104,8 +106,38 @@ function ProductReviewForms({
   );
 }
 
-/** Compact summary card for a position (ID, status, confidence, needs review, updated). */
-function PositionSummaryCard({ position }: { position: PositionSummary }) {
+/** Compact summary card for a position (ID, status, confidence, needs review, summary-level traceability when present, updated). Epic 5: shows Source image ID and Source file (original filename) when available. Supports opening the reference image when source_image_id is present. */
+function PositionSummaryCard({
+  position,
+  inventoryId,
+  aisleId,
+}: {
+  position: PositionSummary;
+  inventoryId?: string;
+  aisleId?: string;
+}) {
+  const [refImageOpen, setRefImageOpen] = useState(false);
+  const [refImageError, setRefImageError] = useState(false);
+  const sourceImageIdValue =
+    position.source_image_id != null && String(position.source_image_id).trim() !== ''
+      ? String(position.source_image_id).trim()
+      : null;
+  const sourceFileNameValue =
+    position.source_image_original_filename != null && String(position.source_image_original_filename).trim() !== ''
+      ? String(position.source_image_original_filename).trim()
+      : null;
+  const canOpenReferenceImage =
+    Boolean(sourceImageIdValue && inventoryId && aisleId);
+
+  const handleOpenRefImage = useCallback(() => {
+    setRefImageError(false);
+    setRefImageOpen(true);
+  }, []);
+  const handleCloseRefImage = useCallback(() => {
+    setRefImageOpen(false);
+    setRefImageError(false);
+  }, []);
+
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
       <Typography variant="subtitle2" color="text.secondary">
@@ -122,10 +154,50 @@ function PositionSummaryCard({ position }: { position: PositionSummary }) {
         />
         <StatusChip label={`${(position.confidence * 100).toFixed(0)}% confidence`} variant="outlined" />
         {position.needs_review && <StatusChip label="Needs review" color="warning" />}
+        {isTraceabilityStatus(position.traceability_status) && (
+          <TraceabilityChip status={position.traceability_status} />
+        )}
       </Box>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+        Source image ID: {sourceImageIdValue ?? '—'}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+        Source file: {sourceFileNameValue ?? '—'}
+      </Typography>
+      {canOpenReferenceImage && (
+        <Box sx={{ mt: 1 }}>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={handleOpenRefImage}
+            aria-label="View reference image"
+          >
+            View reference image
+          </Button>
+        </Box>
+      )}
       <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
         Updated: {formatDate(position.updated_at)}
       </Typography>
+
+      <Dialog open={refImageOpen} onClose={handleCloseRefImage} maxWidth="md" fullWidth>
+        <DialogTitle>Reference image</DialogTitle>
+        <DialogContent>
+          {refImageError ? (
+            <Typography color="error">Image not available. It may have been removed or the file is missing.</Typography>
+          ) : (
+            <img
+              src={refImageOpen && canOpenReferenceImage ? getReferenceImageFileUrl(inventoryId!, aisleId!, sourceImageIdValue!) : ''}
+              alt="Reference image for this position"
+              style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+              onError={() => setRefImageError(true)}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseRefImage}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 }
@@ -331,7 +403,7 @@ export default function PositionDetailPage() {
         Position detail
       </Typography>
 
-      <PositionSummaryCard position={position} />
+      <PositionSummaryCard position={position} inventoryId={inventoryId} aisleId={aisleId} />
 
       {displayActionError && (
         <ErrorAlert

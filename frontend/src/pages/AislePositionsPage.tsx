@@ -1,6 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Box,
   Button,
   Paper,
   Table,
@@ -11,6 +10,7 @@ import {
   TableRow,
   Typography,
   Alert,
+  Tooltip,
 } from '@mui/material';
 import type { PositionSummary } from '../api/types';
 import { ApiError } from '../api/types';
@@ -18,7 +18,8 @@ import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { getPositionStatusLabel, getPositionStatusColor } from '../utils/positionStatus';
 import { pathToPositionDetail } from '../utils/resultRoutes';
-import { PageLayout, LoadingBlock, EmptyState, ErrorAlert, StatusChip } from '../components/ui';
+import { PageLayout, LoadingBlock, EmptyState, ErrorAlert, StatusChip, TraceabilityChip } from '../components/ui';
+import { isTraceabilityStatus } from '../utils/traceability';
 import { useAislePositions } from '../hooks';
 
 function displaySku(p: PositionSummary): string {
@@ -97,6 +98,11 @@ export default function AislePositionsPage() {
                 <TableCell>Status</TableCell>
                 <TableCell>Confidence</TableCell>
                 <TableCell>Needs review</TableCell>
+                <TableCell>
+                  <Tooltip title="Summary-level result-to-image traceability (when available)" placement="top">
+                    <span>Traceability</span>
+                  </Tooltip>
+                </TableCell>
                 <TableCell>Updated</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -118,6 +124,13 @@ export default function AislePositionsPage() {
                   </TableCell>
                   <TableCell>{(p.confidence * 100).toFixed(0)}%</TableCell>
                   <TableCell>{p.needs_review ? 'Yes' : 'No'}</TableCell>
+                  <TableCell>
+                    {isTraceabilityStatus(p.traceability_status) ? (
+                      <TraceabilityChip status={p.traceability_status} />
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
                   <TableCell>{formatDate(p.updated_at)}</TableCell>
                   <TableCell align="right">
                     <Button

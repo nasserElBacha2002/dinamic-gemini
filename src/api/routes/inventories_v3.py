@@ -7,10 +7,16 @@ Dependencies (repo, clock, use cases) provided by api.dependencies.
 
 from __future__ import annotations
 
+import json
+import logging
 from io import BytesIO
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+
+from src.config import load_settings
 
 from src.api.dependencies import (
     get_confirm_position_use_case,
@@ -83,6 +89,8 @@ from src.domain.jobs.entities import Job
 from src.domain.reviews.entities import ReviewAction
 
 router = APIRouter(prefix="/api/v3/inventories", tags=["inventories-v3"])
+
+logger = logging.getLogger(__name__)
 
 
 def _review_exception_to_http(e: Exception) -> HTTPException:
@@ -230,6 +238,9 @@ def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str],
     truth for product data is ProductRecord; we derive from detected_summary_json here to
     avoid loading product records in the list flow. Prefer final_quantity then
     product_label_quantity (same precedence as the pipeline mapper).
+
+    sku: internal_code if present; else review_display_label; else position_barcode; else pallet_id (empty → None).
+    pallet_id is always in the summary so existing positions show at least pallet id when internal_code is null.
     """
     j = p.detected_summary_json
     if not j or not isinstance(j, dict):
@@ -238,9 +249,20 @@ def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str],
     sku = None
     if sku_raw is not None and isinstance(sku_raw, str) and sku_raw.strip():
         sku = sku_raw.strip()
+    if sku is None:
+        fallback = (
+            j.get("review_display_label")
+            or j.get("position_barcode")
+            or j.get("pallet_id")
+        )
+        if fallback is not None and isinstance(fallback, str) and fallback.strip():
+            sku = fallback.strip()
     # Prefer final_quantity (resolved count), then product_label_quantity (raw from pipeline).
     q_raw = j.get("final_quantity") if j.get("final_quantity") is not None else j.get("product_label_quantity")
     qty = _parse_summary_quantity(q_raw)
+    # Business rule: always show a counted quantity. When unresolved (both null), use 0 so the frontend never gets null.
+    if qty is None:
+        qty = 0
     return sku, qty
 
 
@@ -263,8 +285,54 @@ def _parse_summary_quantity(raw: object) -> Optional[int]:
     return None
 
 
+def _enrich_position_traceability_from_report(p: Position) -> Tuple[Optional[str], Optional[str]]:
+    """When position has entity_uid but missing source_image_id/traceability_status, try to load from hybrid_report.json.
+
+    entity_uid format is {job_id}_{model_entity_id} (e.g. 79ea44b5-9609-4d83-8b41-2974c58d35c8_E1).
+    Report path: output_dir / job_id / run / hybrid_report.json. Returns (source_image_id, traceability_status).
+    """
+    summary = p.detected_summary_json or {}
+    entity_uid = summary.get("entity_uid") if isinstance(summary.get("entity_uid"), str) else None
+    if not entity_uid or "_" not in entity_uid:
+        return None, None
+    parts = entity_uid.rsplit("_", 1)
+    if len(parts) != 2:
+        return None, None
+    job_id, _model_entity_id = parts
+    try:
+        base = Path(load_settings().output_dir)
+        report_path = base / job_id / "run" / "hybrid_report.json"
+        if not report_path.is_file():
+            return None, None
+        with open(report_path, encoding="utf-8") as f:
+            report = json.load(f)
+        entities = report.get("entities") or []
+        for ent in entities:
+            if isinstance(ent, dict) and ent.get("entity_uid") == entity_uid:
+                sid = ent.get("source_image_id")
+                ts = ent.get("traceability_status")
+                return (
+                    sid if sid is not None and str(sid).strip() else None,
+                    ts if ts is not None and str(ts).strip() else None,
+                )
+        return None, None
+    except Exception as e:
+        logger.debug("Enrich position traceability from report failed (entity_uid=%s): %s", entity_uid, e)
+        return None, None
+
+
 def _position_to_summary(p: Position) -> PositionSummaryResponse:
     sku, detected_quantity = _summary_sku_and_quantity_from_position(p)
+    summary_json = p.detected_summary_json or {}
+    source_image_id = summary_json.get("source_image_id") or None
+    traceability_status = summary_json.get("traceability_status") or None
+    # Fallback: if position was persisted before we stored traceability in summary, load from report
+    if (source_image_id is None or traceability_status is None) and summary_json.get("entity_uid"):
+        sid_from_report, ts_from_report = _enrich_position_traceability_from_report(p)
+        if source_image_id is None and sid_from_report is not None:
+            source_image_id = sid_from_report
+        if traceability_status is None and ts_from_report is not None:
+            traceability_status = ts_from_report
     return PositionSummaryResponse(
         id=p.id,
         aisle_id=p.aisle_id,
@@ -277,6 +345,8 @@ def _position_to_summary(p: Position) -> PositionSummaryResponse:
         detected_summary_json=p.detected_summary_json,
         sku=sku,
         detected_quantity=detected_quantity,
+        source_image_id=source_image_id,
+        traceability_status=traceability_status,
     )
 
 
@@ -476,6 +546,40 @@ def list_aisle_assets(
         return [_asset_to_response(a) for a in assets]
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/assets/{asset_id}/file",
+    response_class=FileResponse,
+)
+def get_aisle_asset_file(
+    inventory_id: str,
+    aisle_id: str,
+    asset_id: str,
+    use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
+) -> FileResponse:
+    """Serve the reference image/file for an aisle asset. Used by Position Detail to open the source image.
+    Returns 404 if inventory/aisle/asset not found or file is missing. Safe for position.source_image_id (asset id)."""
+    try:
+        assets = use_case.execute(inventory_id, aisle_id)
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    asset = next((a for a in assets if a.id == asset_id), None)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    base = Path(load_settings().output_dir) / "v3_uploads"
+    file_path = (base / asset.storage_path).resolve()
+    try:
+        if not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Asset file not found")
+        file_path.relative_to(base.resolve())
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Asset path invalid")
+    return FileResponse(
+        path=str(file_path),
+        media_type=asset.mime_type or "application/octet-stream",
+        filename=asset.original_filename or "file",
+    )
 
 
 @router.get("/{inventory_id}/aisles/{aisle_id}/positions", response_model=PositionListResponse)
