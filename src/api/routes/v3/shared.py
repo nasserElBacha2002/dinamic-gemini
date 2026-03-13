@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from fastapi import HTTPException
 
@@ -52,6 +52,34 @@ logger = logging.getLogger(__name__)
 _MANIFEST_FILENAME = "input_manifest.json"
 _NORMALIZED_SUBDIR = "input_photos_normalized"
 _HEIC_EXTENSIONS = (".heic", ".heif")
+
+# Simple in-process cache for traceability enrichment to avoid repeatedly loading
+# the same hybrid_report.json file for multiple positions from the same job.
+# Keyed by entity_uid from detected_summary_json.
+#
+# Best-effort only:
+# - Assumes hybrid_report.json is immutable once written by the pipeline.
+# - Lives for the life of the process; bounded to avoid unbounded growth.
+_TRACEABILITY_CACHE: Dict[str, Tuple[Optional[str], Optional[str], Optional[str]]] = {}
+_TRACEABILITY_REPORTS_LOADED: Set[str] = set()
+_MAX_TRACEABILITY_JOBS = 128
+_MAX_TRACEABILITY_ENTITIES = 4096
+
+
+def _maybe_evict_traceability_cache() -> None:
+    """Best-effort guard to keep the traceability cache bounded.
+
+    When the number of loaded jobs or cached entities grows beyond a small
+    threshold (per-process), the cache is cleared. This keeps memory usage
+    bounded while preserving the optimization for the common case where
+    only a limited set of jobs are being inspected in one process lifetime.
+    """
+    if (
+        len(_TRACEABILITY_REPORTS_LOADED) > _MAX_TRACEABILITY_JOBS
+        or len(_TRACEABILITY_CACHE) > _MAX_TRACEABILITY_ENTITIES
+    ):
+        _TRACEABILITY_CACHE.clear()
+        _TRACEABILITY_REPORTS_LOADED.clear()
 
 
 def resolve_normalized_asset_path(
@@ -290,14 +318,31 @@ def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str],
 def _enrich_position_traceability_from_report(
     p: Position,
 ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Best-effort enrichment of traceability fields from hybrid_report.json.
+
+    Assumptions:
+    - hybrid_report.json is written once per job by the pipeline and treated as immutable
+      for the life of the backend process.
+    - Missing or invalid reports should not raise; instead, enrichment is skipped.
+    - This helper is an internal optimization: if the cache is empty or evicted, behavior
+      degrades gracefully to "no enrichment" for that entity.
+    """
     summary = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
     entity_uid = summary.get("entity_uid") if isinstance(summary.get("entity_uid"), str) else None
     if not entity_uid or "_" not in entity_uid:
         return None, None, None
+    # Fast path: cached enrichment for this entity.
+    cached = _TRACEABILITY_CACHE.get(entity_uid)
+    if cached is not None:
+        return cached
     parts = entity_uid.rsplit("_", 1)
     if len(parts) != 2:
         return None, None, None
     job_id, _ = parts
+    # If we've already attempted to load this job's report and the entity_uid is
+    # still not cached, avoid re-reading the same file.
+    if job_id in _TRACEABILITY_REPORTS_LOADED:
+        return None, None, None
     try:
         base = Path(load_settings().output_dir)
         report_path = base / job_id / "run" / "hybrid_report.json"
@@ -307,16 +352,23 @@ def _enrich_position_traceability_from_report(
             report = json.load(f)
         entities = report.get("entities") or []
         for ent in entities:
-            if isinstance(ent, dict) and ent.get("entity_uid") == entity_uid:
-                sid = ent.get("source_image_id")
-                ts = ent.get("traceability_status")
-                sof = ent.get("source_image_original_filename")
-                return (
-                    sid if sid is not None and str(sid).strip() else None,
-                    ts if ts is not None and str(ts).strip() else None,
-                    sof if sof is not None and str(sof).strip() else None,
-                )
-        return None, None, None
+            if not isinstance(ent, dict):
+                continue
+            ent_uid = ent.get("entity_uid")
+            if not ent_uid or not isinstance(ent_uid, str):
+                continue
+            sid = ent.get("source_image_id")
+            ts = ent.get("traceability_status")
+            sof = ent.get("source_image_original_filename")
+            normalized: Tuple[Optional[str], Optional[str], Optional[str]] = (
+                str(sid).strip() if sid is not None and str(sid).strip() else None,
+                str(ts).strip() if ts is not None and str(ts).strip() else None,
+                str(sof).strip() if sof is not None and str(sof).strip() else None,
+            )
+            _TRACEABILITY_CACHE[ent_uid] = normalized
+        _TRACEABILITY_REPORTS_LOADED.add(job_id)
+        _maybe_evict_traceability_cache()
+        return _TRACEABILITY_CACHE.get(entity_uid, (None, None, None))
     except Exception as e:
         logger.debug("Enrich position traceability from report failed (entity_uid=%s): %s", entity_uid, e)
         return None, None, None
@@ -396,3 +448,13 @@ def review_to_response(r: ReviewAction) -> ReviewActionResponse:
 
 def heic_extensions() -> tuple[str, ...]:
     return _HEIC_EXTENSIONS
+
+
+def _reset_traceability_cache_for_tests() -> None:
+    """Internal helper to clear the traceability cache.
+
+    Intended for tests or one-off scripts that need to isolate behavior
+    across runs. Not used by production code paths.
+    """
+    _TRACEABILITY_CACHE.clear()
+    _TRACEABILITY_REPORTS_LOADED.clear()
