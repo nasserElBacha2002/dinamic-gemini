@@ -25,7 +25,15 @@ export const AISLE_STATUSES = [
 export type AisleStatus = (typeof AISLE_STATUSES)[number];
 
 /** Backend job status values (v3 API). */
-export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed'] as const;
+export const JOB_STATUSES = [
+  'queued',
+  'running',
+  'cancel_requested',
+  'canceled',
+  'timed_out',
+  'succeeded',
+  'failed',
+] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 /** Backend position status values (result model — Épica 6). */

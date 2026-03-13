@@ -28,19 +28,17 @@ Sistema en Python que procesa videos de depósito, extrae fotogramas estratégic
 
 2. **Crear entorno virtual (recomendado):**
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # En Windows: venv\Scripts\activate
+   python -m venv .venv
+   source .venv/bin/activate  # En Windows: .venv\Scripts\activate
    ```
 
-3. **Instalar dependencias:**
+3. **Instalar dependencias del backend:**
    ```bash
-   pip install -e ".[dev]"
+   pip install -e backend/
+   pip install -e "backend/[dev]"   # con deps de desarrollo (pytest, black, ruff)
    ```
 
-   O si prefieres instalar solo las dependencias de producción:
-   ```bash
-   pip install -e .
-   ```
+   La aplicación tiene **backend** (Python, en `backend/`) y **frontend** (React, en `frontend/`). Ver [REPO_STRUCTURE.md](REPO_STRUCTURE.md) para la estructura del repo.
 
 ## ⚙️ Configuración
 
@@ -128,20 +126,20 @@ El sistema genera un archivo `result.json` en el directorio de salida con la sig
 
 ```
 dinamic-gemini/
-├── src/
-│   ├── models/          # Modelos Pydantic (schemas)
-│   ├── video/           # Módulo de procesamiento de video
-│   ├── preprocess/      # Preprocesamiento de imágenes
-│   ├── llm/             # Integración con Gemini API
-│   ├── consolidate/     # Consolidación de resultados
-│   ├── io/              # I/O y exportación
-│   └── cli.py           # Interfaz de línea de comandos
-├── tests/               # Tests unitarios e integración
-├── output/              # Directorio de salida (generado)
-├── configs/             # Archivos de configuración
-├── data/                # Videos de prueba (opcional)
-├── pyproject.toml       # Configuración del proyecto
+├── backend/             # Backend Python (API, pipeline, jobs, persistencia)
+│   ├── src/             # Código fuente (api, domain, application, pipeline, ...)
+│   ├── tests/           # Tests del backend
+│   ├── configs/         # Configuración del backend
+│   ├── scripts/         # Scripts de utilidad
+│   └── pyproject.toml   # Dependencias y entrada CLI (dinamic-gemini = src.app:main)
+├── frontend/            # Frontend React/TypeScript (Vite)
+│   ├── src/
+│   ├── tests/
+│   └── package.json
+├── docs/                # Documentación del proyecto
+├── output/              # Directorio de salida (generado por el backend)
 ├── .env.example         # Ejemplo de variables de entorno
+├── REPO_STRUCTURE.md    # Dónde añadir código (backend vs frontend)
 └── README.md            # Este archivo
 ```
 
@@ -153,10 +151,11 @@ Ejecutar tests:
 pytest
 ```
 
-Con cobertura:
+Con cobertura (desde la raíz; usa `pytest.ini` que apunta a `backend/tests`):
 
 ```bash
-pytest --cov=src --cov-report=html
+pytest
+# o: pytest --cov=src --cov-report=html
 ```
 
 ## 📝 Desarrollo
@@ -167,15 +166,17 @@ Para levantar backend (Python) y frontend (React) con un solo comando desde la r
 
 ### Formateo de código
 
+Desde la raíz (el backend está en `backend/`):
+
 ```bash
-black src/ tests/
-ruff check src/ tests/
+black backend/src backend/tests
+ruff check backend/src backend/tests
 ```
 
 ### Type checking
 
 ```bash
-mypy src/
+mypy backend/src
 ```
 
 ## 🔒 Seguridad

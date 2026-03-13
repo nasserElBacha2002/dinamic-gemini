@@ -2,17 +2,24 @@
  * Helpers for consistent job/status chip presentation in aisle processing UI.
  */
 
+import type { JobStatus } from '../api/types';
+
 type ChipColor = 'default' | 'primary' | 'success' | 'error' | 'warning';
+type JobStatusLike = JobStatus | string;
 
 /**
  * Display label for a job status string (capitalized, known values normalized).
+ * Supports the full v3 job status set, including cancellation and timeout.
  */
-export function getJobStatusLabel(status: string): string {
+export function getJobStatusLabel(status: JobStatusLike): string {
   const s = (status || '').trim().toLowerCase();
   if (!s) return '—';
   const known: Record<string, string> = {
     queued: 'Queued',
     running: 'Running',
+    cancel_requested: 'Cancel requested',
+    canceled: 'Canceled',
+    timed_out: 'Timed out',
     succeeded: 'Succeeded',
     failed: 'Failed',
   };
@@ -22,16 +29,20 @@ export function getJobStatusLabel(status: string): string {
 /**
  * MUI Chip color for job status. Use for job (not aisle) status chips.
  */
-export function getJobStatusColor(status: string): ChipColor {
+export function getJobStatusColor(status: JobStatusLike): ChipColor {
   const s = (status || '').trim().toLowerCase();
   switch (s) {
     case 'succeeded':
       return 'success';
     case 'failed':
+    case 'timed_out':
       return 'error';
     case 'running':
     case 'queued':
       return 'primary';
+    case 'cancel_requested':
+    case 'canceled':
+      return 'warning';
     default:
       return 'default';
   }
