@@ -1,4 +1,11 @@
-"""Stage 2.1.E — Entities and review API (list, evidence, submit review, audit)."""
+"""Stage 2.1.E — Entities and review API (list, evidence, submit review, audit).
+
+Legacy v1 API (v3.1.2 Stage 2): This module implements /api/v1/inventory/jobs/{job_id}/entities and
+entity evidence/review/audit. It is RETAINED because: (1) GET .../entities is consumed by the frontend
+(getJobEntities in client.ts) and by multiple backend tests; (2) GET evidence, POST review, GET audit are
+consumed by backend tests (test_e2e_v2_2, test_stage_2_1_e). Primary product API is v3 (positions/reviews).
+Do not remove v1 routes without re-running consumer trace and updating or removing dependent tests.
+"""
 
 import json
 import logging

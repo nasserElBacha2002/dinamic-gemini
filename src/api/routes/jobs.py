@@ -1,4 +1,11 @@
-"""Stage 7 — Job endpoints. Stage 8 — DB as source of truth when sqlserver_enabled. Stage 2.2.A — video or photos input."""
+"""Stage 7 — Job endpoints. Stage 8 — DB as source of truth when sqlserver_enabled. Stage 2.2.A — video or photos input.
+
+Legacy v1 API (v3.1.2 Stage 2): This module implements the /api/v1/inventory/jobs surface. It is RETAINED
+because: (1) POST/create and GET status/result/report/artifacts are consumed by backend tests and by the
+legacy job flow (worker, job_store, Stage 8 DB); (2) no safe removal was possible without breaking tests or
+external callers. Primary product API is v3 (/api/v3/inventories). Do not remove v1 routes without
+re-running consumer trace and updating or removing dependent tests.
+"""
 
 import json
 import logging
