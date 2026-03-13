@@ -8,12 +8,9 @@ empty/legacy handling.
 
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-from fastapi.testclient import TestClient
 
-from src.api.server import app
 from src.domain.entity import Entity
 from src.llm.prompts import enrich_prompt_with_product_label_association, get_hybrid_prompt
 from src.reporting.artifacts import write_report_csv
@@ -146,70 +143,7 @@ def test_build_hybrid_report_review_display_label_empty_strings_treated_as_missi
 # ---------- API list_entities: review_display_label + product_display_label alias ----------
 
 
-@pytest.fixture
-def client():
-    return TestClient(app)
-
-
-def test_list_entities_returns_review_display_label_and_alias(client, tmp_path):
-    """GET /jobs/{id}/entities returns review_display_label and product_display_label (same value)."""
-    job_id = "job_epic3d01"
-    run_dir = tmp_path / job_id / "run"
-    run_dir.mkdir(parents=True)
-    report_path = run_dir / "hybrid_report.json"
-    report = {
-        "report_version": "2.1",
-        "mode": "hybrid_v2.1",
-        "entities": [
-            {
-                "entity_uid": f"{job_id}_E1",
-                "entity_type": "PALLET",
-                "count_status": "COUNTED",
-                "internal_code": "SKU-X",
-                "position_barcode": "POS-1",
-            },
-        ],
-        "traceability_summary": {"total_entities": 1, "valid": 0, "missing": 1, "invalid": 0, "unvalidated": 0},
-    }
-    report_path.write_text(json.dumps(report), encoding="utf-8")
-    with patch("src.api.routes.entities._resolve_report_and_run_dir") as mock_resolve:
-        mock_resolve.return_value = (report_path, run_dir)
-        resp = client.get(f"/api/v1/inventory/jobs/{job_id}/entities")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data["entities"]) == 1
-    ent = data["entities"][0]
-    assert ent["review_display_label"] == "SKU-X"
-    assert ent["product_display_label"] == "SKU-X"
-
-
-def test_list_entities_derives_display_label_when_key_missing(client, tmp_path):
-    """Legacy report without review_display_label: API derives internal_code else position_barcode."""
-    job_id = "job_epic3d02"
-    run_dir = tmp_path / job_id / "run"
-    run_dir.mkdir(parents=True)
-    report_path = run_dir / "hybrid_report.json"
-    report = {
-        "report_version": "2.1",
-        "mode": "hybrid_v2.1",
-        "entities": [
-            {
-                "entity_uid": f"{job_id}_E1",
-                "entity_type": "PALLET",
-                "count_status": "NEEDS_REVIEW",
-                "position_barcode": "LEGACY-POS",
-            },
-        ],
-        "traceability_summary": {"total_entities": 1, "valid": 0, "missing": 1, "invalid": 0, "unvalidated": 0},
-    }
-    report_path.write_text(json.dumps(report), encoding="utf-8")
-    with patch("src.api.routes.entities._resolve_report_and_run_dir") as mock_resolve:
-        mock_resolve.return_value = (report_path, run_dir)
-        resp = client.get(f"/api/v1/inventory/jobs/{job_id}/entities")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["entities"][0]["review_display_label"] == "LEGACY-POS"
-    assert data["entities"][0]["product_display_label"] == "LEGACY-POS"
+# ---------- list_entities API: v1 routes removed in Stage 3 ----------
 
 
 # ---------- CSV review_display_label ----------

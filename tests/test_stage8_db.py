@@ -14,9 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 
-from src.api.server import app
 from src.database.repository import PalletResultsRepository
 from src.jobs.job_store import get_job
 from src.jobs.worker import run_job, _push_success_to_db
@@ -160,91 +158,4 @@ def test_insert_pallet_results_quantity_object_final_quantity_preferred():
     assert args[8] == 10  # raw_estimated_visible_boxes
 
 
-# --- API uses DB when enabled (mock _get_db_repos) ---
-
-
-@pytest.fixture
-def client():
-    return TestClient(app)
-
-
-def test_get_status_uses_db_when_enabled(client, output_dir):
-    """GET /jobs/{id} when _get_db_repos returns repos uses jobs_repo.get_job."""
-    mock_jobs = MagicMock()
-    mock_jobs.get_job.return_value = {
-        "job_id": "job_api1",
-        "input": {"video_path": "/v", "mode": "hybrid", "confidence_threshold": 0.7, "metadata": None},
-        "status": "running",
-        "progress": {"stage": "gemini_global_call", "percent": 50},
-        "output": None,
-        "error": None,
-        "created_at": "2025-01-01T12:00:00Z",
-        "updated_at": "2025-01-01T12:00:01Z",
-    }
-    with patch("src.api.routes.jobs.load_settings") as m_settings:
-        m_settings.return_value = MagicMock(output_dir=str(output_dir))
-        with patch("src.api.routes.jobs._get_db_repos") as m_repos:
-            m_repos.return_value = (mock_jobs, MagicMock(), MagicMock())
-            r = client.get("/api/v1/inventory/jobs/job_api1")
-    assert r.status_code == 200
-    assert r.json()["job_id"] == "job_api1"
-    assert r.json()["status"] == "running"
-    mock_jobs.get_job.assert_called_once_with("job_api1")
-
-
-def test_get_result_uses_db_when_enabled(client, output_dir):
-    """GET /jobs/{id}/result when DB enabled uses jobs_repo.get_job + pallet_repo.get_pallet_results."""
-    mock_jobs = MagicMock()
-    mock_jobs.get_job.return_value = {
-        "job_id": "job_res1",
-        "input": {"video_path": "/v", "mode": "hybrid", "confidence_threshold": 0.75, "metadata": None},
-        "status": "succeeded",
-        "progress": {"stage": "done", "percent": 100},
-        "output": {"report_json_path": None, "report_csv_path": None, "artifacts_dir": str(output_dir)},
-        "error": None,
-        "created_at": "2025-01-01T12:00:00Z",
-        "updated_at": "2025-01-01T12:01:00Z",
-    }
-    mock_pallet = MagicMock()
-    mock_pallet.get_pallet_results.return_value = [
-        {"pallet_id": "P1", "internal_code": "X", "quantity": 5, "source": "label", "confidence": 0.9, "fallback_used": False, "raw_estimated_visible_boxes": None},
-    ]
-    with patch("src.api.routes.jobs.load_settings") as m_settings:
-        m_settings.return_value = MagicMock(output_dir=str(output_dir))
-        with patch("src.api.routes.jobs._get_db_repos") as m_repos:
-            m_repos.return_value = (mock_jobs, mock_pallet, MagicMock())
-            r = client.get("/api/v1/inventory/jobs/job_res1/result")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["job_id"] == "job_res1"
-    assert data["status"] == "succeeded"
-    assert data["total_pallets_detected"] == 1
-    assert data["pallets"][0]["pallet_id"] == "P1"
-    assert data["pallets"][0]["quantity"] == 5
-    mock_jobs.get_job.assert_called_once_with("job_res1")
-    mock_pallet.get_pallet_results.assert_called_once_with("job_res1")
-
-
-def test_post_job_with_db_enabled_calls_create_job(client, output_dir):
-    """POST /jobs with DB enabled: job_store.create_job is called and inserts into DB (mock _db_repos)."""
-    with patch("src.api.routes.jobs.load_settings") as m_settings:
-        m_settings.return_value = MagicMock(
-            output_dir=str(output_dir),
-            max_upload_size_mb=500,
-            api_key="",
-        )
-        with patch("src.api.routes.jobs.enqueue"):
-            mock_jobs = MagicMock()
-            with patch("src.jobs.job_store._db_repos") as m_db_repos:
-                m_db_repos.return_value = (mock_jobs, MagicMock(), MagicMock())
-                r = client.post(
-                    "/api/v1/inventory/jobs",
-                    data={"mode": "hybrid", "confidence_threshold": "0.7"},
-                    files={"video": ("test.mp4", b"fake", "video/mp4")},
-                )
-    assert r.status_code == 202
-    assert r.json()["job_id"].startswith("job_")
-    mock_jobs.create_job.assert_called_once()
-    call_kw = mock_jobs.create_job.call_args[1]
-    assert call_kw["mode"] == "hybrid"
-    assert call_kw["confidence_threshold"] == 0.7
+# --- API uses DB when enabled: removed in Stage 3 (v1 job routes retired) ---

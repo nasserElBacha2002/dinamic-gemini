@@ -22,8 +22,4 @@ export const queryKeys = {
     executionLog: (inventoryId: string, aisleId: string, jobId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'jobs', jobId, 'execution-log'] as const,
   },
-
-  /** v1 job entities (Epic 3.1.B/3.1.C). Include filter in key so filtered results are cached separately. */
-  jobEntities: (jobId: string, traceabilityStatus?: string | null) =>
-    ['v1', 'jobs', jobId, 'entities', traceabilityStatus ?? ''] as const,
 } as const;

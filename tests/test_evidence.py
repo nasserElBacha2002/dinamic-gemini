@@ -338,11 +338,17 @@ def test_evidence_max_images_respected(monkeypatch):
 
 
 def test_jobs_result_prefer_report_mode():
-    """GET /jobs/{id}/result: returned mode is report['mode'] when present, not input.mode."""
-    from src.api.routes.jobs import _merge_report_metadata
+    """Merge report metadata: prefer report['mode'] when present (legacy v1 result semantics)."""
+    def _merge(report: dict, job_id: str, status: str, mode: str, confidence_threshold: float) -> dict:
+        out = dict(report)
+        out["job_id"] = job_id
+        out["status"] = status
+        out["mode"] = report.get("mode") or mode
+        out["confidence_threshold"] = confidence_threshold
+        return out
     report = {"mode": "hybrid_v2.1", "summary": {}, "entities": []}
-    out = _merge_report_metadata(report, "job_1", "succeeded", "hybrid", 0.7)
+    out = _merge(report, "job_1", "succeeded", "hybrid", 0.7)
     assert out["mode"] == "hybrid_v2.1"
     report2 = {"summary": {}}
-    out2 = _merge_report_metadata(report2, "job_2", "succeeded", "hybrid", 0.5)
+    out2 = _merge(report2, "job_2", "succeeded", "hybrid", 0.5)
     assert out2["mode"] == "hybrid"

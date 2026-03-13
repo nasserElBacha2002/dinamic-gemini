@@ -11,9 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from src.api.routes.entities import router as entities_router
-from src.api.routes.inventories_v3 import router as inventories_v3_router
-from src.api.routes.jobs import router as jobs_router
+from src.api.routes.v3 import router as v3_router
 from src.api.schemas.responses import HealthResponse
 from src.config import load_settings
 from src.jobs.queue import dequeue
@@ -32,10 +30,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(jobs_router)
-app.include_router(entities_router)
-app.include_router(inventories_v3_router)
+# Include routers (v3 only; legacy v1 jobs/entities removed in Stage 3)
+app.include_router(v3_router)
 
 
 @app.middleware("http")

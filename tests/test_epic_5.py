@@ -12,9 +12,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 
-from src.api.server import app
 from src.domain.entity import Entity
 from src.jobs.models import JobInput
 from src.jobs.photos_paths import photos_dir_relative_for_manifest, resolve_manifest_path
@@ -238,77 +236,4 @@ def test_write_report_csv_backward_compat_no_source_image_original_filename():
 # ---------- list_entities API source_image_original_filename ----------
 
 
-@pytest.fixture
-def client():
-    return TestClient(app)
-
-
-def test_list_entities_returns_source_image_original_filename_when_in_report(client, tmp_path):
-    """GET /jobs/{id}/entities includes source_image_original_filename when present in report."""
-    job_id = "job_epic5_test"
-    run_dir = tmp_path / job_id / "run"
-    run_dir.mkdir(parents=True)
-    report = {
-        "report_version": "2.1",
-        "mode": "hybrid_v2.1",
-        "summary": {"total_entities": 1},
-        "entities": [
-            {
-                "entity_uid": "E1",
-                "pallet_id": "P1",
-                "entity_type": "PALLET",
-                "count_status": "COUNTED",
-                "source_image_id": "img_001",
-                "traceability_status": "valid",
-                "source_image_original_filename": "my_photo.jpg",
-            },
-        ],
-    }
-    report_path = run_dir / "hybrid_report.json"
-    report_path.write_text(json.dumps(report), encoding="utf-8")
-    create_job(tmp_path, job_id, video_path=str(tmp_path / "v.mp4"), mode="hybrid", confidence_threshold=0.7)
-    update_job(tmp_path, job_id, status=JobStatus.SUCCEEDED, output=JobOutput(report_json_path=str(report_path)))
-    with patch("src.api.routes.jobs._base_path", return_value=tmp_path):
-        with patch("src.api.routes.entities._resolve_report_and_run_dir") as mock_resolve:
-            mock_resolve.return_value = (report_path, run_dir)
-            r = client.get(f"/api/v1/inventory/jobs/{job_id}/entities")
-    assert r.status_code == 200
-    data = r.json()
-    assert len(data["entities"]) == 1
-    assert data["entities"][0]["source_image_original_filename"] == "my_photo.jpg"
-    assert data["entities"][0]["source_image_id"] == "img_001"
-
-
-def test_list_entities_legacy_report_without_source_image_original_filename(client, tmp_path):
-    """Legacy report without source_image_original_filename: field is null/omitted in response (backward compat)."""
-    job_id = "job_epic5_legacy"
-    run_dir = tmp_path / job_id / "run"
-    run_dir.mkdir(parents=True)
-    report = {
-        "report_version": "2.1",
-        "mode": "hybrid_v2.1",
-        "summary": {"total_entities": 1},
-        "entities": [
-            {
-                "entity_uid": "E1",
-                "pallet_id": "P1",
-                "entity_type": "PALLET",
-                "count_status": "COUNTED",
-                "source_image_id": "img_001",
-                "traceability_status": "valid",
-            },
-        ],
-    }
-    report_path = run_dir / "hybrid_report.json"
-    report_path.write_text(json.dumps(report), encoding="utf-8")
-    create_job(tmp_path, job_id, video_path=str(tmp_path / "v.mp4"), mode="hybrid", confidence_threshold=0.7)
-    update_job(tmp_path, job_id, status=JobStatus.SUCCEEDED, output=JobOutput(report_json_path=str(report_path)))
-    with patch("src.api.routes.jobs._base_path", return_value=tmp_path):
-        with patch("src.api.routes.entities._resolve_report_and_run_dir") as mock_resolve:
-            mock_resolve.return_value = (report_path, run_dir)
-            r = client.get(f"/api/v1/inventory/jobs/{job_id}/entities")
-    assert r.status_code == 200
-    data = r.json()
-    assert len(data["entities"]) == 1
-    assert data["entities"][0].get("source_image_original_filename") is None
-    assert data["entities"][0]["source_image_id"] == "img_001"
+# v1 list_entities tests removed in Stage 3; v3 positions expose source_image_original_filename

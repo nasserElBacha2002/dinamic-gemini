@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.api.routes.inventories_v3 import (
-    _position_to_summary,
+from src.api.routes.v3.shared import (
+    position_to_summary as _position_to_summary,
     _summary_sku_and_quantity_from_position,
 )
 from src.api.schemas.position_schemas import PositionSummaryResponse

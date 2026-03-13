@@ -114,7 +114,7 @@ def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) 
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.inventories_v3.load_settings") as mock_settings:
+    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
         mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
 
         try:
@@ -155,7 +155,7 @@ def test_heic_asset_file_returns_404_when_no_normalized_preview(output_dir: Path
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.inventories_v3.load_settings") as mock_settings:
+    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
         mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
 
         try:
@@ -196,7 +196,7 @@ def test_jpg_asset_file_serves_original_unchanged(output_dir: Path) -> None:
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.inventories_v3.load_settings") as mock_settings:
+    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
         mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
 
         try:
@@ -264,7 +264,7 @@ def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) ->
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.inventories_v3.load_settings") as mock_settings:
+    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
         mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
 
         try:
@@ -331,7 +331,7 @@ def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.inventories_v3.load_settings") as mock_settings:
+    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
         mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
 
         try:
