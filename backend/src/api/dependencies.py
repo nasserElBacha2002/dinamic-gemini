@@ -56,6 +56,7 @@ from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.application.use_cases.persist_aisle_result import PersistAisleResultUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
+from src.application.use_cases.cancel_aisle_job import CancelAisleJobUseCase
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,18 @@ def get_get_aisle_processing_status_use_case(
     return GetAisleProcessingStatusUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
+    )
+
+
+def get_cancel_aisle_job_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    clock: Clock = Depends(get_clock),
+) -> CancelAisleJobUseCase:
+    return CancelAisleJobUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        clock=clock,
     )
 
 

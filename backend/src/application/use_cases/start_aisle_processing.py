@@ -47,7 +47,11 @@ class StartAisleProcessingUseCase:
             )
 
         latest = self._job_repo.get_latest_by_target("aisle", command.aisle_id)
-        if latest is not None and latest.status in (JobStatus.QUEUED, JobStatus.RUNNING):
+        if latest is not None and latest.status in (
+            JobStatus.QUEUED,
+            JobStatus.RUNNING,
+            JobStatus.CANCEL_REQUESTED,
+        ):
             raise ActiveJobExistsError(
                 f"Aisle {command.aisle_id} already has an active job (status={latest.status.value})"
             )

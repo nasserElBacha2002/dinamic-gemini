@@ -75,6 +75,13 @@ class V3JobExecutor:
         job = self._job_repo.get_by_id(job_id)
         if job is None or job.job_type != "process_aisle":
             return False
+        if job.status == JobStatus.CANCELED:
+            logger.info("v3 job %s already canceled, skip", job_id)
+            return True
+        if job.status == JobStatus.CANCEL_REQUESTED:
+            logger.info("v3 job %s cancel requested before start; marking canceled", job_id)
+            self._cancel_job(job_id, "Job canceled before execution")
+            return True
         if job.status != JobStatus.QUEUED:
             logger.warning("v3 job %s not queued (status=%s), skip", job_id, job.status.value)
             return True
@@ -136,6 +143,13 @@ class V3JobExecutor:
                 else:
                     error_message = f"Pipeline exited with code {code}"
                 self._fail_job_and_aisle(job_id, aisle, error_message)
+                return True
+
+            # Cooperative cancellation checkpoint after pipeline execution and before persist.
+            current_job = self._job_repo.get_by_id(job_id)
+            if current_job is not None and current_job.status == JobStatus.CANCEL_REQUESTED:
+                logger.info("v3 job %s cancellation observed after pipeline; marking canceled", job_id)
+                self._cancel_job_and_aisle(job_id, aisle, "Job canceled after pipeline execution")
                 return True
 
             report_path = run_dir / "hybrid_report.json"
@@ -278,6 +292,15 @@ class V3JobExecutor:
             job.error_message = error_message[:2048] if len(error_message) > 2048 else error_message
             self._job_repo.save(job)
 
+    def _cancel_job(self, job_id: str, reason: str) -> None:
+        job = self._job_repo.get_by_id(job_id)
+        if job:
+            now = self._clock.now()
+            job.status = JobStatus.CANCELED
+            job.updated_at = now
+            job.error_message = reason[:2048] if len(reason) > 2048 else reason
+            self._job_repo.save(job)
+
     def _fail_job_and_aisle(
         self, job_id: str, aisle: Aisle, error_message: str
     ) -> None:
@@ -287,6 +310,19 @@ class V3JobExecutor:
             now,
             error_code="PROCESSING_FAILED",
             error_message=error_message[:2048] if len(error_message) > 2048 else error_message,
+            retryable=True,
+        )
+        self._aisle_repo.save(aisle)
+
+    def _cancel_job_and_aisle(
+        self, job_id: str, aisle: Aisle, reason: str
+    ) -> None:
+        now = self._clock.now()
+        self._cancel_job(job_id, reason)
+        aisle.mark_failed(
+            now,
+            error_code="CANCELED",
+            error_message=reason[:2048] if len(reason) > 2048 else reason,
             retryable=True,
         )
         self._aisle_repo.save(aisle)

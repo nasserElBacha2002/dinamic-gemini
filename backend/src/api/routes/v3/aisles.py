@@ -13,6 +13,7 @@ from src.api.dependencies import (
     get_list_aisles_with_status_use_case,
     get_start_aisle_processing_use_case,
     get_get_aisle_processing_status_use_case,
+    get_cancel_aisle_job_use_case,
     get_aisle_repo,
     get_job_repo,
 )
@@ -29,6 +30,7 @@ from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAis
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
+from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.pipeline.execution_log import read_execution_log
 
@@ -92,6 +94,38 @@ def get_aisle_status(
         return status_response_from_result(result)
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
+    status_code=202,
+)
+def cancel_aisle_job(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    use_case: CancelAisleJobUseCase = Depends(get_cancel_aisle_job_use_case),
+) -> None:
+    """Request cancellation of an active v3 process_aisle job.
+
+    Cancellation is cooperative:
+    - QUEUED jobs are marked CANCELED immediately (never started).
+    - RUNNING jobs are marked CANCEL_REQUESTED; the executor will observe this and
+      transition to CANCELED at the next safe checkpoint.
+    """
+    try:
+        use_case.execute(
+            CancelAisleJobCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                job_id=job_id,
+            )
+        )
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle/inventory")
+    except ValueError as e:
+        # Terminal or invalid state for cancellation.
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @router.get(
