@@ -117,22 +117,42 @@ BEGIN
 END;
 GO
 
--- v3.0 — Jobs (Épica 4; domain Job entity, distinct from legacy jobs table)
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'v3_jobs')
+-- v3.0 — Inventory jobs (Épica 4; domain Job entity for process_aisle). Normalized from v3_jobs (Stage 4).
+--
+-- SUPPORTED STATES (script is idempotent for these):
+--   1. Fresh install: neither v3_jobs nor inventory_jobs → creates inventory_jobs with IX_inventory_jobs_target.
+--   2. Pre-migration: v3_jobs exists, inventory_jobs does not → renames table then index (with guard).
+--   3. Already migrated: inventory_jobs exists → no action (outer IF skips block).
+-- UNSUPPORTED / OPERATOR INTERVENTION: Both v3_jobs and inventory_jobs exist (e.g. manual partial run).
+--   Script does not touch tables; application uses inventory_jobs. Operator may drop or archive v3_jobs if desired.
+--
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'inventory_jobs')
 BEGIN
-    CREATE TABLE v3_jobs (
-        id VARCHAR(36) NOT NULL PRIMARY KEY,
-        target_type VARCHAR(32) NOT NULL,
-        target_id VARCHAR(36) NOT NULL,
-        job_type VARCHAR(64) NOT NULL,
-        status VARCHAR(16) NOT NULL,
-        payload_json NVARCHAR(MAX) NULL,
-        result_json NVARCHAR(MAX) NULL,
-        error_message NVARCHAR(2048) NULL,
-        created_at DATETIME2 NOT NULL,
-        updated_at DATETIME2 NOT NULL
-    );
-    CREATE INDEX IX_v3_jobs_target ON v3_jobs(target_type, target_id);
+    IF EXISTS (SELECT * FROM sys.tables WHERE name = 'v3_jobs')
+    BEGIN
+        -- Migration: rename v3_jobs to inventory_jobs (data-preserving).
+        EXEC sp_rename 'dbo.v3_jobs', 'inventory_jobs';
+        -- Rename index only if it still has the old name (idempotent if index was already renamed manually).
+        IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.inventory_jobs') AND name = 'IX_v3_jobs_target')
+            EXEC sp_rename 'dbo.inventory_jobs.IX_v3_jobs_target', 'IX_inventory_jobs_target', 'INDEX';
+    END
+    ELSE
+    BEGIN
+        -- New install: create inventory_jobs directly.
+        CREATE TABLE inventory_jobs (
+            id VARCHAR(36) NOT NULL PRIMARY KEY,
+            target_type VARCHAR(32) NOT NULL,
+            target_id VARCHAR(36) NOT NULL,
+            job_type VARCHAR(64) NOT NULL,
+            status VARCHAR(16) NOT NULL,
+            payload_json NVARCHAR(MAX) NULL,
+            result_json NVARCHAR(MAX) NULL,
+            error_message NVARCHAR(2048) NULL,
+            created_at DATETIME2 NOT NULL,
+            updated_at DATETIME2 NOT NULL
+        );
+        CREATE INDEX IX_inventory_jobs_target ON inventory_jobs(target_type, target_id);
+    END
 END;
 GO
 

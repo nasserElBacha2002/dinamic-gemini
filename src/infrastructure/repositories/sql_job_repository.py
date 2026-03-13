@@ -1,7 +1,7 @@
 """
 SQL Server implementation of JobRepository — v3.0 (Épica 4).
 
-Persists domain Job entities to the v3_jobs table.
+Persists domain Job entities to the inventory_jobs table (normalized from v3_jobs in Stage 4).
 get_latest_by_target: ORDER BY updated_at DESC, created_at DESC; returns single row.
 """
 
@@ -54,11 +54,11 @@ def _row_to_job(row: Any) -> Job:
     created = _ensure_utc(getattr(row, "created_at", None))
     updated = _ensure_utc(getattr(row, "updated_at", None))
     if created is None:
-        logger.warning("v3_jobs row missing created_at for job_id=%s", jid)
-        raise ValueError("v3_jobs row missing required created_at")
+        logger.warning("inventory_jobs row missing created_at for job_id=%s", jid)
+        raise ValueError("inventory_jobs row missing required created_at")
     if updated is None:
-        logger.warning("v3_jobs row missing updated_at for job_id=%s", jid)
-        raise ValueError("v3_jobs row missing required updated_at")
+        logger.warning("inventory_jobs row missing updated_at for job_id=%s", jid)
+        raise ValueError("inventory_jobs row missing required updated_at")
     return Job(
         id=jid,
         target_type=row.target_type or "",
@@ -89,7 +89,7 @@ class SqlJobRepository(JobRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                UPDATE v3_jobs
+                UPDATE inventory_jobs
                 SET target_type = ?, target_id = ?, job_type = ?, status = ?,
                     payload_json = ?, result_json = ?, error_message = ?, updated_at = ?
                 WHERE id = ?
@@ -109,7 +109,7 @@ class SqlJobRepository(JobRepository):
             if cur.rowcount == 0:
                 cur.execute(
                     """
-                    INSERT INTO v3_jobs (id, target_type, target_id, job_type, status,
+                    INSERT INTO inventory_jobs (id, target_type, target_id, job_type, status,
                         payload_json, result_json, error_message, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
@@ -133,7 +133,7 @@ class SqlJobRepository(JobRepository):
                 """
                 SELECT id, target_type, target_id, job_type, status,
                        payload_json, result_json, error_message, created_at, updated_at
-                FROM v3_jobs WHERE id = ?
+                FROM inventory_jobs WHERE id = ?
                 """,
                 (job_id,),
             )
@@ -148,7 +148,7 @@ class SqlJobRepository(JobRepository):
                 """
                 SELECT TOP 1 id, target_type, target_id, job_type, status,
                        payload_json, result_json, error_message, created_at, updated_at
-                FROM v3_jobs
+                FROM inventory_jobs
                 WHERE target_type = ? AND target_id = ?
                 ORDER BY updated_at DESC, created_at DESC
                 """,
@@ -173,7 +173,7 @@ class SqlJobRepository(JobRepository):
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY target_id ORDER BY updated_at DESC, created_at DESC
                 ) AS rn
-                FROM v3_jobs
+                FROM inventory_jobs
                 WHERE target_type = ? AND target_id IN ({placeholders})
             ) t
             WHERE t.rn = 1

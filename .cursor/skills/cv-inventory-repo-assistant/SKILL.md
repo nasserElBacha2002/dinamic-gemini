@@ -17,8 +17,8 @@ description: Guides implementation and maintenance of the Dinamic Inventory prod
 - **Backend:** Clean layers — `api` (routes, schemas, dependencies) → `application` (use cases, ports) → `domain` (entities) → `infrastructure` (repositories, queue, storage). No business logic in routes; use cases depend only on ports.
 - **Domain entities:** Inventory, Aisle, Job (v3), SourceAsset, Position, ProductRecord, Evidence, ReviewAction. Status enums and transitions are explicit.
 - **API:** v3 endpoints under `/api/v3/` — inventories, aisles, process, status. Thin routes: parse → call use case → serialize. Errors mapped to HTTP (404, 409, 422).
-- **Persistence:** SQL (inventories, aisles, v3_jobs) with repository implementations; optional in-memory fallback. Schema and migrations in `src/database/`.
-- **Jobs:** v3 job flow for aisle processing (create job, enqueue, persist, status). Legacy job system (`src/jobs/`, legacy `jobs` table) remains for existing pipeline; v3 uses `v3_jobs` and application ports.
+- **Persistence:** SQL (inventories, aisles, inventory_jobs) with repository implementations; optional in-memory fallback. Schema and migrations in `src/database/`.
+- **Jobs:** v3 job flow for aisle processing (create job, enqueue, persist, status). Legacy job system (`src/jobs/`, legacy `jobs` table) remains for existing pipeline; v3 uses `inventory_jobs` and application ports.
 - **Frontend:** React + TypeScript + Material UI in `frontend/`. Centralized API client, typed DTOs, pages (list, detail), dialogs (create inventory, create aisle). Loading/error states and contract alignment with backend.
 
 ### 2. Computer vision / processing subsystem

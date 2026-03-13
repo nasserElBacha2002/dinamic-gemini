@@ -14,7 +14,7 @@ Summary for the Repo Assistant skill. Product = **operational platform (v3)** + 
 | **application** | `application/use_cases/`, `application/ports/` | Use cases (create/list inventory, create/list aisles, start aisle processing, get aisle status). Ports: repositories (ABCs), services (JobQueue, ArtifactStorage, etc.), contracts (typed payloads). |
 | **domain** | `domain/inventory/`, `domain/aisle/`, `domain/jobs/`, etc. | Entities: Inventory, Aisle, Job, SourceAsset, Position, ProductRecord, Evidence, ReviewAction. Status enums and transitions. Framework-agnostic. |
 | **infrastructure** | `infrastructure/repositories/`, `infrastructure/queue/` | SQL and in-memory repository implementations; v3 job queue adapter (enqueue job_type + payload → job_id). |
-| **database** | `database/schema.sql`, `database/sqlserver.py` | v3 tables: inventories, aisles, v3_jobs. Legacy jobs table for existing pipeline. |
+| **database** | `database/schema.sql`, `database/sqlserver.py` | v3 tables: inventories, aisles, inventory_jobs. Legacy jobs table for existing pipeline. |
 
 ### v3 API (relevant endpoints)
 
