@@ -13,6 +13,8 @@ from fastapi.responses import JSONResponse
 
 from src.api.routes.v3 import router as v3_router
 from src.api.schemas.responses import HealthResponse
+from src.auth.errors import AuthHttpError
+from src.auth.routes import router as auth_router
 from src.config import load_settings
 from src.jobs.queue import dequeue
 from src.jobs.worker import run_job
@@ -30,8 +32,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers (v3 only; legacy v1 jobs/entities removed in Stage 3)
+# Include routers (v3 only for inventory operations; legacy v1 jobs/entities removed in Stage 3).
 app.include_router(v3_router)
+app.include_router(auth_router)
+
+
+@app.exception_handler(AuthHttpError)
+async def auth_http_error_handler(_: Request, exc: AuthHttpError):
+    return JSONResponse(status_code=exc.status_code, content=exc.to_response_body())
 
 
 @app.middleware("http")

@@ -37,6 +37,10 @@ dependencies = [
     "uvicorn[standard]>=0.22.0",
     "python-multipart>=0.0.6",
     "pyodbc>=5.0.0",
+    # v3.2.1 auth core (Phase 2)
+    "passlib>=1.7.4",
+    "bcrypt>=4.0.0",
+    "PyJWT>=2.10.0",
 ]
 
 [project.optional-dependencies]

@@ -486,6 +486,26 @@ class Settings(BaseModel):
         description="Si es True, guarda los frames procesados para debug.",
     )
 
+    # Auth (v3.2.1 — minimal administrative authentication)
+    admin_username: str = Field(
+        default_factory=lambda: (os.getenv("ADMIN_USERNAME", "") or "").strip(),
+        description="Single administrator username for v3.2.1 auth. Env: ADMIN_USERNAME.",
+    )
+    admin_password_hash: str = Field(
+        default_factory=lambda: (os.getenv("ADMIN_PASSWORD_HASH", "") or "").strip(),
+        description="Password hash for administrator (no plaintext). Env: ADMIN_PASSWORD_HASH.",
+    )
+    auth_token_secret: str = Field(
+        default_factory=lambda: (os.getenv("AUTH_TOKEN_SECRET", "") or "").strip(),
+        description="Secret key used to sign auth tokens. Env: AUTH_TOKEN_SECRET.",
+    )
+    auth_token_expires_minutes: int = Field(
+        default_factory=lambda: int(os.getenv("AUTH_TOKEN_EXPIRES_MINUTES", "480")),
+        ge=1,
+        le=7 * 24 * 60,
+        description="Token lifetime in minutes for admin access (default 480 = 8h). Env: AUTH_TOKEN_EXPIRES_MINUTES.",
+    )
+
     # Stage 2.1.D — Evidence pack
     evidence_k_overview: int = Field(
         default_factory=lambda: int(os.getenv("EVIDENCE_K_OVERVIEW", "3")),
