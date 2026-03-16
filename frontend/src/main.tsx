@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, CssBaseline } from '@mui/material';
+import { AuthProvider } from './features/auth';
 import App from './App';
 import theme from './theme';
 
@@ -24,13 +25,15 @@ const queryClient = new QueryClient({
 // the in-flight request can be cancelled, so the remount runs the query again.
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-  <QueryClientProvider client={queryClient}>
-    <BrowserRouter>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <App />
-      </ThemeProvider>
-    </BrowserRouter>
-  </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </ThemeProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
   </React.StrictMode>
 );

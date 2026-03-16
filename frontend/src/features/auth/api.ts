@@ -1,5 +1,7 @@
-// Auth API client for v3.2.1 — Phase 1 foundation only.
-// Functions are defined with correct contracts but deliberately not implemented yet.
+/**
+ * Auth API client for v3.2.1 — Phase 4 implementation.
+ * Calls POST /auth/login and GET /auth/me; parses stable auth error envelope.
+ */
 
 import type {
   AuthUser,
@@ -8,18 +10,80 @@ import type {
   AuthErrorResponseDto,
 } from './types';
 
-export async function login(_payload: LoginRequestDto): Promise<LoginResponseDto> {
-  // Phase 1: contract only. Real implementation will be added in Phase 2.
-  throw new Error('Auth login is not implemented in v3.2.1 Phase 1.');
+const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
+
+/** Thrown when the backend returns the stable auth error envelope (e.g. 401). */
+export class AuthApiError extends Error {
+  constructor(
+    message: string,
+    public readonly responseBody: AuthErrorResponseDto,
+  ) {
+    super(message);
+    this.name = 'AuthApiError';
+    Object.setPrototypeOf(this, AuthApiError.prototype);
+  }
 }
 
-export async function getCurrentUser(): Promise<AuthUser> {
-  // Phase 1: contract only. Implementation will call /auth/me in later phases.
-  throw new Error('Auth current-user lookup is not implemented in v3.2.1 Phase 1.');
+function isAuthErrorEnvelope(data: unknown): data is AuthErrorResponseDto {
+  const body = data as AuthErrorResponseDto;
+  return !!(
+    body?.error &&
+    typeof body.error === 'object' &&
+    'code' in body.error &&
+    'message' in body.error
+  );
 }
 
-export function isAuthError(_error: unknown): _error is AuthErrorResponseDto {
-  // Helper boundary for later phases. Currently a simple structural check.
-  return false;
+async function handleAuthResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  let data: unknown;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+
+  if (!response.ok) {
+    if (isAuthErrorEnvelope(data)) {
+      throw new AuthApiError((data as AuthErrorResponseDto).error.message, data as AuthErrorResponseDto);
+    }
+    throw new Error(
+      typeof (data as { detail?: string })?.detail === 'string'
+        ? (data as { detail: string }).detail
+        : response.statusText || 'Request failed',
+    );
+  }
+
+  return data as T;
 }
 
+export async function login(payload: LoginRequestDto): Promise<LoginResponseDto> {
+  const response = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return handleAuthResponse<LoginResponseDto>(response);
+}
+
+/**
+ * Validate token and return current user. Use for session restoration.
+ * Call with the stored token; backend returns 401 if invalid/expired.
+ */
+export async function getCurrentUser(token: string): Promise<AuthUser> {
+  const response = await fetch(`${API_BASE}/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return handleAuthResponse<AuthUser>(response);
+}
+
+export function isAuthError(error: unknown): error is AuthApiError {
+  return error instanceof AuthApiError;
+}
+
+/** Get user-facing message from an auth API error. */
+export function getAuthErrorMessage(error: unknown): string {
+  if (error instanceof AuthApiError) return error.responseBody.error.message;
+  if (error instanceof Error && error.message) return error.message;
+  return 'Authentication failed';
+}

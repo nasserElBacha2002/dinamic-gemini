@@ -1,32 +1,73 @@
-import React from 'react';
-import { Box, Button, TextField, Typography, Paper } from '@mui/material';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Box, Button, TextField, Typography, Paper, Alert } from '@mui/material';
+import { login as loginApi, getAuthErrorMessage } from './api';
+import { useAuth } from './store';
 
 /**
- * LoginPage — Phase 1 placeholder.
+ * LoginPage — Phase 4 implementation.
  *
- * This component defines the basic layout for the future admin login screen
- * but does not yet perform any API calls or state updates.
+ * Submits credentials to POST /auth/login; on success stores token and user
+ * via AuthProvider and navigates to home. Shows loading and error state.
  */
 export default function LoginPage() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const canSubmit = !loading && username.trim() !== '' && password !== '';
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setErrorMessage(null);
+    setLoading(true);
+    try {
+      const res = await loginApi({ username: username.trim(), password });
+      login(res.user, res.access_token);
+      navigate('/', { replace: true });
+    } catch (err) {
+      setErrorMessage(getAuthErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
       <Paper elevation={3} sx={{ p: 4, width: 360 }}>
         <Typography variant="h5" component="h1" gutterBottom>
-          Admin login (coming in v3.2.1)
+          Admin login
         </Typography>
-        <Box component="form" noValidate autoComplete="off">
+        <Box component="form" onSubmit={handleSubmit} noValidate autoComplete="off">
+          {errorMessage && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setErrorMessage(null)}>
+              {errorMessage}
+            </Alert>
+          )}
           <TextField
             label="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             margin="normal"
             fullWidth
-            disabled
+            required
+            autoComplete="username"
+            disabled={loading}
           />
           <TextField
             label="Password"
             type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             margin="normal"
             fullWidth
-            disabled
+            required
+            autoComplete="current-password"
+            disabled={loading}
           />
           <Button
             type="submit"
@@ -34,17 +75,12 @@ export default function LoginPage() {
             color="primary"
             fullWidth
             sx={{ mt: 2 }}
-            disabled
+            disabled={!canSubmit}
           >
-            Login
+            {loading ? 'Signing in…' : 'Login'}
           </Button>
         </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          This is a placeholder for the v3.2.1 admin authentication flow. Functionality will be
-          wired in later phases.
-        </Typography>
       </Paper>
     </Box>
   );
 }
-
