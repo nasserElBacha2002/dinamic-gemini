@@ -20,7 +20,13 @@ from uuid import uuid4
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
-from src.domain.quantity.resolution import normalize_raw_qty, resolve_final_qty, QtySource
+from src.domain.quantity.resolution import (
+    QtySource,
+    has_strong_identity_for_qty_inference,
+    is_product_present_for_qty_inference,
+    normalize_raw_qty,
+    resolve_final_qty,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,10 +123,21 @@ def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tup
     entity_type = (entity.get("entity_type") or "").strip().upper()
     count_status = (entity.get("count_status") or "").strip().upper()
 
-    # Domain acceptance proxy for v3 persistence:
-    # - product-present when report marks it counted (COUNTED / COUNTED_MANUAL)
-    # - explicit zero is only valid for EMPTY_PALLET (existing domain rule)
-    is_product_present = count_status in _ACCEPTED_COUNT_STATUSES
+    has_identity = has_strong_identity_for_qty_inference(
+        internal_code=entity.get("internal_code"),
+        review_display_label=entity.get("review_display_label"),
+        position_barcode=entity.get("position_barcode"),
+        pallet_id=entity.get("pallet_id"),
+    )
+
+    # Shared product-present rule for qty inference (mapper + API legacy) via shared helpers.
+    is_product_present = is_product_present_for_qty_inference(
+        count_status=count_status,
+        entity_type=entity_type,
+        has_valid_evidence=has_valid_evidence,
+        has_identity=has_identity,
+        traceability_status=entity.get("traceability_status"),
+    )
     allow_zero = entity_type == "EMPTY_PALLET"
 
     res = resolve_final_qty(

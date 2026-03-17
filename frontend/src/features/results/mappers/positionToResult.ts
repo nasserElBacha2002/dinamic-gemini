@@ -72,10 +72,20 @@ export function mapPositionSummaryToResultSummary(
     p.has_evidence ?? Boolean(
       p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
     );
+  const resolvedQty =
+    p.corrected_quantity != null
+      ? p.corrected_quantity
+      : p.qty ?? null;
+
   return {
     id: p.id,
     sku: p.sku ?? null,
     detectedQty: p.detected_quantity ?? null,
+    correctedQty: p.corrected_quantity ?? null,
+    resolvedQty,
+    qtySource: p.qtySource ?? 'detected',
+    qtyResolved: p.qtyResolved ?? null,
+    qtyInferenceReason: p.qtyInferenceReason ?? null,
     confidence: p.confidence ?? null,
     reviewStatus: mapPositionStatusToReviewStatus(p.status, p.needs_review),
     traceabilityStatus: mapTraceabilityToVisible(p.traceability_status),
@@ -136,11 +146,20 @@ export function mapPositionDetailToResultDetail(
 
   const entityId = getSummaryString(summaryJson, 'entity_uid');
 
+  const resolvedQty =
+    position.corrected_quantity != null
+      ? position.corrected_quantity
+      : position.qty ?? null;
+
   return {
     id: position.id,
     sku: position.sku ?? null,
     detectedQty: position.detected_quantity ?? null,
     correctedQty: position.corrected_quantity ?? null,
+    resolvedQty,
+    qtySource: position.qtySource ?? 'detected',
+    qtyResolved: position.qtyResolved ?? null,
+    qtyInferenceReason: position.qtyInferenceReason ?? null,
     confidence: position.confidence ?? null,
     reviewStatus: mapPositionStatusToReviewStatus(
       position.status,

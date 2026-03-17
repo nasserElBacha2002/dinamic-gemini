@@ -154,3 +154,50 @@ def resolve_final_qty(
         is_resolved=False,
     )
 
+
+def has_strong_identity_for_qty_inference(
+    *,
+    internal_code: Optional[str] = None,
+    review_display_label: Optional[str] = None,
+    position_barcode: Optional[str] = None,
+    pallet_id: Optional[str] = None,
+) -> bool:
+    """Return True when an entity has a strong identity signal for qty inference.
+
+    Shared across mapper and API legacy paths so identity semantics stay aligned.
+    """
+    return bool(
+        (internal_code or "").strip()
+        or (review_display_label or "").strip()
+        or (position_barcode or "").strip()
+        or (pallet_id or "").strip()
+    )
+
+
+def is_product_present_for_qty_inference(
+    *,
+    count_status: str,
+    entity_type: str,
+    has_valid_evidence: bool,
+    has_identity: bool,
+    traceability_status: Optional[str] = None,
+) -> bool:
+    """Return True when an entity should be treated as product-present for qty inference."""
+    cs = (count_status or "").strip().upper()
+    et = (entity_type or "").strip().upper()
+    ts = (traceability_status or "").strip().lower() if traceability_status is not None else ""
+
+    # Baseline: counted entities are product-present.
+    if cs in {"COUNTED", "COUNTED_MANUAL"}:
+        return True
+
+    # EMPTY_PALLET is handled via allow_zero_as_valid, not as product-present for inference.
+    if et == "EMPTY_PALLET":
+        return False
+
+    # Option B: strong presence NEEDS_REVIEW cases.
+    if cs == "NEEDS_REVIEW" and has_valid_evidence and has_identity and ts == "valid":
+        return True
+
+    return False
+

@@ -26,6 +26,14 @@ export interface ResultSummary {
   id: string;
   sku: string | null;
   detectedQty: number | null;
+  /** v3.2.2: corrected_quantity from backend (may be null). */
+  correctedQty: number | null;
+  /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */
+  resolvedQty: number | null;
+  /** v3.2.2: provenance of resolved qty. */
+  qtySource?: 'detected' | 'inferred' | null;
+  qtyResolved?: boolean | null;
+  qtyInferenceReason?: string | null;
   confidence: number | null;
   reviewStatus: ReviewStatus;
   traceabilityStatus: TraceabilityStatus;
@@ -59,6 +67,11 @@ export interface ResultDetail {
   sku: string | null;
   detectedQty: number | null;
   correctedQty: number | null;
+  /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */
+  resolvedQty: number | null;
+  qtySource?: 'detected' | 'inferred' | null;
+  qtyResolved?: boolean | null;
+  qtyInferenceReason?: string | null;
   confidence: number | null;
   reviewStatus: ReviewStatus;
   traceabilityStatus: TraceabilityStatus;

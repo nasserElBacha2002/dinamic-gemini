@@ -72,12 +72,19 @@ describe('mapPositionSummaryToResultSummary', () => {
       updated_at: '2024-01-02T00:00:00Z',
       sku: 'SKU-X',
       detected_quantity: 10,
+      corrected_quantity: null,
+      qty: 1,
+      qtySource: 'inferred',
+      qtyResolved: true,
       traceability_status: 'valid',
     };
     const r = mapPositionSummaryToResultSummary(p);
     expect(r.id).toBe('pos-1');
     expect(r.sku).toBe('SKU-X');
     expect(r.detectedQty).toBe(10);
+    expect(r.correctedQty).toBeNull();
+    // Display rule: corrected_quantity ?? qty; here qty=1 and no correction.
+    expect(r.resolvedQty).toBe(1);
     expect(r.confidence).toBe(0.92);
     expect(r.reviewStatus).toBe('NEEDS_REVIEW');
     expect(r.traceabilityStatus).toBe('VALID');
@@ -192,6 +199,9 @@ describe('mapPositionDetailToResultDetail', () => {
         sku: 'SKU-A',
         detected_quantity: 5,
         corrected_quantity: 6,
+        qty: 1,
+        qtySource: 'inferred',
+        qtyResolved: true,
         detected_summary_json: {
           entity_uid: 'job_E1',
           source_image_id: 'img-1',
@@ -226,6 +236,8 @@ describe('mapPositionDetailToResultDetail', () => {
     expect(r.sku).toBe('SKU-A');
     expect(r.detectedQty).toBe(5);
     expect(r.correctedQty).toBe(6);
+    // Display rule: corrected_quantity wins over qty.
+    expect(r.resolvedQty).toBe(6);
     expect(r.reviewStatus).toBe('NEEDS_REVIEW');
     expect(r.traceabilityStatus).toBe('VALID');
     expect(r.sourceImageId).toBe('img-1');
