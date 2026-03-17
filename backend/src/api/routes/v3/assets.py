@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+from enum import Enum
 from io import BytesIO
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from src.config import load_settings
@@ -23,7 +25,17 @@ from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCa
 
 from .shared import asset_to_response, resolve_normalized_asset_path, heic_extensions
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class AssetFileFailureReason(str, Enum):
+    """Internal reason for asset file endpoint returning 404 or failure. Used for logging and observability."""
+    AISLE_NOT_FOUND = "aisle_not_found"
+    ASSET_NOT_FOUND = "asset_not_found"
+    FILE_NOT_FOUND = "file_not_found"
+    PATH_INVALID = "path_invalid"
+    HEIC_PREVIEW_UNAVAILABLE = "heic_preview_unavailable"
 
 
 @router.post(
@@ -87,30 +99,71 @@ def get_aisle_asset_file(
     inventory_id: str,
     aisle_id: str,
     asset_id: str,
+    job_id: Optional[str] = Query(None, description="Optional job id to resolve HEIC normalized preview from that run"),
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
     job_repo: JobRepository = Depends(get_job_repo),
 ) -> FileResponse:
-    """Serve the reference image/file for an aisle asset. HEIC/HEIF: serves normalized JPG when available."""
+    """Serve the reference image/file for an aisle asset. HEIC/HEIF: serves normalized JPG when available (optional job_id)."""
+    failure_reason: Optional[AssetFileFailureReason] = None
     try:
         assets = use_case.execute(inventory_id, aisle_id)
     except AisleNotFoundError:
+        failure_reason = AssetFileFailureReason.AISLE_NOT_FOUND
+        logger.warning(
+            "Asset file: %s inventory_id=%s aisle_id=%s asset_id=%s",
+            failure_reason.value,
+            inventory_id,
+            aisle_id,
+            asset_id,
+        )
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
     asset = next((a for a in assets if a.id == asset_id), None)
     if asset is None:
+        failure_reason = AssetFileFailureReason.ASSET_NOT_FOUND
+        logger.warning(
+            "Asset file: %s inventory_id=%s aisle_id=%s asset_id=%s",
+            failure_reason.value,
+            inventory_id,
+            aisle_id,
+            asset_id,
+        )
         raise HTTPException(status_code=404, detail="Asset not found")
     base = Path(load_settings().output_dir) / "v3_uploads"
     file_path = (base / asset.storage_path).resolve()
     try:
         if not file_path.is_file():
+            failure_reason = AssetFileFailureReason.FILE_NOT_FOUND
+            logger.warning(
+                "Asset file: %s asset_id=%s storage_path=%s resolved=%s",
+                failure_reason.value,
+                asset_id,
+                asset.storage_path,
+                str(file_path),
+            )
             raise HTTPException(status_code=404, detail="Asset file not found")
         file_path.relative_to(base.resolve())
     except ValueError:
+        failure_reason = AssetFileFailureReason.PATH_INVALID
+        logger.warning(
+            "Asset file: %s asset_id=%s storage_path=%s",
+            failure_reason.value,
+            asset_id,
+            asset.storage_path,
+        )
         raise HTTPException(status_code=404, detail="Asset path invalid")
 
     suffix = file_path.suffix.lower()
     if suffix in heic_extensions():
         output_dir = Path(load_settings().output_dir)
-        normalized_path = resolve_normalized_asset_path(output_dir, job_repo, aisle_id, asset_id)
+        request_job_id = job_id.strip() if job_id and job_id.strip() else None
+        logger.debug(
+            "Asset file: HEIC resolving normalized path asset_id=%s job_id=%s",
+            asset_id,
+            request_job_id,
+        )
+        normalized_path = resolve_normalized_asset_path(
+            output_dir, job_repo, aisle_id, asset_id, job_id=job_id
+        )
         if normalized_path is not None:
             preview_filename = (asset.original_filename or "preview").rsplit(".", 1)[0] + ".jpg"
             return FileResponse(
@@ -118,6 +171,13 @@ def get_aisle_asset_file(
                 media_type="image/jpeg",
                 filename=preview_filename,
             )
+        failure_reason = AssetFileFailureReason.HEIC_PREVIEW_UNAVAILABLE
+        logger.warning(
+            "Asset file: %s asset_id=%s request_job_id=%s",
+            failure_reason.value,
+            asset_id,
+            request_job_id,
+        )
         raise HTTPException(
             status_code=404,
             detail="Preview is not available for this image",

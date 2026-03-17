@@ -7,12 +7,20 @@ const path = require("path");
 const { spawn } = require("child_process");
 
 const root = path.resolve(__dirname, "..");
+const backendDir = path.join(root, "backend");
 const isWin = process.platform === "win32";
-const py = path.join(root, ".venv", isWin ? "Scripts" : "bin", isWin ? "python.exe" : "python");
+const binDir = isWin ? "Scripts" : "bin";
+const pyName = isWin ? "python.exe" : "python";
+// Prefer backend/.venv (has backend deps); fallback to root .venv
+const py = require("fs").existsSync(path.join(backendDir, ".venv", binDir, pyName))
+  ? path.join(backendDir, ".venv", binDir, pyName)
+  : path.join(root, ".venv", binDir, pyName);
 const port = process.env.PORT || "8000";
 
+const env = { ...process.env, PYTHONPATH: backendDir };
 const child = spawn(py, ["-m", "uvicorn", "src.api.server:app", "--reload", "--port", port], {
-  cwd: root,
+  cwd: backendDir,
+  env,
   stdio: "inherit",
   shell: false,
 });

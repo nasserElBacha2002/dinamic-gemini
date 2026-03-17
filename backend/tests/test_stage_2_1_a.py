@@ -281,6 +281,9 @@ def test_resolve_pallet_id_duplicate_barcode_sets_conflict_no_suffix():
 
 
 # --- count_status ---
+# Regression: test_assign_count_status_empty_pallet and test_assign_count_status_pallet_*
+# ensure EMPTY_PALLET and PALLET behaviour is unchanged after LOOSE_BOXES rule changes.
+
 
 def test_assign_count_status_empty_pallet():
     e = Entity(entity_uid="j_E1", entity_type="EMPTY_PALLET", model_entity_id="E1")
@@ -289,10 +292,100 @@ def test_assign_count_status_empty_pallet():
     assert e.final_quantity == 0
 
 
-def test_assign_count_status_loose_boxes():
+def test_assign_count_status_loose_boxes_no_evidence():
+    """LOOSE_BOXES with no position_barcode, internal_code or quantity → INVALID_STRUCTURE."""
     e = Entity(entity_uid="j_E1", entity_type="LOOSE_BOXES", model_entity_id="E1")
     assign_count_status(e)
     assert e.count_status == "INVALID_STRUCTURE"
+    assert e.final_quantity is None
+
+
+def test_assign_count_status_loose_boxes_counted():
+    """LOOSE_BOXES with identity (position or internal_code) and quantity → COUNTED."""
+    e_pos = Entity(
+        entity_uid="j_E1",
+        entity_type="LOOSE_BOXES",
+        model_entity_id="E1",
+        position_barcode="P1",
+        product_label_quantity=8,
+    )
+    assign_count_status(e_pos)
+    assert e_pos.count_status == "COUNTED"
+    assert e_pos.final_quantity == 8
+    e_sku = Entity(
+        entity_uid="j_E2",
+        entity_type="LOOSE_BOXES",
+        model_entity_id="E2",
+        internal_code="SKU-X",
+        product_label_quantity=3,
+    )
+    assign_count_status(e_sku)
+    assert e_sku.count_status == "COUNTED"
+    assert e_sku.final_quantity == 3
+
+
+def test_assign_count_status_loose_boxes_needs_review():
+    """LOOSE_BOXES with only identity or only quantity → NEEDS_REVIEW."""
+    e_pos_only = Entity(
+        entity_uid="j_E1",
+        entity_type="LOOSE_BOXES",
+        model_entity_id="E1",
+        position_barcode="P1",
+    )
+    assign_count_status(e_pos_only)
+    assert e_pos_only.count_status == "NEEDS_REVIEW"
+    assert e_pos_only.final_quantity is None
+    e_qty_only = Entity(
+        entity_uid="j_E2",
+        entity_type="LOOSE_BOXES",
+        model_entity_id="E2",
+        product_label_quantity=5,
+    )
+    assign_count_status(e_qty_only)
+    assert e_qty_only.count_status == "NEEDS_REVIEW"
+    assert e_qty_only.final_quantity is None
+
+
+def test_assign_count_status_loose_boxes_qty_zero():
+    """LOOSE_BOXES with identity but product_label_quantity=0 → NEEDS_REVIEW (qty not valid for COUNTED)."""
+    e = Entity(
+        entity_uid="j_E1",
+        entity_type="LOOSE_BOXES",
+        model_entity_id="E1",
+        position_barcode="P1",
+        product_label_quantity=0,
+    )
+    assign_count_status(e)
+    assert e.count_status == "NEEDS_REVIEW"
+    assert e.final_quantity is None
+
+
+def test_assign_count_status_loose_boxes_qty_zero_no_identity():
+    """LOOSE_BOXES with only product_label_quantity=0 (no identity) → INVALID_STRUCTURE."""
+    e = Entity(
+        entity_uid="j_E1",
+        entity_type="LOOSE_BOXES",
+        model_entity_id="E1",
+        product_label_quantity=0,
+    )
+    assign_count_status(e)
+    assert e.count_status == "INVALID_STRUCTURE"
+    assert e.final_quantity is None
+
+
+def test_assign_count_status_loose_boxes_conflict_flag():
+    """LOOSE_BOXES with conflict_flag set → NEEDS_REVIEW even when identity and qty present."""
+    e = Entity(
+        entity_uid="j_E1",
+        entity_type="LOOSE_BOXES",
+        model_entity_id="E1",
+        position_barcode="P1",
+        product_label_quantity=8,
+        conflict_flag=True,
+        conflict_reason="DUPLICATE_POSITION_BARCODE",
+    )
+    assign_count_status(e)
+    assert e.count_status == "NEEDS_REVIEW"
     assert e.final_quantity is None
 
 

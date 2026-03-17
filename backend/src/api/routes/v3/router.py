@@ -1,10 +1,20 @@
-"""v3 API main router: single prefix, domain-based sub-routers."""
+"""v3 API main router: single prefix, domain-based sub-routers.
 
-from fastapi import APIRouter
+v3.2.1 Phase 3: all v3 business routes require authentication via router-level
+dependency; auth failures return the stable AuthHttpError contract.
+"""
+
+from fastapi import APIRouter, Depends
+
+from src.auth.dependencies import get_current_admin
 
 from . import inventories, aisles, assets, positions, reviews
 
-router = APIRouter(prefix="/api/v3/inventories", tags=["inventories-v3"])
+router = APIRouter(
+    prefix="/api/v3/inventories",
+    tags=["inventories-v3"],
+    dependencies=[Depends(get_current_admin)],
+)
 
 router.include_router(inventories.router)
 router.include_router(aisles.router)
