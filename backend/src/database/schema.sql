@@ -213,6 +213,17 @@ BEGIN
 END;
 GO
 
+-- v3.2.2 — Quantity provenance (Minimum Count Rule + qty hardening)
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('product_records') AND name = 'qty_source')
+    ALTER TABLE product_records ADD qty_source VARCHAR(32) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('product_records') AND name = 'qty_inference_reason')
+    ALTER TABLE product_records ADD qty_inference_reason NVARCHAR(128) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('product_records') AND name = 'raw_qty_json')
+    ALTER TABLE product_records ADD raw_qty_json NVARCHAR(MAX) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('product_records') AND name = 'qty_parse_status')
+    ALTER TABLE product_records ADD qty_parse_status VARCHAR(32) NULL;
+GO
+
 -- v3.0 — Evidences (Épica 6, Documento técnico §7.6)
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'evidences')
 BEGIN

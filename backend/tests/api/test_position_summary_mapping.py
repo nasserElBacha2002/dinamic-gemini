@@ -73,7 +73,7 @@ def test_summary_sku_and_quantity_empty_json_returns_none() -> None:
     )
     sku, qty = _summary_sku_and_quantity_from_position(p)
     assert sku is None
-    assert qty is None
+    assert qty == 0
 
 
 def test_position_to_summary_includes_sku_and_detected_quantity() -> None:
@@ -97,6 +97,9 @@ def test_position_to_summary_includes_sku_and_detected_quantity() -> None:
     assert isinstance(resp, PositionSummaryResponse)
     assert resp.sku == "ITEM-A"
     assert resp.detected_quantity == 10
+    assert resp.qty == 10
+    assert resp.qtySource == "detected"
+    assert resp.qtyInferenceReason is None
     assert resp.id == "pos-4"
     assert resp.confidence == 0.92
     assert resp.has_evidence is True
@@ -345,6 +348,35 @@ def test_position_to_summary_non_dict_detected_summary_json_no_raise() -> None:
         assert resp.id == "pos-bad"
         assert resp.sku is None
         assert resp.detected_quantity == 0
+        assert resp.qty == 0
+        assert resp.qtySource == "detected"
+        assert resp.qtyInferenceReason is None
         assert resp.has_evidence is False
         assert resp.source_image_original_filename is None
         assert resp.source_image_id is None
+
+
+def test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty() -> None:
+    """v3.2.2: has_evidence + COUNTED but qty missing -> qty=1 inferred (legacy rows)."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-inf",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "entity_type": "PALLET",
+            "count_status": "COUNTED",
+            "final_quantity": None,
+            "product_label_quantity": None,
+            "internal_code": "SKU-1",
+        },
+    )
+    resp = _position_to_summary(p)
+    assert resp.qty == 1
+    assert resp.qtySource == "inferred"
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"

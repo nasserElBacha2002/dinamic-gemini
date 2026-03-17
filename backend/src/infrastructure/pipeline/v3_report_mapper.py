@@ -10,6 +10,7 @@ where the model requires a value.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,10 +20,14 @@ from uuid import uuid4
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
+from src.domain.quantity.resolution import normalize_raw_qty, resolve_final_qty, QtySource
+
+logger = logging.getLogger(__name__)
 
 # Explicit sentinels when pipeline does not provide a value (auditable).
 SKU_UNKNOWN = "UNKNOWN"
 EVIDENCE_PATH_NO_ARTIFACT = "no_artifact"
+_ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
 
 
 @dataclass
@@ -88,6 +93,66 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
     return out
 
 
+def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tuple[int, Dict[str, Any]]:
+    """Resolve final qty + provenance for one report entity (v3.2.2).
+
+    Returns (qty_final, qty_meta_for_summary_json).
+    """
+    # Prefer final_quantity field if present (pipeline-derived), else product_label_quantity.
+    if "final_quantity" in entity:
+        raw = entity.get("final_quantity")
+        present = True
+        origin = "final_quantity"
+    elif "product_label_quantity" in entity:
+        raw = entity.get("product_label_quantity")
+        present = True
+        origin = "product_label_quantity"
+    else:
+        raw = None
+        present = False
+        origin = "missing"
+
+    normalized = normalize_raw_qty(raw, field_was_present=present)
+
+    entity_type = (entity.get("entity_type") or "").strip().upper()
+    count_status = (entity.get("count_status") or "").strip().upper()
+
+    # Domain acceptance proxy for v3 persistence:
+    # - product-present when report marks it counted (COUNTED / COUNTED_MANUAL)
+    # - explicit zero is only valid for EMPTY_PALLET (existing domain rule)
+    is_product_present = count_status in _ACCEPTED_COUNT_STATUSES
+    allow_zero = entity_type == "EMPTY_PALLET"
+
+    res = resolve_final_qty(
+        has_valid_evidence=has_valid_evidence,
+        is_product_present=is_product_present,
+        normalized_qty=normalized,
+        allow_zero_as_valid=allow_zero,
+    )
+    if logger.isEnabledFor(logging.DEBUG) and res.qty_source == QtySource.INFERRED:
+        logger.debug(
+            "v3.2.2 qty inferred: entity_uid=%s count_status=%s entity_type=%s raw=%r parse=%s -> qty=%d",
+            entity.get("entity_uid"),
+            count_status,
+            entity_type,
+            raw,
+            res.qty_parse_status.value,
+            res.qty_final,
+        )
+
+    meta = {
+        # Canonical persisted-in-summary fields (snake_case in detected_summary_json).
+        "qty_final": res.qty_final,
+        "qty_source": res.qty_source.value,
+        "qty_inference_reason": res.qty_inference_reason.value if res.qty_inference_reason else None,
+        "raw_qty": res.raw_qty,
+        "qty_parse_status": res.qty_parse_status.value,
+        "qty_origin_field": origin,
+    }
+    # Maintain backward compatibility: keep final_quantity/product_label_quantity as-is; qty_final is authoritative.
+    return res.qty_final, meta
+
+
 def map_hybrid_report_to_domain(
     aisle_id: str,
     report: Dict[str, Any],
@@ -122,6 +187,7 @@ def map_hybrid_report_to_domain(
         else:
             storage_path = EVIDENCE_PATH_NO_ARTIFACT
             evidence_path_missing = True
+        has_valid_evidence = not evidence_path_missing
 
         internal_code_raw = entity.get("internal_code")
         if internal_code_raw is not None and isinstance(internal_code_raw, str) and internal_code_raw.strip():
@@ -130,16 +196,8 @@ def map_hybrid_report_to_domain(
             sku = SKU_UNKNOWN
         internal_code_missing = sku == SKU_UNKNOWN
 
-        final_qty = entity.get("final_quantity")
-        product_qty = entity.get("product_label_quantity")
-        if final_qty is not None and isinstance(final_qty, (int, float)):
-            quantity = int(final_qty)
-        elif product_qty is not None and isinstance(product_qty, (int, float)):
-            quantity = int(product_qty)
-        else:
-            quantity = 0
-        quantity_missing = (final_qty is None and product_qty is None) or quantity < 0
-        quantity = max(0, quantity)
+        quantity, qty_meta = _qty_from_entity(entity, has_valid_evidence=has_valid_evidence)
+        quantity_missing = qty_meta.get("qty_parse_status") in ("missing", "null", "invalid")  # type: ignore[comparison-overlap]
 
         audit: Dict[str, Any] = {}
         if confidence_missing:
@@ -160,7 +218,7 @@ def map_hybrid_report_to_domain(
             primary_evidence_id=evidence_id,
             created_at=now,
             updated_at=now,
-            detected_summary_json=_detected_summary(entity, audit),
+            detected_summary_json={**_detected_summary(entity, audit), **qty_meta},
             corrected_summary_json=None,
         )
         positions.append(position)
@@ -175,6 +233,10 @@ def map_hybrid_report_to_domain(
             created_at=now,
             updated_at=now,
             corrected_quantity=None,
+            qty_source=str(qty_meta.get("qty_source") or ""),
+            qty_inference_reason=qty_meta.get("qty_inference_reason"),
+            raw_qty=qty_meta.get("raw_qty"),
+            qty_parse_status=qty_meta.get("qty_parse_status"),
         )
         product_records.append(product)
 

@@ -126,6 +126,12 @@ export interface PositionSummary {
   sku?: string | null;
   detected_quantity?: number | null;
   corrected_quantity?: number | null;
+  /** v3.2.2: stable qty contract (backend-resolved). */
+  qty: number;
+  /** v3.2.2: 'detected' or 'inferred' (backend-resolved). */
+  qtySource: 'detected' | 'inferred' | string;
+  /** v3.2.2: non-null when qtySource='inferred'. */
+  qtyInferenceReason?: string | null;
   /** Epic 3.1.B: optional; when present, summary-level result-to-image traceability for this position. */
   source_image_id?: string | null;
   /** Epic 5: optional; original filename of the source image when available (photos jobs). May be absent until the v3 position API is extended to expose it. */

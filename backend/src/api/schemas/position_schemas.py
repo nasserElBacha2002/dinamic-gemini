@@ -20,6 +20,10 @@ class PositionSummaryResponse(BaseModel):
     sku: Optional[str] = None
     detected_quantity: Optional[int] = None
     corrected_quantity: Optional[int] = None
+    # v3.2.2 — stable qty contract for frontend
+    qty: int = 0
+    qtySource: Literal["detected", "inferred"] = "detected"
+    qtyInferenceReason: Optional[str] = None
     """Epic 3.1.B: image_id of source image for this position (from report entity)."""
     source_image_id: Optional[str] = None
     """Epic 3.1.B: valid | missing | invalid | unvalidated (from report entity)."""
