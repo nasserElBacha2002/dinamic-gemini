@@ -246,7 +246,7 @@ def test_orchestrator_returns_1_on_stage_failure() -> None:
     logger = MagicMock()
     with patch.object(pipeline, "_input_stage") as mock_input:
         mock_input.run.side_effect = ValueError("input validation failed")
-        code = pipeline._run_hybrid(
+        result = pipeline._run_hybrid(
             "/dummy/v.mp4",
             settings=MagicMock(),
             video_id="j1",
@@ -254,7 +254,7 @@ def test_orchestrator_returns_1_on_stage_failure() -> None:
             run_id="r1",
             logger=logger,
         )
-    assert code == 1
+    assert result.exit_code == 1
     logger.exception.assert_called()
     call_args = logger.exception.call_args[0]
     assert "InputPreparationStage" in call_args[0]

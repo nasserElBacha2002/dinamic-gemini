@@ -76,7 +76,7 @@ def run_pipeline_sync(
     pipeline = HybridInventoryPipeline()
     logger = MagicMock()
     video_path = getattr(job_input, "video_path", "") or ""
-    return pipeline._run_hybrid(
+    result = pipeline._run_hybrid(
         video_path,
         settings=settings,
         video_id=job_id,
@@ -85,6 +85,7 @@ def run_pipeline_sync(
         logger=logger,
         job_input=job_input,
     )
+    return result.exit_code
 
 
 def make_fake_settings(

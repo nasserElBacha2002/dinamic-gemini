@@ -101,7 +101,7 @@ def test_hybrid_pipeline_e2e_fake_provider_no_network(tmp_path, llm_provider):
 
     logger = MagicMock()
     pipe = HybridInventoryPipeline()
-    code = pipe._run_hybrid(
+    result = pipe._run_hybrid(
         "",
         settings=settings,
         video_id="job_photos",
@@ -110,7 +110,7 @@ def test_hybrid_pipeline_e2e_fake_provider_no_network(tmp_path, llm_provider):
         logger=logger,
         job_input=job_input,
     )
-    assert code == 0
+    assert result.exit_code == 0
     report_path = run_dir / "hybrid_report.json"
     assert report_path.exists(), "hybrid_report.json must be produced"
     report = json.loads(report_path.read_text(encoding="utf-8"))

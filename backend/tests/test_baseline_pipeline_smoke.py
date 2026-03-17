@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 from src.jobs.models import JobInput
-from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, PipelineRunResult
 
 # Reuse fixture from E2E tests
 FIXTURES_V21 = Path(__file__).resolve().parent / "fixtures" / "v2_1"
@@ -38,8 +38,10 @@ def _make_fake_settings(fixture_path: str):
     return s
 
 
-def _run_pipeline_sync(output_dir: Path, job_id: str, run_id: str, settings: MagicMock, job_input: JobInput) -> int:
-    """Run hybrid pipeline synchronously; return exit code. Uses public process_video API."""
+def _run_pipeline_sync(
+    output_dir: Path, job_id: str, run_id: str, settings: MagicMock, job_input: JobInput
+) -> PipelineRunResult:
+    """Run hybrid pipeline synchronously; return PipelineRunResult. Uses public process_video API."""
     pipeline = HybridInventoryPipeline()
     logger = MagicMock()
     video_path = job_input.video_path or ""
@@ -101,9 +103,9 @@ def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path) -> None:
         mock_source.get_frames.return_value = bundle
         mock_src.return_value = mock_source
 
-        code = _run_pipeline_sync(tmp_path, job_id, run_id, settings=settings, job_input=job_input)
+        result = _run_pipeline_sync(tmp_path, job_id, run_id, settings=settings, job_input=job_input)
 
-    assert code == 0, "Pipeline must complete successfully (exit code 0)"
+    assert result.exit_code == 0, "Pipeline must complete successfully (exit code 0)"
 
     report_path = run_dir / "hybrid_report.json"
     assert report_path.exists(), "hybrid_report.json must exist after run"
@@ -117,3 +119,13 @@ def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path) -> None:
     # Minimal structure check; do not depend on exact entity count
     assert report.get("report_version") == "2.1"
     assert report.get("mode") == "hybrid_v2.1"
+
+    # Phase 5: run_metadata propagated in memory with visual_reference_context (no refs in this run)
+    assert result.run_metadata is not None, "run_metadata must be set on success"
+    assert "visual_reference_context" in result.run_metadata
+    vrc = result.run_metadata["visual_reference_context"]
+    assert vrc["resolved"] is False
+    assert vrc["reference_ids"] == []
+    assert vrc["resolved_count"] == 0
+    assert vrc["provider_consumed"] is False
+    assert vrc["provider_consumed_count"] == 0

@@ -49,7 +49,11 @@ from src.pipeline.contracts.analysis_context import (
     analysis_context_to_dict,
 )
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
-from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, PipelineRunResult
+from src.pipeline.run_metadata import (
+    RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
+    default_empty_block,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +181,7 @@ class V3JobExecutor:
 
         try:
             pipeline = HybridInventoryPipeline()
-            code = pipeline.process_video(
+            result = pipeline.process_video(
                 video_path,
                 mode="hybrid",
                 settings=settings,
@@ -188,12 +192,12 @@ class V3JobExecutor:
                 progress_callback=None,
                 job_input=job_input,
             )
-            if code != 0:
+            if result.exit_code != 0:
                 last_error = read_last_stage_error(run_dir)
                 if last_error:
-                    error_message = f"{last_error} (exit code {code})"
+                    error_message = f"{last_error} (exit code {result.exit_code})"
                 else:
-                    error_message = f"Pipeline exited with code {code}"
+                    error_message = f"Pipeline exited with code {result.exit_code}"
                 self._fail_job_and_aisle(job_id, aisle, error_message)
                 return True
 
@@ -231,7 +235,10 @@ class V3JobExecutor:
                 exec_log.error("Persist", f"Persist failed: {persist_e}", payload={"error": str(persist_e)[:500]})
                 raise
 
-            self._mark_success(job_id, aisle, report_path, now)
+            # Phase 5: persist visual_reference_context from in-memory run_metadata (no file read)
+            self._mark_success(
+                job_id, aisle, report_path, now, run_metadata=result.run_metadata
+            )
         except Exception as e:
             logger.exception("v3 job %s failed: %s", job_id, e)
             run_dir = base_path / job_id / RUN_ID
@@ -339,13 +346,29 @@ class V3JobExecutor:
         self._aisle_repo.save(aisle)
 
     def _mark_success(
-        self, job_id: str, aisle: Aisle, report_path: Path, now
+        self,
+        job_id: str,
+        aisle: Aisle,
+        report_path: Path,
+        now,
+        *,
+        run_metadata: Optional[dict] = None,
     ) -> None:
         job = self._job_repo.get_by_id(job_id)
         if job:
             job.status = JobStatus.SUCCEEDED
             job.updated_at = now
-            job.result_json = {"report_path": str(report_path)}
+            vrc = (
+                (run_metadata or {}).get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
+                if run_metadata
+                else None
+            )
+            job.result_json = {
+                "report_path": str(report_path),
+                RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: vrc
+                if vrc is not None
+                else default_empty_block(),
+            }
             job.error_message = None
             self._job_repo.save(job)
         aisle.mark_processed(now)

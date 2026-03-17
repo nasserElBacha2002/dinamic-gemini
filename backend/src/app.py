@@ -100,7 +100,7 @@ def main() -> int:
 
     try:
         pipeline = HybridInventoryPipeline()
-        return pipeline.process_video(
+        result = pipeline.process_video(
             str(video_path),
             mode=args.mode,
             settings=settings,
@@ -110,6 +110,7 @@ def main() -> int:
             logger=logger,
             args=args,
         )
+        return result.exit_code
     except KeyboardInterrupt:
         logger.warning("⚠️  Procesamiento interrumpido por el usuario")
         return 130

@@ -421,7 +421,7 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
     )
     with patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider):
         pipe = HybridInventoryPipeline()
-        code = pipe._run_hybrid(
+        result = pipe._run_hybrid(
             "",
             settings=settings,
             video_id="job_photos",
@@ -430,7 +430,7 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
             logger=logger,
             job_input=job_input,
         )
-    assert code == 0
+    assert result.exit_code == 0
     # Pipeline loads from bundle (normalized paths) and passes them to the provider
     call_args = mock_provider.analyze_global.call_args
     request = call_args[0][0]

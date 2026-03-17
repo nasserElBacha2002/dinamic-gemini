@@ -158,7 +158,7 @@ def run_job(base_path: Path, job_id: str) -> None:
     update_job(base_path, job_id, status=JobStatus.RUNNING, progress={"stage": "extract_frames", "percent": 10})
     try:
         pipeline = HybridInventoryPipeline()
-        code = pipeline.process_video(
+        result = pipeline.process_video(
             video_path,
             mode="hybrid",
             settings=settings,
@@ -170,12 +170,12 @@ def run_job(base_path: Path, job_id: str) -> None:
             progress_callback=progress_cb,
             job_input=record.input,
         )
-        if code != 0:
+        if result.exit_code != 0:
             update_job(
                 base_path,
                 job_id,
                 status=JobStatus.FAILED,
-                error=f"Pipeline exited with code {code}",
+                error=f"Pipeline exited with code {result.exit_code}",
                 progress={"stage": "done", "percent": 100},
             )
             return
