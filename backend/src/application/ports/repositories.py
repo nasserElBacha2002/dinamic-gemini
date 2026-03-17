@@ -14,6 +14,8 @@ from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
+from src.domain.inventory.visual_reference import InventoryVisualReference
+from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.domain.jobs.entities import Job
 from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLabel
 from src.domain.positions.entities import Position
@@ -67,6 +69,19 @@ class SourceAssetRepository(ABC):
 
     @abstractmethod
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
+        ...
+
+
+class InventoryVisualReferenceRepository(ABC):
+    """Persist and list visual reference images per inventory (v3.2.4)."""
+
+    @abstractmethod
+    def save(self, reference: InventoryVisualReference) -> None:
+        ...
+
+    @abstractmethod
+    def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
+        """Return all visual references for the given inventory. Order is implementation-defined."""
         ...
 
 
@@ -219,4 +234,21 @@ class FinalCountRepository(ABC):
     @abstractmethod
     def replace_for_scope(self, inventory_id: str, aisle_id: str) -> None:
         """Remove existing final count for scope; caller then saves new ones."""
+        ...
+
+
+class InventoryVisualReferenceRepository(ABC):
+    """Persist and list visual reference images per inventory (v3.2.4).
+
+    list_by_inventory must return references ordered by created_at ascending.
+    """
+
+    @abstractmethod
+    def create(self, reference: InventoryVisualReference) -> None:
+        """Insert a new reference. Must fail if the id already exists."""
+        ...
+
+    @abstractmethod
+    def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
+        """Return all visual references for the given inventory ordered by created_at ASC."""
         ...

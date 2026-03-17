@@ -334,3 +334,20 @@ BEGIN
     CREATE INDEX IX_normalized_labels_group_key ON normalized_labels(group_key);
 END;
 GO
+
+-- v3.2.4 — Inventory visual references (optional reference images per inventory)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'inventory_visual_references')
+BEGIN
+    CREATE TABLE inventory_visual_references (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        inventory_id VARCHAR(36) NOT NULL,
+        filename NVARCHAR(512) NOT NULL,
+        storage_path NVARCHAR(1024) NOT NULL,
+        mime_type VARCHAR(128) NOT NULL,
+        file_size BIGINT NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_inventory_visual_references_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id)
+    );
+    CREATE INDEX IX_inventory_visual_references_inventory_id ON inventory_visual_references(inventory_id);
+END;
+GO
