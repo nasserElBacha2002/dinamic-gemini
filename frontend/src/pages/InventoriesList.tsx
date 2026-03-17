@@ -19,9 +19,11 @@ import { formatDate } from '../utils/formatDate';
 import { PageLayout, LoadingBlock, EmptyState, ErrorAlert } from '../components/ui';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
 import { useInventoriesList, useCreateInventory } from '../hooks';
+import { useAuth } from '../features/auth';
 
 export default function InventoriesList() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -43,9 +45,14 @@ export default function InventoriesList() {
 
   return (
     <PageLayout>
-      <Typography variant="h5" sx={{ mb: 2 }}>
-        Dinamic Inventory v3
-      </Typography>
+      <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Typography variant="h5">
+          Dinamic Inventory v3
+        </Typography>
+        <Button variant="outlined" size="small" onClick={logout}>
+          Logout
+        </Button>
+      </Box>
 
       {errorMessage && (
         <ErrorAlert message={errorMessage} onRetry={() => refetch()} />

@@ -17,6 +17,7 @@ class AuthSettings:
     admin_password_hash: str
     token_secret: str
     token_expires_minutes: int
+    refresh_token_expires_minutes: int
 
 
 def get_auth_settings(settings: Settings | None = None) -> AuthSettings:
@@ -33,5 +34,6 @@ def get_auth_settings(settings: Settings | None = None) -> AuthSettings:
         admin_password_hash=s.admin_password_hash,
         token_secret=s.auth_token_secret,
         token_expires_minutes=s.auth_token_expires_minutes,
+        refresh_token_expires_minutes=s.auth_refresh_token_expires_minutes,
     )
 

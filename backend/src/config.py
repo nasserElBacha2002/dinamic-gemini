@@ -500,10 +500,16 @@ class Settings(BaseModel):
         description="Secret key used to sign auth tokens. Env: AUTH_TOKEN_SECRET.",
     )
     auth_token_expires_minutes: int = Field(
-        default_factory=lambda: int(os.getenv("AUTH_TOKEN_EXPIRES_MINUTES", "480")),
+        default_factory=lambda: int(os.getenv("AUTH_TOKEN_EXPIRES_MINUTES", "15")),
         ge=1,
         le=7 * 24 * 60,
-        description="Token lifetime in minutes for admin access (default 480 = 8h). Env: AUTH_TOKEN_EXPIRES_MINUTES.",
+        description="Access token lifetime in minutes for admin access (default 15). Env: AUTH_TOKEN_EXPIRES_MINUTES.",
+    )
+    auth_refresh_token_expires_minutes: int = Field(
+        default_factory=lambda: int(os.getenv("AUTH_REFRESH_TOKEN_EXPIRES_MINUTES", str(30 * 24 * 60))),
+        ge=1,
+        le=60 * 24 * 365,
+        description="Refresh token lifetime in minutes for admin sessions (default 30 days). Env: AUTH_REFRESH_TOKEN_EXPIRES_MINUTES.",
     )
 
     # Stage 2.1.D — Evidence pack

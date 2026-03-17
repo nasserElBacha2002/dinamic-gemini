@@ -18,6 +18,11 @@ export interface LoginResponseDto {
   access_token: string;
   token_type: 'bearer';
   expires_in: number;
+  /**
+   * Optional refresh token for session renewal (v3.2.3.E6).
+   * Older backends may omit this field.
+   */
+  refresh_token?: string | null;
   user: AuthUser;
 }
 

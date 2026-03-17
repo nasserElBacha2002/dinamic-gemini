@@ -31,7 +31,15 @@ class LoginResponse(BaseModel):
     token_type: str = Field(default="bearer", description="Token type, e.g. 'bearer'.")
     expires_in: int = Field(
         ...,
-        description="Token lifetime in seconds (derived from AUTH_TOKEN_EXPIRES_MINUTES).",
+        description="Access token lifetime in seconds (derived from AUTH_TOKEN_EXPIRES_MINUTES).",
+    )
+    refresh_token: str | None = Field(
+        default=None,
+        description="Opaque refresh token for session renewal. Present when refresh is enabled.",
+    )
+    refresh_expires_in: int | None = Field(
+        default=None,
+        description="Refresh token lifetime in seconds (derived from AUTH_REFRESH_TOKEN_EXPIRES_MINUTES).",
     )
     user: AuthUser = Field(..., description="Authenticated admin principal.")
 
@@ -53,4 +61,10 @@ class AuthErrorResponse(BaseModel):
     """Standardized unauthorized/invalid-credentials error envelope."""
 
     error: AuthError
+
+
+class RefreshRequest(BaseModel):
+    """Request body for POST /auth/refresh and POST /auth/logout."""
+
+    refresh_token: str = Field(..., description="Opaque refresh token issued by the login/refresh endpoints.")
 

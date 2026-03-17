@@ -9,8 +9,15 @@ from fastapi import APIRouter, Depends, status
 
 from src.auth.dependencies import get_auth_context_dep, get_current_admin
 from src.auth.errors import AuthHttpError
-from src.auth.schemas import AuthError, AuthErrorResponse, CurrentUserResponse, LoginRequest, LoginResponse
-from src.auth.service import AuthContext, authenticate_admin, build_login_response
+from src.auth.schemas import (
+    AuthError,
+    AuthErrorResponse,
+    CurrentUserResponse,
+    LoginRequest,
+    LoginResponse,
+    RefreshRequest,
+)
+from src.auth.service import AuthContext, authenticate_admin, build_login_response, refresh_session, logout_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -54,4 +61,49 @@ async def get_me(current: CurrentUserResponse = Depends(get_current_admin)) -> C
     Optional current-user endpoint.
     """
     return current
+
+
+@router.post(
+    "/refresh",
+    response_model=LoginResponse,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"model": AuthErrorResponse},
+    },
+)
+async def refresh_tokens(
+    body: RefreshRequest,
+    context: AuthContext = Depends(get_auth_context_dep),
+) -> LoginResponse:
+    """
+    Refresh endpoint for admin session (v3.2.3.E6).
+
+    Accepts a refresh token, validates and rotates it, and returns a new pair of
+    access + refresh tokens together with the admin principal.
+    """
+    try:
+        return refresh_session(body.refresh_token, context)
+    except AuthHttpError:
+        # Propagate standardized auth errors.
+        raise
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"model": AuthErrorResponse},
+    },
+)
+async def logout(
+    body: RefreshRequest,
+    _: CurrentUserResponse = Depends(get_current_admin),
+    context: AuthContext = Depends(get_auth_context_dep),
+) -> None:
+    """
+    Logout endpoint for admin session (v3.2.3.E6).
+
+    Revokes the supplied refresh token; subsequent use of that token will fail.
+    Requires a valid access token (same as other protected endpoints).
+    """
+    logout_session(body.refresh_token, context)
 

@@ -7,7 +7,11 @@ Phase 2 implements:
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+from typing import Dict, Optional
+
+from uuid import uuid4
 
 from fastapi import status
 
@@ -28,6 +32,80 @@ def get_auth_context() -> AuthContext:
     """Factory used by dependencies to build an AuthContext."""
 
     return AuthContext(settings=get_auth_settings())
+
+
+@dataclass
+class RefreshTokenRecord:
+    """In-memory refresh token record for the single admin session (v3.2.3.E6).
+
+    This is intentionally simple and process-local; it can be replaced by a
+    repository-backed implementation in a later phase without changing the
+    public auth contracts.
+    """
+
+    id: str
+    user_id: str
+    token_hash: str
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    replaced_by_token_id: str | None = None
+
+
+_REFRESH_TOKENS: Dict[str, RefreshTokenRecord] = {}
+_REFRESH_TOKENS_BY_HASH: Dict[str, str] = {}
+
+
+def _now_utc() -> datetime:
+    dt = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _hash_token(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
+
+
+def _issue_refresh_token(user_id: str, context: AuthContext) -> tuple[str, RefreshTokenRecord]:
+    """Create and persist a new refresh token for the admin session."""
+    raw = uuid4().hex + uuid4().hex
+    token_hash = _hash_token(raw)
+    now = _now_utc()
+    expires_at = now + timedelta(minutes=context.settings.refresh_token_expires_minutes)
+    rec = RefreshTokenRecord(
+        id=str(uuid4()),
+        user_id=user_id,
+        token_hash=token_hash,
+        created_at=now,
+        expires_at=expires_at,
+    )
+    _REFRESH_TOKENS[rec.id] = rec
+    _REFRESH_TOKENS_BY_HASH[token_hash] = rec.id
+    return raw, rec
+
+
+def _find_refresh_record(refresh_token: str) -> RefreshTokenRecord | None:
+    if not refresh_token:
+        return None
+    token_hash = _hash_token(refresh_token)
+    rec_id = _REFRESH_TOKENS_BY_HASH.get(token_hash)
+    if not rec_id:
+        return None
+    return _REFRESH_TOKENS.get(rec_id)
+
+
+def _revoke_token_record(rec: RefreshTokenRecord, *, replaced_by: RefreshTokenRecord | None = None) -> None:
+    now = _now_utc()
+    rec.revoked_at = now
+    if replaced_by is not None:
+        rec.replaced_by_token_id = replaced_by.id
+
+
+def _revoke_all_for_user(user_id: str) -> None:
+    for rec in _REFRESH_TOKENS.values():
+        if rec.user_id == user_id and rec.revoked_at is None:
+            rec.revoked_at = _now_utc()
 
 
 def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[AuthUser]:
@@ -60,7 +138,59 @@ def build_login_response(user: AuthUser, context: AuthContext) -> LoginResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             error=AuthError(code="SERVER_ERROR", message="Auth is misconfigured."),
         )
-    token = create_access_token(
+    access_token = create_access_token(
+        "admin",
+        username=user.username,
+        role=user.role,
+        secret=s.token_secret,
+        expires_minutes=s.token_expires_minutes,
+    )
+    refresh_token, _ = _issue_refresh_token(user.id, context)
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=s.token_expires_minutes * 60,
+        refresh_token=refresh_token,
+        refresh_expires_in=s.refresh_token_expires_minutes * 60,
+        user=user,
+    )
+
+
+def refresh_session(refresh_token: str, context: AuthContext) -> LoginResponse:
+    """
+    Validate and rotate a refresh token, returning a new LoginResponse payload.
+
+    Old token becomes invalid; new refresh token is the only valid one for the session.
+    Basic reuse protection: if a revoked/replaced token is seen again, revoke all tokens
+    for the admin and fail the refresh.
+    """
+    s = context.settings
+    if not (s.token_secret or "").strip():
+        raise AuthHttpError(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error=AuthError(code="SERVER_ERROR", message="Auth is misconfigured."),
+        )
+    rec = _find_refresh_record(refresh_token)
+    now = _now_utc()
+    if rec is None or rec.expires_at <= now:
+        raise AuthHttpError(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            error=AuthError(code="UNAUTHORIZED", message="Authentication required."),
+        )
+    if rec.revoked_at is not None or rec.replaced_by_token_id is not None:
+        # Token reuse or already rotated; revoke entire chain for safety.
+        _revoke_all_for_user(rec.user_id)
+        raise AuthHttpError(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            error=AuthError(code="UNAUTHORIZED", message="Authentication required."),
+        )
+
+    # Rotate: revoke old record, issue new one.
+    new_refresh_token, new_rec = _issue_refresh_token(rec.user_id, context)
+    _revoke_token_record(rec, replaced_by=new_rec)
+
+    user = AuthUser(id="admin", username=s.admin_username, role="administrator")
+    access_token = create_access_token(
         "admin",
         username=user.username,
         role=user.role,
@@ -68,9 +198,23 @@ def build_login_response(user: AuthUser, context: AuthContext) -> LoginResponse:
         expires_minutes=s.token_expires_minutes,
     )
     return LoginResponse(
-        access_token=token,
+        access_token=access_token,
         token_type="bearer",
         expires_in=s.token_expires_minutes * 60,
+        refresh_token=new_refresh_token,
+        refresh_expires_in=s.refresh_token_expires_minutes * 60,
         user=user,
     )
+
+
+def logout_session(refresh_token: str | None, context: AuthContext) -> None:
+    """
+    Revoke the supplied refresh token if present; no-op when token is missing/unknown.
+    """
+    if not refresh_token:
+        return
+    rec = _find_refresh_record(refresh_token)
+    if rec is None:
+        return
+    _revoke_token_record(rec)
 
