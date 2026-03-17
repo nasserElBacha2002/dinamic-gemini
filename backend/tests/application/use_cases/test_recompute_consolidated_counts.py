@@ -132,6 +132,100 @@ def test_recompute_duplicate_raw_same_group_does_not_inflate():
     assert updated_prod.detected_quantity == 1
 
 
+def test_recompute_clears_stale_and_updates_all_matching_products():
+    """
+    Full-scope reconciliation:
+    - multiple ProductRecords for same (position, sku) are all updated
+    - unmatched ProductRecords are reset to 0
+    """
+    raw_repo: RawLabelRepository = MemoryRawLabelRepository()
+    norm_repo: NormalizedLabelRepository = MemoryNormalizedLabelRepository()
+    final_repo: FinalCountRepository = MemoryFinalCountRepository()
+    product_repo: ProductRecordRepository = MemoryProductRecordRepository()
+    position_repo: PositionRepository = MemoryPositionRepository()
+
+    now = datetime.now(timezone.utc)
+    pos_id = "pos-1"
+
+    # Two raw duplicates => final quantity 1 for SKU-X
+    raw_repo.save_many([
+        _raw("r1", pos_id, "g1", "ev1", "SKU-X"),
+        _raw("r2", pos_id, "g1", "ev1", "SKU-X"),
+    ])
+
+    # Two product records for same SKU (stale values) + one unrelated SKU (should be zeroed)
+    product_repo.save(
+        ProductRecord(
+            id="p1",
+            position_id=pos_id,
+            sku="SKU-X",
+            description="",
+            detected_quantity=7,
+            confidence=0.9,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    product_repo.save(
+        ProductRecord(
+            id="p2",
+            position_id=pos_id,
+            sku="SKU-X",
+            description="",
+            detected_quantity=42,
+            confidence=0.9,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    product_repo.save(
+        ProductRecord(
+            id="p3",
+            position_id=pos_id,
+            sku="SKU-Y",
+            description="",
+            detected_quantity=3,
+            confidence=0.9,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    from src.domain.positions.entities import Position, PositionStatus
+
+    position_repo.save(
+        Position(
+            id=pos_id,
+            aisle_id="aisle1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=now,
+            updated_at=now,
+            detected_summary_json={},
+            corrected_summary_json=None,
+        )
+    )
+
+    uc = RecomputeConsolidatedCountsUseCase(
+        raw_label_repo=raw_repo,
+        normalized_label_repo=norm_repo,
+        final_count_repo=final_repo,
+        product_record_repo=product_repo,
+        position_repo=position_repo,
+        normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
+        final_count_builder=FinalCountBuilder(),
+    )
+    res = uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=True))
+    assert res.final_count == 1
+
+    assert product_repo.get_by_id("p1").detected_quantity == 1
+    assert product_repo.get_by_id("p2").detected_quantity == 1
+    # Unmatched SKU in scope must be reset to 0
+    assert product_repo.get_by_id("p3").detected_quantity == 0
+
+
 def test_recompute_same_scope_idempotent():
     """Recomputing the same scope twice does not duplicate normalized/final records."""
     raw_repo = MemoryRawLabelRepository()

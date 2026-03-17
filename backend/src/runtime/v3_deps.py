@@ -278,8 +278,22 @@ def get_raw_label_repo() -> RawLabelRepository:
     global _raw_label_repo
     if _raw_label_repo is not None:
         return _raw_label_repo
-    from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
-    _raw_label_repo = MemoryRawLabelRepository()
+    if _v3_db_enabled():
+        try:
+            client = _get_v3_sql_client()
+            from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+            _raw_label_repo = SqlRawLabelRepository(client)
+            logger.info("v3 RawLabelRepository: using SQL backend")
+        except Exception as e:
+            if not _v3_allow_in_memory_fallback():
+                logger.error("v3 SQL raw_label repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
+                raise
+            logger.warning("v3 SQL raw_label repo init failed, falling back to in-memory: %s", e)
+            from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+            _raw_label_repo = MemoryRawLabelRepository()
+    else:
+        from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+        _raw_label_repo = MemoryRawLabelRepository()
     return _raw_label_repo
 
 
@@ -287,8 +301,22 @@ def get_normalized_label_repo() -> NormalizedLabelRepository:
     global _normalized_label_repo
     if _normalized_label_repo is not None:
         return _normalized_label_repo
-    from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
-    _normalized_label_repo = MemoryNormalizedLabelRepository()
+    if _v3_db_enabled():
+        try:
+            client = _get_v3_sql_client()
+            from src.infrastructure.repositories.sql_normalized_label_repository import SqlNormalizedLabelRepository
+            _normalized_label_repo = SqlNormalizedLabelRepository(client)
+            logger.info("v3 NormalizedLabelRepository: using SQL backend")
+        except Exception as e:
+            if not _v3_allow_in_memory_fallback():
+                logger.error("v3 SQL normalized_label repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
+                raise
+            logger.warning("v3 SQL normalized_label repo init failed, falling back to in-memory: %s", e)
+            from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
+            _normalized_label_repo = MemoryNormalizedLabelRepository()
+    else:
+        from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
+        _normalized_label_repo = MemoryNormalizedLabelRepository()
     return _normalized_label_repo
 
 

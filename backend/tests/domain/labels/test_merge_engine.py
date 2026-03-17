@@ -98,7 +98,7 @@ def test_single_label_no_merge():
     partition = [_raw("r1", sku_raw="SKU-X")]
     decision = engine.evaluate(partition)
     assert decision.should_merge is False
-    assert decision.rule_name == MergeRule.SAME_SKU_SAME_GROUP.value
+    assert decision.rule_name == MergeRule.NO_MERGE_SINGLE_LABEL.value
 
 
 def test_ambiguous_conflict_conflicting_names_no_merge():

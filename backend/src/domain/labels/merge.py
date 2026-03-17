@@ -22,6 +22,7 @@ class MergeRule(str, Enum):
     SAME_SKU_SAME_EVIDENCE = "same_sku_same_evidence"
     MISSING_CANONICAL_SKU = "missing_canonical_sku"
     AMBIGUOUS_CONFLICT = "ambiguous_conflict"
+    NO_MERGE_SINGLE_LABEL = "no_merge_single_label"
     NO_MERGE_CONSERVATIVE = "no_merge_conservative"
 
 
@@ -94,7 +95,7 @@ class MergeRuleEngine:
                 )
             return MergeDecision(
                 should_merge=False,
-                rule_name=MergeRule.SAME_SKU_SAME_GROUP.value,
+                rule_name=MergeRule.NO_MERGE_SINGLE_LABEL.value,
                 reason="single_label",
                 review_required=partition[0].confidence is not None and partition[0].confidence < 0.5,
                 confidence=partition[0].confidence,
