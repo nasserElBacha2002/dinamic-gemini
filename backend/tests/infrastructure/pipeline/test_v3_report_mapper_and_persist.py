@@ -188,6 +188,77 @@ def test_map_hybrid_report_persists_unresolved_when_insufficient_evidence():
     assert summary.get("qty_is_resolved") is False
 
 
+def test_map_hybrid_report_needs_review_with_strong_presence_infers_one():
+    """NEEDS_REVIEW + valid evidence + valid traceability + identity -> qty_final=1 inferred."""
+    report = {
+        "entities": [
+            {
+                "entity_uid": "e-nr-strong",
+                "entity_type": "PALLET",
+                "internal_code": "SKU-STRONG",
+                "final_quantity": None,
+                "product_label_quantity": None,
+                "confidence": 0.9,
+                "count_status": "NEEDS_REVIEW",
+                "evidence_path": "evidence/crop.jpg",
+                "traceability_status": "valid",
+            }
+        ]
+    }
+    now = datetime.now(timezone.utc)
+    result = map_hybrid_report_to_domain(
+        aisle_id="a",
+        report=report,
+        run_dir=Path("/run"),
+        run_id="run",
+        job_id="j",
+        now=now,
+    )
+    assert len(result.product_records) == 1
+    pr = result.product_records[0]
+    assert pr.detected_quantity == 1
+    assert pr.qty_source == "inferred"
+    assert pr.qty_inference_reason == "valid_evidence_without_explicit_quantity"
+    summary = result.positions[0].detected_summary_json or {}
+    assert summary.get("qty_final") == 1
+    assert summary.get("qty_source") == "inferred"
+    assert summary.get("qty_inference_reason") == "valid_evidence_without_explicit_quantity"
+
+
+def test_map_hybrid_report_needs_review_with_weak_presence_stays_unresolved():
+    """NEEDS_REVIEW but weak evidence/identity does not trigger inference."""
+    report = {
+        "entities": [
+            {
+                "entity_uid": "e-nr-weak",
+                "entity_type": "PALLET",
+                "internal_code": None,
+                "final_quantity": None,
+                "product_label_quantity": None,
+                "confidence": 0.6,
+                "count_status": "NEEDS_REVIEW",
+                # No evidence_path, no identity, traceability missing/invalid.
+            }
+        ]
+    }
+    now = datetime.now(timezone.utc)
+    result = map_hybrid_report_to_domain(
+        aisle_id="a",
+        report=report,
+        run_dir=Path("/run"),
+        run_id="run",
+        job_id="j",
+        now=now,
+    )
+    assert len(result.product_records) == 1
+    pr = result.product_records[0]
+    assert pr.detected_quantity == 0
+    assert pr.qty_source == "unresolved"
+    summary = result.positions[0].detected_summary_json or {}
+    assert summary.get("qty_source") == "unresolved"
+    assert summary.get("qty_is_resolved") is False
+
+
 def test_map_hybrid_report_empty_pallet_explicit_zero_preserved():
     """v3.2.2: EMPTY_PALLET with explicit zero -> qty_final=0, is_resolved True (allowed domain case)."""
     report = {

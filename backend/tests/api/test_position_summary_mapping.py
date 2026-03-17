@@ -383,6 +383,60 @@ def test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qt
     assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
 
 
+def test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy() -> None:
+    """NEEDS_REVIEW + strong evidence/identity/traceability -> qty=1 inferred in legacy path."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-nr-strong",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "entity_type": "PALLET",
+            "count_status": "NEEDS_REVIEW",
+            "final_quantity": None,
+            "product_label_quantity": None,
+            "internal_code": "SKU-STRONG",
+            "traceability_status": "valid",
+        },
+    )
+    resp = _position_to_summary(p)
+    assert resp.qty == 1
+    assert resp.qtySource == "inferred"
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+    assert resp.qtyResolved is True
+
+
+def test_position_to_summary_needs_review_weak_presence_unresolved() -> None:
+    """NEEDS_REVIEW with weak presence/evidence does not infer qty=1."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-nr-weak",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.6,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "entity_type": "PALLET",
+            "count_status": "NEEDS_REVIEW",
+            "final_quantity": None,
+            "product_label_quantity": None,
+            # No identity, no traceability_status, and no primary_evidence_id.
+        },
+    )
+    resp = _position_to_summary(p)
+    assert resp.qty == 0
+    assert resp.qtySource == "detected"
+    assert resp.qtyResolved is False
+
+
 def test_position_to_summary_uses_primary_product_authoritative() -> None:
     """v3.2.2: When primary_product is provided with qty_source set, API uses it as authoritative (not detected_summary_json)."""
     now = datetime.now(timezone.utc)

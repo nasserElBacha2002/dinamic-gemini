@@ -47,7 +47,14 @@ from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
-from src.domain.quantity.resolution import normalize_raw_qty, resolve_final_qty, QtySource, QtyParseStatus
+from src.domain.quantity.resolution import (
+    QtyParseStatus,
+    QtySource,
+    has_strong_identity_for_qty_inference,
+    is_product_present_for_qty_inference,
+    normalize_raw_qty,
+    resolve_final_qty,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -407,7 +414,20 @@ def _resolve_qty_contract_from_position_legacy(p: Position, *, has_evidence: boo
     normalized = normalize_raw_qty(raw, field_was_present=present)
     entity_type = (j.get("entity_type") or "").strip().upper()
     count_status = (j.get("count_status") or "").strip().upper()
-    is_product_present = count_status in _ACCEPTED_COUNT_STATUSES
+
+    has_identity = has_strong_identity_for_qty_inference(
+        internal_code=j.get("internal_code"),
+        review_display_label=j.get("review_display_label"),
+        position_barcode=j.get("position_barcode"),
+        pallet_id=j.get("pallet_id"),
+    )
+    is_product_present = is_product_present_for_qty_inference(
+        count_status=count_status,
+        entity_type=entity_type,
+        has_valid_evidence=has_evidence,
+        has_identity=has_identity,
+        traceability_status=j.get("traceability_status"),
+    )
     allow_zero = entity_type == "EMPTY_PALLET"
     res = resolve_final_qty(
         has_valid_evidence=has_evidence,

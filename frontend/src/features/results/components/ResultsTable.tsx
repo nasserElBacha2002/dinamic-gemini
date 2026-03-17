@@ -33,8 +33,13 @@ function displaySku(r: ResultSummary): string {
 }
 
 function displayQty(r: ResultSummary): string {
-  if (r.detectedQty != null && !Number.isNaN(r.detectedQty) && r.detectedQty >= 0) {
-    return String(r.detectedQty);
+  const value =
+    r.resolvedQty != null && !Number.isNaN(r.resolvedQty)
+      ? r.resolvedQty
+      : r.detectedQty;
+
+  if (value != null && !Number.isNaN(value) && value >= 0) {
+    return String(value);
   }
   return '—';
 }

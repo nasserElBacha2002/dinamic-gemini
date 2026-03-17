@@ -20,9 +20,11 @@ function displayStr(value: string | null | undefined): string {
 
 export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
   const sku = displayStr(result.sku);
-  const detectedQty =
-    result.detectedQty != null && !Number.isNaN(result.detectedQty)
-      ? String(result.detectedQty)
+  const qty =
+    result.correctedQty != null && !Number.isNaN(result.correctedQty)
+      ? String(result.correctedQty)
+      : result.resolvedQty != null && !Number.isNaN(result.resolvedQty)
+      ? String(result.resolvedQty)
       : '—';
   const correctedQty =
     result.correctedQty != null && !Number.isNaN(result.correctedQty)
@@ -45,9 +47,9 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
       <Box sx={{ display: 'flex', gap: 2, mt: 1.5, flexWrap: 'wrap' }}>
         <Box>
           <Typography variant="caption" color="text.secondary">
-            Detected qty
+            Qty
           </Typography>
-          <Typography variant="body1">{detectedQty}</Typography>
+          <Typography variant="body1">{qty}</Typography>
         </Box>
         {correctedQty != null && (
           <Box>
