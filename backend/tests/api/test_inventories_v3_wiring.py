@@ -52,3 +52,4 @@ def test_get_aisle_asset_file_returns_404_when_asset_not_found() -> None:
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/nonexistent-asset-id/file"
     )
     assert response.status_code == 404
+    assert response.json().get("detail") == "Asset not found"

@@ -24,6 +24,8 @@ export {
 } from './mappers';
 
 export { useResultSummaries, useResultDetail } from './hooks/useResultSummaries';
+export { useEvidenceImageLoad } from './hooks/useEvidenceImageLoad';
+export type { EvidenceImageLoadState, EvidenceImageErrorKind } from './hooks/useEvidenceImageLoad';
 
 export { computeResultsKpi, filterResults } from './selectors';
 export type { ResultsKpi, ResultsFilterKind } from './selectors';

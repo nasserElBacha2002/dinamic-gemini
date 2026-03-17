@@ -188,15 +188,55 @@ export async function getAisleAssets(
 
 /**
  * URL for the reference image file of an aisle asset (position.source_image_id).
- * Use for &lt;img src&gt; or open in new tab. Backend returns 404 if asset/file missing.
+ * Use for <img src> or open in new tab. Backend returns 404 if asset/file missing.
+ * When jobId is provided, backend uses that job to resolve HEIC normalized preview (avoids multi-job regression).
  */
 export function getReferenceImageFileUrl(
   inventoryId: string,
   aisleId: string,
-  assetId: string
+  assetId: string,
+  jobId?: string | null
 ): string {
   const base = import.meta.env.VITE_API_BASE_URL ?? '';
-  return `${base}/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/file`;
+  const path = `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/file`;
+  if (jobId != null && String(jobId).trim() !== '') {
+    return `${base}${path}?job_id=${encodeURIComponent(String(jobId).trim())}`;
+  }
+  return `${base}${path}`;
+}
+
+/** Result of preflight fetch for evidence image. Used to distinguish 404/403/network and show the right message. */
+export type FetchEvidenceImageResult =
+  | { ok: true; blobUrl: string }
+  | { ok: false; status: number; detail?: string };
+
+/**
+ * Fetch evidence/reference image with auth (same as protectedFetch). Returns blob URL on success
+ * or status + detail on failure so the UI can show a differentiated error (not_found, forbidden, network).
+ * Caller must revoke the returned blobUrl when no longer needed (e.g. URL.revokeObjectURL(blobUrl)).
+ */
+export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImageResult> {
+  const token = getStoredToken();
+  const headers = new Headers();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  try {
+    const response = await fetch(url, { credentials: 'include', headers });
+    if (!response.ok) {
+      let detail: string | undefined;
+      try {
+        const data = (await response.json()) as { detail?: unknown };
+        detail = typeof data?.detail === 'string' ? data.detail : undefined;
+      } catch {
+        detail = undefined;
+      }
+      return { ok: false, status: response.status, detail };
+    }
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    return { ok: true, blobUrl };
+  } catch {
+    return { ok: false, status: 0, detail: undefined };
+  }
 }
 
 /** List positions (results) for an aisle — Épica 6. */

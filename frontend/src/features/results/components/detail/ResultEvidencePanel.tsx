@@ -2,18 +2,21 @@
  * Epic 4 — Evidence panel for Result Detail.
  *
  * Semantics:
- * - Source image preview: when result.sourceImageId + inventory/aisle are available we show the
- *   reference image (asset file) and optional source file name. This is the main visual evidence.
+ * - Source image preview: when result.sourceImageId + inventory/aisle are available we load the
+ *   reference image via fetch (with auth) and show blob URL or a differentiated error state.
  * - Evidence metadata only: when evidence records exist but no source image URL can be built,
  *   we show a short message that evidence is recorded but preview is not available.
  * - No evidence: when there is no source image and no evidence records, we show an intentional
  *   "No evidence available" state.
+ *
+ * Error differentiation: 404 not_found, 403/401 forbidden, HEIC preview missing, network/unknown.
  */
 
 import { useState, useCallback } from 'react';
-import { Paper, Typography, Box, Button, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
+import { Paper, Typography, Box, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
 import type { ResultDetail } from '../../types';
 import { getReferenceImageFileUrl } from '../../../../api/client';
+import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
 
 export interface ResultEvidencePanelProps {
   result: ResultDetail;
@@ -27,7 +30,6 @@ export default function ResultEvidencePanel({
   aisleId,
 }: ResultEvidencePanelProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [imageError, setImageError] = useState(false);
 
   const sourceImageId =
     result.sourceImageId != null && String(result.sourceImageId).trim() !== ''
@@ -36,18 +38,19 @@ export default function ResultEvidencePanel({
   const canShowImage = Boolean(
     sourceImageId && inventoryId && aisleId
   );
+  const jobId = (() => {
+    const entityId = result.technicalMetadata?.entityId;
+    if (!entityId || typeof entityId !== 'string') return null;
+    const idx = entityId.lastIndexOf('_');
+    return idx > 0 ? entityId.slice(0, idx) : null;
+  })();
   const imageUrl = canShowImage
-    ? getReferenceImageFileUrl(inventoryId!, aisleId!, sourceImageId!)
+    ? getReferenceImageFileUrl(inventoryId!, aisleId!, sourceImageId!, jobId)
     : null;
+  const loadState = useEvidenceImageLoad(canShowImage ? imageUrl : null);
 
-  const handleOpenImage = useCallback(() => {
-    setImageError(false);
-    setDialogOpen(true);
-  }, []);
-  const handleCloseImage = useCallback(() => {
-    setDialogOpen(false);
-    setImageError(false);
-  }, []);
+  const handleOpenImage = useCallback(() => setDialogOpen(true), []);
+  const handleCloseImage = useCallback(() => setDialogOpen(false), []);
 
   const primaryEvidence = result.evidence.find((e) => e.role === 'PRIMARY');
   const supportingEvidence = result.evidence.filter((e) => e.role === 'SUPPORTING');
@@ -59,7 +62,6 @@ export default function ResultEvidencePanel({
         Evidence
       </Typography>
 
-      {/* No evidence: no source image and no evidence records. */}
       {!hasAnyEvidence && !canShowImage && (
         <Box
           sx={{
@@ -76,7 +78,6 @@ export default function ResultEvidencePanel({
         </Box>
       )}
 
-      {/* Source image preview: show reference image when sourceImageId + route context available. */}
       {canShowImage && (
         <Box>
           <Box
@@ -91,9 +92,15 @@ export default function ResultEvidencePanel({
               position: 'relative',
             }}
           >
-            {imageUrl ? (
+            {loadState.status === 'idle' && null}
+            {loadState.status === 'loading' && (
+              <Box sx={{ py: 4 }}>
+                <CircularProgress size={32} />
+              </Box>
+            )}
+            {loadState.status === 'loaded' && (
               <img
-                src={imageUrl}
+                src={loadState.blobUrl}
                 alt={
                   result.sourceFileName
                     ? `Source: ${result.sourceFileName}`
@@ -104,12 +111,11 @@ export default function ResultEvidencePanel({
                   maxHeight: 320,
                   objectFit: 'contain',
                 }}
-                onError={() => setImageError(true)}
               />
-            ) : null}
-            {imageError && (
-              <Typography color="error" sx={{ p: 2 }}>
-                Preview is not available for this image.
+            )}
+            {loadState.status === 'error' && (
+              <Typography color="error" sx={{ p: 2 }} role="alert">
+                {loadState.message}
               </Typography>
             )}
           </Box>
@@ -124,13 +130,13 @@ export default function ResultEvidencePanel({
             onClick={handleOpenImage}
             sx={{ mt: 1 }}
             aria-label="View full image"
+            disabled={loadState.status !== 'loaded'}
           >
             View full image
           </Button>
         </Box>
       )}
 
-      {/* Evidence metadata only: records exist but no source image URL can be built. */}
       {!canShowImage && hasAnyEvidence && (
         <Box sx={{ py: 2 }}>
           <Typography variant="body2" color="text.secondary">
@@ -147,20 +153,22 @@ export default function ResultEvidencePanel({
       <Dialog open={dialogOpen} onClose={handleCloseImage} maxWidth="md" fullWidth>
         <DialogTitle>Source image</DialogTitle>
         <DialogContent>
-          {imageError ? (
-            <Typography color="error">
-              Preview is not available for this image.
-            </Typography>
-          ) : (
-            imageUrl && (
-              <img
-                src={dialogOpen ? imageUrl : ''}
-                alt="Source image"
-                style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
-                onError={() => setImageError(true)}
-              />
-            )
+          {loadState.status === 'loaded' && (
+            <img
+              src={loadState.blobUrl}
+              alt="Source image"
+              style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+            />
           )}
+          {loadState.status === 'error' && (
+            <Typography color="error">{loadState.message}</Typography>
+          )}
+          {loadState.status === 'loading' && (
+            <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+              <CircularProgress />
+            </Box>
+          )}
+          {loadState.status === 'idle' && null}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseImage}>Close</Button>

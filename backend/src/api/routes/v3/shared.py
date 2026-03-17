@@ -82,40 +82,39 @@ def _maybe_evict_traceability_cache() -> None:
         _TRACEABILITY_REPORTS_LOADED.clear()
 
 
-def resolve_normalized_asset_path(
+def _try_resolve_normalized_asset_for_job(
     output_dir: Path,
-    job_repo: JobRepository,
-    aisle_id: str,
+    job_id: str,
     asset_id: str,
-) -> Optional[Path]:
-    """Resolve the normalized (browser-safe) image path for an asset when the original is HEIC/HEIF."""
-    job = job_repo.get_latest_by_target("aisle", aisle_id)
-    if job is None:
-        return None
-    job_id = getattr(job, "id", None)
-    if not job_id:
-        return None
+) -> Tuple[Optional[Path], Optional[str]]:
+    """Try to resolve normalized image path for one job (no job_repo/aisle_id needed).
+
+    Returns (path, None) on success, (None, reason) on failure.
+    Caller is responsible for choosing which job_id to use (e.g. from request or latest).
+    """
     run_dir = output_dir / job_id / RUN_ID
     job_dir = run_dir.parent
+    if not run_dir.is_dir():
+        return None, "job_run_dir_missing"
     manifest_path = job_dir / _MANIFEST_FILENAME
     if not manifest_path.is_file():
-        return None
+        return None, "manifest_missing"
     try:
         with open(manifest_path, encoding="utf-8") as f:
             manifest = json.load(f)
     except (OSError, json.JSONDecodeError):
-        return None
+        return None, "manifest_unreadable"
     photos = manifest.get("photos") or []
     for entry in photos:
         if entry.get("image_id") != asset_id:
             continue
         stored_normalized = entry.get("stored_normalized_filename") or ""
         if not stored_normalized:
-            return None
+            return None, "stored_normalized_filename_missing"
         try:
             safe_filename = validate_relative_path(stored_normalized, "stored_normalized_filename")
         except ValueError:
-            return None
+            return None, "path_validation_failed"
         normalized_base = run_dir / _NORMALIZED_SUBDIR
         candidate = normalized_base / safe_filename
         try:
@@ -123,10 +122,56 @@ def resolve_normalized_asset_path(
             base_resolved = normalized_base.resolve()
             candidate_resolved.relative_to(base_resolved)
         except (ValueError, OSError):
-            return None
+            return None, "path_validation_failed"
         if not candidate_resolved.is_file():
-            return None
-        return Path(candidate_resolved)
+            return None, "normalized_file_missing"
+        return Path(candidate_resolved), None
+    return None, "asset_id_not_in_manifest"
+
+
+def resolve_normalized_asset_path(
+    output_dir: Path,
+    job_repo: JobRepository,
+    aisle_id: str,
+    asset_id: str,
+    job_id: Optional[str] = None,
+) -> Optional[Path]:
+    """Resolve the normalized (browser-safe) image path for an asset when the original is HEIC/HEIF.
+
+    When job_id is provided, tries that job first; on failure falls back to latest job for the aisle.
+    When job_id is not provided, uses latest job only (backward compatible).
+    """
+    output_dir = Path(output_dir)
+    if job_id and job_id.strip():
+        jid = job_id.strip()
+        logger.debug("HEIC preview: resolving with job_id=%s for asset_id=%s", jid, asset_id)
+        path, reason = _try_resolve_normalized_asset_for_job(output_dir, jid, asset_id)
+        if path is not None:
+            logger.debug("HEIC preview: resolved with job_id=%s", jid)
+            return path
+        logger.debug(
+            "HEIC preview: resolution with job_id=%s failed (%s), falling back to latest job for aisle",
+            jid,
+            reason,
+        )
+    job = job_repo.get_latest_by_target("aisle", aisle_id)
+    if job is None:
+        logger.debug("HEIC preview: no latest job for aisle_id=%s", aisle_id)
+        return None
+    latest_job_id = getattr(job, "id", None)
+    if not latest_job_id:
+        return None
+    logger.debug("HEIC preview: resolving with latest job_id=%s for asset_id=%s", latest_job_id, asset_id)
+    path, reason = _try_resolve_normalized_asset_for_job(output_dir, latest_job_id, asset_id)
+    if path is not None:
+        logger.debug("HEIC preview: resolved with latest job_id=%s", latest_job_id)
+        return path
+    logger.debug(
+        "HEIC preview: resolution with latest job_id=%s failed (%s) for asset_id=%s",
+        latest_job_id,
+        reason,
+        asset_id,
+    )
     return None
 
 
