@@ -17,6 +17,8 @@ from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
+    InventoryRepository,
+    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
@@ -27,6 +29,12 @@ from src.application.use_cases.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
+from src.application.services.inventory_visual_reference_resolver import (
+    InventoryVisualReferenceResolver,
+)
+from src.application.services.aisle_analysis_context_builder import (
+    AisleAnalysisContextBuilder,
+)
 from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
 from src.config import load_settings
 from src.domain.aisle.entities import Aisle
@@ -34,6 +42,11 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.entities import Job, JobStatus
 from src.io.logging import setup_logger
 from src.jobs.models import JobInput
+from src.pipeline.contracts.analysis_context import (
+    AnalysisContext,
+    AnalysisImage,
+    analysis_context_to_dict,
+)
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
@@ -54,6 +67,8 @@ class V3JobExecutor:
         product_record_repo: ProductRecordRepository,
         evidence_repo: EvidenceRepository,
         clock: Clock,
+        inventory_repo: InventoryRepository,
+        inventory_visual_reference_repo: InventoryVisualReferenceRepository,
         raw_label_repo: RawLabelRepository | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
     ) -> None:
@@ -73,6 +88,11 @@ class V3JobExecutor:
             raw_label_repo=raw_label_repo,
             recompute_consolidated_uc=recompute_consolidated_uc,
         )
+        resolver = InventoryVisualReferenceResolver(
+            inventory_repo=inventory_repo,
+            reference_repo=inventory_visual_reference_repo,
+        )
+        self._context_builder = AisleAnalysisContextBuilder(resolver)
 
     def execute(self, base_path: Path, job_id: str) -> bool:
         """
@@ -119,8 +139,9 @@ class V3JobExecutor:
         job_dir.mkdir(parents=True, exist_ok=True)
 
         try:
+            analysis_context = self._build_analysis_context(aisle)
             job_input, video_path = self._build_pipeline_input(
-                assets, v3_base, job_dir, job_id
+                assets, v3_base, job_dir, job_id, analysis_context=analysis_context
             )
         except Exception as e:
             logger.exception("v3 job %s: build pipeline input failed: %s", job_id, e)
@@ -200,12 +221,24 @@ class V3JobExecutor:
 
         return True
 
+    def _build_analysis_context(self, aisle: Aisle) -> AnalysisContext:
+        """Construct AnalysisContext for this aisle's inventory. Primary evidence left empty in v3.2.4."""
+        inventory_id = aisle.inventory_id
+        primary: list[AnalysisImage] = []
+        return self._context_builder.build(
+            inventory_id=inventory_id,
+            primary_evidence=primary,
+            metadata=None,
+        )
+
     def _build_pipeline_input(
         self,
         assets: list,
         v3_base: Path,
         job_dir: Path,
         job_id: str,
+        *,
+        analysis_context: AnalysisContext,
     ) -> tuple:
         """Return (JobInput, video_path). video_path used as first arg to process_video."""
         single_video = (
@@ -223,6 +256,7 @@ class V3JobExecutor:
                     video_path=video_path,
                     mode="hybrid",
                     input_type="video",
+                    metadata={"analysis_context": analysis_context_to_dict(analysis_context)},
                 ),
                 video_path,
             )
@@ -264,6 +298,7 @@ class V3JobExecutor:
                 input_type="photos",
                 input_manifest_path="input_manifest.json",
                 photos_dir="input_photos",
+                metadata={"analysis_context": analysis_context_to_dict(analysis_context)},
             ),
             "",  # video_path empty for photos
         )

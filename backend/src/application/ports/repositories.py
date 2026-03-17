@@ -240,7 +240,7 @@ class FinalCountRepository(ABC):
 class InventoryVisualReferenceRepository(ABC):
     """Persist and list visual reference images per inventory (v3.2.4).
 
-    list_by_inventory must return references ordered by created_at ascending.
+    list_by_inventory must return references ordered by created_at ASC, id ASC.
     """
 
     @abstractmethod
@@ -250,5 +250,5 @@ class InventoryVisualReferenceRepository(ABC):
 
     @abstractmethod
     def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
-        """Return all visual references for the given inventory ordered by created_at ASC."""
+        """Return all visual references for the given inventory ordered by created_at ASC, id ASC."""
         ...

@@ -1,0 +1,246 @@
+"""Tests for V3JobExecutor analysis context wiring — v3.2.4."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional, Sequence
+
+import pytest
+
+from src.application.ports.clock import Clock
+from src.application.ports.repositories import (
+    AisleRepository,
+    EvidenceRepository,
+    InventoryRepository,
+    InventoryVisualReferenceRepository,
+    JobRepository,
+    PositionRepository,
+    ProductRecordRepository,
+    RawLabelRepository,
+    SourceAssetRepository,
+)
+from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
+from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.visual_reference import InventoryVisualReference
+from src.domain.jobs.entities import Job, JobStatus
+from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
+
+
+class FixedClock(Clock):
+    def __init__(self, now: datetime) -> None:
+        self._now = now
+
+    def now(self) -> datetime:
+        return self._now
+
+
+class InMemoryJobRepo(JobRepository):
+    def __init__(self) -> None:
+        self._store: Dict[str, Job] = {}
+
+    def save(self, job: Job) -> None:
+        self._store[job.id] = job
+
+    def get_by_id(self, job_id: str) -> Optional[Job]:
+        return self._store.get(job_id)
+
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+        return None
+
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> Dict[str, Job]:
+        return {}
+
+
+class InMemoryAisleRepo(AisleRepository):
+    def __init__(self) -> None:
+        self._store: Dict[str, Aisle] = {}
+
+    def save(self, aisle: Aisle) -> None:
+        self._store[aisle.id] = aisle
+
+    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+        return self._store.get(aisle_id)
+
+    def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
+        return [a for a in self._store.values() if a.inventory_id == inventory_id]
+
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+        return None
+
+
+class InMemoryInventoryRepo(InventoryRepository):
+    def __init__(self) -> None:
+        self._store: Dict[str, Inventory] = {}
+
+    def save(self, inventory: Inventory) -> None:
+        self._store[inventory.id] = inventory
+
+    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+        return self._store.get(inventory_id)
+
+    def list_all(self) -> Sequence[Inventory]:
+        return list(self._store.values())
+
+
+class InMemorySourceAssetRepo(SourceAssetRepository):
+    def __init__(self) -> None:
+        self._store: Dict[str, SourceAsset] = {}
+
+    def save(self, asset: SourceAsset) -> None:
+        self._store[asset.id] = asset
+
+    def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
+        return self._store.get(asset_id)
+
+    def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
+        return [a for a in self._store.values() if a.aisle_id == aisle_id]
+
+
+class InMemoryInventoryVisualReferenceRepo(InventoryVisualReferenceRepository):
+    def __init__(self) -> None:
+        self._store: Dict[str, InventoryVisualReference] = {}
+
+    def create(self, reference: InventoryVisualReference) -> None:
+        self._store[reference.id] = reference
+
+    def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
+        refs = [r for r in self._store.values() if r.inventory_id == inventory_id]
+        refs.sort(key=lambda r: (r.created_at, r.id))
+        return refs
+
+
+class NoopRepo(
+    EvidenceRepository,
+    PositionRepository,
+    ProductRecordRepository,
+    RawLabelRepository,
+):
+    def save(self, *args, **kwargs):  # type: ignore[override]
+        return None
+
+    def get_by_id(self, *args, **kwargs):  # type: ignore[override]
+        return None
+
+    def list_by_aisle(self, *args, **kwargs):  # type: ignore[override]
+        return []
+
+    def list_by_position(self, *args, **kwargs):  # type: ignore[override]
+        return []
+
+    def save_many(self, *args, **kwargs):  # type: ignore[override]
+        return None
+
+    def list_for_scope(self, *args, **kwargs):  # type: ignore[override]
+        return []
+
+    def replace_for_scope(self, *args, **kwargs):  # type: ignore[override]
+        return None
+
+
+class DummyRecomputeCounts(RecomputeConsolidatedCountsUseCase):
+    def execute(self, inventory_id: str) -> None:  # type: ignore[override]
+        return None
+
+
+@pytest.mark.skip(reason="Integration-style test; enable when filesystem and pipeline are available in CI.")
+def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> None:
+    """Smoke test: when executing, JobInput.metadata carries analysis_context with visual_references."""
+    now = datetime(2025, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    clock = FixedClock(now)
+    job_repo = InMemoryJobRepo()
+    aisle_repo = InMemoryAisleRepo()
+    inv_repo = InMemoryInventoryRepo()
+    asset_repo = InMemorySourceAssetRepo()
+    visual_repo = InMemoryInventoryVisualReferenceRepo()
+    noop = NoopRepo()
+
+    inv = Inventory(
+        id="inv-1",
+        name="Inv",
+        status=InventoryStatus.DRAFT,
+        created_at=now,
+        updated_at=now,
+    )
+    inv_repo.save(inv)
+
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo.save(aisle)
+
+    asset = SourceAsset(
+        id="asset-1",
+        aisle_id="aisle-1",
+        type=SourceAssetType.PHOTO,
+        original_filename="f.jpg",
+        storage_path="some/path/f.jpg",
+        mime_type="image/jpeg",
+        uploaded_at=now,
+        metadata_json=None,
+    )
+    asset_repo.save(asset)
+
+    ref = InventoryVisualReference(
+        id="ref-1",
+        inventory_id="inv-1",
+        filename="ref.jpg",
+        storage_path="inventories/inv-1/visual_references/ref-1.jpg",
+        mime_type="image/jpeg",
+        file_size=10,
+        created_at=now,
+    )
+    visual_repo.create(ref)
+
+    payload = {"aisle_id": "aisle-1"}
+    job = Job(
+        id="job-1",
+        payload_json=payload,
+        status=JobStatus.QUEUED,
+        created_at=now,
+        updated_at=now,
+        job_type="process_aisle",
+        mode="hybrid",
+        confidence_threshold=0.7,
+    )
+    job_repo.save(job)
+
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=asset_repo,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=clock,
+        inventory_repo=inv_repo,
+        inventory_visual_reference_repo=visual_repo,
+        raw_label_repo=noop,
+        recompute_consolidated_uc=DummyRecomputeCounts(),
+    )
+
+    # We don't actually run the full pipeline in this test; we only assert that
+    # _build_pipeline_input would attach analysis_context to JobInput.metadata.
+    analysis_context = executor._build_analysis_context(aisle)  # type: ignore[attr-defined]
+    job_input, _ = executor._build_pipeline_input(  # type: ignore[attr-defined]
+        [asset],
+        v3_base=tmp_path,
+        job_dir=tmp_path,
+        job_id="job-1",
+        analysis_context=analysis_context,
+    )
+
+    assert job_input.metadata is not None
+    ctx = job_input.metadata.get("analysis_context")
+    assert ctx is not None
+    assert isinstance(ctx, dict)
+    assert "visual_references" in ctx
+    assert ctx["visual_references"]
+

@@ -98,7 +98,7 @@ class SqlInventoryVisualReferenceRepository(InventoryVisualReferenceRepository):
                 SELECT id, inventory_id, filename, storage_path, mime_type, file_size, created_at
                 FROM inventory_visual_references
                 WHERE inventory_id = ?
-                ORDER BY created_at ASC
+                ORDER BY created_at ASC, id ASC
                 """,
                 (inventory_id,),
             )
