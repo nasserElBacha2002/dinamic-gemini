@@ -45,6 +45,7 @@ from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
     AnalysisImage,
+    VisualReferenceContext,
     analysis_context_to_dict,
 )
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
@@ -53,6 +54,29 @@ from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 logger = logging.getLogger(__name__)
 
 RUN_ID = "run"
+
+
+def _resolve_visual_reference_paths(ctx: AnalysisContext, v3_base: Path) -> AnalysisContext:
+    """Return a new AnalysisContext with resolved_path set on each visual reference. Provider consumes these paths."""
+    if not ctx.visual_references:
+        return ctx
+    resolved_refs = [
+        VisualReferenceContext(
+            reference_id=ref.reference_id,
+            source_path=ref.source_path,
+            mime_type=ref.mime_type,
+            role=ref.role,
+            created_at=ref.created_at,
+            resolved_path=str(v3_base / ref.source_path),
+        )
+        for ref in ctx.visual_references
+    ]
+    return AnalysisContext(
+        primary_evidence=ctx.primary_evidence,
+        visual_references=resolved_refs,
+        instructions=ctx.instructions,
+        metadata=ctx.metadata,
+    )
 
 
 class V3JobExecutor:
@@ -251,12 +275,13 @@ class V3JobExecutor:
             if not full.exists():
                 raise FileNotFoundError(f"Asset file not found: {full}")
             video_path = str(full)
+            resolved_ctx = _resolve_visual_reference_paths(analysis_context, v3_base)
             return (
                 JobInput(
                     video_path=video_path,
                     mode="hybrid",
                     input_type="video",
-                    metadata={"analysis_context": analysis_context_to_dict(analysis_context)},
+                    metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
                 ),
                 video_path,
             )
@@ -291,6 +316,7 @@ class V3JobExecutor:
             json.dump(manifest, f, indent=2)
 
         # Paths relative to job dir for pipeline
+        resolved_ctx = _resolve_visual_reference_paths(analysis_context, v3_base)
         return (
             JobInput(
                 video_path="",
@@ -298,7 +324,7 @@ class V3JobExecutor:
                 input_type="photos",
                 input_manifest_path="input_manifest.json",
                 photos_dir="input_photos",
-                metadata={"analysis_context": analysis_context_to_dict(analysis_context)},
+                metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
             ),
             "",  # video_path empty for photos
         )

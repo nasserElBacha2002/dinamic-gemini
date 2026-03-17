@@ -77,7 +77,13 @@ class GeminiProvider:
         run_dir = request.metadata.get("run_dir")
         save_raw_to_path = Path(run_dir) / "gemini_raw_response.json" if run_dir else None
         try:
-            data = analyzer.analyze_video_frames(frames_nd, logger=logger, save_raw_to_path=save_raw_to_path)
+            data = analyzer.analyze_video_frames(
+                frames_nd,
+                context_instruction=getattr(request, "context_instruction", None),
+                context_images=getattr(request, "context_images", None),
+                logger=logger,
+                save_raw_to_path=save_raw_to_path,
+            )
         except GlobalAnalysisParsingError as e:
             raise LLMProviderError(
                 code="INVALID_JSON",

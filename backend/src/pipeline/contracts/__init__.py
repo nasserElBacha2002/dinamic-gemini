@@ -5,6 +5,8 @@ from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
     AnalysisImage,
     VisualReferenceContext,
+    analysis_context_from_dict,
+    analysis_context_to_dict,
 )
 
 __all__ = [
@@ -12,4 +14,6 @@ __all__ = [
     "AnalysisContext",
     "AnalysisImage",
     "VisualReferenceContext",
+    "analysis_context_from_dict",
+    "analysis_context_to_dict",
 ]
