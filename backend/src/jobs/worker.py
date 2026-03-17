@@ -28,6 +28,8 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
             get_job_repo,
             get_position_repo,
             get_product_record_repo,
+            get_raw_label_repo,
+            get_recompute_consolidated_counts_use_case,
             get_source_asset_repo,
         )
         from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
@@ -40,6 +42,8 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
             product_record_repo=get_product_record_repo(),
             evidence_repo=get_evidence_repo(),
             clock=get_clock(),
+            raw_label_repo=get_raw_label_repo(),
+            recompute_consolidated_uc=get_recompute_consolidated_counts_use_case(),
         )
         return executor.execute(base_path, job_id)
     except Exception as e:

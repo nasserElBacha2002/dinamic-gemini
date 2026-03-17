@@ -260,3 +260,25 @@ BEGIN
     CREATE INDEX IX_review_actions_position_id ON review_actions(position_id);
 END;
 GO
+
+-- v3.2.3 — Final count records (consolidated quantity from normalized labels)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'final_count_records')
+BEGIN
+    CREATE TABLE final_count_records (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        position_id VARCHAR(36) NULL,
+        sku NVARCHAR(128) NULL,
+        product_name NVARCHAR(512) NULL,
+        quantity INT NOT NULL,
+        normalized_label_ids_json NVARCHAR(MAX) NOT NULL,
+        review_required BIT NOT NULL,
+        explanation_summary NVARCHAR(1024) NULL,
+        metadata_json NVARCHAR(MAX) NULL,
+        created_at DATETIME2 NOT NULL
+    );
+    CREATE INDEX IX_final_count_scope ON final_count_records(inventory_id, aisle_id);
+    CREATE INDEX IX_final_count_position ON final_count_records(position_id);
+END;
+GO

@@ -14,10 +14,13 @@ from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
+    FinalCountRepository,
     InventoryRepository,
     JobRepository,
+    NormalizedLabelRepository,
     PositionRepository,
     ProductRecordRepository,
+    RawLabelRepository,
     ReviewActionRepository,
     SourceAssetRepository,
 )
@@ -34,6 +37,9 @@ _product_record_repo: Optional[ProductRecordRepository] = None
 _evidence_repo: Optional[EvidenceRepository] = None
 _review_action_repo: Optional[ReviewActionRepository] = None
 _metrics_calculator: Optional[MetricsCalculator] = None
+_raw_label_repo: Optional[RawLabelRepository] = None
+_normalized_label_repo: Optional[NormalizedLabelRepository] = None
+_final_count_repo: Optional[FinalCountRepository] = None
 _v3_sql_client = None
 
 
@@ -263,3 +269,63 @@ def get_metrics_calculator() -> MetricsCalculator:
 def get_clock() -> Clock:
     from src.infrastructure.adapters.clock import UtcClock
     return UtcClock()
+
+
+# --- v3.2.3 label consolidation (in-memory only for now) ---
+
+
+def get_raw_label_repo() -> RawLabelRepository:
+    global _raw_label_repo
+    if _raw_label_repo is not None:
+        return _raw_label_repo
+    from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+    _raw_label_repo = MemoryRawLabelRepository()
+    return _raw_label_repo
+
+
+def get_normalized_label_repo() -> NormalizedLabelRepository:
+    global _normalized_label_repo
+    if _normalized_label_repo is not None:
+        return _normalized_label_repo
+    from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
+    _normalized_label_repo = MemoryNormalizedLabelRepository()
+    return _normalized_label_repo
+
+
+def get_final_count_repo() -> FinalCountRepository:
+    global _final_count_repo
+    if _final_count_repo is not None:
+        return _final_count_repo
+    if _v3_db_enabled():
+        try:
+            client = _get_v3_sql_client()
+            from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
+            _final_count_repo = SqlFinalCountRepository(client)
+            logger.info("v3 FinalCountRepository: using SQL backend")
+        except Exception as e:
+            if not _v3_allow_in_memory_fallback():
+                logger.error("v3 SQL final_count repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
+                raise
+            logger.warning("v3 SQL final_count repo init failed, falling back to in-memory: %s", e)
+            from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
+            _final_count_repo = MemoryFinalCountRepository()
+    else:
+        from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
+        _final_count_repo = MemoryFinalCountRepository()
+    return _final_count_repo
+
+
+def get_recompute_consolidated_counts_use_case():
+    from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
+    from src.application.services.label_normalization import LabelNormalizationService
+    from src.application.services.final_count_builder import FinalCountBuilder
+    from src.domain.labels.merge import MergeRuleEngine
+    return RecomputeConsolidatedCountsUseCase(
+        raw_label_repo=get_raw_label_repo(),
+        normalized_label_repo=get_normalized_label_repo(),
+        final_count_repo=get_final_count_repo(),
+        product_record_repo=get_product_record_repo(),
+        position_repo=get_position_repo(),
+        normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
+        final_count_builder=FinalCountBuilder(),
+    )
