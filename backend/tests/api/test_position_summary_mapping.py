@@ -664,3 +664,43 @@ def test_regression_valid_entity_never_exposes_unjustified_zero() -> None:
     resp = _position_to_summary(p, primary_product=primary)
     assert resp.qty == 1
     assert resp.qtySource == "inferred"
+
+
+def test_position_to_summary_consolidated_qty_uses_product_record_projection() -> None:
+    """
+    v3.2.3: When qty_source is 'consolidated', API should use ProductRecord.detected_quantity
+    as the authoritative quantity (same behavior as detected), proving projection alignment.
+    """
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-consolidated",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "SKU-X", "final_quantity": 99},
+    )
+    primary = ProductRecord(
+        id="prod-consolidated",
+        position_id="pos-consolidated",
+        sku="SKU-X",
+        description="",
+        detected_quantity=4,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=None,
+        qty_source="consolidated",
+        qty_inference_reason=None,
+        raw_qty=None,
+        qty_parse_status="valid_positive",
+    )
+    resp = _position_to_summary(p, primary_product=primary)
+    assert resp.qty == 4
+    assert resp.qtySource == "detected"
+    # v3.2.3.E3 regression: detected_quantity must align with authoritative qty,
+    # not stale detected_summary_json (99), so response does not expose pre-consolidation values.
+    assert resp.detected_quantity == 4

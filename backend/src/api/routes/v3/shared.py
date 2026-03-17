@@ -534,6 +534,9 @@ def position_to_summary(
             qty_source = "detected"
             qty_reason = None
             qty_resolved = None
+        # v3.2.3: When ProductRecord is authoritative, align detected_quantity so response
+        # does not expose stale values from detected_summary_json (e.g. pre-consolidation).
+        detected_quantity = qty
     else:
         qty, qty_source, qty_reason, qty_resolved = _resolve_qty_contract_from_position_legacy(p, has_evidence=has_evidence)
     response_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
