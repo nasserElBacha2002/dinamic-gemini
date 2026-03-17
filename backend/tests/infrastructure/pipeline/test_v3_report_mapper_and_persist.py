@@ -34,6 +34,7 @@ def test_map_hybrid_report_to_domain_empty_entities():
     assert result.positions == []
     assert result.product_records == []
     assert result.evidences == []
+    assert result.raw_labels == []
 
 
 def test_map_hybrid_report_to_domain_one_entity():
@@ -65,6 +66,9 @@ def test_map_hybrid_report_to_domain_one_entity():
     assert len(result.positions) == 1
     assert len(result.product_records) == 1
     assert len(result.evidences) == 1
+    assert len(result.raw_labels) == 1
+    assert result.raw_labels[0].sku_raw == "SKU-001"
+    assert result.raw_labels[0].aisle_id == "aisle-1"
 
     pos = result.positions[0]
     assert pos.aisle_id == "aisle-1"

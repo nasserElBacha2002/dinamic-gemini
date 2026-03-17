@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { getCurrentUser } from './api';
-import { getStoredToken, setStoredToken, clearStoredToken } from './storage';
+import { getStoredSession, setStoredSession, clearStoredSession } from './storage';
 import { AuthContext, AuthContextValue, createInitialAuthState } from './store';
 
 interface AuthProviderProps {
@@ -18,7 +18,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [state, setState] = useState(() => createInitialAuthState());
 
   useEffect(() => {
-    const token = getStoredToken();
+    const session = getStoredSession();
+    const token = session?.accessToken ?? null;
     if (!token) {
       setState((s) => ({ ...s, initialized: true }));
       return;
@@ -30,7 +31,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setState({ user, token, initialized: true });
       })
       .catch(() => {
-        clearStoredToken();
+        clearStoredSession();
         setState(createInitialAuthState(true));
       });
   }, []);
@@ -39,12 +40,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
     () => ({
       ...state,
       login: (user, token) => {
-        setStoredToken(token);
+        setStoredSession(token, null);
         setState({ user, token, initialized: true });
       },
       logout: () => {
-        clearStoredToken();
+        const session = getStoredSession();
+        const accessToken = session?.accessToken ?? null;
+        const refreshToken = session?.refreshToken ?? null;
+
+        if (refreshToken) {
+          const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
+          const body = JSON.stringify({ refresh_token: refreshToken });
+          const headers: HeadersInit = { 'Content-Type': 'application/json' };
+          if (accessToken) {
+            (headers as Record<string, string>)['Authorization'] = `Bearer ${accessToken}`;
+          }
+          // Fire-and-forget backend logout; always clear local session afterwards.
+          fetch(`${apiBase}/auth/logout`, {
+            method: 'POST',
+            headers,
+            body,
+          }).catch(() => {
+            // Ignore network/logout errors; session will still be cleared locally.
+          });
+        }
+
+        clearStoredSession();
         setState(createInitialAuthState(true));
+        if (typeof window !== 'undefined') {
+          window.location.assign('/login');
+        }
       },
     }),
     [state],

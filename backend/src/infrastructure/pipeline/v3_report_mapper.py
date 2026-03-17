@@ -18,6 +18,7 @@ from typing import Any, Dict, List
 from uuid import uuid4
 
 from src.domain.evidence.entities import Evidence, EvidenceType
+from src.domain.labels.entities import RawLabel
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.domain.quantity.resolution import (
@@ -38,10 +39,11 @@ _ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
 
 @dataclass
 class MappedAisleResult:
-    """Result of mapping a hybrid report to v3 domain for one aisle."""
+    """Result of mapping a hybrid report to v3 domain for one aisle. v3.2.3: includes raw_labels."""
     positions: List[Position]
     product_records: List[ProductRecord]
     evidences: List[Evidence]
+    raw_labels: List[RawLabel]
 
 
 def _needs_review_from_entity(entity: Dict[str, Any]) -> bool:
@@ -179,16 +181,19 @@ def map_hybrid_report_to_domain(
     run_id: str,
     job_id: str,
     now: datetime,
+    inventory_id: str = "",
 ) -> MappedAisleResult:
     """
-    Map hybrid_report entities to Position, ProductRecord, Evidence.
+    Map hybrid_report entities to Position, ProductRecord, Evidence, and RawLabel (v3.2.3).
 
     run_dir: pipeline run directory (e.g. output_path/job_id/run_id).
     Storage paths for evidence are stored as relative to output root: job_id/run_id/evidence_path.
+    inventory_id: required for raw_labels scope when provided.
     """
     positions: List[Position] = []
     product_records: List[ProductRecord] = []
     evidences: List[Evidence] = []
+    raw_labels: List[RawLabel] = []
 
     entities = report.get("entities") or []
     for entity in entities:
@@ -282,8 +287,36 @@ def map_hybrid_report_to_domain(
         )
         evidences.append(evidence)
 
+        # v3.2.3: one RawLabel per entity for normalization/merge layer
+        raw_label_id = str(uuid4())
+        entity_uid = entity.get("entity_uid") or position_id
+        evidence_path_rel = (entity.get("evidence_path") or "").strip()
+        group_key = f"position:{position_id}:evidence:{evidence_id}" if evidence_id else str(entity_uid)
+        sku_raw = internal_code_raw if internal_code_raw is not None and isinstance(internal_code_raw, str) else None
+        raw_labels.append(
+            RawLabel(
+                id=raw_label_id,
+                inventory_id=inventory_id or "",
+                aisle_id=aisle_id,
+                position_id=position_id,
+                evidence_id=evidence_id,
+                group_key=group_key,
+                provider="pipeline",
+                source_type="hybrid_report",
+                source_reference=entity.get("entity_uid"),
+                sku_raw=sku_raw.strip() if sku_raw and sku_raw.strip() else None,
+                sku_candidate=sku_raw.strip() if sku_raw and sku_raw.strip() else None,
+                product_name_raw=entity.get("review_display_label") if isinstance(entity.get("review_display_label"), str) else None,
+                detected_text=entity.get("internal_code") if isinstance(entity.get("internal_code"), str) else None,
+                confidence=confidence,
+                metadata={"entity_uid": entity_uid, "evidence_path": evidence_path_rel},
+                created_at=now,
+            )
+        )
+
     return MappedAisleResult(
         positions=positions,
         product_records=product_records,
         evidences=evidences,
+        raw_labels=raw_labels,
     )

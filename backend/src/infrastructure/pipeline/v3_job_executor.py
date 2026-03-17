@@ -20,12 +20,14 @@ from src.application.ports.repositories import (
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
+    RawLabelRepository,
     SourceAssetRepository,
 )
 from src.application.use_cases.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
+from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
 from src.config import load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset, SourceAssetType
@@ -52,6 +54,8 @@ class V3JobExecutor:
         product_record_repo: ProductRecordRepository,
         evidence_repo: EvidenceRepository,
         clock: Clock,
+        raw_label_repo: RawLabelRepository | None = None,
+        recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
@@ -65,6 +69,9 @@ class V3JobExecutor:
             product_record_repo=product_record_repo,
             evidence_repo=evidence_repo,
             clock=clock,
+            aisle_repo=aisle_repo,
+            raw_label_repo=raw_label_repo,
+            recompute_consolidated_uc=recompute_consolidated_uc,
         )
 
     def execute(self, base_path: Path, job_id: str) -> bool:

@@ -7,7 +7,7 @@ Use cases depend on these abstractions; infrastructure provides SQL (or other) i
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from src.application.ports.contracts import PositionListQuery
 from src.domain.aisle.entities import Aisle
@@ -15,6 +15,7 @@ from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
+from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLabel
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
@@ -164,4 +165,58 @@ class JobRepository(ABC):
         self, target_type: str, target_ids: Sequence[str]
     ) -> Dict[str, Job]:
         """Return the latest job per target_id for the given target_type. Keys are target_id; only one job per target (the latest by updated_at, then created_at). Missing targets are omitted from the dict."""
+        ...
+
+
+# --- v3.2.3 Label consolidation layers ---
+
+
+class RawLabelRepository(ABC):
+    """Persist and read raw labels (original observations)."""
+
+    @abstractmethod
+    def save_many(self, labels: List[RawLabel]) -> None:
+        ...
+
+    @abstractmethod
+    def list_for_scope(self, inventory_id: str, aisle_id: str) -> Sequence[RawLabel]:
+        """All raw labels for the given inventory and aisle."""
+        ...
+
+
+class NormalizedLabelRepository(ABC):
+    """Persist and read normalized labels (after merge)."""
+
+    @abstractmethod
+    def save_many(self, labels: List[NormalizedLabel]) -> None:
+        ...
+
+    @abstractmethod
+    def list_for_scope(self, inventory_id: str, aisle_id: str) -> Sequence[NormalizedLabel]:
+        ...
+
+    @abstractmethod
+    def replace_for_scope(self, inventory_id: str, aisle_id: str) -> None:
+        """Remove existing normalized labels for scope; caller then saves new ones. Idempotent recompute."""
+        ...
+
+
+class FinalCountRepository(ABC):
+    """Persist and read final count records (business output)."""
+
+    @abstractmethod
+    def save_many(self, records: List[FinalCountRecord]) -> None:
+        ...
+
+    @abstractmethod
+    def list_for_scope(self, inventory_id: str, aisle_id: str) -> Sequence[FinalCountRecord]:
+        ...
+
+    @abstractmethod
+    def list_by_position(self, position_id: str) -> Sequence[FinalCountRecord]:
+        """Final count records for one position (e.g. to apply to ProductRecord)."""
+
+    @abstractmethod
+    def replace_for_scope(self, inventory_id: str, aisle_id: str) -> None:
+        """Remove existing final count for scope; caller then saves new ones."""
         ...

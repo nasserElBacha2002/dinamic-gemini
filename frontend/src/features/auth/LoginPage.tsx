@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Box, Button, TextField, Typography, Paper, Alert } from '@mui/material';
 import { login as loginApi, getAuthErrorMessage } from './api';
 import { useAuth } from './store';
+import { setStoredSession } from './storage';
 
 /**
  * LoginPage — Phase 4 implementation.
@@ -27,6 +28,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await loginApi({ username: username.trim(), password });
+      // Persist both access and refresh tokens so future refresh flows can be implemented.
+      setStoredSession(res.access_token, res.refresh_token ?? null);
       login(res.user, res.access_token);
       navigate('/', { replace: true });
     } catch (err) {
