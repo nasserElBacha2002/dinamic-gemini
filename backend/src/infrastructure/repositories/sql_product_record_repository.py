@@ -4,6 +4,7 @@ SQL Server implementation of ProductRecordRepository — v3.0 Épica 6.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
@@ -30,13 +31,37 @@ def _row_to_product(row) -> ProductRecord:
         id=pid,
         position_id=row.position_id or "",
         sku=row.sku or "",
-        description=getattr(row, "description", None),
+        description=(getattr(row, "description", None) or ""),
         detected_quantity=int(getattr(row, "detected_quantity", 0)),
         corrected_quantity=int(row.corrected_quantity) if getattr(row, "corrected_quantity", None) is not None else None,
         confidence=float(getattr(row, "confidence", 0)),
         created_at=created,
         updated_at=updated,
+        qty_source=getattr(row, "qty_source", None),
+        qty_inference_reason=getattr(row, "qty_inference_reason", None),
+        raw_qty=_safe_load_json(getattr(row, "raw_qty_json", None)),
+        qty_parse_status=getattr(row, "qty_parse_status", None),
     )
+
+
+def _safe_dump_json(v: object) -> Optional[str]:
+    if v is None:
+        return None
+    try:
+        return json.dumps(v, ensure_ascii=False)
+    except TypeError:
+        return json.dumps(str(v), ensure_ascii=False)
+
+
+def _safe_load_json(raw: object) -> Optional[object]:
+    if raw is None:
+        return None
+    if isinstance(raw, str) and raw.strip():
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return raw
+    return raw
 
 
 class SqlProductRecordRepository(ProductRecordRepository):
@@ -48,11 +73,13 @@ class SqlProductRecordRepository(ProductRecordRepository):
             raise ValueError("ProductRecord created_at and updated_at are required")
         created = _ensure_utc(product.created_at)
         updated = _ensure_utc(product.updated_at)
+        raw_qty_json = _safe_dump_json(product.raw_qty)
         with self._client.cursor() as cur:
             cur.execute(
                 """
                 UPDATE product_records
-                SET position_id = ?, sku = ?, description = ?, detected_quantity = ?, corrected_quantity = ?, confidence = ?, updated_at = ?
+                SET position_id = ?, sku = ?, description = ?, detected_quantity = ?, corrected_quantity = ?, confidence = ?,
+                    updated_at = ?, qty_source = ?, qty_inference_reason = ?, raw_qty_json = ?, qty_parse_status = ?
                 WHERE id = ?
                 """,
                 (
@@ -63,14 +90,21 @@ class SqlProductRecordRepository(ProductRecordRepository):
                     product.corrected_quantity,
                     product.confidence,
                     updated,
+                    (product.qty_source or None),
+                    (product.qty_inference_reason or None),
+                    raw_qty_json,
+                    (product.qty_parse_status or None),
                     product.id,
                 ),
             )
             if cur.rowcount == 0:
                 cur.execute(
                     """
-                    INSERT INTO product_records (id, position_id, sku, description, detected_quantity, corrected_quantity, confidence, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO product_records (
+                        id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
+                        created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         product.id,
@@ -82,6 +116,10 @@ class SqlProductRecordRepository(ProductRecordRepository):
                         product.confidence,
                         created,
                         updated,
+                        (product.qty_source or None),
+                        (product.qty_inference_reason or None),
+                        raw_qty_json,
+                        (product.qty_parse_status or None),
                     ),
                 )
 
@@ -89,7 +127,8 @@ class SqlProductRecordRepository(ProductRecordRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence, created_at, updated_at
+                SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
+                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status
                 FROM product_records WHERE id = ?
                 """,
                 (product_id,),
@@ -103,7 +142,8 @@ class SqlProductRecordRepository(ProductRecordRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence, created_at, updated_at
+                SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
+                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status
                 FROM product_records WHERE position_id = ? ORDER BY created_at ASC, id ASC
                 """,
                 (position_id,),

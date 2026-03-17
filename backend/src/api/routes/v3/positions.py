@@ -7,7 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from src.api.dependencies import (
     get_list_aisle_positions_use_case,
     get_get_position_detail_use_case,
+    get_product_record_repo,
 )
+from src.application.ports.repositories import ProductRecordRepository
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
     PositionDetailResponse,
@@ -31,15 +33,22 @@ def list_aisle_positions(
     inventory_id: str,
     aisle_id: str,
     use_case: ListAislePositionsUseCase = Depends(get_list_aisle_positions_use_case),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
 ) -> PositionListResponse:
     """List result positions for an aisle. Response includes summary sku and detected_quantity when available."""
     try:
         positions = use_case.execute(
             ListAislePositionsCommand(inventory_id=inventory_id, aisle_id=aisle_id)
         )
-        return PositionListResponse(
-            positions=[position_to_summary(p) for p in positions]
-        )
+        summaries = []
+        for p in positions:
+            products = product_record_repo.list_by_position(p.id)
+            primary = (
+                sorted(products, key=lambda x: (x.created_at, x.id))[0]
+                if products else None
+            )
+            summaries.append(position_to_summary(p, primary_product=primary))
+        return PositionListResponse(positions=summaries)
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:
@@ -71,7 +80,11 @@ def get_position_detail(
             primary_product.corrected_quantity if primary_product is not None else None
         )
         return PositionDetailResponse(
-            position=position_to_summary(result.position, corrected_quantity=corrected_quantity),
+            position=position_to_summary(
+                result.position,
+                corrected_quantity=corrected_quantity,
+                primary_product=primary_product,
+            ),
             evidences=[evidence_to_response(e) for e in result.evidences],
             review_actions=[review_to_response(ra) for ra in result.review_actions],
         )

@@ -10,6 +10,7 @@ where the model requires a value.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,10 +20,14 @@ from uuid import uuid4
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
+from src.domain.quantity.resolution import normalize_raw_qty, resolve_final_qty, QtySource
+
+logger = logging.getLogger(__name__)
 
 # Explicit sentinels when pipeline does not provide a value (auditable).
 SKU_UNKNOWN = "UNKNOWN"
 EVIDENCE_PATH_NO_ARTIFACT = "no_artifact"
+_ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
 
 
 @dataclass
@@ -88,6 +93,68 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
     return out
 
 
+def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tuple[int, Dict[str, Any]]:
+    """Resolve final qty + provenance for one report entity (v3.2.2).
+
+    Returns (qty_final, qty_meta_for_summary_json).
+    """
+    # Prefer final_quantity field if present (pipeline-derived), else product_label_quantity.
+    if "final_quantity" in entity:
+        raw = entity.get("final_quantity")
+        present = True
+        origin = "final_quantity"
+    elif "product_label_quantity" in entity:
+        raw = entity.get("product_label_quantity")
+        present = True
+        origin = "product_label_quantity"
+    else:
+        raw = None
+        present = False
+        origin = "missing"
+
+    normalized = normalize_raw_qty(raw, field_was_present=present)
+
+    entity_type = (entity.get("entity_type") or "").strip().upper()
+    count_status = (entity.get("count_status") or "").strip().upper()
+
+    # Domain acceptance proxy for v3 persistence:
+    # - product-present when report marks it counted (COUNTED / COUNTED_MANUAL)
+    # - explicit zero is only valid for EMPTY_PALLET (existing domain rule)
+    is_product_present = count_status in _ACCEPTED_COUNT_STATUSES
+    allow_zero = entity_type == "EMPTY_PALLET"
+
+    res = resolve_final_qty(
+        has_valid_evidence=has_valid_evidence,
+        is_product_present=is_product_present,
+        normalized_qty=normalized,
+        allow_zero_as_valid=allow_zero,
+    )
+    if logger.isEnabledFor(logging.DEBUG) and res.qty_source == QtySource.INFERRED:
+        logger.debug(
+            "v3.2.2 qty inferred: entity_uid=%s count_status=%s entity_type=%s raw=%r parse=%s -> qty=%d",
+            entity.get("entity_uid"),
+            count_status,
+            entity_type,
+            raw,
+            res.qty_parse_status.value,
+            res.qty_final,
+        )
+
+    # Persist source as "unresolved" when not resolved so API/audit can distinguish from valid 0.
+    source_value = "unresolved" if not res.is_resolved else res.qty_source.value
+    meta = {
+        # Secondary projection in detected_summary_json; ProductRecord is authoritative.
+        "qty_final": res.qty_final,
+        "qty_source": source_value,
+        "qty_inference_reason": res.qty_inference_reason.value if res.qty_inference_reason else None,
+        "raw_qty": res.raw_qty,
+        "qty_parse_status": res.qty_parse_status.value,
+        "qty_origin_field": origin,
+        "qty_is_resolved": res.is_resolved,
+    }
+    return res.qty_final, meta
+
+
 def map_hybrid_report_to_domain(
     aisle_id: str,
     report: Dict[str, Any],
@@ -122,6 +189,9 @@ def map_hybrid_report_to_domain(
         else:
             storage_path = EVIDENCE_PATH_NO_ARTIFACT
             evidence_path_missing = True
+        # v3.2.2: Temporary proxy for "valid evidence". Better signal would be explicit
+        # evidence validation; for this release we use presence of evidence_path.
+        has_valid_evidence = not evidence_path_missing
 
         internal_code_raw = entity.get("internal_code")
         if internal_code_raw is not None and isinstance(internal_code_raw, str) and internal_code_raw.strip():
@@ -130,24 +200,21 @@ def map_hybrid_report_to_domain(
             sku = SKU_UNKNOWN
         internal_code_missing = sku == SKU_UNKNOWN
 
-        final_qty = entity.get("final_quantity")
-        product_qty = entity.get("product_label_quantity")
-        if final_qty is not None and isinstance(final_qty, (int, float)):
-            quantity = int(final_qty)
-        elif product_qty is not None and isinstance(product_qty, (int, float)):
-            quantity = int(product_qty)
-        else:
-            quantity = 0
-        quantity_missing = (final_qty is None and product_qty is None) or quantity < 0
-        quantity = max(0, quantity)
+        quantity, qty_meta = _qty_from_entity(entity, has_valid_evidence=has_valid_evidence)
+        # "Explicit" quantity missing = raw field absent/null/invalid (not "final quantity unavailable").
+        explicit_quantity_missing = qty_meta.get("qty_parse_status") in (
+            "missing",
+            "null",
+            "invalid",
+        )
 
         audit: Dict[str, Any] = {}
         if confidence_missing:
             audit["confidence_missing"] = True
         if internal_code_missing:
             audit["internal_code_missing"] = True
-        if quantity_missing:
-            audit["quantity_missing"] = True
+        if explicit_quantity_missing:
+            audit["explicit_quantity_missing"] = True
         if evidence_path_missing:
             audit["evidence_path_missing"] = True
 
@@ -160,11 +227,12 @@ def map_hybrid_report_to_domain(
             primary_evidence_id=evidence_id,
             created_at=now,
             updated_at=now,
-            detected_summary_json=_detected_summary(entity, audit),
+            detected_summary_json={**_detected_summary(entity, audit), **qty_meta},
             corrected_summary_json=None,
         )
         positions.append(position)
 
+        # ProductRecord is the authoritative persisted record for qty and provenance.
         product = ProductRecord(
             id=product_id,
             position_id=position_id,
@@ -175,6 +243,10 @@ def map_hybrid_report_to_domain(
             created_at=now,
             updated_at=now,
             corrected_quantity=None,
+            qty_source=str(qty_meta.get("qty_source") or ""),
+            qty_inference_reason=qty_meta.get("qty_inference_reason"),
+            raw_qty=qty_meta.get("raw_qty"),
+            qty_parse_status=qty_meta.get("qty_parse_status"),
         )
         product_records.append(product)
 
