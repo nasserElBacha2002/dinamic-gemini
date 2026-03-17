@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Set, Tuple
+from typing import Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 from fastapi import HTTPException
 
@@ -521,6 +521,45 @@ def position_to_summary(
     has_evidence = bool(
         p.primary_evidence_id is not None and str(p.primary_evidence_id).strip() != ""
     )
+    # Aggregated SKU-level rows (v3.2.3): when detected_summary_json carries an
+    # "aggregated_from_ids" list, final_quantity represents the consolidated SKU
+    # quantity across multiple physical positions. In this case we treat the
+    # final_quantity in the summary as authoritative for qty and detected_quantity,
+    # instead of any single ProductRecord.
+    aggregated_from = summary_json.get("aggregated_from_ids")
+    if isinstance(aggregated_from, list) and aggregated_from:
+        raw_q = summary_json.get("final_quantity")
+        try:
+            qty = max(0, int(raw_q))
+        except (TypeError, ValueError):
+            qty = 0
+        qty_source = "detected"
+        qty_reason = None
+        qty_resolved = None
+        detected_quantity = qty
+        response_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
+        return PositionSummaryResponse(
+            id=p.id,
+            aisle_id=p.aisle_id,
+            status=p.status.value,
+            confidence=p.confidence,
+            needs_review=p.needs_review,
+            primary_evidence_id=p.primary_evidence_id,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+            detected_summary_json=response_summary_json,
+            sku=sku,
+            detected_quantity=detected_quantity,
+            corrected_quantity=corrected_quantity,
+            qty=qty,
+            qtySource=qty_source,
+            qtyInferenceReason=qty_reason,
+            qtyResolved=qty_resolved,
+            source_image_id=source_image_id,
+            traceability_status=traceability_status,
+            has_evidence=has_evidence,
+            source_image_original_filename=source_image_original_filename,
+        )
     # Authoritative source: ProductRecord when present. Use full provenance when qty_source is set;
     # when qty_source is empty (legacy/pre-v3.2.2 rows), use ProductRecord.detected_quantity so the
     # numeric qty never diverges from persistence; provenance is then "detected" by convention.
@@ -605,3 +644,4 @@ def _reset_traceability_cache_for_tests() -> None:
     """
     _TRACEABILITY_CACHE.clear()
     _TRACEABILITY_REPORTS_LOADED.clear()
+
