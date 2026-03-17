@@ -31,7 +31,7 @@ def _row_to_product(row) -> ProductRecord:
         id=pid,
         position_id=row.position_id or "",
         sku=row.sku or "",
-        description=getattr(row, "description", None),
+        description=(getattr(row, "description", None) or ""),
         detected_quantity=int(getattr(row, "detected_quantity", 0)),
         corrected_quantity=int(row.corrected_quantity) if getattr(row, "corrected_quantity", None) is not None else None,
         confidence=float(getattr(row, "confidence", 0)),

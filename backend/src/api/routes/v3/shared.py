@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Literal, Optional, Set, Tuple
 
 from fastapi import HTTPException
 
@@ -44,6 +44,7 @@ from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
 from src.domain.positions.entities import Position
+from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.domain.quantity.resolution import normalize_raw_qty, resolve_final_qty, QtySource, QtyParseStatus
@@ -362,27 +363,38 @@ def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str],
 
 
 _ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
+# (qty, qtySource, qtyInferenceReason, qtyResolved or None)
+_QtyContract = Tuple[int, Literal["detected", "inferred"], Optional[str], Optional[bool]]
 
 
-def _resolve_qty_contract_from_position(p: Position, *, has_evidence: bool) -> tuple[int, str, Optional[str]]:
-    """Return (qty, qtySource, qtyInferenceReason) for v3 API responses.
+def _qty_contract_from_product(primary: ProductRecord) -> _QtyContract:
+    """Build stable qty contract from authoritative ProductRecord. Collapse consolidated/unresolved."""
+    qty = max(0, primary.detected_quantity)
+    src = (primary.qty_source or "").strip()
+    if src == "inferred":
+        return (qty, "inferred", primary.qty_inference_reason or None, True)
+    if src == "unresolved":
+        return (0, "detected", None, False)
+    # detected, consolidated -> "detected", resolved
+    return (qty, "detected", None, True)
 
-    Uses persisted qty metadata when present; otherwise falls back to v3.2.2 resolver
-    on legacy detected_summary_json fields.
-    """
+
+def _resolve_qty_contract_from_position_legacy(p: Position, *, has_evidence: bool) -> _QtyContract:
+    """Legacy fallback when no ProductRecord is available or for backward compatibility.
+    Uses detected_summary_json only. Returns qtyResolved when present in summary or from recomputation."""
     j = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
 
-    # Prefer already-resolved metadata from v3.2.2 persistence/mapping.
     qty_final = j.get("qty_final")
     qty_source = j.get("qty_source")
     qty_reason = j.get("qty_inference_reason")
+    qty_is_resolved = j.get("qty_is_resolved")
     if isinstance(qty_final, int) and isinstance(qty_source, str) and qty_source.strip():
-        # Collapse consolidated -> detected for external API stability.
-        api_source = "detected" if qty_source.strip() != QtySource.INFERRED.value else "inferred"
-        return int(qty_final), api_source, (str(qty_reason) if qty_reason is not None else None)
+        api_source: Literal["detected", "inferred"] = (
+            "inferred" if qty_source.strip() == QtySource.INFERRED.value else "detected"
+        )
+        resolved = qty_is_resolved if isinstance(qty_is_resolved, bool) else None
+        return (int(qty_final), api_source, (str(qty_reason) if qty_reason is not None else None), resolved)
 
-    # Legacy path: compute from raw fields deterministically.
-    # Choose raw field and presence semantics.
     if "final_quantity" in j:
         raw = j.get("final_quantity")
         present = True
@@ -393,20 +405,18 @@ def _resolve_qty_contract_from_position(p: Position, *, has_evidence: bool) -> t
         raw = None
         present = False
     normalized = normalize_raw_qty(raw, field_was_present=present)
-
     entity_type = (j.get("entity_type") or "").strip().upper()
     count_status = (j.get("count_status") or "").strip().upper()
     is_product_present = count_status in _ACCEPTED_COUNT_STATUSES
     allow_zero = entity_type == "EMPTY_PALLET"
-
     res = resolve_final_qty(
         has_valid_evidence=has_evidence,
         is_product_present=is_product_present,
         normalized_qty=normalized,
         allow_zero_as_valid=allow_zero,
     )
-    api_source = "detected" if res.qty_source != QtySource.INFERRED else "inferred"
-    return res.qty_final, api_source, (res.qty_inference_reason.value if res.qty_inference_reason else None)
+    api_source = "inferred" if res.qty_source == QtySource.INFERRED else "detected"
+    return (res.qty_final, api_source, (res.qty_inference_reason.value if res.qty_inference_reason else None), res.is_resolved)
 
 
 def _enrich_position_traceability_from_report(
@@ -471,6 +481,7 @@ def _enrich_position_traceability_from_report(
 def position_to_summary(
     p: Position,
     corrected_quantity: Optional[int] = None,
+    primary_product: Optional[ProductRecord] = None,
 ) -> PositionSummaryResponse:
     sku, detected_quantity = _summary_sku_and_quantity_from_position(p)
     summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
@@ -490,7 +501,21 @@ def position_to_summary(
     has_evidence = bool(
         p.primary_evidence_id is not None and str(p.primary_evidence_id).strip() != ""
     )
-    qty, qty_source, qty_reason = _resolve_qty_contract_from_position(p, has_evidence=has_evidence)
+    # Authoritative source: ProductRecord when present. Use full provenance when qty_source is set;
+    # when qty_source is empty (legacy/pre-v3.2.2 rows), use ProductRecord.detected_quantity so the
+    # numeric qty never diverges from persistence; provenance is then "detected" by convention.
+    if primary_product is not None:
+        src = (primary_product.qty_source or "").strip()
+        if src:
+            qty, qty_source, qty_reason, qty_resolved = _qty_contract_from_product(primary_product)
+        else:
+            # Legacy compatibility: ProductRecord exists but qty_source not set; use persisted qty.
+            qty = max(0, primary_product.detected_quantity)
+            qty_source = "detected"
+            qty_reason = None
+            qty_resolved = None
+    else:
+        qty, qty_source, qty_reason, qty_resolved = _resolve_qty_contract_from_position_legacy(p, has_evidence=has_evidence)
     response_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
     return PositionSummaryResponse(
         id=p.id,
@@ -508,6 +533,7 @@ def position_to_summary(
         qty=qty,
         qtySource=qty_source,
         qtyInferenceReason=qty_reason,
+        qtyResolved=qty_resolved,
         source_image_id=source_image_id,
         traceability_status=traceability_status,
         has_evidence=has_evidence,

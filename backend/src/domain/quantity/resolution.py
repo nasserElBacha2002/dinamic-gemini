@@ -41,12 +41,17 @@ class NormalizedQty:
 
 @dataclass(frozen=True)
 class QtyResolution:
+    """Result of central quantity resolution. Authoritative for persistence and API."""
+
     qty_final: int
     qty_source: QtySource
     qty_inference_reason: Optional[QtyInferenceReason]
     raw_qty: Any
     qty_parse_status: QtyParseStatus
     normalization_notes: Optional[str] = None
+    # When False, this resolution is "unresolved / not materialized"; qty_final=0 must not
+    # be treated as a valid visible quantity for product-present entities.
+    is_resolved: bool = True
 
 
 def normalize_raw_qty(raw_qty: Any, *, field_was_present: bool) -> NormalizedQty:
@@ -99,6 +104,7 @@ def resolve_final_qty(
             qty_inference_reason=None,
             raw_qty=normalized_qty.raw_qty,
             qty_parse_status=normalized_qty.parse_status,
+            is_resolved=True,
         )
 
     # (2) explicit consolidated qty (if caller provides one)
@@ -110,6 +116,7 @@ def resolve_final_qty(
             raw_qty=normalized_qty.raw_qty,
             qty_parse_status=normalized_qty.parse_status,
             normalization_notes="used_consolidated_qty",
+            is_resolved=True,
         )
 
     # Interpret zero: invalid unless explicitly allowed by a separate business rule.
@@ -121,6 +128,7 @@ def resolve_final_qty(
             raw_qty=normalized_qty.raw_qty,
             qty_parse_status=normalized_qty.parse_status,
             normalization_notes="zero_allowed_by_rule",
+            is_resolved=True,
         )
 
     # (3) minimum inferred qty
@@ -131,9 +139,11 @@ def resolve_final_qty(
             qty_inference_reason=QtyInferenceReason.VALID_EVIDENCE_WITHOUT_EXPLICIT_QUANTITY,
             raw_qty=normalized_qty.raw_qty,
             qty_parse_status=normalized_qty.parse_status,
+            is_resolved=True,
         )
 
-    # (4) fallback: unresolved / not accepted
+    # (4) Unresolved / not materialized. Callers must not treat qty_final as valid visible
+    # quantity for product-present entities; persist as unresolved for audit.
     return QtyResolution(
         qty_final=0,
         qty_source=QtySource.DETECTED,
@@ -141,5 +151,6 @@ def resolve_final_qty(
         raw_qty=normalized_qty.raw_qty,
         qty_parse_status=normalized_qty.parse_status,
         normalization_notes="no_inference_due_to_insufficient_evidence_or_presence",
+        is_resolved=False,
     )
 

@@ -128,10 +128,12 @@ export interface PositionSummary {
   corrected_quantity?: number | null;
   /** v3.2.2: stable qty contract (backend-resolved). */
   qty: number;
-  /** v3.2.2: 'detected' or 'inferred' (backend-resolved). */
-  qtySource: 'detected' | 'inferred' | string;
+  /** v3.2.2: stable contract; backend always sends 'detected' or 'inferred'. */
+  qtySource: 'detected' | 'inferred';
   /** v3.2.2: non-null when qtySource='inferred'. */
   qtyInferenceReason?: string | null;
+  /** v3.2.2: when true/false, qty is from resolved decision; when null, legacy/compatibility path. */
+  qtyResolved?: boolean | null;
   /** Epic 3.1.B: optional; when present, summary-level result-to-image traceability for this position. */
   source_image_id?: string | null;
   /** Epic 5: optional; original filename of the source image when available (photos jobs). May be absent until the v3 position API is extended to expose it. */

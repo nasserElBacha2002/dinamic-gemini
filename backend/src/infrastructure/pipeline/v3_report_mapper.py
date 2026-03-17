@@ -140,16 +140,18 @@ def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tup
             res.qty_final,
         )
 
+    # Persist source as "unresolved" when not resolved so API/audit can distinguish from valid 0.
+    source_value = "unresolved" if not res.is_resolved else res.qty_source.value
     meta = {
-        # Canonical persisted-in-summary fields (snake_case in detected_summary_json).
+        # Secondary projection in detected_summary_json; ProductRecord is authoritative.
         "qty_final": res.qty_final,
-        "qty_source": res.qty_source.value,
+        "qty_source": source_value,
         "qty_inference_reason": res.qty_inference_reason.value if res.qty_inference_reason else None,
         "raw_qty": res.raw_qty,
         "qty_parse_status": res.qty_parse_status.value,
         "qty_origin_field": origin,
+        "qty_is_resolved": res.is_resolved,
     }
-    # Maintain backward compatibility: keep final_quantity/product_label_quantity as-is; qty_final is authoritative.
     return res.qty_final, meta
 
 
@@ -187,6 +189,8 @@ def map_hybrid_report_to_domain(
         else:
             storage_path = EVIDENCE_PATH_NO_ARTIFACT
             evidence_path_missing = True
+        # v3.2.2: Temporary proxy for "valid evidence". Better signal would be explicit
+        # evidence validation; for this release we use presence of evidence_path.
         has_valid_evidence = not evidence_path_missing
 
         internal_code_raw = entity.get("internal_code")
@@ -197,15 +201,20 @@ def map_hybrid_report_to_domain(
         internal_code_missing = sku == SKU_UNKNOWN
 
         quantity, qty_meta = _qty_from_entity(entity, has_valid_evidence=has_valid_evidence)
-        quantity_missing = qty_meta.get("qty_parse_status") in ("missing", "null", "invalid")  # type: ignore[comparison-overlap]
+        # "Explicit" quantity missing = raw field absent/null/invalid (not "final quantity unavailable").
+        explicit_quantity_missing = qty_meta.get("qty_parse_status") in (
+            "missing",
+            "null",
+            "invalid",
+        )
 
         audit: Dict[str, Any] = {}
         if confidence_missing:
             audit["confidence_missing"] = True
         if internal_code_missing:
             audit["internal_code_missing"] = True
-        if quantity_missing:
-            audit["quantity_missing"] = True
+        if explicit_quantity_missing:
+            audit["explicit_quantity_missing"] = True
         if evidence_path_missing:
             audit["evidence_path_missing"] = True
 
@@ -223,6 +232,7 @@ def map_hybrid_report_to_domain(
         )
         positions.append(position)
 
+        # ProductRecord is the authoritative persisted record for qty and provenance.
         product = ProductRecord(
             id=product_id,
             position_id=position_id,

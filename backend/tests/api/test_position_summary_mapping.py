@@ -1,4 +1,4 @@
-"""Épica 7: position summary mapping — sku and detected_quantity in list response."""
+"""Épica 7: position summary mapping — sku and detected_quantity in list response. v3.2.2: authoritative ProductRecord for qty."""
 
 from datetime import datetime, timezone
 
@@ -10,6 +10,7 @@ from src.api.routes.v3.shared import (
 )
 from src.api.schemas.position_schemas import PositionSummaryResponse
 from src.domain.positions.entities import Position, PositionStatus
+from src.domain.products.entities import ProductRecord
 
 
 def test_summary_sku_and_quantity_from_detected_summary() -> None:
@@ -357,7 +358,7 @@ def test_position_to_summary_non_dict_detected_summary_json_no_raise() -> None:
 
 
 def test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty() -> None:
-    """v3.2.2: has_evidence + COUNTED but qty missing -> qty=1 inferred (legacy rows)."""
+    """v3.2.2: has_evidence + COUNTED but qty missing -> qty=1 inferred (legacy path when no primary_product)."""
     now = datetime.now(timezone.utc)
     p = Position(
         id="pos-inf",
@@ -380,3 +381,232 @@ def test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qt
     assert resp.qty == 1
     assert resp.qtySource == "inferred"
     assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+
+def test_position_to_summary_uses_primary_product_authoritative() -> None:
+    """v3.2.2: When primary_product is provided with qty_source set, API uses it as authoritative (not detected_summary_json)."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-auth",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.85,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "internal_code": "SKU-OLD",
+            "final_quantity": 99,
+        },
+    )
+    primary = ProductRecord(
+        id="prod-1",
+        position_id="pos-auth",
+        sku="SKU-A",
+        description="",
+        detected_quantity=5,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=None,
+        qty_source="detected",
+        qty_inference_reason=None,
+        raw_qty=5,
+        qty_parse_status="valid_positive",
+    )
+    resp = _position_to_summary(p, primary_product=primary)
+    assert resp.qty == 5
+    assert resp.qtySource == "detected"
+    assert resp.qtyInferenceReason is None
+    assert resp.qtyResolved is True
+
+
+def test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty() -> None:
+    """v3.2.2 corrective: When primary_product exists but qty_source is empty (legacy row), use ProductRecord.detected_quantity so qty never diverges; qtyResolved is None."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-legacy",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.8,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "SKU-OLD", "final_quantity": 99},
+    )
+    primary = ProductRecord(
+        id="prod-legacy",
+        position_id="pos-legacy",
+        sku="SKU-A",
+        description="",
+        detected_quantity=3,
+        confidence=0.8,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=None,
+        qty_source="",
+        qty_inference_reason=None,
+        raw_qty=3,
+        qty_parse_status="valid_positive",
+    )
+    resp = _position_to_summary(p, primary_product=primary)
+    assert resp.qty == 3
+    assert resp.qtySource == "detected"
+    assert resp.qtyInferenceReason is None
+    assert resp.qtyResolved is None
+
+
+def test_position_to_summary_unresolved_primary_returns_zero_detected() -> None:
+    """v3.2.2: primary_product with qty_source=unresolved yields (0, 'detected', None) so UI can treat as non-valid visible."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-unr",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.5,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={},
+    )
+    primary = ProductRecord(
+        id="prod-unr",
+        position_id="pos-unr",
+        sku="X",
+        description="",
+        detected_quantity=0,
+        confidence=0.5,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=None,
+        qty_source="unresolved",
+        qty_inference_reason=None,
+        raw_qty=None,
+        qty_parse_status="missing",
+    )
+    resp = _position_to_summary(p, primary_product=primary)
+    assert resp.qty == 0
+    assert resp.qtySource == "detected"
+    assert resp.qtyInferenceReason is None
+    assert resp.qtyResolved is False
+
+
+def test_position_to_summary_legacy_fallback_when_no_primary_product() -> None:
+    """v3.2.2: When primary_product is None, qty contract is built from detected_summary_json (legacy)."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-leg",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "internal_code": "SKU",
+            "final_quantity": 7,
+            "count_status": "COUNTED",
+        },
+    )
+    resp = _position_to_summary(p, primary_product=None)
+    assert resp.qty == 7
+    assert resp.qtySource == "detected"
+    assert resp.qtyInferenceReason is None
+    assert resp.qtyResolved is True
+
+
+def test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it() -> None:
+    """When legacy path uses pre-populated qty_final/qty_source from summary, qtyResolved comes from qty_is_resolved when present."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-leg-2",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "qty_final": 0,
+            "qty_source": "unresolved",
+            "qty_is_resolved": False,
+        },
+    )
+    resp = _position_to_summary(p, primary_product=None)
+    assert resp.qty == 0
+    assert resp.qtyResolved is False
+
+
+def test_regression_valid_entity_never_exposes_unjustified_null_qty() -> None:
+    """Regression: valid visible entity must not expose null qty; authoritative ProductRecord supplies explicit qty."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-reg",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "SKU-OK", "final_quantity": None},
+    )
+    primary = ProductRecord(
+        id="prod-reg",
+        position_id="pos-reg",
+        sku="SKU-OK",
+        description="",
+        detected_quantity=1,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=None,
+        qty_source="inferred",
+        qty_inference_reason="valid_evidence_without_explicit_quantity",
+        raw_qty=None,
+        qty_parse_status="missing",
+    )
+    resp = _position_to_summary(p, primary_product=primary)
+    assert resp.qty == 1
+    assert resp.qtySource == "inferred"
+    assert resp.qtyInferenceReason is not None
+    assert resp.qtyResolved is True
+
+
+def test_regression_valid_entity_never_exposes_unjustified_zero() -> None:
+    """Regression: when SKU was correct but qty could regress to 0 after parser changes, authoritative ProductRecord prevents unjustified 0."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-zero",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "SKU-OK", "final_quantity": 0},
+    )
+    primary = ProductRecord(
+        id="prod-zero",
+        position_id="pos-zero",
+        sku="SKU-OK",
+        description="",
+        detected_quantity=1,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=None,
+        qty_source="inferred",
+        qty_inference_reason="valid_evidence_without_explicit_quantity",
+        raw_qty=0,
+        qty_parse_status="zero",
+    )
+    resp = _position_to_summary(p, primary_product=primary)
+    assert resp.qty == 1
+    assert resp.qtySource == "inferred"
