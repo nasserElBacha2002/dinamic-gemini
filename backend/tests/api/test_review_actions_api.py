@@ -174,10 +174,8 @@ def test_post_review_update_quantity_returns_204_and_detail_updated() -> None:
         assert detail.status_code == 200
         data = detail.json()
         assert data["position"]["status"] == "corrected"
-        products = data["products"]
-        assert len(products) == 1
-        assert products[0]["corrected_quantity"] == 10
-        assert products[0]["detected_quantity"] == 5
+        assert data["position"]["corrected_quantity"] == 10
+        assert data["position"]["qty"] == 10
         assert len(data["review_actions"]) == 1
         assert data["review_actions"][0]["action_type"] == "update_quantity"
     finally:
@@ -315,5 +313,72 @@ def test_get_position_detail_includes_review_actions() -> None:
         data = resp.json()
         assert "review_actions" in data
         assert data["review_actions"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_and_detail_corrected_quantity_coherent_after_update_quantity() -> None:
+    """v3.2.5 Phase 2 Block 1: After update_quantity, list and detail both expose same corrected_quantity."""
+    client = TestClient(app)
+    repos = _seed_repos()
+    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
+    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
+    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
+    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
+    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
+    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
+    try:
+        resp = client.post(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
+            json={
+                "action_type": "update_quantity",
+                "product_id": "prod-review-1",
+                "corrected_quantity": 10,
+            },
+        )
+        assert resp.status_code == 204
+
+        list_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
+        )
+        assert list_resp.status_code == 200
+        list_data = list_resp.json()
+        assert "positions" in list_data
+        positions = list_data["positions"]
+        ids = [pos["id"] for pos in positions]
+        assert ids == ["pos-review-1"], "list must return exactly the expected position ids"
+        assert len(ids) == len(set(ids)), "list must not contain duplicate position rows"
+        assert len(positions) == 1
+        assert positions[0]["corrected_quantity"] == 10
+
+        detail_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1"
+        )
+        assert detail_resp.status_code == 200
+        detail_data = detail_resp.json()
+        assert detail_data["position"]["corrected_quantity"] == 10
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_corrected_quantity_null_when_no_manual_correction() -> None:
+    """v3.2.5 Phase 2 Block 1: List returns corrected_quantity null when no manual correction exists."""
+    client = TestClient(app)
+    repos = _seed_repos()
+    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
+    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
+    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
+    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
+    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
+    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
+    try:
+        list_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
+        )
+        assert list_resp.status_code == 200
+        list_data = list_resp.json()
+        assert len(list_data["positions"]) == 1
+        # Seed product has corrected_quantity=None; list must expose null/absent per schema.
+        assert list_data["positions"][0].get("corrected_quantity") is None
     finally:
         app.dependency_overrides.clear()
