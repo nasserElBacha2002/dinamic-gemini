@@ -53,7 +53,7 @@ def test_mode_hybrid_runs_without_error():
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 15]})
         with tempfile.TemporaryDirectory() as tmp:
-            code = pipeline.process_video(
+            result = pipeline.process_video(
                 "video.mp4",
                 mode="hybrid",
                 settings=mock_settings,
@@ -63,7 +63,7 @@ def test_mode_hybrid_runs_without_error():
                 logger=mock_logger,
                 args=MagicMock(),
             )
-    assert code == 0
+    assert result.exit_code == 0
 
 
 def test_mode_hybrid_logs_global_analysis():

@@ -70,6 +70,10 @@ class StubArtifactStorage(ArtifactStorage):
         self._written.append((path, content, content_type))
         return path
 
+    def delete_file(self, path: str) -> None:
+        # UploadAisleAssetsUseCase does not currently require rollback semantics.
+        pass
+
 
 def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)

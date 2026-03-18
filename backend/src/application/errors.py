@@ -32,6 +32,14 @@ class EmptyUploadError(Exception):
     """Raised when no files are provided for an aisle asset upload."""
 
 
+class ZeroByteFileError(Exception):
+    """Raised when an uploaded file has size zero or negative (empty file not allowed)."""
+
+
+class MaxInventoryVisualReferencesExceededError(Exception):
+    """Raised when uploading would exceed the maximum visual references per inventory."""
+
+
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
 

@@ -24,6 +24,15 @@ class ArtifactStorage(ABC):
     def save_file(self, path: str, file_obj: BinaryIO, content_type: str) -> str:
         ...
 
+    @abstractmethod
+    def delete_file(self, path: str) -> None:
+        """Best-effort deletion of a previously saved file at path (relative to base).
+
+        Used to rollback partially successful uploads when later steps fail.
+        Implementations should be idempotent (no error if path does not exist).
+        """
+        ...
+
 
 class JobQueue(ABC):
     """Port for enqueueing jobs. Returns job id from the queue.

@@ -18,7 +18,13 @@ from pathlib import Path
 from fastapi import Depends
 
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository, SourceAssetRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    InventoryVisualReferenceRepository,
+    JobRepository,
+    SourceAssetRepository,
+)
 from src.application.ports.repositories import (
     EvidenceRepository,
     PositionRepository,
@@ -31,6 +37,7 @@ from src.runtime.v3_deps import (
     get_clock,
     get_evidence_repo,
     get_inventory_repo,
+    get_inventory_visual_reference_repo,
     get_job_repo,
     get_metrics_calculator,
     get_position_repo,
@@ -56,6 +63,10 @@ from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.application.use_cases.persist_aisle_result import PersistAisleResultUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
+from src.application.use_cases.upload_inventory_visual_references import (
+    ListInventoryVisualReferencesUseCase,
+    UploadInventoryVisualReferencesUseCase,
+)
 from src.application.use_cases.cancel_aisle_job import CancelAisleJobUseCase
 
 logger = logging.getLogger(__name__)
@@ -196,6 +207,30 @@ def get_list_aisle_assets_use_case(
     return ListAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
+    )
+
+
+def get_upload_inventory_visual_references_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    reference_repo: InventoryVisualReferenceRepository = Depends(get_inventory_visual_reference_repo),
+    artifact_storage=Depends(get_artifact_storage),
+    clock: Clock = Depends(get_clock),
+) -> UploadInventoryVisualReferencesUseCase:
+    return UploadInventoryVisualReferencesUseCase(
+        inventory_repo=inventory_repo,
+        reference_repo=reference_repo,
+        artifact_storage=artifact_storage,
+        clock=clock,
+    )
+
+
+def get_list_inventory_visual_references_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    reference_repo: InventoryVisualReferenceRepository = Depends(get_inventory_visual_reference_repo),
+) -> ListInventoryVisualReferencesUseCase:
+    return ListInventoryVisualReferencesUseCase(
+        inventory_repo=inventory_repo,
+        reference_repo=reference_repo,
     )
 
 

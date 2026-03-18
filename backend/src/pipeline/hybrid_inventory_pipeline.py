@@ -1,10 +1,13 @@
 """
 Hybrid inventory pipeline (v2.1).
 Stage 2.2.B: frames via FrameSource; v2.3.A: RunContext, InputPreparationStage; v2.3.B: AnalysisProvider; v2.3.C: staged orchestration.
+v3.2.4 Phase 5: produce run_metadata in memory (visual_reference_context) for job-level traceability.
 """
 
+import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 import cv2
 import numpy as np
@@ -14,6 +17,7 @@ from src.jobs.models import JobInput
 from src.llm.errors import LLMProviderError
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
@@ -23,6 +27,18 @@ from src.pipeline.stages.analysis_stage import AnalysisStage
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage
 from src.pipeline.stages.evidence_stage import EvidenceStage, EvidenceStageInput
 from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageInput
+from src.pipeline.run_metadata import (
+    RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
+    build_run_metadata,
+)
+
+
+@dataclass
+class PipelineRunResult:
+    """Result of a pipeline run. Phase 5: run_metadata propagated in memory for job persistence."""
+
+    exit_code: int
+    run_metadata: Optional[Dict[str, Any]] = None
 
 # Default max frames when hybrid_max_frames is None (kept for test imports)
 HYBRID_MAX_FRAMES = 10000
@@ -66,7 +82,7 @@ class HybridInventoryPipeline:
         video_path: str,
         mode: str = "hybrid",
         **kwargs: object,
-    ) -> int:
+    ) -> PipelineRunResult:
         if mode != "hybrid":
             raise ValueError(f"Invalid mode: {mode!r}; only 'hybrid' is supported as of v2.2.")
         return self._run_hybrid(video_path, **kwargs)
@@ -83,14 +99,20 @@ class HybridInventoryPipeline:
         confidence_threshold: Optional[float] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
         job_input: Optional[JobInput] = None,
+        analysis_context: Optional[AnalysisContext] = None,
         **_: object,
-    ) -> int:
-        """Orchestrate staged pipeline; preserve exit codes and progress semantics."""
+    ) -> PipelineRunResult:
+        """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5)."""
         execution_id = video_id
         if job_input is None:
             job_input = JobInput(video_path=video_path or "", mode="hybrid", input_type="video")
         workspace_path = output_path
         run_dir = output_path / execution_id / run_id
+        # Phase 3/4/5: prefer typed AnalysisContext passed in-memory by orchestrator.
+        # Compatibility fallback: parse from job_input.metadata['analysis_context'] if present.
+        if analysis_context is None:
+            raw_ctx = (getattr(job_input, "metadata", None) or {}).get("analysis_context")
+            analysis_context = analysis_context_from_dict(raw_ctx) if isinstance(raw_ctx, dict) else None
         context = RunContext(
             job_id=execution_id,
             run_id=run_id,
@@ -101,6 +123,7 @@ class HybridInventoryPipeline:
             logger=logger,
             progress_callback=progress_callback,
             metadata={},
+            analysis_context=analysis_context,
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)
@@ -115,12 +138,12 @@ class HybridInventoryPipeline:
                 except Exception:
                     pass
 
-        def _fail(stage: str, e: BaseException) -> int:
+        def _fail(stage: str, e: BaseException) -> PipelineRunResult:
             msg = str(e).strip() or repr(e)
             exec_log.error(stage, f"{stage} failed: {msg}", payload={"error": msg[:500]})
             exec_log.write_last_stage_error(stage, msg)
             logger.exception("Stage failure: %s (job_id=%s): %s", stage, context.job_id, e)
-            return 1
+            return PipelineRunResult(exit_code=1, run_metadata=None)
 
         exec_log.info("Pipeline", "Job started", payload={"job_id": execution_id})
         try:
@@ -147,7 +170,7 @@ class HybridInventoryPipeline:
             exec_log.error("AnalysisStage", f"Gemini/LLM analysis failed: {e}", payload={"error": str(e)[:500]})
             exec_log.write_last_stage_error("AnalysisStage", str(e))
             logger.exception("Stage failure: AnalysisStage (job_id=%s): %s", context.job_id, e)
-            return 1
+            return PipelineRunResult(exit_code=1, run_metadata=None)
 
         try:
             exec_log.info("EntityResolutionStage", "Entity resolution started")
@@ -187,6 +210,15 @@ class HybridInventoryPipeline:
             exec_log.info("ReportingStage", "Reporting completed")
         except Exception as e:
             return _fail("ReportingStage", e)
+        # Phase 5: build run_metadata in memory (formal AnalysisContext); optional file as debug artifact
+        run_metadata = build_run_metadata(context.analysis_context, analysis_result.provider_metadata)
+        if getattr(settings, "debug_run_metadata", False):
+            try:
+                (context.run_dir / "run_metadata.json").write_text(
+                    json.dumps(run_metadata, indent=2), encoding="utf-8"
+                )
+            except OSError as e:
+                logger.warning("Failed to write run_metadata.json (job_id=%s): %s", context.job_id, e)
         exec_log.info("Pipeline", "Job completed successfully")
         _report("done", 100)
-        return 0
+        return PipelineRunResult(exit_code=0, run_metadata=run_metadata)

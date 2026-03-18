@@ -4,17 +4,31 @@ AnalysisProvider port — global product analysis (Stage 2.3.B).
 Pipeline depends on this interface; implementations (Gemini, Fake, etc.) are adapters. The
 current contract is aligned with the existing v2.1/v2.3 hybrid analysis flow (single global
 entity analysis call, parsed JSON consumed by parse_entities).
+v3.2.4 Phase 4: provider capabilities and provider_metadata for visual reference consumption.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 import numpy as np
 
 from src.pipeline.context.run_context import RunContext
+
+
+# v3.2.4 Phase 4: provider capability flags
+PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE = "visual_references_available"
+PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED = "visual_references_consumed"
+PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT = "visual_reference_count"
+
+
+@dataclass
+class ProviderCapabilities:
+    """Declares what analysis context features a provider supports (v3.2.4 Phase 4)."""
+
+    supports_visual_reference_context: bool = False
 
 
 @dataclass
@@ -25,14 +39,20 @@ class AnalysisResult:
     Intentionally minimal for Stage B. It currently carries only the parsed payload consumed
     by the existing pipeline (parse_entities). Future stages may extend it with metadata such
     as raw response, tokens, latency, model info, or trace IDs.
+    v3.2.4 Phase 4: provider_metadata carries visual reference usage (available/consumed/count).
     """
 
     parsed_json: Dict[str, Any]
     provider_name: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class AnalysisProvider(Protocol):
     """Port for performing global analysis on frames. Implementations wrap LLM providers."""
+
+    def get_capabilities(self) -> ProviderCapabilities:
+        """Return provider capabilities (e.g. supports_visual_reference_context). Default: no extras."""
+        ...
 
     def analyze(
         self,

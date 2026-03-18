@@ -2,12 +2,13 @@
 AnalysisStage — delegate to AnalysisProvider and return structured result (v2.3.C).
 
 Performs the global analysis call only; no entity parsing.
+v3.2.4 Phase 4: passes through provider_metadata (visual reference usage) for callers to persist.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from src.pipeline.ports.analysis_provider import AnalysisProvider, AnalysisResult
 from src.pipeline.stages.frame_acquisition_stage import AcquiredFrames
@@ -20,6 +21,7 @@ class AnalysisStageResult:
 
     parsed_json: Dict[str, Any]
     provider_name: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class AnalysisStage:
@@ -45,4 +47,5 @@ class AnalysisStage:
         return AnalysisStageResult(
             parsed_json=result.parsed_json,
             provider_name=result.provider_name,
+            provider_metadata=result.provider_metadata,
         )

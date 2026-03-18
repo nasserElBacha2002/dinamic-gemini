@@ -253,7 +253,7 @@ def test_pipeline_runs_with_photos_frames(tmp_path):
     )
     with patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider):
         pipe = HybridInventoryPipeline()
-        code = pipe._run_hybrid(
+        result = pipe._run_hybrid(
             "",
             settings=settings,
             video_id="job_photos",
@@ -262,7 +262,7 @@ def test_pipeline_runs_with_photos_frames(tmp_path):
             logger=logger,
             job_input=job_input,
         )
-    assert code == 0
+    assert result.exit_code == 0
     report_path = run_dir / "hybrid_report.json"
     assert report_path.exists()
     report = json.loads(report_path.read_text(encoding="utf-8"))

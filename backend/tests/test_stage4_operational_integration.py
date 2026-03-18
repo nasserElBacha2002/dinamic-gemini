@@ -125,7 +125,7 @@ def test_hybrid_pipeline_writes_hybrid_report_json_and_csv():
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 15]})
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
-            code = HybridInventoryPipeline().process_video(
+            result = HybridInventoryPipeline().process_video(
                 "/some/video.mp4",
                 mode="hybrid",
                 settings=mock_settings,
@@ -137,7 +137,7 @@ def test_hybrid_pipeline_writes_hybrid_report_json_and_csv():
             )
             run_dir = out / "vid" / "run1"
             report_file = run_dir / "hybrid_report.json"
-            assert code == 0
+            assert result.exit_code == 0
             assert report_file.exists()
             with open(report_file, encoding="utf-8") as f:
                 report = json.load(f)

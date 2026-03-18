@@ -149,7 +149,7 @@ def test_hybrid_one_global_plus_n_fallback_and_final_quantity_updated():
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
-            code = HybridInventoryPipeline().process_video(
+            result = HybridInventoryPipeline().process_video(
                 "/some/video.mp4",
                 mode="hybrid",
                 settings=mock_settings,
@@ -160,7 +160,7 @@ def test_hybrid_one_global_plus_n_fallback_and_final_quantity_updated():
                 args=MagicMock(),
             )
             report_path = out / "vid" / "run1" / "hybrid_report.json"
-            assert code == 0
+            assert result.exit_code == 0
             assert report_path.exists()
             with open(report_path, encoding="utf-8") as f:
                 report = json.load(f)
@@ -209,7 +209,7 @@ def test_hybrid_high_confidence_no_fallback_calls():
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
-            code = HybridInventoryPipeline().process_video(
+            result = HybridInventoryPipeline().process_video(
                 "/some/video.mp4",
                 mode="hybrid",
                 settings=mock_settings,
@@ -284,7 +284,7 @@ def test_metrics_attempts_increment_and_total_calls_on_fallback_error():
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
-            code = HybridInventoryPipeline().process_video(
+            result = HybridInventoryPipeline().process_video(
                 "/some/video.mp4",
                 mode="hybrid",
                 settings=mock_settings,
@@ -296,7 +296,7 @@ def test_metrics_attempts_increment_and_total_calls_on_fallback_error():
             )
             with open(out / "vid" / "run1" / "hybrid_report.json", encoding="utf-8") as f:
                 report = json.load(f)
-            assert code == 0
+            assert result.exit_code == 0
             assert report["report_version"] == "2.1"
             assert len(report["entities"]) == 1
 

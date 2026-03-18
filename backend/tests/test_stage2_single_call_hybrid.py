@@ -141,7 +141,7 @@ def test_hybrid_mode_calls_llm_provider_once():
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 10, 20]})
         with tempfile.TemporaryDirectory() as tmp:
-            code = pipeline.process_video(
+            result = pipeline.process_video(
                 "video.mp4",
                 mode="hybrid",
                 settings=mock_settings,
@@ -151,7 +151,7 @@ def test_hybrid_mode_calls_llm_provider_once():
                 logger=mock_logger,
                 args=MagicMock(),
             )
-    assert code == 0
+    assert result.exit_code == 0
     mock_provider.analyze_global.assert_called_once()
     call_request = mock_provider.analyze_global.call_args[0][0]
     assert len(call_request.frames) == 3
@@ -179,7 +179,7 @@ def test_hybrid_run_returns_success_and_writes_result():
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 15]})
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
-            code = pipeline.process_video(
+            run_result = pipeline.process_video(
                 "video.mp4",
                 mode="hybrid",
                 settings=mock_settings,
@@ -190,7 +190,7 @@ def test_hybrid_run_returns_success_and_writes_result():
                 args=MagicMock(),
             )
             result_file = out / "vid" / "run1" / "hybrid_report.json"
-            assert code == 0
+            assert run_result.exit_code == 0
             assert result_file.exists()
             with open(result_file, encoding="utf-8") as f:
                 report = json.load(f)

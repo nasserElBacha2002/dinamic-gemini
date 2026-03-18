@@ -16,6 +16,7 @@ from src.application.ports.repositories import (
     EvidenceRepository,
     FinalCountRepository,
     InventoryRepository,
+    InventoryVisualReferenceRepository,
     JobRepository,
     NormalizedLabelRepository,
     PositionRepository,
@@ -32,6 +33,7 @@ _inventory_repo: Optional[InventoryRepository] = None
 _aisle_repo: Optional[AisleRepository] = None
 _job_repo: Optional[JobRepository] = None
 _asset_repo: Optional[SourceAssetRepository] = None
+_visual_reference_repo: Optional[InventoryVisualReferenceRepository] = None
 _position_repo: Optional[PositionRepository] = None
 _product_record_repo: Optional[ProductRecordRepository] = None
 _evidence_repo: Optional[EvidenceRepository] = None
@@ -160,6 +162,41 @@ def get_source_asset_repo() -> SourceAssetRepository:
         from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
         _asset_repo = MemorySourceAssetRepository()
     return _asset_repo
+
+
+def get_inventory_visual_reference_repo() -> InventoryVisualReferenceRepository:
+    global _visual_reference_repo
+    if _visual_reference_repo is not None:
+        return _visual_reference_repo
+    if _v3_db_enabled():
+        try:
+            client = _get_v3_sql_client()
+            from src.infrastructure.repositories.sql_inventory_visual_reference_repository import (
+                SqlInventoryVisualReferenceRepository,
+            )
+            _visual_reference_repo = SqlInventoryVisualReferenceRepository(client)
+            logger.info("v3 InventoryVisualReferenceRepository: using SQL backend")
+        except Exception as e:
+            if not _v3_allow_in_memory_fallback():
+                logger.error(
+                    "v3 SQL inventory_visual_reference repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s",
+                    e,
+                )
+                raise
+            logger.warning(
+                "v3 SQL inventory_visual_reference repo init failed, falling back to in-memory: %s",
+                e,
+            )
+            from src.infrastructure.repositories.memory_inventory_visual_reference_repository import (
+                MemoryInventoryVisualReferenceRepository,
+            )
+            _visual_reference_repo = MemoryInventoryVisualReferenceRepository()
+    else:
+        from src.infrastructure.repositories.memory_inventory_visual_reference_repository import (
+            MemoryInventoryVisualReferenceRepository,
+        )
+        _visual_reference_repo = MemoryInventoryVisualReferenceRepository()
+    return _visual_reference_repo
 
 
 def get_position_repo() -> PositionRepository:

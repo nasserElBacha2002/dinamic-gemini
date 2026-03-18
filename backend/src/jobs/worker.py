@@ -25,6 +25,8 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
             get_aisle_repo,
             get_clock,
             get_evidence_repo,
+            get_inventory_repo,
+            get_inventory_visual_reference_repo,
             get_job_repo,
             get_position_repo,
             get_product_record_repo,
@@ -42,6 +44,8 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
             product_record_repo=get_product_record_repo(),
             evidence_repo=get_evidence_repo(),
             clock=get_clock(),
+            inventory_repo=get_inventory_repo(),
+            inventory_visual_reference_repo=get_inventory_visual_reference_repo(),
             raw_label_repo=get_raw_label_repo(),
             recompute_consolidated_uc=get_recompute_consolidated_counts_use_case(),
         )
@@ -154,7 +158,7 @@ def run_job(base_path: Path, job_id: str) -> None:
     update_job(base_path, job_id, status=JobStatus.RUNNING, progress={"stage": "extract_frames", "percent": 10})
     try:
         pipeline = HybridInventoryPipeline()
-        code = pipeline.process_video(
+        result = pipeline.process_video(
             video_path,
             mode="hybrid",
             settings=settings,
@@ -166,12 +170,12 @@ def run_job(base_path: Path, job_id: str) -> None:
             progress_callback=progress_cb,
             job_input=record.input,
         )
-        if code != 0:
+        if result.exit_code != 0:
             update_job(
                 base_path,
                 job_id,
                 status=JobStatus.FAILED,
-                error=f"Pipeline exited with code {code}",
+                error=f"Pipeline exited with code {result.exit_code}",
                 progress={"stage": "done", "percent": 100},
             )
             return

@@ -27,6 +27,7 @@ from src.jobs.models import JobInput
 
 if TYPE_CHECKING:
     from src.pipeline.execution_log import ExecutionLogWriter
+    from src.pipeline.contracts.analysis_context import AnalysisContext
 
 
 @dataclass
@@ -50,3 +51,6 @@ class RunContext:
     progress_callback: Optional[Callable[[str, int], None]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     execution_log: Optional["ExecutionLogWriter"] = None
+    # Phase 3/4/5: typed, provider-agnostic analysis context prepared upstream.
+    # This is *input* to analysis, not a stage output; avoids relying on raw metadata dicts.
+    analysis_context: Optional["AnalysisContext"] = None

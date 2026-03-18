@@ -17,7 +17,14 @@ from src.jobs.models import JobInput, JobRecord, JobStatus
 from src.parsing.global_analysis_parser import parse_entities
 from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
 from src.pipeline.context.run_context import RunContext
-from src.pipeline.ports.analysis_provider import AnalysisResult, AnalysisProvider
+from src.pipeline.ports.analysis_provider import (
+    AnalysisResult,
+    AnalysisProvider,
+    ProviderCapabilities,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
+)
 
 
 # --- Contract: any AnalysisProvider returns expected shape ---
@@ -30,6 +37,9 @@ class FakeAnalysisProvider:
         self._parsed_json = parsed_json
         self._provider_name = provider_name
 
+    def get_capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(supports_visual_reference_context=False)
+
     def analyze(
         self,
         context: RunContext,
@@ -41,6 +51,11 @@ class FakeAnalysisProvider:
         return AnalysisResult(
             parsed_json=self._parsed_json,
             provider_name=self._provider_name,
+            provider_metadata={
+                PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE: False,
+                PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED: False,
+                PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT: 0,
+            },
         )
 
 
@@ -109,6 +124,10 @@ def test_gemini_analysis_provider_adapter_returns_analysis_result() -> None:
     assert "entities" in result.parsed_json
     entities = parse_entities(result.parsed_json, job_id="j1")
     assert isinstance(entities, list)
+    # v3.2.4 Phase 4: provider_metadata present when no analysis_context
+    assert result.provider_metadata is not None
+    assert result.provider_metadata["visual_references_available"] is False
+    assert result.provider_metadata["visual_references_consumed"] is False
 
 
 def test_job_repository_create_returns_persisted_record(tmp_path: Path) -> None:

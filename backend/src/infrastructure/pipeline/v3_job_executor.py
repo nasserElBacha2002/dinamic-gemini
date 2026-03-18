@@ -17,6 +17,8 @@ from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
+    InventoryRepository,
+    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
@@ -27,6 +29,12 @@ from src.application.use_cases.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
+from src.application.services.inventory_visual_reference_resolver import (
+    InventoryVisualReferenceResolver,
+)
+from src.application.services.aisle_analysis_context_builder import (
+    AisleAnalysisContextBuilder,
+)
 from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
 from src.config import load_settings
 from src.domain.aisle.entities import Aisle
@@ -34,12 +42,45 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.entities import Job, JobStatus
 from src.io.logging import setup_logger
 from src.jobs.models import JobInput
+from src.pipeline.contracts.analysis_context import (
+    AnalysisContext,
+    AnalysisImage,
+    VisualReferenceContext,
+    analysis_context_to_dict,
+)
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
-from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, PipelineRunResult
+from src.pipeline.run_metadata import (
+    RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
+    default_empty_block,
+)
 
 logger = logging.getLogger(__name__)
 
 RUN_ID = "run"
+
+
+def _resolve_visual_reference_paths(ctx: AnalysisContext, v3_base: Path) -> AnalysisContext:
+    """Return a new AnalysisContext with resolved_path set on each visual reference. Provider consumes these paths."""
+    if not ctx.visual_references:
+        return ctx
+    resolved_refs = [
+        VisualReferenceContext(
+            reference_id=ref.reference_id,
+            source_path=ref.source_path,
+            mime_type=ref.mime_type,
+            role=ref.role,
+            created_at=ref.created_at,
+            resolved_path=str(v3_base / ref.source_path),
+        )
+        for ref in ctx.visual_references
+    ]
+    return AnalysisContext(
+        primary_evidence=ctx.primary_evidence,
+        visual_references=resolved_refs,
+        instructions=ctx.instructions,
+        metadata=ctx.metadata,
+    )
 
 
 class V3JobExecutor:
@@ -54,6 +95,8 @@ class V3JobExecutor:
         product_record_repo: ProductRecordRepository,
         evidence_repo: EvidenceRepository,
         clock: Clock,
+        inventory_repo: InventoryRepository,
+        inventory_visual_reference_repo: InventoryVisualReferenceRepository,
         raw_label_repo: RawLabelRepository | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
     ) -> None:
@@ -73,6 +116,11 @@ class V3JobExecutor:
             raw_label_repo=raw_label_repo,
             recompute_consolidated_uc=recompute_consolidated_uc,
         )
+        resolver = InventoryVisualReferenceResolver(
+            inventory_repo=inventory_repo,
+            reference_repo=inventory_visual_reference_repo,
+        )
+        self._context_builder = AisleAnalysisContextBuilder(resolver)
 
     def execute(self, base_path: Path, job_id: str) -> bool:
         """
@@ -119,8 +167,9 @@ class V3JobExecutor:
         job_dir.mkdir(parents=True, exist_ok=True)
 
         try:
+            analysis_context = self._build_analysis_context(aisle)
             job_input, video_path = self._build_pipeline_input(
-                assets, v3_base, job_dir, job_id
+                assets, v3_base, job_dir, job_id, analysis_context=analysis_context
             )
         except Exception as e:
             logger.exception("v3 job %s: build pipeline input failed: %s", job_id, e)
@@ -132,7 +181,7 @@ class V3JobExecutor:
 
         try:
             pipeline = HybridInventoryPipeline()
-            code = pipeline.process_video(
+            result = pipeline.process_video(
                 video_path,
                 mode="hybrid",
                 settings=settings,
@@ -142,13 +191,14 @@ class V3JobExecutor:
                 logger=log,
                 progress_callback=None,
                 job_input=job_input,
+                analysis_context=analysis_context,
             )
-            if code != 0:
+            if result.exit_code != 0:
                 last_error = read_last_stage_error(run_dir)
                 if last_error:
-                    error_message = f"{last_error} (exit code {code})"
+                    error_message = f"{last_error} (exit code {result.exit_code})"
                 else:
-                    error_message = f"Pipeline exited with code {code}"
+                    error_message = f"Pipeline exited with code {result.exit_code}"
                 self._fail_job_and_aisle(job_id, aisle, error_message)
                 return True
 
@@ -186,7 +236,10 @@ class V3JobExecutor:
                 exec_log.error("Persist", f"Persist failed: {persist_e}", payload={"error": str(persist_e)[:500]})
                 raise
 
-            self._mark_success(job_id, aisle, report_path, now)
+            # Phase 5: persist visual_reference_context from in-memory run_metadata (no file read)
+            self._mark_success(
+                job_id, aisle, report_path, now, run_metadata=result.run_metadata
+            )
         except Exception as e:
             logger.exception("v3 job %s failed: %s", job_id, e)
             run_dir = base_path / job_id / RUN_ID
@@ -200,12 +253,24 @@ class V3JobExecutor:
 
         return True
 
+    def _build_analysis_context(self, aisle: Aisle) -> AnalysisContext:
+        """Construct AnalysisContext for this aisle's inventory. Primary evidence left empty in v3.2.4."""
+        inventory_id = aisle.inventory_id
+        primary: list[AnalysisImage] = []
+        return self._context_builder.build(
+            inventory_id=inventory_id,
+            primary_evidence=primary,
+            metadata=None,
+        )
+
     def _build_pipeline_input(
         self,
         assets: list,
         v3_base: Path,
         job_dir: Path,
         job_id: str,
+        *,
+        analysis_context: AnalysisContext,
     ) -> tuple:
         """Return (JobInput, video_path). video_path used as first arg to process_video."""
         single_video = (
@@ -218,11 +283,13 @@ class V3JobExecutor:
             if not full.exists():
                 raise FileNotFoundError(f"Asset file not found: {full}")
             video_path = str(full)
+            resolved_ctx = _resolve_visual_reference_paths(analysis_context, v3_base)
             return (
                 JobInput(
                     video_path=video_path,
                     mode="hybrid",
                     input_type="video",
+                    metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
                 ),
                 video_path,
             )
@@ -257,6 +324,7 @@ class V3JobExecutor:
             json.dump(manifest, f, indent=2)
 
         # Paths relative to job dir for pipeline
+        resolved_ctx = _resolve_visual_reference_paths(analysis_context, v3_base)
         return (
             JobInput(
                 video_path="",
@@ -264,6 +332,7 @@ class V3JobExecutor:
                 input_type="photos",
                 input_manifest_path="input_manifest.json",
                 photos_dir="input_photos",
+                metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
             ),
             "",  # video_path empty for photos
         )
@@ -278,13 +347,29 @@ class V3JobExecutor:
         self._aisle_repo.save(aisle)
 
     def _mark_success(
-        self, job_id: str, aisle: Aisle, report_path: Path, now
+        self,
+        job_id: str,
+        aisle: Aisle,
+        report_path: Path,
+        now,
+        *,
+        run_metadata: Optional[dict] = None,
     ) -> None:
         job = self._job_repo.get_by_id(job_id)
         if job:
             job.status = JobStatus.SUCCEEDED
             job.updated_at = now
-            job.result_json = {"report_path": str(report_path)}
+            vrc = (
+                (run_metadata or {}).get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
+                if run_metadata
+                else None
+            )
+            job.result_json = {
+                "report_path": str(report_path),
+                RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: vrc
+                if vrc is not None
+                else default_empty_block(),
+            }
             job.error_message = None
             self._job_repo.save(job)
         aisle.mark_processed(now)

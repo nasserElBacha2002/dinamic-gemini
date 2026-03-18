@@ -14,6 +14,7 @@ import pytest
 from src.domain.entity import Entity
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.stages.frame_acquisition_stage import FrameAcquisitionStage, AcquiredFrames
+from src.pipeline.ports.analysis_provider import AnalysisResult
 from src.pipeline.stages.analysis_stage import AnalysisStage, AnalysisStageResult
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage, ResolvedEntities
 from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageInput, ReportingResult
@@ -151,7 +152,11 @@ def test_analysis_stage_delegates_to_provider() -> None:
         frame_refs=["f0"],
     )
     mock_provider = MagicMock()
-    mock_provider.analyze.return_value = MagicMock(parsed_json={"total_entities_detected": 0, "entities": []}, provider_name="fake")
+    mock_provider.analyze.return_value = AnalysisResult(
+        parsed_json={"total_entities_detected": 0, "entities": []},
+        provider_name="fake",
+        provider_metadata=None,
+    )
 
     stage = AnalysisStage(mock_provider)
     result = stage.run(context, acquired)
@@ -241,7 +246,7 @@ def test_orchestrator_returns_1_on_stage_failure() -> None:
     logger = MagicMock()
     with patch.object(pipeline, "_input_stage") as mock_input:
         mock_input.run.side_effect = ValueError("input validation failed")
-        code = pipeline._run_hybrid(
+        result = pipeline._run_hybrid(
             "/dummy/v.mp4",
             settings=MagicMock(),
             video_id="j1",
@@ -249,7 +254,7 @@ def test_orchestrator_returns_1_on_stage_failure() -> None:
             run_id="r1",
             logger=logger,
         )
-    assert code == 1
+    assert result.exit_code == 1
     logger.exception.assert_called()
     call_args = logger.exception.call_args[0]
     assert "InputPreparationStage" in call_args[0]
