@@ -148,8 +148,8 @@ export interface PositionSummary {
   corrected_quantity?: number | null;
   /** v3.2.2: stable qty contract (backend-resolved). */
   qty: number;
-  /** v3.2.2: stable contract; backend always sends 'detected' or 'inferred'. */
-  qtySource: 'detected' | 'inferred';
+  /** v3.2.2+v3.2.5: stable contract; backend sends 'detected' | 'inferred' | 'consolidated'. */
+  qtySource: 'detected' | 'inferred' | 'consolidated';
   /** v3.2.2: non-null when qtySource='inferred'. */
   qtyInferenceReason?: string | null;
   /** v3.2.2: when true/false, qty is from resolved decision; when null, legacy/compatibility path. */

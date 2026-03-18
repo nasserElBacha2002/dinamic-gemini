@@ -31,7 +31,7 @@ export interface ResultSummary {
   /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */
   resolvedQty: number | null;
   /** v3.2.2: provenance of resolved qty. */
-  qtySource?: 'detected' | 'inferred' | null;
+  qtySource?: 'detected' | 'inferred' | 'consolidated' | null;
   qtyResolved?: boolean | null;
   qtyInferenceReason?: string | null;
   confidence: number | null;
@@ -69,7 +69,7 @@ export interface ResultDetail {
   correctedQty: number | null;
   /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */
   resolvedQty: number | null;
-  qtySource?: 'detected' | 'inferred' | null;
+  qtySource?: 'detected' | 'inferred' | 'consolidated' | null;
   qtyResolved?: boolean | null;
   qtyInferenceReason?: string | null;
   confidence: number | null;

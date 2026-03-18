@@ -766,7 +766,32 @@ def test_position_to_summary_consolidated_qty_uses_product_record_projection() -
     )
     resp = _position_to_summary(p, primary_product=primary)
     assert resp.qty == 4
-    assert resp.qtySource == "detected"
+    assert resp.qtySource == "consolidated"
     # v3.2.3.E3 regression: detected_quantity must align with authoritative qty,
     # not stale detected_summary_json (99), so response does not expose pre-consolidation values.
     assert resp.detected_quantity == 4
+
+
+def test_position_to_summary_aggregated_row_emits_consolidated_qty_source() -> None:
+    """Phase 5 Block 1: aggregated/consolidated rows must be explicit via qtySource='consolidated'."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-agg-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "internal_code": "SKU-AGG",
+            "final_quantity": 7,
+            "aggregated_from_ids": ["pos-a", "pos-b"],
+        },
+    )
+    resp = _position_to_summary(p, primary_product=None)
+    assert resp.qty == 7
+    assert resp.qtySource == "consolidated"
+    assert resp.qtyResolved is True
+    assert resp.corrected_quantity is None

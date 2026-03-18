@@ -398,3 +398,16 @@ Phase 4 (observability and debugging) is **complete**. The goal was to make v3 r
 
 No dashboards, alerting, or distributed tracing were added. The repository is ready for the next phase.
 
+---
+
+## 11) Phase 5 — Release Closure and Final Validation
+
+Phase 5 (release closure) is **complete**. Final validation was performed against code, tests, and docs.
+
+- **Route surface**: Confirmed only v3 router and auth router are mounted; no legacy routes.
+- **Contracts**: Phase 2 decisions (corrected_quantity, latest_job shape, source-image, has_evidence) verified in backend and frontend; docs match.
+- **Lifecycle**: Source of truth, cancel semantics, retry boundary, historical-read behavior verified; tests cover cancel, process 409/202, execution-log when artifacts missing.
+- **Observability**: Inventory, metadata contract, stage boundary, and persist-failure prefix verified; executor and test align with DEBUGGING_AND_OBSERVABILITY.
+
+**Closure report**: `docs/3.2.5/RELEASE_3_2_5_CLOSURE_REPORT.md` contains the full validation results, deferred items, and final readiness verdict (READY WITH CAUTIONS). Recommended next step: dev deployment / integrated testing.
+

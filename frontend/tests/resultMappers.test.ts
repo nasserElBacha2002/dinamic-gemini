@@ -113,6 +113,30 @@ describe('mapPositionSummaryToResultSummary', () => {
     expect(r.reviewStatus).toBe('CONFIRMED');
   });
 
+  it('preserves qtySource = consolidated (Phase 5 Block 1) and keeps visible qty rule', () => {
+    const p: PositionSummary = {
+      id: 'pos-consolidated',
+      aisle_id: 'aisle-1',
+      status: 'detected',
+      confidence: 0.9,
+      needs_review: false,
+      primary_evidence_id: 'ev-1',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-02T00:00:00Z',
+      detected_quantity: 7,
+      corrected_quantity: null,
+      qty: 7,
+      qtySource: 'consolidated',
+      qtyResolved: true,
+      has_evidence: true,
+    };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.qtySource).toBe('consolidated');
+    expect(r.qtyResolved).toBe(true);
+    // Display rule remains: corrected_quantity ?? qty.
+    expect(r.resolvedQty).toBe(7);
+  });
+
   it('uses has_evidence true from API and produces hasEvidence true', () => {
     const p: PositionSummary = {
       id: 'pos-3',
