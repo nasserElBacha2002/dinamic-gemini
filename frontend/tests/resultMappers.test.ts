@@ -60,7 +60,7 @@ describe('mapPositionStatusToReviewStatus', () => {
 });
 
 describe('mapPositionSummaryToResultSummary', () => {
-  it('maps all fields and sets hasEvidence from primary_evidence_id', () => {
+  it('maps all fields and uses has_evidence as canonical (v3.2.5 Block 4)', () => {
     const p: PositionSummary = {
       id: 'pos-1',
       aisle_id: 'aisle-1',
@@ -77,6 +77,7 @@ describe('mapPositionSummaryToResultSummary', () => {
       qtySource: 'inferred',
       qtyResolved: true,
       traceability_status: 'valid',
+      has_evidence: true,
     };
     const r = mapPositionSummaryToResultSummary(p);
     expect(r.id).toBe('pos-1');
@@ -93,7 +94,7 @@ describe('mapPositionSummaryToResultSummary', () => {
     expect(r.hasEvidence).toBe(true);
   });
 
-  it('hasEvidence false when primary_evidence_id is null', () => {
+  it('hasEvidence false when has_evidence is false (v3.2.5 Block 4)', () => {
     const p: PositionSummary = {
       id: 'pos-2',
       aisle_id: 'aisle-1',
@@ -103,13 +104,16 @@ describe('mapPositionSummaryToResultSummary', () => {
       primary_evidence_id: null,
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
+      qty: 1,
+      qtySource: 'detected',
+      has_evidence: false,
     };
     const r = mapPositionSummaryToResultSummary(p);
     expect(r.hasEvidence).toBe(false);
     expect(r.reviewStatus).toBe('CONFIRMED');
   });
 
-  it('prefers API has_evidence when present (Epic 2)', () => {
+  it('uses has_evidence true from API and produces hasEvidence true', () => {
     const p: PositionSummary = {
       id: 'pos-3',
       aisle_id: 'aisle-1',
@@ -119,8 +123,27 @@ describe('mapPositionSummaryToResultSummary', () => {
       primary_evidence_id: null,
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
+      qty: 1,
+      qtySource: 'detected',
       has_evidence: true,
     };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.hasEvidence).toBe(true);
+  });
+
+  it('Case 4 — fallback when has_evidence omitted (transitional payload): uses primary_evidence_id', () => {
+    const p = {
+      id: 'pos-transitional',
+      aisle_id: 'aisle-1',
+      status: 'detected',
+      confidence: 0.8,
+      needs_review: false,
+      primary_evidence_id: 'ev-99',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      qty: 1,
+      qtySource: 'detected',
+    } as PositionSummary;
     const r = mapPositionSummaryToResultSummary(p);
     expect(r.hasEvidence).toBe(true);
   });
@@ -209,6 +232,7 @@ describe('mapPositionDetailToResultDetail', () => {
         },
         source_image_id: 'img-1',
         traceability_status: 'valid',
+        has_evidence: true,
       },
       evidences: [
         {
@@ -250,6 +274,106 @@ describe('mapPositionDetailToResultDetail', () => {
     expect(r.technicalMetadata?.primaryEvidenceId).toBe('ev-1');
   });
 
+  it('Case 1 — uses typed source_image fields as canonical when present (v3.2.5 Block 3)', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-canonical',
+        aisle_id: 'aisle-1',
+        status: 'detected',
+        confidence: 0.9,
+        needs_review: true,
+        primary_evidence_id: 'ev-1',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        sku: 'SKU-A',
+        detected_quantity: 5,
+        corrected_quantity: null,
+        qty: 5,
+        qtySource: 'detected',
+        qtyResolved: true,
+        detected_summary_json: {
+          source_image_id: 'legacy-from-json',
+          source_image_original_filename: 'legacy.jpg',
+        },
+        source_image_id: 'canonical-id',
+        source_image_original_filename: 'canonical.jpg',
+        traceability_status: 'valid',
+        has_evidence: true,
+      },
+      evidences: [],
+      review_actions: [],
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.sourceImageId).toBe('canonical-id');
+    expect(r.sourceFileName).toBe('canonical.jpg');
+  });
+
+  it('Case 2 — falls back to detected_summary_json when typed fields absent (v3.2.5 Block 3)', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-fallback',
+        aisle_id: 'aisle-1',
+        status: 'detected',
+        confidence: 0.8,
+        needs_review: false,
+        primary_evidence_id: null,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        sku: 'SKU-B',
+        detected_quantity: 2,
+        corrected_quantity: null,
+        qty: 2,
+        qtySource: 'detected',
+        qtyResolved: null,
+        detected_summary_json: {
+          source_image_id: 'from-json-id',
+          source_image_original_filename: 'from_json.jpg',
+        },
+        source_image_id: null,
+        source_image_original_filename: null,
+        traceability_status: null,
+        has_evidence: false,
+      },
+      evidences: [],
+      review_actions: [],
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.sourceImageId).toBe('from-json-id');
+    expect(r.sourceFileName).toBe('from_json.jpg');
+  });
+
+  it('Case 3 — neither typed nor summary: source fields null, no crash (v3.2.5 Block 3)', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-no-source',
+        aisle_id: 'aisle-1',
+        status: 'detected',
+        confidence: 0.5,
+        needs_review: true,
+        primary_evidence_id: null,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        sku: null,
+        detected_quantity: 0,
+        corrected_quantity: null,
+        qty: 0,
+        qtySource: 'detected',
+        qtyResolved: false,
+        detected_summary_json: null,
+        source_image_id: null,
+        source_image_original_filename: null,
+        traceability_status: null,
+        has_evidence: false,
+      },
+      evidences: [],
+      review_actions: [],
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.sourceImageId).toBeNull();
+    expect(r.sourceFileName).toBeNull();
+    expect(r.id).toBe('pos-no-source');
+  });
+
   it('handles empty evidences and review_actions', () => {
     const data: PositionDetailResponse = {
       position: {
@@ -260,6 +384,9 @@ describe('mapPositionDetailToResultDetail', () => {
         needs_review: false,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
+        qty: 0,
+        qtySource: 'detected',
+        has_evidence: false,
       },
       evidences: [],
     };

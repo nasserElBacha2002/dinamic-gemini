@@ -64,14 +64,16 @@ export function mapPositionStatusToReviewStatus(
   }
 }
 
-/** Map list position (API) to ResultSummary. Prefers backend has_evidence when present (Epic 2). */
+/** Map list position (API) to ResultSummary. v3.2.5 Block 4: has_evidence is canonical; fallback only for transitional payloads that omit it. */
 export function mapPositionSummaryToResultSummary(
   p: PositionSummary
 ): ResultSummary {
   const hasEvidence =
-    p.has_evidence ?? Boolean(
-      p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
-    );
+    typeof p.has_evidence === 'boolean'
+      ? p.has_evidence
+      : Boolean(
+          p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
+        );
   const resolvedQty =
     p.corrected_quantity != null
       ? p.corrected_quantity
@@ -132,17 +134,18 @@ export function mapPositionDetailToResultDetail(
   const review_actions = data.review_actions ?? [];
 
   const summaryJson = position.detected_summary_json ?? null;
-  const sourceImageId =
-    getSummaryString(summaryJson, 'source_image_id') ??
-    (position.source_image_id != null && String(position.source_image_id).trim() !== ''
+  // v3.2.5 Phase 2 Block 3: typed fields are canonical; detected_summary_json is compatibility fallback only.
+  const typedSourceImageId =
+    position.source_image_id != null && String(position.source_image_id).trim() !== ''
       ? position.source_image_id.trim()
-      : null);
-  const sourceFileName =
-    getSummaryString(summaryJson, 'source_image_original_filename') ??
-    (position.source_image_original_filename != null &&
+      : null;
+  const typedSourceFileName =
+    position.source_image_original_filename != null &&
     String(position.source_image_original_filename).trim() !== ''
       ? position.source_image_original_filename.trim()
-      : null);
+      : null;
+  const sourceImageId = typedSourceImageId ?? getSummaryString(summaryJson, 'source_image_id');
+  const sourceFileName = typedSourceFileName ?? getSummaryString(summaryJson, 'source_image_original_filename');
 
   const entityId = getSummaryString(summaryJson, 'entity_uid');
 

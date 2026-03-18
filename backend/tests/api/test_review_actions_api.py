@@ -380,5 +380,81 @@ def test_list_corrected_quantity_null_when_no_manual_correction() -> None:
         assert len(list_data["positions"]) == 1
         # Seed product has corrected_quantity=None; list must expose null/absent per schema.
         assert list_data["positions"][0].get("corrected_quantity") is None
+        # v3.2.5 Block 4: no evidence in seed -> has_evidence false
+        assert list_data["positions"][0]["has_evidence"] is False
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _seed_repos_with_evidence():
+    """Same as _seed_repos but position has primary_evidence_id set so has_evidence is true."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv-review-1", "WH Review", InventoryStatus.DRAFT, now, now)
+    aisle = Aisle("aisle-review-1", "inv-review-1", "R01", AisleStatus.CREATED, now, now)
+    position = Position(
+        id="pos-review-1",
+        aisle_id="aisle-review-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+    )
+    product = ProductRecord(
+        id="prod-review-1",
+        position_id="pos-review-1",
+        sku="SKU-REVIEW",
+        description="Product for review",
+        detected_quantity=5,
+        corrected_quantity=None,
+        confidence=0.95,
+        created_at=now,
+        updated_at=now,
+    )
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    position_repo = MemoryPositionRepository()
+    product_repo = MemoryProductRecordRepository()
+    evidence_repo = MemoryEvidenceRepository()
+    review_repo = MemoryReviewActionRepository()
+    inv_repo.save(inv)
+    aisle_repo.save(aisle)
+    position_repo.save(position)
+    product_repo.save(product)
+    return {
+        "inv_repo": inv_repo,
+        "aisle_repo": aisle_repo,
+        "position_repo": position_repo,
+        "product_repo": product_repo,
+        "evidence_repo": evidence_repo,
+        "review_repo": review_repo,
+    }
+
+
+def test_list_and_detail_has_evidence_coherent_when_evidence_present() -> None:
+    """v3.2.5 Phase 2 Block 4: When position has primary_evidence_id, list and detail both return has_evidence true."""
+    client = TestClient(app)
+    repos = _seed_repos_with_evidence()
+    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
+    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
+    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
+    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
+    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
+    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
+    try:
+        list_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
+        )
+        assert list_resp.status_code == 200
+        list_data = list_resp.json()
+        assert len(list_data["positions"]) == 1
+        assert list_data["positions"][0]["has_evidence"] is True
+
+        detail_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1"
+        )
+        assert detail_resp.status_code == 200
+        assert detail_resp.json()["position"]["has_evidence"] is True
     finally:
         app.dependency_overrides.clear()
