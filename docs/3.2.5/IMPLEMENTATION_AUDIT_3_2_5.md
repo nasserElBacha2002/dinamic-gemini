@@ -384,3 +384,17 @@ Phase 3 lifecycle hardening is **complete**. The v3 job-state authority has been
 
 The repository is ready to proceed to the next phase. Deferred items (explicit retry product semantics, historical job list, artifact retention policy, legacy fallback removal) are recorded in `JOB_LIFECYCLE_3_2_5.md` §9.
 
+---
+
+## 10) Phase 4 — Observability and Debugging (closure)
+
+Phase 4 (observability and debugging) is **complete**. The goal was to make v3 runs reconstructable and diagnosable without building an enterprise observability platform.
+
+- **Observability inventory**: Documented in `docs/3.2.5/DEBUGGING_AND_OBSERVABILITY.md` §1 — current sources (job/aisle DB, execution_log, last_stage_error, hybrid_report, positions/products, run_metadata), gaps (prompt/model not persisted per job), and what is persisted vs transient, API vs internal-only.
+- **Minimum metadata contract**: Documented in §2 — classification of prompt version, provider/model, parse status, qty inference reason, merge/consolidation, artifact references, lifecycle stage of failure, error context. Most metadata is already present and adequate; prompt/provider per-job persistence deferred.
+- **Stage boundary for regression analysis**: Documented in §3 — six layers (raw output → parsed → consolidation → persisted → API DTO → frontend) with where each lives and how to diagnose which layer caused a regression.
+- **Error-context hardening**: Persist failures in the executor now set job/aisle error_message to `"Persist: {exception}"` so the failing stage is explicit in DB and API (§4). Pipeline failures continue to use last_stage_error content (e.g. "AnalysisStage: ...").
+- **Debugging documentation**: §5 describes how to investigate failures/regressions step-by-step.
+
+No dashboards, alerting, or distributed tracing were added. The repository is ready for the next phase.
+

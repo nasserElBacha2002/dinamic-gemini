@@ -115,3 +115,4 @@ Cancel states are **not** flattened into generic failed/succeeded semantics; `ca
 - Repository: `backend/src/infrastructure/repositories/sql_job_repository.py`
 - API: `backend/src/api/routes/v3/aisles.py`, `shared.py`
 - Audit: `docs/3.2.5/IMPLEMENTATION_AUDIT_3_2_5.md`
+- Debugging / observability (error_message semantics, stage boundaries, how to investigate failures): `docs/3.2.5/DEBUGGING_AND_OBSERVABILITY.md`

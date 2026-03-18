@@ -234,7 +234,10 @@ class V3JobExecutor:
                 exec_log.info("Persist", "Persist completed")
             except Exception as persist_e:
                 exec_log.error("Persist", f"Persist failed: {persist_e}", payload={"error": str(persist_e)[:500]})
-                raise
+                # Record stage-prefixed failure in job/aisle state so diagnosability is explicit (Phase 4).
+                # Do not re-raise: we have recorded the failure and return normally.
+                self._fail_job_and_aisle(job_id, aisle, f"Persist: {persist_e}")
+                return True
 
             # Phase 5: persist visual_reference_context from in-memory run_metadata (no file read)
             self._mark_success(
