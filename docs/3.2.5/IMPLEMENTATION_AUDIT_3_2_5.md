@@ -360,3 +360,14 @@ Docs:
 
 - Keep this audit updated as discoveries are made while proceeding to Phase 2+.
 
+---
+
+## 8) Phase 3 — Job Lifecycle Hardening (Block 1)
+
+Lifecycle hardening has started. The **v3 job-state authority** is being formalized so that:
+
+- The active v3 API reads/writes job state only via **domain `Job`/`JobStatus`** and **`JobRepository`** (no dependence on Stage-7 `JobRecord` or `src.jobs.models.JobStatus`).
+- Cancel-state semantics (QUEUED→CANCELED, RUNNING→CANCEL_REQUESTED, CANCEL_REQUESTED→CANCELED, terminal reject) are explicit and test-protected.
+
+**Reference**: See **`docs/3.2.5/JOB_LIFECYCLE_3_2_5.md`** for the documented source of truth, write/read paths, cancel transitions, DB vs filesystem relationship, and legacy coexistence. Tests added in this block cover: queued-job cancel (202 + list/status show `canceled`), terminal-job cancel (409), and use-case-level cancel transitions; they demonstrate that active v3 lifecycle behavior does not depend on the legacy job store.
+

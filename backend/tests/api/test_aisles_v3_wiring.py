@@ -1,10 +1,29 @@
 """API wiring tests: v3 aisle endpoints and inventory get by id."""
 
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from src.api.server import app
+from src.api.dependencies import (
+    get_aisle_repo,
+    get_inventory_repo,
+    get_job_repo,
+)
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
+from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.jobs.entities import Job, JobStatus
+from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 
 client = TestClient(app)
+
+
+def _fake_admin() -> AuthUser:
+    return AuthUser(id="admin", username="admin", role="administrator")
 
 
 def test_get_inventory_returns_200_when_found() -> None:
@@ -226,6 +245,124 @@ def test_list_and_status_latest_job_created_at_aligned() -> None:
     list_created = list_data[0]["latest_job"]["created_at"]
     status_created = status_data["latest_job"]["created_at"]
     assert list_created == status_created, "list and status must expose same latest_job.created_at"
+
+
+def test_cancel_queued_job_returns_202_and_list_and_status_show_canceled() -> None:
+    """Phase 3 Block 1 Case 1: Cancel QUEUED job -> 202; list and status expose latest_job.status = canceled."""
+    create_resp = client.post("/api/v3/inventories", json={"name": "For Cancel"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "C-01"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+    process_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+    )
+    assert process_resp.status_code == 202
+    job_id = process_resp.json()["job_id"]
+
+    cancel_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
+    )
+    assert cancel_resp.status_code == 202
+
+    list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
+    assert list_resp.status_code == 200
+    list_data = list_resp.json()
+    assert len(list_data) == 1
+    assert list_data[0]["latest_job"] is not None
+    assert list_data[0]["latest_job"]["status"] == "canceled"
+
+    status_resp = client.get(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status",
+    )
+    assert status_resp.status_code == 200
+    assert status_resp.json()["latest_job"] is not None
+    assert status_resp.json()["latest_job"]["status"] == "canceled"
+
+
+def test_cancel_already_canceled_job_returns_409() -> None:
+    """Phase 3 Block 1 Case 3: Cancel terminal (CANCELED) job -> 409."""
+    create_resp = client.post("/api/v3/inventories", json={"name": "For Cancel 409"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "C-02"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+    process_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+    )
+    assert process_resp.status_code == 202
+    job_id = process_resp.json()["job_id"]
+
+    client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
+    )
+    cancel_again = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
+    )
+    assert cancel_again.status_code == 409
+    assert "terminal" in cancel_again.json().get("detail", "").lower() or "cancel" in cancel_again.json().get("detail", "").lower()
+
+
+def test_cancel_running_job_returns_202_and_list_and_status_show_cancel_requested() -> None:
+    """Phase 3 Block 1 Case 2: Cancel RUNNING job -> 202; list and status expose latest_job.status = cancel_requested."""
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv = Inventory("inv-running", "For Running Cancel", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-running", "inv-running", "R-01", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+    job = Job(
+        id="job-running",
+        target_type="aisle",
+        target_id="aisle-running",
+        job_type="process_aisle",
+        status=JobStatus.RUNNING,
+        payload_json={"aisle_id": "aisle-running"},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        cancel_resp = c.post(
+            "/api/v3/inventories/inv-running/aisles/aisle-running/jobs/job-running/cancel",
+        )
+        assert cancel_resp.status_code == 202
+
+        list_resp = c.get("/api/v3/inventories/inv-running/aisles")
+        assert list_resp.status_code == 200
+        list_data = list_resp.json()
+        assert len(list_data) == 1
+        assert list_data[0]["latest_job"] is not None
+        assert list_data[0]["latest_job"]["status"] == "cancel_requested"
+
+        status_resp = c.get(
+            "/api/v3/inventories/inv-running/aisles/aisle-running/status",
+        )
+        assert status_resp.status_code == 200
+        assert status_resp.json()["latest_job"] is not None
+        assert status_resp.json()["latest_job"]["status"] == "cancel_requested"
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
 
 
 def test_get_aisle_status_not_found_returns_404() -> None:
