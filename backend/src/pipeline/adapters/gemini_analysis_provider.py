@@ -20,6 +20,7 @@ import numpy as np
 from src.jobs.image_identity import load_job_images_from_manifest
 from src.llm.prompts import enrich_prompt_with_image_ids, get_hybrid_prompt
 from src.llm.providers.factory import get_llm_provider
+from src.llm.types import ContextImageSequence
 from src.llm.types import LLMRequest
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.context.run_context import RunContext
@@ -111,7 +112,7 @@ class GeminiAnalysisProvider:
             analysis_context = analysis_context_from_dict((job_input.metadata or {}).get("analysis_context"))
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
         context_instruction = None
-        context_images: Optional[List[Any]] = None
+        context_images: Optional[ContextImageSequence] = None
         consumed_count = 0
         if analysis_context and analysis_context.instructions:
             context_instruction = "\n".join(analysis_context.instructions).strip() or None
