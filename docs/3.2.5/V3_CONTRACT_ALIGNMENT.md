@@ -23,6 +23,13 @@ Phase 2 (active contract hardening) is **closed**. Four narrow blocks were imple
 
 ---
 
+## Phase 5 note — qtySource consolidation explicit
+
+- `qtySource` now includes `consolidated` to represent SKU-aggregated/consolidated rows.
+- Aggregated/consolidated rows emit `qtySource="consolidated"` and should be treated as resolved (`qtyResolved=true`).
+
+---
+
 ## Remaining compatibility fallbacks
 
 These remain in the frontend by design; they are either defensive or for transitional/historical payloads.

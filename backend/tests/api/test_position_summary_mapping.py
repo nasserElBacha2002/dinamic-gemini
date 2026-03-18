@@ -767,6 +767,8 @@ def test_position_to_summary_consolidated_qty_uses_product_record_projection() -
     resp = _position_to_summary(p, primary_product=primary)
     assert resp.qty == 4
     assert resp.qtySource == "consolidated"
+    # Consolidated is treated as an explicit resolved quantity in the v3 contract.
+    assert resp.qtyResolved is True
     # v3.2.3.E3 regression: detected_quantity must align with authoritative qty,
     # not stale detected_summary_json (99), so response does not expose pre-consolidation values.
     assert resp.detected_quantity == 4

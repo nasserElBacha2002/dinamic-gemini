@@ -101,6 +101,7 @@ The frontend maps `(status, needs_review)` to visible review status:
 ### 4.3 Phase 5 note: needs_review reason
 In the current contract, `needs_review` is a boolean without an explicit reason field.
 It can be partially explained by existing fields (e.g. status, evidence presence, qty inference, traceability), but the repo does not expose a stable `needsReviewReason` enum yet.
+In the current visible model, `needs_review` only changes the UI review status when `status == "detected"`. For `status in {"reviewed","corrected"}`, the UI is always `CONFIRMED` regardless of `needs_review`.
 If a reason field is introduced later, it must be small, stable, and conservative (UNKNOWN when evidence is insufficient).
 
 ---
