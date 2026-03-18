@@ -35,6 +35,10 @@ class StubVisualReferenceRepo(InventoryVisualReferenceRepository):
     def create(self, reference: InventoryVisualReference) -> None:
         self._store[reference.id] = reference
 
+    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
+        for r in references:
+            self._store[r.id] = r
+
     def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
         refs = [r for r in self._store.values() if r.inventory_id == inventory_id]
         refs.sort(key=lambda r: (r.created_at, r.id))

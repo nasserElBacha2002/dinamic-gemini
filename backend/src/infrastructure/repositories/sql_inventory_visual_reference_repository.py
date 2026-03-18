@@ -91,6 +91,31 @@ class SqlInventoryVisualReferenceRepository(InventoryVisualReferenceRepository):
                 ),
             )
 
+    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
+        if not references:
+            return
+        # Single cursor context => single DB transaction (commit on success, rollback on exception).
+        with self._client.cursor() as cur:
+            for reference in references:
+                created = _to_utc(reference.created_at)
+                if created is None:
+                    raise ValueError("InventoryVisualReference.created_at is required")
+                cur.execute(
+                    """
+                    INSERT INTO inventory_visual_references (id, inventory_id, filename, storage_path, mime_type, file_size, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        reference.id,
+                        reference.inventory_id,
+                        reference.filename,
+                        reference.storage_path,
+                        reference.mime_type,
+                        reference.file_size,
+                        created,
+                    ),
+                )
+
     def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
         with self._client.cursor() as cur:
             cur.execute(

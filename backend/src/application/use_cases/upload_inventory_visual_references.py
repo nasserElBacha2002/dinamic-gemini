@@ -9,9 +9,8 @@ the InventoryVisualReferenceRepository and ArtifactStorage. Enforces:
 - no zero-byte files
 
 Atomicity: All validations (count, mime, size) run before any file is written.
-If storage write or DB create fails mid-batch, already-written files are not
-removed (ArtifactStorage has no delete in the current port). Callers should
-treat partial failure as best-effort; no automatic rollback of storage.
+If storage write or DB create fails mid-batch, already-written files are
+best-effort removed via ArtifactStorage.delete_file to minimize partial artifacts.
 """
 
 from __future__ import annotations
@@ -109,6 +108,7 @@ class UploadInventoryVisualReferencesUseCase:
 
         now = self._clock.now()
         created: List[InventoryVisualReference] = []
+        written_paths: List[str] = []
         logger.info(
             "Uploading %d visual reference(s) for inventory %s (existing=%d, max=%d)",
             len(files),
@@ -117,31 +117,44 @@ class UploadInventoryVisualReferencesUseCase:
             self._max_refs,
         )
 
-        for f in files:
-            mime = _normalize_mime(f.content_type)
-            reference_id = str(uuid4())
-            storage_path = visual_reference_storage_path(
-                inventory_id=inventory_id,
-                reference_id=reference_id,
-                mime_type=mime,
-            )
-            # Persist file bytes; use normalized mime for consistency with validation.
-            final_path = self._artifact_storage.save_file(
-                storage_path,
-                f.file_obj,
-                mime,
-            )
-            reference = InventoryVisualReference(
-                id=reference_id,
-                inventory_id=inventory_id,
-                filename=f.original_filename or "file",
-                storage_path=final_path,
-                mime_type=mime,
-                file_size=f.size,
-                created_at=now,
-            )
-            self._reference_repo.create(reference)
-            created.append(reference)
+        try:
+            # 1) Write all files first. If this fails, there are no DB writes to rollback.
+            for f in files:
+                mime = _normalize_mime(f.content_type)
+                reference_id = str(uuid4())
+                storage_path = visual_reference_storage_path(
+                    inventory_id=inventory_id,
+                    reference_id=reference_id,
+                    mime_type=mime,
+                )
+                final_path = self._artifact_storage.save_file(storage_path, f.file_obj, mime)
+                written_paths.append(final_path)
+                created.append(
+                    InventoryVisualReference(
+                        id=reference_id,
+                        inventory_id=inventory_id,
+                        filename=f.original_filename or "file",
+                        storage_path=final_path,
+                        mime_type=mime,
+                        file_size=f.size,
+                        created_at=now,
+                    )
+                )
+
+            # 2) Persist DB records in a batch (transactional in SQL impl; atomic in memory impl).
+            self._reference_repo.create_many(created)
+        except Exception:
+            # Best-effort rollback of any files written in this batch.
+            for p in reversed(written_paths):
+                try:
+                    self._artifact_storage.delete_file(p)
+                except Exception as cleanup_e:
+                    logger.warning(
+                        "Rollback cleanup failed for visual reference file %s: %s",
+                        p,
+                        cleanup_e,
+                    )
+            raise
 
         return created
 

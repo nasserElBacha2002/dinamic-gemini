@@ -21,6 +21,14 @@ class MemoryInventoryVisualReferenceRepository(InventoryVisualReferenceRepositor
             raise ValueError(f"InventoryVisualReference with id={reference.id!r} already exists")
         self._store[reference.id] = reference
 
+    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
+        # Make create_many atomic for in-memory repo: pre-check duplicates, then insert.
+        for r in references:
+            if r.id in self._store:
+                raise ValueError(f"InventoryVisualReference with id={r.id!r} already exists")
+        for r in references:
+            self._store[r.id] = r
+
     def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
         refs = [r for r in self._store.values() if r.inventory_id == inventory_id]
         refs.sort(key=lambda r: (r.created_at, r.id))

@@ -103,6 +103,9 @@ class StubArtifactStorage(ArtifactStorage):
     def save_file(self, path: str, file_obj: Any, content_type: str) -> str:
         return f"stub/{path}"
 
+    def delete_file(self, path: str) -> None:
+        pass
+
 
 class StubJobQueue(JobQueue):
     def __init__(self) -> None:
@@ -138,10 +141,11 @@ class StubResultMapper(ResultMapper):
 
 
 def test_artifact_storage_contract() -> None:
-    """Stub satisfies ArtifactStorage: save_file returns path."""
+    """Stub satisfies ArtifactStorage: save_file returns path, delete_file exists."""
     storage: ArtifactStorage = StubArtifactStorage()
     path = storage.save_file("aisles/a1/raw/f1.jpg", BytesIO(b"x"), "image/jpeg")
     assert path == "stub/aisles/a1/raw/f1.jpg"
+    storage.delete_file(path)
 
 
 def test_job_queue_contract() -> None:

@@ -36,3 +36,16 @@ class V3ArtifactStorageAdapter(ArtifactStorage):
         with open(full, "wb") as dest:
             shutil.copyfileobj(file_obj, dest)
         return path
+
+    def delete_file(self, path: str) -> None:
+        full = (self._base / path).resolve()
+        try:
+            full.relative_to(self._base)
+        except ValueError:
+            raise ValueError("Path must not escape base directory")
+        try:
+            full.unlink(missing_ok=True)
+        except TypeError:
+            # Python < 3.8 compatibility is not needed, but keep idempotent semantics.
+            if full.exists():
+                full.unlink()

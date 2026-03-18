@@ -60,6 +60,14 @@ class StubVisualReferenceRepo(InventoryVisualReferenceRepository):
             raise ValueError("duplicate id")
         self._store[reference.id] = reference
 
+    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
+        # Atomic semantics for stub: pre-check duplicates, then insert.
+        for r in references:
+            if r.id in self._store:
+                raise ValueError("duplicate id")
+        for r in references:
+            self._store[r.id] = r
+
     def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
         refs = [r for r in self._store.values() if r.inventory_id == inventory_id]
         refs.sort(key=lambda r: (r.created_at, r.id))
@@ -69,11 +77,22 @@ class StubVisualReferenceRepo(InventoryVisualReferenceRepository):
 class StubArtifactStorage(ArtifactStorage):
     def __init__(self) -> None:
         self._written: list[tuple[str, bytes, str]] = []
+        self._deleted: list[str] = []
 
     def save_file(self, path: str, file_obj: BytesIO, content_type: str) -> str:
         content = file_obj.read()
         self._written.append((path, content, content_type))
         return path
+
+    def delete_file(self, path: str) -> None:
+        self._deleted.append(path)
+
+
+class FailingAfterFirstCreateRepo(StubVisualReferenceRepo):
+    """Repo that fails on create_many() to simulate DB failure mid-batch."""
+
+    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
+        raise RuntimeError("simulated db failure")
 
 
 def _inventory(now: datetime) -> Inventory:
@@ -246,6 +265,33 @@ def test_upload_inventory_visual_references_invalid_mime_fails_before_any_write(
     with pytest.raises(UnsupportedAssetTypeError):
         use_case.execute("inv-1", files)
     assert len(storage._written) == 0
+    assert len(ref_repo.list_by_inventory("inv-1")) == 0
+
+
+def test_upload_inventory_visual_references_rolls_back_written_files_on_db_failure() -> None:
+    """If a later DB create fails, previously written files in this request are best-effort deleted."""
+    now = datetime(2025, 3, 10, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo()
+    inv_repo.save(_inventory(now))
+    ref_repo = FailingAfterFirstCreateRepo()
+    storage = StubArtifactStorage()
+
+    use_case = UploadInventoryVisualReferencesUseCase(
+        inventory_repo=inv_repo,
+        reference_repo=ref_repo,
+        artifact_storage=storage,
+        clock=FixedClock(now),
+    )
+    files = [
+        UploadedVisualReferenceFile("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg", size=9),
+        UploadedVisualReferenceFile("ref2.png", BytesIO(b"png-data"), "image/png", size=8),
+    ]
+
+    with pytest.raises(RuntimeError, match="simulated db failure"):
+        use_case.execute("inv-1", files)
+    assert len(storage._written) == 2
+    written_paths = [p for (p, _, _) in storage._written]
+    assert storage._deleted == list(reversed(written_paths))
     assert len(ref_repo.list_by_inventory("inv-1")) == 0
 
 
