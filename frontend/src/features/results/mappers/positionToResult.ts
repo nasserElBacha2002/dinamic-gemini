@@ -21,7 +21,8 @@ import type {
 } from '../types';
 import { getSummaryString } from './detectedSummary';
 
-/** Backend traceability is lowercase; visible model uses uppercase. */
+/** Backend traceability is lowercase; visible model uses uppercase.
+ * Unknown/missing → UNVALIDATED (document-only fallback: backend sends valid|missing|invalid|unvalidated). */
 export function mapTraceabilityToVisible(
   status: string | null | undefined
 ): TraceabilityStatus {
@@ -44,7 +45,7 @@ export function mapTraceabilityToVisible(
  *
  * MISSING and NOT_COUNTABLE are part of the visible ReviewStatus type but are not produced by this
  * mapper in Epic 1; they may be introduced when the decision layer or report shape exposes them.
- */
+ * Unknown status → DETECTED (document-only: backend sends detected|reviewed|corrected|deleted). */
 export function mapPositionStatusToReviewStatus(
   status: string | null | undefined,
   needsReview: boolean
@@ -64,7 +65,9 @@ export function mapPositionStatusToReviewStatus(
   }
 }
 
-/** Map list position (API) to ResultSummary. v3.2.5 Block 4: has_evidence is canonical; fallback only for transitional payloads that omit it. */
+/** Map list position (API) to ResultSummary.
+ * v3.2.5 Block 4: has_evidence is canonical. Fallback (Reduce): when has_evidence is not a boolean,
+ * use primary_evidence_id only for historical/transitional payloads; do not treat as canonical for fresh API. */
 export function mapPositionSummaryToResultSummary(
   p: PositionSummary
 ): ResultSummary {
@@ -79,6 +82,7 @@ export function mapPositionSummaryToResultSummary(
       ? p.corrected_quantity
       : p.qty ?? null;
 
+  // qtySource fallback: Keep for historical payloads only; backend now always sends qtySource.
   return {
     id: p.id,
     sku: p.sku ?? null,
@@ -136,7 +140,7 @@ export function mapPositionDetailToResultDetail(
   const review_actions = data.review_actions ?? [];
 
   const summaryJson = position.detected_summary_json ?? null;
-  // v3.2.5 Phase 2 Block 3: typed fields are canonical; detected_summary_json is compatibility fallback only.
+  /** Canonical: typed fields win. Keep: fallback to detected_summary_json only when typed absent (historical). */
   const typedSourceImageId =
     position.source_image_id != null && String(position.source_image_id).trim() !== ''
       ? position.source_image_id.trim()
@@ -164,6 +168,7 @@ export function mapPositionDetailToResultDetail(
     correctedQty: position.corrected_quantity ?? null,
     resolvedQty,
     systemQty,
+    // qtySource fallback: Keep for historical payloads only; backend sends qtySource in active v3.
     qtySource: position.qtySource ?? 'detected',
     qtyResolved: position.qtyResolved ?? null,
     qtyInferenceReason: position.qtyInferenceReason ?? null,

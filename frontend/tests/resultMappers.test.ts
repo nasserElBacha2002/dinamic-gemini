@@ -3,7 +3,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { PositionSummary, PositionDetailResponse } from '../src/api/types';
+import type {
+  PositionSummary,
+  PositionDetailResponse,
+  EvidenceSummary,
+  ReviewActionSummary,
+} from '../src/api/types';
 import {
   mapTraceabilityToVisible,
   mapPositionStatusToReviewStatus,
@@ -413,11 +418,57 @@ describe('mapPositionDetailToResultDetail', () => {
         has_evidence: false,
       },
       evidences: [],
+      review_actions: [],
     };
     const r = mapPositionDetailToResultDetail(data);
     expect(r.evidence).toEqual([]);
     expect(r.reviewHistory).toEqual([]);
     expect(r.correctedQty).toBeNull();
+  });
+
+  it('Case 4 — qtySource omitted (historical payload): fallback to detected', () => {
+    const data = {
+      position: {
+        id: 'pos-historical',
+        aisle_id: 'aisle-1',
+        status: 'detected',
+        confidence: 0.8,
+        needs_review: false,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        qty: 3,
+        detected_quantity: 3,
+        corrected_quantity: null,
+        sku: 'SKU-Old',
+        source_image_id: null,
+        source_image_original_filename: null,
+        traceability_status: null,
+        has_evidence: false,
+      },
+      evidences: [] as EvidenceSummary[],
+      review_actions: [] as ReviewActionSummary[],
+    };
+    const r = mapPositionDetailToResultDetail(data as PositionDetailResponse);
+    expect(r.qtySource).toBe('detected');
+    expect(r.resolvedQty).toBe(3);
+  });
+
+  it('Case 5 — has_evidence explicitly false is not overridden by primary_evidence_id (canonical wins)', () => {
+    const p: PositionSummary = {
+      id: 'pos-canonical-false',
+      aisle_id: 'aisle-1',
+      status: 'detected',
+      confidence: 0.9,
+      needs_review: true,
+      primary_evidence_id: 'ev-1',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-02T00:00:00Z',
+      qty: 1,
+      qtySource: 'detected',
+      has_evidence: false,
+    };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.hasEvidence).toBe(false);
   });
 });
 

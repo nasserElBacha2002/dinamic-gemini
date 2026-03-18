@@ -210,12 +210,12 @@ export interface ReviewActionSummary {
   comment?: string | null;
 }
 
-/** Response for GET .../aisles/{aisle_id}/positions/{position_id}. v3.1.1: Result-centric; products are not returned. */
+/** Response for GET .../aisles/{aisle_id}/positions/{position_id}. v3.1.1: Result-centric; products are not returned. Backend always sends review_actions (array). */
 export interface PositionDetailResponse {
   position: PositionSummary;
   evidences: EvidenceSummary[];
-  /** Review audit history — Épica 8. */
-  review_actions?: ReviewActionSummary[];
+  /** Review audit history — Épica 8. v3.2.5 Phase 8: required; backend sends list (default_factory=list). */
+  review_actions: ReviewActionSummary[];
 }
 
 // v1 job-entities types (TraceabilitySummary, JobEntityListItem, JobEntitiesListResponse) removed in Stage 3;
