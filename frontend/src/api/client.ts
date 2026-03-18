@@ -15,6 +15,8 @@ import type {
   ProcessAisleResponse,
   SourceAssetSummary,
   UploadAisleAssetsResponse,
+  UploadInventoryVisualReferencesResponse,
+  InventoryVisualReferenceListResponse,
   PositionListResponse,
   PositionDetailResponse,
   ReviewActionRequest,
@@ -107,6 +109,28 @@ export async function createInventory(body: CreateInventoryRequest): Promise<Inv
     body: JSON.stringify(body),
   });
   return handleResponse<Inventory>(response);
+}
+
+export async function uploadInventoryVisualReferences(
+  inventoryId: string,
+  files: File[]
+): Promise<UploadInventoryVisualReferencesResponse> {
+  const form = new FormData();
+  files.forEach((file) => form.append('files', file));
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references`,
+    { method: 'POST', body: form }
+  );
+  return handleResponse<UploadInventoryVisualReferencesResponse>(response);
+}
+
+export async function getInventoryVisualReferences(
+  inventoryId: string
+): Promise<InventoryVisualReferenceListResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references`
+  );
+  return handleResponse<InventoryVisualReferenceListResponse>(response);
 }
 
 export async function getAisles(inventoryId: string): Promise<Aisle[]> {

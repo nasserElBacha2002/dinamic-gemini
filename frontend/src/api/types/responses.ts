@@ -22,6 +22,25 @@ export interface Inventory {
   created_at?: string | null;
 }
 
+// ─── Inventory visual references (v3.2.4 Phase 2/8) ─────────────────────────
+
+export interface InventoryVisualReference {
+  id: string;
+  inventory_id: string;
+  filename: string;
+  mime_type: string;
+  file_size: number;
+  created_at: string;
+}
+
+export interface UploadInventoryVisualReferencesResponse {
+  items: InventoryVisualReference[];
+}
+
+export interface InventoryVisualReferenceListResponse {
+  items: InventoryVisualReference[];
+}
+
 /** GET /api/v3/inventories/{inventory_id}/metrics response — Épica 9 (§9.6). */
 export interface InventoryMetrics {
   total_positions: number;

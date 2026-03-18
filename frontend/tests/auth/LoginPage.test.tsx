@@ -8,6 +8,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '../../src/features/auth';
 import LoginPage from '../../src/features/auth/LoginPage';
+import { getStoredToken } from '../../src/features/auth/storage';
 
 const mockLogin = vi.fn();
 vi.mock('../../src/features/auth/api', () => ({
@@ -81,7 +82,8 @@ describe('LoginPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
 
     expect(await screen.findByText('Home')).toBeInTheDocument();
-    expect(localStorage.getItem('dinamic_auth_token')).toBe('jwt-123');
+    // v3.2.3.E6: token is stored as a structured session; use helper for contract stability.
+    expect(getStoredToken()).toBe('jwt-123');
   });
 
   it('on login failure shows error message', async () => {
