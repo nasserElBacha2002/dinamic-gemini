@@ -58,6 +58,7 @@ export interface InventoryMetrics {
 export interface AisleJobSummary {
   id: string;
   status: JobStatus | string;
+  created_at: string;
   updated_at: string;
   error_message?: string | null;
 }

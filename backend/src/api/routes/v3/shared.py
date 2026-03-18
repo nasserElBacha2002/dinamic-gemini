@@ -284,6 +284,7 @@ def aisle_to_response(a: Aisle, latest_job: Optional[Job] = None) -> AisleRespon
         latest = AisleJobSummary(
             id=latest_job.id,
             status=latest_job.status.value,
+            created_at=latest_job.created_at,
             updated_at=latest_job.updated_at,
             error_message=latest_job.error_message,
         )

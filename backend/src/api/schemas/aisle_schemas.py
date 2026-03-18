@@ -12,9 +12,10 @@ class CreateAisleRequest(BaseModel):
 
 
 class AisleJobSummary(BaseModel):
-    """Latest job summary for an aisle (optional in list response)."""
+    """Latest job summary for an aisle (optional in list response). Aligned with JobSummary for list/status contract."""
     id: str
     status: str
+    created_at: datetime
     updated_at: datetime
     error_message: Optional[str] = None
 

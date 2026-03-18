@@ -179,7 +179,53 @@ def test_get_aisle_status_returns_aisle_and_latest_job() -> None:
     data2 = response2.json()
     assert data2["latest_job"] is not None
     assert data2["latest_job"]["status"] == "queued"
+    assert "created_at" in data2["latest_job"], "aisle status latest_job must expose created_at (Phase 2 Block 2)"
     assert data2["aisle"]["status"] == "queued"
+
+
+def test_list_aisles_latest_job_includes_created_at() -> None:
+    """v3.2.5 Phase 2 Block 2: GET .../aisles returns latest_job.created_at when present."""
+    create_resp = client.post("/api/v3/inventories", json={"name": "For List Job CreatedAt"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "LJ-CA"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+    client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
+    list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
+    assert list_resp.status_code == 200
+    aisles = list_resp.json()
+    assert len(aisles) == 1
+    assert aisles[0]["latest_job"] is not None
+    assert "created_at" in aisles[0]["latest_job"], "aisle list latest_job must expose created_at (Phase 2 Block 2)"
+
+
+def test_list_and_status_latest_job_created_at_aligned() -> None:
+    """v3.2.5 Phase 2 Block 2: list and status expose the same latest_job.created_at for the same job."""
+    create_resp = client.post("/api/v3/inventories", json={"name": "For Aligned CreatedAt"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "AL-01"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+    client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
+    list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
+    status_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
+    assert list_resp.status_code == 200
+    assert status_resp.status_code == 200
+    list_data = list_resp.json()
+    status_data = status_resp.json()
+    assert list_data[0]["latest_job"] is not None
+    assert status_data["latest_job"] is not None
+    list_created = list_data[0]["latest_job"]["created_at"]
+    status_created = status_data["latest_job"]["created_at"]
+    assert list_created == status_created, "list and status must expose same latest_job.created_at"
 
 
 def test_get_aisle_status_not_found_returns_404() -> None:
@@ -217,6 +263,7 @@ def test_list_aisles_includes_latest_job_when_present() -> None:
     assert len(aisles2) == 1
     assert aisles2[0]["latest_job"] is not None
     assert aisles2[0]["latest_job"]["status"] == "queued"
+    assert "created_at" in aisles2[0]["latest_job"], "aisle list latest_job must expose created_at (Phase 2 Block 2)"
     assert aisles2[0]["status"] == "queued"
 
 
