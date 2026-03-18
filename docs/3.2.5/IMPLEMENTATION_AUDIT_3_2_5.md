@@ -371,3 +371,16 @@ Lifecycle hardening has started. The **v3 job-state authority** is being formali
 
 **Reference**: See **`docs/3.2.5/JOB_LIFECYCLE_3_2_5.md`** for the documented source of truth, write/read paths, cancel transitions, DB vs filesystem relationship, and legacy coexistence. Tests added in this block cover: queued-job cancel (202 + list/status show `canceled`), terminal-job cancel (409), and use-case-level cancel transitions; they demonstrate that active v3 lifecycle behavior does not depend on the legacy job store.
 
+---
+
+## 9) Phase 3 — Job Lifecycle Hardening (closure)
+
+Phase 3 lifecycle hardening is **complete**. The v3 job-state authority has been formalized, and the following are documented and test-protected:
+
+- **Source of truth**: Active v3 API and executor use only `JobRepository` and domain `Job`/`JobStatus`; no dependence on Stage-7 or legacy job store for v3 behavior.
+- **Cancel contract**: QUEUED→CANCELED, RUNNING→CANCEL_REQUESTED, CANCEL_REQUESTED→CANCELED, terminal reject; list/status expose cancel states correctly (route-level tests).
+- **Retry / re-processing boundary**: QUEUED, RUNNING, CANCEL_REQUESTED block `POST .../process` (409); CANCELED, FAILED, SUCCEEDED, TIMED_OUT allow a new job (202). Documented in `JOB_LIFECYCLE_3_2_5.md` §5; route-level tests cover active-job block and post-terminal new job.
+- **Historical reads**: Job state and latest-job come from DB; execution-log is best-effort from filesystem. Missing artifacts do not affect lifecycle status; execution-log returns 200 with empty events when run dir is missing. Documented in `JOB_LIFECYCLE_3_2_5.md` §6; route-level test confirms status and execution-log contract when artifacts are absent.
+
+The repository is ready to proceed to the next phase. Deferred items (explicit retry product semantics, historical job list, artifact retention policy, legacy fallback removal) are recorded in `JOB_LIFECYCLE_3_2_5.md` §9.
+

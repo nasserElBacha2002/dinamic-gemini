@@ -1,7 +1,7 @@
 # v3 Job Lifecycle — Source of Truth and Cancel-State Contract (3.2.5)
 
-**Release**: 3.2.5 — Phase 3 Block 1  
-**Purpose**: Document the authoritative v3 job state source of truth, write/read paths, cancel-state semantics, and the relationship between DB state and filesystem artifacts. This makes the active v3 lifecycle contract explicit and safe for later lifecycle work (retry, historical-read hardening).
+**Release**: 3.2.5 — Phase 3 (Job Lifecycle Hardening)  
+**Purpose**: Document the authoritative v3 job state source of truth, write/read paths, cancel-state semantics, retry/re-processing boundary, historical reads and artifact dependency, and legacy coexistence. This makes the active v3 lifecycle contract explicit, test-protected, and safe for later phases.
 
 ---
 
@@ -45,21 +45,69 @@ Cancel states are **not** flattened into generic failed/succeeded semantics; `ca
 
 ---
 
-## 5. Relationship between DB job state and filesystem artifacts
+## 5. Retry and re-processing boundary
 
-- **Job state** (status, updated_at, error_message, result summary) lives in the **database** via `JobRepository` / `inventory_jobs`. This is the authority for “what is the job’s status?” and “what is the latest job for this aisle?”.
-- **Filesystem artifacts** (e.g. execution logs, pipeline outputs under the job output directory) are **derived** from the job lifecycle (e.g. created when the executor runs). They do **not** replace or override the DB as the source of truth for job state. Reading artifacts (e.g. execution log) is for traceability and debugging; the API still resolves “current job status” from the repository.
+**Allowed / disallowed process-start behavior by latest-job state**
+
+- **QUEUED**, **RUNNING**, **CANCEL_REQUESTED**: `POST .../process` is **blocked**. The use case `StartAisleProcessingUseCase` calls `JobRepository.get_latest_by_target("aisle", aisle_id)` and, if the latest job has one of these statuses, raises `ActiveJobExistsError`. The API returns **409** with a detail message indicating an active job already exists.
+- **CANCELED**, **FAILED**, **SUCCEEDED**, **TIMED_OUT**: `POST .../process` is **allowed**. A **new** job is created (new id, QUEUED), enqueued, and saved. This is **re-processing** (starting a new independent job after a terminal state), not “retry” of the same job. The API returns **202** with the new `job_id`.
+
+**API contract for blocked starts**
+
+- When the latest job for the aisle is in a non-terminal state, `POST /api/v3/inventories/{id}/aisles/{id}/process` returns **409 Conflict** with a detail string that includes the existing job status (e.g. “already has an active job (status=queued)”). No new job is created.
+
+**Deferred beyond Phase 3**
+
+- “Retry” as an explicit product concept (e.g. retry the same job id, automatic backoff, or UI “Retry” button semantics) is **not** implemented. Current behavior is: after any terminal state, the client may start a new job via `POST .../process`; that new job is independent. Future retry design (same-job retry, idempotency keys, or dedicated retry endpoint) is out of scope for this phase.
 
 ---
 
-## 6. Legacy fallback coexistence
+## 6. Historical reads and artifact dependency boundary
+
+**What is guaranteed from DB**
+
+- Job state (status, updated_at, error_message, result summary, job id, target_type, target_id, job_type) is stored in **`inventory_jobs`** and read via **`JobRepository`**. List-aisles, aisle-status, and cancel all resolve “latest job” and “job by id” from the repository only. **Lifecycle truth** (current status, latest job per aisle) is **guaranteed** from the DB regardless of filesystem state.
+
+**What is best-effort from filesystem**
+
+- **Execution log** (`GET .../jobs/{job_id}/execution-log`): events are read from `read_execution_log(run_dir)` where `run_dir = output_dir / job_id / RUN_ID`. The file `execution_log.jsonl` is written by the pipeline during execution. Reading it is **best-effort** for traceability and debugging.
+- Other artifacts (e.g. `hybrid_report.json`, `input_manifest.json`, pipeline outputs under the job run directory) are **not** used by the active lifecycle API to determine job status. They are used for results, evidence, and debugging.
+
+**What happens when artifacts are missing**
+
+- If the run directory or `execution_log.jsonl` is missing (e.g. job was canceled before run, or files were purged), `read_execution_log(run_dir)` returns an **empty list**. The execution-log endpoint still returns **200** with `events: []`. Job existence and ownership are validated via `JobRepository.get_by_id`; only the event payload is empty.
+- **Lifecycle guarantees remain valid**: list-aisles and aisle-status continue to return the job and its status from the repository. Missing execution-log or other artifacts does **not** change job state, latest-job resolution, or cancel semantics. Only traceability/debugging (e.g. viewing the log in the UI) degrades when artifacts are absent.
+
+**Summary**
+
+- DB = authority for job state and latest-job. Filesystem = best-effort for execution log and pipeline artifacts. Missing artifacts affect only traceability/debugging, not lifecycle correctness.
+
+---
+
+## 7. Relationship between DB job state and filesystem artifacts (summary)
+
+- **Job state** (status, updated_at, error_message, result summary) lives in the **database** via `JobRepository` / `inventory_jobs`. This is the authority for “what is the job’s status?” and “what is the latest job for this aisle?”.
+- **Filesystem artifacts** (e.g. execution logs, pipeline outputs under the job output directory) are **derived** from the job lifecycle and do **not** replace or override the DB. See §6 for the full historical-read and artifact-dependency boundary.
+
+---
+
+## 8. Legacy fallback coexistence
 
 - The **worker** (`src.jobs.worker`) tries the **v3 path** first (`V3JobExecutor` + v3 `JobRepository`). The legacy path (Stage-7 `JobRecord`, `job_store`) is used only when the v3 path is not applicable (e.g. non–process_aisle or legacy job id).
 - **Active v3 semantics** (list, status, cancel, process) must **not** depend on the legacy job store or legacy status enum. Tests and this document exist to keep the v3 read/write path locked to `JobRepository` and domain `JobStatus`, so that later lifecycle work (retry, historical-read) can rely on a single, clear contract.
 
 ---
 
-## 7. References
+## 9. Open items deferred beyond Phase 3
+
+- **Explicit “retry” product semantics**: Same-job retry, idempotency keys, or a dedicated retry endpoint are not implemented; re-processing after terminal state is the current contract.
+- **Historical job list**: Only “latest job per aisle” is exposed; listing all jobs for an aisle or inventory is not in scope.
+- **Artifact retention / purge policy**: How long execution logs and pipeline outputs are kept, and behavior when they are purged, is operational/deployment concern; lifecycle guarantees (DB-backed state) hold regardless.
+- **Legacy fallback removal**: The worker’s legacy Stage-7 path remains; removal is deferred until v3 is the only job type in use.
+
+---
+
+## References
 
 - Domain: `backend/src/domain/jobs/entities.py`
 - Use cases: `start_aisle_processing.py`, `cancel_aisle_job.py`, `list_aisles_with_status.py`, `get_aisle_processing_status.py`

@@ -365,6 +365,136 @@ def test_cancel_running_job_returns_202_and_list_and_status_show_cancel_requeste
         app.dependency_overrides.pop(get_job_repo, None)
 
 
+def test_post_process_when_latest_job_running_returns_409() -> None:
+    """Phase 3 Case 4: Active job (RUNNING) blocks duplicate process start; API returns 409."""
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv = Inventory("inv-block", "For Block", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-block", "inv-block", "B-01", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+    job = Job(
+        id="job-running-block",
+        target_type="aisle",
+        target_id="aisle-block",
+        job_type="process_aisle",
+        status=JobStatus.RUNNING,
+        payload_json={"aisle_id": "aisle-block"},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        resp = c.post(
+            "/api/v3/inventories/inv-block/aisles/aisle-block/process",
+        )
+        assert resp.status_code == 409
+        assert "active" in resp.json().get("detail", "").lower()
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+
+
+def test_post_process_after_terminal_job_creates_new_job() -> None:
+    """Phase 3 Case 5: After terminal state (e.g. CANCELED), POST process creates a new job; list/status show new job."""
+    create_resp = client.post("/api/v3/inventories", json={"name": "For Re-process"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "RP-01"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+    process1 = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+    )
+    assert process1.status_code == 202
+    job_id_1 = process1.json()["job_id"]
+    cancel_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id_1}/cancel",
+    )
+    assert cancel_resp.status_code == 202
+
+    process2 = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+    )
+    assert process2.status_code == 202
+    job_id_2 = process2.json()["job_id"]
+    assert job_id_2 != job_id_1
+
+    list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
+    assert list_resp.status_code == 200
+    assert list_resp.json()[0]["latest_job"]["id"] == job_id_2
+    assert list_resp.json()[0]["latest_job"]["status"] == "queued"
+
+    status_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["latest_job"]["id"] == job_id_2
+    assert status_resp.json()["latest_job"]["status"] == "queued"
+
+
+def test_execution_log_and_lifecycle_when_artifacts_missing() -> None:
+    """Phase 3 Case 6: Job state from DB remains; execution-log returns 200 with empty events when run dir missing."""
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv = Inventory("inv-art", "For Artifacts", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-art", "inv-art", "ART-01", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+    job = Job(
+        id="job-art-1",
+        target_type="aisle",
+        target_id="aisle-art",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={"aisle_id": "aisle-art"},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        status_resp = c.get(
+            "/api/v3/inventories/inv-art/aisles/aisle-art/status",
+        )
+        assert status_resp.status_code == 200
+        assert status_resp.json()["latest_job"] is not None
+        assert status_resp.json()["latest_job"]["status"] == "succeeded"
+        assert status_resp.json()["latest_job"]["id"] == "job-art-1"
+
+        log_resp = c.get(
+            "/api/v3/inventories/inv-art/aisles/aisle-art/jobs/job-art-1/execution-log",
+        )
+        assert log_resp.status_code == 200
+        assert "events" in log_resp.json()
+        assert isinstance(log_resp.json()["events"], list)
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+
+
 def test_get_aisle_status_not_found_returns_404() -> None:
     create_resp = client.post("/api/v3/inventories", json={"name": "For Status 404"})
     assert create_resp.status_code == 201

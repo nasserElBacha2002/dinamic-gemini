@@ -8,6 +8,8 @@ This document records contract inconsistencies identified in Phase 2 and the imp
 
 Phase 2 (active contract hardening) is **closed**. Four narrow blocks were implemented: list/detail `corrected_quantity` alignment, `latest_job` shape alignment (aisle list vs status), canonical typed source-image fields, and `has_evidence` as a guaranteed boolean. Backend and frontend types/mappers were updated; remaining fallbacks are documented and classified below. The repository is ready to proceed to **Phase 3 — Job lifecycle hardening** with the cautions noted.
 
+**Phase 3 lifecycle (3.2.5)**: Job lifecycle hardening is documented in **`docs/3.2.5/JOB_LIFECYCLE_3_2_5.md`** (source of truth, cancel transitions, retry/re-processing boundary, historical reads and artifact dependency). Phase 3 does **not** change the Phase 2 contract decisions in this document (positions, results, `latest_job` shape, source-image, `has_evidence`); it only formalizes job-state and process/cancel/execution-log semantics.
+
 ---
 
 ## Implemented contract decisions
