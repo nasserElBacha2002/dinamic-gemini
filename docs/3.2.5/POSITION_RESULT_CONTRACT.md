@@ -104,6 +104,9 @@ It can be partially explained by existing fields (e.g. status, evidence presence
 In the current visible model, `needs_review` only changes the UI review status when `status == "detected"`. For `status in {"reviewed","corrected"}`, the UI is always `CONFIRMED` regardless of `needs_review`.
 If a reason field is introduced later, it must be small, stable, and conservative (UNKNOWN when evidence is insufficient).
 
+### 4.4 Phase 6 note: needs_review and corrected state after manual actions
+After any successful manual review action (`confirm`, `update_quantity`, `update_sku`, `delete_position`), the backend sets `needs_review = false`. Reread (list and detail) therefore shows coherent review state and corrected/deleted semantics without contradicting filters or KPIs that use `needs_review`. See `docs/3.2.5/REVIEW_OPERATIONAL_CONSISTENCY.md` for full reread guarantees.
+
 ---
 
 ## 5. Evidence and traceability

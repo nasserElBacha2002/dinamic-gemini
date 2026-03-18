@@ -40,6 +40,7 @@ def _seed_repos():
         primary_evidence_id=None,
         created_at=now,
         updated_at=now,
+        detected_summary_json={"internal_code": "SKU-REVIEW"},
     )
     product = ProductRecord(
         id="prod-review-1",
@@ -117,7 +118,7 @@ def test_post_review_position_not_found_returns_404() -> None:
 
 
 def test_post_review_confirm_returns_204_and_detail_includes_review() -> None:
-    """POST confirm returns 204; GET detail then returns position reviewed and review_actions."""
+    """Phase 6: POST confirm returns 204; list/detail reread show reviewed, needs_review false, review_actions."""
     client = TestClient(app)
     repos = _seed_repos()
     app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
@@ -133,12 +134,22 @@ def test_post_review_confirm_returns_204_and_detail_includes_review() -> None:
         )
         assert resp.status_code == 204
 
+        list_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
+        )
+        assert list_resp.status_code == 200
+        list_data = list_resp.json()
+        assert len(list_data["positions"]) == 1
+        assert list_data["positions"][0]["status"] == "reviewed"
+        assert list_data["positions"][0]["needs_review"] is False
+
         detail = client.get(
             "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1"
         )
         assert detail.status_code == 200
         data = detail.json()
         assert data["position"]["status"] == "reviewed"
+        assert data["position"]["needs_review"] is False
         assert "review_actions" in data
         assert len(data["review_actions"]) == 1
         assert data["review_actions"][0]["action_type"] == "confirm"
@@ -148,7 +159,7 @@ def test_post_review_confirm_returns_204_and_detail_includes_review() -> None:
 
 
 def test_post_review_update_quantity_returns_204_and_detail_updated() -> None:
-    """POST update_quantity with product_id and corrected_quantity returns 204; detail shows corrected."""
+    """Phase 6: POST update_quantity returns 204; list/detail show corrected_quantity, needs_review false."""
     client = TestClient(app)
     repos = _seed_repos()
     app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
@@ -168,6 +179,16 @@ def test_post_review_update_quantity_returns_204_and_detail_updated() -> None:
         )
         assert resp.status_code == 204
 
+        list_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
+        )
+        assert list_resp.status_code == 200
+        positions = list_resp.json()["positions"]
+        assert len(positions) == 1
+        assert positions[0]["corrected_quantity"] == 10
+        assert positions[0]["status"] == "corrected"
+        assert positions[0]["needs_review"] is False
+
         detail = client.get(
             "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1"
         )
@@ -175,15 +196,16 @@ def test_post_review_update_quantity_returns_204_and_detail_updated() -> None:
         data = detail.json()
         assert data["position"]["status"] == "corrected"
         assert data["position"]["corrected_quantity"] == 10
-        assert data["position"]["qty"] == 10
+        assert data["position"]["needs_review"] is False
         assert len(data["review_actions"]) == 1
         assert data["review_actions"][0]["action_type"] == "update_quantity"
+        assert data["review_actions"][0]["after_json"].get("corrected_quantity") == 10
     finally:
         app.dependency_overrides.clear()
 
 
-def test_post_review_update_quantity_missing_product_id_returns_422() -> None:
-    """update_quantity without product_id returns 422."""
+def test_post_review_update_quantity_without_product_id_uses_single_product() -> None:
+    """update_quantity without product_id succeeds when position has a single product (backend picks it)."""
     client = TestClient(app)
     repos = _seed_repos()
     app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
@@ -197,13 +219,18 @@ def test_post_review_update_quantity_missing_product_id_returns_422() -> None:
             "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
             json={"action_type": "update_quantity", "corrected_quantity": 3},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 204
+        detail = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1"
+        )
+        assert detail.status_code == 200
+        assert detail.json()["position"]["corrected_quantity"] == 3
     finally:
         app.dependency_overrides.clear()
 
 
 def test_post_review_update_sku_returns_204_and_detail_updated() -> None:
-    """POST update_sku with product_id, sku (and optional description) returns 204; detail shows corrected."""
+    """Phase 6: POST update_sku returns 204; list/detail reread show visible sku updated, needs_review false."""
     client = TestClient(app)
     repos = _seed_repos()
     app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
@@ -224,18 +251,27 @@ def test_post_review_update_sku_returns_204_and_detail_updated() -> None:
         )
         assert resp.status_code == 204
 
+        list_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
+        )
+        assert list_resp.status_code == 200
+        positions = list_resp.json()["positions"]
+        assert len(positions) == 1
+        assert positions[0]["sku"] == "NEW-SKU-123"
+        assert positions[0]["status"] == "corrected"
+        assert positions[0]["needs_review"] is False
+
         detail = client.get(
             "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1"
         )
         assert detail.status_code == 200
         data = detail.json()
         assert data["position"]["status"] == "corrected"
-        products = data["products"]
-        assert len(products) == 1
-        assert products[0]["sku"] == "NEW-SKU-123"
-        assert products[0]["description"] == "Updated description"
+        assert data["position"]["sku"] == "NEW-SKU-123"
+        assert data["position"]["needs_review"] is False
         assert len(data["review_actions"]) == 1
         assert data["review_actions"][0]["action_type"] == "update_sku"
+        assert data["review_actions"][0]["after_json"].get("sku") == "NEW-SKU-123"
     finally:
         app.dependency_overrides.clear()
 
@@ -268,7 +304,7 @@ def test_post_review_update_quantity_wrong_product_id_returns_404() -> None:
 
 
 def test_post_review_delete_position_returns_204_and_detail_deleted() -> None:
-    """POST delete_position returns 204; GET detail shows status deleted."""
+    """Phase 6: POST delete_position returns 204; list/detail show deleted, needs_review false."""
     client = TestClient(app)
     repos = _seed_repos()
     app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
@@ -284,13 +320,24 @@ def test_post_review_delete_position_returns_204_and_detail_deleted() -> None:
         )
         assert resp.status_code == 204
 
+        list_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
+        )
+        assert list_resp.status_code == 200
+        positions = list_resp.json()["positions"]
+        assert len(positions) == 1
+        assert positions[0]["status"] == "deleted"
+        assert positions[0]["needs_review"] is False
+
         detail = client.get(
             "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1"
         )
         assert detail.status_code == 200
-        assert detail.json()["position"]["status"] == "deleted"
-        assert len(detail.json()["review_actions"]) == 1
-        assert detail.json()["review_actions"][0]["action_type"] == "delete_position"
+        data = detail.json()
+        assert data["position"]["status"] == "deleted"
+        assert data["position"]["needs_review"] is False
+        assert len(data["review_actions"]) == 1
+        assert data["review_actions"][0]["action_type"] == "delete_position"
     finally:
         app.dependency_overrides.clear()
 
@@ -357,6 +404,8 @@ def test_list_and_detail_corrected_quantity_coherent_after_update_quantity() -> 
         assert detail_resp.status_code == 200
         detail_data = detail_resp.json()
         assert detail_data["position"]["corrected_quantity"] == 10
+        assert detail_data["position"]["needs_review"] is False
+        assert positions[0]["needs_review"] is False
     finally:
         app.dependency_overrides.clear()
 
