@@ -109,6 +109,9 @@ class NoopRepo(
     def create(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         pass
 
+    def create_many(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        pass
+
 
 class FixedClock(Clock):
     def __init__(self, now: datetime) -> None:

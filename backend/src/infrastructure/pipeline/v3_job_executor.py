@@ -191,6 +191,7 @@ class V3JobExecutor:
                 logger=log,
                 progress_callback=None,
                 job_input=job_input,
+                analysis_context=analysis_context,
             )
             if result.exit_code != 0:
                 last_error = read_last_stage_error(run_dir)

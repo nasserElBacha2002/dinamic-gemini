@@ -21,7 +21,7 @@ from src.jobs.image_identity import load_job_images_from_manifest
 from src.llm.prompts import enrich_prompt_with_image_ids, get_hybrid_prompt
 from src.llm.providers.factory import get_llm_provider
 from src.llm.types import LLMRequest
-from src.pipeline.contracts.analysis_context import analysis_context_from_dict
+from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.ports.analysis_provider import (
     AnalysisResult,
@@ -105,8 +105,9 @@ class GeminiAnalysisProvider:
                     prompt_text = enrich_prompt_with_image_ids(prompt_text, images)
 
         # v3.2.4 Phase 4: consume shared analysis context (no raw dict or storage layout here)
-        analysis_context = None
-        if job_input and getattr(job_input, "metadata", None):
+        analysis_context: Optional[AnalysisContext] = getattr(context, "analysis_context", None)
+        if analysis_context is None and job_input and getattr(job_input, "metadata", None):
+            # Compatibility fallback only: legacy callers may pass analysis_context via JobInput.metadata.
             analysis_context = analysis_context_from_dict((job_input.metadata or {}).get("analysis_context"))
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
         context_instruction = None

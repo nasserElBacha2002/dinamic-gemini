@@ -17,7 +17,7 @@ from src.jobs.models import JobInput
 from src.llm.errors import LLMProviderError
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError
 from src.pipeline.context.run_context import RunContext
-from src.pipeline.contracts.analysis_context import analysis_context_from_dict
+from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
@@ -99,6 +99,7 @@ class HybridInventoryPipeline:
         confidence_threshold: Optional[float] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
         job_input: Optional[JobInput] = None,
+        analysis_context: Optional[AnalysisContext] = None,
         **_: object,
     ) -> PipelineRunResult:
         """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5)."""
@@ -107,6 +108,11 @@ class HybridInventoryPipeline:
             job_input = JobInput(video_path=video_path or "", mode="hybrid", input_type="video")
         workspace_path = output_path
         run_dir = output_path / execution_id / run_id
+        # Phase 3/4/5: prefer typed AnalysisContext passed in-memory by orchestrator.
+        # Compatibility fallback: parse from job_input.metadata['analysis_context'] if present.
+        if analysis_context is None:
+            raw_ctx = (getattr(job_input, "metadata", None) or {}).get("analysis_context")
+            analysis_context = analysis_context_from_dict(raw_ctx) if isinstance(raw_ctx, dict) else None
         context = RunContext(
             job_id=execution_id,
             run_id=run_id,
@@ -117,6 +123,7 @@ class HybridInventoryPipeline:
             logger=logger,
             progress_callback=progress_callback,
             metadata={},
+            analysis_context=analysis_context,
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)
@@ -204,9 +211,7 @@ class HybridInventoryPipeline:
         except Exception as e:
             return _fail("ReportingStage", e)
         # Phase 5: build run_metadata in memory (formal AnalysisContext); optional file as debug artifact
-        raw_ctx = (getattr(context.job_input, "metadata", None) or {}).get("analysis_context")
-        analysis_context = analysis_context_from_dict(raw_ctx) if isinstance(raw_ctx, dict) else raw_ctx
-        run_metadata = build_run_metadata(analysis_context, analysis_result.provider_metadata)
+        run_metadata = build_run_metadata(context.analysis_context, analysis_result.provider_metadata)
         if getattr(settings, "debug_run_metadata", False):
             try:
                 (context.run_dir / "run_metadata.json").write_text(
