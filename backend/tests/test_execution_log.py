@@ -53,6 +53,30 @@ def test_read_execution_log_empty_dir():
         assert read_execution_log(Path(d)) == []
 
 
+def test_read_execution_log_malformed_lines_skipped():
+    """Phase 7 Block 2 Case 3: Malformed JSON lines are skipped; valid lines returned."""
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "execution_log.jsonl"
+        path.write_text(
+            '{"ts":"2025-01-01T00:00:00Z","stage":"S1","level":"info","message":"ok"}\n'
+            "not json\n"
+            '{"ts":"2025-01-01T00:00:01Z","stage":"S2","level":"error","message":"fail"}\n',
+            encoding="utf-8",
+        )
+        events = read_execution_log(Path(d))
+        assert len(events) == 2
+        assert events[0]["message"] == "ok"
+        assert events[1]["message"] == "fail"
+
+
+def test_read_execution_log_all_malformed_returns_empty():
+    """Phase 7 Block 2 Case 3: All lines invalid JSON syntax yields empty list (degraded diagnostic)."""
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "execution_log.jsonl"
+        path.write_text("not json\n{invalid}\n", encoding="utf-8")
+        assert read_execution_log(Path(d)) == []
+
+
 def test_read_last_stage_error_missing():
     """Missing file returns None."""
     with tempfile.TemporaryDirectory() as d:

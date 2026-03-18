@@ -107,6 +107,8 @@ If a reason field is introduced later, it must be small, stable, and conservativ
 ### 4.4 Phase 6 note: needs_review and corrected state after manual actions
 After any successful manual review action (`confirm`, `update_quantity`, `update_sku`, `delete_position`), the backend sets `needs_review = false`. Reread (list and detail) therefore shows coherent review state and corrected/deleted semantics without contradicting filters or KPIs that use `needs_review`. See `docs/3.2.5/REVIEW_OPERATIONAL_CONSISTENCY.md` for full reread guarantees.
 
+Phase 6 also improves the review detail UI: **current quantity** is shown using the rule `corrected_quantity ?? qty`; when a correction exists, **system quantity** (the pre-override `qty`) is shown; **count origin** (qtySource and qtyInferenceReason when inferred) is displayed so the operator understands where the system count came from. Evidence is labeled as primary vs supporting, and review history shows a concise change summary from before/after JSON.
+
 ---
 
 ## 5. Evidence and traceability

@@ -129,3 +129,7 @@ def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path) -> None:
     assert vrc["resolved_count"] == 0
     assert vrc["provider_consumed"] is False
     assert vrc["provider_consumed_count"] == 0
+    # Phase 7: provider key present in run_metadata (value may be None if provider not reported)
+    assert "provider" in result.run_metadata
+    if result.run_metadata["provider"] is not None:
+        assert isinstance(result.run_metadata["provider"], str)

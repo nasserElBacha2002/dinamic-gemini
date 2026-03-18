@@ -212,6 +212,12 @@ class HybridInventoryPipeline:
             return _fail("ReportingStage", e)
         # Phase 5: build run_metadata in memory (formal AnalysisContext); optional file as debug artifact
         run_metadata = build_run_metadata(context.analysis_context, analysis_result.provider_metadata)
+        # Phase 7: run attribution for debugging (provider and prompt_key persisted in job.result_json)
+        provider = (analysis_result.provider_name or "").strip() or None
+        run_metadata["provider"] = provider
+        prompt_key = getattr(settings, "hybrid_prompt", None)
+        if prompt_key is not None and str(prompt_key).strip():
+            run_metadata["prompt_key"] = str(prompt_key).strip()
         if getattr(settings, "debug_run_metadata", False):
             try:
                 (context.run_dir / "run_metadata.json").write_text(

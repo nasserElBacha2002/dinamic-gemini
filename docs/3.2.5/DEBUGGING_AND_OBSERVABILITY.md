@@ -1,11 +1,31 @@
-# v3 Debugging and Observability (3.2.5 Phase 4)
+# v3 Debugging and Observability (3.2.5 Phase 4 + Phase 7)
 
-**Release**: 3.2.5 — Phase 4 (Observability and Debugging)  
+**Release**: 3.2.5 — Phase 4 (Observability and Debugging); Phase 7 (Observability hardening)  
 **Purpose**: Make v3 runs reconstructable and diagnosable without building an enterprise observability platform. This document inventories current traceability, defines minimum metadata and stage boundaries, and records error-context guarantees.
 
 ---
 
 ## 1. Observability inventory
+
+### 1.5 Canonical pipeline stage names (Phase 7)
+
+The following stage names are the **canonical vocabulary** used in:
+
+- **execution_log** (JSONL events: `stage` field)
+- **last_stage_error.txt** (first token: "StageName: message")
+- Stage-level investigation and regression isolation
+
+| Stage name | Description |
+|------------|-------------|
+| **InputPreparationStage** | Validate input, prepare run dir, normalize photos. |
+| **FrameAcquisitionStage** | Obtain frames from FrameSource and load into memory. |
+| **AnalysisStage** | Call analysis provider (e.g. Gemini); raw output and parse. |
+| **EntityResolutionStage** | Parse analysis payload, entity validation/transformation. |
+| **EvidenceStage** | Generate evidence pack (overview + crops). |
+| **ReportingStage** | Assemble report payload and write hybrid_report.json. |
+| **Persist** | Post-pipeline: write positions/product_records/evidence to DB. Not a pipeline stage; used in error_message when persist fails (e.g. "Persist: ..."). |
+
+When correlating a failure with a stage, match `error_message` or execution_log `stage` to one of these names.
 
 ### 1.1 Current sources of truth
 
@@ -13,25 +33,28 @@
 |--------|----------|------------|---------------------------|------|
 | **Job metadata** | `inventory_jobs` (DB) via `JobRepository` | Yes | Yes | status, updated_at, error_message, result_json (report_path, visual_reference_context). Exposed in list/status/cancel and execution-log validation. |
 | **Aisle lifecycle** | `aisles` (DB) | Yes | Yes | status, error_code, error_message, retryable. Exposed in list/status. |
-| **Execution log** | `{output_dir}/{job_id}/run/execution_log.jsonl` | Filesystem | Yes (GET execution-log) | JSONL events: ts, stage, level, message, optional payload. Best-effort; empty if missing. |
+| **Execution log** | `{output_dir}/{job_id}/run/execution_log.jsonl` | Filesystem | Yes (GET execution-log) | JSONL events: ts, stage, level, message, optional payload. Best-effort; `events: []` when missing/invalid/unreadable — does not necessarily mean no stages ran (see `ARTIFACT_HISTORICAL_READ_BOUNDARY.md` §5). |
 | **Last stage error** | `{output_dir}/{job_id}/run/last_stage_error.txt` | Filesystem | No (internal) | Single line "StageName: message". Read by executor on pipeline exit_code != 0 and appended to job.error_message. |
 | **Hybrid report** | `{output_dir}/{job_id}/run/hybrid_report.json` | Filesystem | Indirect | Entities with source_image_id, traceability_status, quantities, etc. Used by persist; also by shared traceability enrichment for list/detail. |
 | **Input manifest** | `{output_dir}/{job_id}/input_manifest.json` | Filesystem | No | Photos list (image_id, original_filename, stored_filename). Used for HEIC/normalized path resolution and preview. |
 | **Positions / products** | DB (positions, product_records) | Yes | Yes | detected_summary_json, corrected_summary_json; qty_source, qty_inference_reason, qty_parse_status (product_records). Exposed in positions list/detail. |
 | **Evidences / review actions** | DB | Yes | Yes | Evidences and review history for positions. |
-| **Run metadata (in-memory)** | Propagated to `job.result_json` | Yes (in result_json) | Partially | visual_reference_context (reference_ids, resolved_count, provider_consumed_count). Stored on success; not exposed as a dedicated API field. |
+| **Run metadata (in-memory)** | Propagated to `job.result_json` | Yes (in result_json) | Internal only | visual_reference_context; **provider** (Phase 7); **prompt_key** when attributable (Phase 7). Stored on success; **result_json is an internal persisted metadata container, not a public API contract** — not exposed as a dedicated API field. |
 
-### 1.2 Current gaps
+### 1.2 Current gaps (updated Phase 7)
 
-- **Prompt/model/version**: Prompt key comes from settings (`hybrid_prompt`, e.g. `global_v21`); schema version is fixed in code (`v2.1`). Provider name is logged in execution_log and returned by the analysis provider but **not** persisted in job metadata. A run cannot be fully attributed to a specific prompt version or model from DB alone.
+- **Provider attribution**: **Addressed in Phase 7.** Provider is now persisted in `job.result_json` on successful runs, so a run can be attributed to a model from DB without requiring execution_log.
+- **Prompt attribution**: When `hybrid_prompt` is set and cleanly attributable to the run, **prompt_key** is persisted in `job.result_json`. Otherwise prompt attribution remains config/code derived; per-job prompt_key is deferred when not attributable.
 - **Stage at failure**: When the pipeline fails, `last_stage_error.txt` holds "StageName: message" and the executor surfaces it in job.error_message. When **persist** fails (after pipeline succeeds), the exception was previously surfaced without a "Persist:" prefix; Phase 4 adds that prefix so the failing stage is explicit.
 - **Per-entity parse/merge provenance**: qty_source, qty_inference_reason, qty_parse_status are persisted on ProductRecord and exposed in position summary (qtySource, qtyInferenceReason; qtyResolved). detected_summary_json carries a copy of qty metadata. Merge/consolidation is reflected by qty_source=consolidated and by aggregated_from_ids in detected_summary_json where applicable. No separate "merge reason" field exists.
 - **Artifact references**: result_json.report_path points to hybrid_report.json. Evidence and asset paths are in DB; no single "artifacts that support this result" list is exposed.
 
-### 1.3 Persisted vs transient
+### 1.3 Persisted vs logged-only vs transient (Phase 7)
 
-- **Persisted**: Job (status, error_message, result_json), aisle (status, error_*), positions, product_records, evidences, review_actions. Execution log and hybrid_report are written to disk but not to DB; retention is filesystem-based.
-- **Transient**: In-process traceability cache in shared.py (hybrid_report enrichment); pipeline run_metadata in memory until persisted into result_json on success.
+- **Persisted (DB / result_json)**: Job (status, error_message, result_json including **provider**, and when attributable **prompt_key**; report_path; visual_reference_context). Aisle (status, error_*). Positions, product_records, evidences, review_actions. **Provider in result_json** = persisted; allows run attribution from DB without execution_log.
+- **Logged-only / best-effort artifact**: **Provider in execution_log payload** = logged-only (same value may also be in result_json after Phase 7). execution_log and hybrid_report are **best-effort artifact-based**; retention is filesystem-based. last_stage_error is file-backed, then copied into job.error_message by the executor.
+- **Transient**: In-process traceability cache in shared.py; pipeline run_metadata in memory until persisted into result_json on success.
+- **Authoritative for run attribution**: DB-backed job.result_json.provider (and optional prompt_key). **Supplementary**: execution_log events and hybrid_report when files are present.
 
 ### 1.4 Consumed by API/frontend vs internal-only
 
@@ -46,8 +69,8 @@ For each metadata family, classification:
 
 | Metadata | Status | Notes |
 |----------|--------|-------|
-| **Prompt version** | Present but inconsistent | In code/settings (`hybrid_prompt`); not stored per job. **Deferred**: add to result_json or run_metadata when needed for A/B or regression. |
-| **Provider/model** | Present but not persisted | Analysis provider returns provider name; logged in execution_log. **Deferred**: persist in result_json if regression-by-model is required. |
+| **Prompt version** | Persisted when attributable (Phase 7) | When `hybrid_prompt` is set and attributable to the run, **prompt_key** is stored in result_json. Otherwise deferred; prompt attribution remains config/code derived. |
+| **Provider/model** | Persisted (Phase 7) | **provider** is stored in job.result_json on successful runs. Run attribution from DB without execution_log is now possible. |
 | **Parse status** | Already present and adequate | QtyParseStatus (missing/null/invalid/zero/valid_positive) on ProductRecord; qty_parse_status persisted and derivable in detected_summary. |
 | **Qty inference reason** | Already present and adequate | qty_inference_reason on ProductRecord; qtyInferenceReason in API when qty_source=inferred. |
 | **Merge/consolidation** | Present but implicit | qty_source=consolidated; aggregated_from_ids in detected_summary_json. No separate "merge reason" enum. **Adequate** for current debugging. |
@@ -89,6 +112,8 @@ Explicit layers for diagnosing where a regression occurred:
 **Overloaded fields**: detected_summary_json is both a business blob (SKU, quantities, traceability) and a debugging carrier (qty_final, qty_source, entity_uid). ProductRecord is the authority for qty and provenance; detected_summary_json is secondary and used for enrichment and legacy fallback.
 
 **Reliable for regression**: Job status and error_message; execution_log events (when present); last_stage_error content; ProductRecord qty_source, qty_inference_reason, qty_parse_status; position source_image_id and traceability_status (from persist or enrichment). Best-effort: execution_log and hybrid_report when files are missing or evicted.
+
+**Phase 7 clarification**: Hybrid-report traceability enrichment (`source_image_id`, `traceability_status`, `source_image_original_filename`) is **non-authoritative metadata**; when `hybrid_report.json` is missing, list/detail still return 200 with DB-backed result truth and only those optional fields degrade to null. HEIC normalized preview with an explicit `job_id` may fall back to the aisle’s latest job; that fallback is **best-effort only** and must not be interpreted as exact-run fidelity (see `ARTIFACT_HISTORICAL_READ_BOUNDARY.md`).
 
 ---
 

@@ -1,15 +1,11 @@
 /**
  * Epic 4 — Evidence panel for Result Detail.
+ * Phase 6: Primary vs supporting evidence clearly labeled for operator hierarchy.
  *
  * Semantics:
- * - Source image preview: when result.sourceImageId + inventory/aisle are available we load the
- *   reference image via fetch (with auth) and show blob URL or a differentiated error state.
- * - Evidence metadata only: when evidence records exist but no source image URL can be built,
- *   we show a short message that evidence is recorded but preview is not available.
- * - No evidence: when there is no source image and no evidence records, we show an intentional
- *   "No evidence available" state.
- *
- * Error differentiation: 404 not_found, 403/401 forbidden, HEIC preview missing, network/unknown.
+ * - Primary evidence: source image (when available) or primary evidence record; labeled "Primary evidence".
+ * - Supporting evidence: all other evidence; labeled "Supporting evidence".
+ * - No evidence: intentional "No evidence available" state.
  */
 
 import { useState, useCallback } from 'react';
@@ -80,6 +76,9 @@ export default function ResultEvidencePanel({
 
       {canShowImage && (
         <Box>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+            Primary evidence
+          </Typography>
           <Box
             sx={{
               bgcolor: 'grey.100',
@@ -134,19 +133,41 @@ export default function ResultEvidencePanel({
           >
             View full image
           </Button>
+          {supportingEvidence.length > 0 && (
+            <>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2, mb: 0.5 }}>
+                Supporting evidence
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {supportingEvidence.length} supporting item(s).
+              </Typography>
+            </>
+          )}
         </Box>
       )}
 
       {!canShowImage && hasAnyEvidence && (
         <Box sx={{ py: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            {primaryEvidence && 'Primary evidence recorded.'}
-            {supportingEvidence.length > 0 &&
-              ` ${supportingEvidence.length} supporting item(s).`}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-            Image preview is not available for this result.
-          </Typography>
+          {primaryEvidence && (
+            <>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                Primary evidence
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Primary evidence recorded. Image preview is not available for this result.
+              </Typography>
+            </>
+          )}
+          {supportingEvidence.length > 0 && (
+            <>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1.5, mb: 0.5 }}>
+                Supporting evidence
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {supportingEvidence.length} supporting item(s).
+              </Typography>
+            </>
+          )}
         </Box>
       )}
 

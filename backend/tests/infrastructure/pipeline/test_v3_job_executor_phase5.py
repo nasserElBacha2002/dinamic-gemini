@@ -172,6 +172,64 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
     assert updated is not None
     assert updated.result_json["report_path"] == str(report_path)
     assert updated.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT) == default_empty_block()
+    # Phase 7: provider key always present; None when run_metadata absent
+    assert "provider" in updated.result_json
+    assert updated.result_json["provider"] is None
+
+
+def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
+    """Phase 7: Successful job result_json includes provider and prompt_key when present in run_metadata."""
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job = Job(
+        id="j-attribution",
+        target_type="aisle",
+        target_id="aisle-1",
+        job_type="process_aisle",
+        status=JobStatus.RUNNING,
+        payload_json={"aisle_id": "aisle-1"},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+    run_metadata = {
+        RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: default_empty_block(),
+        "provider": "gemini-2.0",
+        "prompt_key": "global_v21",
+    }
+    report_path = Path("/tmp/run/hybrid_report.json")
+    executor._mark_success("j-attribution", aisle, report_path, now, run_metadata=run_metadata)
+
+    updated = job_repo.get_by_id("j-attribution")
+    assert updated is not None
+    assert updated.result_json is not None
+    assert updated.result_json["report_path"] == str(report_path)
+    assert updated.result_json["provider"] == "gemini-2.0"
+    assert updated.result_json["prompt_key"] == "global_v21"
+    assert updated.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT) is not None
 
 
 def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
@@ -223,6 +281,8 @@ def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
             "provider_consumed": True,
             "provider_consumed_count": 2,
         },
+        "provider": "test-provider",
+        "prompt_key": "global_v21",
     }
     report_path = Path("/tmp/run/hybrid_report.json")
     executor._mark_success("j2", aisle, report_path, now, run_metadata=run_metadata)
@@ -238,6 +298,9 @@ def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
     assert vrc["resolved_count"] == 2
     assert vrc["provider_consumed"] is True
     assert vrc["provider_consumed_count"] == 2
+    # Phase 7: provider and prompt_key persisted for run attribution
+    assert updated.result_json.get("provider") == "test-provider"
+    assert updated.result_json.get("prompt_key") == "global_v21"
 
 
 def test_persist_failure_sets_error_message_with_persist_prefix() -> None:

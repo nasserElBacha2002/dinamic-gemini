@@ -1,6 +1,6 @@
 /**
  * Epic 4 — Review actions panel for Result Detail (confirm, update quantity/SKU, delete).
- * Epic 3.1.1 simplification — Result is the only visible review object; no separate Product block.
+ * Phase 6: Action labels and short descriptions so operators understand effect before clicking.
  */
 
 import { useState, useEffect } from 'react';
@@ -46,6 +46,9 @@ export default function ResultReviewActions({
           >
             {actionLoading ? 'Sending…' : 'Confirm result'}
           </Button>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+            Accept as correct without changing quantity or SKU. Marks result as reviewed.
+          </Typography>
         </Box>
         <Box sx={{ pl: 1, borderLeft: 2, borderColor: 'divider', mt: 1 }}>
           <ResultFieldsForm
@@ -64,6 +67,9 @@ export default function ResultReviewActions({
           >
             Delete result
           </Button>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+            Mark result as invalid/deleted. No further review actions will be available.
+          </Typography>
         </Box>
       </Stack>
     </Paper>
@@ -96,7 +102,7 @@ function ResultFieldsForm({
   return (
     <>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        Adjust this result&apos;s quantity and SKU.
+        Set corrected quantity or override SKU. Changes are saved and visible on reread.
       </Typography>
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap">
         <TextField
@@ -117,7 +123,10 @@ function ResultFieldsForm({
           Update quantity
         </Button>
       </Stack>
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+        Sets the manual override quantity (replaces system count for this result).
+      </Typography>
+      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap">
         <TextField
           size="small"
           label="SKU"
@@ -134,6 +143,9 @@ function ResultFieldsForm({
           Update SKU
         </Button>
       </Stack>
+      <Typography variant="caption" color="text.secondary" display="block">
+        Overrides the visible SKU/classification for this result.
+      </Typography>
     </>
   );
 }

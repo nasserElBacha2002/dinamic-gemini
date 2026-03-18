@@ -112,7 +112,7 @@ export function mapEvidenceToResultEvidence(
   };
 }
 
-/** Map review action to ReviewHistoryItem. */
+/** Map review action to ReviewHistoryItem. Phase 6: include before/after for audit summary. */
 export function mapReviewActionToHistoryItem(
   a: ReviewActionSummary
 ): ReviewHistoryItem {
@@ -122,6 +122,8 @@ export function mapReviewActionToHistoryItem(
     createdAt: a.created_at,
     userName: a.user_id ?? undefined,
     notes: a.comment ?? undefined,
+    beforeJson: a.before_json ?? undefined,
+    afterJson: a.after_json ?? undefined,
   };
 }
 
@@ -153,6 +155,7 @@ export function mapPositionDetailToResultDetail(
     position.corrected_quantity != null
       ? position.corrected_quantity
       : position.qty ?? null;
+  const systemQty = position.qty ?? null;
 
   return {
     id: position.id,
@@ -160,6 +163,7 @@ export function mapPositionDetailToResultDetail(
     detectedQty: position.detected_quantity ?? null,
     correctedQty: position.corrected_quantity ?? null,
     resolvedQty,
+    systemQty,
     qtySource: position.qtySource ?? 'detected',
     qtyResolved: position.qtyResolved ?? null,
     qtyInferenceReason: position.qtyInferenceReason ?? null,

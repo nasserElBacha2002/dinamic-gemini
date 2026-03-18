@@ -362,17 +362,17 @@ class V3JobExecutor:
         if job:
             job.status = JobStatus.SUCCEEDED
             job.updated_at = now
-            vrc = (
-                (run_metadata or {}).get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
-                if run_metadata
-                else None
-            )
+            meta = run_metadata or {}
+            vrc = meta.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
             job.result_json = {
                 "report_path": str(report_path),
                 RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: vrc
                 if vrc is not None
                 else default_empty_block(),
+                "provider": meta.get("provider"),
             }
+            if meta.get("prompt_key"):
+                job.result_json["prompt_key"] = meta["prompt_key"]
             job.error_message = None
             self._job_repo.save(job)
         aisle.mark_processed(now)
