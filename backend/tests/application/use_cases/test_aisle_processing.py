@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence
 
 import pytest
 
@@ -69,17 +69,23 @@ class StubJobRepo(JobRepository):
         candidates.sort(key=lambda j: (j.updated_at, j.created_at), reverse=True)
         return candidates[0]
 
+    def get_latest_by_targets(
+        self, target_type: str, target_ids: Sequence[str]
+    ) -> Dict[str, Job]:
+        out: Dict[str, Job] = {}
+        for tid in target_ids:
+            latest = self.get_latest_by_target(target_type, tid)
+            if latest is not None:
+                out[tid] = latest
+        return out
+
 
 class StubJobQueue(JobQueue):
     def __init__(self) -> None:
-        self._ids: list[str] = []
-        self._next_id = 0
+        self.enqueued: list[str] = []
 
-    def enqueue(self, job_type: str, payload: Dict[str, Any]) -> str:
-        job_id = f"job-{self._next_id}"
-        self._next_id += 1
-        self._ids.append(job_id)
-        return job_id
+    def enqueue(self, job_id: str) -> None:
+        self.enqueued.append(job_id)
 
 
 def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
@@ -98,8 +104,7 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
         clock=clock,
     )
     job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
-
-    assert job_id == "job-0"
+    assert queue.enqueued == [job_id]
     saved_job = job_repo.get_by_id(job_id)
     assert saved_job is not None
     assert saved_job.target_type == "aisle"
@@ -111,6 +116,82 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     updated_aisle = aisle_repo.get_by_id("a1")
     assert updated_aisle is not None
     assert updated_aisle.status == AisleStatus.QUEUED
+
+
+def test_start_aisle_processing_persists_job_before_enqueue() -> None:
+    """Regression test for the v3 queue race condition.
+
+    The worker dequeues job ids from an in-memory queue. To avoid dequeuing a job
+    before persistence, the use case must persist the job/aisle first, then enqueue.
+    """
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    job_repo = StubJobRepo()
+
+    class AssertingJobQueue(JobQueue):
+        def __init__(self) -> None:
+            self.enqueued: list[str] = []
+
+        def enqueue(self, job_id: str) -> None:
+            # If enqueue is called before job persistence, this will fail.
+            assert job_repo.get_by_id(job_id) is not None
+            self.enqueued.append(job_id)
+
+    queue = AssertingJobQueue()
+    clock = FixedClock(now)
+    use_case = StartAisleProcessingUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        job_queue=queue,
+        clock=clock,
+    )
+
+    job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    assert queue.enqueued == [job_id]
+
+
+def test_start_aisle_processing_marks_failed_when_enqueue_fails() -> None:
+    """If enqueue(job_id) fails, do not leave QUEUED job/aisle behind."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    job_repo = StubJobRepo()
+
+    class FailingQueue(JobQueue):
+        def __init__(self) -> None:
+            self.captured_job_id: str | None = None
+
+        def enqueue(self, job_id: str) -> None:
+            self.captured_job_id = job_id
+            raise RuntimeError("in-memory queue failure")
+
+    queue = FailingQueue()
+    clock = FixedClock(now)
+    use_case = StartAisleProcessingUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        job_queue=queue,
+        clock=clock,
+    )
+
+    with pytest.raises(RuntimeError):
+        use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+
+    assert queue.captured_job_id is not None
+    saved_job = job_repo.get_by_id(queue.captured_job_id)
+    assert saved_job is not None
+    assert saved_job.status == JobStatus.FAILED
+    assert saved_job.error_message is not None
+    assert "in-memory queue failure" in saved_job.error_message
+
+    updated_aisle = aisle_repo.get_by_id("a1")
+    assert updated_aisle is not None
+    assert updated_aisle.status == AisleStatus.FAILED
+    assert updated_aisle.error_message is not None
+    assert "in-memory queue failure" in updated_aisle.error_message
 
 
 def test_start_aisle_processing_raises_when_aisle_not_found() -> None:

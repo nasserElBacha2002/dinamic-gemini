@@ -24,9 +24,19 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Inventory Engine API", version="2.0.0")
 
 # CORS for v3 frontend (e.g. Vite dev server on localhost:5173)
+settings = load_settings()
+raw_cors_allow_origins = (settings.cors_allow_origins or "").strip()
+cors_allow_origins = (
+    [o.strip() for o in raw_cors_allow_origins.split(",") if o.strip()]
+    if raw_cors_allow_origins
+    else []
+)
+if not cors_allow_origins:
+    cors_allow_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=cors_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -6,7 +6,6 @@ Verifies that stub implementations satisfy repository and service ABCs.
 
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Sequence
-from uuid import uuid4
 from datetime import datetime
 
 from src.application.ports.repositories import (
@@ -109,12 +108,10 @@ class StubArtifactStorage(ArtifactStorage):
 
 class StubJobQueue(JobQueue):
     def __init__(self) -> None:
-        self._jobs: List[Dict[str, Any]] = []
+        self.enqueued: List[str] = []
 
-    def enqueue(self, job_type: str, payload: Dict[str, Any]) -> str:
-        jid = str(uuid4())
-        self._jobs.append({"id": jid, "job_type": job_type, "payload": payload})
-        return jid
+    def enqueue(self, job_id: str) -> None:
+        self.enqueued.append(job_id)
 
 
 class StubAnalysisProvider(AnalysisProvider):
@@ -149,11 +146,11 @@ def test_artifact_storage_contract() -> None:
 
 
 def test_job_queue_contract() -> None:
-    """Stub satisfies JobQueue: enqueue returns job id."""
-    queue: JobQueue = StubJobQueue()
-    jid = queue.enqueue("process_aisle", {"aisle_id": "a1"})
-    assert jid is not None
-    assert len(jid) > 0
+    """Stub satisfies JobQueue: enqueue accepts an existing job id."""
+    stub = StubJobQueue()
+    queue: JobQueue = stub
+    queue.enqueue("job-1")
+    assert stub.enqueued == ["job-1"]
 
 
 def test_analysis_provider_contract() -> None:

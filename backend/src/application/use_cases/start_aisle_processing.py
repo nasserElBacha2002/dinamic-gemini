@@ -8,6 +8,7 @@ aisle does not belong to the given inventory, or an active job already exists fo
 from __future__ import annotations
 
 from dataclasses import dataclass
+import uuid
 
 from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.ports.services import JobQueue
@@ -56,10 +57,10 @@ class StartAisleProcessingUseCase:
                 f"Aisle {command.aisle_id} already has an active job (status={latest.status.value})"
             )
 
-        payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
-        job_id = self._job_queue.enqueue("process_aisle", payload)
-
         now = self._clock.now()
+        payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
+        # Concurrency safety: persist the job first, then enqueue its id.
+        job_id = str(uuid.uuid4())
         job = Job(
             id=job_id,
             target_type="aisle",
@@ -74,5 +75,25 @@ class StartAisleProcessingUseCase:
 
         aisle.mark_queued(now)
         self._aisle_repo.save(aisle)
+
+        # The worker consumes job_id strings from an in-memory queue.
+        # Concurrency safety: the job must exist in persistence before enqueue.
+        # Additionally, if enqueue fails we must not leave an "active/queued" aisle/job.
+        try:
+            self._job_queue.enqueue(job_id)
+        except Exception as e:
+            enqueue_error = f"Enqueue failed: {e}"
+
+            job.status = JobStatus.FAILED
+            job.error_message = enqueue_error
+            job.updated_at = now
+            self._job_repo.save(job)
+
+            aisle.mark_failed(
+                now,
+                error_message=enqueue_error,
+            )
+            self._aisle_repo.save(aisle)
+            raise
 
         return job_id

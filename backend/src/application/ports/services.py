@@ -35,11 +35,15 @@ class ArtifactStorage(ABC):
 
 
 class JobQueue(ABC):
-    """Port for enqueueing jobs. Returns job id from the queue.
-    For job_type 'process_aisle', payload must be ProcessAislePayload (see application.ports.contracts)."""
+    """Port for enqueueing v3 jobs.
+
+    Enqueue must receive an already-persisted `job_id`.
+    This prevents the embedded worker from dequeuing a job before it exists in the repository.
+    """
 
     @abstractmethod
-    def enqueue(self, job_type: str, payload: Dict[str, Any]) -> str:
+    def enqueue(self, job_id: str) -> None:
+        """Add a persisted job_id to the queue."""
         ...
 
 
