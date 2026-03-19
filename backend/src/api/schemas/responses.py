@@ -1,6 +1,7 @@
 """Stage 7 — Response schemas."""
 
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional
+from typing_extensions import TypedDict
 
 from pydantic import BaseModel, Field
 

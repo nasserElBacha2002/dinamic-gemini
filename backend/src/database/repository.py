@@ -2,7 +2,8 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional
+from typing_extensions import TypedDict
 
 from src.database.sqlserver import SqlServerClient, now_utc
 
