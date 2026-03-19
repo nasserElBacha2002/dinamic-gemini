@@ -8,7 +8,8 @@ metrics, queue payloads, and position list query. Reduces reliance on Dict[str, 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional
+from typing_extensions import TypedDict
 
 
 # --- Analysis (AnalysisProvider.analyze_aisle) ---
