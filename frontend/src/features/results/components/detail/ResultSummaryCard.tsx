@@ -1,5 +1,7 @@
 /**
  * Epic 4 — Summary card for Result Detail (SKU, quantity, status, traceability, confidence).
+ * Phase 6: Current final state and count-origin visibility per POSITION_RESULT_CONTRACT.
+ * Visible quantity = corrected_quantity ?? qty; show system quantity when override exists.
  */
 
 import { Paper, Typography, Box } from '@mui/material';
@@ -18,19 +20,35 @@ function displayStr(value: string | null | undefined): string {
   return '—';
 }
 
+/** Coerce to finite number or null; avoids NaN and mixed string/number. */
+function toNumeric(value: unknown): number | null {
+  if (value == null) return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Count origin label for qtySource (detected | inferred | consolidated). */
+function getCountOriginLabel(result: ResultDetail): string {
+  const src = result.qtySource ?? 'detected';
+  if (src === 'inferred' && result.qtyInferenceReason) {
+    return `Inferred (${result.qtyInferenceReason})`;
+  }
+  if (src === 'inferred') return 'Inferred';
+  if (src === 'consolidated') return 'Consolidated';
+  return 'Detected';
+}
+
 export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
   const sku = displayStr(result.sku);
-  const qty =
-    result.correctedQty != null && !Number.isNaN(result.correctedQty)
-      ? String(result.correctedQty)
-      : result.resolvedQty != null && !Number.isNaN(result.resolvedQty)
-      ? String(result.resolvedQty)
-      : '—';
-  const correctedQty =
-    result.correctedQty != null && !Number.isNaN(result.correctedQty)
-      ? String(result.correctedQty)
-      : null;
-  const confidence =
+
+  const correctedQtyNum = toNumeric(result.correctedQty);
+  const resolvedQtyNum = toNumeric(result.resolvedQty);
+  const systemQtyNum = toNumeric(result.systemQty);
+
+  const visibleQtyNum = correctedQtyNum ?? resolvedQtyNum;
+  const hasManualOverride = correctedQtyNum != null;
+
+  const confidenceStr =
     result.confidence != null
       ? `${(result.confidence * 100).toFixed(0)}%`
       : '—';
@@ -47,19 +65,31 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
       <Box sx={{ display: 'flex', gap: 2, mt: 1.5, flexWrap: 'wrap' }}>
         <Box>
           <Typography variant="caption" color="text.secondary">
-            Qty
+            Current quantity
           </Typography>
-          <Typography variant="body1">{qty}</Typography>
+          <Typography variant="body1">
+            {visibleQtyNum != null ? String(visibleQtyNum) : '—'}
+          </Typography>
         </Box>
-        {correctedQty != null && (
+        {hasManualOverride && systemQtyNum != null && (
           <Box>
             <Typography variant="caption" color="text.secondary">
-              Corrected qty
+              System quantity
             </Typography>
-            <Typography variant="body1">{correctedQty}</Typography>
+            <Typography variant="body1">{String(systemQtyNum)}</Typography>
           </Box>
         )}
       </Box>
+
+      {hasManualOverride && (
+        <Typography variant="caption" color="primary.main" display="block" sx={{ mt: 0.5 }}>
+          Manual override applied
+        </Typography>
+      )}
+
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+        Count origin: {getCountOriginLabel(result)}
+      </Typography>
 
       <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
         <StatusChip
@@ -74,7 +104,7 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
           variant="outlined"
         />
         <StatusChip
-          label={`${confidence} confidence`}
+          label={`${confidenceStr} confidence`}
           variant="outlined"
           size="small"
         />

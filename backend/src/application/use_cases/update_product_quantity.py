@@ -83,6 +83,7 @@ class UpdateProductQuantityUseCase:
         self._product_record_repo.save(product)
 
         position.status = PositionStatus.CORRECTED
+        position.needs_review = False
         position.updated_at = now
         self._position_repo.save(position)
 

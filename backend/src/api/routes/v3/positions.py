@@ -47,7 +47,16 @@ def list_aisle_positions(
                 sorted(products, key=lambda x: (x.created_at, x.id))[0]
                 if products else None
             )
-            summaries.append(position_to_summary(p, primary_product=primary))
+            corrected_quantity = (
+                primary.corrected_quantity if primary is not None else None
+            )
+            summaries.append(
+                position_to_summary(
+                    p,
+                    corrected_quantity=corrected_quantity,
+                    primary_product=primary,
+                )
+            )
         return PositionListResponse(positions=summaries)
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")

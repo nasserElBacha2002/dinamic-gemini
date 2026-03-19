@@ -21,7 +21,8 @@ import type {
 } from '../types';
 import { getSummaryString } from './detectedSummary';
 
-/** Backend traceability is lowercase; visible model uses uppercase. */
+/** Backend traceability is lowercase; visible model uses uppercase.
+ * Unknown/missing → UNVALIDATED (document-only fallback: backend sends valid|missing|invalid|unvalidated). */
 export function mapTraceabilityToVisible(
   status: string | null | undefined
 ): TraceabilityStatus {
@@ -44,7 +45,7 @@ export function mapTraceabilityToVisible(
  *
  * MISSING and NOT_COUNTABLE are part of the visible ReviewStatus type but are not produced by this
  * mapper in Epic 1; they may be introduced when the decision layer or report shape exposes them.
- */
+ * Unknown status → DETECTED (document-only: backend sends detected|reviewed|corrected|deleted). */
 export function mapPositionStatusToReviewStatus(
   status: string | null | undefined,
   needsReview: boolean
@@ -64,19 +65,24 @@ export function mapPositionStatusToReviewStatus(
   }
 }
 
-/** Map list position (API) to ResultSummary. Prefers backend has_evidence when present (Epic 2). */
+/** Map list position (API) to ResultSummary.
+ * v3.2.5 Block 4: has_evidence is canonical. Fallback (Reduce): when has_evidence is not a boolean,
+ * use primary_evidence_id only for historical/transitional payloads; do not treat as canonical for fresh API. */
 export function mapPositionSummaryToResultSummary(
   p: PositionSummary
 ): ResultSummary {
   const hasEvidence =
-    p.has_evidence ?? Boolean(
-      p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
-    );
+    typeof p.has_evidence === 'boolean'
+      ? p.has_evidence
+      : Boolean(
+          p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
+        );
   const resolvedQty =
     p.corrected_quantity != null
       ? p.corrected_quantity
       : p.qty ?? null;
 
+  // qtySource fallback: Keep for historical payloads only; backend now always sends qtySource.
   return {
     id: p.id,
     sku: p.sku ?? null,
@@ -110,7 +116,7 @@ export function mapEvidenceToResultEvidence(
   };
 }
 
-/** Map review action to ReviewHistoryItem. */
+/** Map review action to ReviewHistoryItem. Phase 6: include before/after for audit summary. */
 export function mapReviewActionToHistoryItem(
   a: ReviewActionSummary
 ): ReviewHistoryItem {
@@ -120,6 +126,8 @@ export function mapReviewActionToHistoryItem(
     createdAt: a.created_at,
     userName: a.user_id ?? undefined,
     notes: a.comment ?? undefined,
+    beforeJson: a.before_json ?? undefined,
+    afterJson: a.after_json ?? undefined,
   };
 }
 
@@ -132,17 +140,18 @@ export function mapPositionDetailToResultDetail(
   const review_actions = data.review_actions ?? [];
 
   const summaryJson = position.detected_summary_json ?? null;
-  const sourceImageId =
-    getSummaryString(summaryJson, 'source_image_id') ??
-    (position.source_image_id != null && String(position.source_image_id).trim() !== ''
+  /** Canonical: typed fields win. Keep: fallback to detected_summary_json only when typed absent (historical). */
+  const typedSourceImageId =
+    position.source_image_id != null && String(position.source_image_id).trim() !== ''
       ? position.source_image_id.trim()
-      : null);
-  const sourceFileName =
-    getSummaryString(summaryJson, 'source_image_original_filename') ??
-    (position.source_image_original_filename != null &&
+      : null;
+  const typedSourceFileName =
+    position.source_image_original_filename != null &&
     String(position.source_image_original_filename).trim() !== ''
       ? position.source_image_original_filename.trim()
-      : null);
+      : null;
+  const sourceImageId = typedSourceImageId ?? getSummaryString(summaryJson, 'source_image_id');
+  const sourceFileName = typedSourceFileName ?? getSummaryString(summaryJson, 'source_image_original_filename');
 
   const entityId = getSummaryString(summaryJson, 'entity_uid');
 
@@ -150,6 +159,7 @@ export function mapPositionDetailToResultDetail(
     position.corrected_quantity != null
       ? position.corrected_quantity
       : position.qty ?? null;
+  const systemQty = position.qty ?? null;
 
   return {
     id: position.id,
@@ -157,6 +167,8 @@ export function mapPositionDetailToResultDetail(
     detectedQty: position.detected_quantity ?? null,
     correctedQty: position.corrected_quantity ?? null,
     resolvedQty,
+    systemQty,
+    // qtySource fallback: Keep for historical payloads only; backend sends qtySource in active v3.
     qtySource: position.qtySource ?? 'detected',
     qtyResolved: position.qtyResolved ?? null,
     qtyInferenceReason: position.qtyInferenceReason ?? null,

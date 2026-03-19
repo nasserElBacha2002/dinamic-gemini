@@ -58,6 +58,7 @@ export interface InventoryMetrics {
 export interface AisleJobSummary {
   id: string;
   status: JobStatus | string;
+  created_at: string;
   updated_at: string;
   error_message?: string | null;
 }
@@ -147,8 +148,8 @@ export interface PositionSummary {
   corrected_quantity?: number | null;
   /** v3.2.2: stable qty contract (backend-resolved). */
   qty: number;
-  /** v3.2.2: stable contract; backend always sends 'detected' or 'inferred'. */
-  qtySource: 'detected' | 'inferred';
+  /** v3.2.2+v3.2.5: stable contract; backend sends 'detected' | 'inferred' | 'consolidated'. */
+  qtySource: 'detected' | 'inferred' | 'consolidated';
   /** v3.2.2: non-null when qtySource='inferred'. */
   qtyInferenceReason?: string | null;
   /** v3.2.2: when true/false, qty is from resolved decision; when null, legacy/compatibility path. */
@@ -159,8 +160,8 @@ export interface PositionSummary {
   source_image_original_filename?: string | null;
   /** Epic 3.1.B: optional; summary-level traceability status when backend provides it. */
   traceability_status?: ApiTraceabilityStatus | null;
-  /** Epic 2: explicit flag when backend sends it; frontend may derive from primary_evidence_id when absent. */
-  has_evidence?: boolean;
+  /** v3.2.5 Phase 2 Block 4: guaranteed boolean in active v3 contract; backend always sends it. */
+  has_evidence: boolean;
 }
 
 /** Response for GET .../aisles/{aisle_id}/positions. */
@@ -209,12 +210,12 @@ export interface ReviewActionSummary {
   comment?: string | null;
 }
 
-/** Response for GET .../aisles/{aisle_id}/positions/{position_id}. v3.1.1: Result-centric; products are not returned. */
+/** Response for GET .../aisles/{aisle_id}/positions/{position_id}. v3.1.1: Result-centric; products are not returned. Backend always sends review_actions (array). */
 export interface PositionDetailResponse {
   position: PositionSummary;
   evidences: EvidenceSummary[];
-  /** Review audit history — Épica 8. */
-  review_actions?: ReviewActionSummary[];
+  /** Review audit history — Épica 8. v3.2.5 Phase 8: required; backend sends list (default_factory=list). */
+  review_actions: ReviewActionSummary[];
 }
 
 // v1 job-entities types (TraceabilitySummary, JobEntityListItem, JobEntitiesListResponse) removed in Stage 3;

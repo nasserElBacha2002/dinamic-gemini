@@ -31,7 +31,7 @@ export interface ResultSummary {
   /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */
   resolvedQty: number | null;
   /** v3.2.2: provenance of resolved qty. */
-  qtySource?: 'detected' | 'inferred' | null;
+  qtySource?: 'detected' | 'inferred' | 'consolidated' | null;
   qtyResolved?: boolean | null;
   qtyInferenceReason?: string | null;
   confidence: number | null;
@@ -52,13 +52,16 @@ export interface ResultEvidence {
   thumbnailUrl?: string | null;
 }
 
-/** One review history entry (audit). */
+/** One review history entry (audit). Phase 6: before/after for human-readable change summary. */
 export interface ReviewHistoryItem {
   id: string;
   action: string;
   createdAt: string;
   userName?: string | null;
   notes?: string | null;
+  /** Raw before/after from API; used to build concise change summary. */
+  beforeJson?: Record<string, unknown> | null;
+  afterJson?: Record<string, unknown> | null;
 }
 
 /** Full result detail (detail screen). */
@@ -69,7 +72,9 @@ export interface ResultDetail {
   correctedQty: number | null;
   /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */
   resolvedQty: number | null;
-  qtySource?: 'detected' | 'inferred' | null;
+  /** v3.2.5 Phase 6: system-resolved qty (backend qty) for display when corrected_quantity is set. Mapper always sets this (position.qty ?? null). */
+  systemQty: number | null;
+  qtySource?: 'detected' | 'inferred' | 'consolidated' | null;
   qtyResolved?: boolean | null;
   qtyInferenceReason?: string | null;
   confidence: number | null;

@@ -53,6 +53,7 @@ class ConfirmPositionUseCase:
         now = self._clock.now()
         before_status = position.status.value
         position.status = PositionStatus.REVIEWED
+        position.needs_review = False
         position.updated_at = now
         self._position_repo.save(position)
 

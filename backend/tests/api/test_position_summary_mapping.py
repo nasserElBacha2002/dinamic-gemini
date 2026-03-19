@@ -437,6 +437,72 @@ def test_position_to_summary_needs_review_weak_presence_unresolved() -> None:
     assert resp.qtyResolved is False
 
 
+def test_position_to_summary_includes_corrected_quantity_when_provided() -> None:
+    """v3.2.5 Phase 2: When corrected_quantity is passed (e.g. from display primary product), response includes it."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-cq",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "SKU-X", "final_quantity": 3},
+    )
+    primary = ProductRecord(
+        id="prod-cq",
+        position_id="pos-cq",
+        sku="SKU-X",
+        description="",
+        detected_quantity=3,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=7,
+        qty_source="detected",
+        qty_inference_reason=None,
+        raw_qty=3,
+        qty_parse_status="valid_positive",
+    )
+    resp = _position_to_summary(p, corrected_quantity=7, primary_product=primary)
+    assert resp.corrected_quantity == 7
+
+
+def test_position_to_summary_corrected_quantity_none_when_not_provided() -> None:
+    """v3.2.5 Phase 2: When corrected_quantity is not passed (or primary has None), response has corrected_quantity None."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-no-cq",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "SKU-Y", "final_quantity": 2},
+    )
+    primary = ProductRecord(
+        id="prod-no-cq",
+        position_id="pos-no-cq",
+        sku="SKU-Y",
+        description="",
+        detected_quantity=2,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=None,
+        qty_source="detected",
+        qty_inference_reason=None,
+        raw_qty=2,
+        qty_parse_status="valid_positive",
+    )
+    resp = _position_to_summary(p, primary_product=primary)
+    assert resp.corrected_quantity is None
+
+
 def test_position_to_summary_uses_primary_product_authoritative() -> None:
     """v3.2.2: When primary_product is provided with qty_source set, API uses it as authoritative (not detected_summary_json)."""
     now = datetime.now(timezone.utc)
@@ -700,7 +766,34 @@ def test_position_to_summary_consolidated_qty_uses_product_record_projection() -
     )
     resp = _position_to_summary(p, primary_product=primary)
     assert resp.qty == 4
-    assert resp.qtySource == "detected"
+    assert resp.qtySource == "consolidated"
+    # Consolidated is treated as an explicit resolved quantity in the v3 contract.
+    assert resp.qtyResolved is True
     # v3.2.3.E3 regression: detected_quantity must align with authoritative qty,
     # not stale detected_summary_json (99), so response does not expose pre-consolidation values.
     assert resp.detected_quantity == 4
+
+
+def test_position_to_summary_aggregated_row_emits_consolidated_qty_source() -> None:
+    """Phase 5 Block 1: aggregated/consolidated rows must be explicit via qtySource='consolidated'."""
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-agg-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "internal_code": "SKU-AGG",
+            "final_quantity": 7,
+            "aggregated_from_ids": ["pos-a", "pos-b"],
+        },
+    )
+    resp = _position_to_summary(p, primary_product=None)
+    assert resp.qty == 7
+    assert resp.qtySource == "consolidated"
+    assert resp.qtyResolved is True
+    assert resp.corrected_quantity is None

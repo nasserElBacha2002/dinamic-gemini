@@ -284,6 +284,7 @@ def aisle_to_response(a: Aisle, latest_job: Optional[Job] = None) -> AisleRespon
         latest = AisleJobSummary(
             id=latest_job.id,
             status=latest_job.status.value,
+            created_at=latest_job.created_at,
             updated_at=latest_job.updated_at,
             error_message=latest_job.error_message,
         )
@@ -371,18 +372,20 @@ def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str],
 
 _ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
 # (qty, qtySource, qtyInferenceReason, qtyResolved or None)
-_QtyContract = Tuple[int, Literal["detected", "inferred"], Optional[str], Optional[bool]]
+_QtyContract = Tuple[int, Literal["detected", "inferred", "consolidated"], Optional[str], Optional[bool]]
 
 
 def _qty_contract_from_product(primary: ProductRecord) -> _QtyContract:
-    """Build stable qty contract from authoritative ProductRecord. Collapse consolidated/unresolved."""
+    """Build stable qty contract from authoritative ProductRecord."""
     qty = max(0, primary.detected_quantity)
     src = (primary.qty_source or "").strip()
     if src == "inferred":
         return (qty, "inferred", primary.qty_inference_reason or None, True)
+    if src == "consolidated":
+        return (qty, "consolidated", None, True)
     if src == "unresolved":
         return (0, "detected", None, False)
-    # detected, consolidated -> "detected", resolved
+    # detected (and legacy/empty): "detected", resolved
     return (qty, "detected", None, True)
 
 
@@ -533,9 +536,10 @@ def position_to_summary(
             qty = max(0, int(raw_q))
         except (TypeError, ValueError):
             qty = 0
-        qty_source = "detected"
+        qty_source = "consolidated"
         qty_reason = None
-        qty_resolved = None
+        # This is an explicit consolidation result; treat as resolved.
+        qty_resolved = True
         detected_quantity = qty
         response_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
         return PositionSummaryResponse(
