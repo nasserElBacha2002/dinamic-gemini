@@ -82,7 +82,7 @@ def get_artifact_storage():
 
 
 def get_job_queue():
-    """Return v3 JobQueue adapter (enqueue(job_type, payload) -> job_id). Stateless."""
+    """Return v3 JobQueue adapter (enqueue(job_id) -> None). Stateless."""
     from src.infrastructure.queue.v3_job_queue_adapter import V3JobQueueAdapter
     return V3JobQueueAdapter()
 

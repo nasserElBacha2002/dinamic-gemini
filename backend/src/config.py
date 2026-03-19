@@ -417,6 +417,13 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("API_KEY", ""),
         description="API key for server auth (header X-API-Key). Empty = no auth (dev only).",
     )
+    cors_allow_origins: str = Field(
+        default_factory=lambda: (os.getenv("CORS_ALLOW_ORIGINS", "") or "").strip(),
+        description=(
+            "Comma-separated list of allowed CORS origins for the FastAPI server. "
+            "If empty, the server falls back to localhost origins. Env: CORS_ALLOW_ORIGINS."
+        ),
+    )
     max_upload_size_mb: int = Field(
         default_factory=lambda: int(os.getenv("MAX_UPLOAD_SIZE_MB", "500")),
         ge=1,
