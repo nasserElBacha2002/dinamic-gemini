@@ -27,14 +27,17 @@ function toNumeric(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Count origin label for qtySource (detected | inferred | consolidated). */
+/** Count origin label for stable public qtySource contract. */
 function getCountOriginLabel(result: ResultDetail): string {
   const src = result.qtySource ?? 'detected';
   if (src === 'inferred' && result.qtyInferenceReason) {
     return `Inferred (${result.qtyInferenceReason})`;
   }
   if (src === 'inferred') return 'Inferred';
-  if (src === 'consolidated') return 'Consolidated';
+  if (src === 'merge_inferred') return 'Merge inferred';
+  if (src === 'manual_review') return 'Manual review';
+  if (src === 'label_explicit') return 'Label explicit';
+  if (src === 'unknown') return 'Unknown';
   return 'Detected';
 }
 

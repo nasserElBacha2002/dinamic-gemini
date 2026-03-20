@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Optional
@@ -8,6 +9,8 @@ from typing import Optional
 from src.jobs import job_store
 from src.jobs.models import JobInput, JobRecord, JobStatus
 from src.jobs.worker import worker_loop
+from src.domain.jobs.entities import Job as V3Job
+from src.domain.jobs.entities import JobStatus as V3JobStatus
 
 
 def _make_job(job_id: str, status: JobStatus = JobStatus.QUEUED) -> JobRecord:
@@ -48,6 +51,70 @@ def test_claim_next_job_prefers_db_claim(monkeypatch) -> None:
     assert claimed.job_id == "job-db-1"
     assert claimed.status == JobStatus.RUNNING
     assert claimed.progress.percent == 1
+
+
+def test_claim_next_job_prefers_v3_inventory_jobs_claim(monkeypatch) -> None:
+    v3_claimed = V3Job(
+        id="v3-job-1",
+        target_type="aisle",
+        target_id="a-1",
+        job_type="process_aisle",
+        status=V3JobStatus.RUNNING,
+        payload_json={"aisle_id": "a-1"},
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
+    )
+
+    class FakeV3Repo:
+        def claim_next_queued_job(self):
+            return v3_claimed
+
+    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: FakeV3Repo())
+    monkeypatch.setattr(job_store, "_db_repos", lambda: None)
+    monkeypatch.setattr(
+        job_store,
+        "load_settings",
+        lambda: SimpleNamespace(sqlserver_enabled=True, sqlserver_connection_string="Driver=ok"),
+    )
+
+    claimed = job_store.claim_next_job(Path("output"))
+    assert claimed is not None
+    assert claimed.job_id == "v3-job-1"
+    assert claimed.status == JobStatus.RUNNING
+    assert claimed.progress.percent == 1
+
+
+def test_claim_next_job_reclaims_stale_running_before_claim(monkeypatch, caplog) -> None:
+    class FakeV3Repo:
+        def __init__(self) -> None:
+            self.reclaimed = 0
+
+        def reclaim_stale_running_jobs(self, stale_after_seconds: int):
+            assert stale_after_seconds == 900
+            self.reclaimed += 1
+            return 2
+
+        def claim_next_queued_job(self):
+            return None
+
+    repo = FakeV3Repo()
+    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: repo)
+    monkeypatch.setattr(job_store, "_db_repos", lambda: None)
+    monkeypatch.setattr(
+        job_store,
+        "load_settings",
+        lambda: SimpleNamespace(
+            sqlserver_enabled=True,
+            sqlserver_connection_string="Driver=ok",
+            worker_stale_running_timeout_sec=900,
+        ),
+    )
+    with caplog.at_level(logging.WARNING):
+        claimed = job_store.claim_next_job(Path("output"))
+
+    assert claimed is None
+    assert repo.reclaimed == 1
+    assert "Reclaimed stale RUNNING v3 jobs before claim" in caplog.text
 
 
 def test_claim_next_job_legacy_fallback_when_db_disabled(monkeypatch) -> None:

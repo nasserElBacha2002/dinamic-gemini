@@ -19,6 +19,8 @@ import type {
   InventoryVisualReferenceListResponse,
   PositionListResponse,
   PositionDetailResponse,
+  RunMergeResponse,
+  MergeResultsResponse,
   ReviewActionRequest,
   InventoryMetrics,
   ExecutionLogResponse,
@@ -171,6 +173,29 @@ export async function getAisleStatus(
     `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/status`
   );
   return handleResponse<AisleStatusResponse>(response);
+}
+
+/** Run merge/consolidation post-process for an aisle (non-authoritative quantity artifact). */
+export async function runAisleMerge(
+  inventoryId: string,
+  aisleId: string
+): Promise<RunMergeResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge`,
+    { method: 'POST' }
+  );
+  return handleResponse<RunMergeResponse>(response);
+}
+
+/** Read merge/consolidation artifacts for an aisle. */
+export async function getAisleMergeResults(
+  inventoryId: string,
+  aisleId: string
+): Promise<MergeResultsResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge-results`
+  );
+  return handleResponse<MergeResultsResponse>(response);
 }
 
 /** Get execution log for a job (v3.1.1). Job must belong to the given aisle. */

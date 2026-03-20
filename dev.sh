@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Levanta backend (Python) y frontend (Vite) para desarrollo local.
+# Levanta backend (Python), worker y frontend (Vite) para desarrollo local.
 # Uso: ./dev.sh   (desde la raíz del repo)
 
 set -e
@@ -7,6 +7,22 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 PORT="${PORT:-8000}"
+
+# Load shared env once so backend + worker inherit identical runtime config.
+# Parse .env safely (supports optional spaces around "=" without shell-eval).
+if [[ -f "${ROOT}/.env" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "${line//[[:space:]]/}" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="$(echo "$key" | xargs)"
+    value="${value#"${value%%[![:space:]]*}"}"
+    [[ -z "$key" ]] && continue
+    export "${key}=${value}"
+  done < "${ROOT}/.env"
+fi
+
 # Prefer backend's venv (has backend deps); fallback to root .venv or system python
 if [[ -x "${ROOT}/backend/.venv/bin/python" ]]; then
   PYTHON="${ROOT}/backend/.venv/bin/python"
@@ -17,22 +33,61 @@ else
   PYTHON=python
 fi
 
-# Ensure backend package is installed (from backend/)
+# Ensure backend package is installed
 "$PYTHON" -m pip install -e "$ROOT/backend" -q 2>/dev/null || true
 
-# Backend en segundo plano (PYTHONPATH=backend para que el import src.api.server funcione)
-echo "[dev] Arrancando backend en http://127.0.0.1:${PORT} ..."
+# Shared env for backend + worker
 export PYTHONPATH="${ROOT}/backend${PYTHONPATH:+:${PYTHONPATH}}"
+# dev.sh always starts a dedicated worker process, so keep API embedded worker disabled
+# to avoid duplicate worker loops and reduce local/runtime ambiguity.
+export EMBEDDED_WORKER_ENABLED=false
+# Local sessions should not auto-reclaim stale RUNNING jobs from previous runs.
+export WORKER_STALE_RUNNING_TIMEOUT_SEC=0
+echo "[dev] Runtime: OUTPUT_DIR=${OUTPUT_DIR:-output} SQLSERVER_ENABLED=${SQLSERVER_ENABLED:-unset} EMBEDDED_WORKER_ENABLED=${EMBEDDED_WORKER_ENABLED:-unset}"
+
+# Prevent stale mixed runtimes: kill previously running local backend/worker
+# processes before starting fresh ones.
+echo "[dev] Limpiando procesos previos de backend/worker..."
+if command -v pgrep >/dev/null 2>&1; then
+  WORKER_PIDS="$(pgrep -f "python -m src.jobs.run_worker" || true)"
+  if [[ -n "${WORKER_PIDS}" ]]; then
+    echo "${WORKER_PIDS}" | xargs kill 2>/dev/null || true
+    sleep 0.3
+    STILL_WORKER_PIDS="$(pgrep -f "python -m src.jobs.run_worker" || true)"
+    if [[ -n "${STILL_WORKER_PIDS}" ]]; then
+      echo "${STILL_WORKER_PIDS}" | xargs kill -9 2>/dev/null || true
+    fi
+  fi
+  API_PIDS="$(pgrep -f "uvicorn src.api.server:app --reload --port ${PORT}" || true)"
+  if [[ -n "${API_PIDS}" ]]; then
+    echo "${API_PIDS}" | xargs kill 2>/dev/null || true
+    sleep 0.3
+    STILL_API_PIDS="$(pgrep -f "uvicorn src.api.server:app --reload --port ${PORT}" || true)"
+    if [[ -n "${STILL_API_PIDS}" ]]; then
+      echo "${STILL_API_PIDS}" | xargs kill -9 2>/dev/null || true
+    fi
+  fi
+fi
+
+echo "[dev] Arrancando backend en http://127.0.0.1:${PORT} ..."
 (cd "$ROOT/backend" && "$PYTHON" -m uvicorn src.api.server:app --reload --port "$PORT") &
 BE_PID=$!
 
+echo "[dev] Arrancando worker..."
+(cd "$ROOT/backend" && "$PYTHON" -m src.jobs.run_worker) &
+WORKER_PID=$!
+sleep 0.4
+ACTIVE_WORKERS="$(pgrep -fc "python -m src.jobs.run_worker" || true)"
+echo "[dev] Workers activos detectados: ${ACTIVE_WORKERS:-0}"
+
 cleanup() {
-  echo "[dev] Cerrando backend (PID $BE_PID)..."
+  echo "[dev] Cerrando procesos..."
   kill "$BE_PID" 2>/dev/null || true
+  kill "$WORKER_PID" 2>/dev/null || true
   exit 0
 }
 trap cleanup INT TERM EXIT
 
-# Frontend en primer plano (Ctrl+C cierra ambos)
+# Frontend en primer plano (Ctrl+C cierra backend + worker)
 echo "[dev] Arrancando frontend..."
-cd frontend && npm run dev
+cd "$ROOT/frontend" && npm run dev

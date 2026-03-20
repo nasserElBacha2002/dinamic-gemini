@@ -182,3 +182,60 @@ class SqlJobRepository(JobRepository):
             cur.execute(query, params)
             rows = cur.fetchall()
         return {row.target_id: _row_to_job(row) for row in rows}
+
+    def claim_next_queued_job(self) -> Optional[Job]:
+        """Atomically claim next queued v3 job from `inventory_jobs`.
+
+        This is used by the standalone worker flow so API and worker share
+        the same persisted v3 job source.
+        """
+        claimed_job_id: Optional[str] = None
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                ;WITH next_job AS (
+                    SELECT TOP 1 id
+                    FROM inventory_jobs WITH (UPDLOCK, READPAST, ROWLOCK)
+                    WHERE status = 'queued'
+                    ORDER BY created_at ASC, id ASC
+                )
+                UPDATE inventory_jobs
+                SET updated_at = ?, status = ?
+                OUTPUT inserted.id
+                WHERE id IN (SELECT id FROM next_job)
+                """,
+                (datetime.now(timezone.utc), JobStatus.RUNNING.value),
+            )
+            row = cur.fetchone()
+            if row is not None:
+                raw_id = getattr(row, "id", None)
+                if raw_id is None:
+                    try:
+                        raw_id = row[0]
+                    except Exception:
+                        raw_id = None
+                if raw_id is not None:
+                    claimed_job_id = str(raw_id)
+        if not claimed_job_id:
+            return None
+        return self.get_by_id(claimed_job_id)
+
+    def reclaim_stale_running_jobs(self, stale_after_seconds: int) -> int:
+        """Reset stale RUNNING jobs back to QUEUED for recovery.
+
+        Intended for operational recovery when a worker crashes after claim.
+        Returns number of rows reset.
+        """
+        if stale_after_seconds <= 0:
+            return 0
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE inventory_jobs
+                SET status = 'queued', updated_at = ?
+                WHERE status = 'running'
+                  AND DATEDIFF(SECOND, updated_at, ?) >= ?
+                """,
+                (datetime.now(timezone.utc), datetime.now(timezone.utc), stale_after_seconds),
+            )
+            return int(cur.rowcount or 0)

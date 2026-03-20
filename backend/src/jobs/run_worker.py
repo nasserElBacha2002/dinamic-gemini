@@ -23,6 +23,7 @@ def main() -> None:
     base_path = Path(load_settings().output_dir)
     base_path.mkdir(parents=True, exist_ok=True)
     logger.info("Worker process starting (output_dir=%s)", str(base_path))
+    logger.info("Worker code profile: v3_executor_accepts_running_status=true")
     worker_loop(base_path)
 
 if __name__ == "__main__":

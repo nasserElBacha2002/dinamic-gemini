@@ -7,6 +7,7 @@ import {
   createInventory,
   createAisle,
   startAisleProcessing,
+  runAisleMerge,
   uploadAisleAssets,
   submitReviewAction,
 } from '../api/client';
@@ -41,6 +42,17 @@ export function useStartAisleProcessing(inventoryId: string) {
     onSuccess: (_, aisleId) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleAssets(inventoryId, aisleId) });
+    },
+  });
+}
+
+export function useRunAisleMerge(inventoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (aisleId: string) => runAisleMerge(inventoryId, aisleId),
+    onSuccess: (_, aisleId) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId) });
     },
   });
 }

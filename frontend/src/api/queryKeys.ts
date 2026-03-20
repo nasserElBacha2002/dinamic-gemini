@@ -21,5 +21,7 @@ export const queryKeys = {
     /** Execution log for a job (v3.1.1). */
     executionLog: (inventoryId: string, aisleId: string, jobId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'jobs', jobId, 'execution-log'] as const,
+    mergeResults: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId] as const,
   },
 } as const;

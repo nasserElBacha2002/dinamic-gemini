@@ -22,7 +22,14 @@ class PositionSummaryResponse(BaseModel):
     corrected_quantity: Optional[int] = None
     # v3.2.2 — stable qty contract; required so response building never relies on defaults
     qty: int
-    qtySource: Literal["detected", "inferred", "consolidated"]
+    qtySource: Literal[
+        "detected",
+        "inferred",
+        "merge_inferred",
+        "manual_review",
+        "label_explicit",
+        "unknown",
+    ]
     qtyInferenceReason: Optional[str] = None
     """v3.2.2: When True/False, qty is from resolved decision; when None, legacy/compatibility path."""
     qtyResolved: Optional[bool] = None

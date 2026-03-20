@@ -83,7 +83,10 @@ def _worker_thread_fn() -> None:
 def start_worker() -> None:
     """Start background worker thread when embedded worker mode is enabled."""
     if not load_settings().embedded_worker_enabled:
-        logger.info("Embedded worker disabled (EMBEDDED_WORKER_ENABLED=false)")
+        logger.info(
+            "Embedded worker disabled (EMBEDDED_WORKER_ENABLED=false); "
+            "run dedicated worker process (e.g. `python -m src.jobs.run_worker`)."
+        )
         return
     t = threading.Thread(target=_worker_thread_fn, daemon=True)
     t.start()

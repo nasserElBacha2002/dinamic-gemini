@@ -5,7 +5,7 @@
 
 import { useMemo, useState, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Alert, Button } from '@mui/material';
+import { Alert, Button, Paper, Typography, Box } from '@mui/material';
 import { PageLayout } from '../components/ui';
 import { pathToPositionDetail } from '../utils/resultRoutes';
 import { getApiErrorMessage } from '../utils/apiErrors';
@@ -18,6 +18,8 @@ import {
   type ResultDetailNavigationState,
   type ResultsFilterKind,
 } from '../features/results';
+import { useAisleMergeResults } from '../hooks/usePositions';
+import { useRunAisleMerge } from '../hooks/useMutations';
 import {
   ResultsOverviewHeader,
   ResultsKpiCards,
@@ -41,6 +43,9 @@ export default function AislePositionsPage() {
     inventoryId,
     aisleId
   );
+  const runMerge = useRunAisleMerge(inventoryId ?? '');
+  const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId);
+  const mergePreviewLimit = 8;
 
   const kpi = useMemo(() => computeResultsKpi(results), [results]);
   const filteredResults = useMemo(
@@ -95,6 +100,70 @@ export default function AislePositionsPage() {
         onBack={handleBack}
         backLabel="Back to inventory"
       />
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+          Consolidation (optional)
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Run merge as a post-process artifact. This does not overwrite authoritative quantity.
+        </Typography>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => runMerge.mutate(aisleId)}
+          disabled={runMerge.isPending}
+        >
+          {runMerge.isPending ? 'Running merge…' : 'Run Merge'}
+        </Button>
+        {runMerge.isSuccess && (
+          <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+            Merge recompute ({runMerge.data.operation_mode}): raw={runMerge.data.raw_count}, normalized=
+            {runMerge.data.normalized_count}, final={runMerge.data.final_count}, authoritative updates=
+            {runMerge.data.authoritative_quantity_updated ? 'yes' : 'no'}, compatibility updates=
+            {runMerge.data.product_records_updated}
+          </Typography>
+        )}
+        {mergeResultsQuery.isError ? (
+          <Typography variant="caption" color="error" display="block" sx={{ mt: 1 }}>
+            Failed to load merge groups.
+          </Typography>
+        ) : null}
+        {mergeResultsQuery.data?.results?.length ? (
+          <Box sx={{ mt: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1 }}>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
+              Merge groups ({mergeResultsQuery.data.results.length})
+            </Typography>
+            {mergeResultsQuery.data.results.length > mergePreviewLimit ? (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                Showing first {mergePreviewLimit} of {mergeResultsQuery.data.results.length} merge groups
+              </Typography>
+            ) : null}
+            {mergeResultsQuery.data.results.slice(0, mergePreviewLimit).map((r) => (
+              <Box
+                key={r.id}
+                sx={{
+                  py: 0.5,
+                  borderTop: '1px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="caption" display="block">
+                  SKU: {r.sku ?? '—'} | Position: {r.position_id ?? '—'} | Merged qty: {r.merged_quantity}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Review: {r.review_required ? 'required' : 'not required'} | Normalized labels:{' '}
+                  {r.normalized_label_ids.length}
+                  {r.explanation_summary ? ` | ${r.explanation_summary}` : ''}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        ) : (
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+            No merge groups computed yet.
+          </Typography>
+        )}
+      </Paper>
 
       {errorMessage && (
         <ResultsErrorState message={errorMessage} onRetry={() => refetch()} />

@@ -31,7 +31,14 @@ export interface ResultSummary {
   /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */
   resolvedQty: number | null;
   /** v3.2.2: provenance of resolved qty. */
-  qtySource?: 'detected' | 'inferred' | 'consolidated' | null;
+  qtySource?:
+    | 'detected'
+    | 'inferred'
+    | 'merge_inferred'
+    | 'manual_review'
+    | 'label_explicit'
+    | 'unknown'
+    | null;
   qtyResolved?: boolean | null;
   qtyInferenceReason?: string | null;
   confidence: number | null;
@@ -74,7 +81,14 @@ export interface ResultDetail {
   resolvedQty: number | null;
   /** v3.2.5 Phase 6: system-resolved qty (backend qty) for display when corrected_quantity is set. Mapper always sets this (position.qty ?? null). */
   systemQty: number | null;
-  qtySource?: 'detected' | 'inferred' | 'consolidated' | null;
+  qtySource?:
+    | 'detected'
+    | 'inferred'
+    | 'merge_inferred'
+    | 'manual_review'
+    | 'label_explicit'
+    | 'unknown'
+    | null;
   qtyResolved?: boolean | null;
   qtyInferenceReason?: string | null;
   confidence: number | null;

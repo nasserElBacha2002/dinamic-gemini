@@ -128,8 +128,25 @@ class V3JobExecutor:
         Otherwise return False (caller may run legacy flow).
         """
         job = self._job_repo.get_by_id(job_id)
+        logger.info("v3 dispatch: job_id=%s found=%s", job_id, job is not None)
         if job is None or job.job_type != "process_aisle":
+            if job is not None:
+                logger.info(
+                    "v3 dispatch skipped: job_id=%s job_type=%s target_type=%s target_id=%s",
+                    job_id,
+                    job.job_type,
+                    job.target_type,
+                    job.target_id,
+                )
             return False
+        logger.info(
+            "v3 dispatch accepted: job_id=%s job_type=%s target_type=%s target_id=%s status=%s",
+            job_id,
+            job.job_type,
+            job.target_type,
+            job.target_id,
+            job.status.value,
+        )
         if job.status == JobStatus.CANCELED:
             logger.info("v3 job %s already canceled, skip", job_id)
             return True
@@ -137,8 +154,8 @@ class V3JobExecutor:
             logger.info("v3 job %s cancel requested before start; marking canceled", job_id)
             self._cancel_job(job_id, "Job canceled before execution")
             return True
-        if job.status != JobStatus.QUEUED:
-            logger.warning("v3 job %s not queued (status=%s), skip", job_id, job.status.value)
+        if job.status not in (JobStatus.QUEUED, JobStatus.RUNNING):
+            logger.warning("v3 job %s invalid status for execution (status=%s), skip", job_id, job.status.value)
             return True
 
         payload = job.payload_json or {}
@@ -151,6 +168,15 @@ class V3JobExecutor:
         if aisle is None:
             self._fail_job(job_id, f"Aisle not found: {aisle_id}")
             return True
+        logger.info(
+            "v3 target resolved: job_id=%s job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s",
+            job_id,
+            job.job_type,
+            job.target_type,
+            job.target_id,
+            aisle.inventory_id,
+            aisle_id,
+        )
 
         assets = list(self._source_asset_repo.list_by_aisle(aisle_id))
         if not assets:
@@ -158,6 +184,15 @@ class V3JobExecutor:
             return True
 
         now = self._clock.now()
+        logger.info(
+            "v3 mark running: job_id=%s job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s",
+            job_id,
+            job.job_type,
+            job.target_type,
+            job.target_id,
+            aisle.inventory_id,
+            aisle_id,
+        )
         self._mark_running(job_id, aisle, now)
 
         settings = load_settings()
@@ -165,11 +200,26 @@ class V3JobExecutor:
         v3_base = output_dir / "v3_uploads"
         job_dir = base_path / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            "v3 run dirs ready: job_id=%s output_dir=%s job_dir=%s v3_base=%s",
+            job_id,
+            str(output_dir),
+            str(job_dir),
+            str(v3_base),
+        )
 
         try:
             analysis_context = self._build_analysis_context(aisle)
             job_input, video_path = self._build_pipeline_input(
                 assets, v3_base, job_dir, job_id, analysis_context=analysis_context
+            )
+            logger.info(
+                "v3 pipeline input ready: job_id=%s inventory_id=%s aisle_id=%s input_type=%s video_path=%s",
+                job_id,
+                aisle.inventory_id,
+                aisle_id,
+                job_input.input_type,
+                video_path or "",
             )
         except Exception as e:
             logger.exception("v3 job %s: build pipeline input failed: %s", job_id, e)
@@ -178,8 +228,22 @@ class V3JobExecutor:
 
         run_dir = base_path / job_id / RUN_ID
         log = setup_logger(str(job_dir), job_id, RUN_ID, console=False)
+        logger.info(
+            "v3 execution log initialized: job_id=%s run_dir=%s",
+            job_id,
+            str(run_dir),
+        )
 
         try:
+            logger.info(
+                "v3 executor start: job_id=%s job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s",
+                job_id,
+                job.job_type,
+                job.target_type,
+                job.target_id,
+                aisle.inventory_id,
+                aisle_id,
+            )
             pipeline = HybridInventoryPipeline()
             result = pipeline.process_video(
                 video_path,
@@ -192,6 +256,13 @@ class V3JobExecutor:
                 progress_callback=None,
                 job_input=job_input,
                 analysis_context=analysis_context,
+            )
+            logger.info(
+                "v3 executor finished: job_id=%s exit_code=%s inventory_id=%s aisle_id=%s",
+                job_id,
+                result.exit_code,
+                aisle.inventory_id,
+                aisle_id,
             )
             if result.exit_code != 0:
                 last_error = read_last_stage_error(run_dir)
@@ -243,6 +314,13 @@ class V3JobExecutor:
             self._mark_success(
                 job_id, aisle, report_path, now, run_metadata=result.run_metadata
             )
+            logger.info(
+                "v3 mark success: job_id=%s inventory_id=%s aisle_id=%s report_path=%s",
+                job_id,
+                aisle.inventory_id,
+                aisle_id,
+                str(report_path),
+            )
         except Exception as e:
             logger.exception("v3 job %s failed: %s", job_id, e)
             run_dir = base_path / job_id / RUN_ID
@@ -253,6 +331,13 @@ class V3JobExecutor:
                 except Exception:
                     pass
             self._fail_job_and_aisle(job_id, aisle, str(e))
+            logger.info(
+                "v3 mark failed: job_id=%s inventory_id=%s aisle_id=%s error=%s",
+                job_id,
+                aisle.inventory_id,
+                aisle_id,
+                str(e),
+            )
 
         return True
 
@@ -295,6 +380,15 @@ class V3JobExecutor:
                     metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
                 ),
                 video_path,
+            )
+
+        # Photos execution supports only photo assets. Any video in a multi-asset
+        # set would be routed into image normalization and fail opaquely later.
+        has_video_asset = any(getattr(a, "type", None) == SourceAssetType.VIDEO for a in assets)
+        if has_video_asset:
+            raise ValueError(
+                "Invalid aisle assets: videos must be uploaded/processed as a single video asset; "
+                "mixed or multi-video sets are not supported in photos normalization flow."
             )
 
         # Photos (or multiple assets): copy into job_dir/input_photos, write manifest

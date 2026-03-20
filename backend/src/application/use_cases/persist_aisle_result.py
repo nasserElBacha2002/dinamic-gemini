@@ -100,7 +100,9 @@ class PersistAisleResultUseCase:
                     RecomputeConsolidatedCountsCommand(
                         inventory_id=inventory_id,
                         aisle_id=command.aisle_id,
-                        apply_to_product_records=True,
+                        # Hotfix v3.2.5: merge/consolidation is non-authoritative in main flow.
+                        # Keep explicit quantity resolved by pipeline mapping; do not overwrite ProductRecord.
+                        apply_to_product_records=False,
                     )
                 )
                 logger.debug(
