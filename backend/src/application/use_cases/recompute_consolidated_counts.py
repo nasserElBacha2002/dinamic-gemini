@@ -104,14 +104,12 @@ class RecomputeConsolidatedCountsUseCase:
         aisle_id: str,
         final_records: list,
     ) -> int:
-        """
-        Project final_count into ProductRecord.detected_quantity for the whole scope.
+        """Project final_count into ProductRecord with authoritative-quantity safeguards.
 
-        For each position in the aisle:
-        - If there is a FinalCountRecord for (position_id, sku), set detected_quantity to that quantity.
-        - If there is no FinalCountRecord for (position_id, sku), set detected_quantity to 0.
-
-        This avoids stale quantities from pre-consolidation mapping.
+        Business guardrails:
+        - Never overwrite manual corrections.
+        - Never overwrite explicit/extracted authoritative quantities already persisted.
+        - Consolidation can update only non-authoritative/fallback quantities.
         """
         # Build lookup from (position_id, sku) -> quantity from final_count.
         qty_by_pos_sku: dict[tuple[str, str], int] = {}
@@ -129,10 +127,57 @@ class RecomputeConsolidatedCountsUseCase:
             for prod in products:
                 key = (prod.position_id, prod.sku or "")
                 new_qty = qty_by_pos_sku.get(key, 0)
+                old_qty = prod.detected_quantity
+                old_src = (prod.qty_source or "").strip()
+                explicit_qty_from_record = (
+                    str(getattr(prod, "qty_parse_status", "") or "").strip() == "valid_positive"
+                )
+                has_authoritative_qty = (
+                    old_qty > 0
+                    and (
+                        explicit_qty_from_record
+                        or old_src in {"detected", "label_explicit", "ocr", "llm_extracted"}
+                    )
+                )
+                if prod.corrected_quantity is not None:
+                    logger.info(
+                        "Recompute skip (manual override): inv=%s aisle=%s position=%s sku=%s old_qty=%s merge_qty=%s source=%s",
+                        inventory_id,
+                        aisle_id,
+                        prod.position_id,
+                        prod.sku,
+                        old_qty,
+                        new_qty,
+                        old_src or "unknown",
+                    )
+                    continue
+                if has_authoritative_qty:
+                    logger.info(
+                        "Recompute skip (authoritative qty preserved): inv=%s aisle=%s position=%s sku=%s old_qty=%s merge_qty=%s old_source=%s",
+                        inventory_id,
+                        aisle_id,
+                        prod.position_id,
+                        prod.sku,
+                        old_qty,
+                        new_qty,
+                        old_src or "unknown",
+                    )
+                    continue
                 if prod.detected_quantity != new_qty:
                     prod.detected_quantity = new_qty
-                    # Mark as consolidated source for audit.
-                    prod.qty_source = "consolidated"
+                    # Merge artifact source (non-authoritative by design).
+                    prod.qty_source = "merge_inferred"
+                    logger.info(
+                        "Recompute applied: inv=%s aisle=%s position=%s sku=%s old_qty=%s new_qty=%s old_source=%s new_source=%s",
+                        inventory_id,
+                        aisle_id,
+                        prod.position_id,
+                        prod.sku,
+                        old_qty,
+                        new_qty,
+                        old_src or "unknown",
+                        prod.qty_source,
+                    )
                     self._product_repo.save(prod)
                     updated += 1
         return updated

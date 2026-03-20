@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
     """If job_id is a v3 process_aisle job, run it and return True. Otherwise return False."""
     try:
+        logger.info("worker dispatch attempt: job_id=%s dispatch=v3_process_aisle", job_id)
         from src.runtime.v3_deps import (
             get_aisle_repo,
             get_clock,
@@ -49,7 +50,13 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
             raw_label_repo=get_raw_label_repo(),
             recompute_consolidated_uc=get_recompute_consolidated_counts_use_case(),
         )
-        return executor.execute(base_path, job_id)
+        handled = executor.execute(base_path, job_id)
+        logger.info(
+            "worker dispatch result: job_id=%s dispatch=v3_process_aisle handled=%s",
+            job_id,
+            handled,
+        )
+        return handled
     except Exception as e:
         logger.warning("v3 process_aisle attempt failed (will try legacy): %s", e)
         return False
@@ -122,8 +129,11 @@ def _push_success_to_db(
 
 def run_job(base_path: Path, job_id: str) -> None:
     """Load job, run hybrid pipeline, update status and output. Try v3 process_aisle first."""
+    logger.info("worker run_job start: job_id=%s base_path=%s", job_id, str(base_path))
     if _try_v3_process_aisle(base_path, job_id):
+        logger.info("worker run_job handled by v3 executor: job_id=%s", job_id)
         return
+    logger.info("worker run_job fallback to legacy flow: job_id=%s", job_id)
     record = get_job(base_path, job_id)
     if record is None:
         logger.warning("Job %s not found", job_id)
@@ -232,5 +242,14 @@ def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> N
                 last_idle_log_ts = now
             time.sleep(idle_sleep_sec)
             continue
-        logger.info("Worker claimed job %s", claimed.job_id)
+        logger.info(
+            "Worker claimed job %s (job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s status=%s)",
+            claimed.job_id,
+            ((claimed.input.metadata or {}).get("job_type") if claimed.input else None) or "process_aisle",
+            ((claimed.input.metadata or {}).get("target_type") if claimed.input else None) or "aisle",
+            ((claimed.input.metadata or {}).get("target_id") if claimed.input else None) or ((claimed.input.metadata or {}).get("aisle_id")),
+            (claimed.input.metadata or {}).get("inventory_id") if claimed.input else None,
+            (claimed.input.metadata or {}).get("aisle_id") if claimed.input else None,
+            claimed.status.value if hasattr(claimed.status, "value") else str(claimed.status),
+        )
         run_job(base_path, claimed.job_id)

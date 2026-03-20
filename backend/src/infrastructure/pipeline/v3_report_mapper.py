@@ -22,6 +22,7 @@ from src.domain.labels.entities import RawLabel
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.domain.quantity.resolution import (
+    QtyParseStatus,
     QtySource,
     has_strong_identity_for_qty_inference,
     is_product_present_for_qty_inference,
@@ -160,7 +161,16 @@ def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tup
         )
 
     # Persist source as "unresolved" when not resolved so API/audit can distinguish from valid 0.
+    # Semantic hardening: when quantity is explicit and parsed positive from label-oriented fields,
+    # persist a specific authoritative source instead of generic "detected".
     source_value = "unresolved" if not res.is_resolved else res.qty_source.value
+    if (
+        res.is_resolved
+        and normalized.parse_status == QtyParseStatus.VALID_POSITIVE
+        and origin in {"final_quantity", "product_label_quantity"}
+        and res.qty_source == QtySource.DETECTED
+    ):
+        source_value = "label_explicit"
     meta = {
         # Secondary projection in detected_summary_json; ProductRecord is authoritative.
         "qty_final": res.qty_final,

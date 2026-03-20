@@ -140,6 +140,38 @@ def claim_next_job(base_path: Path) -> Optional[JobRecord]:
         getattr(settings, "sqlserver_enabled", False)
         and (getattr(settings, "sqlserver_connection_string", "") or "").strip()
     )
+    # Preferred v3 source: inventory_jobs via v3 JobRepository claim.
+    try:
+        from src.runtime.v3_deps import get_job_repo
+
+        v3_repo = get_job_repo()
+        claim_v3 = getattr(v3_repo, "claim_next_queued_job", None)
+        if callable(claim_v3):
+            claimed_v3 = claim_v3()
+            if claimed_v3 is not None:
+                metadata = dict(claimed_v3.payload_json or {})
+                metadata.setdefault("job_type", claimed_v3.job_type)
+                metadata.setdefault("target_type", claimed_v3.target_type)
+                metadata.setdefault("target_id", claimed_v3.target_id)
+                return JobRecord(
+                    job_id=claimed_v3.id,
+                    input=JobInput(
+                        video_path="",
+                        mode="hybrid",
+                        confidence_threshold=0.7,
+                        metadata=metadata,
+                    ),
+                    status=JobStatus(claimed_v3.status.value),
+                    progress={"stage": "claimed", "percent": 1},
+                    output=None,
+                    error=claimed_v3.error_message,
+                    created_at=claimed_v3.created_at.isoformat(),
+                    updated_at=claimed_v3.updated_at.isoformat(),
+                )
+    except Exception:
+        logger.exception("v3 DB claim_next_queued_job failed while SQL worker mode is enabled")
+
+    # Legacy DB source: jobs table (v2 compatibility only).
     repos = _db_repos()
     if repos is not None:
         jobs_repo, _, _ = repos

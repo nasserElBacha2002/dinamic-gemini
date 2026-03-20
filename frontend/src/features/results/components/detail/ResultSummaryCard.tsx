@@ -34,6 +34,10 @@ function getCountOriginLabel(result: ResultDetail): string {
     return `Inferred (${result.qtyInferenceReason})`;
   }
   if (src === 'inferred') return 'Inferred';
+  if (src === 'merge_inferred') return 'Merge inferred';
+  if (src === 'manual_review') return 'Manual review';
+  if (src === 'label_explicit') return 'Label explicit';
+  if (src === 'unknown') return 'Unknown';
   if (src === 'consolidated') return 'Consolidated';
   return 'Detected';
 }

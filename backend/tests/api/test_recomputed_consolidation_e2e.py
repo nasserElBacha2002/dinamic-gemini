@@ -183,7 +183,7 @@ def test_list_aisle_positions_duplicate_raw_labels_shows_consolidated_quantity()
         pos_summary = data["positions"][0]
         assert pos_summary["qty"] == 1
         assert pos_summary["detected_quantity"] == 1
-        assert pos_summary["qtySource"] == "consolidated"
+        assert pos_summary["qtySource"] in ("consolidated", "merge_inferred")
     finally:
         app.dependency_overrides.clear()
 
@@ -212,7 +212,7 @@ def test_get_position_detail_recomputed_shows_consolidated_quantity() -> None:
         pos = data["position"]
         assert pos["qty"] == 1
         assert pos["detected_quantity"] == 1
-        assert pos["qtySource"] == "consolidated"
+        assert pos["qtySource"] in ("consolidated", "merge_inferred")
     finally:
         app.dependency_overrides.clear()
 

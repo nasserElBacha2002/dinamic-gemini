@@ -70,16 +70,18 @@ def test_recompute_duplicate_raw_same_group_does_not_inflate():
         _raw("r2", pos_id, "g1", "ev1", "SKU-X"),
         _raw("r3", pos_id, "g1", "ev1", "SKU-X"),
     ])
-    # One product record for that position (pre-recompute quantity could be 3 if from raw)
+    # One product record with authoritative explicit quantity: must be preserved.
     prod = ProductRecord(
         id="prod-1",
         position_id=pos_id,
         sku="SKU-X",
         description="",
-        detected_quantity=99,
+        detected_quantity=36,
         confidence=0.9,
         created_at=now,
         updated_at=now,
+        qty_source="detected",
+        qty_parse_status="valid_positive",
     )
     product_repo.save(prod)
     # Position needed for projection over aisle scope.
@@ -120,7 +122,7 @@ def test_recompute_duplicate_raw_same_group_does_not_inflate():
     assert result.raw_count == 3
     assert result.normalized_count == 1
     assert result.final_count == 1
-    assert result.product_records_updated == 1
+    assert result.product_records_updated == 0
 
     final_list = list(final_repo.list_for_scope("inv1", "aisle1"))
     assert len(final_list) == 1
@@ -129,10 +131,11 @@ def test_recompute_duplicate_raw_same_group_does_not_inflate():
 
     updated_prod = product_repo.get_by_id("prod-1")
     assert updated_prod is not None
-    assert updated_prod.detected_quantity == 1
+    assert updated_prod.detected_quantity == 36
+    assert updated_prod.qty_source == "detected"
 
 
-def test_recompute_clears_stale_and_updates_all_matching_products():
+def test_recompute_updates_only_non_authoritative_products():
     """
     Full-scope reconciliation:
     - multiple ProductRecords for same (position, sku) are all updated
@@ -153,19 +156,22 @@ def test_recompute_clears_stale_and_updates_all_matching_products():
         _raw("r2", pos_id, "g1", "ev1", "SKU-X"),
     ])
 
-    # Two product records for same SKU (stale values) + one unrelated SKU (should be zeroed)
+    # Explicit authoritative record must be preserved.
     product_repo.save(
         ProductRecord(
             id="p1",
             position_id=pos_id,
             sku="SKU-X",
             description="",
-            detected_quantity=7,
+            detected_quantity=31,
             confidence=0.9,
             created_at=now,
             updated_at=now,
+            qty_source="detected",
+            qty_parse_status="valid_positive",
         )
     )
+    # Non-authoritative record can be reconciled by merge artifact.
     product_repo.save(
         ProductRecord(
             id="p2",
@@ -176,8 +182,10 @@ def test_recompute_clears_stale_and_updates_all_matching_products():
             confidence=0.9,
             created_at=now,
             updated_at=now,
+            qty_source="unknown",
         )
     )
+    # Manual override must be preserved.
     product_repo.save(
         ProductRecord(
             id="p3",
@@ -188,6 +196,8 @@ def test_recompute_clears_stale_and_updates_all_matching_products():
             confidence=0.9,
             created_at=now,
             updated_at=now,
+            corrected_quantity=9,
+            qty_source="manual_review",
         )
     )
 
@@ -220,10 +230,67 @@ def test_recompute_clears_stale_and_updates_all_matching_products():
     res = uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=True))
     assert res.final_count == 1
 
-    assert product_repo.get_by_id("p1").detected_quantity == 1
+    assert product_repo.get_by_id("p1").detected_quantity == 31
+    assert product_repo.get_by_id("p1").qty_source == "detected"
     assert product_repo.get_by_id("p2").detected_quantity == 1
-    # Unmatched SKU in scope must be reset to 0
-    assert product_repo.get_by_id("p3").detected_quantity == 0
+    assert product_repo.get_by_id("p2").qty_source == "merge_inferred"
+    assert product_repo.get_by_id("p3").detected_quantity == 3
+    assert product_repo.get_by_id("p3").corrected_quantity == 9
+
+
+def test_merge_inferred_allowed_when_explicit_missing():
+    raw_repo = MemoryRawLabelRepository()
+    norm_repo = MemoryNormalizedLabelRepository()
+    final_repo = MemoryFinalCountRepository()
+    product_repo = MemoryProductRecordRepository()
+    position_repo = MemoryPositionRepository()
+    now = datetime.now(timezone.utc)
+
+    raw_repo.save_many([_raw("r1", "pos-m1", "g1", "ev1", "SKU-M")])
+    product_repo.save(
+        ProductRecord(
+            id="p-m1",
+            position_id="pos-m1",
+            sku="SKU-M",
+            description="",
+            detected_quantity=0,
+            confidence=0.9,
+            created_at=now,
+            updated_at=now,
+            qty_source="unknown",
+        )
+    )
+
+    from src.domain.positions.entities import Position, PositionStatus
+
+    position_repo.save(
+        Position(
+            id="pos-m1",
+            aisle_id="aisle1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=now,
+            updated_at=now,
+            detected_summary_json={},
+            corrected_summary_json=None,
+        )
+    )
+    uc = RecomputeConsolidatedCountsUseCase(
+        raw_label_repo=raw_repo,
+        normalized_label_repo=norm_repo,
+        final_count_repo=final_repo,
+        product_record_repo=product_repo,
+        position_repo=position_repo,
+        normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
+        final_count_builder=FinalCountBuilder(),
+    )
+    uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=True))
+    updated = product_repo.get_by_id("p-m1")
+    assert updated is not None
+    assert updated.detected_quantity == 1
+    assert updated.qty_source == "merge_inferred"
 
 
 def test_recompute_same_scope_idempotent():

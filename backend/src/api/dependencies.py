@@ -36,12 +36,14 @@ from src.runtime.v3_deps import (
     get_aisle_repo,
     get_clock,
     get_evidence_repo,
+    get_final_count_repo,
     get_inventory_repo,
     get_inventory_visual_reference_repo,
     get_job_repo,
     get_metrics_calculator,
     get_position_repo,
     get_product_record_repo,
+    get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
     get_source_asset_repo,
 )
@@ -68,6 +70,10 @@ from src.application.use_cases.upload_inventory_visual_references import (
     UploadInventoryVisualReferencesUseCase,
 )
 from src.application.use_cases.cancel_aisle_job import CancelAisleJobUseCase
+from src.application.use_cases.get_aisle_merge_results import (
+    GetAisleMergeResultsUseCase,
+)
+from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
 logger = logging.getLogger(__name__)
 
@@ -329,4 +335,28 @@ def get_delete_position_use_case(
         position_repo=position_repo,
         review_repo=review_repo,
         clock=clock,
+    )
+
+
+def get_run_aisle_merge_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    recompute_uc=Depends(get_recompute_consolidated_counts_use_case),
+) -> RunAisleMergeUseCase:
+    return RunAisleMergeUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        recompute_use_case=recompute_uc,
+    )
+
+
+def get_get_aisle_merge_results_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    final_count_repo=Depends(get_final_count_repo),
+) -> GetAisleMergeResultsUseCase:
+    return GetAisleMergeResultsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        final_count_repo=final_count_repo,
     )

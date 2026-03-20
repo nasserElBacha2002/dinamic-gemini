@@ -15,7 +15,14 @@ from src.api.dependencies import (
     get_get_aisle_processing_status_use_case,
     get_cancel_aisle_job_use_case,
     get_aisle_repo,
+    get_get_aisle_merge_results_use_case,
     get_job_repo,
+    get_run_aisle_merge_use_case,
+)
+from src.api.schemas.merge_schemas import (
+    MergeResultItemResponse,
+    MergeResultsResponse,
+    RunMergeResponse,
 )
 from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest
 from src.api.schemas.processing_schemas import (
@@ -31,6 +38,14 @@ from src.application.use_cases.list_aisles_with_status import ListAislesWithStat
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
+from src.application.use_cases.get_aisle_merge_results import (
+    GetAisleMergeResultsCommand,
+    GetAisleMergeResultsUseCase,
+)
+from src.application.use_cases.run_aisle_merge import (
+    RunAisleMergeCommand,
+    RunAisleMergeUseCase,
+)
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.pipeline.execution_log import read_execution_log
 
@@ -153,3 +168,74 @@ def get_job_execution_log(
     return ExecutionLogResponse(
         events=[ExecutionLogEvent.model_validate(e) for e in events],
     )
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/merge",
+    response_model=RunMergeResponse,
+    status_code=202,
+)
+def run_aisle_merge(
+    inventory_id: str,
+    aisle_id: str,
+    use_case: RunAisleMergeUseCase = Depends(get_run_aisle_merge_use_case),
+) -> RunMergeResponse:
+    """Run merge/consolidation artifact recompute (non-authoritative, post-process)."""
+    try:
+        result = use_case.execute(
+            RunAisleMergeCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+            )
+        )
+        return RunMergeResponse(
+            operation_mode="artifact_only",
+            authoritative_quantity_updated=False,
+            raw_count=result.raw_count,
+            normalized_count=result.normalized_count,
+            final_count=result.final_count,
+            product_records_updated=result.product_records_updated,
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/merge-results",
+    response_model=MergeResultsResponse,
+)
+def get_aisle_merge_results(
+    inventory_id: str,
+    aisle_id: str,
+    use_case: GetAisleMergeResultsUseCase = Depends(get_get_aisle_merge_results_use_case),
+) -> MergeResultsResponse:
+    try:
+        records = use_case.execute(
+            GetAisleMergeResultsCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+            )
+        )
+        return MergeResultsResponse(
+            results=[
+                MergeResultItemResponse(
+                    id=r.id,
+                    position_id=r.position_id,
+                    sku=r.sku,
+                    product_name=r.product_name,
+                    merged_quantity=r.quantity,
+                    normalized_label_ids=list(r.normalized_label_ids),
+                    review_required=r.review_required,
+                    explanation_summary=r.explanation_summary,
+                    metadata=dict(r.metadata or {}),
+                    created_at=r.created_at.isoformat(),
+                )
+                for r in records
+            ]
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")

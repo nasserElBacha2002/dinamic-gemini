@@ -148,8 +148,15 @@ export interface PositionSummary {
   corrected_quantity?: number | null;
   /** v3.2.2: stable qty contract (backend-resolved). */
   qty: number;
-  /** v3.2.2+v3.2.5: stable contract; backend sends 'detected' | 'inferred' | 'consolidated'. */
-  qtySource: 'detected' | 'inferred' | 'consolidated';
+  /** Quantity provenance contract (authoritative + merge artifact). */
+  qtySource:
+    | 'detected'
+    | 'inferred'
+    | 'consolidated'
+    | 'merge_inferred'
+    | 'manual_review'
+    | 'label_explicit'
+    | 'unknown';
   /** v3.2.2: non-null when qtySource='inferred'. */
   qtyInferenceReason?: string | null;
   /** v3.2.2: when true/false, qty is from resolved decision; when null, legacy/compatibility path. */
@@ -216,6 +223,32 @@ export interface PositionDetailResponse {
   evidences: EvidenceSummary[];
   /** Review audit history — Épica 8. v3.2.5 Phase 8: required; backend sends list (default_factory=list). */
   review_actions: ReviewActionSummary[];
+}
+
+export interface RunMergeResponse {
+  operation_mode: string;
+  authoritative_quantity_updated: boolean;
+  raw_count: number;
+  normalized_count: number;
+  final_count: number;
+  product_records_updated: number;
+}
+
+export interface MergeResultItemResponse {
+  id: string;
+  position_id?: string | null;
+  sku?: string | null;
+  product_name?: string | null;
+  merged_quantity: number;
+  normalized_label_ids: string[];
+  review_required: boolean;
+  explanation_summary?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface MergeResultsResponse {
+  results: MergeResultItemResponse[];
 }
 
 // v1 job-entities types (TraceabilitySummary, JobEntityListItem, JobEntitiesListResponse) removed in Stage 3;

@@ -372,7 +372,20 @@ def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str],
 
 _ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
 # (qty, qtySource, qtyInferenceReason, qtyResolved or None)
-_QtyContract = Tuple[int, Literal["detected", "inferred", "consolidated"], Optional[str], Optional[bool]]
+_QtyContract = Tuple[
+    int,
+    Literal[
+        "detected",
+        "inferred",
+        "consolidated",
+        "merge_inferred",
+        "manual_review",
+        "label_explicit",
+        "unknown",
+    ],
+    Optional[str],
+    Optional[bool],
+]
 
 
 def _qty_contract_from_product(primary: ProductRecord) -> _QtyContract:
@@ -381,6 +394,17 @@ def _qty_contract_from_product(primary: ProductRecord) -> _QtyContract:
     src = (primary.qty_source or "").strip()
     if src == "inferred":
         return (qty, "inferred", primary.qty_inference_reason or None, True)
+    if src == "merge_inferred":
+        return (qty, "merge_inferred", None, True)
+    if src == "manual_review":
+        return (qty, "manual_review", None, True)
+    if src == "label_explicit":
+        return (qty, "label_explicit", None, True)
+    # Normalize richer/internal variants to stable public contract.
+    if src in {"ocr", "llm_extracted", "fallback"}:
+        return (qty, "detected", primary.qty_inference_reason or None, True)
+    if src == "unknown":
+        return (qty, "unknown", None, None)
     if src == "consolidated":
         return (qty, "consolidated", None, True)
     if src == "unresolved":
