@@ -502,3 +502,96 @@ def test_execute_accepts_running_status_after_db_claim() -> None:
     updated_job = job_repo.get_by_id(job_id)
     assert updated_job is not None
     assert updated_job.status == JobStatus.SUCCEEDED
+
+
+def test_execute_rejects_mixed_video_and_photo_assets() -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_id = "j-mixed-assets"
+    aisle_id = "aisle-1"
+    job_repo = InMemoryJobRepo()
+    job = Job(
+        id=job_id,
+        target_type="aisle",
+        target_id=aisle_id,
+        job_type="process_aisle",
+        status=JobStatus.RUNNING,
+        payload_json={"aisle_id": aisle_id},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+    aisle = Aisle(
+        id=aisle_id,
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.QUEUED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+
+    class MixedAssetsRepo:
+        def list_by_aisle(self, aid: str):
+            if aid != aisle_id:
+                return []
+            return [
+                SourceAsset(
+                    id="asset-video",
+                    aisle_id=aisle_id,
+                    type=SourceAssetType.VIDEO,
+                    original_filename="clip.mp4",
+                    storage_path="a1/clip.mp4",
+                    mime_type="video/mp4",
+                    uploaded_at=now,
+                ),
+                SourceAsset(
+                    id="asset-photo",
+                    aisle_id=aisle_id,
+                    type=SourceAssetType.PHOTO,
+                    original_filename="p.jpg",
+                    storage_path="a1/p.jpg",
+                    mime_type="image/jpeg",
+                    uploaded_at=now,
+                ),
+            ]
+
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=MixedAssetsRepo(),
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+
+    base_path = Path("/tmp/test_execute_mixed_assets")
+    base_path.mkdir(parents=True, exist_ok=True)
+    (base_path / "v3_uploads" / "a1").mkdir(parents=True, exist_ok=True)
+    (base_path / "v3_uploads" / "a1" / "clip.mp4").write_bytes(b"fake-video")
+    (base_path / "v3_uploads" / "a1" / "p.jpg").write_bytes(b"fake-image")
+
+    with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
+        mock_settings.return_value.output_dir = str(base_path)
+        with patch.object(
+            executor,
+            "_build_analysis_context",
+            return_value=AnalysisContext(
+                primary_evidence=[],
+                visual_references=[],
+                instructions="",
+            ),
+        ):
+            handled = executor.execute(base_path, job_id)
+
+    assert handled is True
+    updated_job = job_repo.get_by_id(job_id)
+    assert updated_job is not None
+    assert updated_job.status == JobStatus.FAILED
+    assert updated_job.error_message is not None
+    assert "videos must be uploaded/processed as a single video asset" in updated_job.error_message

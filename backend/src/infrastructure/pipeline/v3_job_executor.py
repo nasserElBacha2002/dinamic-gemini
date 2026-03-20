@@ -382,6 +382,15 @@ class V3JobExecutor:
                 video_path,
             )
 
+        # Photos execution supports only photo assets. Any video in a multi-asset
+        # set would be routed into image normalization and fail opaquely later.
+        has_video_asset = any(getattr(a, "type", None) == SourceAssetType.VIDEO for a in assets)
+        if has_video_asset:
+            raise ValueError(
+                "Invalid aisle assets: videos must be uploaded/processed as a single video asset; "
+                "mixed or multi-video sets are not supported in photos normalization flow."
+            )
+
         # Photos (or multiple assets): copy into job_dir/input_photos, write manifest
         photos_dir = job_dir / "input_photos"
         photos_dir.mkdir(parents=True, exist_ok=True)

@@ -185,6 +185,26 @@ def test_upload_aisle_assets_raises_when_empty_files() -> None:
         use_case.execute("inv1", "a1", [])
 
 
+def test_upload_aisle_assets_rejects_video_extension_labeled_as_image() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    asset_repo = StubAssetRepo()
+    storage = StubArtifactStorage()
+
+    use_case = UploadAisleAssetsUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        artifact_storage=storage,
+        clock=FixedClock(now),
+    )
+    files = [UploadedFile("camera_capture.mp4", BytesIO(b"bad"), "image/jpeg")]
+
+    with pytest.raises(UnsupportedAssetTypeError, match="Invalid photo upload"):
+        use_case.execute("inv1", "a1", files)
+
+
 def test_list_aisle_assets_returns_assets_for_aisle() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.ASSETS_UPLOADED, now, now)

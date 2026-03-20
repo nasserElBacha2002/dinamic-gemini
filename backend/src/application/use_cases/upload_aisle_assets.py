@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import BinaryIO, List, Sequence
 from uuid import uuid4
 
@@ -43,6 +44,24 @@ def _safe_filename(name: str) -> str:
     """Sanitize filename for use in storage path (no path traversal)."""
     base = re.sub(r"[^\w.\-]", "_", (name or "file").strip())
     return base[:200] if base else "file"
+
+
+_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".gif", ".tiff"}
+
+
+def _validate_filename_matches_type(filename: str, asset_type: SourceAssetType) -> None:
+    ext = Path(filename or "").suffix.strip().lower()
+    if not ext:
+        return
+    if asset_type == SourceAssetType.PHOTO and ext in _VIDEO_EXTS:
+        raise UnsupportedAssetTypeError(
+            f"Invalid photo upload: file extension {ext} indicates video ({filename})"
+        )
+    if asset_type == SourceAssetType.VIDEO and ext in _IMAGE_EXTS:
+        raise UnsupportedAssetTypeError(
+            f"Invalid video upload: file extension {ext} indicates image ({filename})"
+        )
 
 
 @dataclass
@@ -88,6 +107,7 @@ class UploadAisleAssetsUseCase:
         try:
             for uf in files:
                 asset_type = _detect_asset_type(uf.content_type)
+                _validate_filename_matches_type(uf.original_filename, asset_type)
                 asset_id = str(uuid4())
                 safe_name = _safe_filename(uf.original_filename)
                 storage_path = f"aisles/{aisle_id}/raw/{asset_id}_{safe_name}"

@@ -41,6 +41,8 @@ export PYTHONPATH="${ROOT}/backend${PYTHONPATH:+:${PYTHONPATH}}"
 # dev.sh always starts a dedicated worker process, so keep API embedded worker disabled
 # to avoid duplicate worker loops and reduce local/runtime ambiguity.
 export EMBEDDED_WORKER_ENABLED=false
+# Local sessions should not auto-reclaim stale RUNNING jobs from previous runs.
+export WORKER_STALE_RUNNING_TIMEOUT_SEC=0
 echo "[dev] Runtime: OUTPUT_DIR=${OUTPUT_DIR:-output} SQLSERVER_ENABLED=${SQLSERVER_ENABLED:-unset} EMBEDDED_WORKER_ENABLED=${EMBEDDED_WORKER_ENABLED:-unset}"
 
 # Prevent stale mixed runtimes: kill previously running local backend/worker
@@ -50,10 +52,20 @@ if command -v pgrep >/dev/null 2>&1; then
   WORKER_PIDS="$(pgrep -f "python -m src.jobs.run_worker" || true)"
   if [[ -n "${WORKER_PIDS}" ]]; then
     echo "${WORKER_PIDS}" | xargs kill 2>/dev/null || true
+    sleep 0.3
+    STILL_WORKER_PIDS="$(pgrep -f "python -m src.jobs.run_worker" || true)"
+    if [[ -n "${STILL_WORKER_PIDS}" ]]; then
+      echo "${STILL_WORKER_PIDS}" | xargs kill -9 2>/dev/null || true
+    fi
   fi
   API_PIDS="$(pgrep -f "uvicorn src.api.server:app --reload --port ${PORT}" || true)"
   if [[ -n "${API_PIDS}" ]]; then
     echo "${API_PIDS}" | xargs kill 2>/dev/null || true
+    sleep 0.3
+    STILL_API_PIDS="$(pgrep -f "uvicorn src.api.server:app --reload --port ${PORT}" || true)"
+    if [[ -n "${STILL_API_PIDS}" ]]; then
+      echo "${STILL_API_PIDS}" | xargs kill -9 2>/dev/null || true
+    fi
   fi
 fi
 
@@ -64,6 +76,9 @@ BE_PID=$!
 echo "[dev] Arrancando worker..."
 (cd "$ROOT/backend" && "$PYTHON" -m src.jobs.run_worker) &
 WORKER_PID=$!
+sleep 0.4
+ACTIVE_WORKERS="$(pgrep -fc "python -m src.jobs.run_worker" || true)"
+echo "[dev] Workers activos detectados: ${ACTIVE_WORKERS:-0}"
 
 cleanup() {
   echo "[dev] Cerrando procesos..."
