@@ -171,6 +171,7 @@ def run_job(base_path: Path, job_id: str) -> None:
             job_input=record.input,
         )
         if result.exit_code != 0:
+            logger.error("Job %s failed: pipeline exited with code %s", job_id, result.exit_code)
             update_job(
                 base_path,
                 job_id,
@@ -195,6 +196,7 @@ def run_job(base_path: Path, job_id: str) -> None:
             error=None,
         )
         _push_success_to_db(job_id, report_json, report_csv, str(job_dir))
+        logger.info("Job %s finished successfully", job_id)
     except Exception as e:
         logger.exception("Job %s failed: %s", job_id, e)
         update_job(
@@ -216,11 +218,19 @@ def run_job(base_path: Path, job_id: str) -> None:
 def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> None:
     """Poll shared store and process claimed jobs until stop() returns True."""
     idle_sleep_sec = 1.0
+    idle_log_every_sec = 30.0
+    last_idle_log_ts = 0.0
+    logger.info("Worker loop started; polling for queued jobs")
     while True:
         if stop and stop():
             break
         claimed = claim_next_job(base_path)
         if claimed is None:
+            now = time.monotonic()
+            if now - last_idle_log_ts >= idle_log_every_sec:
+                logger.info("Worker poll idle: no queued jobs available")
+                last_idle_log_ts = now
             time.sleep(idle_sleep_sec)
             continue
+        logger.info("Worker claimed job %s", claimed.job_id)
         run_job(base_path, claimed.job_id)
