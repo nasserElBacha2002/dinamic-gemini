@@ -76,7 +76,8 @@ class StartAisleProcessingUseCase:
         aisle.mark_queued(now)
         self._aisle_repo.save(aisle)
 
-        # The worker consumes job_id strings from an in-memory queue.
+        # Legacy/local dispatch: enqueue persisted job_id for in-memory queue consumers.
+        # Production worker flow claims from DB and does not require this queue.
         # Concurrency safety: the job must exist in persistence before enqueue.
         # Additionally, if enqueue fails we must not leave an "active/queued" aisle/job.
         try:

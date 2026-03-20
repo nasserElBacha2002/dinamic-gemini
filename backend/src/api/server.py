@@ -16,8 +16,7 @@ from src.api.schemas.responses import HealthResponse
 from src.auth.errors import AuthHttpError
 from src.auth.routes import router as auth_router
 from src.config import load_settings
-from src.jobs.queue import dequeue
-from src.jobs.worker import run_job
+from src.jobs.worker import worker_loop
 
 logger = logging.getLogger(__name__)
 
@@ -74,18 +73,18 @@ async def health() -> HealthResponse:
 
 def _worker_thread_fn() -> None:
     base = Path(load_settings().output_dir)
-    while True:
-        try:
-            job_id = dequeue(timeout=1.0)
-            if job_id:
-                run_job(base, job_id)
-        except Exception as e:
-            logger.exception("Worker error: %s", e)
+    try:
+        worker_loop(base)
+    except Exception as e:
+        logger.exception("Worker error: %s", e)
 
 
 @app.on_event("startup")
 def start_worker() -> None:
-    """Start background worker thread."""
+    """Start background worker thread when embedded worker mode is enabled."""
+    if not load_settings().embedded_worker_enabled:
+        logger.info("Embedded worker disabled (EMBEDDED_WORKER_ENABLED=false)")
+        return
     t = threading.Thread(target=_worker_thread_fn, daemon=True)
     t.start()
     logger.info("Worker thread started")

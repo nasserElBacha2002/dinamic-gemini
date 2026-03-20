@@ -19,7 +19,7 @@ class V3JobQueueAdapter:
     """
     Implements application JobQueue port: enqueue(job_id) -> None.
 
-    Only job_id is enqueued to the legacy in-memory queue.
+Only job_id is enqueued to the legacy in-memory queue (local/dev compatibility).
     """
 
     def enqueue(self, job_id: str) -> None:

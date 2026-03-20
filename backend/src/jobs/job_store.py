@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.config import load_settings
 from src.jobs.models import JobInput, JobRecord, JobStatus
 from src.utils.validation import validate_job_id
 
@@ -125,6 +126,50 @@ def get_job(base_path: Path, job_id: str) -> Optional[JobRecord]:
             data = json.load(f)
         return JobRecord.model_validate(data)
     except Exception:
+        return None
+
+
+def claim_next_job(base_path: Path) -> Optional[JobRecord]:
+    """Claim next queued job from DB (preferred) or legacy in-memory queue.
+
+    Production path: SQL-backed atomic claim from jobs table.
+    Local legacy fallback (only when SQL mode is disabled): in-memory queue + get_job().
+    """
+    settings = load_settings()
+    db_claim_configured = bool(
+        getattr(settings, "sqlserver_enabled", False)
+        and (getattr(settings, "sqlserver_connection_string", "") or "").strip()
+    )
+    repos = _db_repos()
+    if repos is not None:
+        jobs_repo, _, _ = repos
+        try:
+            data = jobs_repo.claim_next_queued_job()
+            if data is None:
+                return None
+            return JobRecord.model_validate(data)
+        except Exception:
+            # Explicitly surface DB claim failures; do not mask as a normal idle poll.
+            logger.exception("DB claim_next_queued_job failed while SQL worker mode is enabled")
+            return None
+    if db_claim_configured:
+        # SQL mode is expected but claim infrastructure is unavailable.
+        logger.error("SQL worker mode configured but DB repositories are unavailable; cannot claim queued jobs")
+        return None
+
+    # Legacy/local fallback only (non-distributed).
+    try:
+        from src.jobs.queue import dequeue
+
+        job_id = dequeue(timeout=0.1)
+        if not job_id:
+            return None
+        claimed = get_job(base_path, job_id)
+        if claimed is None:
+            logger.warning("Dequeued legacy job %s not found in store", job_id)
+        return claimed
+    except Exception as e:
+        logger.warning("Legacy queue claim failed: %s", e)
         return None
 
 
