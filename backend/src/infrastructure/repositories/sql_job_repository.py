@@ -219,3 +219,23 @@ class SqlJobRepository(JobRepository):
         if not claimed_job_id:
             return None
         return self.get_by_id(claimed_job_id)
+
+    def reclaim_stale_running_jobs(self, stale_after_seconds: int) -> int:
+        """Reset stale RUNNING jobs back to QUEUED for recovery.
+
+        Intended for operational recovery when a worker crashes after claim.
+        Returns number of rows reset.
+        """
+        if stale_after_seconds <= 0:
+            return 0
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE inventory_jobs
+                SET status = 'queued', updated_at = ?
+                WHERE status = 'running'
+                  AND DATEDIFF(SECOND, updated_at, ?) >= ?
+                """,
+                (datetime.now(timezone.utc), datetime.now(timezone.utc), stale_after_seconds),
+            )
+            return int(cur.rowcount or 0)

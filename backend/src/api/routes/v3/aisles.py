@@ -180,7 +180,12 @@ def run_aisle_merge(
     aisle_id: str,
     use_case: RunAisleMergeUseCase = Depends(get_run_aisle_merge_use_case),
 ) -> RunMergeResponse:
-    """Run merge/consolidation artifact recompute (non-authoritative, post-process)."""
+    """Run merge/consolidation artifact recompute (non-authoritative, post-process).
+
+    Compatibility note:
+    - `product_records_updated` is returned for backward compatibility.
+    - In `artifact_only` mode, it is expected to remain 0.
+    """
     try:
         result = use_case.execute(
             RunAisleMergeCommand(

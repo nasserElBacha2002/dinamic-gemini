@@ -25,7 +25,6 @@ class PositionSummaryResponse(BaseModel):
     qtySource: Literal[
         "detected",
         "inferred",
-        "consolidated",
         "merge_inferred",
         "manual_review",
         "label_explicit",

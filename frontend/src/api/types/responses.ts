@@ -152,7 +152,6 @@ export interface PositionSummary {
   qtySource:
     | 'detected'
     | 'inferred'
-    | 'consolidated'
     | 'merge_inferred'
     | 'manual_review'
     | 'label_explicit'

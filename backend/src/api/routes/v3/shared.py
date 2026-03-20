@@ -377,7 +377,6 @@ _QtyContract = Tuple[
     Literal[
         "detected",
         "inferred",
-        "consolidated",
         "merge_inferred",
         "manual_review",
         "label_explicit",
@@ -406,7 +405,8 @@ def _qty_contract_from_product(primary: ProductRecord) -> _QtyContract:
     if src == "unknown":
         return (qty, "unknown", None, None)
     if src == "consolidated":
-        return (qty, "consolidated", None, True)
+        # Keep "consolidated" internal. Public contract remains simplified/stable.
+        return (qty, "detected", None, True)
     if src == "unresolved":
         return (0, "detected", None, False)
     # detected (and legacy/empty): "detected", resolved
@@ -560,7 +560,8 @@ def position_to_summary(
             qty = max(0, int(raw_q))
         except (TypeError, ValueError):
             qty = 0
-        qty_source = "consolidated"
+        # "consolidated" remains internal provenance; API exposes simplified contract.
+        qty_source = "detected"
         qty_reason = None
         # This is an explicit consolidation result; treat as resolved.
         qty_resolved = True

@@ -426,6 +426,15 @@ class Settings(BaseModel):
             "Env: EMBEDDED_WORKER_ENABLED."
         ),
     )
+    worker_stale_running_timeout_sec: int = Field(
+        default_factory=lambda: int(os.getenv("WORKER_STALE_RUNNING_TIMEOUT_SEC", "900")),
+        ge=0,
+        le=86400,
+        description=(
+            "When > 0, worker may reclaim stale RUNNING jobs older than this timeout by resetting them to QUEUED "
+            "before claim. Set 0 to disable reclaim. Env: WORKER_STALE_RUNNING_TIMEOUT_SEC."
+        ),
+    )
     cors_allow_origins: str = Field(
         default_factory=lambda: (os.getenv("CORS_ALLOW_ORIGINS", "") or "").strip(),
         description=(

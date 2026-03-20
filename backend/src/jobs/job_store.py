@@ -145,6 +145,16 @@ def claim_next_job(base_path: Path) -> Optional[JobRecord]:
         from src.runtime.v3_deps import get_job_repo
 
         v3_repo = get_job_repo()
+        stale_timeout_sec = int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0)
+        reclaim_stale = getattr(v3_repo, "reclaim_stale_running_jobs", None)
+        if callable(reclaim_stale) and stale_timeout_sec > 0:
+            reclaimed = int(reclaim_stale(stale_timeout_sec) or 0)
+            if reclaimed > 0:
+                logger.warning(
+                    "Reclaimed stale RUNNING v3 jobs before claim: count=%s timeout_sec=%s",
+                    reclaimed,
+                    stale_timeout_sec,
+                )
         claim_v3 = getattr(v3_repo, "claim_next_queued_job", None)
         if callable(claim_v3):
             claimed_v3 = claim_v3()

@@ -40,7 +40,22 @@ fi
 export PYTHONPATH="${ROOT}/backend${PYTHONPATH:+:${PYTHONPATH}}"
 # dev.sh always starts a dedicated worker process, so keep API embedded worker disabled
 # to avoid duplicate worker loops and reduce local/runtime ambiguity.
+export EMBEDDED_WORKER_ENABLED=false
 echo "[dev] Runtime: OUTPUT_DIR=${OUTPUT_DIR:-output} SQLSERVER_ENABLED=${SQLSERVER_ENABLED:-unset} EMBEDDED_WORKER_ENABLED=${EMBEDDED_WORKER_ENABLED:-unset}"
+
+# Prevent stale mixed runtimes: kill previously running local backend/worker
+# processes before starting fresh ones.
+echo "[dev] Limpiando procesos previos de backend/worker..."
+if command -v pgrep >/dev/null 2>&1; then
+  WORKER_PIDS="$(pgrep -f "python -m src.jobs.run_worker" || true)"
+  if [[ -n "${WORKER_PIDS}" ]]; then
+    echo "${WORKER_PIDS}" | xargs kill 2>/dev/null || true
+  fi
+  API_PIDS="$(pgrep -f "uvicorn src.api.server:app --reload --port ${PORT}" || true)"
+  if [[ -n "${API_PIDS}" ]]; then
+    echo "${API_PIDS}" | xargs kill 2>/dev/null || true
+  fi
+fi
 
 echo "[dev] Arrancando backend en http://127.0.0.1:${PORT} ..."
 (cd "$ROOT/backend" && "$PYTHON" -m uvicorn src.api.server:app --reload --port "$PORT") &

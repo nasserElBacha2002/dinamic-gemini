@@ -34,7 +34,6 @@ export interface ResultSummary {
   qtySource?:
     | 'detected'
     | 'inferred'
-    | 'consolidated'
     | 'merge_inferred'
     | 'manual_review'
     | 'label_explicit'
@@ -85,7 +84,6 @@ export interface ResultDetail {
   qtySource?:
     | 'detected'
     | 'inferred'
-    | 'consolidated'
     | 'merge_inferred'
     | 'manual_review'
     | 'label_explicit'

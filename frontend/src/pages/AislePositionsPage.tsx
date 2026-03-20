@@ -45,6 +45,7 @@ export default function AislePositionsPage() {
   );
   const runMerge = useRunAisleMerge(inventoryId ?? '');
   const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId);
+  const mergePreviewLimit = 8;
 
   const kpi = useMemo(() => computeResultsKpi(results), [results]);
   const filteredResults = useMemo(
@@ -117,7 +118,9 @@ export default function AislePositionsPage() {
         {runMerge.isSuccess && (
           <Typography variant="caption" display="block" sx={{ mt: 1 }}>
             Merge recompute ({runMerge.data.operation_mode}): raw={runMerge.data.raw_count}, normalized=
-            {runMerge.data.normalized_count}, final={runMerge.data.final_count}
+            {runMerge.data.normalized_count}, final={runMerge.data.final_count}, authoritative updates=
+            {runMerge.data.authoritative_quantity_updated ? 'yes' : 'no'}, compatibility updates=
+            {runMerge.data.product_records_updated}
           </Typography>
         )}
         {mergeResultsQuery.isError ? (
@@ -130,12 +133,29 @@ export default function AislePositionsPage() {
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
               Merge groups ({mergeResultsQuery.data.results.length})
             </Typography>
-            {mergeResultsQuery.data.results.slice(0, 8).map((r) => (
-              <Typography key={r.id} variant="caption" display="block">
-                SKU {r.sku ?? '—'} | position {r.position_id ?? '—'} | merged qty {r.merged_quantity} | review{' '}
-                {r.review_required ? 'required' : 'not required'} | normalized labels {r.normalized_label_ids.length}
-                {r.explanation_summary ? ` | ${r.explanation_summary}` : ''}
+            {mergeResultsQuery.data.results.length > mergePreviewLimit ? (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                Showing first {mergePreviewLimit} of {mergeResultsQuery.data.results.length} merge groups
               </Typography>
+            ) : null}
+            {mergeResultsQuery.data.results.slice(0, mergePreviewLimit).map((r) => (
+              <Box
+                key={r.id}
+                sx={{
+                  py: 0.5,
+                  borderTop: '1px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="caption" display="block">
+                  SKU: {r.sku ?? '—'} | Position: {r.position_id ?? '—'} | Merged qty: {r.merged_quantity}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Review: {r.review_required ? 'required' : 'not required'} | Normalized labels:{' '}
+                  {r.normalized_label_ids.length}
+                  {r.explanation_summary ? ` | ${r.explanation_summary}` : ''}
+                </Typography>
+              </Box>
             ))}
           </Box>
         ) : (
