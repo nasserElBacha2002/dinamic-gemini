@@ -5,13 +5,13 @@ Stage 8 — When SQL Server enabled, push status/progress/outputs/pallet_results
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from src.config import load_settings
-from src.jobs.job_store import _db_repos, get_job, update_job
+from src.jobs.job_store import _db_repos, claim_next_job, get_job, update_job
 from src.jobs.models import JobStatus
-from src.jobs.queue import dequeue
 from src.io.logging import setup_logger
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
@@ -214,10 +214,13 @@ def run_job(base_path: Path, job_id: str) -> None:
 
 
 def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> None:
-    """Consume queue until stop() returns True."""
+    """Poll shared store and process claimed jobs until stop() returns True."""
+    idle_sleep_sec = 1.0
     while True:
         if stop and stop():
             break
-        job_id = dequeue(timeout=1.0)
-        if job_id:
-            run_job(base_path, job_id)
+        claimed = claim_next_job(base_path)
+        if claimed is None:
+            time.sleep(idle_sleep_sec)
+            continue
+        run_job(base_path, claimed.job_id)

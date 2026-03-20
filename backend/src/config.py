@@ -417,6 +417,15 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("API_KEY", ""),
         description="API key for server auth (header X-API-Key). Empty = no auth (dev only).",
     )
+    embedded_worker_enabled: bool = Field(
+        default_factory=lambda: os.getenv("EMBEDDED_WORKER_ENABLED", "true").strip().lower()
+        in ("1", "true", "yes"),
+        description=(
+            "Enable the embedded background worker thread inside API process. "
+            "Default true for local/dev; disable in production when running dedicated worker service. "
+            "Env: EMBEDDED_WORKER_ENABLED."
+        ),
+    )
     cors_allow_origins: str = Field(
         default_factory=lambda: (os.getenv("CORS_ALLOW_ORIGINS", "") or "").strip(),
         description=(

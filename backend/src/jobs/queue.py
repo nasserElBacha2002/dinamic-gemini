@@ -1,4 +1,8 @@
-"""Stage 7 — In-memory job queue (MVP)."""
+"""Stage 7 — In-memory job queue (legacy/local fallback only).
+
+Production worker flow now claims jobs from shared SQL persistence.
+This module is kept for local compatibility and transitional paths.
+"""
 
 import queue
 import threading

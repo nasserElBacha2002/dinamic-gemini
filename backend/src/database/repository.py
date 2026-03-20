@@ -219,6 +219,43 @@ class JobsRepository:
             "updated_at": _row_to_iso(row, "updated_at"),
         }
 
+    def claim_next_queued_job(self) -> Optional[JobRecordDict]:
+        """Atomically claim one queued job and mark it running.
+
+        Returns:
+            JobRecordDict for the claimed job, or None when no queued jobs exist.
+        """
+        claimed_job_id: Optional[str] = None
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                ;WITH next_job AS (
+                    SELECT TOP 1 id
+                    FROM jobs WITH (UPDLOCK, READPAST, ROWLOCK)
+                    WHERE status = 'queued'
+                    ORDER BY created_at ASC, id ASC
+                )
+                UPDATE jobs
+                SET updated_at = ?, status = 'running', progress_stage = ?, progress_percent = ?
+                OUTPUT inserted.id
+                WHERE id IN (SELECT id FROM next_job)
+                """,
+                (now_utc(), "claimed", 1),
+            )
+            row = cur.fetchone()
+            if row is not None:
+                raw_id = getattr(row, "id", None)
+                if raw_id is None:
+                    try:
+                        raw_id = row[0]
+                    except Exception:
+                        raw_id = None
+                if raw_id is not None:
+                    claimed_job_id = str(raw_id)
+        if not claimed_job_id:
+            return None
+        return self.get_job(claimed_job_id)
+
 
 class PalletResultsRepository:
     """Bulk insert and read pallet_results.
