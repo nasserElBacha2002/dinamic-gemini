@@ -55,6 +55,7 @@ output/
 !package-lock.json
 !tsconfig.json
 !tsconfig.node.json
+!frontend/vercel.json
 
 # Data files (videos de prueba, etc.)
 data/
