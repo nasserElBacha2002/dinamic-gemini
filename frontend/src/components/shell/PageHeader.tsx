@@ -29,7 +29,10 @@ export interface PageHeaderProps {
   /** Required when `title` is omitted: screen reader `h1` (visually hidden) so each route keeps a sensible heading. */
   a11yTitle?: string;
   subtitle?: ReactNode;
-  /** Internal navigation — Re diseño 3.3 §4.1 / §14.1; typical above inventory/aisle flows. */
+  /**
+   * Internal navigation — §4.1 / §14.1. Trail links stay **secondary** by default and only pick up primary blue
+   * on hover so they do not compete with page actions (§6.2: primary blue for important emphasis, not every link).
+   */
   breadcrumbs?: PageHeaderBreadcrumb[];
   /** Actions in the main column (e.g. Create inventory). §4.3 also allows primary actions in the topbar later; for Sprint 2.1 they stay here unless lifted explicitly. */
   actions?: ReactNode;
@@ -68,9 +71,15 @@ export default function PageHeader({ title, a11yTitle, subtitle, breadcrumbs, ac
                   component={RouterLink}
                   to={crumb.to}
                   underline="hover"
-                  color="primary"
                   variant="body2"
-                  fontWeight={500}
+                  color="inherit"
+                  sx={{
+                    color: 'text.secondary',
+                    fontWeight: 400,
+                    '&:hover': {
+                      color: 'primary.main',
+                    },
+                  }}
                 >
                   {crumb.label}
                 </Link>
@@ -83,7 +92,7 @@ export default function PageHeader({ title, a11yTitle, subtitle, breadcrumbs, ac
           </Breadcrumbs>
         ) : null}
         {title ? (
-          <Typography variant="h5" component="h1" fontWeight={600} gutterBottom={Boolean(subtitle)}>
+          <Typography variant="h5" component="h1" gutterBottom={Boolean(subtitle)}>
             {title}
           </Typography>
         ) : (

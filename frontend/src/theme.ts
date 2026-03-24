@@ -1,9 +1,20 @@
-import { createTheme } from '@mui/material/styles';
+import { alpha, createTheme } from '@mui/material/styles';
 import type { Shadows } from '@mui/material/styles';
 
 /**
  * Dinamic Inventory v3 — product theme (Sprint 2.1).
  * Source: Re diseño 3.3 §5–7 (enterprise tone, neutral surfaces, semantic colors, MUI typography, medium density).
+ *
+ * **Palette roles**
+ * - `primary`: action / links / focus / active nav (§6.2–6.3).
+ * - `secondary`: **not** a marketing accent — reserved for neutral “support” chrome (outlined secondary actions,
+ *   passive controls). Semantic “grey / neutral state” in the redesign maps here and to `text.secondary` / greys;
+ *   do not use `secondary` for brand accent or success (§6.3–6.4).
+ * - `success` | `warning` | `error` | `info`: semantic statuses (§6.3).
+ *
+ * **Shape**
+ * - `theme.shape.borderRadius` (8px) is the default corner radius for buttons, inputs, paper, list rows, alerts,
+ *   and shell-adjacent surfaces unless a component documents an exception (§6.1 soft edges).
  */
 
 const baseShadows = createTheme().shadows;
@@ -22,7 +33,6 @@ const theme = createTheme({
       contrastText: '#ffffff',
     },
     secondary: {
-      // Neutral “passive” UI — Re diseño 3.3 §6.3 (gris / estado pasivo). Not accent pink.
       main: '#5f6368',
       light: '#80868b',
       dark: '#3c4043',
@@ -44,7 +54,6 @@ const theme = createTheme({
       dark: '#b71c1c',
     },
     info: {
-      // Informational / sistema — same family as action blue (§6.2–6.3).
       main: '#0277bd',
       light: '#039be5',
       dark: '#01579b',
@@ -78,12 +87,13 @@ const theme = createTheme({
     fontFamily: '"Roboto", "Helvetica Neue", "Arial", sans-serif',
     fontWeightRegular: 400,
     fontWeightMedium: 500,
-    fontWeightBold: 600,
-    h4: { fontWeight: 600, letterSpacing: '-0.02em' },
-    h5: { fontWeight: 600, letterSpacing: '-0.015em' },
-    h6: { fontWeight: 600, letterSpacing: '-0.01em' },
-    subtitle1: { fontWeight: 600 },
-    subtitle2: { fontWeight: 600 },
+    /** Roboto is loaded at 400 / 500 / 700 only — use 700 for heading-level emphasis (no synthetic 600). */
+    fontWeightBold: 700,
+    h4: { fontWeight: 700, letterSpacing: '-0.02em' },
+    h5: { fontWeight: 700, letterSpacing: '-0.015em' },
+    h6: { fontWeight: 700, letterSpacing: '-0.01em' },
+    subtitle1: { fontWeight: 500 },
+    subtitle2: { fontWeight: 500 },
     body1: { lineHeight: 1.5 },
     body2: { lineHeight: 1.43 },
     caption: { lineHeight: 1.33 },
@@ -107,11 +117,11 @@ const theme = createTheme({
         disableElevation: true,
       },
       styleOverrides: {
-        root: {
-          borderRadius: 8,
-          paddingLeft: '1rem',
-          paddingRight: '1rem',
-        },
+        root: ({ theme }) => ({
+          borderRadius: theme.shape.borderRadius,
+          paddingLeft: theme.spacing(2),
+          paddingRight: theme.spacing(2),
+        }),
         containedPrimary: {
           '&:hover': {
             boxShadow: 'none',
@@ -123,24 +133,22 @@ const theme = createTheme({
             borderWidth: 1,
           },
         },
-        text: {
+        text: ({ theme }) => ({
           '&:focus-visible': {
-            outline: '2px solid',
-            outlineColor: 'primary.main',
+            outline: `2px solid ${theme.palette.primary.main}`,
             outlineOffset: 2,
           },
-        },
+        }),
       },
     },
     MuiIconButton: {
       styleOverrides: {
-        root: {
+        root: ({ theme }) => ({
           '&:focus-visible': {
-            outline: '2px solid',
-            outlineColor: 'primary.main',
+            outline: `2px solid ${theme.palette.primary.main}`,
             outlineOffset: 2,
           },
-        },
+        }),
       },
     },
     MuiPaper: {
@@ -148,18 +156,18 @@ const theme = createTheme({
         root: {
           backgroundImage: 'none',
         },
-        rounded: {
-          borderRadius: 8,
-        },
-        elevation1: {
-          boxShadow: shadows[1],
-        },
-        elevation2: {
-          boxShadow: shadows[2],
-        },
-        elevation3: {
-          boxShadow: shadows[3],
-        },
+        rounded: ({ theme }) => ({
+          borderRadius: theme.shape.borderRadius,
+        }),
+        elevation1: ({ theme }) => ({
+          boxShadow: theme.shadows[1],
+        }),
+        elevation2: ({ theme }) => ({
+          boxShadow: theme.shadows[2],
+        }),
+        elevation3: ({ theme }) => ({
+          boxShadow: theme.shadows[3],
+        }),
       },
     },
     MuiAppBar: {
@@ -170,25 +178,24 @@ const theme = createTheme({
     },
     MuiDrawer: {
       styleOverrides: {
-        paper: {
-          borderRight: '1px solid',
-          borderColor: 'divider',
+        paper: ({ theme }) => ({
+          borderRight: `1px solid ${theme.palette.divider}`,
           boxShadow: 'none',
-        },
+        }),
       },
     },
     MuiListItemButton: {
       styleOverrides: {
-        root: {
-          borderRadius: 8,
-          marginBottom: 2,
+        root: ({ theme }) => ({
+          borderRadius: theme.shape.borderRadius,
+          marginBottom: theme.spacing(0.25),
           '&.Mui-selected': {
-            backgroundColor: 'action.selected',
+            backgroundColor: theme.palette.action.selected,
             '&:hover': {
-              backgroundColor: 'action.selected',
+              backgroundColor: theme.palette.action.selected,
             },
           },
-        },
+        }),
       },
     },
     MuiTextField: {
@@ -199,16 +206,16 @@ const theme = createTheme({
     },
     MuiOutlinedInput: {
       styleOverrides: {
-        root: {
-          borderRadius: 8,
-        },
+        root: ({ theme }) => ({
+          borderRadius: theme.shape.borderRadius,
+        }),
       },
     },
     MuiBreadcrumbs: {
       styleOverrides: {
-        separator: {
-          color: 'text.secondary',
-        },
+        separator: ({ theme }) => ({
+          color: theme.palette.text.secondary,
+        }),
       },
     },
     MuiLink: {
@@ -218,33 +225,44 @@ const theme = createTheme({
     },
     MuiAlert: {
       styleOverrides: {
-        root: {
-          borderRadius: 8,
-        },
-        standardSuccess: {
-          backgroundColor: 'rgba(46, 125, 50, 0.08)',
-        },
-        standardWarning: {
-          backgroundColor: 'rgba(237, 108, 2, 0.08)',
-        },
-        standardError: {
-          backgroundColor: 'rgba(198, 40, 40, 0.08)',
-        },
-        standardInfo: {
-          backgroundColor: 'rgba(2, 119, 189, 0.08)',
-        },
+        root: ({ theme }) => ({
+          borderRadius: theme.shape.borderRadius,
+        }),
+        standardSuccess: ({ theme }) => ({
+          backgroundColor: alpha(theme.palette.success.main, 0.08),
+        }),
+        standardWarning: ({ theme }) => ({
+          backgroundColor: alpha(theme.palette.warning.main, 0.08),
+        }),
+        standardError: ({ theme }) => ({
+          backgroundColor: alpha(theme.palette.error.main, 0.08),
+        }),
+        standardInfo: ({ theme }) => ({
+          backgroundColor: alpha(theme.palette.info.main, 0.08),
+        }),
       },
     },
     MuiTableCell: {
       styleOverrides: {
-        head: {
-          fontWeight: 600,
-          color: 'text.secondary',
-          backgroundColor: 'rgba(0, 0, 0, 0.02)',
-        },
+        head: ({ theme }) => ({
+          fontWeight: theme.typography.fontWeightBold,
+          color: theme.palette.text.secondary,
+          backgroundColor: theme.palette.action.hover,
+        }),
+      },
+    },
+    MuiMenu: {
+      styleOverrides: {
+        paper: ({ theme }) => ({
+          borderRadius: theme.shape.borderRadius,
+          border: `1px solid ${theme.palette.divider}`,
+          boxShadow: theme.shadows[2],
+        }),
       },
     },
   },
 });
+
+// Sprint 2.3+: StatusBadge, FilterToolbar, DataTable density tokens — extend components here when those land.
 
 export default theme;
