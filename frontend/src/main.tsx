@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { AuthProvider } from './features/auth';
+import { AppSnackbarProvider } from './components/ui/AppSnackbarProvider';
 import App from './App';
 /** Product theme — Sprint 2.1; aligned with `docs/Re diseño 3.3.md` §5–7. */
 import theme from './theme';
@@ -30,9 +31,11 @@ ReactDOM.createRoot(root).render(
       <BrowserRouter>
         <ThemeProvider theme={theme}>
           <CssBaseline />
-          <AuthProvider>
-            <App />
-          </AuthProvider>
+          <AppSnackbarProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </AppSnackbarProvider>
         </ThemeProvider>
       </BrowserRouter>
     </QueryClientProvider>

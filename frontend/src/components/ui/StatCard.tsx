@@ -1,26 +1,16 @@
 /**
- * Metric/stat card: label + value in an outlined Card.
- * Use for dashboard-style metrics (e.g. inventory metrics grid).
+ * Thin wrapper over `KpiCard` — same `label` / `value` API.
+ * Prefer importing `KpiCard` for new code (description, onClick for §14.6 drill-down).
  */
 
-import { Card, CardContent, Typography } from '@mui/material';
+import type { ReactNode } from 'react';
+import KpiCard from './KpiCard';
 
 export interface StatCardProps {
-  /** Short label (e.g. "Total positions", "Success rate"). */
   label: string;
-  /** Value to show (number, string, or React node). */
-  value: React.ReactNode;
+  value: ReactNode;
 }
 
 export default function StatCard({ label, value }: StatCardProps) {
-  return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="body2" color="text.secondary">
-          {label}
-        </Typography>
-        <Typography variant="h6">{value}</Typography>
-      </CardContent>
-    </Card>
-  );
+  return <KpiCard label={label} value={value} />;
 }
