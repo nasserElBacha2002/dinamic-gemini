@@ -1,8 +1,20 @@
 """
-List inventories with per-row aggregates for table/list screens (Sprint 1.2).
+List inventories with per-row aggregates for the **screen-ready** inventories table (Sprint 1.2).
 
-pending_review_count: positions with needs_review True under this inventory's aisles.
-last_activity_at: max of inventory updated_at, aisle updated_at, position updated_at (UTC-aware).
+**Contract:** This use case backs ``GET /api/v3/inventories``, which returns
+``InventoryListItemResponse`` — not the thin ``InventoryResponse`` shape used for GET-by-id
+and create.
+
+**Aggregates:**
+- ``pending_review_count``: positions with ``needs_review`` true under this inventory's aisles.
+- ``last_activity_at``: max of persisted ``updated_at`` / ``created_at`` on the inventory row,
+  each related aisle, and each related position. It is a **freshness signal for list sorting
+  and “recent activity” columns** — not a dedicated “last human review” or “last job completed”
+  event (those may be added later if product requires).
+
+**Performance:** Implementation walks each inventory and calls aisle + position repositories.
+That is correct for small/medium data volumes and in-memory tests; for large SQL deployments,
+a future optimization may replace this with fewer query-oriented reads (same DTO).
 """
 
 from __future__ import annotations
@@ -40,8 +52,10 @@ class ListInventoryListItemsUseCase:
             times: List[datetime] = [inv.updated_at, inv.created_at]
             for a in aisles:
                 times.append(a.updated_at)
+                times.append(a.created_at)
             for p in positions:
                 times.append(p.updated_at)
+                times.append(p.created_at)
             last_activity = _max_dt(*times) if times else inv.updated_at
             out.append(
                 InventoryListItem(

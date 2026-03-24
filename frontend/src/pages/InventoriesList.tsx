@@ -12,7 +12,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import type { Inventory } from '../api/types';
+import type { Inventory, InventoryListItem } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
@@ -27,7 +27,8 @@ export default function InventoriesList() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const { data: inventories = [], isLoading, isError, error, refetch } = useInventoriesList();
+  const { data, isLoading, isError, error, refetch } = useInventoriesList();
+  const inventories: InventoryListItem[] = data ?? [];
   const createMutation = useCreateInventory();
 
   const errorMessage =

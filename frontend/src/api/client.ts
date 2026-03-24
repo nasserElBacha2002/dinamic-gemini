@@ -88,6 +88,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
+/** GET collection — screen-ready list rows (`InventoryListItemResponse`); not the thin entity shape. */
 export async function getInventories(): Promise<InventoryListItem[]> {
   const response = await protectedFetch(`${API_BASE}/api/v3/inventories`);
   const data = await handleResponse<InventoryListItem[]>(response);

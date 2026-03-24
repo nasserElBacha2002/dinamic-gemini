@@ -22,12 +22,19 @@ Validate that backend/frontend contracts can support target product screens **wi
 
 - **v3 routes**: inventories CRUD, metrics, visual refs; aisles; positions list/detail; reviews.
 - **Gaps before 1.2**: `GET /inventories` returned only id, name, status, created_at — **no row aggregates** for list tables.
-- **After 1.2**: same route returns **inventory list items** with `aisles_count`, `pending_review_count`, `last_activity_at`, `updated_at`.
+- **After 1.2 (contract change)**: `GET /api/v3/inventories` is the **primary screen-ready inventories list** contract: response type is **`InventoryListItemResponse[]`**, not `InventoryResponse[]`. Get-by-id and create still use **`InventoryResponse`**.
+
+### `last_activity_at` semantics
+
+Max of **persisted** `created_at` / `updated_at` on the inventory, each aisle, and each position — a **list freshness** signal for sorting or “recent activity” columns. It is **not** a dedicated “last human review” or “last job finished” timestamp.
+
+### Performance note (Sprint 1.2)
+
+`ListInventoryListItemsUseCase` loads aisles and positions per inventory via repository calls. Suitable for typical volumes; **SQL-scale optimization** (e.g. aggregate queries) is a future change **without** altering the list DTO.
 
 ## 4. Current frontend readiness
 
-- Types mirrored `Inventory`; hooks call `getInventories()`.
-- **After 1.2**: `InventoryListItem` type + `getInventories()` return type updated; list page can bind new fields when UI is built.
+- **After 1.2**: `getInventories()` returns `InventoryListItem[]` (list contract). Create/detail still use `Inventory`. List page types rows as list items for clarity.
 
 ## 5. Gap matrix
 

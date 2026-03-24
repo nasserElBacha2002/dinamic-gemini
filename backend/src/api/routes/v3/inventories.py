@@ -1,4 +1,8 @@
-"""v3 inventory CRUD, metrics, and visual references."""
+"""v3 inventory CRUD, metrics, and visual references.
+
+GET / (collection) returns InventoryListItemResponse — screen-ready list rows with aggregates.
+GET /{id} and POST / return InventoryResponse (entity without list aggregates).
+"""
 
 from __future__ import annotations
 
@@ -90,7 +94,11 @@ def create_inventory(
 def list_inventories(
     use_case: ListInventoryListItemsUseCase = Depends(get_list_inventory_list_items_use_case),
 ) -> List[InventoryListItemResponse]:
-    """List all inventories with per-row aggregates for table views (aisles count, pending review, last activity)."""
+    """Primary inventories **list** contract: all inventories with table aggregates (Sprint 1.2).
+
+    Response is ``InventoryListItemResponse[]`` — not the thin ``InventoryResponse`` used for
+    get-by-id or create.
+    """
     items = use_case.execute()
     return [inventory_list_item_to_response(item) for item in items]
 

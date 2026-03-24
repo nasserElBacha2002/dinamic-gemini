@@ -72,7 +72,11 @@ class ProcessAislePayload(TypedDict):
 
 @dataclass(frozen=True)
 class InventoryListItem:
-    """One inventory row for list/summary screens: entity plus aggregates for tables and cards."""
+    """Application row for GET /inventories (list): entity plus counts and ``last_activity_at``.
+
+    ``last_activity_at`` is the maximum of inventory, aisle, and position ``created_at`` /
+    ``updated_at`` — a list **freshness** signal, not a domain “last review completed” timestamp.
+    """
 
     inventory: Inventory
     aisles_count: int

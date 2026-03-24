@@ -12,7 +12,7 @@ class CreateInventoryRequest(BaseModel):
 
 
 class InventoryResponse(BaseModel):
-    """Single inventory in get or create response."""
+    """Single inventory for GET /{id} and POST / (create). Not the list-row contract; see InventoryListItemResponse."""
     id: str
     name: str
     status: str
@@ -21,7 +21,12 @@ class InventoryResponse(BaseModel):
 
 
 class InventoryListItemResponse(BaseModel):
-    """GET /api/v3/inventories — one row for inventories table (aggregates for screen-ready lists)."""
+    """Primary **list** contract for GET /api/v3/inventories: table-ready row with aggregates.
+
+    Replaces the pre–1.2 thin entity list (InventoryResponse-like fields only). Clients that
+    consumed GET / must expect this shape, including ``aisles_count``, ``pending_review_count``,
+    ``last_activity_at``, and ``updated_at``.
+    """
 
     id: str
     name: str
@@ -36,7 +41,10 @@ class InventoryListItemResponse(BaseModel):
     )
     last_activity_at: Optional[datetime] = Field(
         None,
-        description="Latest activity: max of inventory, aisle, and position timestamps.",
+        description=(
+            "Freshness for list UX: max of inventory/aisle/position created_at and updated_at. "
+            "Not a dedicated last-review or last-job event."
+        ),
     )
 
 
