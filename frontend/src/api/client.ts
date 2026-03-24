@@ -278,14 +278,49 @@ export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImag
   }
 }
 
-/** List positions (results) for an aisle — Épica 6. */
+/** Query params for GET aisle positions (§9.7). Omitted keys are not sent; backend defaults apply. */
+export interface AislePositionsListQuery {
+  status?: string | null;
+  needs_review?: boolean | null;
+  min_confidence?: number | null;
+  sku_filter?: string | null;
+  page?: number;
+  page_size?: number;
+}
+
+function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.status != null && String(q.status).trim() !== '') {
+    params.set('status', String(q.status).trim());
+  }
+  if (q.needs_review != null) {
+    params.set('needs_review', String(q.needs_review));
+  }
+  if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
+    params.set('min_confidence', String(q.min_confidence));
+  }
+  if (q.sku_filter != null && String(q.sku_filter).trim() !== '') {
+    params.set('sku_filter', String(q.sku_filter).trim());
+  }
+  if (q.page != null && q.page >= 1) {
+    params.set('page', String(q.page));
+  }
+  if (q.page_size != null && q.page_size >= 1) {
+    params.set('page_size', String(q.page_size));
+  }
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+/** List positions (results) for an aisle — Épica 6 / Aisle Results table. */
 export async function getAislePositions(
   inventoryId: string,
-  aisleId: string
+  aisleId: string,
+  listQuery?: AislePositionsListQuery
 ): Promise<PositionListResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions`
-  );
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions`;
+  const response = await protectedFetch(`${path}${buildAislePositionsQueryString(listQuery)}`);
   return handleResponse<PositionListResponse>(response);
 }
 

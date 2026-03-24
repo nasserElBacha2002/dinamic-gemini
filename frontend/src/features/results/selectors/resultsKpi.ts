@@ -12,7 +12,7 @@ export interface ResultsKpi {
   validTraceability: number;
   /** Count of results with traceability not valid (MISSING, INVALID, UNVALIDATED). */
   nonValidTraceability: number;
-  /** Count of results with detectedQty exactly 0 (excludes null/unknown). */
+  /** Count of results with resolved display quantity exactly 0 (resolvedQty ?? detectedQty). */
   qtyZero: number;
   withEvidence: number;
   /** Results with confidence < threshold (when confidence is present). */
@@ -43,7 +43,10 @@ export function computeResultsKpi(results: ResultSummary[]): ResultsKpi {
     ) {
       kpi.nonValidTraceability += 1;
     }
-    if (r.detectedQty === 0) kpi.qtyZero += 1;
+    {
+      const q = r.resolvedQty ?? r.detectedQty;
+      if (q === 0) kpi.qtyZero += 1;
+    }
     if (r.hasEvidence) kpi.withEvidence += 1;
     if (r.confidence != null && r.confidence < LOW_CONFIDENCE_THRESHOLD) {
       kpi.lowConfidence += 1;

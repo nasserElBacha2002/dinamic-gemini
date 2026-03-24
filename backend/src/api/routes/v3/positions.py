@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.dependencies import (
     get_list_aisle_positions_use_case,
@@ -16,6 +18,7 @@ from src.api.schemas.position_schemas import (
     PositionListResponse,
 )
 from src.application.errors import AisleNotFoundError, InventoryNotFoundError, PositionNotFoundError
+from src.application.ports.contracts import PositionListQuery
 from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 
@@ -34,11 +37,34 @@ def list_aisle_positions(
     aisle_id: str,
     use_case: ListAislePositionsUseCase = Depends(get_list_aisle_positions_use_case),
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    status: Optional[str] = Query(None, description="Filter by position status (e.g. detected, reviewed)."),
+    needs_review: Optional[bool] = Query(None, description="When set, only positions with this needs_review flag."),
+    min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="Minimum confidence (inclusive)."),
+    sku_filter: Optional[str] = Query(None, description="Substring match against product SKU for this aisle."),
+    page: int = Query(1, ge=1, description="Page index (1-based). Applied before SKU consolidation."),
+    page_size: int = Query(
+        25,
+        ge=1,
+        le=500,
+        description="Page size (max 500). Applied before consolidation; use with page for large aisles.",
+    ),
 ) -> PositionListResponse:
-    """List result positions for an aisle. Response includes summary sku and detected_quantity when available."""
+    """List result positions for an aisle (Aisle Results table). Optional filters and pagination §9.7."""
     try:
+        query = PositionListQuery(
+            status=status,
+            needs_review=needs_review,
+            min_confidence=min_confidence,
+            sku_filter=sku_filter.strip() if sku_filter and str(sku_filter).strip() else None,
+            page=page,
+            page_size=page_size,
+        )
         positions = use_case.execute(
-            ListAislePositionsCommand(inventory_id=inventory_id, aisle_id=aisle_id)
+            ListAislePositionsCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                query=query,
+            )
         )
         summaries = []
         for p in positions:

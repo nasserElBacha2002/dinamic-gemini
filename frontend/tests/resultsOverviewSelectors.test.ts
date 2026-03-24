@@ -12,6 +12,8 @@ function makeResult(overrides: Partial<ResultSummary> = {}): ResultSummary {
     id: 'r1',
     sku: 'SKU',
     detectedQty: 1,
+    correctedQty: null,
+    resolvedQty: null,
     confidence: 0.9,
     reviewStatus: 'DETECTED',
     traceabilityStatus: 'VALID',
@@ -64,14 +66,15 @@ describe('computeResultsKpi', () => {
     expect(kpi.nonValidTraceability).toBe(2);
   });
 
-  it('counts qtyZero (only exact 0, not null)', () => {
+  it('counts qtyZero when resolved display qty (resolvedQty ?? detectedQty) is exactly 0', () => {
     const results = [
-      makeResult({ detectedQty: 0 }),
-      makeResult({ detectedQty: null }),
+      makeResult({ detectedQty: 0, resolvedQty: null }),
+      makeResult({ detectedQty: 5, resolvedQty: 0, correctedQty: 0 }),
+      makeResult({ detectedQty: null, resolvedQty: null }),
       makeResult({ detectedQty: 5 }),
     ];
     const kpi = computeResultsKpi(results);
-    expect(kpi.qtyZero).toBe(1);
+    expect(kpi.qtyZero).toBe(2);
   });
 
   it('counts lowConfidence', () => {
@@ -113,7 +116,7 @@ describe('filterResults', () => {
     expect(out[0].id).toBe('1');
   });
 
-  it('qty_zero filters by detectedQty exactly 0', () => {
+  it('qty_zero filters by resolved display quantity 0', () => {
     const out = filterResults(results, 'qty_zero');
     expect(out).toHaveLength(1);
     expect(out[0].id).toBe('1');

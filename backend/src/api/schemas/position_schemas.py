@@ -7,7 +7,12 @@ from pydantic import BaseModel, Field
 
 
 class PositionSummaryResponse(BaseModel):
-    """Summary of a position in list responses. Aligned with ResultSummary (v3.1.1 Epic 2)."""
+    """One row in the per-aisle results list (Aisle Results / review entry).
+
+    Same shape as the ``position`` field on detail responses. Quantity fields follow the v3.2.2
+    contract (``qty``, ``qtySource``, ``qtyResolved``); ``needs_review`` and ``status`` drive review UX;
+    ``has_evidence`` and ``traceability_status`` avoid inferring from raw JSON in the client.
+    """
     id: str
     aisle_id: str
     status: str

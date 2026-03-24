@@ -35,8 +35,10 @@ export function filterResults(
           r.traceabilityStatus === 'INVALID' ||
           r.traceabilityStatus === 'UNVALIDATED'
         );
-      case 'qty_zero':
-        return r.detectedQty === 0;
+      case 'qty_zero': {
+        const q = r.resolvedQty ?? r.detectedQty;
+        return q === 0;
+      }
       case 'low_confidence':
         return r.confidence != null && r.confidence < LOW_CONFIDENCE_THRESHOLD;
       default:

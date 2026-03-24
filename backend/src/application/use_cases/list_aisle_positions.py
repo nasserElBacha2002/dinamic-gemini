@@ -64,11 +64,10 @@ class ListAislePositionsUseCase:
             raise AisleNotFoundError(
                 f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
             )
-        q = command.query
-        if q is not None:
-            positions = list(self._position_repo.list_by_aisle_query(command.aisle_id, q))
-        else:
-            positions = list(self._position_repo.list_by_aisle(command.aisle_id))
+        # Always use list_by_aisle_query so pagination and filters share one path (§9.7).
+        # When command.query is omitted, default PositionListQuery() matches former list_by_aisle defaults (page=1, page_size=25).
+        q = command.query if command.query is not None else PositionListQuery()
+        positions = list(self._position_repo.list_by_aisle_query(command.aisle_id, q))
 
         # Group by (aisle_id, canonical SKU). Positions without a valid internal_code
         # are emitted as-is and never merged.
