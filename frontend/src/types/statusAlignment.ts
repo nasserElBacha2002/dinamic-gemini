@@ -3,17 +3,33 @@
  *
  * Direction: backend/API value → documented UI taxonomy.
  * When no doc counterpart exists, `target` is null; use `raw` for labels/badges.
+ *
+ * For result review, `target === 'confirmed'` is ambiguous in the plan docs: use `resolutionKind`
+ * to distinguish human confirmation from auto-accept (detected + !needs_review).
  */
 
 import type {
   TargetAisleStatus,
   TargetInventoryStatus,
-  TargetQualityStatus,
   TargetResultReviewStatus,
+  TraceabilityPlanLabel,
 } from './screenTargets';
+import { LOW_CONFIDENCE_THRESHOLD } from '../constants/reviewThresholds';
 
-/** Matches features/results/constants LOW_CONFIDENCE_THRESHOLD (avoid importing features from types). */
-export const ALIGNMENT_LOW_CONFIDENCE_THRESHOLD = 0.5;
+/** Shared with Results KPIs/filters via src/constants/reviewThresholds.ts */
+export { LOW_CONFIDENCE_THRESHOLD };
+
+/**
+ * How the position relates to review / confirmation semantics.
+ * Use with `target` — especially when target is `confirmed`, check `resolutionKind`.
+ */
+export type ResultReviewResolutionKind =
+  | 'pending_review'
+  | 'human_confirmed'
+  | 'auto_accepted'
+  | 'corrected'
+  | 'deleted'
+  | 'unknown';
 
 export interface InventoryStatusAlignment {
   raw: string;
@@ -33,18 +49,17 @@ export interface ResultReviewAlignment {
   needsReview: boolean;
   target: TargetResultReviewStatus | null;
   isApproximate: boolean;
+  /** Semantic disambiguation; do not infer from `target` or `isApproximate` alone. */
+  resolutionKind: ResultReviewResolutionKind;
 }
 
 export interface QualityAlignmentSignals {
   /**
-   * Plan quality axis from API traceability (valid → valid; invalid/missing → invalid).
-   * `unvalidated` has no plan label — null.
+   * Traceability dimension (plan §11); orthogonal to `lowConfidence`.
+   * `unvalidated` / empty API → null (no plan bucket).
    */
-  traceabilityTarget: Extract<
-    TargetQualityStatus,
-    'valid_traceability' | 'invalid_traceability'
-  > | null;
-  /** Plan `low_confidence` axis; independent of traceability. */
+  traceabilityTarget: TraceabilityPlanLabel | null;
+  /** Separate dimension: confidence vs LOW_CONFIDENCE_THRESHOLD. */
   lowConfidence: boolean;
 }
 
@@ -108,6 +123,9 @@ export function alignAisleApiStatusToTarget(
 /**
  * Result: API position detected | reviewed | corrected | deleted + needs_review.
  * Plan: pending_review | confirmed | corrected | deleted.
+ *
+ * `target === 'confirmed'` covers both human-confirmed (`reviewed`) and auto-accepted
+ * (`detected` + !needs_review); use `resolutionKind` to tell them apart.
  */
 export function alignPositionToResultReviewTarget(
   positionStatus: string | null | undefined,
@@ -120,6 +138,7 @@ export function alignPositionToResultReviewTarget(
       needsReview,
       target: 'pending_review',
       isApproximate: false,
+      resolutionKind: 'pending_review',
     };
   }
   if (raw === 'detected' && !needsReview) {
@@ -128,6 +147,7 @@ export function alignPositionToResultReviewTarget(
       needsReview,
       target: 'confirmed',
       isApproximate: true,
+      resolutionKind: 'auto_accepted',
     };
   }
   if (raw === 'reviewed') {
@@ -136,6 +156,7 @@ export function alignPositionToResultReviewTarget(
       needsReview,
       target: 'confirmed',
       isApproximate: false,
+      resolutionKind: 'human_confirmed',
     };
   }
   if (raw === 'corrected') {
@@ -144,6 +165,7 @@ export function alignPositionToResultReviewTarget(
       needsReview,
       target: 'corrected',
       isApproximate: false,
+      resolutionKind: 'corrected',
     };
   }
   if (raw === 'deleted') {
@@ -152,6 +174,7 @@ export function alignPositionToResultReviewTarget(
       needsReview,
       target: 'deleted',
       isApproximate: false,
+      resolutionKind: 'deleted',
     };
   }
   return {
@@ -159,11 +182,12 @@ export function alignPositionToResultReviewTarget(
     needsReview,
     target: null,
     isApproximate: false,
+    resolutionKind: 'unknown',
   };
 }
 
 /**
- * Quality: plan valid_traceability | invalid_traceability | low_confidence.
+ * Quality: two dimensions — traceability (plan labels) and low confidence (threshold).
  * API traceability: valid | missing | invalid | unvalidated.
  */
 export function deriveQualityAlignmentSignals(
@@ -171,13 +195,12 @@ export function deriveQualityAlignmentSignals(
   confidence: number | null | undefined,
   options?: { lowConfidenceThreshold?: number }
 ): QualityAlignmentSignals {
-  const threshold = options?.lowConfidenceThreshold ?? ALIGNMENT_LOW_CONFIDENCE_THRESHOLD;
+  const threshold = options?.lowConfidenceThreshold ?? LOW_CONFIDENCE_THRESHOLD;
   const lowConfidence = confidence != null && confidence < threshold;
   const t = norm(apiTraceability);
-  let traceabilityTarget: QualityAlignmentSignals['traceabilityTarget'] = null;
+  let traceabilityTarget: TraceabilityPlanLabel | null = null;
   if (t === 'valid') traceabilityTarget = 'valid_traceability';
   else if (t === 'invalid' || t === 'missing') traceabilityTarget = 'invalid_traceability';
-  else if (t === 'unvalidated' || t === '') traceabilityTarget = null;
   else traceabilityTarget = null;
   return { traceabilityTarget, lowConfidence };
 }

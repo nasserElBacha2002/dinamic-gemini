@@ -4,7 +4,7 @@ import {
   alignAisleApiStatusToTarget,
   alignPositionToResultReviewTarget,
   deriveQualityAlignmentSignals,
-  ALIGNMENT_LOW_CONFIDENCE_THRESHOLD,
+  LOW_CONFIDENCE_THRESHOLD,
 } from '../src/types/statusAlignment';
 
 describe('alignInventoryApiStatusToTarget', () => {
@@ -67,27 +67,30 @@ describe('alignPositionToResultReviewTarget', () => {
   it('maps detected + needs_review to pending_review', () => {
     expect(alignPositionToResultReviewTarget('detected', true)).toMatchObject({
       target: 'pending_review',
+      resolutionKind: 'pending_review',
       isApproximate: false,
     });
   });
-  it('maps detected + !needs_review to confirmed (approximate)', () => {
-    expect(alignPositionToResultReviewTarget('detected', false)).toMatchObject({
-      target: 'confirmed',
-      isApproximate: true,
-    });
+  it('maps detected + !needs_review to plan confirmed with auto_accepted resolution', () => {
+    const r = alignPositionToResultReviewTarget('detected', false);
+    expect(r.target).toBe('confirmed');
+    expect(r.resolutionKind).toBe('auto_accepted');
+    expect(r.isApproximate).toBe(true);
   });
-  it('maps reviewed and corrected', () => {
-    expect(alignPositionToResultReviewTarget('reviewed', false)).toMatchObject({
-      target: 'confirmed',
-      isApproximate: false,
-    });
+  it('maps reviewed to plan confirmed with human_confirmed resolution', () => {
+    const r = alignPositionToResultReviewTarget('reviewed', false);
+    expect(r.target).toBe('confirmed');
+    expect(r.resolutionKind).toBe('human_confirmed');
+    expect(r.isApproximate).toBe(false);
+  });
+  it('maps corrected and deleted', () => {
     expect(alignPositionToResultReviewTarget('corrected', false)).toMatchObject({
       target: 'corrected',
-      isApproximate: false,
+      resolutionKind: 'corrected',
     });
     expect(alignPositionToResultReviewTarget('deleted', false)).toMatchObject({
       target: 'deleted',
-      isApproximate: false,
+      resolutionKind: 'deleted',
     });
   });
 });
@@ -110,7 +113,7 @@ describe('deriveQualityAlignmentSignals', () => {
     expect(deriveQualityAlignmentSignals('valid', 0.9).lowConfidence).toBe(false);
     expect(
       deriveQualityAlignmentSignals('valid', 0.9, {
-        lowConfidenceThreshold: ALIGNMENT_LOW_CONFIDENCE_THRESHOLD,
+        lowConfidenceThreshold: LOW_CONFIDENCE_THRESHOLD,
       }).lowConfidence
     ).toBe(false);
   });
