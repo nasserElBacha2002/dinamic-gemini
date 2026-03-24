@@ -7,6 +7,7 @@ import InventoriesList from './pages/InventoriesList';
 import InventoryDetail from './pages/InventoryDetail';
 import AislePositionsPage from './pages/AislePositionsPage';
 import PositionDetailPage from './pages/PositionDetailPage';
+import ScreenPlaceholderPage from './pages/ScreenPlaceholderPage';
 
 /** Minimal full-screen loading while auth bootstrap runs. */
 function AuthLoading() {
@@ -32,6 +33,33 @@ function App() {
   const detailEl = useMemo(() => <InventoryDetail />, []);
   const positionsEl = useMemo(() => <AislePositionsPage />, []);
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
+  const dashboardEl = useMemo(
+    () => (
+      <ScreenPlaceholderPage
+        title="Dashboard"
+        description="Operational summary (KPIs, attention, activity) — planned for v3.3."
+      />
+    ),
+    [],
+  );
+  const reviewQueueEl = useMemo(
+    () => (
+      <ScreenPlaceholderPage
+        title="Review queue"
+        description="Cross-inventory prioritized results — planned for v3.3."
+      />
+    ),
+    [],
+  );
+  const metricsEl = useMemo(
+    () => (
+      <ScreenPlaceholderPage
+        title="Metrics / Analytics"
+        description="Trends and performance — planned for v3.3."
+      />
+    ),
+    [],
+  );
 
   if (!initialized) {
     return <AuthLoading />;
@@ -47,6 +75,9 @@ function App() {
     <Routes>
       <Route path="/login" element={loginEl} />
       <Route path="/" element={listEl} />
+      <Route path="/dashboard" element={dashboardEl} />
+      <Route path="/review-queue" element={reviewQueueEl} />
+      <Route path="/metrics" element={metricsEl} />
       <Route path="/inventories/:inventoryId" element={detailEl} />
       <Route path="/inventories/:inventoryId/aisles/:aisleId/positions" element={positionsEl} />
       <Route path="/inventories/:inventoryId/aisles/:aisleId/positions/:positionId" element={positionDetailEl} />
