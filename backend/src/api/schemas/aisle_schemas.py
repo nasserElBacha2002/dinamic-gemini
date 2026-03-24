@@ -21,7 +21,13 @@ class AisleJobSummary(BaseModel):
 
 
 class AisleResponse(BaseModel):
-    """Single aisle in list or create response."""
+    """Single aisle in list or create response.
+
+    List (GET .../aisles) includes ``assets_count``, ``positions_count``,
+    ``pending_review_positions_count``, and ``last_activity_at`` for the Inventory Detail table.
+    Create returns these as 0 / null when not computed.
+    """
+
     id: str
     inventory_id: str
     code: str
@@ -31,3 +37,7 @@ class AisleResponse(BaseModel):
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     latest_job: Optional[AisleJobSummary] = None
+    assets_count: int = 0
+    positions_count: int = 0
+    pending_review_positions_count: int = 0
+    last_activity_at: Optional[datetime] = None

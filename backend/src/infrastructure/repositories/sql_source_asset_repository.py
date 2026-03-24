@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Sequence
 
+from src.application.ports.contracts import AisleAssetRollup
 from src.application.ports.repositories import SourceAssetRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.assets.entities import SourceAsset, SourceAssetType
@@ -135,3 +136,29 @@ class SqlSourceAssetRepository(SourceAssetRepository):
             )
             rows = cur.fetchall()
         return [_row_to_asset(row) for row in rows]
+
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+        if not aisle_ids:
+            return {}
+        placeholders = ",".join("?" * len(aisle_ids))
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT aisle_id, COUNT(*) AS cnt, MAX(uploaded_at) AS max_uploaded
+                FROM source_assets
+                WHERE aisle_id IN ({placeholders})
+                GROUP BY aisle_id
+                """,
+                list(aisle_ids),
+            )
+            rows = cur.fetchall()
+        out: Dict[str, AisleAssetRollup] = {}
+        for row in rows:
+            aid = row.aisle_id or ""
+            if not aid:
+                continue
+            cnt = int(getattr(row, "cnt", 0) or 0)
+            raw_max = getattr(row, "max_uploaded", None)
+            last = _ensure_utc(raw_max) if raw_max is not None else None
+            out[aid] = AisleAssetRollup(count=cnt, last_uploaded_at=last)
+        return out

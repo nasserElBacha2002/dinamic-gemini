@@ -12,6 +12,27 @@ from src.infrastructure.repositories.memory_source_asset_repository import (
 )
 
 
+def test_summarize_assets_for_aisles_returns_count_and_latest_upload() -> None:
+    repo = MemorySourceAssetRepository()
+    t1 = datetime(2025, 3, 6, 10, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2025, 3, 6, 11, 0, 0, tzinfo=timezone.utc)
+    repo.save(
+        SourceAsset("x1", "aisle-a", SourceAssetType.PHOTO, "a.jpg", "/p/a.jpg", "image/jpeg", t1)
+    )
+    repo.save(
+        SourceAsset("x2", "aisle-a", SourceAssetType.PHOTO, "b.jpg", "/p/b.jpg", "image/jpeg", t2)
+    )
+    repo.save(
+        SourceAsset("y1", "aisle-b", SourceAssetType.PHOTO, "c.jpg", "/p/c.jpg", "image/jpeg", t1)
+    )
+    out = repo.summarize_assets_for_aisles(["aisle-a", "aisle-b", "aisle-empty"])
+    assert out["aisle-a"].count == 2
+    assert out["aisle-a"].last_uploaded_at == t2
+    assert out["aisle-b"].count == 1
+    assert out["aisle-b"].last_uploaded_at == t1
+    assert "aisle-empty" not in out
+
+
 def test_list_by_aisle_returns_assets_ordered_by_uploaded_at_asc() -> None:
     """list_by_aisle returns assets in uploaded_at ASC order to match SqlSourceAssetRepository."""
     repo = MemorySourceAssetRepository()

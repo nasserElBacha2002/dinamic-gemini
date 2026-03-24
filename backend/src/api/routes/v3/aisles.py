@@ -78,7 +78,17 @@ def list_aisles(
     """List aisles for an inventory (v3.0). Returns 404 if inventory not found. Includes latest job per aisle."""
     try:
         items = use_case.execute(inventory_id)
-        return [aisle_to_response(item.aisle, item.latest_job) for item in items]
+        return [
+            aisle_to_response(
+                item.aisle,
+                item.latest_job,
+                assets_count=item.assets_count,
+                positions_count=item.positions_count,
+                pending_review_positions_count=item.pending_review_positions_count,
+                last_activity_at=item.last_activity_at,
+            )
+            for item in items
+        ]
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
 

@@ -81,6 +81,11 @@ export interface Aisle {
   error_code?: string | null;
   error_message?: string | null;
   latest_job?: AisleJobSummary | null;
+  /** Populated on GET .../aisles list (Inventory Detail table). */
+  assets_count?: number;
+  positions_count?: number;
+  pending_review_positions_count?: number;
+  last_activity_at?: string | null;
 }
 
 /** GET .../aisles/{aisle_id}/status response. */

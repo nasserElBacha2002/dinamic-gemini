@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Sequence
 
-from src.application.ports.contracts import PositionListQuery
+from src.application.ports.contracts import AisleAssetRollup, PositionListQuery
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
@@ -68,6 +68,11 @@ class SourceAssetRepository(ABC):
 
     @abstractmethod
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
+        ...
+
+    @abstractmethod
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+        """Return upload count and latest ``uploaded_at`` per aisle id (missing aisles omitted or zero)."""
         ...
 
 

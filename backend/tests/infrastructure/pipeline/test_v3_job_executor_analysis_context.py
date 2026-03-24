@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Sequence
@@ -9,6 +10,7 @@ from typing import Dict, Optional, Sequence
 import pytest
 
 from src.application.ports.clock import Clock
+from src.application.ports.contracts import AisleAssetRollup
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
@@ -97,6 +99,20 @@ class InMemorySourceAssetRepo(SourceAssetRepository):
 
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return [a for a in self._store.values() if a.aisle_id == aisle_id]
+
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+        wanted = set(aisle_ids)
+        by_aisle: Dict[str, list[SourceAsset]] = defaultdict(list)
+        for a in self._store.values():
+            if a.aisle_id in wanted:
+                by_aisle[a.aisle_id].append(a)
+        out: Dict[str, AisleAssetRollup] = {}
+        for aid, assets in by_aisle.items():
+            if not assets:
+                continue
+            last = max(x.uploaded_at for x in assets)
+            out[aid] = AisleAssetRollup(count=len(assets), last_uploaded_at=last)
+        return out
 
 
 class InMemoryInventoryVisualReferenceRepo(InventoryVisualReferenceRepository):

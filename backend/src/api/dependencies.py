@@ -161,11 +161,15 @@ def get_list_aisles_with_status_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
 ) -> ListAislesWithStatusUseCase:
     return ListAislesWithStatusUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
+        position_repo=position_repo,
+        source_asset_repo=source_asset_repo,
     )
 
 

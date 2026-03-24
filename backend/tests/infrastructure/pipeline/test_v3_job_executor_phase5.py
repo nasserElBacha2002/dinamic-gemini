@@ -117,6 +117,9 @@ class NoopRepo(
     def create_many(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         pass
 
+    def summarize_assets_for_aisles(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return {}
+
 
 class FixedClock(Clock):
     def __init__(self, now: datetime) -> None:

@@ -84,6 +84,14 @@ class InventoryListItem:
     last_activity_at: Optional[datetime]
 
 
+@dataclass(frozen=True)
+class AisleAssetRollup:
+    """Per-aisle upload summary for GET /inventories/{id}/aisles (batch, no N+1)."""
+
+    count: int
+    last_uploaded_at: Optional[datetime]
+
+
 @dataclass
 class PositionListQuery:
     """Optional filters and pagination for listing positions by aisle (§9.7)."""

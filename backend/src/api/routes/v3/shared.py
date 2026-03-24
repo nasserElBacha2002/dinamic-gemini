@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Sequence, Set, Tuple
 
@@ -294,7 +295,15 @@ def inventory_list_item_to_response(item: InventoryListItem) -> InventoryListIte
     )
 
 
-def aisle_to_response(a: Aisle, latest_job: Optional[Job] = None) -> AisleResponse:
+def aisle_to_response(
+    a: Aisle,
+    latest_job: Optional[Job] = None,
+    *,
+    assets_count: int = 0,
+    positions_count: int = 0,
+    pending_review_positions_count: int = 0,
+    last_activity_at: Optional[datetime] = None,
+) -> AisleResponse:
     latest = None
     if latest_job is not None:
         latest = AisleJobSummary(
@@ -314,6 +323,10 @@ def aisle_to_response(a: Aisle, latest_job: Optional[Job] = None) -> AisleRespon
         error_code=a.error_code,
         error_message=a.error_message,
         latest_job=latest,
+        assets_count=assets_count,
+        positions_count=positions_count,
+        pending_review_positions_count=pending_review_positions_count,
+        last_activity_at=last_activity_at,
     )
 
 

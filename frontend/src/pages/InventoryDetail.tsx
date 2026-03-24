@@ -37,7 +37,6 @@ import ExecutionLogPanel from '../components/ExecutionLogPanel';
 import {
   useInventoryDetail,
   useAislesList,
-  useAisleAssetCounts,
   useExecutionLog,
   useInventoryMetrics,
   useCreateAisle,
@@ -80,9 +79,6 @@ export default function InventoryDetail() {
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, { enabled: Boolean(inventoryId && inventoryQuery.data) });
   const aisles = aislesQuery.data ?? [];
-  const assetCounts = useAisleAssetCounts(inventoryId, aisles.map((a) => a.id), {
-    enabled: Boolean(inventoryId && aisles.length > 0),
-  });
   const metricsQuery = useInventoryMetrics(inventoryId);
 
   const createAisleMutation = useCreateAisle(inventoryId ?? '');
@@ -108,7 +104,6 @@ export default function InventoryDetail() {
     metricsQuery.isError && metricsQuery.error
       ? getApiErrorMessage(metricsQuery.error, 'Failed to load metrics')
       : null;
-  const assetCountByAisleId = assetCounts.data ?? {};
 
   const handleCreateAisleSuccess = () => {
     setCreateAisleOpen(false);
@@ -289,7 +284,8 @@ export default function InventoryDetail() {
                     <TableCell>Assets</TableCell>
                     <TableCell>Job</TableCell>
                     <TableCell>Results</TableCell>
-                    <TableCell>Created</TableCell>
+                    <TableCell>Pending review</TableCell>
+                    <TableCell>Last activity</TableCell>
                     <TableCell>Error</TableCell>
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
@@ -305,8 +301,8 @@ export default function InventoryDetail() {
                         />
                       </TableCell>
                       <TableCell>
-                        {assetCountByAisleId[aisle.id] != null
-                          ? `${assetCountByAisleId[aisle.id]} file(s)`
+                        {typeof aisle.assets_count === 'number'
+                          ? `${aisle.assets_count} file(s)`
                           : '—'}
                       </TableCell>
                       <TableCell>
@@ -345,6 +341,11 @@ export default function InventoryDetail() {
                       <TableCell>
                         {(aisle.status === 'processed' || aisle.status === 'in_review' || aisle.status === 'completed' || aisle.latest_job?.status === 'succeeded') ? (
                           <Box component="span" sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                            {typeof aisle.positions_count === 'number' && (
+                              <Typography variant="body2" color="text.secondary" component="span">
+                                {aisle.positions_count}
+                              </Typography>
+                            )}
                             <Button
                               variant="contained"
                               size="small"
@@ -353,11 +354,20 @@ export default function InventoryDetail() {
                               View results
                             </Button>
                           </Box>
+                        ) : typeof aisle.positions_count === 'number' && aisle.positions_count > 0 ? (
+                          <Typography variant="body2">{aisle.positions_count}</Typography>
                         ) : (
                           '—'
                         )}
                       </TableCell>
-                      <TableCell>{formatDate(aisle.created_at)}</TableCell>
+                      <TableCell>
+                        {typeof aisle.pending_review_positions_count === 'number'
+                          ? aisle.pending_review_positions_count
+                          : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {formatDate(aisle.last_activity_at ?? aisle.updated_at)}
+                      </TableCell>
                       <TableCell>
                         {aisle.error_message ? (
                           <Typography variant="body2" color="error">
