@@ -11,32 +11,48 @@ from src.api.schemas.inventory_schemas import InventoryListItemResponse
 
 
 class PageMeta(BaseModel):
-    """Stable pagination block for data-heavy tables."""
+    """Shared pagination fields for v3 list responses (flat JSON: same keys as before inheritance refactor).
 
-    page: int = Field(..., ge=1, description="1-based page index.")
-    page_size: int = Field(..., ge=1, description="Items per page.")
-    total_items: int = Field(..., ge=0, description="Total rows matching filters (before current page slice).")
-    total_pages: int = Field(..., ge=0, description="Ceiling of total_items / page_size; 0 when total_items is 0.")
+    ``total_items`` / ``total_pages`` meaning is endpoint-specific. Inventory and aisle list endpoints
+    count the full filtered set in memory. For GET .../positions, totals may be **window-local** when
+    ``raw_fetch_truncated`` is true — see ``PositionListResponse``.
+    """
+
+    page: int = Field(..., ge=1, description="1-based index of this page.")
+    page_size: int = Field(..., ge=1, description="Maximum rows in this page.")
+    total_items: int = Field(
+        ...,
+        ge=0,
+        description=(
+            "Rows matching list filters before paging. Not always the full physical aisle for "
+            "GET .../positions when raw_fetch_truncated is true."
+        ),
+    )
+    total_pages: int = Field(
+        ...,
+        ge=0,
+        description="ceil(total_items / page_size); 0 when total_items is 0. Same caveats as total_items.",
+    )
 
 
-class PaginatedInventoryListResponse(BaseModel):
-    """GET /api/v3/inventories — paginated screen-ready inventory rows."""
+class PaginatedInventoryListResponse(PageMeta):
+    """GET /api/v3/inventories — paginated inventory table rows.
+
+    **Contract change (Sprint 1.4):** this endpoint returns an object with ``items`` and pagination
+    fields, not a bare JSON array. Clients must read ``items`` (see OpenAPI / schema).
+    """
 
     items: List[InventoryListItemResponse]
-    page: int = Field(..., ge=1)
-    page_size: int = Field(..., ge=1)
-    total_items: int = Field(..., ge=0)
-    total_pages: int = Field(..., ge=0)
 
 
-class PaginatedAisleListResponse(BaseModel):
-    """GET .../inventories/{id}/aisles — paginated aisle rows."""
+class PaginatedAisleListResponse(PageMeta):
+    """GET /api/v3/inventories/{inventory_id}/aisles — paginated aisle table rows.
+
+    **Contract change (Sprint 1.4):** response is an object with ``items`` plus pagination fields,
+    not a bare JSON array.
+    """
 
     items: List[AisleResponse]
-    page: int = Field(..., ge=1)
-    page_size: int = Field(..., ge=1)
-    total_items: int = Field(..., ge=0)
-    total_pages: int = Field(..., ge=0)
 
 
 def compute_total_pages(total_items: int, page_size: int) -> int:

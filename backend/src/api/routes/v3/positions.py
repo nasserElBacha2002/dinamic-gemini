@@ -54,7 +54,12 @@ def list_aisle_positions(
     ),
     sort_dir: str = Query("asc", description="asc | desc"),
 ) -> PositionListResponse:
-    """List result positions for an aisle (Aisle Results). Filters apply to raw rows; page/sort after consolidation."""
+    """List result positions for an aisle (Aisle Results).
+
+    Filters apply to **raw** rows; ``page`` / ``page_size`` / sort apply **after** SKU consolidation.
+    When ``raw_fetch_truncated`` is true in the response, ``total_items`` / ``total_pages`` are only
+    reliable within the raw rows the server loaded — not for the entire aisle. See schema docstring.
+    """
     try:
         cmd = ListAislePositionsCommand(
             inventory_id=inventory_id,

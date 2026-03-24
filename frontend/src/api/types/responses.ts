@@ -30,7 +30,10 @@ export interface InventoryListItem extends Inventory {
   last_activity_at: string | null;
 }
 
-/** GET /api/v3/inventories — paginated table (Sprint 1.4). */
+/**
+ * GET /api/v3/inventories — paginated table (Sprint 1.4).
+ * Breaking change: the HTTP body is this object, not `InventoryListItem[]`.
+ */
 export interface PaginatedInventoryListResponse {
   items: InventoryListItem[];
   page: number;
@@ -97,7 +100,10 @@ export interface Aisle {
   last_activity_at?: string | null;
 }
 
-/** GET .../inventories/{id}/aisles — paginated (Sprint 1.4). */
+/**
+ * GET .../inventories/{id}/aisles — paginated (Sprint 1.4).
+ * Breaking change: the HTTP body is this object, not `Aisle[]`.
+ */
 export interface PaginatedAisleListResponse {
   items: Aisle[];
   page: number;
@@ -201,14 +207,17 @@ export interface PositionSummary {
   has_evidence: boolean;
 }
 
-/** Response for GET .../aisles/{aisle_id}/positions. */
+/**
+ * GET .../aisles/{aisle_id}/positions — Aisle Results.
+ * When `raw_fetch_truncated` is true, do not treat `total_items` / `total_pages` as globally exact
+ * for the aisle; they count only consolidated rows from the server’s raw fetch window.
+ */
 export interface PositionListResponse {
   positions: PositionSummary[];
   page: number;
   page_size: number;
   total_items: number;
   total_pages: number;
-  /** True when raw row fetch hit server cap; totals are for the loaded window only. */
   raw_fetch_truncated: boolean;
 }
 
@@ -220,6 +229,7 @@ export interface ReviewQueueItem {
   position: PositionSummary;
 }
 
+/** Review queue list: filters/sort/pagination; no free-text search parameter yet. */
 export interface ReviewQueueListResponse {
   items: ReviewQueueItem[];
   page: number;

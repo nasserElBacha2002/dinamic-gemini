@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.api.schemas.listing_schemas import PageMeta
+
 
 class PositionSummaryResponse(BaseModel):
     """One row in the per-aisle results list (Aisle Results / review entry).
@@ -48,19 +50,30 @@ class PositionSummaryResponse(BaseModel):
     source_image_original_filename: Optional[str] = None
 
 
-class PositionListResponse(BaseModel):
-    """Response for GET .../aisles/{aisle_id}/positions.
+class PositionListResponse(PageMeta):
+    """Response for GET .../aisles/{aisle_id}/positions (Aisle Results).
 
-    Pagination applies **after** SKU consolidation. ``total_items`` counts consolidated rows
-    from the raw fetch window only; ``raw_fetch_truncated`` is true when the raw cap was hit.
+    **Consolidation vs pagination:** filters apply to **raw** rows; ``page`` / ``page_size`` /
+    ``sort_by`` / ``sort_dir`` apply **after** SKU consolidation within the raw rows the server
+    loaded.
+
+    **Truncation:** the server loads at most ``V3_POSITIONS_AISLE_RAW_CAP`` raw rows before
+    consolidating. When ``raw_fetch_truncated`` is ``true``, more raw rows likely exist in the
+    aisle than were loaded. In that case ``total_items`` and ``total_pages`` count **only**
+    consolidated rows built from that loaded window — they are **not** guaranteed to match the
+    full aisle. UIs must not treat them as globally exact totals; prefer showing a warning or
+    disabling “last page” semantics when ``raw_fetch_truncated`` is true until a future true-count
+    or streaming strategy exists.
     """
 
     positions: List[PositionSummaryResponse]
-    page: int = Field(1, ge=1)
-    page_size: int = Field(25, ge=1)
-    total_items: int = Field(0, ge=0)
-    total_pages: int = Field(0, ge=0)
-    raw_fetch_truncated: bool = False
+    raw_fetch_truncated: bool = Field(
+        False,
+        description=(
+            "True when the raw fetch reached the configured cap; total_items/total_pages are then "
+            "only meaningful within that fetch window, not for the full aisle."
+        ),
+    )
 
 
 class ProductRecordResponse(BaseModel):

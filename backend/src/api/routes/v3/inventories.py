@@ -104,7 +104,11 @@ def list_inventories(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
 ) -> PaginatedInventoryListResponse:
-    """Inventories table: aggregates per row with search, filter, sort, and pagination (Sprint 1.4)."""
+    """Inventories table: aggregates per row with search, filter, sort, and pagination (Sprint 1.4).
+
+    **Contract:** returns a **paginated object** (`items`, `page`, `page_size`, `total_items`,
+    `total_pages`), not a JSON array. This is an intentional breaking change from the pre–1.4 array body.
+    """
     q = InventoryTableQuery(
         search=search.strip() if search and search.strip() else None,
         status=status.strip() if status and str(status).strip() else None,

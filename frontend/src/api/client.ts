@@ -112,7 +112,9 @@ function buildInventoriesListQueryString(q: InventoriesListQuery | undefined): s
   return s ? `?${s}` : '';
 }
 
-/** GET collection — paginated screen-ready rows (`PaginatedInventoryListResponse`). */
+/**
+ * GET /api/v3/inventories — paginated object (`items`, `page`, …), not a bare array (Sprint 1.4 contract).
+ */
 export async function getInventories(
   listQuery?: InventoriesListQuery
 ): Promise<PaginatedInventoryListResponse> {
@@ -186,6 +188,9 @@ function buildAislesListQueryString(q: AislesListQuery | undefined): string {
   return s ? `?${s}` : '';
 }
 
+/**
+ * GET .../inventories/{id}/aisles — paginated object (`items`, …), not a bare array (Sprint 1.4 contract).
+ */
 export async function getAisles(
   inventoryId: string,
   listQuery?: AislesListQuery
@@ -416,7 +421,9 @@ function buildReviewQueueQueryString(q: ReviewQueueListQuery | undefined): strin
   return s ? `?${s}` : '';
 }
 
-/** Cross-inventory positions needing review (Sprint 1.4). */
+/**
+ * GET /api/v3/review-queue/positions — filters/sort/pagination only (no free-text search param yet).
+ */
 export async function getReviewQueuePositions(
   listQuery?: ReviewQueueListQuery
 ): Promise<ReviewQueueListResponse> {

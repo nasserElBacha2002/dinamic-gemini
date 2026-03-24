@@ -89,7 +89,11 @@ def list_aisles(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
 ) -> PaginatedAisleListResponse:
-    """List aisles for an inventory with rollups, optional search/filter/sort/pagination (Sprint 1.4)."""
+    """List aisles for an inventory with rollups, optional search/filter/sort/pagination (Sprint 1.4).
+
+    **Contract:** returns a **paginated object** (`items`, `page`, `page_size`, `total_items`,
+    `total_pages`), not a JSON array. Intentional breaking change from the pre–1.4 array body.
+    """
     try:
         q = AisleTableQuery(
             search=search.strip() if search and search.strip() else None,

@@ -36,7 +36,11 @@ def list_review_queue_positions(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
 ) -> ReviewQueueListResponse:
-    """Positions with ``needs_review`` across inventories (paginated)."""
+    """Positions with ``needs_review`` across inventories (paginated).
+
+    Supports inventory/aisle scope, ``min_confidence``, sort, and pagination. There is **no**
+    free-text search (SKU/name) on this endpoint yet — that remains a follow-up if product requires it.
+    """
     q = ReviewQueueQuery(
         inventory_id=inventory_id.strip() if inventory_id and inventory_id.strip() else None,
         aisle_id=aisle_id.strip() if aisle_id and aisle_id.strip() else None,

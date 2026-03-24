@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
+from src.api.schemas.listing_schemas import PageMeta
 from src.api.schemas.position_schemas import PositionSummaryResponse
 
 
@@ -16,9 +17,7 @@ class ReviewQueueItemResponse(BaseModel):
     position: PositionSummaryResponse
 
 
-class ReviewQueueListResponse(BaseModel):
+class ReviewQueueListResponse(PageMeta):
+    """GET /api/v3/review-queue/positions — filter/sort/pagination only; no free-text search yet."""
+
     items: List[ReviewQueueItemResponse]
-    page: int = Field(..., ge=1)
-    page_size: int = Field(..., ge=1)
-    total_items: int = Field(..., ge=0)
-    total_pages: int = Field(..., ge=0)
