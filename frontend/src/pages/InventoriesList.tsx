@@ -34,6 +34,7 @@ export default function InventoriesList() {
 
   return (
     <>
+      {/* Topbar shows “Inventories”; visible h1 is sr-only — see `layout/AppShell.tsx` + `PageHeader` docs. */}
       <PageHeader
         a11yTitle="Inventories"
         actions={

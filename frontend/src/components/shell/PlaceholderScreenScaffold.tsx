@@ -9,9 +9,14 @@ export interface PlaceholderScreenScaffoldProps {
 }
 
 /**
- * Structural placeholder for Dashboard, Review queue, Metrics, etc.
- * Mirrors target composition from Re diseño 3.3 §9.2, §9.8, §9.11: KPI strip → filters → main block — without fabricated data.
- * Page title lives in the app topbar (AppShell); this block is layout-only below it.
+ * **Sprint 2.1 only — not a universal page layout.**
+ *
+ * Temporary composition scaffold for a few **top-level** placeholder routes (Dashboard, Review queue, Metrics).
+ * It mirrors the **target block order** from Re diseño 3.3 §9.2, §9.8, §9.11 (KPI row → filter toolbar → primary
+ * content) so future sprints replace pieces in place without re-architecting the shell.
+ *
+ * Do **not** assume every future screen uses this component: inventory detail, aisle results, and review detail
+ * follow their own §9.x layouts. Page title for scaffold routes lives in `AppShell`’s topbar only.
  */
 export default function PlaceholderScreenScaffold({ roadmapNote, children }: PlaceholderScreenScaffoldProps) {
   return (

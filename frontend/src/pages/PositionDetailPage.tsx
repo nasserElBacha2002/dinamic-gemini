@@ -6,6 +6,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Alert, Box, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
+import { DETAIL_COLUMN_MAX_WIDTH_PX } from '../components/shell/layoutConstants';
 import { pathToAislePositions, pathToPositionDetail } from '../utils/resultRoutes';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { ApiError } from '../api/types';
@@ -191,7 +192,7 @@ export default function PositionDetailPage() {
   const isDeleted = result.reviewStatus === 'INVALID';
 
   return (
-    <Box sx={{ maxWidth: 700, mx: 'auto', width: '100%' }}>
+    <Box sx={{ maxWidth: DETAIL_COLUMN_MAX_WIDTH_PX, mx: 'auto', width: '100%' }}>
       <ResultDetailHeader
         title="Result"
         context={`Aisle ${aisleId}`}

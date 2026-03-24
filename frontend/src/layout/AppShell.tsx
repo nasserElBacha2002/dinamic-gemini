@@ -1,4 +1,18 @@
-import { Link as RouterLink, Outlet, useLocation, matchPath } from 'react-router-dom';
+/**
+ * Authenticated shell — Re diseño 3.3 §4.1–4.3.
+ *
+ * **Topbar vs page header (Sprint 2.1 convention):**
+ * - The topbar always shows the **screen-type** title/subtitle for the current route (§4.3). It uses
+ *   `Typography` as `p`, not `h1`, so the document’s primary heading can live in the page when needed.
+ * - `PageHeader` (see `components/shell/PageHeader.tsx`) is for **breadcrumbs** (§4.1, §14.1), **entity-specific
+ *   titles** when the topbar stays generic (e.g. inventory name while topbar says “Inventory”), **secondary
+ *   lines**, and **actions** in the main column (§4.1 “acciones contextuales en header” at page level).
+ * - Top-level scaffold pages (Dashboard, Review queue, Metrics) use the topbar only plus body layout blocks;
+ *   no duplicate `PageHeader` title.
+ * - Narrow/detail columns (e.g. result review) may constrain width inside `AppMain` via
+ *   `DETAIL_COLUMN_MAX_WIDTH_PX` — see `components/shell/layoutConstants.ts`.
+ */
+import { Link as RouterLink, Outlet, useLocation } from 'react-router-dom';
 import {
   AppBar,
   Box,
@@ -10,7 +24,8 @@ import {
   Toolbar,
   Typography,
 } from '@mui/material';
-import { DRAWER_WIDTH, PRIMARY_NAV_ITEMS } from './navConfig';
+import { DRAWER_WIDTH, PRIMARY_NAV_ITEMS, type PrimaryNavItem } from './navConfig.tsx';
+import { topBarCopy } from './shellTopBarCopy.ts';
 import UserMenu from '../components/shell/UserMenu';
 import AppMain from '../components/shell/AppMain';
 
@@ -19,37 +34,6 @@ function pathMatchesNav(to: string, pathname: string): boolean {
     return pathname === '/inventories' || pathname.startsWith('/inventories/');
   }
   return pathname === to || pathname.startsWith(`${to}/`);
-}
-
-/** Topbar title derived from route — Re diseño 3.3 §4.3 contextual page title. */
-function topBarCopy(pathname: string): { title: string; subtitle?: string } {
-  if (pathname === '/dashboard') {
-    return { title: 'Dashboard', subtitle: 'Operational overview' };
-  }
-  if (pathname === '/inventories') {
-    return { title: 'Inventories', subtitle: 'Manage all inventories' };
-  }
-  if (pathname.startsWith('/inventories/')) {
-    if (matchPath('/inventories/:inventoryId/aisles/:aisleId/positions/:positionId', pathname)) {
-      return { title: 'Result review', subtitle: 'Evidence and review actions' };
-    }
-    if (matchPath('/inventories/:inventoryId/aisles/:aisleId/positions', pathname)) {
-      return { title: 'Aisle results', subtitle: 'Prioritize review' };
-    }
-    if (matchPath('/inventories/:inventoryId', pathname)) {
-      return { title: 'Inventory', subtitle: 'Aisles and processing' };
-    }
-  }
-  if (pathname === '/review-queue') {
-    return { title: 'Review queue', subtitle: 'Cross-inventory results' };
-  }
-  if (pathname === '/metrics') {
-    return { title: 'Metrics', subtitle: 'Analytics and performance' };
-  }
-  if (pathname === '/settings') {
-    return { title: 'Settings', subtitle: 'Preferences' };
-  }
-  return { title: 'Dinamic Inventory', subtitle: 'v3' };
 }
 
 /**
@@ -84,7 +68,7 @@ export default function AppShell() {
           </Typography>
         </Toolbar>
         <List dense sx={{ px: 1 }}>
-          {PRIMARY_NAV_ITEMS.map((item) => {
+          {PRIMARY_NAV_ITEMS.map((item: PrimaryNavItem) => {
             const selected = pathMatchesNav(item.to, pathname);
             return (
               <ListItemButton key={item.to} component={RouterLink} to={item.to} selected={selected}>

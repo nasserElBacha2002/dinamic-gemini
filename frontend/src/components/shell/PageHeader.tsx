@@ -20,20 +20,26 @@ const srOnly: Record<string, string | number> = {
 };
 
 export interface PageHeaderProps {
-  /** Visible page title; omit when the app topbar already shows the same heading (avoid duplicate H1). */
+  /**
+   * Visible document title (`h1`). Use when the topbar only gives a **generic** screen label and the page
+   * must show the **entity or section name** (e.g. inventory name while topbar says “Inventory”).
+   * Omit when the topbar already fully identifies the screen and you only need breadcrumbs/actions — then set `a11yTitle`.
+   */
   title?: string;
-  /** Required for a11y when `title` is omitted. */
+  /** Required when `title` is omitted: screen reader `h1` (visually hidden) so each route keeps a sensible heading. */
   a11yTitle?: string;
   subtitle?: ReactNode;
-  /** Optional trail; use `to` for navigable crumbs. */
+  /** Internal navigation — Re diseño 3.3 §4.1 / §14.1; typical above inventory/aisle flows. */
   breadcrumbs?: PageHeaderBreadcrumb[];
-  /** Primary / secondary actions (e.g. Create, Refresh) — right-aligned on desktop. */
+  /** Actions in the main column (e.g. Create inventory). §4.3 also allows primary actions in the topbar later; for Sprint 2.1 they stay here unless lifted explicitly. */
   actions?: ReactNode;
 }
 
 /**
- * Page header — Re diseño 3.3 §8.2 (title, subtitle, breadcrumbs, actions).
- * Lives below the app topbar inside the main content column.
+ * Page-level header in the main column — Re diseño 3.3 §8.2.
+ *
+ * Does **not** replace the shell topbar (§4.3): the topbar carries route-wide context; this block adds
+ * breadcrumbs, optional entity title, and action rows. See `layout/AppShell.tsx` file comment for the full rule.
  */
 export default function PageHeader({ title, a11yTitle, subtitle, breadcrumbs, actions }: PageHeaderProps) {
   const heading = title ?? a11yTitle;

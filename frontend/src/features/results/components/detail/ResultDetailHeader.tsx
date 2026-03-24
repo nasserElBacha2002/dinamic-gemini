@@ -1,5 +1,8 @@
 /**
- * Epic 4 — Result Detail page header.
+ * Epic 4 — Result detail page header.
+ *
+ * Route-level label (“Result review”) is in `AppShell`’s topbar (`p`). This heading is the **document `h1`**
+ * for the result block. See `layout/AppShell.tsx` for shell vs page header rules.
  */
 
 import { Button, Typography, Box } from '@mui/material';

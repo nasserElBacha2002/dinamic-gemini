@@ -13,7 +13,10 @@ export interface PrimaryNavItem {
   icon: ReactNode;
 }
 
-/** Primary sidebar destinations — aligned with Re diseño 3.3 §4.2 (Dashboard, Inventories, Review Queue, Metrics, Settings). */
+/**
+ * Primary sidebar — explicit list in Re diseño 3.3 §4.2 (Dashboard, Inventories, Review queue, Metrics, Settings).
+ * Settings stays a first-class destination here per the redesign; product behaviour inside Settings is TBD.
+ */
 export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: <DashboardRoundedIcon fontSize="small" /> },
   { label: 'Inventories', to: '/inventories', icon: <Inventory2OutlinedIcon fontSize="small" /> },
