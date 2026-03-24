@@ -2,7 +2,7 @@
  * RowActionMenu — Re diseño 3.3 §8.7, §15.6: row actions without crowding tables with buttons.
  */
 
-import { useState, MouseEvent } from 'react';
+import { useId, useState, type MouseEvent, type ReactNode } from 'react';
 import { IconButton, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 
@@ -14,7 +14,7 @@ export interface RowActionMenuItem {
   /** Destructive row action — uses error tone (§6.3). */
   danger?: boolean;
   /** Optional leading icon. */
-  icon?: React.ReactNode;
+  icon?: ReactNode;
 }
 
 export interface RowActionMenuProps {
@@ -28,6 +28,11 @@ export interface RowActionMenuProps {
 export default function RowActionMenu({ items, ariaLabel, size = 'small' }: RowActionMenuProps) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const open = Boolean(anchor);
+  const menuId = useId();
+
+  if (items.length === 0) {
+    return null;
+  }
 
   const handleOpen = (e: MouseEvent<HTMLElement>) => {
     e.stopPropagation();
@@ -40,7 +45,7 @@ export default function RowActionMenu({ items, ariaLabel, size = 'small' }: RowA
       <IconButton
         size={size}
         aria-label={ariaLabel}
-        aria-controls={open ? 'row-action-menu' : undefined}
+        aria-controls={open ? menuId : undefined}
         aria-haspopup="true"
         aria-expanded={open ? 'true' : undefined}
         onClick={handleOpen}
@@ -48,7 +53,7 @@ export default function RowActionMenu({ items, ariaLabel, size = 'small' }: RowA
         <MoreVertIcon fontSize="small" />
       </IconButton>
       <Menu
-        id="row-action-menu"
+        id={menuId}
         anchorEl={anchor}
         open={open}
         onClose={handleClose}

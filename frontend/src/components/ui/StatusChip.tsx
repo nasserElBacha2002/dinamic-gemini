@@ -1,6 +1,7 @@
 /**
- * Status chip: label + MUI color. Caller provides label and color (e.g. from status utils).
- * Use for aisle status, job status, position status to keep Chip usage consistent.
+ * **Transitional:** thin `Chip` wrapper when status → color is already computed (e.g. `getAisleStatusColor`, job status).
+ * For **new** UI, prefer **StatusBadge** + `StatusBadgeSemantic` when the state maps to redesign semantics (§8.4, §11).
+ * Do not introduce additional ad-hoc Chip wrappers for domain status.
  */
 
 import { Chip } from '@mui/material';

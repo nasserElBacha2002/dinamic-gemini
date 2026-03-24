@@ -1,6 +1,9 @@
 /**
  * Reusable UI base — Sprint 2.3 (Re diseño 3.3 §8.x).
  * Structural primitives: shell/; operational building blocks live here.
+ *
+ * **Dialogs:** `BaseDialog` (generic) → `ConfirmDialog` composes it; `WizardModal` is a separate stepper shell.
+ * **Status:** prefer `StatusBadge` for product semantics; `StatusChip` for transitional mapper-driven colors.
  */
 
 export { default as PageLayout } from './PageLayout';

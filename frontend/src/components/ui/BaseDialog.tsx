@@ -1,9 +1,13 @@
 /**
- * BaseDialog — consistent modal shell for operational dialogs (Re diseño 3.3 §8.11, form dialogs).
- * Feature dialogs (Create Aisle, etc.) can compose this for shared spacing and width.
+ * BaseDialog — shared shell for **simple** operational dialogs (Re diseño 3.3 §8.11: form dialogs, confirmations body).
+ *
+ * **Dialog family (Sprint 2.3):**
+ * - **BaseDialog** — generic title + body + optional actions (compose this for feature forms).
+ * - **ConfirmDialog** — composes `BaseDialog` with a fixed two-button confirmation layout (§14.5).
+ * - **WizardModal** — separate: stepper + multi-step body (§8.10); does not use `BaseDialog` to avoid awkward nesting.
  */
 
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import {
   Dialog,
   DialogActions,
@@ -12,6 +16,7 @@ import {
   Typography,
   type DialogProps,
 } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
 
 export interface BaseDialogProps {
   open: boolean;
@@ -22,8 +27,10 @@ export interface BaseDialogProps {
   actions?: ReactNode;
   maxWidth?: DialogProps['maxWidth'];
   fullWidth?: boolean;
-  /** When true, backdrop click and escape do not close (use during submit). */
+  /** When true, backdrop / escape do not call `onClose` (e.g. while parent sets `loading`). */
   disableClose?: boolean;
+  /** Applied to `DialogActions` when `actions` is set (e.g. confirm dialogs need extra padding). */
+  actionsSx?: SxProps<Theme>;
 }
 
 export default function BaseDialog({
@@ -36,16 +43,19 @@ export default function BaseDialog({
   maxWidth = 'sm',
   fullWidth = true,
   disableClose = false,
+  actionsSx,
 }: BaseDialogProps) {
+  const titleId = useId();
+
   return (
     <Dialog
       open={open}
       onClose={disableClose ? undefined : onClose}
       maxWidth={maxWidth}
       fullWidth={fullWidth}
-      aria-labelledby="base-dialog-title"
+      aria-labelledby={titleId}
     >
-      <DialogTitle id="base-dialog-title">{title}</DialogTitle>
+      <DialogTitle id={titleId}>{title}</DialogTitle>
       <DialogContent>
         {subtitle ? (
           <Typography variant="body2" color="text.secondary" component="p" sx={{ mb: 2 }}>
@@ -54,7 +64,7 @@ export default function BaseDialog({
         ) : null}
         {children}
       </DialogContent>
-      {actions ? <DialogActions>{actions}</DialogActions> : null}
+      {actions ? <DialogActions sx={actionsSx}>{actions}</DialogActions> : null}
     </Dialog>
   );
 }

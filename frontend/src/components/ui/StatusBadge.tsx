@@ -1,6 +1,10 @@
 /**
- * StatusBadge — Re diseño 3.3 §8.4, §11: semantic status for inventory, aisle, review, traceability quality.
- * Maps product semantics to theme colors (§6.3); prefer this over raw Chip for domain status.
+ * StatusBadge — Re diseño 3.3 §8.4, §11: **preferred** presentation for product status (inventory, aisle, review, quality).
+ * Uses fixed **semantic → color** mapping (§6.3). Use this for new screens when status fits the semantic vocabulary.
+ *
+ * **vs `StatusChip`:** `StatusChip` is the **transitional / escape hatch** when a util already maps domain → MUI
+ * `Chip` color (e.g. `getAisleStatusColor`). Prefer migrating call sites to `StatusBadge` + `StatusBadgeSemantic`
+ * when semantics align; do not add a third status chip pattern.
  */
 
 import { Chip } from '@mui/material';

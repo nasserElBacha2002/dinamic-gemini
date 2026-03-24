@@ -1,6 +1,9 @@
 /**
- * FilterToolbar — Re diseño 3.3 §8.5: search, filters, quick chips, reset, secondary actions.
- * Layout-only; pass field controls as children. Fits below KPI row on list/review screens.
+ * FilterToolbar — **Sprint 2.3 structural base** for filter zones (Re diseño 3.3 §8.5).
+ *
+ * This is intentionally **minimal:** a flex row for controls (`children`), optional reset, and optional end actions.
+ * It is **not** the final “smart” table toolbar (no built-in search field, chip state, or query wiring) — those land
+ * with Sprint 2.4+ screens and `FilterToolbar` composition. Pass `TextField`, `Select`, filter chips, etc. as `children`.
  */
 
 import type { ReactNode } from 'react';

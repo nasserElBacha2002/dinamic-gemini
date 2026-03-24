@@ -1,9 +1,11 @@
 /**
  * WizardModal — Re diseño 3.3 §8.10: guided multi-step flows (e.g. Create Inventory).
- * Provides Dialog + Stepper chrome; step body and footer actions are composed by the feature.
+ * **Does not compose BaseDialog:** the stepper + single scrolling content region is a different layout than the
+ * simple title/body/actions stack; keeping a dedicated `Dialog` here avoids forcing `BaseDialog` to support
+ * stepper-specific structure.
  */
 
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { Box, Dialog, DialogActions, DialogContent, DialogTitle, Step, StepLabel, Stepper, Typography } from '@mui/material';
 import type { DialogProps } from '@mui/material';
 
@@ -34,9 +36,17 @@ export default function WizardModal({
   maxWidth = 'sm',
   fullWidth = true,
 }: WizardModalProps) {
+  const titleId = useId();
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth={maxWidth} fullWidth={fullWidth} aria-labelledby="wizard-modal-title">
-      <DialogTitle id="wizard-modal-title">{title}</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth={maxWidth}
+      fullWidth={fullWidth}
+      aria-labelledby={titleId}
+    >
+      <DialogTitle id={titleId}>{title}</DialogTitle>
       <DialogContent>
         <Stepper activeStep={activeStep} sx={{ mb: 3, pt: 1 }}>
           {stepLabels.map((label) => (

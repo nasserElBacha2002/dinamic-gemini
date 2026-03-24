@@ -12,6 +12,7 @@ import {
   StatusBadge,
   EmptyState,
   ConfirmDialog,
+  RowActionMenu,
   AppSnackbarProvider,
   useAppSnackbar,
 } from '../src/components/ui';
@@ -67,6 +68,50 @@ describe('Sprint 2.3 UI base', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /delete/i }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('ConfirmDialog wires aria-labelledby to the visible DialogTitle id', () => {
+    const noop = () => {};
+    render(
+      <WithTheme>
+        <ConfirmDialog open title="Delete row?" description="Sure?" onClose={noop} onConfirm={noop} />
+      </WithTheme>
+    );
+    const dialog = screen.getByRole('dialog');
+    const labelledBy = dialog.getAttribute('aria-labelledby');
+    expect(labelledBy).toBeTruthy();
+    const titleEl = document.getElementById(labelledBy!);
+    expect(titleEl).not.toBeNull();
+    expect(titleEl).toHaveTextContent('Delete row?');
+  });
+
+  it('ConfirmDialog title id is not reused after unmount/remount', () => {
+    const noop = () => {};
+    const { unmount } = render(
+      <WithTheme>
+        <ConfirmDialog open title="A" description="x" onClose={noop} onConfirm={noop} />
+      </WithTheme>
+    );
+    const first = screen.getByRole('dialog').getAttribute('aria-labelledby');
+    unmount();
+    render(
+      <WithTheme>
+        <ConfirmDialog open title="B" description="y" onClose={noop} onConfirm={noop} />
+      </WithTheme>
+    );
+    const second = screen.getByRole('dialog').getAttribute('aria-labelledby');
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+    expect(first).not.toBe(second);
+  });
+
+  it('RowActionMenu renders nothing when items is empty', () => {
+    const { container } = render(
+      <WithTheme>
+        <RowActionMenu items={[]} ariaLabel="Row actions" />
+      </WithTheme>
+    );
+    expect(container.querySelector('button')).toBeNull();
   });
 
   it('useAppSnackbar shows message inside provider', () => {
