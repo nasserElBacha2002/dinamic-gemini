@@ -12,8 +12,6 @@ export const queryKeys = {
     detail: (inventoryId: string) => [...queryKeys.inventories.all, 'detail', inventoryId] as const,
     metrics: (inventoryId: string) => [...queryKeys.inventories.all, 'metrics', inventoryId] as const,
     aisles: (inventoryId: string) => [...queryKeys.inventories.all, 'aisles', inventoryId] as const,
-    aisleAssets: (inventoryId: string, aisleId: string) =>
-      [...queryKeys.inventories.all, 'aisles', inventoryId, 'assets', aisleId] as const,
     positions: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'positions', aisleId] as const,
     positionDetail: (inventoryId: string, aisleId: string, positionId: string) =>

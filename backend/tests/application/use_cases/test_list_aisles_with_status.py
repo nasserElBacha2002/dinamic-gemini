@@ -220,6 +220,50 @@ def test_list_aisles_with_status_rollups_positions_and_pending_review() -> None:
     assert row.last_activity_at == max(now, later, later, later)
 
 
+def test_list_aisles_with_status_last_activity_at_can_win_on_latest_job_only() -> None:
+    """When aisle, positions, and asset rollup are older than the latest job, max must follow the job."""
+    t_old = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    t_job = datetime(2025, 6, 15, 9, 30, 0, tzinfo=timezone.utc)
+    a1 = Aisle("a1", "inv-1", "A-01", AisleStatus.PROCESSED, t_old, t_old)
+    p1 = Position(
+        "p1",
+        "a1",
+        PositionStatus.REVIEWED,
+        0.95,
+        False,
+        None,
+        t_old,
+        t_old,
+    )
+    j1 = Job(
+        "job-newest",
+        "aisle",
+        "a1",
+        "process_aisle",
+        JobStatus.SUCCEEDED,
+        {},
+        t_job,
+        t_job,
+    )
+    inv_repo = StubInventoryRepo({"inv-1"})
+    aisle_repo = StubAisleRepo([a1])
+    job_repo = StubJobRepo({"a1": j1})
+    pos_repo = StubPositionRepo([p1])
+    src_repo = StubSourceAssetRepo(
+        {"a1": AisleAssetRollup(count=1, last_uploaded_at=t_old)}
+    )
+    use_case = ListAislesWithStatusUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=pos_repo,
+        source_asset_repo=src_repo,
+    )
+    result = use_case.execute("inv-1")
+    assert len(result) == 1
+    assert result[0].last_activity_at == t_job
+
+
 def test_list_aisles_with_status_raises_when_inventory_not_found() -> None:
     inv_repo = StubInventoryRepo(set())
     aisle_repo = StubAisleRepo([])

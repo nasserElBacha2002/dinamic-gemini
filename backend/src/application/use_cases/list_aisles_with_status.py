@@ -6,6 +6,12 @@ Uses JobRepository.get_latest_by_targets to avoid N+1 in the API layer.
 
 Sprint 1.3: adds per-aisle rollups (assets, positions, pending review, last_activity_at)
 for the Inventory Detail aisle table without N+1 asset list calls.
+
+``last_activity_at`` (per row) is a **list/table freshness** signal for operators: the maximum
+timestamp among the aisle row, the **latest job only** (not the full job history), all
+positions in that aisle, and the latest asset upload time from ``summarize_assets_for_aisles``.
+It is **not** an audit log, a full activity stream, or a dedicated “last human review”
+timestamp (unless a review happened to update the newest underlying timestamp).
 """
 
 from __future__ import annotations
@@ -46,6 +52,7 @@ def _aisle_last_activity_at(
     positions: Sequence[Position],
     asset_last_upload: Optional[datetime],
 ) -> datetime:
+    """Compute list freshness: max of aisle times, **latest job** times only, position times, asset rollup."""
     parts: List[datetime] = [aisle.updated_at, aisle.created_at]
     if latest_job is not None:
         parts.extend([latest_job.updated_at, latest_job.created_at])

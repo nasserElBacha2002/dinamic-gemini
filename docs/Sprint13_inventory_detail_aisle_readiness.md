@@ -26,7 +26,7 @@ From `Plan implementacion 3.3.md` / `Re diseño 3.3.md` (§9.5, §3.4, aisle tab
 | Processing / job | `latest_job` (already present) |
 | Results volume | **positions count** |
 | Pending human review | **count of positions with `needs_review`** (aligned with inventory list semantics) |
-| Freshness | **`last_activity_at`** (max of aisle, job, positions, asset uploads) |
+| Freshness | **`last_activity_at`** (max of aisle, **latest job only**, positions, latest asset upload) |
 | Navigate to results / review | Existing routes; table only needs clarity of counts and state |
 
 ## 3. Current backend readiness (pre–Sprint 1.3)
@@ -98,8 +98,20 @@ From `Plan implementacion 3.3.md` / `Re diseño 3.3.md` (§9.5, §3.4, aisle tab
 ## Semantics (short)
 
 - **`pending_review_positions_count`**: number of positions in that aisle with `needs_review == true` (aligned with `ListInventoryListItemsUseCase` inventory-level pending count).
-- **`last_activity_at`**: maximum of relevant `created_at` / `updated_at` / asset `uploaded_at` for that aisle (operational freshness, not “last review completed” unless that was the latest event).
+- **`last_activity_at`**: a **screen/list freshness** signal (not an audit trail or “last human review” field). It is the maximum of `created_at` / `updated_at` on the aisle, **`created_at` / `updated_at` on the latest job only** (not older jobs), all positions in that aisle, and the latest asset upload time from the batch rollup. It does **not** scan full job history.
+
+## API shape note
+
+- **`AisleResponse`** intentionally serves both minimal create/status payloads and **GET list** rows with rollups. A future split into list-only vs bare aisle DTOs is optional; until then, defaults on create/status keep the contract backward-compatible.
 
 ## Performance note
 
 - One `list_by_aisles` query, one `summarize_assets_for_aisles` query, plus existing job batch — **O(1) queries in number of aisles**, vs previous frontend **O(n)** asset list calls.
+
+---
+
+## Sprint 1.3 follow-up (post-review)
+
+- Tests and docs tightened around ``last_activity_at`` (including **latest job wins** when newer than other signals).
+- Stale frontend **per-aisle asset list** hook removed where unused; `GET .../assets` remains available for future file-list UIs if needed.
+- **Future debt (non-blocking)**: optional split of `AisleResponse` vs list-row DTO when multiple clients need different shapes; filters/sort/pagination on aisles (Sprint 1.4 / later).

@@ -14,7 +14,6 @@ import type {
   CreateAisleRequest,
   ApiErrorDetail,
   ProcessAisleResponse,
-  SourceAssetSummary,
   UploadAisleAssetsResponse,
   UploadInventoryVisualReferencesResponse,
   InventoryVisualReferenceListResponse,
@@ -224,17 +223,6 @@ export async function uploadAisleAssets(
     { method: 'POST', body: form }
   );
   return handleResponse<UploadAisleAssetsResponse>(response);
-}
-
-export async function getAisleAssets(
-  inventoryId: string,
-  aisleId: string
-): Promise<SourceAssetSummary[]> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/assets`
-  );
-  const data = await handleResponse<SourceAssetSummary[]>(response);
-  return Array.isArray(data) ? data : [];
 }
 
 /**
