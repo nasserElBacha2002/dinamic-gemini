@@ -3,7 +3,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { getAisles, getInventoryMetrics, getExecutionLog } from '../api/client';
+import { getAisles, getInventoryMetrics, getExecutionLog, type AislesListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 
 export function useInventoryMetrics(inventoryId: string | undefined, options?: { enabled?: boolean }) {
@@ -14,10 +14,12 @@ export function useInventoryMetrics(inventoryId: string | undefined, options?: {
   });
 }
 
+const defaultAisleTableQuery: AislesListQuery = { page: 1, page_size: 200 };
+
 export function useAislesList(inventoryId: string | undefined, options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: queryKeys.inventories.aisles(inventoryId ?? ''),
-    queryFn: () => getAisles(inventoryId!),
+    queryKey: [...queryKeys.inventories.aisles(inventoryId ?? ''), defaultAisleTableQuery] as const,
+    queryFn: () => getAisles(inventoryId!, defaultAisleTableQuery),
     enabled: Boolean(inventoryId) && (options?.enabled !== false),
   });
 }

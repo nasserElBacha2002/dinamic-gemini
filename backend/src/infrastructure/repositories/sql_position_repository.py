@@ -139,6 +139,8 @@ class SqlPositionRepository(PositionRepository):
         sku_filter: Optional[str] = None,
         page: int = 1,
         page_size: int = 25,
+        sort_by: str = "created_at",
+        sort_dir: str = "asc",
     ) -> Sequence[Position]:
         conditions = ["p.aisle_id = ?"]
         params: list = [aisle_id]
@@ -159,6 +161,15 @@ class SqlPositionRepository(PositionRepository):
         where = " AND ".join(conditions)
         offset = (page - 1) * page_size
         params.extend([offset, page_size])
+        col_map = {
+            "created_at": "p.created_at",
+            "updated_at": "p.updated_at",
+            "confidence": "p.confidence",
+            "id": "p.id",
+        }
+        order_col = col_map.get((sort_by or "created_at").strip().lower(), "p.created_at")
+        order_dir = "DESC" if (sort_dir or "asc").strip().lower() == "desc" else "ASC"
+        order_clause = f"ORDER BY {order_col} {order_dir}, p.id ASC"
         if join_product_records:
             sql = f"""
                 SELECT DISTINCT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
@@ -166,7 +177,7 @@ class SqlPositionRepository(PositionRepository):
                 FROM positions p
                 INNER JOIN product_records pr ON pr.position_id = p.id
                 WHERE {where}
-                ORDER BY p.created_at ASC, p.id ASC
+                {order_clause}
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
                 """
         else:
@@ -175,7 +186,7 @@ class SqlPositionRepository(PositionRepository):
                        p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json
                 FROM positions p
                 WHERE {where}
-                ORDER BY p.created_at ASC, p.id ASC
+                {order_clause}
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
                 """
         with self._client.cursor() as cur:
@@ -195,6 +206,8 @@ class SqlPositionRepository(PositionRepository):
             sku_filter=q.sku_filter,
             page=q.page,
             page_size=q.page_size,
+            sort_by=q.sort_by,
+            sort_dir=q.sort_dir,
         )
 
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:

@@ -18,7 +18,7 @@ from src.api.schemas.position_schemas import (
     PositionListResponse,
 )
 from src.application.errors import AisleNotFoundError, InventoryNotFoundError, PositionNotFoundError
-from src.application.ports.contracts import PositionListQuery
+from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 
@@ -41,33 +41,36 @@ def list_aisle_positions(
     needs_review: Optional[bool] = Query(None, description="When set, only positions with this needs_review flag."),
     min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="Minimum confidence (inclusive)."),
     sku_filter: Optional[str] = Query(None, description="Substring match against product SKU for this aisle."),
-    page: int = Query(1, ge=1, description="Page index (1-based). Applied before SKU consolidation."),
+    page: int = Query(1, ge=1, description="1-based page index after SKU consolidation."),
     page_size: int = Query(
         25,
         ge=1,
         le=500,
-        description="Page size (max 500). Applied before consolidation; use with page for large aisles.",
+        description="Page size after consolidation (max 500).",
     ),
+    sort_by: str = Query(
+        "created_at",
+        description="Post-consolidation sort: created_at | updated_at | confidence | sku | quantity",
+    ),
+    sort_dir: str = Query("asc", description="asc | desc"),
 ) -> PositionListResponse:
-    """List result positions for an aisle (Aisle Results table). Optional filters and pagination §9.7."""
+    """List result positions for an aisle (Aisle Results). Filters apply to raw rows; page/sort after consolidation."""
     try:
-        query = PositionListQuery(
+        cmd = ListAislePositionsCommand(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
             status=status,
             needs_review=needs_review,
             min_confidence=min_confidence,
             sku_filter=sku_filter.strip() if sku_filter and str(sku_filter).strip() else None,
             page=page,
             page_size=page_size,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
         )
-        positions = use_case.execute(
-            ListAislePositionsCommand(
-                inventory_id=inventory_id,
-                aisle_id=aisle_id,
-                query=query,
-            )
-        )
+        result = use_case.execute(cmd)
         summaries = []
-        for p in positions:
+        for p in result.positions:
             products = product_record_repo.list_by_position(p.id)
             primary = (
                 sorted(products, key=lambda x: (x.created_at, x.id))[0]
@@ -83,7 +86,14 @@ def list_aisle_positions(
                     primary_product=primary,
                 )
             )
-        return PositionListResponse(positions=summaries)
+        return PositionListResponse(
+            positions=summaries,
+            page=result.page,
+            page_size=result.page_size,
+            total_items=result.total_items,
+            total_pages=compute_total_pages(result.total_items, result.page_size),
+            raw_fetch_truncated=result.raw_fetch_truncated,
+        )
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:

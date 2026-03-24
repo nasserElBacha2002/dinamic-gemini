@@ -595,6 +595,16 @@ class Settings(BaseModel):
             "If empty, the server falls back to localhost origins. Env: CORS_ALLOW_ORIGINS."
         ),
     )
+    v3_positions_aisle_raw_cap: int = Field(
+        default_factory=lambda: int(os.getenv("V3_POSITIONS_AISLE_RAW_CAP", "2000")),
+        ge=50,
+        le=100_000,
+        description=(
+            "v3: max raw position rows loaded per aisle before SKU consolidation for GET .../positions. "
+            "Pagination and sort apply after consolidation; totals are incomplete when this cap is hit "
+            "(see raw_fetch_truncated on the list response). Env: V3_POSITIONS_AISLE_RAW_CAP."
+        ),
+    )
     max_upload_size_mb: int = Field(
         default_factory=lambda: int(os.getenv("MAX_UPLOAD_SIZE_MB", "500")),
         ge=1,

@@ -7,9 +7,9 @@ GET /{id} and POST / return InventoryResponse (entity without list aggregates).
 from __future__ import annotations
 
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from src.api.dependencies import (
     get_create_inventory_use_case,
@@ -21,13 +21,14 @@ from src.api.dependencies import (
 )
 from src.api.schemas.inventory_schemas import (
     CreateInventoryRequest,
-    InventoryListItemResponse,
     InventoryMetricsResponse,
     InventoryResponse,
     InventoryVisualReferenceListResponse,
     InventoryVisualReferenceResponse,
     UploadInventoryVisualReferencesResponse,
 )
+from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
+from src.application.ports.contracts import InventoryTableQuery
 from src.application.errors import (
     EmptyUploadError,
     InventoryNotFoundError,
@@ -90,17 +91,37 @@ def create_inventory(
     return inventory_to_response(inventory)
 
 
-@router.get("/", response_model=List[InventoryListItemResponse])
+@router.get("/", response_model=PaginatedInventoryListResponse)
 def list_inventories(
     use_case: ListInventoryListItemsUseCase = Depends(get_list_inventory_list_items_use_case),
-) -> List[InventoryListItemResponse]:
-    """Primary inventories **list** contract: all inventories with table aggregates (Sprint 1.2).
-
-    Response is ``InventoryListItemResponse[]`` — not the thin ``InventoryResponse`` used for
-    get-by-id or create.
-    """
-    items = use_case.execute()
-    return [inventory_list_item_to_response(item) for item in items]
+    search: Optional[str] = Query(None, description="Case-insensitive substring on inventory name."),
+    status: Optional[str] = Query(None, description="Exact inventory status (wire value, e.g. draft)."),
+    sort_by: str = Query(
+        "created_at",
+        description="name | created_at | updated_at | status | last_activity_at | pending_review_count | aisles_count",
+    ),
+    sort_dir: str = Query("desc", description="asc | desc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+) -> PaginatedInventoryListResponse:
+    """Inventories table: aggregates per row with search, filter, sort, and pagination (Sprint 1.4)."""
+    q = InventoryTableQuery(
+        search=search.strip() if search and search.strip() else None,
+        status=status.strip() if status and str(status).strip() else None,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
+    )
+    rows, total = use_case.execute(q)
+    ps = q.page_size
+    return PaginatedInventoryListResponse(
+        items=[inventory_list_item_to_response(item) for item in rows],
+        page=q.page,
+        page_size=ps,
+        total_items=total,
+        total_pages=compute_total_pages(total, ps),
+    )
 
 
 @router.get("/{inventory_id}", response_model=InventoryResponse)

@@ -30,6 +30,15 @@ export interface InventoryListItem extends Inventory {
   last_activity_at: string | null;
 }
 
+/** GET /api/v3/inventories — paginated table (Sprint 1.4). */
+export interface PaginatedInventoryListResponse {
+  items: InventoryListItem[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+}
+
 // ─── Inventory visual references (v3.2.4 Phase 2/8) ─────────────────────────
 
 export interface InventoryVisualReference {
@@ -86,6 +95,15 @@ export interface Aisle {
   positions_count?: number;
   pending_review_positions_count?: number;
   last_activity_at?: string | null;
+}
+
+/** GET .../inventories/{id}/aisles — paginated (Sprint 1.4). */
+export interface PaginatedAisleListResponse {
+  items: Aisle[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
 }
 
 /** GET .../aisles/{aisle_id}/status response. */
@@ -186,6 +204,28 @@ export interface PositionSummary {
 /** Response for GET .../aisles/{aisle_id}/positions. */
 export interface PositionListResponse {
   positions: PositionSummary[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+  /** True when raw row fetch hit server cap; totals are for the loaded window only. */
+  raw_fetch_truncated: boolean;
+}
+
+/** GET /api/v3/review-queue/positions (Sprint 1.4). */
+export interface ReviewQueueItem {
+  inventory_id: string;
+  inventory_name: string;
+  aisle_code: string;
+  position: PositionSummary;
+}
+
+export interface ReviewQueueListResponse {
+  items: ReviewQueueItem[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
 }
 
 /** Product record within a position. */

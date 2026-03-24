@@ -49,8 +49,18 @@ class PositionSummaryResponse(BaseModel):
 
 
 class PositionListResponse(BaseModel):
-    """Response for GET .../aisles/{aisle_id}/positions."""
+    """Response for GET .../aisles/{aisle_id}/positions.
+
+    Pagination applies **after** SKU consolidation. ``total_items`` counts consolidated rows
+    from the raw fetch window only; ``raw_fetch_truncated`` is true when the raw cap was hit.
+    """
+
     positions: List[PositionSummaryResponse]
+    page: int = Field(1, ge=1)
+    page_size: int = Field(25, ge=1)
+    total_items: int = Field(0, ge=0)
+    total_pages: int = Field(0, ge=0)
+    raw_fetch_truncated: bool = False
 
 
 class ProductRecordResponse(BaseModel):

@@ -95,6 +95,8 @@ class PositionRepository(ABC):
         sku_filter: Optional[str] = None,
         page: int = 1,
         page_size: int = 25,
+        sort_by: str = "created_at",
+        sort_dir: str = "asc",
     ) -> Sequence[Position]:
         """List positions for an aisle with optional filters and pagination (§9.7).
         sku_filter: when set, only positions that have at least one product_record with

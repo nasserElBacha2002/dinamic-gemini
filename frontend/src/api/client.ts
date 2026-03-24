@@ -7,7 +7,6 @@
 import { getStoredToken } from '../features/auth/storage';
 import type {
   Inventory,
-  InventoryListItem,
   Aisle,
   AisleStatusResponse,
   CreateInventoryRequest,
@@ -24,6 +23,9 @@ import type {
   ReviewActionRequest,
   InventoryMetrics,
   ExecutionLogResponse,
+  PaginatedInventoryListResponse,
+  PaginatedAisleListResponse,
+  ReviewQueueListResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -87,11 +89,37 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-/** GET collection — screen-ready list rows (`InventoryListItemResponse`); not the thin entity shape. */
-export async function getInventories(): Promise<InventoryListItem[]> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories`);
-  const data = await handleResponse<InventoryListItem[]>(response);
-  return Array.isArray(data) ? data : [];
+/** Query params for GET /api/v3/inventories (Sprint 1.4). */
+export interface InventoriesListQuery {
+  search?: string | null;
+  status?: string | null;
+  sort_by?: string;
+  sort_dir?: string;
+  page?: number;
+  page_size?: number;
+}
+
+function buildInventoriesListQueryString(q: InventoriesListQuery | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.search != null && String(q.search).trim() !== '') params.set('search', String(q.search).trim());
+  if (q.status != null && String(q.status).trim() !== '') params.set('status', String(q.status).trim());
+  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
+  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
+  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
+  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+/** GET collection — paginated screen-ready rows (`PaginatedInventoryListResponse`). */
+export async function getInventories(
+  listQuery?: InventoriesListQuery
+): Promise<PaginatedInventoryListResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories${buildInventoriesListQueryString(listQuery)}`
+  );
+  return handleResponse<PaginatedInventoryListResponse>(response);
 }
 
 export async function getInventory(id: string): Promise<Inventory> {
@@ -136,10 +164,36 @@ export async function getInventoryVisualReferences(
   return handleResponse<InventoryVisualReferenceListResponse>(response);
 }
 
-export async function getAisles(inventoryId: string): Promise<Aisle[]> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/${inventoryId}/aisles`);
-  const data = await handleResponse<Aisle[]>(response);
-  return Array.isArray(data) ? data : [];
+export interface AislesListQuery {
+  search?: string | null;
+  status?: string | null;
+  sort_by?: string;
+  sort_dir?: string;
+  page?: number;
+  page_size?: number;
+}
+
+function buildAislesListQueryString(q: AislesListQuery | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.search != null && String(q.search).trim() !== '') params.set('search', String(q.search).trim());
+  if (q.status != null && String(q.status).trim() !== '') params.set('status', String(q.status).trim());
+  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
+  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
+  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
+  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+export async function getAisles(
+  inventoryId: string,
+  listQuery?: AislesListQuery
+): Promise<PaginatedAisleListResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles${buildAislesListQueryString(listQuery)}`
+  );
+  return handleResponse<PaginatedAisleListResponse>(response);
 }
 
 export async function createAisle(
@@ -286,6 +340,8 @@ export interface AislePositionsListQuery {
   sku_filter?: string | null;
   page?: number;
   page_size?: number;
+  sort_by?: string;
+  sort_dir?: string;
 }
 
 function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined): string {
@@ -309,6 +365,12 @@ function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined):
   if (q.page_size != null && q.page_size >= 1) {
     params.set('page_size', String(q.page_size));
   }
+  if (q.sort_by != null && String(q.sort_by).trim() !== '') {
+    params.set('sort_by', String(q.sort_by).trim());
+  }
+  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') {
+    params.set('sort_dir', String(q.sort_dir).trim());
+  }
   const s = params.toString();
   return s ? `?${s}` : '';
 }
@@ -322,6 +384,46 @@ export async function getAislePositions(
   const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions`;
   const response = await protectedFetch(`${path}${buildAislePositionsQueryString(listQuery)}`);
   return handleResponse<PositionListResponse>(response);
+}
+
+export interface ReviewQueueListQuery {
+  inventory_id?: string | null;
+  aisle_id?: string | null;
+  min_confidence?: number | null;
+  sort_by?: string;
+  sort_dir?: string;
+  page?: number;
+  page_size?: number;
+}
+
+function buildReviewQueueQueryString(q: ReviewQueueListQuery | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.inventory_id != null && String(q.inventory_id).trim() !== '') {
+    params.set('inventory_id', String(q.inventory_id).trim());
+  }
+  if (q.aisle_id != null && String(q.aisle_id).trim() !== '') {
+    params.set('aisle_id', String(q.aisle_id).trim());
+  }
+  if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
+    params.set('min_confidence', String(q.min_confidence));
+  }
+  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
+  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
+  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
+  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+/** Cross-inventory positions needing review (Sprint 1.4). */
+export async function getReviewQueuePositions(
+  listQuery?: ReviewQueueListQuery
+): Promise<ReviewQueueListResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/review-queue/positions${buildReviewQueueQueryString(listQuery)}`
+  );
+  return handleResponse<ReviewQueueListResponse>(response);
 }
 
 /** Get position detail with products and evidences — Épica 6. */

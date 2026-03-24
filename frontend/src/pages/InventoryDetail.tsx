@@ -78,7 +78,7 @@ export default function InventoryDetail() {
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, { enabled: Boolean(inventoryId && inventoryQuery.data) });
-  const aisles = aislesQuery.data ?? [];
+  const aisles = aislesQuery.data?.items ?? [];
   const metricsQuery = useInventoryMetrics(inventoryId);
 
   const createAisleMutation = useCreateAisle(inventoryId ?? '');

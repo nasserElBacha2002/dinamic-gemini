@@ -85,8 +85,9 @@ def test_get_aisles_returns_list_and_includes_created() -> None:
     response = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
-    codes = [a["code"] for a in data]
+    items = data["items"]
+    assert isinstance(items, list)
+    codes = [a["code"] for a in items]
     assert "B-01" in codes
 
 
@@ -229,7 +230,7 @@ def test_list_aisles_latest_job_includes_created_at() -> None:
     client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
     list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert list_resp.status_code == 200
-    aisles = list_resp.json()
+    aisles = list_resp.json()["items"]
     assert len(aisles) == 1
     assert aisles[0]["latest_job"] is not None
     assert "created_at" in aisles[0]["latest_job"], "aisle list latest_job must expose created_at (Phase 2 Block 2)"
@@ -251,7 +252,7 @@ def test_list_and_status_latest_job_created_at_aligned() -> None:
     status_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
     assert list_resp.status_code == 200
     assert status_resp.status_code == 200
-    list_data = list_resp.json()
+    list_data = list_resp.json()["items"]
     status_data = status_resp.json()
     assert list_data[0]["latest_job"] is not None
     assert status_data["latest_job"] is not None
@@ -284,7 +285,7 @@ def test_cancel_queued_job_returns_202_and_list_and_status_show_canceled() -> No
 
     list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert list_resp.status_code == 200
-    list_data = list_resp.json()
+    list_data = list_resp.json()["items"]
     assert len(list_data) == 1
     assert list_data[0]["latest_job"] is not None
     assert list_data[0]["latest_job"]["status"] == "canceled"
@@ -360,7 +361,7 @@ def test_cancel_running_job_returns_202_and_list_and_status_show_cancel_requeste
 
         list_resp = c.get("/api/v3/inventories/inv-running/aisles")
         assert list_resp.status_code == 200
-        list_data = list_resp.json()
+        list_data = list_resp.json()["items"]
         assert len(list_data) == 1
         assert list_data[0]["latest_job"] is not None
         assert list_data[0]["latest_job"]["status"] == "cancel_requested"
@@ -449,8 +450,8 @@ def test_post_process_after_terminal_job_creates_new_job() -> None:
 
     list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert list_resp.status_code == 200
-    assert list_resp.json()[0]["latest_job"]["id"] == job_id_2
-    assert list_resp.json()[0]["latest_job"]["status"] == "queued"
+    assert list_resp.json()["items"][0]["latest_job"]["id"] == job_id_2
+    assert list_resp.json()["items"][0]["latest_job"]["status"] == "queued"
 
     status_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
     assert status_resp.status_code == 200
@@ -693,14 +694,14 @@ def test_list_aisles_includes_latest_job_when_present() -> None:
 
     list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert list_resp.status_code == 200
-    aisles = list_resp.json()
+    aisles = list_resp.json()["items"]
     assert len(aisles) == 1
     assert aisles[0].get("latest_job") is None
 
     client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
     list_resp2 = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert list_resp2.status_code == 200
-    aisles2 = list_resp2.json()
+    aisles2 = list_resp2.json()["items"]
     assert len(aisles2) == 1
     assert aisles2[0]["latest_job"] is not None
     assert aisles2[0]["latest_job"]["status"] == "queued"

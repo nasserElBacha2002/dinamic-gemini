@@ -1,0 +1,89 @@
+"""ListReviewQueueUseCase — cross-inventory needs_review listing (Sprint 1.4)."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from src.application.ports.contracts import ReviewQueueQuery
+from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
+from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.positions.entities import Position, PositionStatus
+from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+
+UTC = timezone.utc
+
+
+def test_review_queue_filters_and_pages() -> None:
+    now = datetime(2025, 10, 1, 12, 0, 0, tzinfo=UTC)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    pos_repo = MemoryPositionRepository()
+
+    inv_repo.save(Inventory("inv-a", "Alpha", InventoryStatus.DRAFT, now, now))
+    inv_repo.save(Inventory("inv-b", "Beta", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-a", "inv-a", "A1", AisleStatus.CREATED, now, now))
+    aisle_repo.save(Aisle("aisle-b", "inv-b", "B1", AisleStatus.CREATED, now, now))
+
+    pos_repo.save(
+        Position(
+            "p1",
+            "aisle-a",
+            PositionStatus.DETECTED,
+            0.4,
+            True,
+            None,
+            now,
+            now,
+        )
+    )
+    pos_repo.save(
+        Position(
+            "p2",
+            "aisle-b",
+            PositionStatus.DETECTED,
+            0.9,
+            True,
+            None,
+            now,
+            now,
+        )
+    )
+    pos_repo.save(
+        Position(
+            "p3",
+            "aisle-b",
+            PositionStatus.DETECTED,
+            0.95,
+            False,
+            None,
+            now,
+            now,
+        )
+    )
+
+    uc = ListReviewQueueUseCase(inv_repo, aisle_repo, pos_repo)
+    rows, total = uc.execute(ReviewQueueQuery(inventory_id="inv-b", page=1, page_size=10))
+    assert total == 1
+    assert len(rows) == 1
+    assert rows[0].position.id == "p2"
+    assert rows[0].inventory_name == "Beta"
+    assert rows[0].aisle_code == "B1"
+
+
+def test_review_queue_out_of_range_page_returns_empty_slice() -> None:
+    now = datetime(2025, 10, 1, 12, 0, 0, tzinfo=UTC)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    pos_repo = MemoryPositionRepository()
+    inv_repo.save(Inventory("inv-x", "X", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-x", "inv-x", "X1", AisleStatus.CREATED, now, now))
+    pos_repo.save(
+        Position("px", "aisle-x", PositionStatus.DETECTED, 0.5, True, None, now, now)
+    )
+    uc = ListReviewQueueUseCase(inv_repo, aisle_repo, pos_repo)
+    rows, total = uc.execute(ReviewQueueQuery(page=99, page_size=10))
+    assert total == 1
+    assert rows == []

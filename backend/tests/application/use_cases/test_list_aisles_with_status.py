@@ -106,6 +106,8 @@ class StubPositionRepo(PositionRepository):
         sku_filter: Optional[str] = None,
         page: int = 1,
         page_size: int = 25,
+        sort_by: str = "created_at",
+        sort_dir: str = "asc",
     ) -> Sequence[Position]:
         return [p for p in self._positions if p.aisle_id == aisle_id]
 
@@ -161,8 +163,9 @@ def test_list_aisles_with_status_returns_aisles_and_latest_jobs() -> None:
         position_repo=StubPositionRepo([]),
         source_asset_repo=StubSourceAssetRepo({}),
     )
-    result = use_case.execute("inv-1")
+    result, total = use_case.execute("inv-1")
 
+    assert total == 2
     assert len(result) == 2
     by_id = {r.aisle.id: r for r in result}
     assert by_id["a1"].latest_job is not None
@@ -211,7 +214,8 @@ def test_list_aisles_with_status_rollups_positions_and_pending_review() -> None:
         position_repo=pos_repo,
         source_asset_repo=src_repo,
     )
-    result = use_case.execute("inv-1")
+    result, total = use_case.execute("inv-1")
+    assert total == 1
     assert len(result) == 1
     row = result[0]
     assert row.assets_count == 3
@@ -259,7 +263,8 @@ def test_list_aisles_with_status_last_activity_at_can_win_on_latest_job_only() -
         position_repo=pos_repo,
         source_asset_repo=src_repo,
     )
-    result = use_case.execute("inv-1")
+    result, total = use_case.execute("inv-1")
+    assert total == 1
     assert len(result) == 1
     assert result[0].last_activity_at == t_job
 

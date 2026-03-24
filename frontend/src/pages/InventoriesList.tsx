@@ -28,7 +28,7 @@ export default function InventoriesList() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useInventoriesList();
-  const inventories: InventoryListItem[] = data ?? [];
+  const inventories: InventoryListItem[] = data?.items ?? [];
   const createMutation = useCreateInventory();
 
   const errorMessage =

@@ -13,6 +13,9 @@ import {
   mapPositionDetailToResultDetail,
 } from '../mappers';
 import type { ResultSummary, ResultDetail } from '../types';
+import type { AislePositionsListQuery } from '../../../api/client';
+
+const defaultResultsListQuery: AislePositionsListQuery = { page: 1, page_size: 500 };
 
 /**
  * Returns the list of results for an aisle as ResultSummary[].
@@ -21,9 +24,10 @@ import type { ResultSummary, ResultDetail } from '../types';
 export function useResultSummaries(
   inventoryId: string | undefined,
   aisleId: string | undefined,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; listQuery?: AislePositionsListQuery }
 ) {
-  const query = useAislePositions(inventoryId, aisleId, options);
+  const listQuery = options?.listQuery ?? defaultResultsListQuery;
+  const query = useAislePositions(inventoryId, aisleId, { ...options, listQuery });
   const results: ResultSummary[] = useMemo(() => {
     const positions = query.data?.positions ?? [];
     return positions.map(mapPositionSummaryToResultSummary);

@@ -2,16 +2,7 @@
 ListAislesWithStatus use case — v3.0 (Épica 4 correction).
 
 Returns aisles for an inventory with latest job per aisle in one batch.
-Uses JobRepository.get_latest_by_targets to avoid N+1 in the API layer.
-
-Sprint 1.3: adds per-aisle rollups (assets, positions, pending review, last_activity_at)
-for the Inventory Detail aisle table without N+1 asset list calls.
-
-``last_activity_at`` (per row) is a **list/table freshness** signal for operators: the maximum
-timestamp among the aisle row, the **latest job only** (not the full job history), all
-positions in that aisle, and the latest asset upload time from ``summarize_assets_for_aisles``.
-It is **not** an audit log, a full activity stream, or a dedicated “last human review”
-timestamp (unless a review happened to update the newest underlying timestamp).
+Sprint 1.3: per-aisle rollups. Sprint 1.4: search, status filter, sort, pagination.
 """
 
 from __future__ import annotations
@@ -19,8 +10,9 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
+from src.application.ports.contracts import AisleTableQuery
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
@@ -52,7 +44,6 @@ def _aisle_last_activity_at(
     positions: Sequence[Position],
     asset_last_upload: Optional[datetime],
 ) -> datetime:
-    """Compute list freshness: max of aisle times, **latest job** times only, position times, asset rollup."""
     parts: List[datetime] = [aisle.updated_at, aisle.created_at]
     if latest_job is not None:
         parts.extend([latest_job.updated_at, latest_job.created_at])
@@ -61,6 +52,24 @@ def _aisle_last_activity_at(
     if asset_last_upload is not None:
         parts.append(asset_last_upload)
     return max(parts)
+
+
+def _row_sort_key(row: AisleWithLatestJob, sort_by: str) -> tuple:
+    sb = (sort_by or "code").strip().lower()
+    a = row.aisle
+    if sb == "status":
+        return (a.status.value, a.code, a.id)
+    if sb == "last_activity_at":
+        la = row.last_activity_at or a.updated_at
+        return (la, a.code, a.id)
+    if sb == "pending_review_positions_count":
+        return (row.pending_review_positions_count, a.code, a.id)
+    if sb == "positions_count":
+        return (row.positions_count, a.code, a.id)
+    if sb == "assets_count":
+        return (row.assets_count, a.code, a.id)
+    # code default
+    return (a.code.lower(), a.id)
 
 
 class ListAislesWithStatusUseCase:
@@ -78,12 +87,23 @@ class ListAislesWithStatusUseCase:
         self._position_repo = position_repo
         self._source_asset_repo = source_asset_repo
 
-    def execute(self, inventory_id: str) -> List[AisleWithLatestJob]:
+    def execute(
+        self, inventory_id: str, query: Optional[AisleTableQuery] = None
+    ) -> Tuple[List[AisleWithLatestJob], int]:
         if self._inventory_repo.get_by_id(inventory_id) is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
-        aisles = self._aisle_repo.list_by_inventory(inventory_id)
+        q = query or AisleTableQuery()
+        aisles = list(self._aisle_repo.list_by_inventory(inventory_id))
+        search = (q.search or "").strip().lower() if q.search else None
+        if search:
+            aisles = [a for a in aisles if search in a.code.lower()]
+        if q.status is not None and str(q.status).strip():
+            st = str(q.status).strip()
+            aisles = [a for a in aisles if a.status.value == st]
+
         if not aisles:
-            return []
+            return [], 0
+
         aisle_ids: Sequence[str] = [a.id for a in aisles]
         latest_by_aisle = self._job_repo.get_latest_by_targets("aisle", aisle_ids)
         positions = self._position_repo.list_by_aisles(list(aisle_ids))
@@ -111,4 +131,11 @@ class ListAislesWithStatusUseCase:
                     last_activity_at=last_at,
                 )
             )
-        return rows
+
+        reverse = (q.sort_dir or "asc").strip().lower() == "desc"
+        rows.sort(key=lambda r: _row_sort_key(r, q.sort_by), reverse=reverse)
+        total = len(rows)
+        page = max(1, q.page)
+        page_size = max(1, min(q.page_size, 200))
+        start = (page - 1) * page_size
+        return rows[start : start + page_size], total

@@ -82,7 +82,8 @@ def test_list_items_includes_counts_and_pending() -> None:
         aisle_repo=aisle_repo,
         position_repo=pos_repo,
     )
-    out = list(uc.execute())
+    out, total = uc.execute()
+    assert total == 1
     assert len(out) == 1
     row = out[0]
     assert isinstance(row, InventoryListItem)
@@ -103,7 +104,7 @@ def test_inventory_with_no_aisles_zero_counts_and_last_activity_from_inventory_o
         aisle_repo=MemoryAisleRepository(),
         position_repo=MemoryPositionRepository(),
     )
-    row = list(uc.execute())[0]
+    row = uc.execute()[0][0]
     assert row.aisles_count == 0
     assert row.pending_review_count == 0
     assert row.last_activity_at == updated
@@ -143,7 +144,7 @@ def test_last_activity_at_is_max_across_inventory_aisle_and_position_times() -> 
         aisle_repo=aisle_repo,
         position_repo=pos_repo,
     )
-    row = list(uc.execute())[0]
+    row = uc.execute()[0][0]
     assert row.last_activity_at == datetime(2025, 3, 1, 21, 0, 0, tzinfo=UTC)
 
 
@@ -153,4 +154,5 @@ def test_list_items_empty_repos() -> None:
         aisle_repo=MemoryAisleRepository(),
         position_repo=MemoryPositionRepository(),
     )
-    assert list(uc.execute()) == []
+    items, total = uc.execute()
+    assert items == [] and total == 0

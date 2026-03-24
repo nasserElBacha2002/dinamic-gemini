@@ -1,10 +1,9 @@
-"""ListAislePositionsUseCase — optional PositionListQuery (filters, pagination path)."""
+"""ListAislePositionsUseCase — filters, post-consolidation pagination (Sprint 1.4)."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from src.application.ports.contracts import PositionListQuery
 from src.application.use_cases.list_aisle_positions import (
     ListAislePositionsCommand,
     ListAislePositionsUseCase,
@@ -55,32 +54,31 @@ def _repos():
 
 def test_list_aisle_positions_filters_by_needs_review() -> None:
     inv_repo, aisle_repo, pos_repo, _ = _repos()
-    uc = ListAislePositionsUseCase(inv_repo, aisle_repo, pos_repo)
-    q = PositionListQuery(needs_review=True, page=1, page_size=50)
-    rows = uc.execute(
+    uc = ListAislePositionsUseCase(inv_repo, aisle_repo, pos_repo, positions_aisle_raw_cap=500)
+    result = uc.execute(
         ListAislePositionsCommand(
             inventory_id="inv-1",
             aisle_id="aisle-1",
-            query=q,
+            needs_review=True,
+            page=1,
+            page_size=50,
         )
     )
-    assert len(rows) == 1
-    assert rows[0].id == "p1"
-    assert rows[0].needs_review is True
+    assert len(result.positions) == 1
+    assert result.positions[0].id == "p1"
+    assert result.positions[0].needs_review is True
 
 
-def test_list_aisle_positions_default_query_matches_pagination_path() -> None:
-    """Explicit default PositionListQuery is equivalent to former list_by_aisle default window."""
+def test_list_aisle_positions_default_pagination_matches_explicit() -> None:
     inv_repo, aisle_repo, pos_repo, _ = _repos()
-    uc = ListAislePositionsUseCase(inv_repo, aisle_repo, pos_repo)
+    uc = ListAislePositionsUseCase(inv_repo, aisle_repo, pos_repo, positions_aisle_raw_cap=500)
     explicit = uc.execute(
         ListAislePositionsCommand(
             inventory_id="inv-1",
             aisle_id="aisle-1",
-            query=PositionListQuery(page=1, page_size=25),
+            page=1,
+            page_size=25,
         )
     )
-    implicit = uc.execute(
-        ListAislePositionsCommand(inventory_id="inv-1", aisle_id="aisle-1", query=None)
-    )
-    assert [p.id for p in explicit] == [p.id for p in implicit]
+    implicit = uc.execute(ListAislePositionsCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+    assert [p.id for p in explicit.positions] == [p.id for p in implicit.positions]

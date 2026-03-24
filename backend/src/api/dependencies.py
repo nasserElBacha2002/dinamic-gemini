@@ -56,6 +56,7 @@ from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
+from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
@@ -262,7 +263,22 @@ def get_list_aisle_positions_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
 ) -> ListAislePositionsUseCase:
+    from src.config import load_settings
+
     return ListAislePositionsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+    )
+
+
+def get_list_review_queue_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> ListReviewQueueUseCase:
+    return ListReviewQueueUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         position_repo=position_repo,

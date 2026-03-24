@@ -7,10 +7,12 @@ import { getInventories, getInventory } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 
 /** List query returns screen-ready rows (InventoryListItem), not thin Inventory. */
+const defaultInventoryTableQuery = { page: 1, page_size: 200 } as const;
+
 export function useInventoriesList() {
   return useQuery({
-    queryKey: queryKeys.inventories.list(),
-    queryFn: getInventories,
+    queryKey: [...queryKeys.inventories.list(), defaultInventoryTableQuery] as const,
+    queryFn: () => getInventories(defaultInventoryTableQuery),
   });
 }
 

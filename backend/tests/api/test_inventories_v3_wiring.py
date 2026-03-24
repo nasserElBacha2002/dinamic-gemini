@@ -24,8 +24,8 @@ def test_get_inventories_returns_list_and_includes_created() -> None:
     response = client.get("/api/v3/inventories")
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
-    ids = [item["id"] for item in data]
+    assert "items" in data
+    ids = [item["id"] for item in data["items"]]
     assert created_id in ids
 
 

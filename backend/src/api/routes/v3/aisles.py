@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.config import load_settings
 from src.api.dependencies import (
@@ -25,6 +25,8 @@ from src.api.schemas.merge_schemas import (
     RunMergeResponse,
 )
 from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest
+from src.api.schemas.listing_schemas import PaginatedAisleListResponse, compute_total_pages
+from src.application.ports.contracts import AisleTableQuery
 from src.api.schemas.processing_schemas import (
     AisleStatusResponse,
     ExecutionLogEvent,
@@ -70,25 +72,52 @@ def create_aisle(
         raise HTTPException(status_code=409, detail=str(e))
 
 
-@router.get("/{inventory_id}/aisles", response_model=List[AisleResponse])
+@router.get("/{inventory_id}/aisles", response_model=PaginatedAisleListResponse)
 def list_aisles(
     inventory_id: str,
     use_case: ListAislesWithStatusUseCase = Depends(get_list_aisles_with_status_use_case),
-) -> List[AisleResponse]:
-    """List aisles for an inventory (v3.0). Returns 404 if inventory not found. Includes latest job per aisle."""
+    search: Optional[str] = Query(None, description="Case-insensitive substring on aisle code."),
+    status: Optional[str] = Query(None, description="Exact aisle status (wire value)."),
+    sort_by: str = Query(
+        "code",
+        description=(
+            "code | status | last_activity_at | pending_review_positions_count | "
+            "positions_count | assets_count"
+        ),
+    ),
+    sort_dir: str = Query("asc", description="asc | desc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+) -> PaginatedAisleListResponse:
+    """List aisles for an inventory with rollups, optional search/filter/sort/pagination (Sprint 1.4)."""
     try:
-        items = use_case.execute(inventory_id)
-        return [
-            aisle_to_response(
-                item.aisle,
-                item.latest_job,
-                assets_count=item.assets_count,
-                positions_count=item.positions_count,
-                pending_review_positions_count=item.pending_review_positions_count,
-                last_activity_at=item.last_activity_at,
-            )
-            for item in items
-        ]
+        q = AisleTableQuery(
+            search=search.strip() if search and search.strip() else None,
+            status=status.strip() if status and str(status).strip() else None,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            page=page,
+            page_size=page_size,
+        )
+        items, total = use_case.execute(inventory_id, q)
+        ps = q.page_size
+        return PaginatedAisleListResponse(
+            items=[
+                aisle_to_response(
+                    item.aisle,
+                    item.latest_job,
+                    assets_count=item.assets_count,
+                    positions_count=item.positions_count,
+                    pending_review_positions_count=item.pending_review_positions_count,
+                    last_activity_at=item.last_activity_at,
+                )
+                for item in items
+            ],
+            page=q.page,
+            page_size=ps,
+            total_items=total,
+            total_pages=compute_total_pages(total, ps),
+        )
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
 
