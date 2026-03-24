@@ -24,14 +24,8 @@ import { getJobStatusLabel, getJobStatusColor } from '../utils/jobStatus';
 import { getAisleStatusLabel, getAisleStatusColor } from '../utils/aisleStatus';
 import { formatDate } from '../utils/formatDate';
 import { pathToAislePositions } from '../utils/resultRoutes';
-import {
-  PageLayout,
-  LoadingBlock,
-  EmptyState,
-  ErrorAlert,
-  StatCard,
-  StatusChip,
-} from '../components/ui';
+import { LoadingBlock, EmptyState, ErrorAlert, StatCard, StatusChip } from '../components/ui';
+import { PageHeader } from '../components/shell';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import ExecutionLogPanel from '../components/ExecutionLogPanel';
 import {
@@ -161,38 +155,39 @@ export default function InventoryDetail() {
 
   if (inventoryLoading && !inventory) {
     return (
-      <PageLayout>
+      <>
         <LoadingBlock />
-      </PageLayout>
+      </>
     );
   }
 
   if (inventoryError && !inventory) {
     return (
-      <PageLayout>
+      <>
         <ErrorAlert message={inventoryError} onRetry={() => inventoryQuery.refetch()} />
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
+        <Button sx={{ mt: 2 }} onClick={() => navigate('/inventories')}>
           Back to list
         </Button>
-      </PageLayout>
+      </>
     );
   }
 
   return (
-    <PageLayout>
-      <Button sx={{ mb: 2 }} onClick={() => navigate('/')}>
-        ← Back to inventories
-      </Button>
-
+    <>
       {inventory && (
         <>
-          <Paper sx={{ p: 2, mb: 3 }}>
-            <Typography variant="h6">{inventory.name}</Typography>
-            <Box sx={{ fontSize: '0.875rem', color: 'text.secondary', mt: 0.5 }}>
-              Status: <StatusChip label={inventory.status} color={getAisleStatusColor(inventory.status)} /> — Created:{' '}
-              {formatDate(inventory.created_at ?? undefined)}
-            </Box>
-          </Paper>
+          <PageHeader
+            breadcrumbs={[{ label: 'Inventories', to: '/inventories' }]}
+            title={inventory.name}
+            subtitle={
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                <span>Status:</span>
+                <StatusChip label={inventory.status} color={getAisleStatusColor(inventory.status)} />
+                <span>—</span>
+                <span>Created: {formatDate(inventory.created_at ?? undefined)}</span>
+              </Box>
+            }
+          />
 
           <Typography variant="h6" sx={{ mb: 1 }}>
             Metrics
@@ -442,6 +437,6 @@ export default function InventoryDetail() {
           />
         </DialogContent>
       </Dialog>
-    </PageLayout>
+    </>
   );
 }

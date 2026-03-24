@@ -6,7 +6,6 @@
 import { useMemo, useState, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Alert, Button, Paper, Typography, Box } from '@mui/material';
-import { PageLayout } from '../components/ui';
 import { pathToPositionDetail } from '../utils/resultRoutes';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { ApiError } from '../api/types';
@@ -83,17 +82,17 @@ export default function AislePositionsPage() {
 
   if (!inventoryId || !aisleId) {
     return (
-      <PageLayout>
+      <>
         <Alert severity="warning">Missing inventory or aisle.</Alert>
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
+        <Button sx={{ mt: 2 }} onClick={() => navigate('/inventories')}>
           Back to list
         </Button>
-      </PageLayout>
+      </>
     );
   }
 
   return (
-    <PageLayout>
+    <>
       <ResultsOverviewHeader
         title="Results"
         context={`Aisle ${aisleId}`}
@@ -203,6 +202,6 @@ export default function AislePositionsPage() {
           )}
         </>
       )}
-    </PageLayout>
+    </>
   );
 }

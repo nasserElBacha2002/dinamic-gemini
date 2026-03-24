@@ -5,8 +5,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Alert, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
-import { PageLayout } from '../components/ui';
+import { Alert, Box, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import { pathToAislePositions, pathToPositionDetail } from '../utils/resultRoutes';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { ApiError } from '../api/types';
@@ -147,44 +146,44 @@ export default function PositionDetailPage() {
 
   if (!inventoryId || !aisleId || !positionId) {
     return (
-      <PageLayout>
+      <>
         <Alert severity="warning">Missing inventory, aisle, or position.</Alert>
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
+        <Button sx={{ mt: 2 }} onClick={() => navigate('/inventories')}>
           Back to list
         </Button>
-      </PageLayout>
+      </>
     );
   }
 
   if (isLoading && !result) {
     return (
-      <PageLayout>
+      <>
         <ResultDetailLoadingState message="Loading result…" />
-      </PageLayout>
+      </>
     );
   }
 
   if (errorMessage && !result) {
     return (
-      <PageLayout>
+      <>
         <ResultDetailHeader onBack={handleBack} backLabel="Back to results" />
         <ResultDetailErrorState message={errorMessage} onRetry={() => refetch()} />
         <Button sx={{ mt: 2 }} onClick={handleBack}>
           Back to results
         </Button>
-      </PageLayout>
+      </>
     );
   }
 
   if (!result) {
     return (
-      <PageLayout>
+      <>
         <ResultDetailHeader onBack={handleBack} backLabel="Back to results" />
         <ResultDetailEmptyState message="Result not found or no longer available." />
         <Button sx={{ mt: 2 }} onClick={handleBack}>
           Back to results
         </Button>
-      </PageLayout>
+      </>
     );
   }
 
@@ -192,7 +191,7 @@ export default function PositionDetailPage() {
   const isDeleted = result.reviewStatus === 'INVALID';
 
   return (
-    <PageLayout maxWidth={700}>
+    <Box sx={{ maxWidth: 700, mx: 'auto', width: '100%' }}>
       <ResultDetailHeader
         title="Result"
         context={`Aisle ${aisleId}`}
@@ -264,6 +263,6 @@ export default function PositionDetailPage() {
           </Button>
         </DialogActions>
       </Dialog>
-    </PageLayout>
+    </Box>
   );
 }

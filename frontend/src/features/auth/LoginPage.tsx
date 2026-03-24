@@ -31,7 +31,7 @@ export default function LoginPage() {
       // Persist both access and refresh tokens so future refresh flows can be implemented.
       setStoredSession(res.access_token, res.refresh_token ?? null);
       login(res.user, res.access_token);
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setErrorMessage(getAuthErrorMessage(err));
     } finally {

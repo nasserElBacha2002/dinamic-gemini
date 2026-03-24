@@ -23,7 +23,7 @@ function renderLoginPage() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<div>Home</div>} />
+          <Route path="/dashboard" element={<div>Dashboard shell</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>
@@ -68,7 +68,7 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: /signing in/i })).toBeInTheDocument();
   });
 
-  it('on login success stores token and navigates to home', async () => {
+  it('on login success stores token and navigates to dashboard', async () => {
     mockLogin.mockResolvedValue({
       access_token: 'jwt-123',
       token_type: 'bearer',
@@ -81,7 +81,7 @@ describe('LoginPage', () => {
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'pass' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
 
-    expect(await screen.findByText('Home')).toBeInTheDocument();
+    expect(await screen.findByText('Dashboard shell')).toBeInTheDocument();
     // v3.2.3.E6: token is stored as a structured session; use helper for contract stability.
     expect(getStoredToken()).toBe('jwt-123');
   });

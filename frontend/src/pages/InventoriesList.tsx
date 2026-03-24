@@ -1,29 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
-} from '@mui/material';
+import { Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
 import type { Inventory, InventoryListItem } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
-import { PageLayout, LoadingBlock, EmptyState, ErrorAlert } from '../components/ui';
+import { LoadingBlock, EmptyState, ErrorAlert } from '../components/ui';
+import { PageHeader } from '../components/shell';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
 import { useInventoriesList, useCreateInventory } from '../hooks';
-import { useAuth } from '../features/auth';
 
 export default function InventoriesList() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -45,25 +33,19 @@ export default function InventoriesList() {
   };
 
   return (
-    <PageLayout>
-      <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Typography variant="h5">
-          Dinamic Inventory v3
-        </Typography>
-        <Button variant="outlined" size="small" onClick={logout}>
-          Logout
-        </Button>
-      </Box>
+    <>
+      <PageHeader
+        a11yTitle="Inventories"
+        actions={
+          <Button variant="contained" onClick={() => { setCreateError(null); setCreateOpen(true); }}>
+            Create inventory
+          </Button>
+        }
+      />
 
       {errorMessage && (
         <ErrorAlert message={errorMessage} onRetry={() => refetch()} />
       )}
-
-      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button variant="contained" onClick={() => { setCreateError(null); setCreateOpen(true); }}>
-          Create inventory
-        </Button>
-      </Box>
 
       {isLoading ? (
         <LoadingBlock />
@@ -113,6 +95,6 @@ export default function InventoriesList() {
         onError={setCreateError}
         createInventoryFn={createMutation.mutateAsync}
       />
-    </PageLayout>
+    </>
   );
 }

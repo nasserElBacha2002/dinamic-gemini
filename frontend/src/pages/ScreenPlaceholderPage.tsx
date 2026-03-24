@@ -20,7 +20,7 @@ export default function ScreenPlaceholderPage({ title, description }: ScreenPlac
         </Typography>
       ) : null}
       <Box>
-        <Link component={RouterLink} to="/" underline="hover">
+        <Link component={RouterLink} to="/inventories" underline="hover">
           Back to inventories
         </Link>
       </Box>
