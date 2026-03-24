@@ -20,6 +20,14 @@ export interface Inventory {
   name: string;
   status: InventoryStatus | string;
   created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** GET /api/v3/inventories — one row with aggregates for list/table screens. */
+export interface InventoryListItem extends Inventory {
+  aisles_count: number;
+  pending_review_count: number;
+  last_activity_at: string | null;
 }
 
 // ─── Inventory visual references (v3.2.4 Phase 2/8) ─────────────────────────

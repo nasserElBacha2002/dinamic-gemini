@@ -7,6 +7,7 @@ Repositories and infrastructure service contracts. Use cases depend on these abs
 from src.application.ports.clock import Clock
 from src.application.ports.contracts import (
     AnalysisResultPayload,
+    InventoryListItem,
     InventoryMetricsResult,
     MappedPositionPayload,
     PositionListQuery,
@@ -38,6 +39,7 @@ __all__ = [
     "AisleRepository",
     "Clock",
     "EvidenceRepository",
+    "InventoryListItem",
     "InventoryMetricsResult",
     "InventoryRepository",
     "JobQueue",

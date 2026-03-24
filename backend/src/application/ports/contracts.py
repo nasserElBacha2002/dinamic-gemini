@@ -8,8 +8,11 @@ metrics, queue payloads, and position list query. Reduces reliance on Dict[str, 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from typing_extensions import TypedDict
+
+from src.domain.inventory.entities import Inventory
 
 
 # --- Analysis (AnalysisProvider.analyze_aisle) ---
@@ -65,6 +68,16 @@ class ProcessAislePayload(TypedDict):
 
 
 # --- Position list query (PositionRepository) ---
+
+
+@dataclass(frozen=True)
+class InventoryListItem:
+    """One inventory row for list/summary screens: entity plus aggregates for tables and cards."""
+
+    inventory: Inventory
+    aisles_count: int
+    pending_review_count: int
+    last_activity_at: Optional[datetime]
 
 
 @dataclass

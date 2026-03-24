@@ -12,11 +12,32 @@ class CreateInventoryRequest(BaseModel):
 
 
 class InventoryResponse(BaseModel):
-    """Single inventory in list or create response."""
+    """Single inventory in get or create response."""
     id: str
     name: str
     status: str
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class InventoryListItemResponse(BaseModel):
+    """GET /api/v3/inventories — one row for inventories table (aggregates for screen-ready lists)."""
+
+    id: str
+    name: str
+    status: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    aisles_count: int = Field(0, ge=0, description="Number of aisles in this inventory.")
+    pending_review_count: int = Field(
+        0,
+        ge=0,
+        description="Positions with needs_review true across all aisles.",
+    )
+    last_activity_at: Optional[datetime] = Field(
+        None,
+        description="Latest activity: max of inventory, aisle, and position timestamps.",
+    )
 
 
 class InventoryMetricsResponse(BaseModel):

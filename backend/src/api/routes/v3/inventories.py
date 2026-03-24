@@ -11,12 +11,13 @@ from src.api.dependencies import (
     get_create_inventory_use_case,
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
-    get_list_inventories_use_case,
+    get_list_inventory_list_items_use_case,
     get_list_inventory_visual_references_use_case,
     get_upload_inventory_visual_references_use_case,
 )
 from src.api.schemas.inventory_schemas import (
     CreateInventoryRequest,
+    InventoryListItemResponse,
     InventoryMetricsResponse,
     InventoryResponse,
     InventoryVisualReferenceListResponse,
@@ -33,14 +34,14 @@ from src.application.errors import (
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
-from src.application.use_cases.list_inventories import ListInventoriesUseCase
+from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.application.use_cases.upload_inventory_visual_references import (
     ListInventoryVisualReferencesUseCase,
     UploadInventoryVisualReferencesUseCase,
     UploadedVisualReferenceFile,
 )
 
-from .shared import inventory_to_response
+from .shared import inventory_list_item_to_response, inventory_to_response
 
 router = APIRouter()
 
@@ -85,13 +86,13 @@ def create_inventory(
     return inventory_to_response(inventory)
 
 
-@router.get("/", response_model=List[InventoryResponse])
+@router.get("/", response_model=List[InventoryListItemResponse])
 def list_inventories(
-    use_case: ListInventoriesUseCase = Depends(get_list_inventories_use_case),
-) -> List[InventoryResponse]:
-    """List all inventories (v3.0)."""
-    inventories = use_case.execute()
-    return [inventory_to_response(inv) for inv in inventories]
+    use_case: ListInventoryListItemsUseCase = Depends(get_list_inventory_list_items_use_case),
+) -> List[InventoryListItemResponse]:
+    """List all inventories with per-row aggregates for table views (aisles count, pending review, last activity)."""
+    items = use_case.execute()
+    return [inventory_list_item_to_response(item) for item in items]
 
 
 @router.get("/{inventory_id}", response_model=InventoryResponse)

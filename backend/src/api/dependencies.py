@@ -58,6 +58,7 @@ from src.application.use_cases.list_aisles_with_status import ListAislesWithStat
 from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
+from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
@@ -104,6 +105,18 @@ def get_list_inventories_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> ListInventoriesUseCase:
     return ListInventoriesUseCase(inventory_repo=repo)
+
+
+def get_list_inventory_list_items_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> ListInventoryListItemsUseCase:
+    return ListInventoryListItemsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+    )
 
 
 def get_get_inventory_use_case(

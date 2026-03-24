@@ -7,6 +7,7 @@
 import { getStoredToken } from '../features/auth/storage';
 import type {
   Inventory,
+  InventoryListItem,
   Aisle,
   AisleStatusResponse,
   CreateInventoryRequest,
@@ -87,9 +88,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-export async function getInventories(): Promise<Inventory[]> {
+export async function getInventories(): Promise<InventoryListItem[]> {
   const response = await protectedFetch(`${API_BASE}/api/v3/inventories`);
-  const data = await handleResponse<Inventory[]>(response);
+  const data = await handleResponse<InventoryListItem[]>(response);
   return Array.isArray(data) ? data : [];
 }
 

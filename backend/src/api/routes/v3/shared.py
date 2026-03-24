@@ -18,7 +18,8 @@ from src.utils.validation import validate_relative_path
 from src.api.schemas.aisle_schemas import AisleResponse, AisleJobSummary
 from src.api.schemas.asset_schemas import SourceAssetResponse
 from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary
-from src.api.schemas.inventory_schemas import InventoryResponse
+from src.api.schemas.inventory_schemas import InventoryListItemResponse, InventoryResponse
+from src.application.ports.contracts import InventoryListItem
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
     PositionSummaryResponse,
@@ -275,6 +276,21 @@ def inventory_to_response(inv: Inventory) -> InventoryResponse:
         name=inv.name,
         status=inv.status.value,
         created_at=inv.created_at,
+        updated_at=inv.updated_at,
+    )
+
+
+def inventory_list_item_to_response(item: InventoryListItem) -> InventoryListItemResponse:
+    inv = item.inventory
+    return InventoryListItemResponse(
+        id=inv.id,
+        name=inv.name,
+        status=inv.status.value,
+        created_at=inv.created_at,
+        updated_at=inv.updated_at,
+        aisles_count=item.aisles_count,
+        pending_review_count=item.pending_review_count,
+        last_activity_at=item.last_activity_at,
     )
 
 
