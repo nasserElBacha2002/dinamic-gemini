@@ -68,8 +68,9 @@ export default function PageHeader({ title, a11yTitle, subtitle, breadcrumbs, ac
                   component={RouterLink}
                   to={crumb.to}
                   underline="hover"
-                  color="inherit"
+                  color="primary"
                   variant="body2"
+                  fontWeight={500}
                 >
                   {crumb.label}
                 </Link>

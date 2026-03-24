@@ -40,8 +40,14 @@ export default function LoginPage() {
   };
 
   return (
-    <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-      <Paper elevation={3} sx={{ p: 4, width: 360 }}>
+    <Box
+      display="flex"
+      justifyContent="center"
+      alignItems="center"
+      minHeight="100vh"
+      bgcolor="background.default"
+    >
+      <Paper elevation={2} sx={{ p: 4, width: 360, maxWidth: '100%' }}>
         <Typography variant="h5" component="h1" gutterBottom>
           Admin login
         </Typography>

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { AuthProvider } from './features/auth';
 import App from './App';
+/** Product theme — Sprint 2.1; aligned with `docs/Re diseño 3.3.md` §5–7. */
 import theme from './theme';
 
 const root = document.getElementById('root');

@@ -37,7 +37,7 @@ export default function UserMenu() {
         onClose={handleClose}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        slotProps={{ paper: { sx: { minWidth: 220 } } }}
+        PaperProps={{ sx: { minWidth: 220, borderRadius: 2 } }}
       >
         <Box sx={{ px: 2, py: 1.5, maxWidth: 280 }}>
           <Typography variant="subtitle2" noWrap>

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Box } from '@mui/material';
+import { MAIN_CONTENT_MAX_WIDTH_PX } from './layoutConstants';
 
 export interface AppMainProps {
   children: ReactNode;
@@ -18,7 +19,7 @@ export default function AppMain({ children }: AppMainProps) {
         flex: 1,
         minWidth: 0,
         p: { xs: 2, md: 3 },
-        maxWidth: 1400,
+        maxWidth: MAIN_CONTENT_MAX_WIDTH_PX,
         width: '100%',
         mx: 'auto',
       }}
