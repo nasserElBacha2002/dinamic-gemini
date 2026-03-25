@@ -21,7 +21,7 @@ from src.database.sqlserver import SqlServerClient
 
 def _build_client() -> SqlServerClient:
     settings = load_settings()
-    return SqlServerClient(settings.sqlserver_connection_string)
+    return SqlServerClient(settings.require_sqlserver_connection_string())
 
 
 def _required_version() -> str:

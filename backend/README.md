@@ -73,7 +73,9 @@ This backend now uses a versioned schema guard to prevent rolling out code again
 
 Important env vars:
 
-- `SQLSERVER_CONNECTION_STRING`
+- SQL Server (ODBC): either **`SQLSERVER_CONNECTION_STRING`** (optional, takes precedence) **or** split vars — all values are **trimmed**:
+  - `SQLSERVER_SERVER`, `SQLSERVER_DATABASE`, `SQLSERVER_UID`, `SQLSERVER_PWD`
+  - `SQLSERVER_DRIVER` — required if pyodbc cannot auto-detect a driver (typical in Linux/CI; e.g. `ODBC Driver 18 for SQL Server`)
 - `DB_SCHEMA_SERVICE_NAME` (default: `inventory-api`)
 - `DB_SCHEMA_REQUIRED_VERSION` (optional override)
 - `DB_SCHEMA_GUARD_ENABLED` (default: `true`)

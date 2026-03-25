@@ -23,7 +23,11 @@ class SqlServerClient:
 
     def __init__(self, connection_string: str) -> None:
         if not connection_string or not connection_string.strip():
-            raise ValueError("connection_string is required")
+            raise ValueError(
+                "connection_string is required. Configure SQLSERVER_CONNECTION_STRING or "
+                "SQLSERVER_SERVER, SQLSERVER_DATABASE, SQLSERVER_UID, SQLSERVER_PWD "
+                "(and SQLSERVER_DRIVER if no ODBC driver is auto-detected)."
+            )
         if pyodbc is None:
             raise RuntimeError("pyodbc is not installed; install with: pip install pyodbc")
         self._connection_string = connection_string.strip()

@@ -21,11 +21,11 @@ def _db_repos() -> Optional[Tuple[Any, Any, Any]]:
     try:
         from src.config import load_settings
         settings = load_settings()
-        if not getattr(settings, "sqlserver_enabled", False) or not (getattr(settings, "sqlserver_connection_string", "") or "").strip():
+        if not getattr(settings, "sqlserver_enabled", False) or not settings.sqlserver_effective_connection_string:
             return None
         from src.database.sqlserver import SqlServerClient
         from src.database.repository import JobsRepository, PalletResultsRepository, JobEventsRepository
-        client = SqlServerClient(settings.sqlserver_connection_string)
+        client = SqlServerClient(settings.require_sqlserver_connection_string())
         return (
             JobsRepository(client),
             PalletResultsRepository(client),
@@ -137,8 +137,7 @@ def claim_next_job(base_path: Path) -> Optional[JobRecord]:
     """
     settings = load_settings()
     db_claim_configured = bool(
-        getattr(settings, "sqlserver_enabled", False)
-        and (getattr(settings, "sqlserver_connection_string", "") or "").strip()
+        getattr(settings, "sqlserver_enabled", False) and settings.sqlserver_effective_connection_string
     )
     # Preferred v3 source: inventory_jobs via v3 JobRepository claim.
     try:
