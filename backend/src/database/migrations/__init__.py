@@ -6,6 +6,7 @@ from .service import (
     SchemaCompatibilityStatus,
     ensure_schema_compatibility,
     get_migration_status,
+    get_required_schema_version,
     run_pending_migrations,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "SchemaCompatibilityStatus",
     "ensure_schema_compatibility",
     "get_migration_status",
+    "get_required_schema_version",
     "run_pending_migrations",
 ]

@@ -62,7 +62,7 @@ jobs:
           DB_SCHEMA_SERVICE_NAME: ${{ env.DB_SCHEMA_SERVICE_NAME }}
           DEPLOYMENT_ID: ${{ env.DEPLOYMENT_ID }}
         run: |
-          python scripts/db_migrate.py apply
+          dinamic-db-migrate apply
 
       - name: Validate schema compatibility after migration
         env:
@@ -70,7 +70,7 @@ jobs:
           SQLSERVER_CONNECTION_STRING: ${{ secrets.SQLSERVER_CONNECTION_STRING }}
           DB_SCHEMA_SERVICE_NAME: ${{ env.DB_SCHEMA_SERVICE_NAME }}
         run: |
-          python scripts/db_migrate.py validate
+          dinamic-db-migrate validate
 
   deploy:
     runs-on: ubuntu-latest

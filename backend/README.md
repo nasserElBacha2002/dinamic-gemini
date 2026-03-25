@@ -62,10 +62,10 @@ This backend now uses a versioned schema guard to prevent rolling out code again
 
 - Versioned migrations: `src/database/migrations/versions/*.sql`
 - Migration state table: `schema_migrations`
-- Migration utility:
-  - `python scripts/db_migrate.py status`
-  - `python scripts/db_migrate.py apply`
-  - `python scripts/db_migrate.py validate`
+- Migration utility (from `backend/`, after `pip install -e .`):
+  - `python scripts/db_migrate.py status|apply|validate`
+  - `python -m src.database.migrations status|apply|validate`
+  - `dinamic-db-migrate status|apply|validate` (console script from the install)
 - Runtime guard:
   - startup check compares DB version vs required version
   - `/ready` returns `503` when schema is incompatible
