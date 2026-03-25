@@ -4,6 +4,7 @@
  *
  * **Dialogs:** `BaseDialog` (generic) → `ConfirmDialog` composes it; `WizardModal` is a separate stepper shell.
  * **Status:** prefer `StatusBadge` for product semantics; `StatusChip` for transitional mapper-driven colors.
+ * **Tables (Sprint 2.4):** `DataTable` — server sort/pagination, loading skeleton, empty state; compose with `SectionCard` + `FilterToolbar`.
  */
 
 export { default as PageLayout } from './PageLayout';
@@ -40,6 +41,15 @@ export { default as FilterToolbar } from './FilterToolbar';
 export type { FilterToolbarProps } from './FilterToolbar';
 export { default as RowActionMenu } from './RowActionMenu';
 export type { RowActionMenuProps, RowActionMenuItem } from './RowActionMenu';
+
+export { default as DataTable } from './DataTable';
+export type {
+  DataTableColumn,
+  DataTablePaginationModel,
+  DataTableProps,
+  DataTableSortDirection,
+  DataTableSortModel,
+} from './DataTable';
 
 export { AppSnackbarProvider, useAppSnackbar } from './AppSnackbarProvider';
 export type { AppSnackbarSeverity } from './AppSnackbarProvider';

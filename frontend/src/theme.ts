@@ -263,6 +263,6 @@ const theme = createTheme({
   },
 });
 
-// Sprint 2.3+: StatusBadge, FilterToolbar, DataTable density tokens — extend components here when those land.
+// Sprint 2.3–2.4: StatusBadge, FilterToolbar, DataTable — `DataTable` uses `size="small"` + `MuiTableCell` head overrides above.
 
 export default theme;
