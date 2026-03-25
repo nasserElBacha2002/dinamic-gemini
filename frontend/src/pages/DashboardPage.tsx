@@ -51,9 +51,8 @@ export default function DashboardPage() {
   const handleCreateSuccess = (created: Inventory) => {
     setCreateOpen(false);
     setCreateError(null);
-    if (!created.id) {
-      recentInvQuery.refetch();
-    }
+    // Always refresh so the Recent inventories table is not stale after creation.
+    recentInvQuery.refetch();
   };
 
   const recentColumns = useMemo<DataTableColumn<InventoryListItem>[]>(
@@ -116,22 +115,22 @@ export default function DashboardPage() {
       />
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={12} sm={6} md={2}>
+        <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
           <KpiCard label="Active inventories" value="—" description="Pending dashboard summary contract" />
         </Grid>
-        <Grid item xs={12} sm={6} md={2}>
+        <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
           <KpiCard label="Pending review" value="—" description="Pending dashboard summary contract" />
         </Grid>
-        <Grid item xs={12} sm={6} md={2}>
+        <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
           <KpiCard label="Processed aisles" value="—" description="Pending dashboard summary contract" />
         </Grid>
-        <Grid item xs={12} sm={6} md={2}>
+        <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
           <KpiCard label="Failed jobs" value="—" description="Pending dashboard summary contract" />
         </Grid>
-        <Grid item xs={12} sm={6} md={2}>
+        <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
           <KpiCard label="Manual corrections" value="—" description="Pending dashboard summary contract" />
         </Grid>
-        <Grid item xs={12} sm={6} md={2}>
+        <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
           <KpiCard label="Auto-acceptance rate" value="—" description="Pending dashboard summary contract" />
         </Grid>
       </Grid>

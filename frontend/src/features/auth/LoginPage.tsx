@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, IconButton, InputAdornment, TextField, Typography, Paper, Alert } from '@mui/material';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
@@ -24,7 +24,7 @@ export default function LoginPage() {
 
   const canSubmit = !loading && username.trim() !== '' && password !== '';
   const passwordFieldType = showPassword ? 'text' : 'password';
-  const productLabel = useMemo(() => 'Dinamic Inventory', []);
+  const productLabel = 'Dinamic Inventory';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,7 +90,9 @@ export default function LoginPage() {
                 <InputAdornment position="end">
                   <IconButton
                     aria-label={showPassword ? 'Hide characters' : 'Show characters'}
+                    aria-pressed={showPassword}
                     onClick={() => setShowPassword((v) => !v)}
+                    onMouseDown={(e) => e.preventDefault()}
                     edge="end"
                     disabled={loading}
                   >
