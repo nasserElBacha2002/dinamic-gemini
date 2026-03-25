@@ -12,8 +12,10 @@ Prevent any deployment from reaching an environment when the target database sch
 - **Migration metadata table**
   - Table: `schema_migrations`
   - Tracks: `service_name`, `version`, `migration_name`, `checksum_sha256`, `deployment_id`, `applied_at`
-- **Migration command**
-  - `python backend/scripts/db_migrate.py status|apply|validate`
+- **Migration command** (after `pip install -e backend/` from repo root, or `pip install -e .` from `backend/`)
+  - `dinamic-db-migrate status|apply|validate` (recommended in CI)
+  - `cd backend && python scripts/db_migrate.py status|apply|validate`
+  - `cd backend && python -m src.database.migrations status|apply|validate`
 - **Runtime compatibility guard**
   - Startup check validates: `current_schema_version >= required_schema_version`
   - Readiness endpoint (`/ready`) returns `503` if incompatible

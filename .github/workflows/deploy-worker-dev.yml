@@ -44,7 +44,7 @@ jobs:
           SQLSERVER_CONNECTION_STRING: ${{ secrets.SQLSERVER_CONNECTION_STRING }}
           DB_SCHEMA_SERVICE_NAME: ${{ env.DB_SCHEMA_SERVICE_NAME }}
         run: |
-          python scripts/db_migrate.py validate
+          dinamic-db-migrate validate
 
   deploy:
     runs-on: ubuntu-latest

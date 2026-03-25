@@ -54,6 +54,7 @@ dev = [
 
 [project.scripts]
 dinamic-gemini = "src.app:main"
+dinamic-db-migrate = "src.database.migrations.cli:main"
 
 [tool.setuptools]
 packages = [
