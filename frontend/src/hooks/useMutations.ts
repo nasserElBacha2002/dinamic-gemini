@@ -90,6 +90,7 @@ export function useSubmitReviewAction(inventoryId: string, aisleId: string, posi
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
       });
+      queryClient.invalidateQueries({ queryKey: ['reviewQueue'] });
     },
   });
 }

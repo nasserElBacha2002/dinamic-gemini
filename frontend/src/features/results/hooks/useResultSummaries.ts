@@ -29,14 +29,17 @@ export function useResultSummaries(
 ) {
   const listQuery = options?.listQuery ?? defaultResultsListQuery;
   const query = useAislePositions(inventoryId, aisleId, { ...options, listQuery });
-  const results: ResultSummary[] = useMemo(() => {
-    const positions = query.data?.positions ?? [];
-    return positions.map(mapPositionSummaryToResultSummary);
-  }, [query.data?.positions]);
+  const rawPositions = query.data?.positions;
+  const results: ResultSummary[] = useMemo(
+    () => (rawPositions ?? []).map(mapPositionSummaryToResultSummary),
+    [rawPositions]
+  );
 
   return {
     ...query,
     results,
+    /** Raw API rows (same order as `results`) for quick review evidence URLs and mutations. */
+    positions: rawPositions ?? [],
   };
 }
 

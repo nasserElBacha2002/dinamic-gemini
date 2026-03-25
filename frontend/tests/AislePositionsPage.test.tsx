@@ -9,6 +9,25 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import AislePositionsPage from '../src/pages/AislePositionsPage';
 import type { ResultSummary } from '../src/features/results/types';
+import type { PositionSummary } from '../src/api/types';
+
+const mockPositions: PositionSummary[] = [
+  {
+    id: 'pos-1',
+    aisle_id: 'aisle-1',
+    status: 'detected',
+    confidence: 0.9,
+    needs_review: false,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+    sku: 'SKU-001',
+    detected_quantity: 5,
+    corrected_quantity: null,
+    qty: 5,
+    qtySource: 'detected',
+    has_evidence: true,
+  },
+];
 
 const mockResults: ResultSummary[] = [
   {
@@ -32,6 +51,7 @@ vi.mock('../src/features/results', async (importOriginal) => {
     ...actual,
     useResultSummaries: () => ({
       results: mockResults,
+      positions: mockPositions,
       isLoading: false,
       isError: false,
       error: null,
@@ -93,6 +113,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getByRole('columnheader', { name: /quantity/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /review status/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /traceability/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /^Actions$/i })).toBeInTheDocument();
     expect(screen.getByText('SKU-001')).toBeInTheDocument();
     expect(screen.getByText('5')).toBeInTheDocument();
   });

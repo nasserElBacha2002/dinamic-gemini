@@ -31,6 +31,7 @@ import {
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import ReviewQueueKpiCards from '../features/reviewQueue/components/ReviewQueueKpiCards';
 import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDrawer';
+import { reviewQueueItemToContext } from '../features/reviewQueue/quickReviewContext';
 import ReviewQueueTable from '../features/reviewQueue/components/ReviewQueueTable';
 import { useAislesList, useInventoriesList, useReviewQueue } from '../hooks';
 import { getApiErrorMessage } from '../utils/apiErrors';
@@ -456,7 +457,7 @@ export default function ReviewQueuePage() {
 
       <QuickReviewDrawer
         open={Boolean(quickRow)}
-        row={quickRow}
+        context={quickRow ? reviewQueueItemToContext(quickRow) : null}
         onClose={() => setQuickRow(null)}
         onOpenFullReview={() => {
           if (quickRow) openFull(quickRow);

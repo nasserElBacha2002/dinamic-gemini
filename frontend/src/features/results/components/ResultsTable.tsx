@@ -7,6 +7,7 @@ import { Button, Typography } from '@mui/material';
 import type { ResultSummary } from '../types';
 import {
   DataTable,
+  RowActionMenu,
   StatusBadge,
   TraceabilityChip,
   type DataTableColumn,
@@ -23,6 +24,8 @@ import { deriveResultPriority } from '../utils/resultPriority';
 export interface ResultsTableProps {
   results: ResultSummary[];
   onOpenDetail: (resultId: string) => void;
+  /** Sprint 4.4 — optional quick review from aisle results. */
+  onQuickReview?: (result: ResultSummary) => void;
   /** Client-side pagination (Sprint 4.1) until the results list API is pageable. */
   pagination?: DataTablePaginationModel;
   loading?: boolean;
@@ -52,9 +55,15 @@ function prioritySemantic(
   return 'neutral';
 }
 
-export default function ResultsTable({ results, onOpenDetail, pagination, loading }: ResultsTableProps) {
+export default function ResultsTable({
+  results,
+  onOpenDetail,
+  onQuickReview,
+  pagination,
+  loading,
+}: ResultsTableProps) {
   const columns = useMemo<DataTableColumn<ResultSummary>[]>(() => {
-    return [
+    const base: DataTableColumn<ResultSummary>[] = [
       {
         id: 'priority',
         label: 'Priority',
@@ -154,7 +163,27 @@ export default function ResultsTable({ results, onOpenDetail, pagination, loadin
         ),
       },
     ];
-  }, [onOpenDetail]);
+
+    if (onQuickReview) {
+      base.push({
+        id: 'actions',
+        label: 'Actions',
+        align: 'right',
+        width: 72,
+        cell: (r) => (
+          <RowActionMenu
+            ariaLabel={`Actions for ${displaySku(r)}`}
+            items={[
+              { id: 'full', label: 'Open full review', onClick: () => onOpenDetail(r.id) },
+              { id: 'quick', label: 'Quick review', onClick: () => onQuickReview(r) },
+            ]}
+          />
+        ),
+      });
+    }
+
+    return base;
+  }, [onOpenDetail, onQuickReview]);
 
   return (
     <DataTable<ResultSummary>

@@ -7,6 +7,7 @@
 import { Paper, Typography, Box } from '@mui/material';
 import type { ResultDetail } from '../../types';
 import { StatusChip, TraceabilityChip } from '../../../../components/ui';
+import { getCountOriginLabel } from '../../utils/countOriginLabel';
 import { getReviewStatusLabel, getReviewStatusColor } from '../../utils/reviewStatusDisplay';
 import { visibleTraceabilityToApiStatus } from '../../utils/traceabilityDisplay';
 import { formatDate } from '../../../../utils/formatDate';
@@ -25,20 +26,6 @@ function toNumeric(value: unknown): number | null {
   if (value == null) return null;
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-/** Count origin label for stable public qtySource contract. */
-function getCountOriginLabel(result: ResultDetail): string {
-  const src = result.qtySource ?? 'detected';
-  if (src === 'inferred' && result.qtyInferenceReason) {
-    return `Inferred (${result.qtyInferenceReason})`;
-  }
-  if (src === 'inferred') return 'Inferred';
-  if (src === 'merge_inferred') return 'Merge inferred';
-  if (src === 'manual_review') return 'Manual review';
-  if (src === 'label_explicit') return 'Label explicit';
-  if (src === 'unknown') return 'Unknown';
-  return 'Detected';
 }
 
 export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {

@@ -19,8 +19,11 @@ import {
   sortResultsByPriority,
   getInitialFilterFromReturnState,
   type ResultDetailNavigationState,
+  type ResultSummary,
   type ResultsFilterKind,
 } from '../features/results';
+import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDrawer';
+import type { QuickReviewContext } from '../features/reviewQueue/quickReviewContext';
 import {
   ResultsKpiCards,
   ResultsQuickFilters,
@@ -41,6 +44,7 @@ export default function AislePositionsPage() {
   const [skuSearch, setSkuSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [quickContext, setQuickContext] = useState<QuickReviewContext | null>(null);
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
@@ -52,7 +56,11 @@ export default function AislePositionsPage() {
     [aislesQuery.data?.items, aisleId]
   );
 
-  const { results, isLoading, isError, error, refetch } = useResultSummaries(inventoryId, aisleId);
+  const { results, positions: positionsFromQuery, isLoading, isError, error, refetch } = useResultSummaries(
+    inventoryId,
+    aisleId
+  );
+  const positions = positionsFromQuery ?? [];
 
   const kpi = useMemo(() => computeResultsKpi(results), [results]);
   const missingEvidenceCount = useMemo(
@@ -104,6 +112,42 @@ export default function AislePositionsPage() {
       }
     },
     [navigate, inventoryId, aisleId, sortedForTable, filter]
+  );
+
+  const positionById = useMemo(() => {
+    const m = new Map<string, (typeof positions)[number]>();
+    for (const p of positions) {
+      m.set(p.id, p);
+    }
+    return m;
+  }, [positions]);
+
+  const handleOpenFullFromQuick = useCallback(() => {
+    if (!quickContext || !inventoryId || !aisleId) return;
+    const navigationState: ResultDetailNavigationState = {
+      resultIds: sortedForTable.map((r) => r.id),
+      filter,
+      returnTo: 'aisle_results',
+    };
+    navigate(pathToPositionDetail(inventoryId, aisleId, quickContext.position.id), {
+      state: navigationState,
+    });
+    setQuickContext(null);
+  }, [quickContext, inventoryId, aisleId, sortedForTable, filter, navigate]);
+
+  const handleQuickReview = useCallback(
+    (r: ResultSummary) => {
+      const p = positionById.get(r.id);
+      if (!p || !inventoryId || !aisleId || !inventory) return;
+      setQuickContext({
+        inventoryId,
+        inventoryName: inventory.name,
+        aisleCode: aisle?.code ?? '—',
+        aisleId,
+        position: p,
+      });
+    },
+    [positionById, inventoryId, inventory, aisle?.code, aisleId]
   );
 
   const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
@@ -233,6 +277,7 @@ export default function AislePositionsPage() {
                 <ResultsTable
                   results={tableRows}
                   onOpenDetail={handleOpenDetail}
+                  onQuickReview={handleQuickReview}
                   pagination={{
                     page,
                     pageSize,
@@ -246,6 +291,13 @@ export default function AislePositionsPage() {
           )}
         </>
       ) : null}
+
+      <QuickReviewDrawer
+        open={Boolean(quickContext)}
+        context={quickContext}
+        onClose={() => setQuickContext(null)}
+        onOpenFullReview={handleOpenFullFromQuick}
+      />
     </>
   );
 }
