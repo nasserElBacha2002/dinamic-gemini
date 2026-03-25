@@ -15,12 +15,6 @@ export interface AuthContextValue extends AuthState {
   logout: () => void;
 }
 
-const defaultState: AuthState = {
-  user: null,
-  token: null,
-  initialized: false,
-};
-
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function useAuth(): AuthContextValue {

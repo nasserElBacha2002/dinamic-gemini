@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getCurrentUser } from './api';
 import { getStoredSession, setStoredSession, clearStoredSession } from './storage';
 import { AuthContext, AuthContextValue, createInitialAuthState } from './store';

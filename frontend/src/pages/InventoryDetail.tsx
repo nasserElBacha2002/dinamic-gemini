@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -6,25 +6,28 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
-  Grid,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
   Alert,
 } from '@mui/material';
 import type { Aisle } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { getJobStatusLabel, getJobStatusColor } from '../utils/jobStatus';
-import { getAisleStatusLabel, getAisleStatusColor } from '../utils/aisleStatus';
+import { getAisleStatusLabel } from '../utils/aisleStatus';
 import { formatDate } from '../utils/formatDate';
 import { pathToAislePositions } from '../utils/resultRoutes';
-import { LoadingBlock, EmptyState, ErrorAlert, StatCard, StatusChip } from '../components/ui';
+import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
+import {
+  DataTable,
+  EmptyState,
+  ErrorAlert,
+  KpiCard,
+  LoadingBlock,
+  RowActionMenu,
+  SectionCard,
+  StatusBadge,
+  StatusChip,
+  type DataTableColumn,
+} from '../components/ui';
 import { PageHeader } from '../components/shell';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import ExecutionLogPanel from '../components/ExecutionLogPanel';
@@ -99,8 +102,29 @@ export default function InventoryDetail() {
       ? getApiErrorMessage(metricsQuery.error, 'Failed to load metrics')
       : null;
 
+  const aisleStatusToSemantic = (status: string) => {
+    const s = String(status || '').trim().toLowerCase();
+    if (!s) return 'neutral' as const;
+    // Direct mapping: domain status → semantic meaning (avoid legacy "color → semantic" coupling).
+    switch (s) {
+      case 'failed':
+        return 'error' as const;
+      case 'processed':
+      case 'in_review':
+      case 'completed':
+        return 'success' as const;
+      case 'queued':
+      case 'processing':
+        return 'info' as const;
+      case 'created':
+      case 'assets_uploaded':
+      default:
+        return 'neutral' as const;
+    }
+  };
+
   const handleCreateAisleSuccess = () => {
-    setCreateAisleOpen(false);
+    aislesQuery.refetch();
   };
 
   const handleStartProcess = async (aisleId: string) => {
@@ -153,6 +177,159 @@ export default function InventoryDetail() {
     }
   };
 
+  const aisleKpis = useMemo(() => {
+    const totalAisles = aisles.length;
+    const processedAisles = aisles.filter((a) => {
+      const s = String(a.status || '').toLowerCase();
+      return s === 'processed' || s === 'in_review' || s === 'completed';
+    }).length;
+    const aislesWithErrors = aisles.filter((a) => {
+      const s = String(a.status || '').toLowerCase();
+      return s === 'failed' || Boolean(a.error_message) || a.latest_job?.status === 'failed';
+    }).length;
+    const pendingAisles = Math.max(0, totalAisles - processedAisles - aislesWithErrors);
+    const pendingReviewResults = aisles.reduce((sum, a) => sum + (a.pending_review_positions_count ?? 0), 0);
+    return { totalAisles, processedAisles, pendingAisles, aislesWithErrors, pendingReviewResults };
+  }, [aisles]);
+
+  const reviewCompletionRate = useMemo(() => {
+    if (!metrics) return null;
+    if (!metrics.total_positions) return 0;
+    const r = (metrics.total_reviewed_positions / metrics.total_positions) * 100;
+    return Number.isFinite(r) ? Math.round(r) : null;
+  }, [metrics]);
+
+  const aisleColumns = useMemo<DataTableColumn<Aisle>[]>(() => {
+    return [
+      {
+        id: 'code',
+        label: 'Aisle code',
+        cell: (a) => (
+          <Button
+            variant="text"
+            size="small"
+            onClick={() => navigate(pathToAislePositions(inventoryId ?? '', a.id))}
+            sx={{
+              fontWeight: 650,
+              textTransform: 'none',
+              px: 0,
+              minWidth: 0,
+              justifyContent: 'flex-start',
+              '&:hover': { textDecoration: 'underline', backgroundColor: 'transparent' },
+            }}
+          >
+            {a.code}
+          </Button>
+        ),
+      },
+      {
+        id: 'aisle_status',
+        label: 'Aisle status',
+        cell: (a) => (
+          <StatusBadge
+            label={getAisleStatusLabel(String(a.status))}
+            semantic={aisleStatusToSemantic(String(a.status))}
+          />
+        ),
+      },
+      {
+        id: 'assets',
+        label: 'Uploaded assets',
+        align: 'right',
+        cell: (a) => (typeof a.assets_count === 'number' ? a.assets_count : '—'),
+      },
+      {
+        id: 'processing',
+        label: 'Processing status',
+        cell: (a) =>
+          a.latest_job ? (
+            <StatusChip
+              label={getJobStatusLabel(a.latest_job.status)}
+              color={getJobStatusColor(a.latest_job.status)}
+              size="small"
+              variant="outlined"
+            />
+          ) : (
+            '—'
+          ),
+      },
+      {
+        id: 'results_found',
+        label: 'Results found',
+        align: 'right',
+        cell: (a) => (typeof a.positions_count === 'number' ? a.positions_count : '—'),
+      },
+      {
+        id: 'pending_review',
+        label: 'Pending review',
+        align: 'right',
+        cell: (a) => (typeof a.pending_review_positions_count === 'number' ? a.pending_review_positions_count : '—'),
+      },
+      {
+        id: 'last_updated',
+        label: 'Last updated',
+        cell: (a) => formatDate(a.last_activity_at ?? a.updated_at),
+      },
+      {
+        id: 'actions',
+        label: 'Actions',
+        align: 'right',
+        width: 56,
+        cell: (a) => {
+          const viewResultsEnabled =
+            (typeof a.positions_count === 'number' && a.positions_count > 0) ||
+            a.status === 'processed' ||
+            a.status === 'in_review' ||
+            a.status === 'completed' ||
+            a.latest_job?.status === 'succeeded';
+
+          return (
+            <RowActionMenu
+              ariaLabel={`Actions for aisle ${a.code}`}
+              items={[
+                ...(viewResultsEnabled
+                  ? [
+                      {
+                        id: 'view_results',
+                        label: 'View results',
+                        onClick: () => navigate(pathToAislePositions(inventoryId ?? '', a.id)),
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'upload_assets',
+                  label: uploadingAisleId === a.id ? 'Uploading…' : 'Upload assets',
+                  onClick: () => handleUploadClick(a.id),
+                  disabled: uploadingAisleId === a.id,
+                },
+                {
+                  id: 'process',
+                  label: processingAisleId === a.id ? 'Starting…' : 'Process aisle',
+                  onClick: () => void handleStartProcess(a.id),
+                  disabled: isAisleProcessingDisabled(a),
+                },
+                ...(a.latest_job
+                  ? [
+                      {
+                        id: 'log',
+                        label: 'View log',
+                        onClick: () =>
+                          setLogDialog({
+                            aisleId: a.id,
+                            jobId: a.latest_job!.id,
+                            aisleCode: a.code,
+                          }),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          );
+        },
+      },
+    ];
+  }, [aisleStatusToSemantic, handleStartProcess, inventoryId, navigate, processingAisleId, uploadingAisleId]);
+
   if (inventoryLoading && !inventory) {
     return (
       <>
@@ -180,223 +357,162 @@ export default function InventoryDetail() {
             breadcrumbs={[{ label: 'Inventories', to: '/inventories' }]}
             title={inventory.name}
             subtitle={
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                <span>Status:</span>
-                <StatusChip label={inventory.status} color={getAisleStatusColor(inventory.status)} />
-                <span>—</span>
-                <span>Created: {formatDate(inventory.created_at ?? undefined)}</span>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
+                  <StatusBadge
+                    label={formatInventoryStatusLabel(String(inventory.status))}
+                    semantic={inventoryStatusToBadgeSemantic(String(inventory.status))}
+                  />
+                </Box>
+                <Box component="span" sx={{ color: 'text.secondary', typography: 'caption' }}>
+                  Created {formatDate(inventory.created_at ?? undefined)}
+                </Box>
               </Box>
+            }
+            actions={
+              <>
+                <Button variant="contained" size="small" onClick={() => setCreateAisleOpen(true)}>
+                  Create aisle
+                </Button>
+              </>
             }
           />
 
-          <Typography variant="h6" sx={{ mb: 1 }}>
-            Metrics
-          </Typography>
-          {metricsLoading ? (
-            <LoadingBlock message="Loading metrics…" size={24} py={2} sx={{ mb: 2 }} />
-          ) : metricsError ? (
-            <ErrorAlert message={metricsError} onRetry={() => metricsQuery.refetch()} />
-          ) : metrics ? (
-            <Grid container spacing={2} sx={{ mb: 3 }}>
-              <Grid item xs={12} sm={6} md={3}>
-                <StatCard label="Total positions" value={metrics.total_positions} />
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <StatCard label="Reviewed" value={metrics.total_reviewed_positions} />
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <StatCard label="Auto accepted" value={metrics.auto_accepted_positions} />
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <StatCard label="Corrected" value={metrics.corrected_positions} />
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <StatCard label="Deleted" value={metrics.deleted_positions} />
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <StatCard label="Success rate" value={`${metrics.success_rate}%`} />
-              </Grid>
-            </Grid>
-          ) : (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>No metrics available.</Typography>
-          )}
+          <Box
+            sx={{
+              mb: 2,
+              display: 'flex',
+              gap: 1.5,
+              flexWrap: { xs: 'wrap', md: 'nowrap' },
+              overflowX: { xs: 'visible', md: 'auto' },
+              pb: { xs: 0, md: 0.5 },
+              alignItems: 'stretch',
+            }}
+          >
+            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 180px' } }}>
+              <KpiCard label="Total aisles" value={aislesLoading ? '—' : aisleKpis.totalAisles} />
+            </Box>
+            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 180px' } }}>
+              <KpiCard label="Processed aisles" value={aislesLoading ? '—' : aisleKpis.processedAisles} />
+            </Box>
+            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 180px' } }}>
+              <KpiCard label="Pending aisles" value={aislesLoading ? '—' : aisleKpis.pendingAisles} />
+            </Box>
+            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 180px' } }}>
+              <KpiCard label="Aisles with errors" value={aislesLoading ? '—' : aisleKpis.aislesWithErrors} />
+            </Box>
 
-          <Typography variant="h6" sx={{ mb: 1 }}>
-            Aisles
-          </Typography>
-          <Box sx={{ mb: 2 }}>
-            <Button variant="contained" size="small" onClick={() => setCreateAisleOpen(true)}>
-              Create aisle
-            </Button>
-            <Button variant="outlined" size="small" sx={{ ml: 1 }} onClick={() => aislesQuery.refetch()} disabled={aislesLoading}>
-              Refresh
-            </Button>
+            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 260px' } }}>
+              <KpiCard
+                label="Review completion rate"
+                value={metricsLoading ? '—' : reviewCompletionRate == null ? '—' : `${reviewCompletionRate}%`}
+                description={metrics ? `${metrics.total_reviewed_positions}/${metrics.total_positions} reviewed` : undefined}
+              />
+            </Box>
+
+            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 220px' } }}>
+              <KpiCard label="Pending review results" value={aislesLoading ? '—' : aisleKpis.pendingReviewResults} />
+            </Box>
+            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 220px' } }}>
+              <KpiCard
+                label="Manual corrections"
+                value={metricsLoading ? '—' : metrics ? metrics.corrected_positions : '—'}
+              />
+            </Box>
           </Box>
 
-          {processMessage && (
-            <Alert
-              severity={processMessage.type}
-              sx={{ mb: 2 }}
-              onClose={() => setProcessMessage(null)}
-            >
-              {processMessage.text}
-            </Alert>
-          )}
+          {metricsError ? <ErrorAlert message={metricsError} onRetry={() => metricsQuery.refetch()} /> : null}
 
-          {uploadMessage && (
-            <Alert
-              severity={uploadMessage.type}
-              sx={{ mb: 2 }}
-              onClose={() => setUploadMessage(null)}
-            >
-              {uploadMessage.text}
-            </Alert>
-          )}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) minmax(320px, 1fr)' },
+              gap: 2,
+              alignItems: 'start',
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              {processMessage && (
+                <Alert
+                  severity={processMessage.type}
+                  sx={{ mb: 2 }}
+                  onClose={() => setProcessMessage(null)}
+                >
+                  {processMessage.text}
+                </Alert>
+              )}
 
-          {aislesError && (
-            <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} />
-          )}
+              {uploadMessage && (
+                <Alert
+                  severity={uploadMessage.type}
+                  sx={{ mb: 2 }}
+                  onClose={() => setUploadMessage(null)}
+                >
+                  {uploadMessage.text}
+                </Alert>
+              )}
 
-          {aislesLoading ? (
-            <LoadingBlock py={3} />
-          ) : aisles.length === 0 ? (
-            <EmptyState message="No aisles yet. Create one to get started." />
-          ) : (
-            <TableContainer component={Paper}>
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*,video/*"
-                multiple
-                style={{ display: 'none' }}
-                onChange={handleFileInputChange}
-              />
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Code</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Assets</TableCell>
-                    <TableCell>Job</TableCell>
-                    <TableCell>Results</TableCell>
-                    <TableCell>Pending review</TableCell>
-                    <TableCell>Last activity</TableCell>
-                    <TableCell>Error</TableCell>
-                    <TableCell align="right">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {aisles.map((aisle) => (
-                    <TableRow key={aisle.id}>
-                      <TableCell>{aisle.code}</TableCell>
-                      <TableCell>
-                        <StatusChip
-                          label={getAisleStatusLabel(aisle.status)}
-                          color={getAisleStatusColor(aisle.status)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        {typeof aisle.assets_count === 'number'
-                          ? `${aisle.assets_count} file(s)`
-                          : '—'}
-                      </TableCell>
-                      <TableCell>
-                        {aisle.latest_job ? (
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-                              <StatusChip
-                                label={getJobStatusLabel(aisle.latest_job.status)}
-                                color={getJobStatusColor(aisle.latest_job.status)}
-                                variant="outlined"
-                              />
-                              <Button
-                              size="small"
-                              variant="text"
-                              onClick={() =>
-                                setLogDialog({
-                                  aisleId: aisle.id,
-                                  jobId: aisle.latest_job!.id,
-                                  aisleCode: aisle.code,
-                                })
-                              }
-                            >
-                              Log
-                            </Button>
-                            </Box>
-                            {aisle.latest_job.status === 'failed' && aisle.latest_job.error_message && (
-                              <Typography variant="caption" color="error" component="span" sx={{ display: 'block', maxWidth: 280 }} title={aisle.latest_job.error_message}>
-                                {aisle.latest_job.error_message}
-                              </Typography>
-                            )}
-                          </Box>
-                        ) : (
-                          '—'
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {(aisle.status === 'processed' || aisle.status === 'in_review' || aisle.status === 'completed' || aisle.latest_job?.status === 'succeeded') ? (
-                          <Box component="span" sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                            {typeof aisle.positions_count === 'number' && (
-                              <Typography variant="body2" color="text.secondary" component="span">
-                                {aisle.positions_count}
-                              </Typography>
-                            )}
-                            <Button
-                              variant="contained"
-                              size="small"
-                              onClick={() => navigate(pathToAislePositions(inventoryId ?? '', aisle.id))}
-                            >
-                              View results
-                            </Button>
-                          </Box>
-                        ) : typeof aisle.positions_count === 'number' && aisle.positions_count > 0 ? (
-                          <Typography variant="body2">{aisle.positions_count}</Typography>
-                        ) : (
-                          '—'
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {typeof aisle.pending_review_positions_count === 'number'
-                          ? aisle.pending_review_positions_count
-                          : '—'}
-                      </TableCell>
-                      <TableCell>
-                        {formatDate(aisle.last_activity_at ?? aisle.updated_at)}
-                      </TableCell>
-                      <TableCell>
-                        {aisle.error_message ? (
-                          <Typography variant="body2" color="error">
-                            {aisle.error_message}
-                          </Typography>
-                        ) : (
-                          '—'
-                        )}
-                      </TableCell>
-                      <TableCell align="right">
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          sx={{ mr: 1 }}
-                          disabled={uploadingAisleId === aisle.id}
-                          onClick={() => handleUploadClick(aisle.id)}
-                        >
-                          {uploadingAisleId === aisle.id ? 'Uploading…' : 'Upload'}
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          disabled={isAisleProcessingDisabled(aisle)}
-                          onClick={() => handleStartProcess(aisle.id)}
-                        >
-                          {processingAisleId === aisle.id ? 'Starting…' : 'Process'}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
+              {aislesError ? <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} /> : null}
+
+              <SectionCard
+                title="Aisles"
+                subtitle="Operational queue for this inventory."
+                actions={
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => aislesQuery.refetch()}
+                    disabled={aislesLoading}
+                  >
+                    Refresh
+                  </Button>
+                }
+                variant="elevation"
+                elevation={1}
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*,video/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleFileInputChange}
+                />
+                <DataTable<Aisle>
+                  rows={aisles}
+                  rowKey={(a) => a.id}
+                  columns={aisleColumns}
+                  loading={aislesLoading}
+                  emptyState={{
+                    title: 'No aisles yet',
+                    message: 'Create an aisle to start processing.',
+                    action: (
+                      <Button variant="contained" onClick={() => setCreateAisleOpen(true)}>
+                        Create aisle
+                      </Button>
+                    ),
+                  }}
+                />
+              </SectionCard>
+            </Box>
+
+            <SectionCard title="Activity" subtitle="Recent activity and log summary (pending contracts).">
+              <Box sx={{ display: 'grid', gap: 1.5 }}>
+                <Box>
+                  <Box component="div" sx={{ typography: 'subtitle2', fontWeight: 700, mb: 0.75 }}>
+                    Recent activity
+                  </Box>
+                  <EmptyState message="Recent activity is not wired yet. A structured activity feed contract is required." />
+                </Box>
+                <Box sx={{ pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                  <Box component="div" sx={{ typography: 'subtitle2', fontWeight: 700, mb: 0.75 }}>
+                    Logs summary
+                  </Box>
+                  <EmptyState message="Open a job log from an aisle Actions menu. A summarized logs contract is not available yet." />
+                </Box>
+              </Box>
+            </SectionCard>
+          </Box>
         </>
       )}
 
@@ -405,6 +521,7 @@ export default function InventoryDetail() {
         inventoryId={inventoryId ?? ''}
         onClose={() => setCreateAisleOpen(false)}
         onSuccess={handleCreateAisleSuccess}
+        existingAisleCodes={aisles.map((a) => a.code)}
         createAisleFn={createAisleMutation.mutateAsync}
       />
 

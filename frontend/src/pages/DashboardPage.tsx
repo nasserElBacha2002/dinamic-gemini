@@ -48,7 +48,7 @@ export default function DashboardPage() {
         : String(recentInvQuery.error)
       : null;
 
-  const handleCreateSuccess = (created: Inventory) => {
+  const handleCreateSuccess = (_created: Inventory) => {
     setCreateOpen(false);
     setCreateError(null);
     // Always refresh so the Recent inventories table is not stale after creation.

@@ -95,7 +95,10 @@ describe('CreateInventoryDialog (visual references step)', () => {
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
-    fireEvent.click(screen.getByRole('button', { name: /^create inventory$/i }));
+    expect(
+      screen.getByRole('button', { name: /create inventory and upload references/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
@@ -114,7 +117,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
-    fireEvent.click(screen.getByRole('button', { name: /^create inventory$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
@@ -137,7 +140,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
-    fireEvent.click(screen.getByRole('button', { name: /^create inventory$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByRole('button', { name: /retry upload/i })).toBeInTheDocument());
@@ -180,6 +183,23 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.drop(dropzone, { dataTransfer: { files: [f1] } });
     expect(screen.getByText('a.jpg')).toBeInTheDocument();
     expect(screen.getByText(/1\/3 selected/i)).toBeInTheDocument();
+  });
+
+  it('Step 2 primary CTA label is context-aware', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    // no selected files → Create inventory
+    expect(screen.getByRole('button', { name: /^create inventory$/i })).toBeInTheDocument();
+
+    // select a file → Create inventory and upload references
+    const input = screen.getByLabelText(/select visual reference images/i) as HTMLInputElement;
+    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
+    fireEvent.change(input, { target: { files: [f1] } });
+    expect(
+      screen.getByRole('button', { name: /create inventory and upload references/i }),
+    ).toBeInTheDocument();
   });
 });
 

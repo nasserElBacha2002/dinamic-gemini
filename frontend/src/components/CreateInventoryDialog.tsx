@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -56,6 +56,8 @@ export default function CreateInventoryDialog({
   const [uploadError, setUploadError] = useState('');
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const dragDepthRef = useRef(0);
+  const dropzoneHelpId = useId();
 
   const pendingFilesRef = useRef<PendingVisualReferenceFile[]>([]);
   useEffect(() => {
@@ -136,6 +138,7 @@ export default function CreateInventoryDialog({
   };
 
   const handleDropFiles = (files: FileList | null) => {
+    dragDepthRef.current = 0;
     setIsDraggingOver(false);
     handleAddFiles(files);
   };
@@ -269,6 +272,7 @@ export default function CreateInventoryDialog({
       if (uploadState === 'failed') return 'Retry upload';
       return 'Upload references';
     }
+    if (pendingFiles.length > 0) return 'Create inventory and upload references';
     return 'Create inventory';
   }, [createdInventory, pendingFiles.length, uploadState]);
 
@@ -363,6 +367,7 @@ export default function CreateInventoryDialog({
             onDragEnter={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              dragDepthRef.current += 1;
               setIsDraggingOver(true);
             }}
             onDragOver={(e) => {
@@ -373,7 +378,11 @@ export default function CreateInventoryDialog({
             onDragLeave={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              setIsDraggingOver(false);
+              // Avoid flicker when moving across children inside the dropzone.
+              const nextTarget = e.relatedTarget as Node | null;
+              if (nextTarget && e.currentTarget.contains(nextTarget)) return;
+              dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+              if (dragDepthRef.current === 0) setIsDraggingOver(false);
             }}
             onDrop={(e) => {
               e.preventDefault();
@@ -382,6 +391,7 @@ export default function CreateInventoryDialog({
             }}
             role="region"
             aria-label="Visual reference dropzone"
+            aria-describedby={dropzoneHelpId}
             sx={{
               mb: 2,
               p: 2,
@@ -402,6 +412,9 @@ export default function CreateInventoryDialog({
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block">
                 {pendingFiles.length}/{maxFiles} selected
+              </Typography>
+              <Typography id={dropzoneHelpId} variant="caption" color="text.secondary" display="block">
+                JPG/PNG/WEBP • max {maxFiles} • or use “Select images”
               </Typography>
             </Box>
             <Button
