@@ -64,7 +64,8 @@ jobs:
       SQLSERVER_UID: ${{ secrets.SQLSERVER_UID }}
       SQLSERVER_PWD: ${{ secrets.SQLSERVER_PWD }}
       SQLSERVER_DRIVER: ${{ vars.SQLSERVER_DRIVER }}
-      DB_SCHEMA_SERVICE_NAME: ${{ env.DB_SCHEMA_SERVICE_NAME }}
+      # Cannot use ${{ env.* }} in job env — mirror workflow env DB_SCHEMA_SERVICE_NAME above.
+      DB_SCHEMA_SERVICE_NAME: inventory-api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,7 +107,7 @@ jobs:
 
       - name: Set image tag
         id: vars
-        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build Docker image
         run: |
