@@ -6,8 +6,8 @@
  * Contract: GET /api/v3/review-queue/positions.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -20,7 +20,6 @@ import {
 } from '@mui/material';
 import type { ReviewQueueListQuery } from '../api/client';
 import { ApiError, type ReviewQueueItem } from '../api/types';
-import type { ResultDetailNavigationState } from '../features/results';
 import { PageHeader } from '../components/shell';
 import {
   ErrorAlert,
@@ -31,12 +30,14 @@ import {
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import ReviewQueueKpiCards from '../features/reviewQueue/components/ReviewQueueKpiCards';
 import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDrawer';
-import { reviewQueueItemToContext } from '../features/reviewQueue/quickReviewContext';
+import {
+  reviewQueueItemToContext,
+  type OpenReviewDrawerPayload,
+  type QuickReviewContext,
+} from '../features/reviewQueue/quickReviewContext';
 import ReviewQueueTable from '../features/reviewQueue/components/ReviewQueueTable';
 import { useAislesList, useInventoriesList, useReviewQueue } from '../hooks';
 import { getApiErrorMessage } from '../utils/apiErrors';
-import { pathToPositionDetail } from '../utils/resultRoutes';
-
 function parseOptional01(raw: string): number | null {
   const t = raw.trim();
   if (t === '') return null;
@@ -47,6 +48,7 @@ function parseOptional01(raw: string): number | null {
 
 export default function ReviewQueuePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [inventoryId, setInventoryId] = useState('');
   const [aisleId, setAisleId] = useState('');
   const [positionStatus, setPositionStatus] = useState('');
@@ -63,7 +65,8 @@ export default function ReviewQueuePage() {
   );
   const [apiSortDir, setApiSortDir] = useState<DataTableSortDirection>('desc');
   const [activeSortColumnId, setActiveSortColumnId] = useState<string>('priority');
-  const [quickRow, setQuickRow] = useState<ReviewQueueItem | null>(null);
+  const [reviewDrawerContext, setReviewDrawerContext] = useState<QuickReviewContext | null>(null);
+  const consumedRedirectKey = useRef<string | null>(null);
 
   const inventoriesQuery = useInventoriesList({ page: 1, page_size: 200, sort_by: 'name', sort_dir: 'asc' });
   const aislesQuery = useAislesList(inventoryId || undefined, { enabled: Boolean(inventoryId) });
@@ -156,19 +159,33 @@ export default function ReviewQueuePage() {
   const items = queueQuery.data?.items ?? [];
   const totalItems = queueQuery.data?.total_items ?? 0;
 
-  const openFull = useCallback(
+  const openReviewDrawer = useCallback(
     (item: ReviewQueueItem) => {
-      const resultIds = items.map((i) => i.position.id);
-      const navigationState: ResultDetailNavigationState = {
-        resultIds,
-        returnTo: 'review_queue',
-      };
-      navigate(pathToPositionDetail(item.inventory_id, item.position.aisle_id, item.position.id), {
-        state: navigationState,
-      });
+      setReviewDrawerContext(reviewQueueItemToContext(item, items.map((i) => i.position.id)));
     },
-    [navigate, items]
+    [items]
   );
+
+  useEffect(() => {
+    const raw = location.state as { openReviewDrawer?: OpenReviewDrawerPayload } | null;
+    const p = raw?.openReviewDrawer;
+    if (!p || p.kind !== 'queue') return;
+    const key = `${p.positionId}-${p.inventoryId}-${p.aisleId}`;
+    if (consumedRedirectKey.current === key) return;
+    consumedRedirectKey.current = key;
+    setInventoryId(p.inventoryId);
+    setAisleId(p.aisleId);
+    setReviewDrawerContext({
+      inventoryId: p.inventoryId,
+      inventoryName: p.inventoryName,
+      aisleCode: p.aisleCode,
+      aisleId: p.aisleId,
+      positionId: p.positionId,
+      resultIds: p.resultIds,
+      returnTo: 'review_queue',
+    });
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
     if (totalItems === 0) return;
@@ -447,22 +464,15 @@ export default function ReviewQueuePage() {
               onPageChange: setPage,
               onPageSizeChange: setPageSize,
             }}
-            onOpenFullDetail={openFull}
-            onQuickReview={(item) => {
-              setQuickRow(item);
-            }}
+            onOpenReview={openReviewDrawer}
           />
         </Box>
       </SectionCard>
 
       <QuickReviewDrawer
-        open={Boolean(quickRow)}
-        context={quickRow ? reviewQueueItemToContext(quickRow) : null}
-        onClose={() => setQuickRow(null)}
-        onOpenFullReview={() => {
-          if (quickRow) openFull(quickRow);
-          setQuickRow(null);
-        }}
+        open={Boolean(reviewDrawerContext)}
+        context={reviewDrawerContext}
+        onClose={() => setReviewDrawerContext(null)}
       />
     </>
   );

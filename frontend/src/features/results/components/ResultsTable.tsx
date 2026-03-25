@@ -1,5 +1,5 @@
 /**
- * Sprint 4.1 — Aisle Results table: priority, SKU (row entry → detail), quantity, review status, traceability, confidence, evidence, updated.
+ * Sprint 4.1 / v3.3 — Aisle Results table; primary review opens canonical drawer.
  */
 
 import { useMemo } from 'react';
@@ -23,10 +23,8 @@ import { deriveResultPriority } from '../utils/resultPriority';
 
 export interface ResultsTableProps {
   results: ResultSummary[];
-  onOpenDetail: (resultId: string) => void;
-  /** Sprint 4.4 — optional quick review from aisle results. */
-  onQuickReview?: (result: ResultSummary) => void;
-  /** Client-side pagination (Sprint 4.1) until the results list API is pageable. */
+  /** Canonical review: opens drawer on list parent. */
+  onOpenReview: (resultId: string) => void;
   pagination?: DataTablePaginationModel;
   loading?: boolean;
 }
@@ -57,13 +55,12 @@ function prioritySemantic(
 
 export default function ResultsTable({
   results,
-  onOpenDetail,
-  onQuickReview,
+  onOpenReview,
   pagination,
   loading,
 }: ResultsTableProps) {
   const columns = useMemo<DataTableColumn<ResultSummary>[]>(() => {
-    const base: DataTableColumn<ResultSummary>[] = [
+    return [
       {
         id: 'priority',
         label: 'Priority',
@@ -91,8 +88,8 @@ export default function ResultsTable({
             <Button
               variant="text"
               size="small"
-              onClick={() => onOpenDetail(r.id)}
-              aria-label={`Open result detail for ${label}`}
+              onClick={() => onOpenReview(r.id)}
+              aria-label={`Review ${label}`}
               sx={{
                 fontWeight: 650,
                 textTransform: 'none',
@@ -162,10 +159,7 @@ export default function ResultsTable({
           </Typography>
         ),
       },
-    ];
-
-    if (onQuickReview) {
-      base.push({
+      {
         id: 'actions',
         label: 'Actions',
         align: 'right',
@@ -173,17 +167,12 @@ export default function ResultsTable({
         cell: (r) => (
           <RowActionMenu
             ariaLabel={`Actions for ${displaySku(r)}`}
-            items={[
-              { id: 'full', label: 'Open full review', onClick: () => onOpenDetail(r.id) },
-              { id: 'quick', label: 'Quick review', onClick: () => onQuickReview(r) },
-            ]}
+            items={[{ id: 'review', label: 'Review', onClick: () => onOpenReview(r.id) }]}
           />
         ),
-      });
-    }
-
-    return base;
-  }, [onOpenDetail, onQuickReview]);
+      },
+    ];
+  }, [onOpenReview]);
 
   return (
     <DataTable<ResultSummary>

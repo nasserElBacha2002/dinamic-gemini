@@ -1,89 +1,81 @@
 /**
- * Sprint 4.4 — Quick Review Drawer: compact evidence, summary, and real review actions (queue / aisle).
+ * Canonical review surface (Sprint v3.3) — drawer with detail fetch, evidence viewer, actions, prev/next, audit.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Box,
   Button,
-  CircularProgress,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Divider,
   Drawer,
   IconButton,
-  Stack,
-  TextField,
   Typography,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { ApiError } from '../../../api/types';
-import { getReferenceImageFileUrl } from '../../../api/client';
-import { StatusBadge, TraceabilityChip } from '../../../components/ui';
+import { useResultDetail, getResultNavigationContext } from '../../results';
 import { useSubmitReviewAction } from '../../../hooks';
 import { getApiErrorMessage } from '../../../utils/apiErrors';
-import { formatDate } from '../../../utils/formatDate';
-import { useEvidenceImageLoad } from '../../results/hooks/useEvidenceImageLoad';
-import { mapPositionSummaryToResultSummary } from '../../results/mappers/positionToResult';
-import { getCountOriginLabel } from '../../results/utils/countOriginLabel';
 import {
-  getReviewStatusLabel,
-  reviewStatusToBadgeSemantic,
-} from '../../results/utils/reviewStatusDisplay';
-import { visibleTraceabilityToApiStatus } from '../../results/utils/traceabilityDisplay';
+  ResultEvidenceViewer,
+  ResultSummaryCard,
+  ResultReviewActions,
+  ResultReviewHistory,
+  ResultTechnicalMetadata,
+  ResultDetailNavigation,
+  ResultDetailLoadingState,
+  ResultDetailErrorState,
+  ResultDetailEmptyState,
+} from '../../results/components/detail';
 import type { QuickReviewContext } from '../quickReviewContext';
+
+function DrawerCollapsibleSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <Box sx={{ mt: 1.5, pt: 1, borderTop: 1, borderColor: 'divider' }}>
+      <Button
+        size="small"
+        onClick={() => setExpanded((e) => !e)}
+        sx={{ textTransform: 'none', color: 'text.secondary', mb: expanded ? 1 : 0, p: 0, minWidth: 0 }}
+        aria-expanded={expanded}
+      >
+        {expanded ? 'Hide' : 'Show'} {title}
+      </Button>
+      <Collapse in={expanded}>{children}</Collapse>
+    </Box>
+  );
+}
 
 export interface QuickReviewDrawerProps {
   open: boolean;
   context: QuickReviewContext | null;
   onClose: () => void;
-  onOpenFullReview: () => void;
-}
-
-function displaySku(sku: string | null | undefined): string {
-  if (sku != null && String(sku).trim() !== '') return String(sku).trim();
-  return '—';
-}
-
-function displayQtyResolved(result: ReturnType<typeof mapPositionSummaryToResultSummary>): string {
-  const v = result.resolvedQty ?? result.detectedQty;
-  if (v != null && !Number.isNaN(v) && v >= 0) return String(v);
-  return '—';
 }
 
 export default function QuickReviewDrawer({
   open,
   context,
   onClose,
-  onOpenFullReview,
 }: QuickReviewDrawerProps) {
+  const [activePositionId, setActivePositionId] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [invalidConfirmOpen, setInvalidConfirmOpen] = useState(false);
-  const [qty, setQty] = useState(0);
-  const [sku, setSku] = useState('');
-
-  const inventoryId = context?.inventoryId ?? '';
-  const aisleId = context?.aisleId ?? '';
-  const positionId = context?.position.id ?? '';
-
-  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, positionId);
-  const actionLoading = reviewMutation.isPending;
-
-  const result = useMemo(
-    () => (context ? mapPositionSummaryToResultSummary(context.position) : null),
-    [context]
-  );
 
   useEffect(() => {
-    if (!context) return;
-    const r = mapPositionSummaryToResultSummary(context.position);
-    setQty(r.correctedQty ?? r.detectedQty ?? 0);
-    setSku(r.sku ?? '');
-  }, [context]);
+    if (context?.positionId) setActivePositionId(context.positionId);
+  }, [context?.positionId, context?.inventoryId, context?.aisleId]);
 
   useEffect(() => {
     if (!open) {
@@ -92,58 +84,71 @@ export default function QuickReviewDrawer({
     }
   }, [open]);
 
-  const sourceImageId = context?.position.source_image_id;
-  const assetId = sourceImageId != null && String(sourceImageId).trim() !== '' ? String(sourceImageId).trim() : null;
-  const imageUrl =
-    context && assetId ? getReferenceImageFileUrl(context.inventoryId, context.aisleId, assetId, null) : null;
-  const loadState = useEvidenceImageLoad(imageUrl);
+  const inventoryId = context?.inventoryId ?? '';
+  const aisleId = context?.aisleId ?? '';
+  const enabled = open && Boolean(context && activePositionId && inventoryId && aisleId);
 
-  const hasEvidenceFlag = result?.hasEvidence ?? false;
-  const hasRecordOnly = Boolean(hasEvidenceFlag && !assetId);
-
-  const runAction = useCallback(
-    async (fn: () => Promise<void>, closeOnSuccess: boolean) => {
-      setActionError(null);
-      try {
-        await fn();
-        if (closeOnSuccess) onClose();
-      } catch (e) {
-        const err = e instanceof ApiError ? e : new ApiError(String(e));
-        setActionError(getApiErrorMessage(err, 'Review action failed'));
-      }
-    },
-    [onClose]
+  const { result, isLoading, isError, error, refetch } = useResultDetail(
+    inventoryId,
+    aisleId,
+    activePositionId,
+    { enabled }
   );
 
+  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId);
+  const actionLoading = reviewMutation.isPending;
+
+  const navContext = useMemo(
+    () => (context && activePositionId ? getResultNavigationContext(context.resultIds, activePositionId) : null),
+    [context, activePositionId]
+  );
+
+  const runAction = useCallback(async (fn: () => Promise<void>) => {
+    setActionError(null);
+    try {
+      await fn();
+    } catch (e) {
+      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      setActionError(getApiErrorMessage(err, 'Review action failed'));
+    }
+  }, []);
+
   const handleConfirm = useCallback(() => {
-    runAction(() => reviewMutation.mutateAsync({ action_type: 'confirm' }), true);
+    runAction(() => reviewMutation.mutateAsync({ action_type: 'confirm' }));
   }, [runAction, reviewMutation]);
 
-  const handleUpdateQuantity = useCallback(() => {
-    runAction(
-      () =>
-        reviewMutation.mutateAsync({
-          action_type: 'update_quantity',
-          corrected_quantity: Math.max(0, qty),
-        }),
-      true
-    );
-  }, [runAction, reviewMutation, qty]);
+  const handleUpdateQuantity = useCallback(
+    (corrected_quantity: number) => {
+      runAction(() => reviewMutation.mutateAsync({ action_type: 'update_quantity', corrected_quantity }));
+    },
+    [runAction, reviewMutation]
+  );
 
-  const handleUpdateSku = useCallback(() => {
-    const t = sku.trim();
-    if (!t) return;
-    runAction(() => reviewMutation.mutateAsync({ action_type: 'update_sku', sku: t }), true);
-  }, [runAction, reviewMutation, sku]);
+  const handleUpdateSku = useCallback(
+    (sku: string) => {
+      runAction(() => reviewMutation.mutateAsync({ action_type: 'update_sku', sku }));
+    },
+    [runAction, reviewMutation]
+  );
 
+  const handleDeleteClick = useCallback(() => setInvalidConfirmOpen(true), []);
   const handleInvalidConfirm = useCallback(() => {
     setInvalidConfirmOpen(false);
-    runAction(() => reviewMutation.mutateAsync({ action_type: 'delete_position' }), true);
+    runAction(() => reviewMutation.mutateAsync({ action_type: 'delete_position' }));
   }, [runAction, reviewMutation]);
 
-  const displayMutationError = actionError;
+  const handleNavigateToResult = useCallback((resultId: string) => {
+    setActivePositionId(resultId);
+  }, []);
 
-  const isInvalid = result?.reviewStatus === 'INVALID';
+  const errorMessage =
+    isError && error
+      ? error instanceof ApiError
+        ? getApiErrorMessage(error, 'Failed to load result')
+        : String(error)
+      : null;
+
+  const detailTitle = result?.sku?.trim() ? result.sku.trim() : 'Result';
 
   return (
     <>
@@ -153,7 +158,7 @@ export default function QuickReviewDrawer({
         onClose={onClose}
         PaperProps={{
           sx: {
-            width: { xs: '100%', sm: 440 },
+            width: { xs: '100%', sm: 'min(720px, 96vw)', md: 'min(1040px, min(94vw, 1200px))' },
             maxWidth: '100vw',
             display: 'flex',
             flexDirection: 'column',
@@ -161,28 +166,36 @@ export default function QuickReviewDrawer({
           },
         }}
       >
-        {!context || !result ? (
+        {!context ? (
           <Box sx={{ p: 2 }}>
             <Typography variant="body2" color="text.secondary">
-              Select a row to review.
+              Select a result to review.
             </Typography>
           </Box>
         ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: 'background.paper' }}>
             <Box
               sx={{
                 flexShrink: 0,
+                position: 'sticky',
+                top: 0,
+                zIndex: 3,
+                bgcolor: 'background.paper',
+                borderBottom: 1,
+                borderColor: 'divider',
+                px: 2.5,
+                py: 1.5,
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: 1,
-                px: 2,
-                pt: 2,
-                pb: 1,
               }}
             >
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="subtitle1" component="h2" fontWeight={600}>
-                  Quick review
+                <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
+                  Review
+                </Typography>
+                <Typography component="h1" variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2, mt: 0.25 }}>
+                  {isLoading && !result ? 'Loading…' : detailTitle}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" display="block">
                   {context.inventoryName} · {context.aisleCode}
@@ -193,239 +206,62 @@ export default function QuickReviewDrawer({
               </IconButton>
             </Box>
 
-            <Box sx={{ px: 2, pb: 1.5, flex: 1, overflow: 'auto', minHeight: 0 }}>
-              {open && displayMutationError ? (
-                <Alert severity="error" sx={{ mb: 1.5 }} onClose={() => setActionError(null)}>
-                  {displayMutationError}
+            <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, pb: 2.5, pt: 2 }}>
+              {actionError ? (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+                  {actionError}
                 </Alert>
               ) : null}
 
-              <Box
-                sx={{
-                  border: 1,
-                  borderColor: 'divider',
-                  borderRadius: 1,
-                  bgcolor: 'grey.50',
-                  overflow: 'hidden',
-                  mb: 1.5,
-                }}
-              >
-                <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, pt: 1, display: 'block' }}>
-                  Evidence
-                </Typography>
-                <Box
-                  sx={{
-                    minHeight: 120,
-                    maxHeight: 200,
-                    mx: 1,
-                    mb: 1,
-                    borderRadius: 1,
-                    bgcolor: 'grey.100',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {!hasEvidenceFlag && (
-                    <Typography variant="caption" color="text.secondary" sx={{ px: 1, py: 2, textAlign: 'center' }}>
-                      No image evidence for this result.
-                    </Typography>
-                  )}
-                  {hasRecordOnly && (
-                    <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, py: 2, textAlign: 'center' }}>
-                      Evidence is recorded, but no image is available to display here. Use open full review if you need
-                      to inspect files.
-                    </Typography>
-                  )}
-                  {assetId && loadState.status === 'loading' && <CircularProgress size={28} />}
-                  {assetId && loadState.status === 'loaded' && (
-                    <Box
-                      component="img"
-                      src={loadState.blobUrl}
-                      alt={context.position.source_image_original_filename ?? 'Evidence'}
-                      sx={{
-                        maxWidth: '100%',
-                        maxHeight: 180,
-                        objectFit: 'contain',
-                        display: 'block',
-                      }}
-                    />
-                  )}
-                  {assetId && loadState.status === 'error' && (
-                    <Typography variant="caption" color="error" sx={{ px: 1.5, py: 1, textAlign: 'center' }}>
-                      {loadState.message}
-                    </Typography>
-                  )}
-                </Box>
-                {context.position.source_image_original_filename ? (
-                  <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, pb: 1, display: 'block' }} noWrap>
-                    {context.position.source_image_original_filename}
-                  </Typography>
-                ) : null}
-              </Box>
+              {enabled && isLoading && !result ? <ResultDetailLoadingState message="Loading result…" /> : null}
 
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Updated {formatDate(context.position.updated_at)}
-              </Typography>
-
-              <Divider sx={{ my: 1.5 }} />
-
-              <Stack spacing={1}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    SKU
-                  </Typography>
-                  <Typography variant="body2" fontWeight={600}>
-                    {displaySku(context.position.sku)}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Quantity
-                  </Typography>
-                  <Typography variant="body2" fontWeight={600}>
-                    {displayQtyResolved(result)}
-                  </Typography>
-                </Box>
-                <Typography variant="caption" color="text.secondary">
-                  Count origin: {getCountOriginLabel(result)}
-                </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Confidence
-                  </Typography>
-                  <Typography variant="body2" fontWeight={600}>
-                    {context.position.confidence != null
-                      ? `${(context.position.confidence * 100).toFixed(0)}%`
-                      : '—'}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Traceability
-                  </Typography>
-                  <TraceabilityChip
-                    status={visibleTraceabilityToApiStatus(result.traceabilityStatus)}
-                    size="small"
-                    variant="outlined"
-                  />
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Review status
-                  </Typography>
-                  <StatusBadge
-                    label={getReviewStatusLabel(result.reviewStatus)}
-                    semantic={reviewStatusToBadgeSemantic(result.reviewStatus)}
-                    variant="outlined"
-                  />
-                </Box>
-              </Stack>
-
-              {!isInvalid ? (
+              {errorMessage && !result ? (
                 <>
-                  <Divider sx={{ my: 1.5 }} />
-                  <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
-                    Quick actions
-                  </Typography>
-                  <Box sx={{ mt: 1 }}>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Confirm
-                    </Typography>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      fullWidth
-                      size="medium"
-                      disabled={actionLoading}
-                      onClick={handleConfirm}
-                      sx={{ mt: 0.5 }}
-                    >
-                      {actionLoading ? 'Sending…' : 'Confirm result'}
-                    </Button>
+                  <ResultDetailErrorState message={errorMessage} onRetry={() => refetch()} />
+                  <Button sx={{ mt: 2 }} size="small" variant="outlined" onClick={onClose}>
+                    Close
+                  </Button>
+                </>
+              ) : null}
+
+              {!isLoading && !errorMessage && !result && enabled ? (
+                <ResultDetailEmptyState message="Result not found or no longer available." />
+              ) : null}
+
+              {result ? (
+                <>
+                  <ResultEvidenceViewer result={result} inventoryId={inventoryId} aisleId={aisleId} />
+
+                  <Box sx={{ mt: 2 }}>
+                    <ResultSummaryCard result={result} embedInDrawer />
                   </Box>
-                  <Box sx={{ mt: 1.5 }}>
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                      Corrections
-                    </Typography>
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
-                      <TextField
-                        size="small"
-                        type="number"
-                        label="Qty"
-                        value={qty}
-                        onChange={(e) => setQty(Number(e.target.value) || 0)}
-                        inputProps={{ min: 0 }}
-                        sx={{ width: 100 }}
-                      />
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        disabled={actionLoading}
-                        onClick={handleUpdateQuantity}
-                      >
-                        Update quantity
-                      </Button>
-                    </Stack>
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                      <TextField
-                        size="small"
-                        label="SKU"
-                        value={sku}
-                        onChange={(e) => setSku(e.target.value)}
-                        sx={{ width: 140 }}
-                      />
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        disabled={actionLoading || !sku.trim()}
-                        onClick={handleUpdateSku}
-                      >
-                        Update SKU
-                      </Button>
-                    </Stack>
+
+                  <Box sx={{ mt: 2 }}>
+                    <ResultReviewActions
+                      result={result}
+                      actionLoading={actionLoading}
+                      onConfirm={handleConfirm}
+                      onUpdateQuantity={handleUpdateQuantity}
+                      onUpdateSku={handleUpdateSku}
+                      onDeleteClick={handleDeleteClick}
+                    />
                   </Box>
-                  <Box
-                    sx={{
-                      mt: 1.5,
-                      p: 1.25,
-                      borderRadius: 1,
-                      bgcolor: 'action.hover',
-                      border: 1,
-                      borderColor: 'error.light',
-                    }}
-                  >
-                    <Typography variant="caption" color="error" display="block" fontWeight={600}>
-                      Invalidate
-                    </Typography>
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      size="small"
-                      fullWidth
-                      disabled={actionLoading}
-                      sx={{ mt: 0.75 }}
-                      onClick={() => setInvalidConfirmOpen(true)}
-                    >
-                      Mark result invalid
-                    </Button>
+
+                  {navContext && navContext.total > 1 ? (
+                    <Box sx={{ mt: 2 }}>
+                      <ResultDetailNavigation context={navContext} onNavigate={handleNavigateToResult} />
+                    </Box>
+                  ) : null}
+
+                  <DrawerCollapsibleSection title="review history">
+                    <ResultReviewHistory items={result.reviewHistory} showHeading={false} />
+                  </DrawerCollapsibleSection>
+
+                  <Box sx={{ mt: 0.5 }}>
+                    <ResultTechnicalMetadata result={result} />
                   </Box>
                 </>
-              ) : (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                  This result is marked invalid. Use open full review for the full record.
-                </Typography>
-              )}
-
-              <Divider sx={{ my: 1.5 }} />
-
-              <Button variant="outlined" fullWidth onClick={onOpenFullReview} sx={{ mb: 1 }}>
-                Open full review
-              </Button>
-              <Button variant="text" fullWidth onClick={onClose}>
-                Close
-              </Button>
+              ) : null}
             </Box>
           </Box>
         )}
@@ -435,8 +271,7 @@ export default function QuickReviewDrawer({
         <DialogTitle>Mark result invalid?</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            This sets the result to invalid review status and removes it from active review work. You can still open
-            full review to read the record.
+            This sets the result to invalid review status and removes it from active review work.
           </DialogContentText>
         </DialogContent>
         <DialogActions>

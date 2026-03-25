@@ -2,10 +2,9 @@
  * Sprint 4.1 — Aisle Results: review prioritization for one aisle (header → KPIs → filters → table → pagination).
  */
 
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Alert, Box, Button, TextField } from '@mui/material';
-import { pathToPositionDetail } from '../utils/resultRoutes';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
@@ -18,12 +17,10 @@ import {
   filterResults,
   sortResultsByPriority,
   getInitialFilterFromReturnState,
-  type ResultDetailNavigationState,
-  type ResultSummary,
   type ResultsFilterKind,
 } from '../features/results';
 import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDrawer';
-import type { QuickReviewContext } from '../features/reviewQueue/quickReviewContext';
+import type { OpenReviewDrawerPayload, QuickReviewContext } from '../features/reviewQueue/quickReviewContext';
 import {
   ResultsKpiCards,
   ResultsQuickFilters,
@@ -45,6 +42,7 @@ export default function AislePositionsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
   const [quickContext, setQuickContext] = useState<QuickReviewContext | null>(null);
+  const consumedAisleRedirectKey = useRef<string | null>(null);
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
@@ -98,22 +96,6 @@ export default function AislePositionsPage() {
     setPage(1);
   }, []);
 
-  const handleOpenDetail = useCallback(
-    (resultId: string) => {
-      if (inventoryId && aisleId) {
-        const navigationState: ResultDetailNavigationState = {
-          resultIds: sortedForTable.map((r) => r.id),
-          filter,
-          returnTo: 'aisle_results',
-        };
-        navigate(pathToPositionDetail(inventoryId, aisleId, resultId), {
-          state: navigationState,
-        });
-      }
-    },
-    [navigate, inventoryId, aisleId, sortedForTable, filter]
-  );
-
   const positionById = useMemo(() => {
     const m = new Map<string, (typeof positions)[number]>();
     for (const p of positions) {
@@ -122,33 +104,42 @@ export default function AislePositionsPage() {
     return m;
   }, [positions]);
 
-  const handleOpenFullFromQuick = useCallback(() => {
-    if (!quickContext || !inventoryId || !aisleId) return;
-    const navigationState: ResultDetailNavigationState = {
-      resultIds: sortedForTable.map((r) => r.id),
-      filter,
-      returnTo: 'aisle_results',
-    };
-    navigate(pathToPositionDetail(inventoryId, aisleId, quickContext.position.id), {
-      state: navigationState,
-    });
-    setQuickContext(null);
-  }, [quickContext, inventoryId, aisleId, sortedForTable, filter, navigate]);
-
-  const handleQuickReview = useCallback(
-    (r: ResultSummary) => {
-      const p = positionById.get(r.id);
-      if (!p || !inventoryId || !aisleId || !inventory) return;
+  const handleOpenReview = useCallback(
+    (resultId: string) => {
+      if (!positionById.has(resultId) || !inventoryId || !aisleId || !inventory) return;
       setQuickContext({
         inventoryId,
         inventoryName: inventory.name,
         aisleCode: aisle?.code ?? '—',
         aisleId,
-        position: p,
+        positionId: resultId,
+        resultIds: sortedForTable.map((r) => r.id),
+        returnTo: 'aisle_results',
+        filter,
       });
     },
-    [positionById, inventoryId, inventory, aisle?.code, aisleId]
+    [positionById, inventoryId, inventory, aisle?.code, aisleId, sortedForTable, filter]
   );
+
+  useEffect(() => {
+    const raw = location.state as { openReviewDrawer?: OpenReviewDrawerPayload } | null;
+    const p = raw?.openReviewDrawer;
+    if (!p || p.kind !== 'aisle' || !inventoryId || !aisleId || !inventory) return;
+    const key = `${p.positionId}-${inventoryId}-${aisleId}`;
+    if (consumedAisleRedirectKey.current === key) return;
+    consumedAisleRedirectKey.current = key;
+    setQuickContext({
+      inventoryId,
+      inventoryName: inventory.name,
+      aisleCode: aisle?.code ?? '—',
+      aisleId,
+      positionId: p.positionId,
+      resultIds: p.resultIds,
+      returnTo: 'aisle_results',
+      filter: p.filter ?? filter,
+    });
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, inventory, inventoryId, aisleId, aisle, filter, navigate]);
 
   const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
 
@@ -276,8 +267,7 @@ export default function AislePositionsPage() {
               <Box sx={{ overflow: 'auto' }}>
                 <ResultsTable
                   results={tableRows}
-                  onOpenDetail={handleOpenDetail}
-                  onQuickReview={handleQuickReview}
+                  onOpenReview={handleOpenReview}
                   pagination={{
                     page,
                     pageSize,
@@ -296,7 +286,6 @@ export default function AislePositionsPage() {
         open={Boolean(quickContext)}
         context={quickContext}
         onClose={() => setQuickContext(null)}
-        onOpenFullReview={handleOpenFullFromQuick}
       />
     </>
   );

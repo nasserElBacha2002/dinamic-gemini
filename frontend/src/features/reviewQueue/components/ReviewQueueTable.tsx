@@ -30,8 +30,8 @@ export interface ReviewQueueTableProps {
   loading?: boolean;
   sort: DataTableSortModel;
   pagination: DataTablePaginationModel;
-  onOpenFullDetail: (item: ReviewQueueItem) => void;
-  onQuickReview: (item: ReviewQueueItem) => void;
+  /** Canonical review surface: opens the drawer. */
+  onOpenReview: (item: ReviewQueueItem) => void;
 }
 
 function prioritySemantic(
@@ -61,8 +61,7 @@ export default function ReviewQueueTable({
   loading,
   sort,
   pagination,
-  onOpenFullDetail,
-  onQuickReview,
+  onOpenReview,
 }: ReviewQueueTableProps) {
   const columns = useMemo<DataTableColumn<ReviewQueueItem>[]>(() => {
     return [
@@ -95,8 +94,8 @@ export default function ReviewQueueTable({
             <Button
               variant="text"
               size="small"
-              onClick={() => onOpenFullDetail(item)}
-              aria-label={`Open full review for ${label}`}
+              onClick={() => onOpenReview(item)}
+              aria-label={`Review ${label}`}
               sx={{
                 fontWeight: 650,
                 textTransform: 'none',
@@ -204,21 +203,16 @@ export default function ReviewQueueTable({
             ariaLabel={`Actions for result ${displaySku(item)}`}
             items={[
               {
-                id: 'full',
-                label: 'Open full review',
-                onClick: () => onOpenFullDetail(item),
-              },
-              {
-                id: 'quick',
-                label: 'Quick review',
-                onClick: () => onQuickReview(item),
+                id: 'review',
+                label: 'Review',
+                onClick: () => onOpenReview(item),
               },
             ]}
           />
         ),
       },
     ];
-  }, [onOpenFullDetail, onQuickReview]);
+  }, [onOpenReview]);
 
   return (
     <DataTable<ReviewQueueItem>
