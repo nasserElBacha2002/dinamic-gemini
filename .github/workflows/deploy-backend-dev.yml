@@ -81,8 +81,9 @@ jobs:
       SQLSERVER_UID: ${{ secrets.SQLSERVER_UID }}
       SQLSERVER_PWD: ${{ secrets.SQLSERVER_PWD }}
       SQLSERVER_DRIVER: ${{ vars.SQLSERVER_DRIVER }}
-      DB_SCHEMA_SERVICE_NAME: ${{ env.DB_SCHEMA_SERVICE_NAME }}
-      DEPLOYMENT_ID: ${{ env.DEPLOYMENT_ID }}
+      # Cannot use ${{ env.* }} here — job-level env is not in env context. Mirror workflow env: above.
+      DB_SCHEMA_SERVICE_NAME: inventory-api
+      DEPLOYMENT_ID: backend-dev-${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -128,7 +129,7 @@ jobs:
 
       - name: Set image tag
         id: vars
-        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build Docker image
         run: |
