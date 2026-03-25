@@ -1,7 +1,11 @@
 /**
  * Epic 3 — Result-centric table for the Results overview.
  * Columns: SKU, Qty, Traceability, Status, Confidence, Evidence, (Updated), Action.
- * Uses shared `DataTable` for density + sticky header; sort/pagination stay client-side at page level for now.
+ *
+ * **Sprint 2.4 — partial `DataTable` adoption:** this component uses the shared shell (density, sticky header, hover)
+ * but **does not** pass `DataTable` loading, empty, or pagination props. `AislePositionsPage` owns loading / empty /
+ * filtered-empty UX and loads results in one chunk for client-side quick filters — a full server-driven table is
+ * deferred until the results list contract is wired for paged/sorted fetches.
  */
 
 import { useMemo } from 'react';

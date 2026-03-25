@@ -8,6 +8,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';
 import theme from '../src/theme';
 import DataTable, { type DataTableColumn } from '../src/components/ui/DataTable';
+import { DATATABLE_DEFAULT_EMPTY_MESSAGE } from '../src/constants/dataTable';
 
 function WithTheme({ children }: { children: ReactNode }) {
   return <ThemeProvider theme={theme}>{children}</ThemeProvider>;
@@ -77,5 +78,71 @@ describe('DataTable', () => {
       </WithTheme>
     );
     expect(container.querySelectorAll('.MuiSkeleton-root').length).toBeGreaterThan(0);
+  });
+
+  it('shows default empty message when rows empty and emptyState omitted', () => {
+    render(
+      <WithTheme>
+        <DataTable<Row> rows={[]} rowKey={(r) => r.id} columns={columns} />
+      </WithTheme>
+    );
+    expect(screen.getByText(DATATABLE_DEFAULT_EMPTY_MESSAGE)).toBeInTheDocument();
+  });
+
+  it('calls onPageChange with next 1-based page when pagination next is used', () => {
+    const onPageChange = vi.fn();
+    const rows: Row[] = Array.from({ length: 10 }, (_, i) => ({
+      id: String(i),
+      name: `Row ${i}`,
+    }));
+    render(
+      <WithTheme>
+        <DataTable<Row>
+          rows={rows}
+          rowKey={(r) => r.id}
+          columns={columns}
+          pagination={{
+            page: 1,
+            pageSize: 10,
+            totalItems: 35,
+            onPageChange,
+            onPageSizeChange: vi.fn(),
+          }}
+        />
+      </WithTheme>
+    );
+    fireEvent.click(screen.getByRole('button', { name: /go to next page/i }));
+    expect(onPageChange).toHaveBeenCalledWith(2);
+  });
+
+  it('calls onPageSizeChange and resets to page 1 when rows per page changes', () => {
+    const onPageChange = vi.fn();
+    const onPageSizeChange = vi.fn();
+    const rows: Row[] = Array.from({ length: 10 }, (_, i) => ({
+      id: String(i),
+      name: `Row ${i}`,
+    }));
+    render(
+      <WithTheme>
+        <DataTable<Row>
+          rows={rows}
+          rowKey={(r) => r.id}
+          columns={columns}
+          pagination={{
+            page: 3,
+            pageSize: 10,
+            totalItems: 100,
+            onPageChange,
+            onPageSizeChange,
+          }}
+        />
+      </WithTheme>
+    );
+    const select = screen.getByRole('combobox', { name: /^rows$/i });
+    fireEvent.mouseDown(select);
+    const opt25 = screen.getByRole('option', { name: '25' });
+    fireEvent.click(opt25);
+    expect(onPageSizeChange).toHaveBeenCalledWith(25);
+    expect(onPageChange).toHaveBeenCalledWith(1);
   });
 });

@@ -169,10 +169,8 @@ export default function InventoriesList() {
                   pageSize,
                   totalItems: data.total_items,
                   onPageChange: setPage,
-                  onPageSizeChange: (ps) => {
-                    setPageSize(ps);
-                    setPage(1);
-                  },
+                  /** Page reset to 1 on size change is handled inside `DataTable`. */
+                  onPageSizeChange: setPageSize,
                 }
               : undefined
           }

@@ -3,8 +3,9 @@
  * Structural primitives: shell/; operational building blocks live here.
  *
  * **Dialogs:** `BaseDialog` (generic) → `ConfirmDialog` composes it; `WizardModal` is a separate stepper shell.
- * **Status:** prefer `StatusBadge` for product semantics; `StatusChip` for transitional mapper-driven colors.
- * **Tables (Sprint 2.4):** `DataTable` — server sort/pagination, loading skeleton, empty state; compose with `SectionCard` + `FilterToolbar`.
+ * **Status:** `StatusBadge` is the **default for new tables/lists** when status maps to redesign semantics (§8.4).
+ *   `StatusChip` stays appropriate where **mapper helpers already emit MUI chip colors** (e.g. review status in results).
+ * **Tables (Sprint 2.4):** `DataTable` — server sort/pagination, loading skeleton, empty fallback; compose with `SectionCard` + `FilterToolbar`.
  */
 
 export { default as PageLayout } from './PageLayout';

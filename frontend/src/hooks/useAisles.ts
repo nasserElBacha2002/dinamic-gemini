@@ -14,6 +14,7 @@ export function useInventoryMetrics(inventoryId: string | undefined, options?: {
   });
 }
 
+/** Large page: detail view table is not yet on `DataTable` pagination; fetch one chunk per inventory. */
 const defaultAisleTableQuery: AislesListQuery = { page: 1, page_size: 200 };
 
 export function useAislesList(inventoryId: string | undefined, options?: { enabled?: boolean }) {

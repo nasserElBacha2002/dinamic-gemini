@@ -15,6 +15,7 @@ import {
 import type { ResultSummary, ResultDetail } from '../types';
 import type { AislePositionsListQuery } from '../../../api/client';
 
+/** Large page: results overview filters client-side; differs from `DEFAULT_LIST_PAGE_SIZE` until paged API UX ships. */
 const defaultResultsListQuery: AislePositionsListQuery = { page: 1, page_size: 500 };
 
 /**

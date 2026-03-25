@@ -3,8 +3,16 @@
  *
  * - **Server-driven sort/pagination:** parent owns query state and passes `sort` / `pagination`; this component
  *   only renders controls and fires callbacks (no hidden client-side sort of `rows`).
+ * - **Page size changes:** when the user picks a new rows-per-page value, this component calls
+ *   `onPageSizeChange(newSize)` (if provided) and **always** `onPageChange(1)` so the current page does not
+ *   point past the last page. Callers should not rely on duplicating that reset (idempotent if they do).
+ * - **Empty rows:** if `emptyState` is omitted and the table is not loading, a **default** empty message is shown
+ *   so the region is never a silent blank shell.
  * - **Density:** defaults to `size="small"` and sticky header for scan-heavy operational lists.
  * - **Composition:** wrap with `SectionCard`, place `FilterToolbar` above, use `RowActionMenu` / `StatusBadge` in `cell`.
+ *
+ * **Status in cells:** prefer `StatusBadge` when domain maps to redesign semantics; use `StatusChip` when the row
+ * already uses mapper output (e.g. review status color helpers) until a single semantic mapping exists.
  *
  * **Limitations:** No built-in row selection or column resize; add per screen when contracts require them.
  */
@@ -24,7 +32,7 @@ import {
   TableRow,
   TableSortLabel,
 } from '@mui/material';
-import { TABLE_PAGE_SIZE_OPTIONS } from '../../constants/dataTable';
+import { DATATABLE_DEFAULT_EMPTY_MESSAGE, TABLE_PAGE_SIZE_OPTIONS } from '../../constants/dataTable';
 import EmptyState from './EmptyState';
 
 export type DataTableSortDirection = 'asc' | 'desc';
@@ -52,6 +60,10 @@ export interface DataTablePaginationModel {
   pageSize: number;
   totalItems: number;
   onPageChange: (page: number) => void;
+  /**
+   * When the user changes rows per page, `DataTable` calls this and then **`onPageChange(1)`** (see file doc).
+   * Optional only for read-only pagination display (unusual); typical callers always provide it.
+   */
   onPageSizeChange?: (pageSize: number) => void;
 }
 
@@ -62,7 +74,10 @@ export interface DataTableProps<T> {
   /** When true, header + skeleton body (operational loading; not a page-level spinner). */
   loading?: boolean;
   skeletonRows?: number;
-  /** Shown when `!loading && rows.length === 0`. */
+  /**
+   * Shown when `!loading && rows.length === 0`. If omitted, a built-in minimal message is used
+   * (`DATATABLE_DEFAULT_EMPTY_MESSAGE` from `constants/dataTable`).
+   */
   emptyState?: { title?: string; message: string; action?: ReactNode };
   sort?: DataTableSortModel;
   pagination?: DataTablePaginationModel;
@@ -102,7 +117,11 @@ export default function DataTable<T>({
   rowHover = true,
 }: DataTableProps<T>) {
   const colCount = columns.length;
-  const showEmpty = !loading && rows.length === 0 && emptyState;
+  const emptyDisplay =
+    !loading && rows.length === 0
+      ? (emptyState ?? { message: DATATABLE_DEFAULT_EMPTY_MESSAGE })
+      : null;
+  const showEmpty = Boolean(emptyDisplay);
 
   return (
     <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 1 }}>
@@ -138,14 +157,14 @@ export default function DataTable<T>({
         <TableBody>
           {loading ? (
             <SkeletonBody columns={colCount} rows={skeletonRows} />
-          ) : showEmpty ? (
+          ) : showEmpty && emptyDisplay ? (
             <TableRow>
               <TableCell colSpan={colCount} sx={{ border: 0, p: 0, verticalAlign: 'top' }}>
                 <Box sx={{ p: 2 }}>
                   <EmptyState
-                    title={emptyState.title}
-                    message={emptyState.message}
-                    action={emptyState.action}
+                    title={emptyDisplay.title}
+                    message={emptyDisplay.message}
+                    action={emptyDisplay.action}
                     padding={3}
                   />
                 </Box>
@@ -177,7 +196,9 @@ export default function DataTable<T>({
                   rowsPerPage={pagination.pageSize}
                   onRowsPerPageChange={(e) => {
                     const next = Number(e.target.value);
+                    if (next === pagination.pageSize) return;
                     pagination.onPageSizeChange?.(next);
+                    pagination.onPageChange(1);
                   }}
                   rowsPerPageOptions={[...TABLE_PAGE_SIZE_OPTIONS]}
                   labelRowsPerPage="Rows"
