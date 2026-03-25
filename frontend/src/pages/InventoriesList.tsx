@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@mui/material';
+import { Button, Link } from '@mui/material';
 import type { Inventory, InventoryListItem } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
@@ -49,16 +49,30 @@ export default function InventoriesList() {
   const handleCreateSuccess = (created: Inventory) => {
     setCreateOpen(false);
     setCreateError(null);
-    if (created.id) {
-      navigate(`/inventories/${created.id}`);
-    } else {
-      refetch();
-    }
+    // Always refresh list so page doesn't go stale.
+    refetch();
+    if (created.id) navigate(`/inventories/${created.id}`);
   };
 
   const columns = useMemo<DataTableColumn<InventoryListItem>[]>(
     () => [
-      { id: 'name', label: 'Name', sortable: true, cell: (inv) => inv.name },
+      {
+        id: 'name',
+        label: 'Name',
+        sortable: true,
+        cell: (inv) => (
+          <Link
+            component="button"
+            type="button"
+            underline="hover"
+            color="text.primary"
+            sx={{ fontWeight: 600, textAlign: 'left' }}
+            onClick={() => navigate(`/inventories/${inv.id}`)}
+          >
+            {inv.name}
+          </Link>
+        ),
+      },
       {
         id: 'status',
         label: 'Status',
@@ -115,7 +129,8 @@ export default function InventoriesList() {
   return (
     <>
       <PageHeader
-        a11yTitle="Inventories"
+        title="Inventories"
+        subtitle="Manage inventories and open them for aisle processing and review."
         actions={
           <Button
             variant="contained"
@@ -132,7 +147,7 @@ export default function InventoriesList() {
       {errorMessage && <ErrorAlert message={errorMessage} onRetry={() => refetch()} />}
 
       {!errorMessage ? (
-      <SectionCard title="All inventories" subtitle="Search, sort, and open inventories. Filters ship in a later sprint.">
+      <SectionCard title="All inventories" subtitle="Open an inventory to manage aisles, processing, and review.">
         <DataTable<InventoryListItem>
           rows={inventories}
           rowKey={(inv) => inv.id}
