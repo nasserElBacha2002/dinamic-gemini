@@ -55,3 +55,28 @@ cd backend && pytest
 ## Docs
 
 See the repository root **README.md** and **docs/** for full project documentation.
+
+## Schema Migrations and Deployment Guard
+
+This backend now uses a versioned schema guard to prevent rolling out code against an outdated DB schema.
+
+- Versioned migrations: `src/database/migrations/versions/*.sql`
+- Migration state table: `schema_migrations`
+- Migration utility:
+  - `python scripts/db_migrate.py status`
+  - `python scripts/db_migrate.py apply`
+  - `python scripts/db_migrate.py validate`
+- Runtime guard:
+  - startup check compares DB version vs required version
+  - `/ready` returns `503` when schema is incompatible
+  - `/health` exposes compatibility metadata
+
+Important env vars:
+
+- `SQLSERVER_CONNECTION_STRING`
+- `DB_SCHEMA_SERVICE_NAME` (default: `inventory-api`)
+- `DB_SCHEMA_REQUIRED_VERSION` (optional override)
+- `DB_SCHEMA_GUARD_ENABLED` (default: `true`)
+- `DB_SCHEMA_GUARD_BLOCK_STARTUP` (default: `true`)
+- `DB_SCHEMA_MIGRATION_LOCK_TIMEOUT_SEC` (default: `60`)
+- `DEPLOYMENT_ID` (optional deployment marker in migration history)

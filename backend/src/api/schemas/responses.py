@@ -48,6 +48,12 @@ class ArtifactsResponse(BaseModel):
 class HealthResponse(BaseModel):
     """GET /health response."""
     ok: bool = True
+    schema_guard_checked: bool = False
+    schema_compatible: bool = True
+    schema_service: Optional[str] = None
+    required_schema_version: Optional[str] = None
+    current_schema_version: Optional[str] = None
+    schema_reason: Optional[str] = None
 
 
 class EntityListItem(BaseModel):
