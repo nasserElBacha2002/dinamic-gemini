@@ -56,6 +56,28 @@ cd backend && pytest
 
 See the repository root **README.md** and **docs/** for full project documentation.
 
+## SQL Server configuration (canonical contract)
+
+All DB access (API, workers, `dinamic-db-migrate`) resolves the ODBC connection string in **one** place: `src.config.resolve_sqlserver_connection_config()` / `Settings.require_sqlserver_connection_string()`.
+
+**Supported modes** (values are trimmed):
+
+1. **Full string:** `SQLSERVER_CONNECTION_STRING` — if set and non-empty, it wins.
+2. **Split vars:** `SQLSERVER_SERVER`, `SQLSERVER_DATABASE`, `SQLSERVER_UID`, `SQLSERVER_PWD`, and optionally `SQLSERVER_DRIVER`.
+
+If `SQLSERVER_DRIVER` is omitted, the resolver picks an installed driver in order: exact names `ODBC Driver 18/17/13 for SQL Server`, then any `pyodbc` driver name containing `SQL Server`.
+
+**Early validation (local / CI):**
+
+```bash
+cd backend && pip install -e .
+dinamic-db-migrate config-check   # or: dinamic-db-migrate doctor
+```
+
+Exits `0` when a connection string can be built, `3` when not. Output is JSON with `config_mode` (`connection_string` | `split_env` | `unset` | `incomplete_split`), `missing_env_vars`, and `driver_resolution` — **no passwords**.
+
+On failure, exceptions include `SqlServerConfigurationError.config_mode` and `missing_env_vars`.
+
 ## Schema Migrations and Deployment Guard
 
 This backend now uses a versioned schema guard to prevent rolling out code against an outdated DB schema.
@@ -63,8 +85,9 @@ This backend now uses a versioned schema guard to prevent rolling out code again
 - Versioned migrations: `src/database/migrations/versions/*.sql`
 - Migration state table: `schema_migrations`
 - Migration utility (from `backend/`, after `pip install -e .`):
-  - `python scripts/db_migrate.py status|apply|validate`
-  - `python -m src.database.migrations status|apply|validate`
+  - `dinamic-db-migrate config-check` (run before `apply` / `validate` in CI)
+  - `python scripts/db_migrate.py status|apply|validate|config-check`
+  - `python -m src.database.migrations status|apply|validate|config-check`
   - `dinamic-db-migrate status|apply|validate` (console script from the install)
 - Runtime guard:
   - startup check compares DB version vs required version
@@ -73,9 +96,7 @@ This backend now uses a versioned schema guard to prevent rolling out code again
 
 Important env vars:
 
-- SQL Server (ODBC): either **`SQLSERVER_CONNECTION_STRING`** (optional, takes precedence) **or** split vars — all values are **trimmed**:
-  - `SQLSERVER_SERVER`, `SQLSERVER_DATABASE`, `SQLSERVER_UID`, `SQLSERVER_PWD`
-  - `SQLSERVER_DRIVER` — required if pyodbc cannot auto-detect a driver (typical in Linux/CI; e.g. `ODBC Driver 18 for SQL Server`)
+- SQL Server: see **SQL Server configuration** above. GitHub Actions should pass **either** `SQLSERVER_CONNECTION_STRING` **or** the split secrets into the migrate job `env` (see `deploy-backend-dev.yml`).
 - `DB_SCHEMA_SERVICE_NAME` (default: `inventory-api`)
 - `DB_SCHEMA_REQUIRED_VERSION` (optional override)
 - `DB_SCHEMA_GUARD_ENABLED` (default: `true`)

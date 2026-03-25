@@ -7,6 +7,7 @@ import pytest
 from src.config import (
     SqlServerConfigurationError,
     load_settings,
+    resolve_sqlserver_connection_config,
     resolve_sqlserver_effective_connection_string,
 )
 
@@ -31,6 +32,9 @@ def test_explicit_connection_string_takes_precedence(monkeypatch: pytest.MonkeyP
     cs, missing = resolve_sqlserver_effective_connection_string()
     assert cs == "DRIVER=explicit;"
     assert missing == ()
+    cfg = resolve_sqlserver_connection_config()
+    assert cfg.mode == "connection_string"
+    assert cfg.driver_resolution == "SQLSERVER_CONNECTION_STRING"
 
 
 def test_split_vars_stripped_and_built(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -46,6 +50,9 @@ def test_split_vars_stripped_and_built(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "UID=u" in cs
     assert "PWD=p" in cs
     assert "DRIVER={ODBC Driver 18 for SQL Server}" in cs
+    cfg = resolve_sqlserver_connection_config()
+    assert cfg.mode == "split_env"
+    assert cfg.driver_resolution == "SQLSERVER_DRIVER"
 
 
 def test_partial_split_reports_missing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,12 +69,16 @@ def test_require_raises_with_missing_vars(monkeypatch: pytest.MonkeyPatch) -> No
     with pytest.raises(SqlServerConfigurationError) as exc:
         load_settings().require_sqlserver_connection_string()
     assert exc.value.missing_env_vars
+    assert exc.value.config_mode == "incomplete_split"
+    assert "config_mode=incomplete_split" in str(exc.value)
 
 
 def test_no_sql_config_returns_empty_tuple(monkeypatch: pytest.MonkeyPatch) -> None:
     cs, missing = resolve_sqlserver_effective_connection_string()
     assert cs == ""
     assert missing == ()
+    cfg = resolve_sqlserver_connection_config()
+    assert cfg.mode == "unset"
 
 
 def test_split_without_odbc_driver_env_reports_sqlserver_driver(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,7 +86,21 @@ def test_split_without_odbc_driver_env_reports_sqlserver_driver(monkeypatch: pyt
     monkeypatch.setenv("SQLSERVER_DATABASE", "d")
     monkeypatch.setenv("SQLSERVER_UID", "u")
     monkeypatch.setenv("SQLSERVER_PWD", "p")
-    monkeypatch.setattr("src.config._get_available_sqlserver_driver", lambda: "")
+    monkeypatch.setattr("src.config._pick_odbc_driver_for_split_config", lambda _env: ("", ""))
     cs, missing = resolve_sqlserver_effective_connection_string()
     assert cs == ""
     assert missing == ("SQLSERVER_DRIVER",)
+
+
+def test_require_unset_includes_config_mode_and_preflight_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(SqlServerConfigurationError) as exc:
+        load_settings().require_sqlserver_connection_string()
+    assert exc.value.config_mode == "unset"
+    assert "config-check" in str(exc.value).lower()
+
+
+def test_migration_cli_config_check_exits_3_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.database.migrations.cli import main
+
+    assert main(["config-check"]) == 3
+    assert main(["doctor"]) == 3

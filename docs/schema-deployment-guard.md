@@ -13,9 +13,11 @@ Prevent any deployment from reaching an environment when the target database sch
   - Table: `schema_migrations`
   - Tracks: `service_name`, `version`, `migration_name`, `checksum_sha256`, `deployment_id`, `applied_at`
 - **Migration command** (after `pip install -e backend/` from repo root, or `pip install -e .` from `backend/`)
-  - `dinamic-db-migrate status|apply|validate` (recommended in CI)
-  - `cd backend && python scripts/db_migrate.py status|apply|validate`
-  - `cd backend && python -m src.database.migrations status|apply|validate`
+  - `dinamic-db-migrate config-check` — **preflight**: validates SQL Server env without connecting; JSON to stdout; exit `3` if config cannot build a connection string (no secrets logged)
+  - `dinamic-db-migrate doctor` — alias of `config-check`
+  - `dinamic-db-migrate status|apply|validate` (recommended in CI **after** config-check)
+  - `cd backend && python scripts/db_migrate.py …` (same subcommands)
+  - `cd backend && python -m src.database.migrations …`
 - **Runtime compatibility guard**
   - Startup check validates: `current_schema_version >= required_schema_version`
   - Readiness endpoint (`/ready`) returns `503` if incompatible
@@ -26,11 +28,12 @@ Prevent any deployment from reaching an environment when the target database sch
 ## Deployment Order (Required)
 
 1. Backup/snapshot and environment safety checks
-2. Migration presence validation in CI (PR/merge gate)
-3. Migration execution stage (`db_migrate.py apply`)
-4. Compatibility validation stage (`db_migrate.py validate`)
-5. Application deployment
-6. Post-deploy smoke (`GET /ready`)
+2. **SQL Server config preflight** — `dinamic-db-migrate config-check` (fail fast; ensures secrets/vars reach the job)
+3. Migration presence validation in CI (PR/merge gate)
+4. Migration execution stage (`dinamic-db-migrate apply`)
+5. Compatibility validation stage (`dinamic-db-migrate validate`)
+6. Application deployment
+7. Post-deploy smoke (`GET /ready`)
 
 ## CI/CD Enforcement Rules
 
@@ -56,11 +59,19 @@ Prevent any deployment from reaching an environment when the target database sch
 ## Environment Model
 
 - Same pattern for `dev`, `staging`, `prod`.
-- Environment-specific values come from CI/CD secrets/vars:
-  - `SQLSERVER_CONNECTION_STRING`
+- **SQL Server:** either repository secret `SQLSERVER_CONNECTION_STRING`, **or** split secrets `SQLSERVER_SERVER`, `SQLSERVER_DATABASE`, `SQLSERVER_UID`, `SQLSERVER_PWD` (and optionally `SQLSERVER_DRIVER` via **vars** if non-secret). The migrate/validate jobs must export these into `env:` so the **same** resolution path as local dev runs.
+- Other CI/CD:
   - `DB_SCHEMA_SERVICE_NAME`
   - `DB_SCHEMA_REQUIRED_VERSION` (optional)
   - `DEPLOYMENT_ID`
+
+### Common failures
+
+| Symptom | Fix |
+|--------|-----|
+| `config_mode=unset` | No DB env in process; add secrets to workflow job `env` or `.env` locally. |
+| `missing_env_vars` lists ODBC driver | Install ODBC driver on runner or set `vars.SQLSERVER_DRIVER` / `SQLSERVER_DRIVER`. |
+| Split mode partial | Set all four core vars or use `SQLSERVER_CONNECTION_STRING`. |
 
 ## Observability
 

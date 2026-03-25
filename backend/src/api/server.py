@@ -16,7 +16,7 @@ from src.api.schema_guard import schema_guard_state
 from src.api.schemas.responses import HealthResponse
 from src.auth.errors import AuthHttpError
 from src.auth.routes import router as auth_router
-from src.config import load_settings, resolve_sqlserver_effective_connection_string
+from src.config import load_settings, resolve_sqlserver_connection_config
 from src.database.migrations import ensure_schema_compatibility, get_required_schema_version
 from src.database.sqlserver import SqlServerClient
 from src.jobs.worker import worker_loop
@@ -112,11 +112,11 @@ def _worker_thread_fn() -> None:
 def start_worker() -> None:
     """Run schema compatibility guard and start optional worker."""
     settings = load_settings()
-    conn_str, sql_missing = resolve_sqlserver_effective_connection_string()
-    if settings.db_schema_guard_enabled and settings.sqlserver_enabled and conn_str.strip():
+    sql_res = resolve_sqlserver_connection_config()
+    if settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_res.connection_string.strip():
         required_version = settings.db_schema_required_version or get_required_schema_version()
         if required_version:
-            client = SqlServerClient(conn_str.strip())
+            client = SqlServerClient(sql_res.connection_string.strip())
             status = ensure_schema_compatibility(
                 client=client,
                 service=settings.db_schema_service_name,
@@ -151,15 +151,16 @@ def start_worker() -> None:
                     )
         else:
             logger.warning("Schema guard enabled but no migration files found; skipping required version check.")
-    elif settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_missing:
+    elif settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_res.mode == "incomplete_split":
         logger.error(
-            "Schema guard skipped: incomplete SQL Server env (missing: %s). "
-            "Set SQLSERVER_CONNECTION_STRING or all split vars plus ODBC driver; see Settings docs.",
-            ", ".join(sql_missing),
+            "Schema guard skipped: SQL Server config incomplete (mode=%s missing=%s). %s",
+            sql_res.mode,
+            list(sql_res.missing_env_vars),
+            sql_res.hint or "",
         )
-    elif settings.db_schema_guard_enabled and settings.sqlserver_enabled and not conn_str.strip():
+    elif settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_res.mode == "unset":
         logger.warning(
-            "Schema guard enabled but no SQL Server connection is configured; "
+            "Schema guard enabled but SQL Server connection is not configured (mode=unset); "
             "skipping startup compatibility check."
         )
     if not settings.embedded_worker_enabled:

@@ -2,10 +2,11 @@
 
 Recommended (CI / local):
   cd backend && pip install -e .
+  python scripts/db_migrate.py config-check   # preflight before apply/validate
   python scripts/db_migrate.py status | validate | apply
 
 Equivalent module invocation (from ``backend/``, or with ``src`` on PYTHONPATH):
-  cd backend && python -m src.database.migrations status
+  cd backend && python -m src.database.migrations config-check
 """
 
 from __future__ import annotations

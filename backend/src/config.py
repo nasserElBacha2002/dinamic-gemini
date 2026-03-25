@@ -6,6 +6,7 @@ con valores por defecto sensatos.
 """
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -77,6 +78,13 @@ def _parse_photos_max_single_bytes() -> Optional[int]:
 
 _sqlserver_driver_cache: Optional[str] = None
 
+# Prefer exact Microsoft ODBC names when installed (deterministic vs substring scan order).
+_KNOWN_SQLSERVER_ODBC_DRIVERS: Tuple[str, ...] = (
+    "ODBC Driver 18 for SQL Server",
+    "ODBC Driver 17 for SQL Server",
+    "ODBC Driver 13 for SQL Server",
+)
+
 
 def _get_available_sqlserver_driver() -> str:
     """Return first ODBC driver name that contains 'SQL Server', or '' if none (e.g. not installed on macOS). Cached per process."""
@@ -95,36 +103,73 @@ def _get_available_sqlserver_driver() -> str:
     return _sqlserver_driver_cache
 
 
+def _pick_odbc_driver_for_split_config(env_driver: str) -> Tuple[str, str]:
+    """Pick ODBC driver for split-var mode. Returns (driver_name, resolution_source_label)."""
+    explicit = env_driver.strip()
+    if explicit:
+        return explicit, "SQLSERVER_DRIVER"
+    try:
+        import pyodbc
+        installed_set = {x.strip() for x in pyodbc.drivers()}
+        for cand in _KNOWN_SQLSERVER_ODBC_DRIVERS:
+            if cand in installed_set:
+                return cand, "installed_odbc_preference"
+        for name in sorted(installed_set):
+            if "SQL Server" in name:
+                return name, "installed_odbc_substring"
+    except Exception:
+        pass
+    return "", ""
+
+
+@dataclass(frozen=True)
+class SqlServerConnectionResolution:
+    """Canonical outcome of resolving SQL Server env (no secrets)."""
+
+    mode: str
+    """``connection_string`` | ``split_env`` | ``unset`` | ``incomplete_split``."""
+
+    connection_string: str
+    missing_env_vars: Tuple[str, ...] = ()
+    driver_resolution: Optional[str] = None
+    """How the ODBC driver was chosen for split mode (e.g. ``SQLSERVER_DRIVER``, ``installed_odbc_preference``)."""
+
+    hint: Optional[str] = None
+    """Actionable message when ``connection_string`` is empty (safe for logs / JSON)."""
+
+
 class SqlServerConfigurationError(ValueError):
     """Raised when SQL Server env is incomplete for building a connection string."""
 
-    def __init__(self, message: str, missing_env_vars: Tuple[str, ...] = ()) -> None:
+    def __init__(
+        self,
+        message: str,
+        missing_env_vars: Tuple[str, ...] = (),
+        *,
+        config_mode: str = "",
+    ) -> None:
         super().__init__(message)
         self.missing_env_vars = missing_env_vars
+        self.config_mode = config_mode
 
 
-def resolve_sqlserver_effective_connection_string() -> Tuple[str, Tuple[str, ...]]:
-    """Build the ODBC connection string from env (single canonical resolver).
-
-    Precedence:
-      1. ``SQLSERVER_CONNECTION_STRING`` if non-empty after strip.
-      2. Built from ``SQLSERVER_SERVER``, ``SQLSERVER_DATABASE``, ``SQLSERVER_UID``, ``SQLSERVER_PWD``,
-         plus ``SQLSERVER_DRIVER`` or an auto-detected ODBC driver.
-
-    Returns:
-        (connection_string, missing_env_var_names). ``missing_env_var_names`` is non-empty when split
-        config was started (any core variable set) but the set is incomplete, or when driver could not
-        be resolved.
-    """
+def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
+    """Single source of truth for SQL Server env → ODBC connection string (canonical resolver)."""
     raw = (os.getenv("SQLSERVER_CONNECTION_STRING") or "").strip()
     if raw:
-        return raw, ()
+        return SqlServerConnectionResolution(
+            mode="connection_string",
+            connection_string=raw,
+            missing_env_vars=(),
+            driver_resolution="SQLSERVER_CONNECTION_STRING",
+            hint=None,
+        )
 
     server = (os.getenv("SQLSERVER_SERVER") or "").strip()
     database = (os.getenv("SQLSERVER_DATABASE") or "").strip()
     uid = (os.getenv("SQLSERVER_UID") or "").strip()
     pwd = (os.getenv("SQLSERVER_PWD") or "").strip()
-    driver = (os.getenv("SQLSERVER_DRIVER") or "").strip()
+    env_driver = (os.getenv("SQLSERVER_DRIVER") or "").strip()
 
     core = {
         "SQLSERVER_SERVER": server,
@@ -132,28 +177,92 @@ def resolve_sqlserver_effective_connection_string() -> Tuple[str, Tuple[str, ...
         "SQLSERVER_UID": uid,
         "SQLSERVER_PWD": pwd,
     }
-    values = list(core.values())
-    if not any(values):
-        return "", ()
-    missing = [name for name, val in core.items() if not val]
-    if missing:
-        return "", tuple(missing)
+    if not any(core.values()):
+        return SqlServerConnectionResolution(
+            mode="unset",
+            connection_string="",
+            missing_env_vars=(),
+            driver_resolution=None,
+            hint=(
+                "No SQL Server settings found. Use SQLSERVER_CONNECTION_STRING or set "
+                "SQLSERVER_SERVER, SQLSERVER_DATABASE, SQLSERVER_UID, SQLSERVER_PWD (and SQLSERVER_DRIVER "
+                "or install Microsoft ODBC Driver for SQL Server). In CI, pass these as job env/secrets."
+            ),
+        )
 
+    missing = tuple(name for name, val in core.items() if not val)
+    if missing:
+        return SqlServerConnectionResolution(
+            mode="incomplete_split",
+            connection_string="",
+            missing_env_vars=missing,
+            driver_resolution=None,
+            hint=(
+                "Split SQL Server config is incomplete. Set all of: SQLSERVER_SERVER, "
+                "SQLSERVER_DATABASE, SQLSERVER_UID, SQLSERVER_PWD. "
+                "Run `dinamic-db-migrate config-check` in CI before apply/validate."
+            ),
+        )
+
+    driver, dsrc = _pick_odbc_driver_for_split_config(env_driver)
     if not driver:
-        driver = _get_available_sqlserver_driver().strip()
-    if not driver:
-        return "", ("SQLSERVER_DRIVER",)
+        return SqlServerConnectionResolution(
+            mode="incomplete_split",
+            connection_string="",
+            missing_env_vars=("SQLSERVER_DRIVER",),
+            driver_resolution=None,
+            hint=(
+                "No ODBC driver could be resolved. Set SQLSERVER_DRIVER (e.g. 'ODBC Driver 18 for SQL Server') "
+                "or install Microsoft ODBC Driver for SQL Server on the runner so pyodbc lists it."
+            ),
+        )
 
     cs = (
         f"DRIVER={{{driver}}};SERVER={server};DATABASE={database};UID={uid};PWD={pwd};"
         "TrustServerCertificate=yes"
     )
-    return cs, ()
+    return SqlServerConnectionResolution(
+        mode="split_env",
+        connection_string=cs,
+        missing_env_vars=(),
+        driver_resolution=dsrc,
+        hint=None,
+    )
+
+
+def resolve_sqlserver_effective_connection_string() -> Tuple[str, Tuple[str, ...]]:
+    """Backward-compatible: ``(connection_string, missing_env_var_names)`` from :func:`resolve_sqlserver_connection_config`."""
+    r = resolve_sqlserver_connection_config()
+    return r.connection_string, r.missing_env_vars
+
+
+def sqlserver_configuration_error_message(resolution: SqlServerConnectionResolution) -> str:
+    """Human-readable, actionable error (no secrets)."""
+    if resolution.connection_string.strip():
+        return ""
+    if resolution.mode == "unset":
+        return (
+            "SQL Server connection not configured (config_mode=unset). "
+            "Set SQLSERVER_CONNECTION_STRING, or set all split variables: "
+            "SQLSERVER_SERVER, SQLSERVER_DATABASE, SQLSERVER_UID, SQLSERVER_PWD "
+            "(and SQLSERVER_DRIVER if no supported ODBC driver is installed on this host). "
+            "In GitHub Actions, pass secrets into the migrate job environment (see docs). "
+            "Preflight: `dinamic-db-migrate config-check`."
+        )
+    if resolution.mode == "incomplete_split":
+        if resolution.missing_env_vars:
+            return (
+                f"Incomplete split SQL Server config (config_mode=incomplete_split). "
+                f"Missing or empty: {', '.join(resolution.missing_env_vars)}. "
+                f"Alternatively set SQLSERVER_CONNECTION_STRING. "
+                f"{resolution.hint or ''}"
+            ).strip()
+    return resolution.hint or "SQL Server configuration invalid."
 
 
 def _default_sqlserver_connection_string() -> str:
     """``Settings.sqlserver_connection_string`` default — effective ODBC string or empty."""
-    return resolve_sqlserver_effective_connection_string()[0]
+    return resolve_sqlserver_connection_config().connection_string
 
 
 class Settings(BaseModel):
@@ -672,29 +781,14 @@ class Settings(BaseModel):
 
     def require_sqlserver_connection_string(self) -> str:
         """Return a non-empty ODBC connection string or raise :class:`SqlServerConfigurationError`."""
-        cs, missing = resolve_sqlserver_effective_connection_string()
-        if cs.strip():
-            return cs.strip()
-        if missing:
-            odbc_hint = (
-                " Set SQLSERVER_DRIVER (e.g. ODBC Driver 18 for SQL Server) or install "
-                "Microsoft ODBC Driver for SQL Server so pyodbc can resolve a driver."
-                if "SQLSERVER_DRIVER" in missing
-                else ""
-            )
-            raise SqlServerConfigurationError(
-                "Incomplete SQL Server configuration; missing or empty environment variables: "
-                + ", ".join(missing)
-                + "."
-                + odbc_hint
-                + " Alternatively set SQLSERVER_CONNECTION_STRING.",
-                missing_env_vars=missing,
-            )
+        r = resolve_sqlserver_connection_config()
+        if r.connection_string.strip():
+            return r.connection_string.strip()
+        msg = sqlserver_configuration_error_message(r)
         raise SqlServerConfigurationError(
-            "SQL Server connection not configured. Set SQLSERVER_CONNECTION_STRING or "
-            "all of SQLSERVER_SERVER, SQLSERVER_DATABASE, SQLSERVER_UID, SQLSERVER_PWD "
-            "(and SQLSERVER_DRIVER if no ODBC driver is auto-detected).",
-            missing_env_vars=(),
+            msg,
+            missing_env_vars=r.missing_env_vars,
+            config_mode=r.mode,
         )
 
     @field_validator("max_frames_to_send")
