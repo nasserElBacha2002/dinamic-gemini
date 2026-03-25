@@ -1,14 +1,13 @@
 /**
- * Sprint 4.1 — Aisle Results table: priority, SKU, quantity, review status, traceability, confidence, evidence, updated, action.
+ * Sprint 4.1 — Aisle Results table: priority, SKU (row entry → detail), quantity, review status, traceability, confidence, evidence, updated.
  */
 
 import { useMemo } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Button, Typography } from '@mui/material';
 import type { ResultSummary } from '../types';
 import {
   DataTable,
   StatusBadge,
-  RowActionMenu,
   TraceabilityChip,
   type DataTableColumn,
   type DataTablePaginationModel,
@@ -70,7 +69,35 @@ export default function ResultsTable({ results, onOpenDetail, pagination, loadin
       {
         id: 'sku',
         label: 'SKU',
-        cell: (r) => <Box component="span" sx={{ fontWeight: 500 }}>{displaySku(r)}</Box>,
+        cell: (r) => {
+          const label = displaySku(r);
+          if (label === '—') {
+            return (
+              <Typography variant="body2" color="text.secondary" component="span">
+                {label}
+              </Typography>
+            );
+          }
+          return (
+            <Button
+              variant="text"
+              size="small"
+              onClick={() => onOpenDetail(r.id)}
+              aria-label={`Open result detail for ${label}`}
+              sx={{
+                fontWeight: 650,
+                textTransform: 'none',
+                px: 0,
+                minWidth: 0,
+                justifyContent: 'flex-start',
+                color: 'text.primary',
+                '&:hover': { textDecoration: 'underline', backgroundColor: 'transparent' },
+              }}
+            >
+              {label}
+            </Button>
+          );
+        },
       },
       {
         id: 'qty',
@@ -124,24 +151,6 @@ export default function ResultsTable({ results, onOpenDetail, pagination, loadin
           <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
             {formatDate(r.updatedAt)}
           </Typography>
-        ),
-      },
-      {
-        id: 'action',
-        label: 'Action',
-        align: 'right',
-        width: 56,
-        cell: (r) => (
-          <RowActionMenu
-            ariaLabel={`Actions for result ${displaySku(r)}`}
-            items={[
-              {
-                id: 'review',
-                label: 'Review',
-                onClick: () => onOpenDetail(r.id),
-              },
-            ]}
-          />
         ),
       },
     ];

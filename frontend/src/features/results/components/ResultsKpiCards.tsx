@@ -18,6 +18,8 @@ export default function ResultsKpiCards({ kpi }: ResultsKpiCardsProps) {
         flexWrap: { xs: 'wrap', md: 'nowrap' },
         gap: 1.5,
         overflowX: { xs: 'visible', md: 'auto' },
+        width: '100%',
+        minWidth: 0,
         mb: 2,
         alignItems: 'stretch',
       }}
