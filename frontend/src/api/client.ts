@@ -395,6 +395,12 @@ export interface ReviewQueueListQuery {
   inventory_id?: string | null;
   aisle_id?: string | null;
   min_confidence?: number | null;
+  max_confidence?: number | null;
+  traceability?: string | null;
+  has_evidence?: boolean | null;
+  qty_zero?: boolean | null;
+  sku_contains?: string | null;
+  position_status?: string | null;
   sort_by?: string;
   sort_dir?: string;
   page?: number;
@@ -413,6 +419,22 @@ function buildReviewQueueQueryString(q: ReviewQueueListQuery | undefined): strin
   if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
     params.set('min_confidence', String(q.min_confidence));
   }
+  if (q.max_confidence != null && !Number.isNaN(q.max_confidence)) {
+    params.set('max_confidence', String(q.max_confidence));
+  }
+  if (q.traceability != null && String(q.traceability).trim() !== '') {
+    params.set('traceability', String(q.traceability).trim().toLowerCase());
+  }
+  if (q.has_evidence === true) params.set('has_evidence', 'true');
+  if (q.has_evidence === false) params.set('has_evidence', 'false');
+  if (q.qty_zero === true) params.set('qty_zero', 'true');
+  if (q.qty_zero === false) params.set('qty_zero', 'false');
+  if (q.sku_contains != null && String(q.sku_contains).trim() !== '') {
+    params.set('sku_contains', String(q.sku_contains).trim());
+  }
+  if (q.position_status != null && String(q.position_status).trim() !== '') {
+    params.set('position_status', String(q.position_status).trim().toLowerCase());
+  }
   if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
   if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
   if (q.page != null && q.page >= 1) params.set('page', String(q.page));
@@ -422,7 +444,7 @@ function buildReviewQueueQueryString(q: ReviewQueueListQuery | undefined): strin
 }
 
 /**
- * GET /api/v3/review-queue/positions — filters/sort/pagination only (no free-text search param yet).
+ * GET /api/v3/review-queue/positions — cross-inventory queue with filters, KPI summary, sort, pagination.
  */
 export async function getReviewQueuePositions(
   listQuery?: ReviewQueueListQuery

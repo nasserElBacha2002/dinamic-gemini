@@ -20,7 +20,7 @@ export default function ResultsKpiCards({ kpi }: ResultsKpiCardsProps) {
         overflowX: { xs: 'visible', md: 'auto' },
         width: '100%',
         minWidth: 0,
-        mb: 2,
+         mb: 2,
         alignItems: 'stretch',
       }}
     >

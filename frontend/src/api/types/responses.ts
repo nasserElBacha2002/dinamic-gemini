@@ -221,7 +221,15 @@ export interface PositionListResponse {
   raw_fetch_truncated: boolean;
 }
 
-/** GET /api/v3/review-queue/positions (Sprint 1.4). */
+/** GET /api/v3/review-queue/positions (Sprint 1.4, Sprint 4.2 summary). */
+export interface ReviewQueueSummary {
+  pending_review: number;
+  low_confidence: number;
+  invalid_traceability: number;
+  qty_zero: number;
+  missing_evidence: number;
+}
+
 export interface ReviewQueueItem {
   inventory_id: string;
   inventory_name: string;
@@ -229,8 +237,9 @@ export interface ReviewQueueItem {
   position: PositionSummary;
 }
 
-/** Review queue list: filters/sort/pagination; no free-text search parameter yet. */
+/** Review queue list: filters/sort/pagination + workload summary for KPI band. */
 export interface ReviewQueueListResponse {
+  summary: ReviewQueueSummary;
   items: ReviewQueueItem[];
   page: number;
   page_size: number;

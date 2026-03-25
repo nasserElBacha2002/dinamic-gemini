@@ -1,0 +1,238 @@
+/**
+ * Sprint 4.2 — Cross-inventory review queue table (priority, context, row actions).
+ */
+
+import { useMemo } from 'react';
+import { Button, Link as MuiLink, Typography } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import type { ReviewQueueItem } from '../../../api/types';
+import {
+  DataTable,
+  RowActionMenu,
+  StatusBadge,
+  TraceabilityChip,
+  type DataTableColumn,
+  type DataTablePaginationModel,
+  type DataTableSortModel,
+} from '../../../components/ui';
+import { mapPositionSummaryToResultSummary } from '../../results/mappers/positionToResult';
+import { deriveResultPriority } from '../../results/utils/resultPriority';
+import {
+  getReviewStatusLabel,
+  reviewStatusToBadgeSemantic,
+} from '../../results/utils/reviewStatusDisplay';
+import { visibleTraceabilityToApiStatus } from '../../results/utils/traceabilityDisplay';
+import { formatDate } from '../../../utils/formatDate';
+import { pathToAislePositions } from '../../../utils/resultRoutes';
+
+export interface ReviewQueueTableProps {
+  rows: ReviewQueueItem[];
+  loading?: boolean;
+  sort: DataTableSortModel;
+  pagination: DataTablePaginationModel;
+  onOpenFullDetail: (item: ReviewQueueItem) => void;
+  onQuickReview: (item: ReviewQueueItem) => void;
+}
+
+function prioritySemantic(
+  tier: number
+): 'error' | 'warning' | 'review' | 'neutral' {
+  if (tier === 1) return 'error';
+  if (tier === 2) return 'warning';
+  if (tier === 3) return 'review';
+  return 'neutral';
+}
+
+function displaySku(item: ReviewQueueItem): string {
+  const s = item.position.sku;
+  if (s != null && String(s).trim() !== '') return String(s).trim();
+  return '—';
+}
+
+function displayQty(item: ReviewQueueItem): string {
+  const r = mapPositionSummaryToResultSummary(item.position);
+  const v = r.resolvedQty ?? r.detectedQty;
+  if (v != null && !Number.isNaN(v) && v >= 0) return String(v);
+  return '—';
+}
+
+export default function ReviewQueueTable({
+  rows,
+  loading,
+  sort,
+  pagination,
+  onOpenFullDetail,
+  onQuickReview,
+}: ReviewQueueTableProps) {
+  const columns = useMemo<DataTableColumn<ReviewQueueItem>[]>(() => {
+    return [
+      {
+        id: 'priority',
+        label: 'Priority',
+        width: 88,
+        cell: (item) => {
+          const r = mapPositionSummaryToResultSummary(item.position);
+          const p = deriveResultPriority(r);
+          return (
+            <StatusBadge label={p.label} semantic={prioritySemantic(p.tier)} variant="outlined" />
+          );
+        },
+      },
+      {
+        id: 'sku',
+        label: 'SKU',
+        cell: (item) => {
+          const label = displaySku(item);
+          if (label === '—') {
+            return (
+              <Typography variant="body2" color="text.secondary" component="span">
+                {label}
+              </Typography>
+            );
+          }
+          return (
+            <Button
+              variant="text"
+              size="small"
+              onClick={() => onOpenFullDetail(item)}
+              aria-label={`Open full review for ${label}`}
+              sx={{
+                fontWeight: 650,
+                textTransform: 'none',
+                px: 0,
+                minWidth: 0,
+                justifyContent: 'flex-start',
+                color: 'text.primary',
+                '&:hover': { textDecoration: 'underline', backgroundColor: 'transparent' },
+              }}
+            >
+              {label}
+            </Button>
+          );
+        },
+      },
+      {
+        id: 'qty',
+        label: 'Quantity',
+        align: 'right',
+        cell: (item) => displayQty(item),
+      },
+      {
+        id: 'confidence',
+        label: 'Confidence',
+        align: 'right',
+        sortable: true,
+        cell: (item) =>
+          item.position.confidence != null ? `${(item.position.confidence * 100).toFixed(0)}%` : '—',
+      },
+      {
+        id: 'traceability',
+        label: 'Traceability',
+        cell: (item) => {
+          const r = mapPositionSummaryToResultSummary(item.position);
+          return (
+            <TraceabilityChip
+              status={visibleTraceabilityToApiStatus(r.traceabilityStatus)}
+              size="small"
+              variant="outlined"
+            />
+          );
+        },
+      },
+      {
+        id: 'review_status',
+        label: 'Review status',
+        cell: (item) => {
+          const r = mapPositionSummaryToResultSummary(item.position);
+          return (
+            <StatusBadge
+              label={getReviewStatusLabel(r.reviewStatus)}
+              semantic={reviewStatusToBadgeSemantic(r.reviewStatus)}
+              variant="outlined"
+            />
+          );
+        },
+      },
+      {
+        id: 'inventory',
+        label: 'Inventory',
+        cell: (item) => (
+          <MuiLink
+            component={RouterLink}
+            to={`/inventories/${item.inventory_id}`}
+            variant="body2"
+            underline="hover"
+            color="primary"
+          >
+            {item.inventory_name}
+          </MuiLink>
+        ),
+      },
+      {
+        id: 'aisle',
+        label: 'Aisle',
+        cell: (item) => (
+          <MuiLink
+            component={RouterLink}
+            to={pathToAislePositions(item.inventory_id, item.position.aisle_id)}
+            variant="body2"
+            underline="hover"
+            color="primary"
+          >
+            {item.aisle_code}
+          </MuiLink>
+        ),
+      },
+      {
+        id: 'updated_at',
+        label: 'Updated',
+        sortable: true,
+        cell: (item) => (
+          <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
+            {formatDate(item.position.updated_at)}
+          </Typography>
+        ),
+      },
+      {
+        id: 'actions',
+        label: 'Actions',
+        align: 'right',
+        width: 64,
+        cell: (item) => (
+          <RowActionMenu
+            ariaLabel={`Actions for result ${displaySku(item)}`}
+            items={[
+              {
+                id: 'full',
+                label: 'Open full review',
+                onClick: () => onOpenFullDetail(item),
+              },
+              {
+                id: 'quick',
+                label: 'Quick review',
+                onClick: () => onQuickReview(item),
+              },
+            ]}
+          />
+        ),
+      },
+    ];
+  }, [onOpenFullDetail, onQuickReview]);
+
+  return (
+    <DataTable<ReviewQueueItem>
+      rows={rows}
+      rowKey={(item) => `${item.inventory_id}-${item.position.id}`}
+      columns={columns}
+      stickyHeader
+      size="medium"
+      rowHover
+      loading={loading}
+      sort={sort}
+      pagination={pagination}
+      emptyState={{
+        message: 'No rows match the current filters. Adjust filters or reset to see the queue.',
+      }}
+    />
+  );
+}

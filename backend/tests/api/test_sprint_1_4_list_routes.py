@@ -179,7 +179,15 @@ def test_get_review_queue_pagination_filter_sort(client_list_repos):
     r = client.get("/api/v3/review-queue/positions")
     assert r.status_code == 200
     data = r.json()
-    assert set(data.keys()) >= {"items", "page", "page_size", "total_items", "total_pages"}
+    assert set(data.keys()) >= {
+        "items",
+        "summary",
+        "page",
+        "page_size",
+        "total_items",
+        "total_pages",
+    }
+    assert data["summary"]["pending_review"] == 1
     assert data["total_items"] == 1
     assert len(data["items"]) == 1
     assert data["items"][0]["inventory_id"] == "inv-s14-a"

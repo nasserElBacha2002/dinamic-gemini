@@ -136,16 +136,35 @@ class PositionListQuery:
 
 @dataclass(frozen=True)
 class ReviewQueueQuery:
-    """Cross-inventory review queue list."""
+    """Cross-inventory review queue list (Sprint 4.2 — filters + priority sort)."""
 
     inventory_id: Optional[str] = None
     aisle_id: Optional[str] = None
     min_confidence: Optional[float] = None
-    sort_by: str = "updated_at"
-    """updated_at | created_at | confidence"""
+    max_confidence: Optional[float] = None
+    traceability: Optional[str] = None
+    """API traceability wire value: valid | missing | invalid | unvalidated."""
+    has_evidence: Optional[bool] = None
+    qty_zero: Optional[bool] = None
+    sku_contains: Optional[str] = None
+    position_status: Optional[str] = None
+    """detected | reviewed | corrected | deleted | confirmed (reviewed or corrected)."""
+    sort_by: str = "priority"
+    """priority | updated_at | created_at | confidence"""
     sort_dir: str = "desc"
     page: int = 1
     page_size: int = 25
+
+
+@dataclass(frozen=True)
+class ReviewQueueSummary:
+    """KPI counts for the filtered queue population (full result set before pagination)."""
+
+    pending_review: int
+    low_confidence: int
+    invalid_traceability: int
+    qty_zero: int
+    missing_evidence: int
 
 
 @dataclass(frozen=True)

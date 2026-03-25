@@ -1,4 +1,4 @@
-"""v3 cross-inventory review queue (Sprint 1.4)."""
+"""v3 cross-inventory review queue (Sprint 1.4, Sprint 4.2)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,11 @@ from src.auth.dependencies import get_current_admin
 
 from src.api.dependencies import get_list_review_queue_use_case, get_product_record_repo
 from src.api.schemas.listing_schemas import compute_total_pages
-from src.api.schemas.review_queue_schemas import ReviewQueueItemResponse, ReviewQueueListResponse
+from src.api.schemas.review_queue_schemas import (
+    ReviewQueueItemResponse,
+    ReviewQueueListResponse,
+    ReviewQueueSummaryResponse,
+)
 from src.application.ports.contracts import ReviewQueueQuery
 from src.application.ports.repositories import ProductRecordRepository
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
@@ -24,6 +28,13 @@ router = APIRouter(
 )
 
 
+def _strip_opt(s: Optional[str]) -> Optional[str]:
+    if s is None:
+        return None
+    t = str(s).strip()
+    return t if t else None
+
+
 @router.get("/positions", response_model=ReviewQueueListResponse)
 def list_review_queue_positions(
     use_case: ListReviewQueueUseCase = Depends(get_list_review_queue_use_case),
@@ -31,26 +42,44 @@ def list_review_queue_positions(
     inventory_id: Optional[str] = Query(None, description="Restrict to aisles in this inventory."),
     aisle_id: Optional[str] = Query(None, description="Restrict to this aisle."),
     min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0),
-    sort_by: str = Query("updated_at", description="updated_at | created_at | confidence"),
+    max_confidence: Optional[float] = Query(None, ge=0.0, le=1.0),
+    traceability: Optional[str] = Query(
+        None,
+        description="valid | missing | invalid | unvalidated",
+    ),
+    has_evidence: Optional[bool] = Query(None),
+    qty_zero: Optional[bool] = Query(None),
+    sku_contains: Optional[str] = Query(None, description="Case-insensitive substring on SKU (summary JSON)."),
+    position_status: Optional[str] = Query(
+        None,
+        description="detected | reviewed | corrected | deleted | confirmed (reviewed or corrected).",
+    ),
+    sort_by: str = Query("priority", description="priority | updated_at | created_at | confidence"),
     sort_dir: str = Query("desc", description="asc | desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
 ) -> ReviewQueueListResponse:
     """Positions with ``needs_review`` across inventories (paginated).
 
-    Supports inventory/aisle scope, ``min_confidence``, sort, and pagination. There is **no**
-    free-text search (SKU/name) on this endpoint yet — that remains a follow-up if product requires it.
+    Sprint 4.2: advanced filters, KPI summary, ``sort_by=priority`` (explainable tiers).
+    Free-text SKU is **substring** on summary-derived SKU (not full-text search).
     """
     q = ReviewQueueQuery(
-        inventory_id=inventory_id.strip() if inventory_id and inventory_id.strip() else None,
-        aisle_id=aisle_id.strip() if aisle_id and aisle_id.strip() else None,
+        inventory_id=_strip_opt(inventory_id),
+        aisle_id=_strip_opt(aisle_id),
         min_confidence=min_confidence,
+        max_confidence=max_confidence,
+        traceability=_strip_opt(traceability),
+        has_evidence=has_evidence,
+        qty_zero=qty_zero,
+        sku_contains=_strip_opt(sku_contains),
+        position_status=_strip_opt(position_status),
         sort_by=sort_by,
         sort_dir=sort_dir,
         page=page,
         page_size=page_size,
     )
-    rows, total = use_case.execute(q)
+    rows, total, summary = use_case.execute(q)
     ps = q.page_size
     items: list[ReviewQueueItemResponse] = []
     for row in rows:
@@ -70,6 +99,13 @@ def list_review_queue_positions(
             )
         )
     return ReviewQueueListResponse(
+        summary=ReviewQueueSummaryResponse(
+            pending_review=summary.pending_review,
+            low_confidence=summary.low_confidence,
+            invalid_traceability=summary.invalid_traceability,
+            qty_zero=summary.qty_zero,
+            missing_evidence=summary.missing_evidence,
+        ),
         items=items,
         page=q.page,
         page_size=ps,

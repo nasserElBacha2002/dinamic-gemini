@@ -65,8 +65,9 @@ def test_review_queue_filters_and_pages() -> None:
     )
 
     uc = ListReviewQueueUseCase(inv_repo, aisle_repo, pos_repo)
-    rows, total = uc.execute(ReviewQueueQuery(inventory_id="inv-b", page=1, page_size=10))
+    rows, total, summary = uc.execute(ReviewQueueQuery(inventory_id="inv-b", page=1, page_size=10))
     assert total == 1
+    assert summary.pending_review == 1
     assert len(rows) == 1
     assert rows[0].position.id == "p2"
     assert rows[0].inventory_name == "Beta"
@@ -84,6 +85,7 @@ def test_review_queue_out_of_range_page_returns_empty_slice() -> None:
         Position("px", "aisle-x", PositionStatus.DETECTED, 0.5, True, None, now, now)
     )
     uc = ListReviewQueueUseCase(inv_repo, aisle_repo, pos_repo)
-    rows, total = uc.execute(ReviewQueueQuery(page=99, page_size=10))
+    rows, total, summary = uc.execute(ReviewQueueQuery(page=99, page_size=10))
     assert total == 1
+    assert summary.pending_review == 1
     assert rows == []

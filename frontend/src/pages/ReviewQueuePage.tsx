@@ -1,10 +1,403 @@
-import PlaceholderScreenScaffold from '../components/shell/PlaceholderScreenScaffold';
+/**
+ * Sprint 4.2 — Review Queue: cross-inventory operational queue (header → KPIs → filters → table).
+ *
+ * Contract: GET /api/v3/review-queue/positions (see inline notes for scope: needs_review rows only).
+ */
 
-/** Sprint 2.1 scaffold — Re diseño 3.3 §9.8 (cross-inventory prioritized review). */
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Button,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  TextField,
+  Typography,
+} from '@mui/material';
+import type { ReviewQueueListQuery } from '../api/client';
+import { ApiError, type ReviewQueueItem } from '../api/types';
+import { PageHeader } from '../components/shell';
+import {
+  ErrorAlert,
+  FilterToolbar,
+  SectionCard,
+  type DataTableSortDirection,
+} from '../components/ui';
+import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
+import ReviewQueueKpiCards from '../features/reviewQueue/components/ReviewQueueKpiCards';
+import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDrawer';
+import ReviewQueueTable from '../features/reviewQueue/components/ReviewQueueTable';
+import { useAislesList, useInventoriesList, useReviewQueue } from '../hooks';
+import { getApiErrorMessage } from '../utils/apiErrors';
+import { pathToPositionDetail } from '../utils/resultRoutes';
+
+const SORT_NONE = '__none__';
+
+function parseOptional01(raw: string): number | null {
+  const t = raw.trim();
+  if (t === '') return null;
+  const n = Number(t);
+  if (Number.isNaN(n) || n < 0 || n > 1) return null;
+  return n;
+}
+
 export default function ReviewQueuePage() {
+  const navigate = useNavigate();
+  const [inventoryId, setInventoryId] = useState('');
+  const [aisleId, setAisleId] = useState('');
+  const [positionStatus, setPositionStatus] = useState('');
+  const [minConfidenceStr, setMinConfidenceStr] = useState('');
+  const [maxConfidenceStr, setMaxConfidenceStr] = useState('');
+  const [traceability, setTraceability] = useState('');
+  const [hasEvidence, setHasEvidence] = useState('');
+  const [qtyZero, setQtyZero] = useState('');
+  const [skuContains, setSkuContains] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [apiSortBy, setApiSortBy] = useState<'priority' | 'updated_at' | 'confidence' | 'created_at'>(
+    'priority'
+  );
+  const [apiSortDir, setApiSortDir] = useState<DataTableSortDirection>('desc');
+  const [activeSortColumnId, setActiveSortColumnId] = useState<string | null>(null);
+  const [quickRow, setQuickRow] = useState<ReviewQueueItem | null>(null);
+
+  const inventoriesQuery = useInventoriesList({ page: 1, page_size: 200, sort_by: 'name', sort_dir: 'asc' });
+  const aislesQuery = useAislesList(inventoryId || undefined, { enabled: Boolean(inventoryId) });
+
+  const listQuery = useMemo((): ReviewQueueListQuery => {
+    const minC = parseOptional01(minConfidenceStr);
+    const maxC = parseOptional01(maxConfidenceStr);
+    let hasEv: boolean | null = null;
+    if (hasEvidence === 'yes') hasEv = true;
+    if (hasEvidence === 'no') hasEv = false;
+    let qz: boolean | null = null;
+    if (qtyZero === 'yes') qz = true;
+    if (qtyZero === 'no') qz = false;
+    return {
+      inventory_id: inventoryId.trim() || null,
+      aisle_id: aisleId.trim() || null,
+      min_confidence: minC,
+      max_confidence: maxC,
+      traceability: traceability.trim() || null,
+      has_evidence: hasEv,
+      qty_zero: qz,
+      sku_contains: skuContains.trim() || null,
+      position_status: positionStatus.trim() || null,
+      sort_by: apiSortBy,
+      sort_dir: apiSortDir,
+      page,
+      page_size: pageSize,
+    };
+  }, [
+    inventoryId,
+    aisleId,
+    minConfidenceStr,
+    maxConfidenceStr,
+    traceability,
+    hasEvidence,
+    qtyZero,
+    skuContains,
+    positionStatus,
+    apiSortBy,
+    apiSortDir,
+    page,
+    pageSize,
+  ]);
+
+  const queueQuery = useReviewQueue(listQuery);
+
+  useEffect(() => {
+    setAisleId('');
+  }, [inventoryId]);
+
+  const handleResetFilters = useCallback(() => {
+    setInventoryId('');
+    setAisleId('');
+    setPositionStatus('');
+    setMinConfidenceStr('');
+    setMaxConfidenceStr('');
+    setTraceability('');
+    setHasEvidence('');
+    setQtyZero('');
+    setSkuContains('');
+    setPage(1);
+    setApiSortBy('priority');
+    setApiSortDir('desc');
+    setActiveSortColumnId(null);
+  }, []);
+
+  const resetDisabled =
+    inventoryId === '' &&
+    aisleId === '' &&
+    positionStatus === '' &&
+    minConfidenceStr === '' &&
+    maxConfidenceStr === '' &&
+    traceability === '' &&
+    hasEvidence === '' &&
+    qtyZero === '' &&
+    skuContains === '' &&
+    apiSortBy === 'priority' &&
+    apiSortDir === 'desc' &&
+    activeSortColumnId === null &&
+    page === 1;
+
+  const openFull = useCallback(
+    (item: ReviewQueueItem) => {
+      navigate(pathToPositionDetail(item.inventory_id, item.position.aisle_id, item.position.id));
+    },
+    [navigate]
+  );
+
+  const errorMessage =
+    queueQuery.isError && queueQuery.error
+      ? queueQuery.error instanceof ApiError
+        ? getApiErrorMessage(queueQuery.error, 'Failed to load review queue')
+        : String(queueQuery.error)
+      : null;
+
+  const summary = queueQuery.data?.summary;
+  const items = queueQuery.data?.items ?? [];
+  const totalItems = queueQuery.data?.total_items ?? 0;
+
+  useEffect(() => {
+    if (totalItems === 0) return;
+    const pages = Math.max(1, Math.ceil(totalItems / pageSize));
+    if (page > pages) setPage(pages);
+  }, [totalItems, pageSize, page]);
+
   return (
-    <PlaceholderScreenScaffold
-      roadmapNote="Review queue table, filters, and KPIs will use the dedicated review-queue summary API (Plan 3.3 — Fase 4)."
-    />
+    <>
+      <PageHeader
+        title="Review Queue"
+        subtitle="Cross-inventory priority queue for operational review — narrow with filters, then open full or quick review."
+        actions={
+          <Button size="small" variant="outlined" onClick={() => queueQuery.refetch()} disabled={queueQuery.isFetching}>
+            Refresh
+          </Button>
+        }
+      />
+
+      {errorMessage ? (
+        <ErrorAlert message={errorMessage} onRetry={() => queueQuery.refetch()} />
+      ) : null}
+
+      {queueQuery.isLoading && !queueQuery.data ? (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Loading workload summary…
+        </Typography>
+      ) : summary ? (
+        <ReviewQueueKpiCards summary={summary} />
+      ) : null}
+
+      <FilterToolbar onReset={handleResetFilters} resetDisabled={resetDisabled}>
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel id="rq-inv-label">Inventory</InputLabel>
+          <Select
+            labelId="rq-inv-label"
+            label="Inventory"
+            value={inventoryId}
+            onChange={(e) => {
+              setInventoryId(String(e.target.value));
+              setPage(1);
+            }}
+          >
+            <MenuItem value="">
+              <em>All</em>
+            </MenuItem>
+            {(inventoriesQuery.data?.items ?? []).map((inv) => (
+              <MenuItem key={inv.id} value={inv.id}>
+                {inv.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 140 }} disabled={!inventoryId}>
+          <InputLabel id="rq-aisle-label">Aisle</InputLabel>
+          <Select
+            labelId="rq-aisle-label"
+            label="Aisle"
+            value={aisleId}
+            onChange={(e) => {
+              setAisleId(String(e.target.value));
+              setPage(1);
+            }}
+          >
+            <MenuItem value="">
+              <em>All</em>
+            </MenuItem>
+            {(aislesQuery.data?.items ?? []).map((a) => (
+              <MenuItem key={a.id} value={a.id}>
+                {a.code}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 150 }}>
+          <InputLabel id="rq-status-label">Status</InputLabel>
+          <Select
+            labelId="rq-status-label"
+            label="Status"
+            value={positionStatus}
+            onChange={(e) => {
+              setPositionStatus(String(e.target.value));
+              setPage(1);
+            }}
+          >
+            <MenuItem value="">
+              <em>All</em>
+            </MenuItem>
+            <MenuItem value="detected">Pending review (detected)</MenuItem>
+            <MenuItem value="confirmed">Confirmed (reviewed/corrected)</MenuItem>
+            <MenuItem value="reviewed">Reviewed</MenuItem>
+            <MenuItem value="corrected">Corrected</MenuItem>
+            <MenuItem value="deleted">Deleted</MenuItem>
+          </Select>
+        </FormControl>
+
+        <TextField
+          size="small"
+          label="Min confidence"
+          placeholder="0–1"
+          value={minConfidenceStr}
+          onChange={(e) => {
+            setMinConfidenceStr(e.target.value);
+            setPage(1);
+          }}
+          sx={{ width: 120 }}
+          inputProps={{ inputMode: 'decimal' }}
+        />
+        <TextField
+          size="small"
+          label="Max confidence"
+          placeholder="0–1"
+          value={maxConfidenceStr}
+          onChange={(e) => {
+            setMaxConfidenceStr(e.target.value);
+            setPage(1);
+          }}
+          sx={{ width: 120 }}
+          inputProps={{ inputMode: 'decimal' }}
+        />
+
+        <FormControl size="small" sx={{ minWidth: 140 }}>
+          <InputLabel id="rq-tr-label">Traceability</InputLabel>
+          <Select
+            labelId="rq-tr-label"
+            label="Traceability"
+            value={traceability}
+            onChange={(e) => {
+              setTraceability(String(e.target.value));
+              setPage(1);
+            }}
+          >
+            <MenuItem value="">
+              <em>All</em>
+            </MenuItem>
+            <MenuItem value="valid">Valid</MenuItem>
+            <MenuItem value="missing">Missing</MenuItem>
+            <MenuItem value="invalid">Invalid</MenuItem>
+            <MenuItem value="unvalidated">Unvalidated</MenuItem>
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 150 }}>
+          <InputLabel id="rq-ev-label">Evidence</InputLabel>
+          <Select
+            labelId="rq-ev-label"
+            label="Evidence"
+            value={hasEvidence}
+            onChange={(e) => {
+              setHasEvidence(String(e.target.value));
+              setPage(1);
+            }}
+          >
+            <MenuItem value="">
+              <em>All</em>
+            </MenuItem>
+            <MenuItem value="yes">Present</MenuItem>
+            <MenuItem value="no">Missing</MenuItem>
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel id="rq-qz-label">Qty zero</InputLabel>
+          <Select
+            labelId="rq-qz-label"
+            label="Qty zero"
+            value={qtyZero}
+            onChange={(e) => {
+              setQtyZero(String(e.target.value));
+              setPage(1);
+            }}
+          >
+            <MenuItem value="">
+              <em>All</em>
+            </MenuItem>
+            <MenuItem value="yes">Yes</MenuItem>
+            <MenuItem value="no">No</MenuItem>
+          </Select>
+        </FormControl>
+
+        <TextField
+          size="small"
+          label="Search SKU"
+          placeholder="Contains…"
+          value={skuContains}
+          onChange={(e) => {
+            setSkuContains(e.target.value);
+            setPage(1);
+          }}
+          sx={{ minWidth: 160 }}
+        />
+      </FilterToolbar>
+
+      <SectionCard title="Queue">
+        <Box sx={{ overflow: 'auto' }}>
+          <ReviewQueueTable
+            rows={items}
+            loading={queueQuery.isLoading}
+            sort={{
+              sortBy: activeSortColumnId ?? SORT_NONE,
+              sortDir: apiSortDir,
+              onSortChange: (sortBy, sortDir) => {
+                setActiveSortColumnId(sortBy);
+                if (sortBy === 'confidence') {
+                  setApiSortBy('confidence');
+                } else if (sortBy === 'updated_at') {
+                  setApiSortBy('updated_at');
+                }
+                setApiSortDir(sortDir);
+                setPage(1);
+              },
+            }}
+            pagination={{
+              page,
+              pageSize,
+              totalItems,
+              onPageChange: setPage,
+              onPageSizeChange: setPageSize,
+            }}
+            onOpenFullDetail={openFull}
+            onQuickReview={(item) => {
+              setQuickRow(item);
+            }}
+          />
+        </Box>
+      </SectionCard>
+
+      <QuickReviewDrawer
+        open={Boolean(quickRow)}
+        row={quickRow}
+        onClose={() => setQuickRow(null)}
+        onOpenFullReview={() => {
+          if (quickRow) openFull(quickRow);
+          setQuickRow(null);
+        }}
+      />
+    </>
   );
 }
