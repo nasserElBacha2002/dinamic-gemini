@@ -1,5 +1,5 @@
 """
-Cross-inventory review queue — positions with ``needs_review`` (Sprint 1.4, Sprint 4.2 filters/KPIs).
+Cross-inventory review queue — primarily ``needs_review`` positions, narrowable by filters (Sprint 1.4 / 4.2).
 
 Uses existing repositories only (batch ``list_by_aisles``). Suitable for small/medium
 deployments; very large multi-inventory installs may need a dedicated SQL path later.

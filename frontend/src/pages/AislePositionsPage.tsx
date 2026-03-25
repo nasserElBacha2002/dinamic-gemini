@@ -96,6 +96,7 @@ export default function AislePositionsPage() {
         const navigationState: ResultDetailNavigationState = {
           resultIds: sortedForTable.map((r) => r.id),
           filter,
+          returnTo: 'aisle_results',
         };
         navigate(pathToPositionDetail(inventoryId, aisleId, resultId), {
           state: navigationState,

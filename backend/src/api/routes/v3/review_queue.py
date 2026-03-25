@@ -59,10 +59,10 @@ def list_review_queue_positions(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
 ) -> ReviewQueueListResponse:
-    """Positions with ``needs_review`` across inventories (paginated).
+    """Review queue: positions with ``needs_review``, narrowable by status and quality filters (paginated).
 
-    Sprint 4.2: advanced filters, KPI summary, ``sort_by=priority`` (explainable tiers).
-    Free-text SKU is **substring** on summary-derived SKU (not full-text search).
+    Sprint 4.2: KPI summary, advanced filters, ``sort_by=priority`` (explainable tiers).
+    ``sku_contains`` matches summary-derived SKU (substring, not full-text search).
     """
     q = ReviewQueueQuery(
         inventory_id=_strip_opt(inventory_id),

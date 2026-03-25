@@ -58,7 +58,10 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
 
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
-      <Typography variant="subtitle2" color="text.secondary">
+      <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
+        Result summary
+      </Typography>
+      <Typography variant="caption" color="text.secondary" display="block">
         SKU
       </Typography>
       <Typography variant="h6" sx={{ fontWeight: 600 }}>

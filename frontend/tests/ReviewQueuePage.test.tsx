@@ -70,7 +70,7 @@ describe('ReviewQueuePage', () => {
     expect(screen.getByText('Invalid traceability')).toBeInTheDocument();
     expect(screen.getByText('Missing evidence')).toBeInTheDocument();
     expect(screen.getByLabelText(/filters/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Queue' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Prioritized results' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /priority/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /SKU/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /^Actions$/i })).toBeInTheDocument();

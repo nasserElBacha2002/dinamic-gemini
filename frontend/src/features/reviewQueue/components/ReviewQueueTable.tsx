@@ -70,6 +70,7 @@ export default function ReviewQueueTable({
         id: 'priority',
         label: 'Priority',
         width: 88,
+        sortable: true,
         cell: (item) => {
           const r = mapPositionSummaryToResultSummary(item.position);
           const p = deriveResultPriority(r);

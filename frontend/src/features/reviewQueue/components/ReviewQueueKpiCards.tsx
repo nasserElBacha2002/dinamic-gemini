@@ -14,29 +14,32 @@ export default function ReviewQueueKpiCards({ summary }: ReviewQueueKpiCardsProp
   return (
     <Box
       sx={{
-        display: 'flex',
-        flexWrap: { xs: 'wrap', md: 'nowrap' },
+        display: 'grid',
+        gridTemplateColumns: {
+          xs: 'repeat(2, minmax(0, 1fr))',
+          sm: 'repeat(3, minmax(0, 1fr))',
+          md: 'repeat(5, minmax(0, 1fr))',
+        },
         gap: 1.5,
-        overflowX: { xs: 'visible', md: 'auto' },
         width: '100%',
         minWidth: 0,
         mb: 2,
         alignItems: 'stretch',
       }}
     >
-      <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 140px' } }}>
+      <Box sx={{ minWidth: 0 }}>
         <KpiCard label="Pending review" value={summary.pending_review} />
       </Box>
-      <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 140px' } }}>
+      <Box sx={{ minWidth: 0 }}>
         <KpiCard label="Low confidence" value={summary.low_confidence} />
       </Box>
-      <Box sx={{ flex: { xs: '1 1 160px', md: '0 0 160px' } }}>
+      <Box sx={{ minWidth: 0 }}>
         <KpiCard label="Invalid traceability" value={summary.invalid_traceability} />
       </Box>
-      <Box sx={{ flex: { xs: '1 1 130px', md: '0 0 130px' } }}>
+      <Box sx={{ minWidth: 0 }}>
         <KpiCard label="Qty zero" value={summary.qty_zero} />
       </Box>
-      <Box sx={{ flex: { xs: '1 1 150px', md: '0 0 150px' } }}>
+      <Box sx={{ minWidth: 0 }}>
         <KpiCard label="Missing evidence" value={summary.missing_evidence} />
       </Box>
     </Box>

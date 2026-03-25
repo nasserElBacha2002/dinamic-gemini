@@ -15,6 +15,7 @@ const basePosition = {
   id: 'pos-1',
   aisle_id: 'aisle-1',
   status: 'detected',
+  sku: 'SKU001',
   confidence: 0.9,
   needs_review: false,
   created_at: '2024-01-01T00:00:00Z',
@@ -63,14 +64,30 @@ vi.mock('../src/features/results', async (importOriginal) => {
   };
 });
 
-vi.mock('../src/hooks', () => ({
-  useSubmitReviewAction: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-    isError: false,
-    error: null,
-  }),
-}));
+vi.mock('../src/hooks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/hooks')>();
+  return {
+    ...actual,
+    useSubmitReviewAction: () => ({
+      mutateAsync: vi.fn(),
+      isPending: false,
+      isError: false,
+      error: null,
+    }),
+    useInventoryDetail: () => ({
+      data: { id: 'inv-1', name: 'Test Inventory', status: 'draft' as const, created_at: null },
+      isLoading: false,
+      isError: false,
+      error: null,
+    }),
+    useAislesList: () => ({
+      data: { items: [{ id: 'aisle-1', code: 'A-01', status: 'created' as const }] },
+      isLoading: false,
+      isError: false,
+      error: null,
+    }),
+  };
+});
 
 function renderPage(
   initialEntry: string | { pathname: string; state?: ResultDetailNavigationState } = '/inventories/inv-1/aisles/aisle-1/positions/pos-1'
@@ -111,8 +128,8 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
     } as ReturnType<typeof useResultDetail>);
 
     renderPage();
-    await screen.findByText('Result');
-    expect(screen.getByText('Result')).toBeInTheDocument();
+    const heading = await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    expect(heading).toBeInTheDocument();
   });
 
   it('shows Evidence section with Source file when source_image_original_filename is present', async () => {
@@ -129,9 +146,8 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
     } as ReturnType<typeof useResultDetail>);
 
     renderPage();
-    await screen.findByText('Result');
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.getByText('Evidence')).toBeInTheDocument();
-    expect(screen.getByText(/Source file:/)).toBeInTheDocument();
     expect(screen.getByText(/IMG_1024.JPG/)).toBeInTheDocument();
   });
 
@@ -146,8 +162,8 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
     } as ReturnType<typeof useResultDetail>);
 
     renderPage();
-    await screen.findByText('Result');
-    expect(screen.getByRole('button', { name: /View full image/i })).toBeInTheDocument();
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    expect(screen.getByRole('button', { name: /Open fullscreen/i })).toBeInTheDocument();
   });
 
   it('shows no-evidence state when sourceImageId and evidence are empty', async () => {
@@ -165,9 +181,9 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
     } as ReturnType<typeof useResultDetail>);
 
     renderPage();
-    await screen.findByText('Result');
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.getByText('Evidence')).toBeInTheDocument();
-    expect(screen.getByText(/No evidence available/)).toBeInTheDocument();
+    expect(screen.getByText(/No image evidence available/)).toBeInTheDocument();
   });
 
   it('shows Review actions and Confirm result button', async () => {
@@ -181,7 +197,7 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
     } as ReturnType<typeof useResultDetail>);
 
     renderPage();
-    await screen.findByText('Result');
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.getByText('Review actions')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Confirm result/i })).toBeInTheDocument();
   });
@@ -205,7 +221,7 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
       state: navState,
     });
 
-    await screen.findByText('Result');
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.getByText(/Result 2 of 3/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Previous result/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Next result/i })).toBeInTheDocument();
@@ -223,7 +239,7 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
 
     renderPage('/inventories/inv-1/aisles/aisle-1/positions/pos-1');
 
-    await screen.findByText('Result');
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Previous result/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Next result/i })).not.toBeInTheDocument();
@@ -244,7 +260,7 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
       state: { resultIds: 'not-an-array' },
     });
 
-    await screen.findByText('Result');
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Previous result/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Next result/i })).not.toBeInTheDocument();
@@ -269,7 +285,7 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
       state: navState,
     });
 
-    await screen.findByText('Result');
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Previous result/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Next result/i })).not.toBeInTheDocument();
@@ -294,7 +310,7 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
       state: navState,
     });
 
-    await screen.findByText('Result');
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.getByText(/Result 1 of 3/)).toBeInTheDocument();
     const prevBtn = screen.getByRole('button', { name: /Previous result/i });
     expect(prevBtn).toBeDisabled();
@@ -320,7 +336,7 @@ describe('PositionDetailPage (Epic 4 Result-centric)', () => {
       state: navState,
     });
 
-    await screen.findByText('Result');
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.getByText(/Result 3 of 3/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Previous result/i })).not.toBeDisabled();
     const nextBtn = screen.getByRole('button', { name: /Next result/i });

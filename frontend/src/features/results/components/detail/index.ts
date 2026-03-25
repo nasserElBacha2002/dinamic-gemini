@@ -6,6 +6,7 @@
 export { default as ResultDetailHeader } from './ResultDetailHeader';
 export { default as ResultSummaryCard } from './ResultSummaryCard';
 export { default as ResultEvidencePanel } from './ResultEvidencePanel';
+export { default as ResultEvidenceViewer } from './ResultEvidenceViewer';
 export { default as ResultReviewActions } from './ResultReviewActions';
 export { default as ResultReviewHistory } from './ResultReviewHistory';
 export { default as ResultTechnicalMetadata } from './ResultTechnicalMetadata';

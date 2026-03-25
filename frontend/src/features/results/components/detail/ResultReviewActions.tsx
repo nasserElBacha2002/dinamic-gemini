@@ -1,10 +1,9 @@
 /**
- * Epic 4 — Review actions panel for Result Detail (confirm, update quantity/SKU, delete).
- * Phase 6: Action labels and short descriptions so operators understand effect before clicking.
+ * Epic 4 / Sprint 4.3 — Review actions: confirm (primary path), corrections, destructive (separated).
  */
 
 import { useState, useEffect } from 'react';
-import { Paper, Typography, Box, Button, Stack, TextField } from '@mui/material';
+import { Paper, Typography, Box, Button, Stack, TextField, Divider } from '@mui/material';
 import type { ResultDetail } from '../../types';
 
 export interface ResultReviewActionsProps {
@@ -24,7 +23,6 @@ export default function ResultReviewActions({
   onUpdateSku,
   onDeleteClick,
 }: ResultReviewActionsProps) {
-  // Temporary visible-model rule: INVALID = deleted (backend status "deleted" maps here). Do not show actions.
   const isDeleted = result.reviewStatus === 'INVALID';
 
   if (isDeleted) {
@@ -32,46 +30,82 @@ export default function ResultReviewActions({
   }
 
   return (
-    <Paper sx={{ p: 2, mb: 2 }}>
-      <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
+    <Paper
+      sx={{
+        p: 2,
+        mb: 2,
+        border: 1,
+        borderColor: 'divider',
+      }}
+      elevation={0}
+    >
+      <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
         Review actions
       </Typography>
-      <Stack spacing={2}>
-        <Box>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={onConfirm}
-            disabled={actionLoading}
-          >
-            {actionLoading ? 'Sending…' : 'Confirm result'}
-          </Button>
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-            Accept as correct without changing quantity or SKU. Marks result as reviewed.
-          </Typography>
-        </Box>
-        <Box sx={{ pl: 1, borderLeft: 2, borderColor: 'divider', mt: 1 }}>
-          <ResultFieldsForm
-            result={result}
-            actionLoading={actionLoading}
-            onUpdateQuantity={onUpdateQuantity}
-            onUpdateSku={onUpdateSku}
-          />
-        </Box>
-        <Box>
-          <Button
-            variant="outlined"
-            color="error"
-            onClick={onDeleteClick}
-            disabled={actionLoading}
-          >
-            Delete result
-          </Button>
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-            Mark result as invalid/deleted. No further review actions will be available.
-          </Typography>
-        </Box>
-      </Stack>
+
+      <Box>
+        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
+          Confirm
+        </Typography>
+        <Button
+          variant="contained"
+          color="primary"
+          size="large"
+          fullWidth
+          onClick={onConfirm}
+          disabled={actionLoading}
+          sx={{ mt: 0.75, py: 1 }}
+        >
+          {actionLoading ? 'Sending…' : 'Confirm result'}
+        </Button>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
+          Accept as correct. Marks the result as reviewed without changing quantity or SKU.
+        </Typography>
+      </Box>
+
+      <Divider sx={{ my: 1.75 }} />
+
+      <Box>
+        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
+          Corrections
+        </Typography>
+        <ResultFieldsForm
+          result={result}
+          actionLoading={actionLoading}
+          onUpdateQuantity={onUpdateQuantity}
+          onUpdateSku={onUpdateSku}
+        />
+      </Box>
+
+      <Divider sx={{ my: 1.75 }} />
+
+      <Box
+        sx={{
+          p: 1.5,
+          borderRadius: 1,
+          bgcolor: 'action.hover',
+          border: 1,
+          borderColor: 'error.light',
+        }}
+      >
+        <Typography variant="overline" color="error" sx={{ letterSpacing: 0.5 }}>
+          Invalidate result
+        </Typography>
+        <Button
+          variant="outlined"
+          color="error"
+          fullWidth
+          onClick={onDeleteClick}
+          disabled={actionLoading}
+          sx={{ mt: 1 }}
+        >
+          Mark result invalid
+        </Button>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
+          Sets review status to invalid and removes this row from active review work. The record stays visible
+          for audit. Requires confirmation.
+        </Typography>
+      </Box>
     </Paper>
   );
 }
@@ -100,11 +134,8 @@ function ResultFieldsForm({
   }, [result.sku]);
 
   return (
-    <>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        Set corrected quantity or override SKU. Changes are saved and visible on reread.
-      </Typography>
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap">
+    <Stack spacing={1} sx={{ mt: 0.75 }}>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField
           size="small"
           type="number"
@@ -112,40 +143,36 @@ function ResultFieldsForm({
           value={qty}
           onChange={(e) => setQty(Number(e.target.value) || 0)}
           inputProps={{ min: 0 }}
-          sx={{ width: 140 }}
+          sx={{ width: 144 }}
         />
         <Button
           size="small"
           variant="outlined"
           onClick={() => onUpdateQuantity(Math.max(0, qty))}
           disabled={actionLoading}
+          sx={{ flexShrink: 0 }}
         >
           Update quantity
         </Button>
       </Stack>
-      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-        Sets the manual override quantity (replaces system count for this result).
-      </Typography>
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap">
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField
           size="small"
           label="SKU"
           value={sku}
           onChange={(e) => setSku(e.target.value)}
-          sx={{ width: 200 }}
+          sx={{ width: 176 }}
         />
         <Button
           size="small"
           variant="outlined"
           onClick={() => onUpdateSku(sku.trim())}
           disabled={actionLoading || !sku.trim()}
+          sx={{ flexShrink: 0 }}
         >
           Update SKU
         </Button>
       </Stack>
-      <Typography variant="caption" color="text.secondary" display="block">
-        Overrides the visible SKU/classification for this result.
-      </Typography>
-    </>
+    </Stack>
   );
 }

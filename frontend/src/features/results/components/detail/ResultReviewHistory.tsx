@@ -11,7 +11,7 @@ const ACTION_LABELS: Record<string, string> = {
   confirm: 'Confirm',
   update_quantity: 'Update quantity',
   update_sku: 'Update SKU',
-  delete_position: 'Delete result',
+  delete_position: 'Mark invalid',
 };
 
 function getActionLabel(action: string): string {
@@ -55,7 +55,7 @@ function getChangeSummary(item: ReviewHistoryItem): string | null {
       if (hasPayload && after.status != null && before.status != null) {
         return `Status: ${String(before.status)} → ${String(after.status)}`;
       }
-      return 'Result removed';
+      return 'Marked invalid';
     }
     default:
       return null;
@@ -64,14 +64,18 @@ function getChangeSummary(item: ReviewHistoryItem): string | null {
 
 export interface ResultReviewHistoryProps {
   items: ReviewHistoryItem[];
+  /** When false, omit section heading (e.g. parent SectionCard provides the title). */
+  showHeading?: boolean;
 }
 
-export default function ResultReviewHistory({ items }: ResultReviewHistoryProps) {
+export default function ResultReviewHistory({ items, showHeading = true }: ResultReviewHistoryProps) {
   return (
-    <Box sx={{ mt: 2 }}>
-      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-        Review history ({items.length})
-      </Typography>
+    <Box sx={{ mt: showHeading ? 2 : 0 }}>
+      {showHeading ? (
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+          Review history ({items.length})
+        </Typography>
+      ) : null}
       {items.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
           No review actions yet.
