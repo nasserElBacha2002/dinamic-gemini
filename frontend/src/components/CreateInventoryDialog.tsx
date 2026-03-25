@@ -55,6 +55,7 @@ export default function CreateInventoryDialog({
   const [createdInventory, setCreatedInventory] = useState<Inventory | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [uploadState, setUploadState] = useState<UploadState>('idle');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const pendingFilesRef = useRef<PendingVisualReferenceFile[]>([]);
   useEffect(() => {
@@ -132,6 +133,11 @@ export default function CreateInventoryDialog({
     // If the user changes the selection after a failed upload, treat it as a fresh retry.
     setUploadError('');
     setUploadState('idle');
+  };
+
+  const handleDropFiles = (files: FileList | null) => {
+    setIsDraggingOver(false);
+    handleAddFiles(files);
   };
 
   const handleRemoveFile = (idx: number) => {
@@ -263,7 +269,6 @@ export default function CreateInventoryDialog({
       if (uploadState === 'failed') return 'Retry upload';
       return 'Upload references';
     }
-    if (pendingFiles.length > 0) return 'Create inventory and upload references';
     return 'Create inventory';
   }, [createdInventory, pendingFiles.length, uploadState]);
 
@@ -286,6 +291,9 @@ export default function CreateInventoryDialog({
           </>
         ) : (
           <>
+            <Button onClick={handleClose} disabled={submitting}>
+              Cancel
+            </Button>
             <Button onClick={() => setActiveStep(0)} disabled={submitting || createdInventory != null}>
               Back
             </Button>
@@ -295,7 +303,7 @@ export default function CreateInventoryDialog({
               </Button>
             ) : (
               <Button onClick={handleCreateOnly} disabled={submitting}>
-                Skip this step
+                Create without references
               </Button>
             )}
             <Button
@@ -351,20 +359,71 @@ export default function CreateInventoryDialog({
             </Alert>
           ) : null}
 
-          <Button component="label" variant="outlined" disabled={submitting || pendingFiles.length >= maxFiles} sx={{ mb: 2 }}>
-            Select images
-            <input
-              hidden
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp"
-              onChange={(e) => {
-                handleAddFiles(e.target.files);
-                e.currentTarget.value = '';
-              }}
-              aria-label="Select visual reference images"
-            />
-          </Button>
+          <Box
+            onDragEnter={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingOver(true);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingOver(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleDropFiles(e.dataTransfer?.files ?? null);
+            }}
+            role="region"
+            aria-label="Visual reference dropzone"
+            sx={{
+              mb: 2,
+              p: 2,
+              borderRadius: 1,
+              border: '1px dashed',
+              borderColor: isDraggingOver ? 'primary.main' : 'divider',
+              bgcolor: isDraggingOver ? 'action.hover' : 'transparent',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1.5,
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Drag & drop images here
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block">
+                {pendingFiles.length}/{maxFiles} selected
+              </Typography>
+            </Box>
+            <Button
+              component="label"
+              variant="outlined"
+              disabled={submitting || pendingFiles.length >= maxFiles}
+              size="small"
+            >
+              Select images
+              <input
+                hidden
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(e) => {
+                  handleAddFiles(e.target.files);
+                  e.currentTarget.value = '';
+                }}
+                aria-label="Select visual reference images"
+              />
+            </Button>
+          </Box>
 
           <Typography variant="caption" display="block" sx={{ mb: 1, color: 'text.secondary' }}>
             Up to {maxFiles} images (JPG/JPEG, PNG, WEBP).

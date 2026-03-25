@@ -1,3 +1,6 @@
+import '@testing-library/jest-dom/vitest';
+import React from 'react';
+import type { ComponentProps } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CreateInventoryDialog from '../src/components/CreateInventoryDialog';
@@ -11,7 +14,7 @@ vi.mock('../src/api/client', async () => {
   };
 });
 
-function renderDialog(props?: Partial<React.ComponentProps<typeof CreateInventoryDialog>>) {
+function renderDialog(props?: Partial<ComponentProps<typeof CreateInventoryDialog>>) {
   const onClose = vi.fn();
   const onSuccess = vi.fn();
   const onError = vi.fn();
@@ -51,7 +54,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
 
     expect(screen.getByText(/visual reference images/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /skip this step/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create without references/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     expect(mockUpload).not.toHaveBeenCalled();
@@ -92,7 +95,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
-    fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^create inventory$/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
@@ -111,7 +114,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
-    fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^create inventory$/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
@@ -134,7 +137,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
-    fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^create inventory$/i }));
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByRole('button', { name: /retry upload/i })).toBeInTheDocument());
@@ -165,6 +168,18 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-2');
+  });
+
+  it('accepts drag-and-drop into dropzone', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    const dropzone = screen.getByRole('region', { name: /visual reference dropzone/i });
+    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
+    fireEvent.drop(dropzone, { dataTransfer: { files: [f1] } });
+    expect(screen.getByText('a.jpg')).toBeInTheDocument();
+    expect(screen.getByText(/1\/3 selected/i)).toBeInTheDocument();
   });
 });
 
