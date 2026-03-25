@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, TextField, Typography, Paper, Alert } from '@mui/material';
+import { Box, Button, IconButton, InputAdornment, TextField, Typography, Paper, Alert } from '@mui/material';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import { login as loginApi, getAuthErrorMessage } from './api';
 import { useAuth } from './store';
 import { setStoredSession } from './storage';
@@ -16,10 +18,13 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const canSubmit = !loading && username.trim() !== '' && password !== '';
+  const passwordFieldType = showPassword ? 'text' : 'password';
+  const productLabel = useMemo(() => 'Dinamic Inventory', []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,6 +53,9 @@ export default function LoginPage() {
       bgcolor="background.default"
     >
       <Paper elevation={2} sx={{ p: 4, width: 360, maxWidth: '100%' }}>
+        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1.2 }}>
+          {productLabel}
+        </Typography>
         <Typography variant="h5" component="h1" gutterBottom>
           Admin login
         </Typography>
@@ -69,7 +77,7 @@ export default function LoginPage() {
           />
           <TextField
             label="Password"
-            type="password"
+            type={passwordFieldType}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             margin="normal"
@@ -77,6 +85,20 @@ export default function LoginPage() {
             required
             autoComplete="current-password"
             disabled={loading}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    aria-label={showPassword ? 'Hide characters' : 'Show characters'}
+                    onClick={() => setShowPassword((v) => !v)}
+                    edge="end"
+                    disabled={loading}
+                  >
+                    {showPassword ? <VisibilityOffOutlinedIcon /> : <VisibilityOutlinedIcon />}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
           />
           <Button
             type="submit"
