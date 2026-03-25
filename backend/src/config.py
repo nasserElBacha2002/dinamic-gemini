@@ -448,6 +448,34 @@ class Settings(BaseModel):
         le=2048,
         description="Max upload file size in MB (1 to 2048).",
     )
+    db_schema_guard_enabled: bool = Field(
+        default_factory=lambda: os.getenv("DB_SCHEMA_GUARD_ENABLED", "true").strip().lower()
+        in ("1", "true", "yes"),
+        description="Enable schema compatibility checks at startup/readiness. Env: DB_SCHEMA_GUARD_ENABLED.",
+    )
+    db_schema_guard_block_startup: bool = Field(
+        default_factory=lambda: os.getenv("DB_SCHEMA_GUARD_BLOCK_STARTUP", "true").strip().lower()
+        in ("1", "true", "yes"),
+        description="Fail app startup when schema is incompatible. Env: DB_SCHEMA_GUARD_BLOCK_STARTUP.",
+    )
+    db_schema_service_name: str = Field(
+        default_factory=lambda: (os.getenv("DB_SCHEMA_SERVICE_NAME", "inventory-api") or "inventory-api").strip(),
+        description="Logical service key used in schema_migrations. Env: DB_SCHEMA_SERVICE_NAME.",
+    )
+    db_schema_required_version: Optional[str] = Field(
+        default_factory=lambda: (os.getenv("DB_SCHEMA_REQUIRED_VERSION") or "").strip() or None,
+        description="Optional required schema version override. If unset, latest local migration version is required.",
+    )
+    db_schema_migration_lock_timeout_sec: int = Field(
+        default_factory=lambda: int(os.getenv("DB_SCHEMA_MIGRATION_LOCK_TIMEOUT_SEC", "60")),
+        ge=1,
+        le=3600,
+        description="Lock timeout for migration execution in seconds. Env: DB_SCHEMA_MIGRATION_LOCK_TIMEOUT_SEC.",
+    )
+    deployment_id: Optional[str] = Field(
+        default_factory=lambda: (os.getenv("DEPLOYMENT_ID") or "").strip() or None,
+        description="Deployment identifier used to annotate migration history. Env: DEPLOYMENT_ID.",
+    )
     # Stage 2.2.A — Photos input (create job with N photos instead of video)
     enable_photos_input: bool = Field(
         default_factory=lambda: os.getenv("ENABLE_PHOTOS_INPUT", "true").strip().lower() in ("1", "true", "yes"),

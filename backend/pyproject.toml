@@ -74,11 +74,12 @@ packages = [
     "src.api.schemas",
     "src.api.routes",
     "src.database",
+    "src.database.migrations",
     "src.jobs",
 ]
 
 [tool.setuptools.package-data]
-"*" = ["*.txt", "*.md"]
+"*" = ["*.txt", "*.md", "*.sql"]
 
 [tool.black]
 line-length = 100
