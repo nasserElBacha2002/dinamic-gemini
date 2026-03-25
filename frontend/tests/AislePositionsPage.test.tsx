@@ -1,8 +1,8 @@
 /**
- * Epic 3 — AislePositionsPage (Results overview) tests.
- * Page is Result-centric; uses useResultSummaries and displays KPI, filters, table.
+ * Sprint 4.1 — Aisle Results page tests.
  */
 
+import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -15,6 +15,8 @@ const mockResults: ResultSummary[] = [
     id: 'pos-1',
     sku: 'SKU-001',
     detectedQty: 5,
+    correctedQty: null,
+    resolvedQty: null,
     confidence: 0.9,
     reviewStatus: 'DETECTED',
     traceabilityStatus: 'UNVALIDATED',
@@ -38,6 +40,25 @@ vi.mock('../src/features/results', async (importOriginal) => {
   };
 });
 
+vi.mock('../src/hooks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/hooks')>();
+  return {
+    ...actual,
+    useInventoryDetail: () => ({
+      data: { id: 'inv-1', name: 'Test Inventory', status: 'draft', created_at: null },
+      isLoading: false,
+      isError: false,
+      error: null,
+    }),
+    useAislesList: () => ({
+      data: { items: [{ id: 'aisle-1', code: 'A-01', status: 'created' }] },
+      isLoading: false,
+      isError: false,
+      error: null,
+    }),
+  };
+});
+
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -54,29 +75,25 @@ function renderPage() {
   );
 }
 
-describe('AislePositionsPage (Results overview)', () => {
-  it('shows Results header and KPI section when results load', () => {
+describe('AislePositionsPage (Aisle Results)', () => {
+  it('shows aisle title, inventory context, and workload KPIs', () => {
     renderPage();
-    expect(screen.getByText('Results')).toBeInTheDocument();
-    expect(screen.getByText('Total')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'A-01' })).toBeInTheDocument();
+    expect(screen.getAllByText('Test Inventory').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Total results')).toBeInTheDocument();
     expect(screen.getByText('Needs review')).toBeInTheDocument();
+    expect(screen.getByText('Invalid traceability')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /missing evidence/i })).toBeInTheDocument();
   });
 
-  it('shows Result-centric table with SKU, Qty, Traceability, Status, Action', () => {
+  it('shows operational columns including Priority and Review status', () => {
     renderPage();
+    expect(screen.getByRole('columnheader', { name: /priority/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /SKU/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /Qty/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /Traceability/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /Status/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /Action/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /quantity/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /review status/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /traceability/i })).toBeInTheDocument();
     expect(screen.getByText('SKU-001')).toBeInTheDocument();
     expect(screen.getByText('5')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /review/i })).toBeInTheDocument();
-  });
-
-  it('shows Review button that opens detail', () => {
-    renderPage();
-    const reviewBtn = screen.getByRole('button', { name: /review/i });
-    expect(reviewBtn).toBeInTheDocument();
   });
 });

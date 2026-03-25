@@ -9,9 +9,8 @@ import { LOW_CONFIDENCE_THRESHOLD } from '../constants';
 export interface ResultsKpi {
   total: number;
   needsReview: number;
-  validTraceability: number;
-  /** Count of results with traceability not valid (MISSING, INVALID, UNVALIDATED). */
-  nonValidTraceability: number;
+  /** Traceability explicitly INVALID (not MISSING / UNVALIDATED). */
+  invalidTraceability: number;
   /** Count of results with resolved display quantity exactly 0 (resolvedQty ?? detectedQty). */
   qtyZero: number;
   withEvidence: number;
@@ -26,8 +25,7 @@ export function computeResultsKpi(results: ResultSummary[]): ResultsKpi {
   const kpi: ResultsKpi = {
     total: results.length,
     needsReview: 0,
-    validTraceability: 0,
-    nonValidTraceability: 0,
+    invalidTraceability: 0,
     qtyZero: 0,
     withEvidence: 0,
     lowConfidence: 0,
@@ -35,14 +33,7 @@ export function computeResultsKpi(results: ResultSummary[]): ResultsKpi {
 
   for (const r of results) {
     if (r.needsReview) kpi.needsReview += 1;
-    if (r.traceabilityStatus === 'VALID') kpi.validTraceability += 1;
-    if (
-      r.traceabilityStatus === 'MISSING' ||
-      r.traceabilityStatus === 'INVALID' ||
-      r.traceabilityStatus === 'UNVALIDATED'
-    ) {
-      kpi.nonValidTraceability += 1;
-    }
+    if (r.traceabilityStatus === 'INVALID') kpi.invalidTraceability += 1;
     {
       const q = r.resolvedQty ?? r.detectedQty;
       if (q === 0) kpi.qtyZero += 1;

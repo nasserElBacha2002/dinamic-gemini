@@ -30,6 +30,9 @@ export type { EvidenceImageLoadState, EvidenceImageErrorKind } from './hooks/use
 export { computeResultsKpi, filterResults } from './selectors';
 export type { ResultsKpi, ResultsFilterKind } from './selectors';
 
+export { deriveResultPriority, sortResultsByPriority } from './utils/resultPriority';
+export type { ResultPriority, ResultPriorityTier } from './utils/resultPriority';
+
 export { LOW_CONFIDENCE_THRESHOLD } from './constants';
 export { visibleTraceabilityToApiStatus } from './utils/traceabilityDisplay';
 export { getResultNavigationContext, parseResultDetailNavigationState, getInitialFilterFromReturnState } from './utils/navigationContext';

@@ -8,10 +8,10 @@ import type { ResultsFilterKind } from '../selectors';
 const VALID_FILTERS: ResultsFilterKind[] = [
   'all',
   'needs_review',
-  'valid_traceability',
-  'non_valid_traceability',
-  'qty_zero',
   'low_confidence',
+  'qty_zero',
+  'invalid_traceability',
+  'missing_evidence',
 ];
 
 function isResultsFilterKind(value: unknown): value is ResultsFilterKind {

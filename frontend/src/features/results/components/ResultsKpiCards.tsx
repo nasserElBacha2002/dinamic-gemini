@@ -1,9 +1,9 @@
 /**
- * Epic 3 — KPI summary strip for the Results overview.
+ * Sprint 4.1 — Aisle Results KPI band (six workload summaries only).
  */
 
 import { Box } from '@mui/material';
-import { StatCard } from '../../../components/ui';
+import { KpiCard } from '../../../components/ui';
 import type { ResultsKpi } from '../selectors/resultsKpi';
 
 export interface ResultsKpiCardsProps {
@@ -14,19 +14,32 @@ export default function ResultsKpiCards({ kpi }: ResultsKpiCardsProps) {
   return (
     <Box
       sx={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-        gap: 2,
-        mb: 3,
+        display: 'flex',
+        flexWrap: { xs: 'wrap', md: 'nowrap' },
+        gap: 1.5,
+        overflowX: { xs: 'visible', md: 'auto' },
+        mb: 2,
+        alignItems: 'stretch',
       }}
     >
-      <StatCard label="Total" value={kpi.total} />
-      <StatCard label="Needs review" value={kpi.needsReview} />
-      <StatCard label="Valid traceability" value={kpi.validTraceability} />
-      <StatCard label="Non-valid traceability" value={kpi.nonValidTraceability} />
-      <StatCard label="Qty 0" value={kpi.qtyZero} />
-      <StatCard label="With evidence" value={kpi.withEvidence} />
-      <StatCard label="Low confidence" value={kpi.lowConfidence} />
+      <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 140px' } }}>
+        <KpiCard label="Total results" value={kpi.total} />
+      </Box>
+      <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 140px' } }}>
+        <KpiCard label="Needs review" value={kpi.needsReview} />
+      </Box>
+      <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 140px' } }}>
+        <KpiCard label="Low confidence" value={kpi.lowConfidence} />
+      </Box>
+      <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 160px' } }}>
+        <KpiCard label="Invalid traceability" value={kpi.invalidTraceability} />
+      </Box>
+      <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 140px' } }}>
+        <KpiCard label="Qty zero" value={kpi.qtyZero} />
+      </Box>
+      <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 140px' } }}>
+        <KpiCard label="With evidence" value={kpi.withEvidence} />
+      </Box>
     </Box>
   );
 }

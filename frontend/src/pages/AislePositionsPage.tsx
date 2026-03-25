@@ -1,26 +1,27 @@
 /**
- * Epic 3 — Results overview page (Result-centric review list).
- * Epic 5 — Pass navigation state to detail for previous/next; restore filter when returning from detail.
+ * Sprint 4.1 — Aisle Results: review prioritization for one aisle (header → KPIs → filters → table → pagination).
  */
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Alert, Button, Paper, Typography, Box } from '@mui/material';
+import { Alert, Box, Button, TextField } from '@mui/material';
 import { pathToPositionDetail } from '../utils/resultRoutes';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { ApiError } from '../api/types';
+import { PageHeader } from '../components/shell';
+import { FilterToolbar, SectionCard } from '../components/ui';
+import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
+import { useInventoryDetail, useAislesList } from '../hooks';
 import {
   useResultSummaries,
   computeResultsKpi,
   filterResults,
+  sortResultsByPriority,
   getInitialFilterFromReturnState,
   type ResultDetailNavigationState,
   type ResultsFilterKind,
 } from '../features/results';
-import { useAisleMergeResults } from '../hooks/usePositions';
-import { useRunAisleMerge } from '../hooks/useMutations';
 import {
-  ResultsOverviewHeader,
   ResultsKpiCards,
   ResultsQuickFilters,
   ResultsTable,
@@ -37,30 +38,63 @@ export default function AislePositionsPage() {
   const [filter, setFilter] = useState<ResultsFilterKind>(() =>
     getInitialFilterFromReturnState(location.state)
   );
+  const [skuSearch, setSkuSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
 
-  const { results, isLoading, isError, error, refetch } = useResultSummaries(
-    inventoryId,
-    aisleId
+  const inventoryQuery = useInventoryDetail(inventoryId);
+  const aislesQuery = useAislesList(inventoryId, {
+    enabled: Boolean(inventoryId && inventoryQuery.data),
+  });
+  const inventory = inventoryQuery.data ?? null;
+  const aisle = useMemo(
+    () => aislesQuery.data?.items?.find((a) => a.id === aisleId) ?? null,
+    [aislesQuery.data?.items, aisleId]
   );
-  const runMerge = useRunAisleMerge(inventoryId ?? '');
-  const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId);
-  const mergePreviewLimit = 8;
+
+  const { results, isLoading, isError, error, refetch } = useResultSummaries(inventoryId, aisleId);
 
   const kpi = useMemo(() => computeResultsKpi(results), [results]);
-  const filteredResults = useMemo(
-    () => filterResults(results, filter),
-    [results, filter]
+  const missingEvidenceCount = useMemo(
+    () => results.reduce((n, r) => n + (r.hasEvidence ? 0 : 1), 0),
+    [results]
   );
 
-  const handleBack = useCallback(() => {
-    navigate(`/inventories/${inventoryId}`);
-  }, [navigate, inventoryId]);
+  const filteredByKind = useMemo(() => filterResults(results, filter), [results, filter]);
+
+  const filteredBySku = useMemo(() => {
+    const q = skuSearch.trim().toLowerCase();
+    if (!q) return filteredByKind;
+    return filteredByKind.filter((r) => {
+      const sku = (r.sku ?? '').trim().toLowerCase();
+      return sku.includes(q);
+    });
+  }, [filteredByKind, skuSearch]);
+
+  const sortedForTable = useMemo(() => sortResultsByPriority(filteredBySku), [filteredBySku]);
+
+  useEffect(() => {
+    if (sortedForTable.length === 0) return;
+    const pages = Math.max(1, Math.ceil(sortedForTable.length / pageSize));
+    if (page > pages) setPage(pages);
+  }, [sortedForTable.length, pageSize, page]);
+
+  const tableRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sortedForTable.slice(start, start + pageSize);
+  }, [sortedForTable, page, pageSize]);
+
+  const handleResetFilters = useCallback(() => {
+    setFilter('all');
+    setSkuSearch('');
+    setPage(1);
+  }, []);
 
   const handleOpenDetail = useCallback(
     (resultId: string) => {
       if (inventoryId && aisleId) {
         const navigationState: ResultDetailNavigationState = {
-          resultIds: filteredResults.map((r) => r.id),
+          resultIds: sortedForTable.map((r) => r.id),
           filter,
         };
         navigate(pathToPositionDetail(inventoryId, aisleId, resultId), {
@@ -68,10 +102,10 @@ export default function AislePositionsPage() {
         });
       }
     },
-    [navigate, inventoryId, aisleId, filteredResults, filter]
+    [navigate, inventoryId, aisleId, sortedForTable, filter]
   );
 
-  const handleClearFilter = useCallback(() => setFilter('all'), []);
+  const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
 
   const errorMessage =
     isError && error
@@ -91,117 +125,126 @@ export default function AislePositionsPage() {
     );
   }
 
+  const breadcrumbs = [
+    { label: 'Inventories', to: '/inventories' as const },
+    ...(inventory
+      ? [{ label: inventory.name, to: `/inventories/${inventoryId}` as const }]
+      : []),
+    { label: 'Aisle results' },
+  ];
+
   return (
     <>
-      <ResultsOverviewHeader
-        title="Results"
-        context={`Aisle ${aisleId}`}
-        onBack={handleBack}
-        backLabel="Back to inventory"
+      <PageHeader
+        breadcrumbs={breadcrumbs}
+        title={aisle?.code ?? 'Aisle'}
+        subtitle={inventory?.name ?? (inventoryQuery.isLoading ? 'Loading…' : '—')}
+        actions={
+          <Button size="small" variant="outlined" onClick={() => refetch()} disabled={isLoading}>
+            Refresh
+          </Button>
+        }
       />
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-          Consolidation (optional)
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          Run merge as a post-process artifact. This does not overwrite authoritative quantity.
-        </Typography>
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={() => runMerge.mutate(aisleId)}
-          disabled={runMerge.isPending}
-        >
-          {runMerge.isPending ? 'Running merge…' : 'Run Merge'}
-        </Button>
-        {runMerge.isSuccess && (
-          <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-            Merge recompute ({runMerge.data.operation_mode}): raw={runMerge.data.raw_count}, normalized=
-            {runMerge.data.normalized_count}, final={runMerge.data.final_count}, authoritative updates=
-            {runMerge.data.authoritative_quantity_updated ? 'yes' : 'no'}, compatibility updates=
-            {runMerge.data.product_records_updated}
-          </Typography>
-        )}
-        {mergeResultsQuery.isError ? (
-          <Typography variant="caption" color="error" display="block" sx={{ mt: 1 }}>
-            Failed to load merge groups.
-          </Typography>
-        ) : null}
-        {mergeResultsQuery.data?.results?.length ? (
-          <Box sx={{ mt: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1 }}>
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
-              Merge groups ({mergeResultsQuery.data.results.length})
-            </Typography>
-            {mergeResultsQuery.data.results.length > mergePreviewLimit ? (
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Showing first {mergePreviewLimit} of {mergeResultsQuery.data.results.length} merge groups
-              </Typography>
-            ) : null}
-            {mergeResultsQuery.data.results.slice(0, mergePreviewLimit).map((r) => (
-              <Box
-                key={r.id}
-                sx={{
-                  py: 0.5,
-                  borderTop: '1px solid',
-                  borderColor: 'divider',
-                }}
-              >
-                <Typography variant="caption" display="block">
-                  SKU: {r.sku ?? '—'} | Position: {r.position_id ?? '—'} | Merged qty: {r.merged_quantity}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" display="block">
-                  Review: {r.review_required ? 'required' : 'not required'} | Normalized labels:{' '}
-                  {r.normalized_label_ids.length}
-                  {r.explanation_summary ? ` | ${r.explanation_summary}` : ''}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-        ) : (
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-            No merge groups computed yet.
-          </Typography>
-        )}
-      </Paper>
 
-      {errorMessage && (
-        <ResultsErrorState message={errorMessage} onRetry={() => refetch()} />
-      )}
+      {errorMessage ? <ResultsErrorState message={errorMessage} onRetry={() => refetch()} /> : null}
 
-      {!errorMessage && isLoading && (
-        <ResultsLoadingState message="Loading results…" />
-      )}
+      {!errorMessage && isLoading ? <ResultsLoadingState message="Loading results…" /> : null}
 
-      {!errorMessage && !isLoading && results.length === 0 && (
-        <ResultsEmptyState message="No results yet. Run processing on this aisle to see results." />
-      )}
-
-      {!errorMessage && !isLoading && results.length > 0 && (
+      {!errorMessage && !isLoading && results.length === 0 ? (
         <>
           <ResultsKpiCards kpi={kpi} />
-          <ResultsQuickFilters
-            value={filter}
-            onChange={setFilter}
-            counts={{
-              all: kpi.total,
-              needs_review: kpi.needsReview,
-              valid_traceability: kpi.validTraceability,
-              non_valid_traceability: kpi.nonValidTraceability,
-              qty_zero: kpi.qtyZero,
-              low_confidence: kpi.lowConfidence,
-            }}
-          />
-          {filteredResults.length === 0 ? (
-            <ResultsFilteredEmptyState onClearFilter={handleClearFilter} />
-          ) : (
-            <ResultsTable
-              results={filteredResults}
-              onOpenDetail={handleOpenDetail}
-              showUpdatedAt
+          <FilterToolbar
+            onReset={handleResetFilters}
+            resetDisabled={filter === 'all' && !skuSearch.trim()}
+          >
+            <TextField
+              size="small"
+              label="Search SKU"
+              placeholder="Filter by SKU"
+              value={skuSearch}
+              onChange={(e) => {
+                setSkuSearch(e.target.value);
+                setPage(1);
+              }}
+              sx={{ minWidth: 200 }}
             />
+            <ResultsQuickFilters
+              value={filter}
+              onChange={(v) => {
+                setFilter(v);
+                setPage(1);
+              }}
+              counts={{
+                all: kpi.total,
+                needs_review: kpi.needsReview,
+                low_confidence: kpi.lowConfidence,
+                qty_zero: kpi.qtyZero,
+                invalid_traceability: kpi.invalidTraceability,
+                missing_evidence: missingEvidenceCount,
+              }}
+            />
+          </FilterToolbar>
+          <ResultsEmptyState message="No results yet. Run processing on this aisle to see results." />
+        </>
+      ) : null}
+
+      {!errorMessage && !isLoading && results.length > 0 ? (
+        <>
+          <ResultsKpiCards kpi={kpi} />
+
+          <FilterToolbar
+            onReset={handleResetFilters}
+            resetDisabled={filter === 'all' && !skuSearch.trim()}
+          >
+            <TextField
+              size="small"
+              label="Search SKU"
+              placeholder="Filter by SKU"
+              value={skuSearch}
+              onChange={(e) => {
+                setSkuSearch(e.target.value);
+                setPage(1);
+              }}
+              sx={{ minWidth: 200 }}
+            />
+            <ResultsQuickFilters
+              value={filter}
+              onChange={(v) => {
+                setFilter(v);
+                setPage(1);
+              }}
+              counts={{
+                all: kpi.total,
+                needs_review: kpi.needsReview,
+                low_confidence: kpi.lowConfidence,
+                qty_zero: kpi.qtyZero,
+                invalid_traceability: kpi.invalidTraceability,
+                missing_evidence: missingEvidenceCount,
+              }}
+            />
+          </FilterToolbar>
+
+          {sortedForTable.length === 0 ? (
+            <ResultsFilteredEmptyState onClearFilter={handleClearFilterOnly} />
+          ) : (
+            <SectionCard title="Results">
+              <Box sx={{ overflow: 'auto' }}>
+                <ResultsTable
+                  results={tableRows}
+                  onOpenDetail={handleOpenDetail}
+                  pagination={{
+                    page,
+                    pageSize,
+                    totalItems: sortedForTable.length,
+                    onPageChange: setPage,
+                    onPageSizeChange: setPageSize,
+                  }}
+                />
+              </Box>
+            </SectionCard>
           )}
         </>
-      )}
+      ) : null}
     </>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * Epic 3 — Tests for results KPI and filter selectors.
+ * Epic 3 / Sprint 4.1 — Results KPI and filter selectors.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -29,8 +29,7 @@ describe('computeResultsKpi', () => {
     const kpi = computeResultsKpi([]);
     expect(kpi.total).toBe(0);
     expect(kpi.needsReview).toBe(0);
-    expect(kpi.validTraceability).toBe(0);
-    expect(kpi.nonValidTraceability).toBe(0);
+    expect(kpi.invalidTraceability).toBe(0);
     expect(kpi.qtyZero).toBe(0);
     expect(kpi.withEvidence).toBe(0);
     expect(kpi.lowConfidence).toBe(0);
@@ -55,15 +54,14 @@ describe('computeResultsKpi', () => {
     expect(kpi.needsReview).toBe(1);
   });
 
-  it('counts valid vs non-valid traceability', () => {
+  it('counts invalidTraceability as INVALID only', () => {
     const results = [
       makeResult({ traceabilityStatus: 'VALID' }),
+      makeResult({ traceabilityStatus: 'INVALID' }),
       makeResult({ traceabilityStatus: 'MISSING' }),
-      makeResult({ traceabilityStatus: 'UNVALIDATED' }),
     ];
     const kpi = computeResultsKpi(results);
-    expect(kpi.validTraceability).toBe(1);
-    expect(kpi.nonValidTraceability).toBe(2);
+    expect(kpi.invalidTraceability).toBe(1);
   });
 
   it('counts qtyZero when resolved display qty (resolvedQty ?? detectedQty) is exactly 0', () => {
@@ -90,28 +88,49 @@ describe('computeResultsKpi', () => {
 
 describe('filterResults', () => {
   const results: ResultSummary[] = [
-    makeResult({ id: '1', needsReview: true, traceabilityStatus: 'MISSING', detectedQty: 0, confidence: 0.3 }),
-    makeResult({ id: '2', needsReview: false, traceabilityStatus: 'VALID', detectedQty: 2, confidence: 0.95 }),
+    makeResult({
+      id: '1',
+      needsReview: true,
+      traceabilityStatus: 'MISSING',
+      detectedQty: 0,
+      confidence: 0.3,
+      hasEvidence: false,
+    }),
+    makeResult({
+      id: '2',
+      needsReview: false,
+      traceabilityStatus: 'VALID',
+      detectedQty: 2,
+      confidence: 0.95,
+      hasEvidence: true,
+    }),
+    makeResult({
+      id: '3',
+      needsReview: true,
+      traceabilityStatus: 'INVALID',
+      detectedQty: 1,
+      confidence: 0.9,
+      hasEvidence: true,
+    }),
   ];
 
   it('all returns full list', () => {
-    expect(filterResults(results, 'all')).toHaveLength(2);
+    expect(filterResults(results, 'all')).toHaveLength(3);
   });
 
   it('needs_review filters by needsReview', () => {
     const out = filterResults(results, 'needs_review');
-    expect(out).toHaveLength(1);
-    expect(out[0].id).toBe('1');
+    expect(out.map((r) => r.id).sort()).toEqual(['1', '3']);
   });
 
-  it('valid_traceability filters by VALID', () => {
-    const out = filterResults(results, 'valid_traceability');
+  it('invalid_traceability filters by INVALID', () => {
+    const out = filterResults(results, 'invalid_traceability');
     expect(out).toHaveLength(1);
-    expect(out[0].id).toBe('2');
+    expect(out[0].id).toBe('3');
   });
 
-  it('non_valid_traceability includes MISSING, INVALID, UNVALIDATED', () => {
-    const out = filterResults(results, 'non_valid_traceability');
+  it('missing_evidence filters by !hasEvidence', () => {
+    const out = filterResults(results, 'missing_evidence');
     expect(out).toHaveLength(1);
     expect(out[0].id).toBe('1');
   });
@@ -126,5 +145,19 @@ describe('filterResults', () => {
     const out = filterResults(results, 'low_confidence');
     expect(out).toHaveLength(1);
     expect(out[0].id).toBe('1');
+  });
+
+  it('exhaustive filter kind', () => {
+    const kinds: ResultsFilterKind[] = [
+      'all',
+      'needs_review',
+      'low_confidence',
+      'qty_zero',
+      'invalid_traceability',
+      'missing_evidence',
+    ];
+    for (const k of kinds) {
+      expect(Array.isArray(filterResults(results, k))).toBe(true);
+    }
   });
 });
