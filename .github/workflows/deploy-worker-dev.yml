@@ -20,11 +20,51 @@ env:
   DB_SCHEMA_SERVICE_NAME: inventory-api
 
 jobs:
-  schema-validate:
+  db-config:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
+    env:
+      SQLSERVER_ENABLED: "true"
+      SQLSERVER_CONNECTION_STRING: ${{ secrets.SQLSERVER_CONNECTION_STRING }}
+      SQLSERVER_SERVER: ${{ secrets.SQLSERVER_SERVER }}
+      SQLSERVER_DATABASE: ${{ secrets.SQLSERVER_DATABASE }}
+      SQLSERVER_UID: ${{ secrets.SQLSERVER_UID }}
+      SQLSERVER_PWD: ${{ secrets.SQLSERVER_PWD }}
+      SQLSERVER_DRIVER: ${{ vars.SQLSERVER_DRIVER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          pip install -e .
+
+      - name: SQL Server config preflight (no secrets logged)
+        run: |
+          dinamic-db-migrate config-check
+
+  schema-validate:
+    runs-on: ubuntu-latest
+    needs: db-config
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      SQLSERVER_ENABLED: "true"
+      SQLSERVER_CONNECTION_STRING: ${{ secrets.SQLSERVER_CONNECTION_STRING }}
+      SQLSERVER_SERVER: ${{ secrets.SQLSERVER_SERVER }}
+      SQLSERVER_DATABASE: ${{ secrets.SQLSERVER_DATABASE }}
+      SQLSERVER_UID: ${{ secrets.SQLSERVER_UID }}
+      SQLSERVER_PWD: ${{ secrets.SQLSERVER_PWD }}
+      SQLSERVER_DRIVER: ${{ vars.SQLSERVER_DRIVER }}
+      DB_SCHEMA_SERVICE_NAME: ${{ env.DB_SCHEMA_SERVICE_NAME }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,10 +79,6 @@ jobs:
           pip install -e .
 
       - name: Validate schema compatibility before worker rollout
-        env:
-          SQLSERVER_ENABLED: "true"
-          SQLSERVER_CONNECTION_STRING: ${{ secrets.SQLSERVER_CONNECTION_STRING }}
-          DB_SCHEMA_SERVICE_NAME: ${{ env.DB_SCHEMA_SERVICE_NAME }}
         run: |
           dinamic-db-migrate validate
 
