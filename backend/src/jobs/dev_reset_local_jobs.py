@@ -40,12 +40,12 @@ def _iter_local_non_terminal_job_dirs(output_dir: Path) -> Iterable[str]:
 
 def _reset_sql_jobs(apply: bool) -> tuple[int, list[str]]:
     settings = load_settings()
-    if not settings.sqlserver_enabled or not (settings.sqlserver_connection_string or "").strip():
+    if not settings.sqlserver_enabled or not settings.sqlserver_effective_connection_string:
         return 0, []
     from src.database.sqlserver import SqlServerClient
 
     try:
-        client = SqlServerClient(settings.sqlserver_connection_string)
+        client = SqlServerClient(settings.require_sqlserver_connection_string())
         ids: list[str] = []
         with client.cursor() as cur:
             cur.execute(

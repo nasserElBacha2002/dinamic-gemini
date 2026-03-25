@@ -27,7 +27,7 @@ Only job_id is enqueued to the legacy in-memory queue (local/dev compatibility).
         settings = load_settings()
         if bool(
             getattr(settings, "sqlserver_enabled", False)
-            and (getattr(settings, "sqlserver_connection_string", "") or "").strip()
+            and settings.sqlserver_effective_connection_string
         ):
             # In SQL mode, standalone/embedded workers claim from inventory_jobs.
             # Keep enqueue() as a no-op to avoid process-local queue coupling.

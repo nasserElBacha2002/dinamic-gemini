@@ -7,7 +7,7 @@ con valores por defecto sensatos.
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
@@ -87,7 +87,7 @@ def _get_available_sqlserver_driver() -> str:
         import pyodbc
         for name in pyodbc.drivers():
             if "SQL Server" in name:
-                _sqlserver_driver_cache = name
+                _sqlserver_driver_cache = name.strip()
                 return _sqlserver_driver_cache
     except Exception:
         pass
@@ -95,21 +95,65 @@ def _get_available_sqlserver_driver() -> str:
     return _sqlserver_driver_cache
 
 
-def _build_sqlserver_connection_string() -> str:
-    """Connection string from env. Prefer SQLSERVER_CONNECTION_STRING; else build from SQLSERVER_SERVER, DATABASE, UID, PWD (credentials only in env)."""
+class SqlServerConfigurationError(ValueError):
+    """Raised when SQL Server env is incomplete for building a connection string."""
+
+    def __init__(self, message: str, missing_env_vars: Tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.missing_env_vars = missing_env_vars
+
+
+def resolve_sqlserver_effective_connection_string() -> Tuple[str, Tuple[str, ...]]:
+    """Build the ODBC connection string from env (single canonical resolver).
+
+    Precedence:
+      1. ``SQLSERVER_CONNECTION_STRING`` if non-empty after strip.
+      2. Built from ``SQLSERVER_SERVER``, ``SQLSERVER_DATABASE``, ``SQLSERVER_UID``, ``SQLSERVER_PWD``,
+         plus ``SQLSERVER_DRIVER`` or an auto-detected ODBC driver.
+
+    Returns:
+        (connection_string, missing_env_var_names). ``missing_env_var_names`` is non-empty when split
+        config was started (any core variable set) but the set is incomplete, or when driver could not
+        be resolved.
+    """
     raw = (os.getenv("SQLSERVER_CONNECTION_STRING") or "").strip()
     if raw:
-        return raw
+        return raw, ()
+
     server = (os.getenv("SQLSERVER_SERVER") or "").strip()
     database = (os.getenv("SQLSERVER_DATABASE") or "").strip()
     uid = (os.getenv("SQLSERVER_UID") or "").strip()
     pwd = (os.getenv("SQLSERVER_PWD") or "").strip()
     driver = (os.getenv("SQLSERVER_DRIVER") or "").strip()
+
+    core = {
+        "SQLSERVER_SERVER": server,
+        "SQLSERVER_DATABASE": database,
+        "SQLSERVER_UID": uid,
+        "SQLSERVER_PWD": pwd,
+    }
+    values = list(core.values())
+    if not any(values):
+        return "", ()
+    missing = [name for name, val in core.items() if not val]
+    if missing:
+        return "", tuple(missing)
+
     if not driver:
-        driver = _get_available_sqlserver_driver()
-    if server and database and uid and pwd and driver:
-        return f"DRIVER={{{driver}}};SERVER={server};DATABASE={database};UID={uid};PWD={pwd};TrustServerCertificate=yes"
-    return ""
+        driver = _get_available_sqlserver_driver().strip()
+    if not driver:
+        return "", ("SQLSERVER_DRIVER",)
+
+    cs = (
+        f"DRIVER={{{driver}}};SERVER={server};DATABASE={database};UID={uid};PWD={pwd};"
+        "TrustServerCertificate=yes"
+    )
+    return cs, ()
+
+
+def _default_sqlserver_connection_string() -> str:
+    """``Settings.sqlserver_connection_string`` default — effective ODBC string or empty."""
+    return resolve_sqlserver_effective_connection_string()[0]
 
 
 class Settings(BaseModel):
@@ -526,8 +570,12 @@ class Settings(BaseModel):
         description="Use SQL Server as source of truth for jobs, pallet_results, job_events. Default True; set to false to use only filesystem.",
     )
     sqlserver_connection_string: str = Field(
-        default_factory=lambda: _build_sqlserver_connection_string(),
-        description="ODBC connection string; built from SQLSERVER_* env vars (credentials only in env).",
+        default_factory=_default_sqlserver_connection_string,
+        description=(
+            "Effective ODBC connection string: SQLSERVER_CONNECTION_STRING if set, else built from "
+            "SQLSERVER_SERVER, SQLSERVER_DATABASE, SQLSERVER_UID, SQLSERVER_PWD, and SQLSERVER_DRIVER "
+            "(or auto-detected ODBC driver)."
+        ),
     )
     engine_version: str = Field(
         default_factory=lambda: os.getenv("ENGINE_VERSION", "v2.0"),
@@ -616,6 +664,38 @@ class Settings(BaseModel):
         le=1.0,
         description="Mínima confianza final para no descartar producto fantasma (0 a 1).",
     )
+
+    @property
+    def sqlserver_effective_connection_string(self) -> str:
+        """Canonical ODBC connection string (``SQLSERVER_CONNECTION_STRING`` or built from split vars)."""
+        return (self.sqlserver_connection_string or "").strip()
+
+    def require_sqlserver_connection_string(self) -> str:
+        """Return a non-empty ODBC connection string or raise :class:`SqlServerConfigurationError`."""
+        cs, missing = resolve_sqlserver_effective_connection_string()
+        if cs.strip():
+            return cs.strip()
+        if missing:
+            odbc_hint = (
+                " Set SQLSERVER_DRIVER (e.g. ODBC Driver 18 for SQL Server) or install "
+                "Microsoft ODBC Driver for SQL Server so pyodbc can resolve a driver."
+                if "SQLSERVER_DRIVER" in missing
+                else ""
+            )
+            raise SqlServerConfigurationError(
+                "Incomplete SQL Server configuration; missing or empty environment variables: "
+                + ", ".join(missing)
+                + "."
+                + odbc_hint
+                + " Alternatively set SQLSERVER_CONNECTION_STRING.",
+                missing_env_vars=missing,
+            )
+        raise SqlServerConfigurationError(
+            "SQL Server connection not configured. Set SQLSERVER_CONNECTION_STRING or "
+            "all of SQLSERVER_SERVER, SQLSERVER_DATABASE, SQLSERVER_UID, SQLSERVER_PWD "
+            "(and SQLSERVER_DRIVER if no ODBC driver is auto-detected).",
+            missing_env_vars=(),
+        )
 
     @field_validator("max_frames_to_send")
     @classmethod

@@ -53,10 +53,7 @@ def _v3_allow_in_memory_fallback() -> bool:
 def _v3_db_enabled() -> bool:
     from src.config import load_settings
     s = load_settings()
-    return bool(
-        getattr(s, "sqlserver_enabled", False)
-        and (getattr(s, "sqlserver_connection_string", "") or "").strip()
-    )
+    return bool(getattr(s, "sqlserver_enabled", False) and s.sqlserver_effective_connection_string)
 
 
 def _get_v3_sql_client():
@@ -65,7 +62,7 @@ def _get_v3_sql_client():
         return _v3_sql_client
     from src.config import load_settings
     from src.database.sqlserver import SqlServerClient
-    client = SqlServerClient(load_settings().sqlserver_connection_string)
+    client = SqlServerClient(load_settings().require_sqlserver_connection_string())
     with client.cursor() as cur:
         cur.execute("SELECT 1")
     _v3_sql_client = client
