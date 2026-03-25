@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from typing_extensions import TypedDict
 
+from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
 
@@ -83,14 +84,6 @@ class InventoryListItem:
     aisles_count: int
     pending_review_count: int
     last_activity_at: Optional[datetime]
-
-
-@dataclass(frozen=True)
-class AisleAssetRollup:
-    """Per-aisle upload summary for GET /inventories/{id}/aisles (batch, no N+1)."""
-
-    count: int
-    last_uploaded_at: Optional[datetime]
 
 
 @dataclass

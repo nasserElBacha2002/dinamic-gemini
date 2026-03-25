@@ -9,7 +9,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Sequence
 
-from src.application.ports.contracts import AisleAssetRollup, PositionListQuery
+from src.application.ports.contracts import PositionListQuery
+from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence

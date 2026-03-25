@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Sequence
 
-from src.application.ports.contracts import AisleAssetRollup
+from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.application.ports.repositories import SourceAssetRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.assets.entities import SourceAsset, SourceAssetType

@@ -18,6 +18,34 @@ from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 logger = logging.getLogger(__name__)
 
 
+def _mark_v3_job_failed(job_id: str, error_message: str) -> None:
+    """Persist FAILED on the v3 job row when setup/executor fails (legacy store will not have this id)."""
+    try:
+        from dataclasses import replace
+        from datetime import datetime, timezone
+
+        from src.domain.jobs.entities import JobStatus as V3JobStatus
+        from src.runtime.v3_deps import get_job_repo
+
+        repo = get_job_repo()
+        job = repo.get_by_id(job_id)
+        if job is None:
+            logger.debug("v3 mark failed skipped: job_id=%s not in v3 JobRepository", job_id)
+            return
+        msg = (error_message or "v3 worker error")[:8000]
+        repo.save(
+            replace(
+                job,
+                status=V3JobStatus.FAILED,
+                error_message=msg,
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+        logger.warning("v3 job_id=%s marked FAILED (worker setup/executor error)", job_id)
+    except Exception:
+        logger.warning("could not mark v3 job_id=%s as FAILED", job_id, exc_info=True)
+
+
 def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
     """If job_id is a v3 process_aisle job, run it and return True. Otherwise return False."""
     try:
@@ -58,7 +86,8 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
         )
         return handled
     except Exception as e:
-        logger.warning("v3 process_aisle attempt failed (will try legacy): %s", e)
+        logger.exception("v3 process_aisle attempt failed (will try legacy): job_id=%s", job_id)
+        _mark_v3_job_failed(job_id, str(e))
         return False
 
 
@@ -136,7 +165,10 @@ def run_job(base_path: Path, job_id: str) -> None:
     logger.info("worker run_job fallback to legacy flow: job_id=%s", job_id)
     record = get_job(base_path, job_id)
     if record is None:
-        logger.warning("Job %s not found", job_id)
+        logger.warning(
+            "Job %s not found in legacy store (expected if this id is v3-only and v3 dispatch already failed)",
+            job_id,
+        )
         return
     if record.status != JobStatus.QUEUED:
         logger.warning("Job %s not queued (status=%s), skip", job_id, record.status)
