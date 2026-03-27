@@ -1,3 +1,6 @@
+import '@testing-library/jest-dom/vitest';
+import React from 'react';
+import type { ComponentProps } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CreateInventoryDialog from '../src/components/CreateInventoryDialog';
@@ -7,12 +10,11 @@ vi.mock('../src/api/client', async () => {
   const actual = await vi.importActual<typeof import('../src/api/client')>('../src/api/client');
   return {
     ...actual,
-    uploadInventoryVisualReferences: (inventoryId: string, files: File[]) =>
-      mockUpload(inventoryId, files),
+    uploadInventoryVisualReferences: (inventoryId: string, files: File[]) => mockUpload(inventoryId, files),
   };
 });
 
-function renderDialog(props?: Partial<React.ComponentProps<typeof CreateInventoryDialog>>) {
+function renderDialog(props?: Partial<ComponentProps<typeof CreateInventoryDialog>>) {
   const onClose = vi.fn();
   const onSuccess = vi.fn();
   const onError = vi.fn();
@@ -30,7 +32,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof CreateInventor
       onError={onError}
       createInventoryFn={createInventoryFn}
       {...props}
-    />
+    />,
   );
   return { onClose, onSuccess, onError, createInventoryFn };
 }
@@ -52,7 +54,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
 
     expect(screen.getByText(/visual reference images/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /skip this step/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create without references/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     expect(mockUpload).not.toHaveBeenCalled();
@@ -93,6 +95,9 @@ describe('CreateInventoryDialog (visual references step)', () => {
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
+    expect(
+      screen.getByRole('button', { name: /create inventory and upload references/i }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
@@ -117,7 +122,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(screen.getByText(/inventory created, but visual reference upload failed/i)).toBeInTheDocument()
+      expect(screen.getByText(/inventory created, but visual reference upload failed/i)).toBeInTheDocument(),
     );
     // Partial failure should not bubble as a "create failed" page-level error.
     expect(onError).not.toHaveBeenCalledWith(expect.stringMatching(/visual reference upload failed/i));
@@ -138,9 +143,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /retry upload/i })).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /retry upload/i })).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: /retry upload/i }));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(2));
@@ -168,6 +171,35 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-2');
+  });
+
+  it('accepts drag-and-drop into dropzone', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    const dropzone = screen.getByRole('region', { name: /visual reference dropzone/i });
+    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
+    fireEvent.drop(dropzone, { dataTransfer: { files: [f1] } });
+    expect(screen.getByText('a.jpg')).toBeInTheDocument();
+    expect(screen.getByText(/1\/3 selected/i)).toBeInTheDocument();
+  });
+
+  it('Step 2 primary CTA label is context-aware', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    // no selected files → Create inventory
+    expect(screen.getByRole('button', { name: /^create inventory$/i })).toBeInTheDocument();
+
+    // select a file → Create inventory and upload references
+    const input = screen.getByLabelText(/select visual reference images/i) as HTMLInputElement;
+    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
+    fireEvent.change(input, { target: { files: [f1] } });
+    expect(
+      screen.getByRole('button', { name: /create inventory and upload references/i }),
+    ).toBeInTheDocument();
   });
 });
 

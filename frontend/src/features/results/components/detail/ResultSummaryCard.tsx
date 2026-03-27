@@ -7,12 +7,15 @@
 import { Paper, Typography, Box } from '@mui/material';
 import type { ResultDetail } from '../../types';
 import { StatusChip, TraceabilityChip } from '../../../../components/ui';
+import { getCountOriginLabel } from '../../utils/countOriginLabel';
 import { getReviewStatusLabel, getReviewStatusColor } from '../../utils/reviewStatusDisplay';
 import { visibleTraceabilityToApiStatus } from '../../utils/traceabilityDisplay';
 import { formatDate } from '../../../../utils/formatDate';
 
 export interface ResultSummaryCardProps {
   result: ResultDetail;
+  /** Tighter layout for the canonical review drawer (single operational column). */
+  embedInDrawer?: boolean;
 }
 
 function displayStr(value: string | null | undefined): string {
@@ -27,21 +30,7 @@ function toNumeric(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Count origin label for stable public qtySource contract. */
-function getCountOriginLabel(result: ResultDetail): string {
-  const src = result.qtySource ?? 'detected';
-  if (src === 'inferred' && result.qtyInferenceReason) {
-    return `Inferred (${result.qtyInferenceReason})`;
-  }
-  if (src === 'inferred') return 'Inferred';
-  if (src === 'merge_inferred') return 'Merge inferred';
-  if (src === 'manual_review') return 'Manual review';
-  if (src === 'label_explicit') return 'Label explicit';
-  if (src === 'unknown') return 'Unknown';
-  return 'Detected';
-}
-
-export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
+export default function ResultSummaryCard({ result, embedInDrawer }: ResultSummaryCardProps) {
   const sku = displayStr(result.sku);
 
   const correctedQtyNum = toNumeric(result.correctedQty);
@@ -57,11 +46,20 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
       : '—';
 
   return (
-    <Paper sx={{ p: 2, mb: 2 }}>
-      <Typography variant="subtitle2" color="text.secondary">
+    <Paper sx={{ p: embedInDrawer ? 1.5 : 2, mb: embedInDrawer ? 1.5 : 2 }} elevation={embedInDrawer ? 0 : undefined}>
+      {!embedInDrawer ? (
+        <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
+          Result summary
+        </Typography>
+      ) : (
+        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5, display: 'block', mb: 1 }}>
+          Summary
+        </Typography>
+      )}
+      <Typography variant="caption" color="text.secondary" display="block">
         SKU
       </Typography>
-      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+      <Typography variant={embedInDrawer ? 'subtitle1' : 'h6'} sx={{ fontWeight: 600 }}>
         {sku}
       </Typography>
 

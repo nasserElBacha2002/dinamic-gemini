@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional, Sequence
 
+from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.application.ports.repositories import SourceAssetRepository
 from src.domain.assets.entities import SourceAsset
 
@@ -25,3 +26,19 @@ class MemorySourceAssetRepository(SourceAssetRepository):
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         assets = [a for a in self._store.values() if a.aisle_id == aisle_id]
         return sorted(assets, key=lambda a: a.uploaded_at)
+
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+        if not aisle_ids:
+            return {}
+        wanted = set(aisle_ids)
+        by_aisle: Dict[str, list[SourceAsset]] = {aid: [] for aid in wanted}
+        for a in self._store.values():
+            if a.aisle_id in wanted:
+                by_aisle.setdefault(a.aisle_id, []).append(a)
+        out: Dict[str, AisleAssetRollup] = {}
+        for aid, assets in by_aisle.items():
+            if not assets:
+                continue
+            last = max(a.uploaded_at for a in assets)
+            out[aid] = AisleAssetRollup(count=len(assets), last_uploaded_at=last)
+        return out

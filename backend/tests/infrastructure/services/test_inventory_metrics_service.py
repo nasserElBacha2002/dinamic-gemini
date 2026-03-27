@@ -57,6 +57,8 @@ class StubPositionRepo(PositionRepository):
         sku_filter: Optional[str] = None,
         page: int = 1,
         page_size: int = 25,
+        sort_by: str = "created_at",
+        sort_dir: str = "asc",
     ) -> Sequence[Position]:
         return []
 

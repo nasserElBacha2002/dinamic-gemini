@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -6,26 +6,20 @@ import {
   Card,
   CardContent,
   CardMedia,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   CircularProgress,
   IconButton,
   Stack,
-  Step,
-  StepLabel,
-  Stepper,
   TextField,
   Typography,
 } from '@mui/material';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { createInventory, uploadInventoryVisualReferences } from '../api/client';
 import type { CreateInventoryRequest, Inventory } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
+import WizardModal from './ui/WizardModal';
 
 type PendingVisualReferenceFile = { file: File; previewUrl: string };
-
 type UploadState = 'idle' | 'uploading' | 'failed';
 
 export interface CreateInventoryDialogProps {
@@ -49,7 +43,7 @@ export default function CreateInventoryDialog({
   const maxFiles = 3;
   const allowedTypes = useMemo(
     () => new Set(['image/jpeg', 'image/png', 'image/webp', 'image/jpg']),
-    []
+    [],
   );
 
   const [activeStep, setActiveStep] = useState<0 | 1>(0);
@@ -61,6 +55,9 @@ export default function CreateInventoryDialog({
   const [createdInventory, setCreatedInventory] = useState<Inventory | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [uploadState, setUploadState] = useState<UploadState>('idle');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const dragDepthRef = useRef(0);
+  const dropzoneHelpId = useId();
 
   const pendingFilesRef = useRef<PendingVisualReferenceFile[]>([]);
   useEffect(() => {
@@ -96,10 +93,9 @@ export default function CreateInventoryDialog({
   };
 
   const handleClose = () => {
-    if (!submitting) {
-      reset();
-      onClose();
-    }
+    if (submitting) return;
+    reset();
+    onClose();
   };
 
   const validateStep1 = (): boolean => {
@@ -141,6 +137,12 @@ export default function CreateInventoryDialog({
     setUploadState('idle');
   };
 
+  const handleDropFiles = (files: FileList | null) => {
+    dragDepthRef.current = 0;
+    setIsDraggingOver(false);
+    handleAddFiles(files);
+  };
+
   const handleRemoveFile = (idx: number) => {
     setPendingFiles((prev) => {
       const item = prev[idx];
@@ -158,7 +160,7 @@ export default function CreateInventoryDialog({
   const createInventoryOnce = async (): Promise<Inventory> => {
     if (createdInventory) return createdInventory;
     const trimmed = (name || '').trim();
-    const created = await doCreate({ name: trimmed });
+    const created = await doCreate({ name: trimmed } as CreateInventoryRequest);
     setCreatedInventory(created);
     return created;
   };
@@ -222,7 +224,7 @@ export default function CreateInventoryDialog({
         setUploadError(
           typeof msg === 'string'
             ? `Inventory created, but visual reference upload failed: ${msg}`
-            : 'Inventory created, but visual reference upload failed.'
+            : 'Inventory created, but visual reference upload failed.',
         );
       }
     } catch (e) {
@@ -251,7 +253,7 @@ export default function CreateInventoryDialog({
       setUploadError(
         typeof msg === 'string'
           ? `Inventory created, but visual reference upload failed: ${msg}`
-          : 'Inventory created, but visual reference upload failed.'
+          : 'Inventory created, but visual reference upload failed.',
       );
     } finally {
       setSubmitting(false);
@@ -275,125 +277,14 @@ export default function CreateInventoryDialog({
   }, [createdInventory, pendingFiles.length, uploadState]);
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Create inventory</DialogTitle>
-      <DialogContent>
-        <Stepper activeStep={activeStep} sx={{ mb: 2 }}>
-          <Step>
-            <StepLabel>Inventory details</StepLabel>
-          </Step>
-          <Step>
-            <StepLabel>Visual references (optional)</StepLabel>
-          </Step>
-        </Stepper>
-
-        {activeStep === 0 && (
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Inventory name"
-            fullWidth
-            variant="outlined"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            error={Boolean(validationError)}
-            helperText={validationError}
-            disabled={submitting || createdInventory != null}
-            inputProps={{ maxLength: 255 }}
-          />
-        )}
-
-        {activeStep === 1 && (
-          <Box>
-            <Typography variant="h6" sx={{ mb: 1 }}>
-              Visual reference images (optional)
-            </Typography>
-            <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-              These images help the system better understand what valid labels, pallets, or expected visual standards look like for this inventory.
-            </Typography>
-
-            {filesError && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {filesError}
-              </Alert>
-            )}
-            {uploadError && (
-              <Alert severity="warning" sx={{ mb: 2 }}>
-                {uploadError}
-              </Alert>
-            )}
-
-            <Button
-              component="label"
-              variant="outlined"
-              disabled={submitting || pendingFiles.length >= maxFiles}
-              sx={{ mb: 2 }}
-            >
-              Select images
-              <input
-                hidden
-                type="file"
-                multiple
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(e) => {
-                  handleAddFiles(e.target.files);
-                  e.currentTarget.value = '';
-                }}
-                aria-label="Select visual reference images"
-              />
-            </Button>
-
-            <Typography variant="caption" display="block" sx={{ mb: 1, color: 'text.secondary' }}>
-              Up to {maxFiles} images (JPG/JPEG, PNG, WEBP).
-            </Typography>
-
-            {pendingFiles.length > 0 && (
-              <Stack spacing={1}>
-                {pendingFiles.map((p, idx) => (
-                  <Card key={`${p.file.name}-${idx}`} variant="outlined">
-                    <Box sx={{ display: 'flex', alignItems: 'stretch' }}>
-                      <CardMedia
-                        component="img"
-                        image={p.previewUrl}
-                        alt={p.file.name}
-                        sx={{ width: 96, height: 96, objectFit: 'cover' }}
-                      />
-                      <CardContent sx={{ flex: 1, py: 1.5 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Box sx={{ pr: 1, minWidth: 0 }}>
-                            <Typography variant="subtitle2" noWrap>
-                              {p.file.name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {(p.file.size / 1024).toFixed(1)} KB
-                            </Typography>
-                          </Box>
-                          <IconButton
-                            aria-label={`Remove ${p.file.name}`}
-                            onClick={() => handleRemoveFile(idx)}
-                            disabled={submitting}
-                          >
-                            ×
-                          </IconButton>
-                        </Box>
-                      </CardContent>
-                    </Box>
-                  </Card>
-                ))}
-              </Stack>
-            )}
-
-            {createdInventory && uploadError && (
-              <Alert severity="info" sx={{ mt: 2 }}>
-                Inventory <strong>{createdInventory.name}</strong> was created. You can continue now and retry uploading references later.
-              </Alert>
-            )}
-          </Box>
-        )}
-      </DialogContent>
-
-      <DialogActions>
-        {activeStep === 0 ? (
+    <WizardModal
+      open={open}
+      onClose={handleClose}
+      title="Create inventory"
+      stepLabels={['Inventory details', 'Visual references (optional)']}
+      activeStep={activeStep}
+      actions={
+        activeStep === 0 ? (
           <>
             <Button onClick={handleClose} disabled={submitting}>
               Cancel
@@ -404,6 +295,9 @@ export default function CreateInventoryDialog({
           </>
         ) : (
           <>
+            <Button onClick={handleClose} disabled={submitting}>
+              Cancel
+            </Button>
             <Button onClick={() => setActiveStep(0)} disabled={submitting || createdInventory != null}>
               Back
             </Button>
@@ -413,7 +307,7 @@ export default function CreateInventoryDialog({
               </Button>
             ) : (
               <Button onClick={handleCreateOnly} disabled={submitting}>
-                Skip this step
+                Create without references
               </Button>
             )}
             <Button
@@ -430,8 +324,163 @@ export default function CreateInventoryDialog({
               {submitting ? <CircularProgress size={24} /> : primaryCtaLabel}
             </Button>
           </>
-        )}
-      </DialogActions>
-    </Dialog>
+        )
+      }
+      maxWidth="sm"
+      fullWidth
+    >
+      {activeStep === 0 ? (
+        <TextField
+          autoFocus
+          margin="dense"
+          label="Inventory name"
+          fullWidth
+          variant="outlined"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          error={Boolean(validationError)}
+          helperText={validationError}
+          disabled={submitting || createdInventory != null}
+          inputProps={{ maxLength: 255 }}
+        />
+      ) : (
+        <Box>
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            Visual reference images (optional)
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+            These images help the system better understand what valid labels, pallets, or expected visual standards look like for this inventory.
+          </Typography>
+
+          {filesError ? (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {filesError}
+            </Alert>
+          ) : null}
+          {uploadError ? (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {uploadError}
+            </Alert>
+          ) : null}
+
+          <Box
+            onDragEnter={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              dragDepthRef.current += 1;
+              setIsDraggingOver(true);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // Avoid flicker when moving across children inside the dropzone.
+              const nextTarget = e.relatedTarget as Node | null;
+              if (nextTarget && e.currentTarget.contains(nextTarget)) return;
+              dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+              if (dragDepthRef.current === 0) setIsDraggingOver(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleDropFiles(e.dataTransfer?.files ?? null);
+            }}
+            role="region"
+            aria-label="Visual reference dropzone"
+            aria-describedby={dropzoneHelpId}
+            sx={{
+              mb: 2,
+              p: 2,
+              borderRadius: 1,
+              border: '1px dashed',
+              borderColor: isDraggingOver ? 'primary.main' : 'divider',
+              bgcolor: isDraggingOver ? 'action.hover' : 'transparent',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1.5,
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Drag & drop images here
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block">
+                {pendingFiles.length}/{maxFiles} selected
+              </Typography>
+              <Typography id={dropzoneHelpId} variant="caption" color="text.secondary" display="block">
+                JPG/PNG/WEBP • max {maxFiles} • or use “Select images”
+              </Typography>
+            </Box>
+            <Button
+              component="label"
+              variant="outlined"
+              disabled={submitting || pendingFiles.length >= maxFiles}
+              size="small"
+            >
+              Select images
+              <input
+                hidden
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(e) => {
+                  handleAddFiles(e.target.files);
+                  e.currentTarget.value = '';
+                }}
+                aria-label="Select visual reference images"
+              />
+            </Button>
+          </Box>
+
+          <Typography variant="caption" display="block" sx={{ mb: 1, color: 'text.secondary' }}>
+            Up to {maxFiles} images (JPG/JPEG, PNG, WEBP).
+          </Typography>
+
+          {pendingFiles.length > 0 ? (
+            <Stack spacing={1}>
+              {pendingFiles.map((p, idx) => (
+                <Card key={`${p.file.name}-${idx}`} variant="outlined">
+                  <Box sx={{ display: 'flex', alignItems: 'stretch' }}>
+                    <CardMedia
+                      component="img"
+                      image={p.previewUrl}
+                      alt={p.file.name}
+                      sx={{ width: 96, height: 96, objectFit: 'cover' }}
+                    />
+                    <CardContent sx={{ flex: 1, py: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box sx={{ pr: 1, minWidth: 0 }}>
+                          <Typography variant="subtitle2" noWrap>
+                            {p.file.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {(p.file.size / 1024).toFixed(1)} KB
+                          </Typography>
+                        </Box>
+                        <IconButton aria-label={`Remove ${p.file.name}`} onClick={() => handleRemoveFile(idx)} disabled={submitting}>
+                          <CloseRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    </CardContent>
+                  </Box>
+                </Card>
+              ))}
+            </Stack>
+          ) : null}
+
+          {createdInventory && uploadError ? (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Inventory <strong>{createdInventory.name}</strong> was created. You can continue now and retry uploading references later.
+            </Alert>
+          ) : null}
+        </Box>
+      )}
+    </WizardModal>
   );
 }

@@ -1,17 +1,21 @@
-"""v3 inventory CRUD, metrics, and visual references."""
+"""v3 inventory CRUD, metrics, and visual references.
+
+GET / (collection) returns InventoryListItemResponse — screen-ready list rows with aggregates.
+GET /{id} and POST / return InventoryResponse (entity without list aggregates).
+"""
 
 from __future__ import annotations
 
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from src.api.dependencies import (
     get_create_inventory_use_case,
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
-    get_list_inventories_use_case,
+    get_list_inventory_list_items_use_case,
     get_list_inventory_visual_references_use_case,
     get_upload_inventory_visual_references_use_case,
 )
@@ -23,6 +27,8 @@ from src.api.schemas.inventory_schemas import (
     InventoryVisualReferenceResponse,
     UploadInventoryVisualReferencesResponse,
 )
+from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
+from src.application.ports.contracts import InventoryTableQuery
 from src.application.errors import (
     EmptyUploadError,
     InventoryNotFoundError,
@@ -33,14 +39,14 @@ from src.application.errors import (
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
-from src.application.use_cases.list_inventories import ListInventoriesUseCase
+from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.application.use_cases.upload_inventory_visual_references import (
     ListInventoryVisualReferencesUseCase,
     UploadInventoryVisualReferencesUseCase,
     UploadedVisualReferenceFile,
 )
 
-from .shared import inventory_to_response
+from .shared import inventory_list_item_to_response, inventory_to_response
 
 router = APIRouter()
 
@@ -85,13 +91,41 @@ def create_inventory(
     return inventory_to_response(inventory)
 
 
-@router.get("/", response_model=List[InventoryResponse])
+@router.get("/", response_model=PaginatedInventoryListResponse)
 def list_inventories(
-    use_case: ListInventoriesUseCase = Depends(get_list_inventories_use_case),
-) -> List[InventoryResponse]:
-    """List all inventories (v3.0)."""
-    inventories = use_case.execute()
-    return [inventory_to_response(inv) for inv in inventories]
+    use_case: ListInventoryListItemsUseCase = Depends(get_list_inventory_list_items_use_case),
+    search: Optional[str] = Query(None, description="Case-insensitive substring on inventory name."),
+    status: Optional[str] = Query(None, description="Exact inventory status (wire value, e.g. draft)."),
+    sort_by: str = Query(
+        "created_at",
+        description="name | created_at | updated_at | status | last_activity_at | pending_review_count | aisles_count",
+    ),
+    sort_dir: str = Query("desc", description="asc | desc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+) -> PaginatedInventoryListResponse:
+    """Inventories table: aggregates per row with search, filter, sort, and pagination (Sprint 1.4).
+
+    **Contract:** returns a **paginated object** (`items`, `page`, `page_size`, `total_items`,
+    `total_pages`), not a JSON array. This is an intentional breaking change from the pre–1.4 array body.
+    """
+    q = InventoryTableQuery(
+        search=search.strip() if search and search.strip() else None,
+        status=status.strip() if status and str(status).strip() else None,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
+    )
+    rows, total = use_case.execute(q)
+    ps = q.page_size
+    return PaginatedInventoryListResponse(
+        items=[inventory_list_item_to_response(item) for item in rows],
+        page=q.page,
+        page_size=ps,
+        total_items=total,
+        total_pages=compute_total_pages(total, ps),
+    )
 
 
 @router.get("/{inventory_id}", response_model=InventoryResponse)

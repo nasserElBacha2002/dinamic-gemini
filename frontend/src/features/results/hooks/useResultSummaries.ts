@@ -13,6 +13,10 @@ import {
   mapPositionDetailToResultDetail,
 } from '../mappers';
 import type { ResultSummary, ResultDetail } from '../types';
+import type { AislePositionsListQuery } from '../../../api/client';
+
+/** Large page: results overview filters client-side; differs from `DEFAULT_LIST_PAGE_SIZE` until paged API UX ships. */
+const defaultResultsListQuery: AislePositionsListQuery = { page: 1, page_size: 500 };
 
 /**
  * Returns the list of results for an aisle as ResultSummary[].
@@ -21,17 +25,21 @@ import type { ResultSummary, ResultDetail } from '../types';
 export function useResultSummaries(
   inventoryId: string | undefined,
   aisleId: string | undefined,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; listQuery?: AislePositionsListQuery }
 ) {
-  const query = useAislePositions(inventoryId, aisleId, options);
-  const results: ResultSummary[] = useMemo(() => {
-    const positions = query.data?.positions ?? [];
-    return positions.map(mapPositionSummaryToResultSummary);
-  }, [query.data?.positions]);
+  const listQuery = options?.listQuery ?? defaultResultsListQuery;
+  const query = useAislePositions(inventoryId, aisleId, { ...options, listQuery });
+  const rawPositions = query.data?.positions;
+  const results: ResultSummary[] = useMemo(
+    () => (rawPositions ?? []).map(mapPositionSummaryToResultSummary),
+    [rawPositions]
+  );
 
   return {
     ...query,
     results,
+    /** Raw API rows (same order as `results`) for quick review evidence URLs and mutations. */
+    positions: rawPositions ?? [],
   };
 }
 

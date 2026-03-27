@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Sequence, Set, Tuple
 
@@ -18,7 +19,8 @@ from src.utils.validation import validate_relative_path
 from src.api.schemas.aisle_schemas import AisleResponse, AisleJobSummary
 from src.api.schemas.asset_schemas import SourceAssetResponse
 from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary
-from src.api.schemas.inventory_schemas import InventoryResponse
+from src.api.schemas.inventory_schemas import InventoryListItemResponse, InventoryResponse
+from src.application.ports.contracts import InventoryListItem
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
     PositionSummaryResponse,
@@ -275,10 +277,33 @@ def inventory_to_response(inv: Inventory) -> InventoryResponse:
         name=inv.name,
         status=inv.status.value,
         created_at=inv.created_at,
+        updated_at=inv.updated_at,
     )
 
 
-def aisle_to_response(a: Aisle, latest_job: Optional[Job] = None) -> AisleResponse:
+def inventory_list_item_to_response(item: InventoryListItem) -> InventoryListItemResponse:
+    inv = item.inventory
+    return InventoryListItemResponse(
+        id=inv.id,
+        name=inv.name,
+        status=inv.status.value,
+        created_at=inv.created_at,
+        updated_at=inv.updated_at,
+        aisles_count=item.aisles_count,
+        pending_review_count=item.pending_review_count,
+        last_activity_at=item.last_activity_at,
+    )
+
+
+def aisle_to_response(
+    a: Aisle,
+    latest_job: Optional[Job] = None,
+    *,
+    assets_count: int = 0,
+    positions_count: int = 0,
+    pending_review_positions_count: int = 0,
+    last_activity_at: Optional[datetime] = None,
+) -> AisleResponse:
     latest = None
     if latest_job is not None:
         latest = AisleJobSummary(
@@ -298,6 +323,10 @@ def aisle_to_response(a: Aisle, latest_job: Optional[Job] = None) -> AisleRespon
         error_code=a.error_code,
         error_message=a.error_message,
         latest_job=latest,
+        assets_count=assets_count,
+        positions_count=positions_count,
+        pending_review_positions_count=pending_review_positions_count,
+        last_activity_at=last_activity_at,
     )
 
 

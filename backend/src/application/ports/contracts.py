@@ -8,8 +8,13 @@ metrics, queue payloads, and position list query. Reduces reliance on Dict[str, 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from typing_extensions import TypedDict
+
+from src.application.ports.rollup_contracts import AisleAssetRollup
+from src.domain.inventory.entities import Inventory
+from src.domain.positions.entities import Position
 
 
 # --- Analysis (AnalysisProvider.analyze_aisle) ---
@@ -67,12 +72,106 @@ class ProcessAislePayload(TypedDict):
 # --- Position list query (PositionRepository) ---
 
 
+@dataclass(frozen=True)
+class InventoryListItem:
+    """Application row for GET /inventories (list): entity plus counts and ``last_activity_at``.
+
+    ``last_activity_at`` is the maximum of inventory, aisle, and position ``created_at`` /
+    ``updated_at`` — a list **freshness** signal, not a domain “last review completed” timestamp.
+    """
+
+    inventory: Inventory
+    aisles_count: int
+    pending_review_count: int
+    last_activity_at: Optional[datetime]
+
+
+@dataclass
+class InventoryTableQuery:
+    """Query for GET /api/v3/inventories table (search, filter, sort, pagination)."""
+
+    search: Optional[str] = None
+    """Case-insensitive substring on inventory name."""
+    status: Optional[str] = None
+    """Exact wire status match (e.g. draft, in_progress)."""
+    sort_by: str = "created_at"
+    """One of: name, created_at, updated_at, status, last_activity_at, pending_review_count, aisles_count."""
+    sort_dir: str = "desc"
+    """asc | desc"""
+    page: int = 1
+    page_size: int = 25
+
+
+@dataclass
+class AisleTableQuery:
+    """Query for GET .../inventories/{id}/aisles table."""
+
+    search: Optional[str] = None
+    """Case-insensitive substring on aisle code."""
+    status: Optional[str] = None
+    sort_by: str = "code"
+    """code | status | last_activity_at | pending_review_positions_count | positions_count | assets_count"""
+    sort_dir: str = "asc"
+    page: int = 1
+    page_size: int = 25
+
+
 @dataclass
 class PositionListQuery:
-    """Optional filters and pagination for listing positions by aisle (§9.7)."""
+    """Repository-level filters for raw positions before consolidation (§9.7).
+
+    Pagination here limits **raw** rows fetched; list route applies **post-consolidation** page separately.
+    """
+
     status: Optional[str] = None
     needs_review: Optional[bool] = None
     min_confidence: Optional[float] = None
     sku_filter: Optional[str] = None
     page: int = 1
     page_size: int = 25
+    sort_by: str = "created_at"
+    """SQL/order: created_at | updated_at | confidence | id"""
+    sort_dir: str = "asc"
+
+
+@dataclass(frozen=True)
+class ReviewQueueQuery:
+    """Cross-inventory review queue list (Sprint 4.2 — filters + priority sort)."""
+
+    inventory_id: Optional[str] = None
+    aisle_id: Optional[str] = None
+    min_confidence: Optional[float] = None
+    max_confidence: Optional[float] = None
+    traceability: Optional[str] = None
+    """API traceability wire value: valid | missing | invalid | unvalidated."""
+    has_evidence: Optional[bool] = None
+    qty_zero: Optional[bool] = None
+    sku_contains: Optional[str] = None
+    position_status: Optional[str] = None
+    """detected | reviewed | corrected | deleted | confirmed (reviewed or corrected)."""
+    sort_by: str = "priority"
+    """priority | updated_at | created_at | confidence"""
+    sort_dir: str = "desc"
+    page: int = 1
+    page_size: int = 25
+
+
+@dataclass(frozen=True)
+class ReviewQueueSummary:
+    """KPI counts for the filtered queue population (full result set before pagination)."""
+
+    pending_review: int
+    low_confidence: int
+    invalid_traceability: int
+    qty_zero: int
+    missing_evidence: int
+
+
+@dataclass(frozen=True)
+class ReviewQueueListRow:
+    """One row for GET /api/v3/review-queue/positions (position + navigation context)."""
+
+    position: Position
+    inventory_id: str
+    inventory_name: str
+    aisle_code: str

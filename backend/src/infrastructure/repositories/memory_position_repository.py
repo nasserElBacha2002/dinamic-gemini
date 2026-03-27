@@ -30,6 +30,8 @@ class MemoryPositionRepository(PositionRepository):
         sku_filter: Optional[str] = None,
         page: int = 1,
         page_size: int = 25,
+        sort_by: str = "created_at",
+        sort_dir: str = "asc",
     ) -> Sequence[Position]:
         # sku_filter is not supported in-memory (no product_record data); all positions for aisle are returned.
         positions = [p for p in self._store.values() if p.aisle_id == aisle_id]
@@ -39,7 +41,19 @@ class MemoryPositionRepository(PositionRepository):
             positions = [p for p in positions if p.needs_review == needs_review]
         if min_confidence is not None:
             positions = [p for p in positions if p.confidence >= min_confidence]
-        positions = sorted(positions, key=lambda p: (p.created_at, p.id))
+        sb = (sort_by or "created_at").strip().lower()
+        reverse = (sort_dir or "asc").strip().lower() == "desc"
+
+        def _key(p: Position) -> tuple:
+            if sb == "updated_at":
+                return (p.updated_at, p.id)
+            if sb == "confidence":
+                return (p.confidence, p.id)
+            if sb == "id":
+                return (p.id,)
+            return (p.created_at, p.id)
+
+        positions = sorted(positions, key=_key, reverse=reverse)
         start = (page - 1) * page_size
         return positions[start : start + page_size]
 

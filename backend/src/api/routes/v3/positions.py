@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.dependencies import (
     get_list_aisle_positions_use_case,
@@ -16,6 +18,7 @@ from src.api.schemas.position_schemas import (
     PositionListResponse,
 )
 from src.application.errors import AisleNotFoundError, InventoryNotFoundError, PositionNotFoundError
+from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 
@@ -34,14 +37,45 @@ def list_aisle_positions(
     aisle_id: str,
     use_case: ListAislePositionsUseCase = Depends(get_list_aisle_positions_use_case),
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    status: Optional[str] = Query(None, description="Filter by position status (e.g. detected, reviewed)."),
+    needs_review: Optional[bool] = Query(None, description="When set, only positions with this needs_review flag."),
+    min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="Minimum confidence (inclusive)."),
+    sku_filter: Optional[str] = Query(None, description="Substring match against product SKU for this aisle."),
+    page: int = Query(1, ge=1, description="1-based page index after SKU consolidation."),
+    page_size: int = Query(
+        25,
+        ge=1,
+        le=500,
+        description="Page size after consolidation (max 500).",
+    ),
+    sort_by: str = Query(
+        "created_at",
+        description="Post-consolidation sort: created_at | updated_at | confidence | sku | quantity",
+    ),
+    sort_dir: str = Query("asc", description="asc | desc"),
 ) -> PositionListResponse:
-    """List result positions for an aisle. Response includes summary sku and detected_quantity when available."""
+    """List result positions for an aisle (Aisle Results).
+
+    Filters apply to **raw** rows; ``page`` / ``page_size`` / sort apply **after** SKU consolidation.
+    When ``raw_fetch_truncated`` is true in the response, ``total_items`` / ``total_pages`` are only
+    reliable within the raw rows the server loaded — not for the entire aisle. See schema docstring.
+    """
     try:
-        positions = use_case.execute(
-            ListAislePositionsCommand(inventory_id=inventory_id, aisle_id=aisle_id)
+        cmd = ListAislePositionsCommand(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            status=status,
+            needs_review=needs_review,
+            min_confidence=min_confidence,
+            sku_filter=sku_filter.strip() if sku_filter and str(sku_filter).strip() else None,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
         )
+        result = use_case.execute(cmd)
         summaries = []
-        for p in positions:
+        for p in result.positions:
             products = product_record_repo.list_by_position(p.id)
             primary = (
                 sorted(products, key=lambda x: (x.created_at, x.id))[0]
@@ -57,7 +91,14 @@ def list_aisle_positions(
                     primary_product=primary,
                 )
             )
-        return PositionListResponse(positions=summaries)
+        return PositionListResponse(
+            positions=summaries,
+            page=result.page,
+            page_size=result.page_size,
+            total_items=result.total_items,
+            total_pages=compute_total_pages(result.total_items, result.page_size),
+            raw_fetch_truncated=result.raw_fetch_truncated,
+        )
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:

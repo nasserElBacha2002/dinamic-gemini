@@ -13,7 +13,6 @@ import type {
   CreateAisleRequest,
   ApiErrorDetail,
   ProcessAisleResponse,
-  SourceAssetSummary,
   UploadAisleAssetsResponse,
   UploadInventoryVisualReferencesResponse,
   InventoryVisualReferenceListResponse,
@@ -24,6 +23,14 @@ import type {
   ReviewActionRequest,
   InventoryMetrics,
   ExecutionLogResponse,
+  PaginatedInventoryListResponse,
+  PaginatedAisleListResponse,
+  ReviewQueueListResponse,
+  AnalyticsSummaryResponse,
+  AnalyticsTrendsResponse,
+  InventoryPerformanceListResponse,
+  AisleIssueListResponse,
+  QualityPatternListResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -87,10 +94,39 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-export async function getInventories(): Promise<Inventory[]> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories`);
-  const data = await handleResponse<Inventory[]>(response);
-  return Array.isArray(data) ? data : [];
+/** Query params for GET /api/v3/inventories (Sprint 1.4). */
+export interface InventoriesListQuery {
+  search?: string | null;
+  status?: string | null;
+  sort_by?: string;
+  sort_dir?: string;
+  page?: number;
+  page_size?: number;
+}
+
+function buildInventoriesListQueryString(q: InventoriesListQuery | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.search != null && String(q.search).trim() !== '') params.set('search', String(q.search).trim());
+  if (q.status != null && String(q.status).trim() !== '') params.set('status', String(q.status).trim());
+  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
+  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
+  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
+  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+/**
+ * GET /api/v3/inventories — paginated object (`items`, `page`, …), not a bare array (Sprint 1.4 contract).
+ */
+export async function getInventories(
+  listQuery?: InventoriesListQuery
+): Promise<PaginatedInventoryListResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories${buildInventoriesListQueryString(listQuery)}`
+  );
+  return handleResponse<PaginatedInventoryListResponse>(response);
 }
 
 export async function getInventory(id: string): Promise<Inventory> {
@@ -135,10 +171,39 @@ export async function getInventoryVisualReferences(
   return handleResponse<InventoryVisualReferenceListResponse>(response);
 }
 
-export async function getAisles(inventoryId: string): Promise<Aisle[]> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/${inventoryId}/aisles`);
-  const data = await handleResponse<Aisle[]>(response);
-  return Array.isArray(data) ? data : [];
+export interface AislesListQuery {
+  search?: string | null;
+  status?: string | null;
+  sort_by?: string;
+  sort_dir?: string;
+  page?: number;
+  page_size?: number;
+}
+
+function buildAislesListQueryString(q: AislesListQuery | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.search != null && String(q.search).trim() !== '') params.set('search', String(q.search).trim());
+  if (q.status != null && String(q.status).trim() !== '') params.set('status', String(q.status).trim());
+  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
+  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
+  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
+  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+/**
+ * GET .../inventories/{id}/aisles — paginated object (`items`, …), not a bare array (Sprint 1.4 contract).
+ */
+export async function getAisles(
+  inventoryId: string,
+  listQuery?: AislesListQuery
+): Promise<PaginatedAisleListResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles${buildAislesListQueryString(listQuery)}`
+  );
+  return handleResponse<PaginatedAisleListResponse>(response);
 }
 
 export async function createAisle(
@@ -224,17 +289,6 @@ export async function uploadAisleAssets(
   return handleResponse<UploadAisleAssetsResponse>(response);
 }
 
-export async function getAisleAssets(
-  inventoryId: string,
-  aisleId: string
-): Promise<SourceAssetSummary[]> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/assets`
-  );
-  const data = await handleResponse<SourceAssetSummary[]>(response);
-  return Array.isArray(data) ? data : [];
-}
-
 /**
  * URL for the reference image file of an aisle asset (position.source_image_id).
  * Use for <img src> or open in new tab. Backend returns 404 if asset/file missing.
@@ -288,15 +342,122 @@ export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImag
   }
 }
 
-/** List positions (results) for an aisle — Épica 6. */
+/** Query params for GET aisle positions (§9.7). Omitted keys are not sent; backend defaults apply. */
+export interface AislePositionsListQuery {
+  status?: string | null;
+  needs_review?: boolean | null;
+  min_confidence?: number | null;
+  sku_filter?: string | null;
+  page?: number;
+  page_size?: number;
+  sort_by?: string;
+  sort_dir?: string;
+}
+
+function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.status != null && String(q.status).trim() !== '') {
+    params.set('status', String(q.status).trim());
+  }
+  if (q.needs_review != null) {
+    params.set('needs_review', String(q.needs_review));
+  }
+  if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
+    params.set('min_confidence', String(q.min_confidence));
+  }
+  if (q.sku_filter != null && String(q.sku_filter).trim() !== '') {
+    params.set('sku_filter', String(q.sku_filter).trim());
+  }
+  if (q.page != null && q.page >= 1) {
+    params.set('page', String(q.page));
+  }
+  if (q.page_size != null && q.page_size >= 1) {
+    params.set('page_size', String(q.page_size));
+  }
+  if (q.sort_by != null && String(q.sort_by).trim() !== '') {
+    params.set('sort_by', String(q.sort_by).trim());
+  }
+  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') {
+    params.set('sort_dir', String(q.sort_dir).trim());
+  }
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+/** List positions (results) for an aisle — Épica 6 / Aisle Results table. */
 export async function getAislePositions(
   inventoryId: string,
-  aisleId: string
+  aisleId: string,
+  listQuery?: AislePositionsListQuery
 ): Promise<PositionListResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions`
-  );
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions`;
+  const response = await protectedFetch(`${path}${buildAislePositionsQueryString(listQuery)}`);
   return handleResponse<PositionListResponse>(response);
+}
+
+export interface ReviewQueueListQuery {
+  inventory_id?: string | null;
+  aisle_id?: string | null;
+  min_confidence?: number | null;
+  max_confidence?: number | null;
+  traceability?: string | null;
+  has_evidence?: boolean | null;
+  qty_zero?: boolean | null;
+  sku_contains?: string | null;
+  position_status?: string | null;
+  sort_by?: string;
+  sort_dir?: string;
+  page?: number;
+  page_size?: number;
+}
+
+function buildReviewQueueQueryString(q: ReviewQueueListQuery | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.inventory_id != null && String(q.inventory_id).trim() !== '') {
+    params.set('inventory_id', String(q.inventory_id).trim());
+  }
+  if (q.aisle_id != null && String(q.aisle_id).trim() !== '') {
+    params.set('aisle_id', String(q.aisle_id).trim());
+  }
+  if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
+    params.set('min_confidence', String(q.min_confidence));
+  }
+  if (q.max_confidence != null && !Number.isNaN(q.max_confidence)) {
+    params.set('max_confidence', String(q.max_confidence));
+  }
+  if (q.traceability != null && String(q.traceability).trim() !== '') {
+    params.set('traceability', String(q.traceability).trim().toLowerCase());
+  }
+  if (q.has_evidence === true) params.set('has_evidence', 'true');
+  if (q.has_evidence === false) params.set('has_evidence', 'false');
+  if (q.qty_zero === true) params.set('qty_zero', 'true');
+  if (q.qty_zero === false) params.set('qty_zero', 'false');
+  if (q.sku_contains != null && String(q.sku_contains).trim() !== '') {
+    params.set('sku_contains', String(q.sku_contains).trim());
+  }
+  if (q.position_status != null && String(q.position_status).trim() !== '') {
+    params.set('position_status', String(q.position_status).trim().toLowerCase());
+  }
+  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
+  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
+  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
+  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+/**
+ * GET /api/v3/review-queue/positions — cross-inventory queue with filters, KPI summary, sort, pagination.
+ */
+export async function getReviewQueuePositions(
+  listQuery?: ReviewQueueListQuery
+): Promise<ReviewQueueListResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/review-queue/positions${buildReviewQueueQueryString(listQuery)}`
+  );
+  return handleResponse<ReviewQueueListResponse>(response);
 }
 
 /** Get position detail with products and evidences — Épica 6. */
@@ -336,4 +497,58 @@ export async function submitReviewAction(
   if (!response.ok) {
     throwApiErrorIfNotOk(response, text, data);
   }
+}
+
+/** Phase 5.1 analytics filters (ISO date strings YYYY-MM-DD). */
+export interface AnalyticsQueryParams {
+  date_from?: string | null;
+  date_to?: string | null;
+  inventory_id?: string | null;
+  aisle_id?: string | null;
+}
+
+function buildAnalyticsQueryString(q: AnalyticsQueryParams | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.date_from != null && String(q.date_from).trim() !== '') {
+    params.set('date_from', String(q.date_from).trim());
+  }
+  if (q.date_to != null && String(q.date_to).trim() !== '') {
+    params.set('date_to', String(q.date_to).trim());
+  }
+  if (q.inventory_id != null && String(q.inventory_id).trim() !== '') {
+    params.set('inventory_id', String(q.inventory_id).trim());
+  }
+  if (q.aisle_id != null && String(q.aisle_id).trim() !== '') {
+    params.set('aisle_id', String(q.aisle_id).trim());
+  }
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+export async function getAnalyticsSummary(q?: AnalyticsQueryParams): Promise<AnalyticsSummaryResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/summary${buildAnalyticsQueryString(q)}`);
+  return handleResponse<AnalyticsSummaryResponse>(response);
+}
+
+export async function getAnalyticsTrends(q?: AnalyticsQueryParams): Promise<AnalyticsTrendsResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/trends${buildAnalyticsQueryString(q)}`);
+  return handleResponse<AnalyticsTrendsResponse>(response);
+}
+
+export async function getAnalyticsInventoryPerformance(
+  q?: AnalyticsQueryParams
+): Promise<InventoryPerformanceListResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/inventories${buildAnalyticsQueryString(q)}`);
+  return handleResponse<InventoryPerformanceListResponse>(response);
+}
+
+export async function getAnalyticsAisleIssues(q?: AnalyticsQueryParams): Promise<AisleIssueListResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/aisles${buildAnalyticsQueryString(q)}`);
+  return handleResponse<AisleIssueListResponse>(response);
+}
+
+export async function getAnalyticsQualityPatterns(q?: AnalyticsQueryParams): Promise<QualityPatternListResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/quality${buildAnalyticsQueryString(q)}`);
+  return handleResponse<QualityPatternListResponse>(response);
 }

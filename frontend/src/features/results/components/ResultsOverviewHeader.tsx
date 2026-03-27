@@ -1,5 +1,8 @@
 /**
  * Epic 3 — Results overview page header.
+ *
+ * Route-level label (“Aisle results”) is in `AppShell`’s topbar (`p`). This heading is the **document `h1`**
+ * for this screen (result list for the aisle). See `layout/AppShell.tsx` for shell vs page header rules.
  */
 
 import { Button, Typography, Box } from '@mui/material';

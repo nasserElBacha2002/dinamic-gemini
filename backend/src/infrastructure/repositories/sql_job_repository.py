@@ -159,6 +159,19 @@ class SqlJobRepository(JobRepository):
             return None
         return _row_to_job(row)
 
+    def list_all_jobs(self) -> Sequence[Job]:
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, target_type, target_id, job_type, status,
+                       payload_json, result_json, error_message, created_at, updated_at
+                FROM inventory_jobs
+                ORDER BY updated_at DESC, created_at DESC
+                """
+            )
+            rows = cur.fetchall()
+        return [_row_to_job(row) for row in rows]
+
     def get_latest_by_targets(
         self, target_type: str, target_ids: Sequence[str]
     ) -> Dict[str, Job]:

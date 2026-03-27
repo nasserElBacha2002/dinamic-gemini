@@ -1,37 +1,16 @@
 /**
- * Epic 4 — Result Detail page header.
+ * Sprint 4.3 — Result detail context: `PageHeader` with breadcrumbs (inventory → source list → result).
  */
 
-import { Button, Typography, Box } from '@mui/material';
+import type { ReactNode } from 'react';
+import { PageHeader, type PageHeaderBreadcrumb } from '../../../../components/shell';
 
 export interface ResultDetailHeaderProps {
-  title?: string;
-  context?: string;
-  onBack?: () => void;
-  backLabel?: string;
+  breadcrumbs: PageHeaderBreadcrumb[];
+  title: string;
+  subtitle?: ReactNode;
 }
 
-export default function ResultDetailHeader({
-  title = 'Result',
-  context,
-  onBack,
-  backLabel = 'Back to results',
-}: ResultDetailHeaderProps) {
-  return (
-    <Box sx={{ mb: 3 }}>
-      {onBack && (
-        <Button sx={{ mb: 1.5 }} onClick={onBack}>
-          ← {backLabel}
-        </Button>
-      )}
-      <Typography variant="h5" component="h1">
-        {title}
-      </Typography>
-      {context && (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {context}
-        </Typography>
-      )}
-    </Box>
-  );
+export default function ResultDetailHeader({ breadcrumbs, title, subtitle }: ResultDetailHeaderProps) {
+  return <PageHeader breadcrumbs={breadcrumbs} title={title} subtitle={subtitle} />;
 }

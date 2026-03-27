@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Sequence
 
 from src.application.ports.contracts import PositionListQuery
+from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
@@ -70,6 +71,11 @@ class SourceAssetRepository(ABC):
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         ...
 
+    @abstractmethod
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+        """Return upload count and latest ``uploaded_at`` per aisle id (missing aisles omitted or zero)."""
+        ...
+
 
 class PositionRepository(ABC):
     @abstractmethod
@@ -90,6 +96,8 @@ class PositionRepository(ABC):
         sku_filter: Optional[str] = None,
         page: int = 1,
         page_size: int = 25,
+        sort_by: str = "created_at",
+        sort_dir: str = "asc",
     ) -> Sequence[Position]:
         """List positions for an aisle with optional filters and pagination (§9.7).
         sku_filter: when set, only positions that have at least one product_record with
@@ -167,6 +175,10 @@ class JobRepository(ABC):
     ) -> Dict[str, Job]:
         """Return the latest job per target_id for the given target_type. Keys are target_id; only one job per target (the latest by updated_at, then created_at). Missing targets are omitted from the dict."""
         ...
+
+    def list_all_jobs(self) -> Sequence[Job]:
+        """Bulk read for analytics. Default empty; SQL/memory implementations scan ``inventory_jobs``."""
+        return []
 
 
 # --- v3.2.3 Label consolidation layers ---

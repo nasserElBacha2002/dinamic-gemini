@@ -1,6 +1,8 @@
 /**
- * Helpers for consistent aisle status chip presentation in inventory/aisle UI.
+ * Helpers for consistent aisle status presentation in inventory/aisle UI.
  */
+
+import type { StatusBadgeSemantic } from '../components/ui/StatusBadge';
 
 type ChipColor = 'default' | 'primary' | 'success' | 'error' | 'warning';
 
@@ -42,5 +44,26 @@ export function getAisleStatusColor(status: string): ChipColor {
     case 'assets_uploaded':
     default:
       return 'default';
+  }
+}
+
+/** Maps aisle lifecycle status to shared `StatusBadge` semantics (Sprint 5.3). */
+export function aisleStatusToBadgeSemantic(status: string): StatusBadgeSemantic {
+  const s = (status || '').trim().toLowerCase();
+  if (!s) return 'neutral';
+  switch (s) {
+    case 'failed':
+      return 'error';
+    case 'processed':
+    case 'in_review':
+    case 'completed':
+      return 'success';
+    case 'queued':
+    case 'processing':
+      return 'info';
+    case 'created':
+    case 'assets_uploaded':
+    default:
+      return 'neutral';
   }
 }

@@ -1,6 +1,9 @@
 /**
  * Shared status enums and consts — used by API DTOs and UI.
- * Single source of truth for backend-aligned status values.
+ * Single source of truth for **wire/API** values (matches backend domain enums).
+ *
+ * **Product plan** taxonomy (implementation docs) differs; map API → doc labels via
+ * `src/types/statusAlignment.ts`.
  */
 
 export const INVENTORY_STATUSES = [

@@ -20,6 +20,26 @@ export interface Inventory {
   name: string;
   status: InventoryStatus | string;
   created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** GET /api/v3/inventories — one row with aggregates for list/table screens. */
+export interface InventoryListItem extends Inventory {
+  aisles_count: number;
+  pending_review_count: number;
+  last_activity_at: string | null;
+}
+
+/**
+ * GET /api/v3/inventories — paginated table (Sprint 1.4).
+ * Breaking change: the HTTP body is this object, not `InventoryListItem[]`.
+ */
+export interface PaginatedInventoryListResponse {
+  items: InventoryListItem[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
 }
 
 // ─── Inventory visual references (v3.2.4 Phase 2/8) ─────────────────────────
@@ -73,6 +93,23 @@ export interface Aisle {
   error_code?: string | null;
   error_message?: string | null;
   latest_job?: AisleJobSummary | null;
+  /** Populated on GET .../aisles list (Inventory Detail table). */
+  assets_count?: number;
+  positions_count?: number;
+  pending_review_positions_count?: number;
+  last_activity_at?: string | null;
+}
+
+/**
+ * GET .../inventories/{id}/aisles — paginated (Sprint 1.4).
+ * Breaking change: the HTTP body is this object, not `Aisle[]`.
+ */
+export interface PaginatedAisleListResponse {
+  items: Aisle[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
 }
 
 /** GET .../aisles/{aisle_id}/status response. */
@@ -170,9 +207,44 @@ export interface PositionSummary {
   has_evidence: boolean;
 }
 
-/** Response for GET .../aisles/{aisle_id}/positions. */
+/**
+ * GET .../aisles/{aisle_id}/positions — Aisle Results.
+ * When `raw_fetch_truncated` is true, do not treat `total_items` / `total_pages` as globally exact
+ * for the aisle; they count only consolidated rows from the server’s raw fetch window.
+ */
 export interface PositionListResponse {
   positions: PositionSummary[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+  raw_fetch_truncated: boolean;
+}
+
+/** GET /api/v3/review-queue/positions (Sprint 1.4, Sprint 4.2 summary). */
+export interface ReviewQueueSummary {
+  pending_review: number;
+  low_confidence: number;
+  invalid_traceability: number;
+  qty_zero: number;
+  missing_evidence: number;
+}
+
+export interface ReviewQueueItem {
+  inventory_id: string;
+  inventory_name: string;
+  aisle_code: string;
+  position: PositionSummary;
+}
+
+/** Review queue list: filters/sort/pagination + workload summary for KPI band. */
+export interface ReviewQueueListResponse {
+  summary: ReviewQueueSummary;
+  items: ReviewQueueItem[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
 }
 
 /** Product record within a position. */

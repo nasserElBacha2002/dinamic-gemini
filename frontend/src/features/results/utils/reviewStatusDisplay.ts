@@ -5,6 +5,7 @@
 
 import type { ReviewStatus } from '../types';
 import type { ChipColorType } from '../../../components/ui/types';
+import type { StatusBadgeSemantic } from '../../../components/ui';
 
 const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
   DETECTED: 'Detected',
@@ -30,4 +31,21 @@ export function getReviewStatusLabel(status: ReviewStatus): string {
 
 export function getReviewStatusColor(status: ReviewStatus): ChipColorType {
   return REVIEW_STATUS_COLOR[status] ?? 'default';
+}
+
+/** Maps visible review status to redesign StatusBadge semantics (Sprint 4.1). */
+export function reviewStatusToBadgeSemantic(status: ReviewStatus): StatusBadgeSemantic {
+  switch (status) {
+    case 'CONFIRMED':
+      return 'success';
+    case 'NEEDS_REVIEW':
+    case 'DETECTED':
+      return 'review';
+    case 'INVALID':
+      return 'error';
+    case 'MISSING':
+    case 'NOT_COUNTABLE':
+    default:
+      return 'neutral';
+  }
 }

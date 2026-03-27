@@ -8,20 +8,25 @@ import type { ResultsFilterKind } from '../selectors';
 const VALID_FILTERS: ResultsFilterKind[] = [
   'all',
   'needs_review',
-  'valid_traceability',
-  'non_valid_traceability',
-  'qty_zero',
   'low_confidence',
+  'qty_zero',
+  'invalid_traceability',
+  'missing_evidence',
 ];
 
 function isResultsFilterKind(value: unknown): value is ResultsFilterKind {
   return typeof value === 'string' && VALID_FILTERS.includes(value as ResultsFilterKind);
 }
 
+/** Where the user should return when leaving detail (drives breadcrumbs + back). */
+export type ResultDetailReturnTo = 'aisle_results' | 'review_queue';
+
 /** State passed via React Router location.state when opening Result Detail from the list. */
 export interface ResultDetailNavigationState {
   resultIds: string[];
   filter?: ResultsFilterKind;
+  /** When omitted, treated as aisle flow (backward compatible). */
+  returnTo?: ResultDetailReturnTo;
 }
 
 export interface ResultNavigationContext {
@@ -54,9 +59,15 @@ export function parseResultDetailNavigationState(
     filter === null ||
     isResultsFilterKind(filter);
   if (!filterOk) return null;
+  const rawReturn = o.returnTo;
+  const returnTo =
+    rawReturn === 'review_queue' || rawReturn === 'aisle_results'
+      ? (rawReturn as ResultDetailReturnTo)
+      : undefined;
   return {
     resultIds: ids,
     filter: filter === undefined || filter === null ? undefined : (filter as ResultsFilterKind),
+    returnTo,
   };
 }
 

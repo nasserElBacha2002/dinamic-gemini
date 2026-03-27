@@ -12,8 +12,6 @@ export const queryKeys = {
     detail: (inventoryId: string) => [...queryKeys.inventories.all, 'detail', inventoryId] as const,
     metrics: (inventoryId: string) => [...queryKeys.inventories.all, 'metrics', inventoryId] as const,
     aisles: (inventoryId: string) => [...queryKeys.inventories.all, 'aisles', inventoryId] as const,
-    aisleAssets: (inventoryId: string, aisleId: string) =>
-      [...queryKeys.inventories.all, 'aisles', inventoryId, 'assets', aisleId] as const,
     positions: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'positions', aisleId] as const,
     positionDetail: (inventoryId: string, aisleId: string, positionId: string) =>
@@ -23,5 +21,19 @@ export const queryKeys = {
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'jobs', jobId, 'execution-log'] as const,
     mergeResults: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId] as const,
+  },
+
+  analytics: {
+    all: ['v3', 'analytics'] as const,
+    summary: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'summary', params] as const,
+    trends: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'trends', params] as const,
+    inventories: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'inventories', params] as const,
+    aisles: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'aisles', params] as const,
+    quality: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'quality', params] as const,
   },
 } as const;

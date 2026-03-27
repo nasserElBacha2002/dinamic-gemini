@@ -39,9 +39,8 @@ export function useStartAisleProcessing(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (aisleId: string) => startAisleProcessing(inventoryId, aisleId),
-    onSuccess: (_, aisleId) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleAssets(inventoryId, aisleId) });
     },
   });
 }
@@ -63,7 +62,6 @@ export function useUploadAisleAssets(inventoryId: string, aisleId: string) {
     mutationFn: (files: File[]) => uploadAisleAssets(inventoryId, aisleId, files),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleAssets(inventoryId, aisleId) });
     },
   });
 }
@@ -74,9 +72,8 @@ export function useUploadAisleAssetsFlex(inventoryId: string) {
   return useMutation({
     mutationFn: ({ aisleId, files }: { aisleId: string; files: File[] }) =>
       uploadAisleAssets(inventoryId, aisleId, files),
-    onSuccess: (_, { aisleId }) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleAssets(inventoryId, aisleId) });
     },
   });
 }
@@ -93,6 +90,7 @@ export function useSubmitReviewAction(inventoryId: string, aisleId: string, posi
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
       });
+      queryClient.invalidateQueries({ queryKey: ['reviewQueue'] });
     },
   });
 }

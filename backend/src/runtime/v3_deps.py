@@ -377,6 +377,45 @@ def get_final_count_repo() -> FinalCountRepository:
     return _final_count_repo
 
 
+_analytics_repo: Optional[object] = None
+
+
+def get_analytics_repo():
+    """Analytics aggregates — SQL when enabled, else in-memory from v3 repos."""
+    global _analytics_repo
+    if _analytics_repo is not None:
+        return _analytics_repo
+    from src.infrastructure.repositories.memory_analytics_repository import MemoryAnalyticsRepository
+    from src.infrastructure.repositories.sql_analytics_repository import SqlAnalyticsRepository
+
+    if _v3_db_enabled():
+        try:
+            client = _get_v3_sql_client()
+            _analytics_repo = SqlAnalyticsRepository(client)
+            logger.info("v3 AnalyticsRepository: using SQL backend")
+        except Exception as e:
+            if not _v3_allow_in_memory_fallback():
+                logger.error("v3 SQL analytics repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
+                raise
+            logger.warning("v3 SQL analytics repo init failed, falling back to in-memory: %s", e)
+            _analytics_repo = MemoryAnalyticsRepository(
+                get_inventory_repo(),
+                get_aisle_repo(),
+                get_position_repo(),
+                get_review_action_repo(),
+                get_job_repo(),
+            )
+    else:
+        _analytics_repo = MemoryAnalyticsRepository(
+            get_inventory_repo(),
+            get_aisle_repo(),
+            get_position_repo(),
+            get_review_action_repo(),
+            get_job_repo(),
+        )
+    return _analytics_repo
+
+
 def get_recompute_consolidated_counts_use_case():
     from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
     from src.application.services.label_normalization import LabelNormalizationService

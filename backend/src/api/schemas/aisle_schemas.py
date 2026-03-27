@@ -21,7 +21,13 @@ class AisleJobSummary(BaseModel):
 
 
 class AisleResponse(BaseModel):
-    """Single aisle in list or create response."""
+    """Aisle payload for create, status, and list endpoints.
+
+    The same model carries a minimal aisle (create / polling) and—on GET list—optional
+    rollups for the Inventory Detail table. Callers should treat unset rollup defaults
+    (0 / null) as “not computed for this response” until a dedicated split is justified.
+    """
+
     id: str
     inventory_id: str
     code: str
@@ -31,3 +37,7 @@ class AisleResponse(BaseModel):
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     latest_job: Optional[AisleJobSummary] = None
+    assets_count: int = 0
+    positions_count: int = 0
+    pending_review_positions_count: int = 0
+    last_activity_at: Optional[datetime] = None

@@ -34,6 +34,7 @@ from src.application.ports.repositories import (
 from src.application.ports.services import MetricsCalculator
 from src.runtime.v3_deps import (
     get_aisle_repo,
+    get_analytics_repo,
     get_clock,
     get_evidence_repo,
     get_final_count_repo,
@@ -56,8 +57,10 @@ from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
+from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
+from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
@@ -73,6 +76,7 @@ from src.application.use_cases.cancel_aisle_job import CancelAisleJobUseCase
 from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
+from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
 logger = logging.getLogger(__name__)
@@ -104,6 +108,18 @@ def get_list_inventories_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> ListInventoriesUseCase:
     return ListInventoriesUseCase(inventory_repo=repo)
+
+
+def get_list_inventory_list_items_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> ListInventoryListItemsUseCase:
+    return ListInventoryListItemsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+    )
 
 
 def get_get_inventory_use_case(
@@ -148,11 +164,15 @@ def get_list_aisles_with_status_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
 ) -> ListAislesWithStatusUseCase:
     return ListAislesWithStatusUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
+        position_repo=position_repo,
+        source_asset_repo=source_asset_repo,
     )
 
 
@@ -245,7 +265,22 @@ def get_list_aisle_positions_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
 ) -> ListAislePositionsUseCase:
+    from src.config import load_settings
+
     return ListAislePositionsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+    )
+
+
+def get_list_review_queue_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> ListReviewQueueUseCase:
+    return ListReviewQueueUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         position_repo=position_repo,
@@ -360,3 +395,9 @@ def get_get_aisle_merge_results_use_case(
         aisle_repo=aisle_repo,
         final_count_repo=final_count_repo,
     )
+
+
+def get_analytics_query_service(
+    repo=Depends(get_analytics_repo),
+) -> AnalyticsQueryService:
+    return AnalyticsQueryService(repo)

@@ -3,17 +3,23 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { getAisleMergeResults, getAislePositions, getPositionDetail } from '../api/client';
+import {
+  getAisleMergeResults,
+  getAislePositions,
+  getPositionDetail,
+  type AislePositionsListQuery,
+} from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 
 export function useAislePositions(
   inventoryId: string | undefined,
   aisleId: string | undefined,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; listQuery?: AislePositionsListQuery }
 ) {
+  const listQuery = options?.listQuery;
   return useQuery({
-    queryKey: queryKeys.inventories.positions(inventoryId ?? '', aisleId ?? ''),
-    queryFn: () => getAislePositions(inventoryId!, aisleId!),
+    queryKey: [...queryKeys.inventories.positions(inventoryId ?? '', aisleId ?? ''), listQuery ?? {}] as const,
+    queryFn: () => getAislePositions(inventoryId!, aisleId!, listQuery),
     enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
   });
 }
