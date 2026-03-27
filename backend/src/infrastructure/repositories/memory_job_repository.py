@@ -34,6 +34,9 @@ class MemoryJobRepository(JobRepository):
         candidates.sort(key=lambda j: (j.updated_at, j.created_at), reverse=True)
         return candidates[0]
 
+    def list_all_jobs(self) -> Sequence[Job]:
+        return list(self._store.values())
+
     def get_latest_by_targets(
         self, target_type: str, target_ids: Sequence[str]
     ) -> Dict[str, Job]:

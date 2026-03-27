@@ -10,10 +10,8 @@ from __future__ import annotations
 from datetime import timezone
 from typing import Any, Optional, Tuple
 
+from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
 from src.domain.positions.entities import Position
-
-# Aligned with frontend/src/constants/reviewThresholds.ts
-LOW_CONFIDENCE_THRESHOLD = 0.5
 
 
 def _parse_summary_quantity(raw: object) -> Optional[int]:

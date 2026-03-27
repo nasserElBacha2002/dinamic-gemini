@@ -116,4 +116,10 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getByText('SKU-001')).toBeInTheDocument();
     expect(screen.getByText('5')).toBeInTheDocument();
   });
+
+  it('opens review via SKU control without an Actions column', () => {
+    renderPage();
+    expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Review SKU-001/i })).toBeInTheDocument();
+  });
 });

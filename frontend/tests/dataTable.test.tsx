@@ -115,6 +115,22 @@ describe('DataTable', () => {
     expect(onPageChange).toHaveBeenCalledWith(2);
   });
 
+  it('calls onRowClick with the row when a data row is clicked', () => {
+    const onRowClick = vi.fn();
+    render(
+      <WithTheme>
+        <DataTable<Row>
+          rows={[{ id: '1', name: 'Alpha' }]}
+          rowKey={(r) => r.id}
+          columns={columns}
+          onRowClick={onRowClick}
+        />
+      </WithTheme>
+    );
+    fireEvent.click(screen.getByText('Alpha'));
+    expect(onRowClick).toHaveBeenCalledWith({ id: '1', name: 'Alpha' });
+  });
+
   it('calls onPageSizeChange and resets to page 1 when rows per page changes', () => {
     const onPageChange = vi.fn();
     const onPageSizeChange = vi.fn();

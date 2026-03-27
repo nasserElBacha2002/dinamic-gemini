@@ -6,7 +6,7 @@ export interface AnalyticsSummaryResponse {
   invalid_traceability_rate: number | null;
   processing_success_rate: number | null;
   average_review_time_seconds: number | null;
-  reviewed_results_per_day: number | null;
+  settling_actions_per_day: number | null;
   notes: string[];
   period_day_count: number;
   settling_actions_count: number;

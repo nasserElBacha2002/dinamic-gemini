@@ -176,6 +176,10 @@ class JobRepository(ABC):
         """Return the latest job per target_id for the given target_type. Keys are target_id; only one job per target (the latest by updated_at, then created_at). Missing targets are omitted from the dict."""
         ...
 
+    def list_all_jobs(self) -> Sequence[Job]:
+        """Bulk read for analytics. Default empty; SQL/memory implementations scan ``inventory_jobs``."""
+        return []
+
 
 # --- v3.2.3 Label consolidation layers ---
 

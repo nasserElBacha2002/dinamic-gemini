@@ -14,7 +14,7 @@ class AnalyticsSummaryResponse(BaseModel):
     invalid_traceability_rate: Optional[float] = None
     processing_success_rate: Optional[float] = None
     average_review_time_seconds: Optional[float] = None
-    reviewed_results_per_day: Optional[float] = None
+    settling_actions_per_day: Optional[float] = None
     notes: List[str] = Field(default_factory=list)
     period_day_count: int = 0
     settling_actions_count: int = 0

@@ -19,6 +19,7 @@ from src.domain.reviews.entities import ReviewAction, ReviewActionType
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
 from src.infrastructure.repositories.memory_analytics_repository import MemoryAnalyticsRepository
 
@@ -98,7 +99,8 @@ def memory_analytics_setup():
     rev_repo.save(ra_confirm)
     rev_repo.save(ra_corr)
 
-    analytics = MemoryAnalyticsRepository(inv_repo, aisle_repo, pos_repo, rev_repo)
+    job_repo = MemoryJobRepository()
+    analytics = MemoryAnalyticsRepository(inv_repo, aisle_repo, pos_repo, rev_repo, job_repo)
     return analytics, inv, aisle
 
 
@@ -160,6 +162,7 @@ def test_memory_empty_data():
         MemoryAisleRepository(),
         MemoryPositionRepository(),
         MemoryReviewActionRepository(),
+        MemoryJobRepository(),
     )
     s = analytics.get_summary(AnalyticsFilters())
     assert s.positions_in_scope == 0

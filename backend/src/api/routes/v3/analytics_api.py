@@ -8,10 +8,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.application.dto.analytics_dto import AnalyticsFilters
+from src.application.ports.repositories import AisleRepository
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.auth.dependencies import get_current_admin
 
-from src.api.dependencies import get_analytics_query_service
+from src.api.dependencies import get_aisle_repo, get_analytics_query_service
 from src.api.schemas.analytics_schemas import (
     AnalyticsSummaryResponse,
     AnalyticsTrendsResponse,
@@ -58,15 +59,27 @@ def _filters(
     return AnalyticsFilters(date_from=df, date_to=dt, inventory_id=inv, aisle_id=aid)
 
 
+def _validate_analytics_scope(f: AnalyticsFilters, aisle_repo: AisleRepository) -> None:
+    if f.aisle_id and f.inventory_id:
+        aisle = aisle_repo.get_by_id(f.aisle_id)
+        if aisle is None or aisle.inventory_id != f.inventory_id:
+            raise HTTPException(
+                status_code=422,
+                detail="aisle_id does not belong to the given inventory_id",
+            )
+
+
 @router.get("/summary", response_model=AnalyticsSummaryResponse)
 def analytics_summary(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> AnalyticsSummaryResponse:
     f = _filters(date_from, date_to, inventory_id, aisle_id)
+    _validate_analytics_scope(f, aisle_repo)
     d = svc.summary(f)
     return AnalyticsSummaryResponse(
         auto_acceptance_rate=d.auto_acceptance_rate,
@@ -74,7 +87,7 @@ def analytics_summary(
         invalid_traceability_rate=d.invalid_traceability_rate,
         processing_success_rate=d.processing_success_rate,
         average_review_time_seconds=d.average_review_time_seconds,
-        reviewed_results_per_day=d.reviewed_results_per_day,
+        settling_actions_per_day=d.settling_actions_per_day,
         notes=list(d.notes),
         period_day_count=d.period_day_count,
         settling_actions_count=d.settling_actions_count,
@@ -85,12 +98,14 @@ def analytics_summary(
 @router.get("/trends", response_model=AnalyticsTrendsResponse)
 def analytics_trends(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> AnalyticsTrendsResponse:
     f = _filters(date_from, date_to, inventory_id, aisle_id)
+    _validate_analytics_scope(f, aisle_repo)
     t = svc.trends(f)
 
     def map_points(xs):
@@ -114,12 +129,14 @@ def analytics_trends(
 @router.get("/inventories", response_model=InventoryPerformanceListResponse)
 def analytics_inventories(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> InventoryPerformanceListResponse:
     f = _filters(date_from, date_to, inventory_id, aisle_id)
+    _validate_analytics_scope(f, aisle_repo)
     rows = svc.inventory_performance(f)
     return InventoryPerformanceListResponse(
         items=[
@@ -144,12 +161,14 @@ def analytics_inventories(
 @router.get("/aisles", response_model=AisleIssueListResponse)
 def analytics_aisles(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> AisleIssueListResponse:
     f = _filters(date_from, date_to, inventory_id, aisle_id)
+    _validate_analytics_scope(f, aisle_repo)
     rows = svc.aisle_issues(f)
     return AisleIssueListResponse(
         items=[
@@ -173,12 +192,14 @@ def analytics_aisles(
 @router.get("/quality", response_model=QualityPatternListResponse)
 def analytics_quality(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> QualityPatternListResponse:
     f = _filters(date_from, date_to, inventory_id, aisle_id)
+    _validate_analytics_scope(f, aisle_repo)
     rows = svc.quality_patterns(f)
     return QualityPatternListResponse(
         items=[

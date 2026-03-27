@@ -199,9 +199,10 @@ export default function MetricsPage() {
       description: 'First settling action minus position created',
     },
     {
-      label: 'Reviewed results / day',
-      value: summary?.reviewed_results_per_day != null ? summary.reviewed_results_per_day.toFixed(1) : '—',
-      description: `Settling actions / day span (${summary?.period_day_count ?? 1})`,
+      label: 'Settling actions / day',
+      value:
+        summary?.settling_actions_per_day != null ? summary.settling_actions_per_day.toFixed(1) : '—',
+      description: `Settling review actions in period ÷ day span (${summary?.period_day_count ?? 1}); not unique positions`,
     },
   ];
 
@@ -328,7 +329,7 @@ export default function MetricsPage() {
         <Grid item xs={12} md={6}>
           <SectionCard
             title="Quality patterns"
-            subtitle="Distribution of primary issue buckets (non–mutually exclusive priority order in backend)"
+            subtitle="Each position counts once: one primary issue bucket by priority (invalid → missing evidence → zero qty → low confidence → pending review → OK)"
           >
             {isLoading && !quality ? (
               <Skeleton variant="rounded" height={160} />

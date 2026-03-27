@@ -208,7 +208,10 @@ export default function InventoryDetail() {
           <Button
             variant="text"
             size="small"
-            onClick={() => navigate(pathToAislePositions(inventoryId ?? '', a.id))}
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(pathToAislePositions(inventoryId ?? '', a.id));
+            }}
             sx={{
               fontWeight: 650,
               textTransform: 'none',
@@ -467,6 +470,7 @@ export default function InventoryDetail() {
                   rowKey={(a) => a.id}
                   columns={aisleColumns}
                   loading={aislesLoading}
+                  onRowClick={(a) => navigate(pathToAislePositions(inventoryId ?? '', a.id))}
                   emptyState={{
                     title: 'No aisles yet',
                     message: 'Create an aisle to start processing.',

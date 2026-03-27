@@ -9,9 +9,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
 from src.application.dto.analytics_dto import AnalyticsFilters
 from src.application.utils.review_queue_derived import (
-    LOW_CONFIDENCE_THRESHOLD,
     position_has_primary_evidence,
     summary_sku_and_detected_quantity,
     traceability_normalized,
@@ -49,13 +49,11 @@ def position_in_scope(
     aisle_to_inventory: Dict[str, str],
     filters: AnalyticsFilters,
 ) -> bool:
+    """Entity scope only (inventory/aisle). Date range does NOT gate position-state metrics."""
     if filters.inventory_id and inventory_id != filters.inventory_id:
         return False
     if filters.aisle_id and aisle_id != filters.aisle_id:
         return False
-    if filters.date_from or filters.date_to:
-        if not _ts_in_range(pos.updated_at, filters.date_from, filters.date_to):
-            return False
     return True
 
 

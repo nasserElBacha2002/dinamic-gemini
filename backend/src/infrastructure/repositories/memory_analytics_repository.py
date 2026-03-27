@@ -1,15 +1,16 @@
 """
 In-memory analytics — aggregates from v3 repositories (no SQL).
 
-Processing success rate is omitted unless ``extra_jobs`` is provided (tests).
+Processing success uses ``JobRepository.list_all_jobs()`` (same bulk read as SQL analytics).
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from datetime import timezone
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List
 
+from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
 from src.application.dto.analytics_dto import (
     AnalyticsFilters,
     AnalyticsSummaryDTO,
@@ -23,6 +24,7 @@ from src.application.ports.analytics_repository import AnalyticsRepository
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
+    JobRepository,
     PositionRepository,
     ReviewActionRepository,
 )
@@ -38,9 +40,10 @@ from src.application.services.analytics_aggregation_core import (
     settling_action,
     active_position,
     is_invalid_traceability,
+    is_low_confidence,
     review_action_in_period,
 )
-from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.entities import JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 
 
@@ -51,13 +54,13 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         aisle_repo: AisleRepository,
         position_repo: PositionRepository,
         review_action_repo: ReviewActionRepository,
-        extra_jobs: Optional[Sequence[Job]] = None,
+        job_repo: JobRepository,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._position_repo = position_repo
         self._review_action_repo = review_action_repo
-        self._extra_jobs = list(extra_jobs) if extra_jobs is not None else None
+        self._job_repo = job_repo
 
     def _collect(
         self, filters: AnalyticsFilters
@@ -114,21 +117,17 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         allowed_aisles = set(aisle_to_inv.keys())
         if filters.aisle_id:
             allowed_aisles &= {filters.aisle_id}
-        jobs_list = self._extra_jobs or []
-        proc = (
-            compute_processing_success_rate(jobs_list, filters.date_from, filters.date_to, allowed_aisles)
-            if jobs_list
-            else None
+        jobs_list = list(self._job_repo.list_all_jobs())
+        proc = compute_processing_success_rate(
+            jobs_list, filters.date_from, filters.date_to, allowed_aisles
         )
-        if not jobs_list:
-            notes.append("Processing success rate unavailable in in-memory mode without injected jobs.")
 
         avg_sec = compute_average_review_time_seconds(positions, actions, filters.date_from, filters.date_to)
         span = day_span_inclusive(filters.date_from, filters.date_to)
         rpd = (settling / span) if settling else None
         if filters.date_from is None or filters.date_to is None:
             notes.append(
-                "Date range open-ended: reviewed_results_per_day uses a 1-day divisor; "
+                "Date range open-ended: settling_actions_per_day uses a 1-day divisor; "
                 "set date_from and date_to for meaningful per-day rates."
             )
         return AnalyticsSummaryDTO(
@@ -137,7 +136,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             invalid_traceability_rate=inv_rate,
             processing_success_rate=proc,
             average_review_time_seconds=avg_sec,
-            reviewed_results_per_day=rpd,
+            settling_actions_per_day=rpd,
             notes=notes,
             period_day_count=span,
             settling_actions_count=settling,
@@ -180,41 +179,40 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             )
 
         proc_series: List[TrendPointDTO] = []
-        jobs_list = self._extra_jobs or []
-        if jobs_list:
-            _, aisle_to_inv, _, _ = self._collect(filters)
-            allowed_aisles = set(aisle_to_inv.keys())
-            if filters.aisle_id:
-                allowed_aisles &= {filters.aisle_id}
-            from src.application.services.analytics_aggregation_core import _ts_in_range
+        jobs_list = list(self._job_repo.list_all_jobs())
+        _, aisle_to_inv, _, _ = self._collect(filters)
+        allowed_aisles = set(aisle_to_inv.keys())
+        if filters.aisle_id:
+            allowed_aisles &= {filters.aisle_id}
+        from src.application.services.analytics_aggregation_core import _ts_in_range
 
-            by_day_job: Dict[str, list] = defaultdict(lambda: [0, 0])
-            for j in jobs_list:
-                if j.target_type != "aisle" or j.target_id not in allowed_aisles:
-                    continue
-                if not _ts_in_range(j.updated_at, filters.date_from, filters.date_to):
-                    continue
-                if j.status not in (JobStatus.SUCCEEDED, JobStatus.FAILED):
-                    continue
-                dkey = j.updated_at.date().isoformat()
-                ok, fail = by_day_job[dkey]
-                if j.status == JobStatus.SUCCEEDED:
-                    ok += 1
-                else:
-                    fail += 1
-                by_day_job[dkey] = [ok, fail]
-            for dkey in sorted(by_day_job.keys()):
-                ok_n, fail_n = by_day_job[dkey]
-                tot = ok_n + fail_n
-                pr = (ok_n / tot) if tot else None
-                proc_series.append(
-                    TrendPointDTO(
-                        period=dkey,
-                        reviewed_results=tot,
-                        correction_rate=None,
-                        processing_success_rate=pr,
-                    )
+        by_day_job: Dict[str, list] = defaultdict(lambda: [0, 0])
+        for j in jobs_list:
+            if j.target_type != "aisle" or j.target_id not in allowed_aisles:
+                continue
+            if not _ts_in_range(j.updated_at, filters.date_from, filters.date_to):
+                continue
+            if j.status not in (JobStatus.SUCCEEDED, JobStatus.FAILED):
+                continue
+            dkey = j.updated_at.date().isoformat()
+            ok, fail = by_day_job[dkey]
+            if j.status == JobStatus.SUCCEEDED:
+                ok += 1
+            else:
+                fail += 1
+            by_day_job[dkey] = [ok, fail]
+        for dkey in sorted(by_day_job.keys()):
+            ok_n, fail_n = by_day_job[dkey]
+            tot = ok_n + fail_n
+            pr = (ok_n / tot) if tot else None
+            proc_series.append(
+                TrendPointDTO(
+                    period=dkey,
+                    reviewed_results=tot,
+                    correction_rate=None,
+                    processing_success_rate=pr,
                 )
+            )
 
         return AnalyticsTrendsDTO(
             reviewed_results_over_time=reviewed_series,
@@ -264,9 +262,9 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             inv_tr_rate = (invalid_n / total_pos) if total_pos else None
 
             aisle_ids = {a.id for a in aisles}
-            jobs_list = self._extra_jobs or []
+            jobs_list = list(self._job_repo.list_all_jobs())
             proc = compute_processing_success_rate(
-                jobs_list, filters.date_from, filters.date_to, aisle_ids if jobs_list else None
+                jobs_list, filters.date_from, filters.date_to, aisle_ids
             )
 
             created = inv.created_at if inv.created_at.tzinfo else inv.created_at.replace(tzinfo=timezone.utc)
@@ -311,7 +309,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             needs_r = sum(1 for p in plist if p.needs_review)
             corrected_c = sum(1 for p in plist if p.status == PositionStatus.CORRECTED)
             invalid_tr = sum(1 for p in plist if is_invalid_traceability(p))
-            low_conf = sum(1 for p in plist if p.confidence < 0.5)
+            low_conf = sum(1 for p in plist if is_low_confidence(p))
             bucket_counts: Dict[str, int] = {}
             for p in plist:
                 b = issue_bucket_for_position(p)
@@ -354,7 +352,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             "invalid_traceability": "traceability_status=invalid in detected summary",
             "missing_evidence": "No primary evidence id",
             "quantity_zero": "final_quantity or product_label_quantity is 0 in summary JSON",
-            "low_confidence": "confidence < 0.5 (operational threshold)",
+            "low_confidence": f"confidence < {LOW_CONFIDENCE_THRESHOLD} (operational threshold)",
             "pending_review": "needs_review flag set",
             "ok": "Did not match higher-priority buckets",
         }

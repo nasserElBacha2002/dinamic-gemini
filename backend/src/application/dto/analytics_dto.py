@@ -10,7 +10,7 @@ Metric definitions (abbreviated; see service docstrings for formulas):
 - invalid_traceability_rate: positions with detected_summary traceability_status='invalid' / non-deleted positions in scope.
 - processing_success_rate: aisle jobs with status succeeded / (succeeded + failed), updated in period.
 - average_review_time_seconds: mean(first settling action time - position.created_at) for positions with such action in period.
-- reviewed_results_per_day: settling actions in period / day span (min 1 day).
+- settling_actions_per_day: COUNT(settling review actions in period) / day span (min 1 day). Not unique positions.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ class AnalyticsSummaryDTO:
     invalid_traceability_rate: Optional[float]
     processing_success_rate: Optional[float]
     average_review_time_seconds: Optional[float]
-    reviewed_results_per_day: Optional[float]
+    settling_actions_per_day: Optional[float]
     notes: List[str] = field(default_factory=list)
     period_day_count: int = 0
     settling_actions_count: int = 0

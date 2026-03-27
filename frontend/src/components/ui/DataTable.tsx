@@ -85,6 +85,8 @@ export interface DataTableProps<T> {
   stickyHeader?: boolean;
   /** Row hover affordance (§10 row hover). */
   rowHover?: boolean;
+  /** Optional row tap target (e.g. navigate); use stopPropagation on nested interactive cells to avoid double handling. */
+  onRowClick?: (row: T) => void;
 }
 
 function SkeletonBody({ columns, rows }: { columns: number; rows: number }) {
@@ -115,6 +117,7 @@ export default function DataTable<T>({
   size = 'small',
   stickyHeader = true,
   rowHover = true,
+  onRowClick,
 }: DataTableProps<T>) {
   const colCount = columns.length;
   const emptyDisplay =
@@ -172,7 +175,12 @@ export default function DataTable<T>({
             </TableRow>
           ) : (
             rows.map((row) => (
-              <TableRow key={rowKey(row)} hover={rowHover}>
+              <TableRow
+                key={rowKey(row)}
+                hover={rowHover}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                sx={onRowClick ? { cursor: 'pointer' } : undefined}
+              >
                 {columns.map((col) => (
                   <TableCell key={col.id} align={col.align ?? 'left'} size={size}>
                     {col.cell(row)}

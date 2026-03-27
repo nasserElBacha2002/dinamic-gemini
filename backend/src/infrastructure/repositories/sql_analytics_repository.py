@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
 from src.application.dto.analytics_dto import (
     AnalyticsFilters,
     AnalyticsSummaryDTO,
@@ -49,20 +50,6 @@ def _append_inventory_aisle_filters(
         params.append(filters.aisle_id.strip())
 
 
-def _append_position_time_filters(
-    conditions: List[str],
-    params: List[Any],
-    filters: AnalyticsFilters,
-    col: str = "p.updated_at",
-) -> None:
-    if filters.date_from:
-        conditions.append(f"{col} >= ?")
-        params.append(_ensure_utc(filters.date_from))
-    if filters.date_to:
-        conditions.append(f"{col} <= ?")
-        params.append(_ensure_utc(filters.date_to))
-
-
 def _append_ra_time_filters(
     conditions: List[str],
     params: List[Any],
@@ -86,6 +73,7 @@ def _traceability_invalid_expr(alias: str = "p") -> str:
 
 def _issue_bucket_expr(alias: str = "p") -> str:
     tr = _traceability_invalid_expr(alias)
+    thr = float(LOW_CONFIDENCE_THRESHOLD)
     return f"""
     CASE
       WHEN {tr} THEN N'invalid_traceability'
@@ -94,7 +82,7 @@ def _issue_bucket_expr(alias: str = "p") -> str:
       WHEN TRY_CONVERT(int, JSON_VALUE({alias}.detected_summary_json, N'$.final_quantity')) = 0
         OR TRY_CONVERT(int, JSON_VALUE({alias}.detected_summary_json, N'$.product_label_quantity')) = 0
         THEN N'quantity_zero'
-      WHEN {alias}.confidence < 0.5 THEN N'low_confidence'
+      WHEN {alias}.confidence < CAST({thr} AS float) THEN N'low_confidence'
       WHEN {alias}.needs_review = 1 THEN N'pending_review'
       ELSE N'ok'
     END
@@ -111,7 +99,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         conditions = [pos_where]
         params: List[Any] = list(pos_params)
         _append_inventory_aisle_filters(conditions, params, filters)
-        _append_position_time_filters(conditions, params, filters)
+        # Position-state metrics: entity scope only (inventory/aisle), not position.updated_at.
         where_pos = " AND ".join(conditions)
 
         cond_ra = [
@@ -208,7 +196,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
 
         if filters.date_from is None or filters.date_to is None:
             notes.append(
-                "Date range open-ended: reviewed_results_per_day uses a 1-day divisor; "
+                "Date range open-ended: settling_actions_per_day uses a 1-day divisor; "
                 "set date_from and date_to for meaningful per-day rates."
             )
 
@@ -218,7 +206,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             invalid_traceability_rate=inv_rate,
             processing_success_rate=proc_success,
             average_review_time_seconds=avg_sec,
-            reviewed_results_per_day=rpd,
+            settling_actions_per_day=rpd,
             notes=notes,
             period_day_count=span,
             settling_actions_count=settling,
@@ -377,7 +365,6 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         conditions = [pos_where]
         params: List[Any] = []
         _append_inventory_aisle_filters(conditions, params, filters)
-        _append_position_time_filters(conditions, params, filters)
         where_scope = " AND ".join(conditions)
         tr_inv = _traceability_invalid_expr("p")
         processed_expr = (
@@ -461,7 +448,6 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         """
         cond_pos = ["p.status <> 'deleted'", "i.id = ?"]
         pm = [inventory_id]
-        _append_position_time_filters(cond_pos, pm, filters)
         where_pos = " AND ".join(cond_pos)
         sql_total = f"""
             SELECT COUNT(*) AS cnt FROM positions p
@@ -488,9 +474,9 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         conditions = [pos_where]
         params: List[Any] = []
         _append_inventory_aisle_filters(conditions, params, filters)
-        _append_position_time_filters(conditions, params, filters)
         where_scope = " AND ".join(conditions)
         tr_inv = _traceability_invalid_expr("p")
+        low_thr = float(LOW_CONFIDENCE_THRESHOLD)
         sql = f"""
             SELECT
               a.id AS aisle_id,
@@ -501,7 +487,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END) AS needs_review_count,
               SUM(CASE WHEN p.status = N'corrected' THEN 1 ELSE 0 END) AS corrected_count,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_traceability_count,
-              SUM(CASE WHEN p.confidence < 0.5 THEN 1 ELSE 0 END) AS low_confidence_count,
+              SUM(CASE WHEN p.confidence < CAST({low_thr} AS float) THEN 1 ELSE 0 END) AS low_confidence_count,
               SUM(CASE WHEN ({bucket}) = N'invalid_traceability' THEN 1 ELSE 0 END) AS iss_invalid,
               SUM(CASE WHEN ({bucket}) = N'missing_evidence' THEN 1 ELSE 0 END) AS iss_missing,
               SUM(CASE WHEN ({bucket}) = N'quantity_zero' THEN 1 ELSE 0 END) AS iss_qty0,
@@ -557,7 +543,6 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         conditions = [pos_where]
         params: List[Any] = []
         _append_inventory_aisle_filters(conditions, params, filters)
-        _append_position_time_filters(conditions, params, filters)
         where_scope = " AND ".join(conditions)
         sql = f"""
             SELECT bucket, COUNT(*) AS cnt
@@ -578,11 +563,12 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             "pending_review": "Pending review",
             "ok": "No primary issue",
         }
+        thr_note = f"confidence < {LOW_CONFIDENCE_THRESHOLD} (LOW_CONFIDENCE_THRESHOLD)"
         notes = {
             "invalid_traceability": "traceability_status=invalid in detected summary",
             "missing_evidence": "No primary evidence id",
             "quantity_zero": "final_quantity or product_label_quantity is 0 in summary JSON",
-            "low_confidence": "confidence < 0.5 (operational threshold)",
+            "low_confidence": thr_note,
             "pending_review": "needs_review flag set",
             "ok": "Did not match higher-priority buckets",
         }
