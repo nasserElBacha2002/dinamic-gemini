@@ -89,6 +89,9 @@ This backend now uses a versioned schema guard to prevent rolling out code again
   - `python scripts/db_migrate.py status|apply|validate|config-check`
   - `python -m src.database.migrations status|apply|validate|config-check`
   - `dinamic-db-migrate status|apply|validate` (console script from the install)
+- CI/CD production path (recommended): run migrations via one-off ECS task inside VPC
+  using `.github/scripts/run-ecs-migration-task.sh` with command
+  `dinamic-db-migrate config-check && dinamic-db-migrate apply && dinamic-db-migrate validate`.
 - Runtime guard:
   - startup check compares DB version vs required version
   - `/ready` returns `503` when schema is incompatible
@@ -96,7 +99,7 @@ This backend now uses a versioned schema guard to prevent rolling out code again
 
 Important env vars:
 
-- SQL Server: see **SQL Server configuration** above. GitHub Actions should pass **either** `SQLSERVER_CONNECTION_STRING` **or** the split secrets into the migrate job `env` (see `deploy-backend-dev.yml`).
+- SQL Server: see **SQL Server configuration** above. In production CI, DB creds stay in ECS task definition / secrets; GitHub runner only needs AWS/ECS metadata (task definition, container name, subnets, security groups).
 - `DB_SCHEMA_SERVICE_NAME` (default: `inventory-api`)
 - `DB_SCHEMA_REQUIRED_VERSION` (optional override)
 - `DB_SCHEMA_GUARD_ENABLED` (default: `true`)

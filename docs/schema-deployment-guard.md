@@ -12,12 +12,14 @@ Prevent any deployment from reaching an environment when the target database sch
 - **Migration metadata table**
   - Table: `schema_migrations`
   - Tracks: `service_name`, `version`, `migration_name`, `checksum_sha256`, `deployment_id`, `applied_at`
-- **Migration command** (after `pip install -e backend/` from repo root, or `pip install -e .` from `backend/`)
-  - `dinamic-db-migrate config-check` — **preflight**: validates SQL Server env without connecting; JSON to stdout; exit `3` if config cannot build a connection string (no secrets logged)
-  - `dinamic-db-migrate doctor` — alias of `config-check`
-  - `dinamic-db-migrate status|apply|validate` (recommended in CI **after** config-check)
-  - `cd backend && python scripts/db_migrate.py …` (same subcommands)
-  - `cd backend && python -m src.database.migrations …`
+- **Migration execution model (production)**
+  - GitHub Actions **does not connect to SQL Server directly**.
+  - Runner calls ECS API only, then runs one-off task in VPC:
+    - `dinamic-db-migrate config-check`
+    - `dinamic-db-migrate apply`
+    - `dinamic-db-migrate validate`
+  - Script used by workflows: `.github/scripts/run-ecs-migration-task.sh`
+  - Task definition must use CloudWatch logs (`awslogs`) with configured `awslogs-group` and `awslogs-stream-prefix` for traceability.
 - **Runtime compatibility guard**
   - Startup check validates: `current_schema_version >= required_schema_version`
   - Readiness endpoint (`/ready`) returns `503` if incompatible
@@ -28,20 +30,18 @@ Prevent any deployment from reaching an environment when the target database sch
 ## Deployment Order (Required)
 
 1. Backup/snapshot and environment safety checks
-2. **SQL Server config preflight** — `dinamic-db-migrate config-check` (fail fast; ensures secrets/vars reach the job)
-3. Migration presence validation in CI (PR/merge gate)
-4. Migration execution stage (`dinamic-db-migrate apply`)
-5. Compatibility validation stage (`dinamic-db-migrate validate`)
-6. Application deployment
-7. Post-deploy smoke (`GET /ready`)
+2. CI schema guard (migration presence by diff)
+3. Build/push backend image to ECR
+4. Run one-off ECS migration task in VPC (`config-check && apply && validate`)
+5. Deploy ECS service(s) only if migration task exits `0`
+6. Post-deploy smoke (`GET /ready`)
 
 ## CI/CD Enforcement Rules
 
 - If DB-related backend code changes, a migration file must be present:
   - Script: `backend/scripts/check_migration_presence.py`
-- Deploy must block if schema validation fails:
-  - Command exits non-zero on incompatibility: `python scripts/db_migrate.py validate`
-- Migration execution and app deployment are separated stages/jobs.
+- Deploy blocks if ECS migration task fails (run-task failure, stop reason, or non-zero container exit code).
+- Migration execution and app deployment are separated phases.
 - Migration stage is idempotent and safe for retries.
 
 ## Rollback and Recovery
@@ -59,19 +59,21 @@ Prevent any deployment from reaching an environment when the target database sch
 ## Environment Model
 
 - Same pattern for `dev`, `staging`, `prod`.
-- **SQL Server:** either repository secret `SQLSERVER_CONNECTION_STRING`, **or** split secrets `SQLSERVER_SERVER`, `SQLSERVER_DATABASE`, `SQLSERVER_UID`, `SQLSERVER_PWD` (and optionally `SQLSERVER_DRIVER` via **vars** if non-secret). The migrate/validate jobs must export these into `env:` so the **same** resolution path as local dev runs.
-- Other CI/CD:
-  - `DB_SCHEMA_SERVICE_NAME`
-  - `DB_SCHEMA_REQUIRED_VERSION` (optional)
-  - `DEPLOYMENT_ID`
+- CI runner env requires only AWS/ECS metadata:
+  - `MIGRATION_TASK_DEFINITION`
+  - `MIGRATION_CONTAINER_NAME`
+  - `MIGRATION_SUBNETS`
+  - `MIGRATION_SECURITY_GROUPS`
+  - optional `MIGRATION_ASSIGN_PUBLIC_IP` / `MIGRATION_LAUNCH_TYPE` / `MIGRATION_PLATFORM_VERSION`
+- SQL Server credentials/config remain inside ECS task definition (env/secrets) in AWS.
 
 ### Common failures
 
 | Symptom | Fix |
 |--------|-----|
-| `config_mode=unset` | No DB env in process; add secrets to workflow job `env` or `.env` locally. |
-| `missing_env_vars` lists ODBC driver | Install ODBC driver on runner or set `vars.SQLSERVER_DRIVER` / `SQLSERVER_DRIVER`. |
-| Split mode partial | Set all four core vars or use `SQLSERVER_CONNECTION_STRING`. |
+| ECS `run-task` failure before start | Check task definition, IAM role permissions, subnet/SG settings. |
+| Container exit non-zero in migration task | Check CloudWatch logs for `dinamic-db-migrate` output and DB schema/config errors. |
+| Task cannot reach DB | Validate VPC routing, SG egress/ingress between task and RDS. |
 
 ## Observability
 
@@ -88,21 +90,24 @@ Prevent any deployment from reaching an environment when the target database sch
 
 1. Add SQL migration file in `backend/src/database/migrations/versions/`.
 2. Run locally:
+   - `python backend/scripts/db_migrate.py config-check`
    - `python backend/scripts/db_migrate.py apply`
    - `python backend/scripts/db_migrate.py validate`
 3. Run tests and open PR.
-4. CI enforces migration presence and schema compatibility.
+4. CI enforces migration presence and runs ECS migration task before deploy.
 
 ## Operator Runbook (Concise)
 
-1. Check migration status:
-   - `python backend/scripts/db_migrate.py status`
-2. Apply pending migrations:
-   - `python backend/scripts/db_migrate.py apply`
-3. Validate compatibility:
-   - `python backend/scripts/db_migrate.py validate`
+1. Trigger deploy pipeline.
+2. Inspect ECS migration task output in workflow logs:
+   - task arn
+   - stopped reason
+   - migration container exit code
+3. If migration task failed:
+   - inspect CloudWatch stream hint printed by script
+   - fix config/schema SQL and rerun
 4. Confirm readiness:
    - `curl -f <base-url>/ready`
-5. If failure:
-   - Inspect logs for required/current versions
-   - Stop rollout and apply forward-fix
+5. If smoke fails:
+   - inspect logs for required/current versions
+   - stop rollout and apply forward-fix
