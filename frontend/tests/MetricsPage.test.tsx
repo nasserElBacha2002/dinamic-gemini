@@ -107,11 +107,12 @@ describe('MetricsPage', () => {
 
   it('renders heading, settling-actions KPI, and quality copy aligned with backend buckets', () => {
     renderMetrics();
-    expect(screen.getByRole('heading', { name: /Metrics & analytics/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Metrics$/i })).toBeInTheDocument();
+    expect(screen.getByText('Auto-acceptance rate')).toBeInTheDocument();
     expect(screen.getByText('Settling actions / day')).toBeInTheDocument();
     expect(screen.getByText('4.0')).toBeInTheDocument();
     expect(
-      screen.getByText(/Each position counts once: one primary issue bucket by priority/i)
+      screen.getByText(/Each position counted once in its highest-priority issue/i)
     ).toBeInTheDocument();
     expect(screen.getByText('Inventory performance')).toBeInTheDocument();
   });
@@ -156,7 +157,7 @@ describe('MetricsPage', () => {
       quality: { items: [] },
     });
     renderMetrics();
-    expect(screen.getByText('No positions in scope for this filter.')).toBeInTheDocument();
+    expect(screen.getByText('No positions match this filter and date range.')).toBeInTheDocument();
   });
 
   it('does not expose a redundant Actions column on inventory or aisle analytics tables', () => {

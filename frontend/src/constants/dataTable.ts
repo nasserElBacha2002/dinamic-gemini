@@ -7,9 +7,11 @@
  * move to server pagination.
  */
 
+import { TABLE_EMPTY_DEFAULT } from './uiCopy';
+
 export const DEFAULT_LIST_PAGE_SIZE = 25;
 
 export const TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200] as const;
 
 /** Used by `DataTable` when `rows` is empty, `loading` is false, and no `emptyState` prop is passed. */
-export const DATATABLE_DEFAULT_EMPTY_MESSAGE = 'No data to display.';
+export const DATATABLE_DEFAULT_EMPTY_MESSAGE = TABLE_EMPTY_DEFAULT;

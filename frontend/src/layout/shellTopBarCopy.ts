@@ -14,7 +14,7 @@ export function topBarCopy(pathname: string): { title: string; subtitle?: string
     return { title: 'Dashboard', subtitle: 'Operational overview' };
   }
   if (pathname === '/inventories') {
-    return { title: 'Inventories', subtitle: 'Manage all inventories' };
+    return { title: 'Inventories', subtitle: 'Manage inventories, aisles, processing, and review' };
   }
   if (pathname.startsWith('/inventories/')) {
     if (matchPath('/inventories/:inventoryId/aisles/:aisleId/positions/:positionId', pathname)) {
@@ -28,10 +28,10 @@ export function topBarCopy(pathname: string): { title: string; subtitle?: string
     }
   }
   if (pathname === '/review-queue') {
-    return { title: 'Review queue', subtitle: 'Cross-inventory results' };
+    return { title: 'Review queue', subtitle: 'Cross-inventory review workload' };
   }
   if (pathname === '/metrics') {
-    return { title: 'Metrics', subtitle: 'Analytics and performance' };
+    return { title: 'Metrics', subtitle: 'Quality, processing, and review performance' };
   }
   if (pathname === '/settings') {
     return { title: 'Settings', subtitle: 'Preferences' };

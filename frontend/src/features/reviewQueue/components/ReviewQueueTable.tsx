@@ -209,7 +209,7 @@ export default function ReviewQueueTable({
       emptyState={{
         title: 'No results in this queue',
         message:
-          'No positions match the current filters. Adjust scope or filters, or reset to see the full queue.',
+          'No results match the current filters. Adjust inventory, aisle, or filters, or choose Reset filters.',
       }}
     />
   );

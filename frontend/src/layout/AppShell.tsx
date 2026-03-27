@@ -7,8 +7,8 @@
  * - `PageHeader` (see `components/shell/PageHeader.tsx`) is for **breadcrumbs** (§4.1, §14.1), **entity-specific
  *   titles** when the topbar stays generic (e.g. inventory name while topbar says “Inventory”), **secondary
  *   lines**, and **actions** in the main column (§4.1 “acciones contextuales en header” at page level).
- * - Top-level scaffold pages (Dashboard, Review queue, Metrics) use the topbar only plus body layout blocks;
- *   no duplicate `PageHeader` title.
+ * - Top-level scaffold pages (Dashboard, Review queue, Metrics) pair the topbar with `PageHeader` for the same
+ *   route so the main column shows breadcrumbs-ready structure, subtitles, and actions when needed.
  * - Narrow/detail columns (e.g. result review) may constrain width inside `AppMain` via
  *   `DETAIL_COLUMN_MAX_WIDTH_PX` — see `components/shell/layoutConstants.ts`.
  */

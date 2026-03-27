@@ -19,6 +19,7 @@ import {
 import { PageHeader } from '../components/shell';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
 import { useInventoriesList, useCreateInventory } from '../hooks';
+import { dashboardPlaceholder, inventoryListEmpty, recentInventoriesCaption } from '../constants/uiCopy';
 
 /**
  * Dashboard — Sprint 3.1 (Re diseño 3.3 §9.2).
@@ -60,7 +61,7 @@ export default function DashboardPage() {
     () => [
       {
         id: 'name',
-        label: 'Inventory name',
+        label: 'Inventory',
         cell: (inv) => (
           <Link
             component="button"
@@ -120,31 +121,31 @@ export default function DashboardPage() {
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
-          <KpiCard label="Active inventories" value="—" description="Pending dashboard summary contract" />
+          <KpiCard label="Active inventories" value="—" description={dashboardPlaceholder.kpiFootnote} />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
-          <KpiCard label="Pending review" value="—" description="Pending dashboard summary contract" />
+          <KpiCard label="Pending review" value="—" description={dashboardPlaceholder.kpiFootnote} />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
-          <KpiCard label="Processed aisles" value="—" description="Pending dashboard summary contract" />
+          <KpiCard label="Processed aisles" value="—" description={dashboardPlaceholder.kpiFootnote} />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
-          <KpiCard label="Failed jobs" value="—" description="Pending dashboard summary contract" />
+          <KpiCard label="Failed jobs" value="—" description={dashboardPlaceholder.kpiFootnote} />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
-          <KpiCard label="Manual corrections" value="—" description="Pending dashboard summary contract" />
+          <KpiCard label="Manual corrections" value="—" description={dashboardPlaceholder.kpiFootnote} />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2} sx={{ display: 'flex' }}>
-          <KpiCard label="Auto-acceptance rate" value="—" description="Pending dashboard summary contract" />
+          <KpiCard label="Auto-acceptance rate" value="—" description={dashboardPlaceholder.kpiFootnote} />
         </Grid>
       </Grid>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, mb: 2 }}>
         <SectionCard title="Requires attention" subtitle="Inventories with errors, failed aisles, and critical results.">
-          <EmptyState message="Dashboard attention feed is not wired yet. Backend summary contract needed." />
+          <EmptyState message={dashboardPlaceholder.attention} />
         </SectionCard>
-        <SectionCard title="Recent activity" subtitle="Recent inventory creation, processing, and review actions.">
-          <EmptyState message="Recent activity feed is not wired yet. Backend summary contract needed." />
+        <SectionCard title="Recent activity" subtitle="Uploads, processing runs, and review actions.">
+          <EmptyState message={dashboardPlaceholder.activity} />
         </SectionCard>
       </Box>
 
@@ -158,8 +159,8 @@ export default function DashboardPage() {
             columns={recentColumns}
             loading={recentInvQuery.isLoading}
             emptyState={{
-              title: 'No inventories yet',
-              message: 'Create an inventory to start aisles, processing, and review.',
+              title: inventoryListEmpty.title,
+              message: inventoryListEmpty.message,
               action: (
                 <Button
                   variant="contained"
@@ -175,7 +176,7 @@ export default function DashboardPage() {
             }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            Showing the 10 most recently active inventories.
+            {recentInventoriesCaption}
           </Typography>
         </SectionCard>
       )}

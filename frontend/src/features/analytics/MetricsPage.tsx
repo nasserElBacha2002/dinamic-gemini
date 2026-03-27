@@ -24,6 +24,7 @@ import {
   SectionCard,
   type DataTableColumn,
 } from '../../components/ui';
+import { PageHeader } from '../../components/shell';
 import { useInventoriesList } from '../../hooks/useInventories';
 import { useAislesList } from '../../hooks/useAisles';
 import { formatDate } from '../../utils/formatDate';
@@ -115,19 +116,19 @@ export default function MetricsPage() {
       { id: 'correction_rate', label: 'Correction rate', align: 'right', cell: (r) => formatPct(r.correction_rate) },
       {
         id: 'invalid_tr',
-        label: 'Invalid trace.',
+        label: 'Invalid traceability',
         align: 'right',
         cell: (r) => formatPct(r.invalid_traceability_rate),
       },
       {
         id: 'avg_conf',
-        label: 'Avg conf.',
+        label: 'Avg confidence',
         align: 'right',
         cell: (r) => (r.avg_confidence != null ? `${(r.avg_confidence * 100).toFixed(0)}%` : '—'),
       },
       {
         id: 'proc',
-        label: 'Job success',
+        label: 'Processing success',
         align: 'right',
         cell: (r) => formatPct(r.processing_success_rate),
       },
@@ -162,11 +163,11 @@ export default function MetricsPage() {
           </Typography>
         ),
       },
-      { id: 'total', label: 'Results', align: 'right', cell: (r) => r.total_results },
+      { id: 'total', label: 'Positions', align: 'right', cell: (r) => r.total_results },
       { id: 'pending', label: 'Pending review', align: 'right', cell: (r) => r.needs_review_count },
       { id: 'corrected', label: 'Corrected', align: 'right', cell: (r) => r.corrected_count },
-      { id: 'inv_tr', label: 'Invalid tr.', align: 'right', cell: (r) => r.invalid_traceability_count },
-      { id: 'low_c', label: 'Low conf.', align: 'right', cell: (r) => r.low_confidence_count },
+      { id: 'inv_tr', label: 'Invalid traceability', align: 'right', cell: (r) => r.invalid_traceability_count },
+      { id: 'low_c', label: 'Low confidence', align: 'right', cell: (r) => r.low_confidence_count },
       { id: 'issue', label: 'Top issue', cell: (r) => r.most_common_issue ?? '—' },
     ],
     []
@@ -174,29 +175,29 @@ export default function MetricsPage() {
 
   const kpiCards = [
     {
-      label: 'Auto acceptance rate',
+      label: 'Auto-acceptance rate',
       value: formatPct(summary?.auto_acceptance_rate),
-      description: 'Confirm / settling actions',
+      description: 'Share of results confirmed without manual correction',
     },
     {
       label: 'Manual correction rate',
       value: formatPct(summary?.manual_correction_rate),
-      description: 'SKU/Qty corrections / settling',
+      description: 'SKU or quantity corrections before settling',
     },
     {
       label: 'Invalid traceability rate',
       value: formatPct(summary?.invalid_traceability_rate),
-      description: 'Invalid / active positions',
+      description: 'Positions with invalid traceability in scope',
     },
     {
       label: 'Processing success rate',
       value: formatPct(summary?.processing_success_rate),
-      description: 'Succeeded / (succeeded+failed) jobs',
+      description: 'Succeeded jobs out of terminal outcomes',
     },
     {
       label: 'Average review time',
       value: formatAvgReviewSec(summary?.average_review_time_seconds),
-      description: 'First settling action minus position created',
+      description: 'Time from result creation to first settling action',
     },
     {
       label: 'Settling actions / day',
@@ -210,12 +211,10 @@ export default function MetricsPage() {
     <Box sx={{ pb: 4 }}>
       {errMsg ? <ErrorAlert message={errMsg} onRetry={() => refetchAll()} /> : null}
 
-      <Typography variant="h5" component="h1" fontWeight={700} gutterBottom>
-        Metrics & analytics
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
-        Quality, review burden, traceability health, and processing performance. Filters scope all sections below.
-      </Typography>
+      <PageHeader
+        title="Metrics"
+        subtitle="Quality, review workload, traceability, and processing performance. Filters apply to all sections below."
+      />
 
       <FilterToolbar
         onReset={() => {
@@ -299,27 +298,27 @@ export default function MetricsPage() {
       </Grid>
 
       {summary?.notes?.length ? (
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+        <Typography variant="body2" color="text.secondary" display="block" sx={{ mb: 2, maxWidth: 900 }}>
           {summary.notes.join(' ')}
         </Typography>
       ) : null}
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={6}>
-          <SectionCard title="Review activity" subtitle="Settling review actions per day">
+          <SectionCard title="Review activity" subtitle="Settling actions per day in the selected period">
             <TrendBars
               title=""
               points={trends?.reviewed_results_over_time ?? []}
-              emptyMessage="No review actions in this range."
+              emptyMessage="No review activity in this date range."
             />
           </SectionCard>
         </Grid>
         <Grid item xs={12} md={6}>
-          <SectionCard title="Processing outcomes" subtitle="Terminal jobs per day (bar height = job count)">
+          <SectionCard title="Processing outcomes" subtitle="Terminal jobs per day (height = job count)">
             <TrendBars
               title=""
               points={trends?.processing_success_over_time ?? []}
-              emptyMessage="No completed/failed jobs in this range."
+              emptyMessage="No completed or failed jobs in this date range."
             />
           </SectionCard>
         </Grid>
@@ -329,13 +328,13 @@ export default function MetricsPage() {
         <Grid item xs={12} md={6}>
           <SectionCard
             title="Quality patterns"
-            subtitle="Each position counts once: one primary issue bucket by priority (invalid → missing evidence → zero qty → low confidence → pending review → OK)"
+            subtitle="Each position counted once in its highest-priority issue (invalid traceability → missing evidence → zero quantity → low confidence → pending review → OK)."
           >
             {isLoading && !quality ? (
               <Skeleton variant="rounded" height={160} />
             ) : !quality?.items.length ? (
               <Typography variant="body2" color="text.secondary">
-                No positions in scope for this filter.
+                No positions match this filter and date range.
               </Typography>
             ) : (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -376,19 +375,19 @@ export default function MetricsPage() {
               columns={aisleColumns}
               loading={isLoading}
               size="small"
-              emptyState={{ message: 'No aisle-level data for this filter.' }}
+              emptyState={{ message: 'No aisle-level metrics for this filter.' }}
             />
           </SectionCard>
         </Grid>
       </Grid>
 
-      <SectionCard title="Inventory performance" subtitle="Coverage, review intensity, and job outcomes by inventory">
+      <SectionCard title="Inventory performance" subtitle="Coverage, review intensity, and processing outcomes by inventory">
         <DataTable<InventoryPerformanceRow>
           rows={inventoryPerformance?.items ?? []}
           rowKey={(r) => r.inventory_id}
           columns={invColumns}
           loading={isLoading}
-          emptyState={{ message: 'No inventory performance rows for this filter.' }}
+          emptyState={{ message: 'No inventory performance data for this filter.' }}
         />
       </SectionCard>
     </Box>

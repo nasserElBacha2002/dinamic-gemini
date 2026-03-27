@@ -4,8 +4,8 @@ import { Box, Button, Dialog, DialogContent, DialogTitle, Typography } from '@mu
 import type { Aisle } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
-import { getJobStatusLabel, getJobStatusColor } from '../utils/jobStatus';
-import { getAisleStatusLabel } from '../utils/aisleStatus';
+import { getJobStatusLabel, jobStatusToBadgeSemantic } from '../utils/jobStatus';
+import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../utils/aisleStatus';
 import { formatDate } from '../utils/formatDate';
 import { pathToAislePositions } from '../utils/resultRoutes';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
@@ -18,7 +18,6 @@ import {
   RowActionMenu,
   SectionCard,
   StatusBadge,
-  StatusChip,
   useAppSnackbar,
   type DataTableColumn,
 } from '../components/ui';
@@ -96,27 +95,6 @@ export default function InventoryDetail() {
     metricsQuery.isError && metricsQuery.error
       ? getApiErrorMessage(metricsQuery.error, 'Failed to load metrics')
       : null;
-
-  const aisleStatusToSemantic = (status: string) => {
-    const s = String(status || '').trim().toLowerCase();
-    if (!s) return 'neutral' as const;
-    // Direct mapping: domain status → semantic meaning (avoid legacy "color → semantic" coupling).
-    switch (s) {
-      case 'failed':
-        return 'error' as const;
-      case 'processed':
-      case 'in_review':
-      case 'completed':
-        return 'success' as const;
-      case 'queued':
-      case 'processing':
-        return 'info' as const;
-      case 'created':
-      case 'assets_uploaded':
-      default:
-        return 'neutral' as const;
-    }
-  };
 
   const handleCreateAisleSuccess = () => {
     showSnackbar('Aisle created', 'success');
@@ -225,7 +203,7 @@ export default function InventoryDetail() {
         cell: (a) => (
           <StatusBadge
             label={getAisleStatusLabel(String(a.status))}
-            semantic={aisleStatusToSemantic(String(a.status))}
+            semantic={aisleStatusToBadgeSemantic(String(a.status))}
           />
         ),
       },
@@ -240,11 +218,9 @@ export default function InventoryDetail() {
         label: 'Processing status',
         cell: (a) =>
           a.latest_job ? (
-            <StatusChip
+            <StatusBadge
               label={getJobStatusLabel(a.latest_job.status)}
-              color={getJobStatusColor(a.latest_job.status)}
-              size="small"
-              variant="outlined"
+              semantic={jobStatusToBadgeSemantic(a.latest_job.status)}
             />
           ) : (
             '—'
@@ -269,13 +245,13 @@ export default function InventoryDetail() {
       },
       {
         id: 'actions',
-        label: 'Actions',
+        label: 'Operations',
         align: 'right',
         width: 56,
         cell: (a) => {
           return (
             <RowActionMenu
-              ariaLabel={`Actions for aisle ${a.code}`}
+              ariaLabel={`Operations for aisle ${a.code}`}
               items={[
                 {
                   id: 'upload_assets',
@@ -309,7 +285,7 @@ export default function InventoryDetail() {
         },
       },
     ];
-  }, [aisleStatusToSemantic, handleStartProcess, inventoryId, navigate, processingAisleId, uploadingAisleId]);
+  }, [handleStartProcess, inventoryId, navigate, processingAisleId, uploadingAisleId]);
 
   if (inventoryLoading && !inventory) {
     return (
@@ -482,13 +458,13 @@ export default function InventoryDetail() {
                   <Box component="div" sx={{ typography: 'subtitle2', fontWeight: 700, mb: 0.75 }}>
                     Recent activity
                   </Box>
-                  <EmptyState message="Recent activity is not wired yet. A structured activity feed contract is required." />
+                  <EmptyState message="Recent activity will appear here when the activity feed API is available." />
                 </Box>
                 <Box sx={{ pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
                   <Box component="div" sx={{ typography: 'subtitle2', fontWeight: 700, mb: 0.75 }}>
                     Logs summary
                   </Box>
-                  <EmptyState message="Open a job log from an aisle Actions menu. A summarized logs contract is not available yet." />
+                  <EmptyState message="Use View log from an aisle’s operations menu to open the job log. A summary view will be available when the contract ships." />
                 </Box>
               </Box>
             </SectionCard>

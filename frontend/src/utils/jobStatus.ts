@@ -1,8 +1,9 @@
 /**
- * Helpers for consistent job/status chip presentation in aisle processing UI.
+ * Helpers for consistent job / processing status presentation in aisle UI.
  */
 
 import type { JobStatus } from '../api/types';
+import type { StatusBadgeSemantic } from '../components/ui/StatusBadge';
 
 type ChipColor = 'default' | 'primary' | 'success' | 'error' | 'warning';
 type JobStatusLike = JobStatus | string;
@@ -45,5 +46,25 @@ export function getJobStatusColor(status: JobStatusLike): ChipColor {
       return 'warning';
     default:
       return 'default';
+  }
+}
+
+/** Maps v3 job status to shared `StatusBadge` semantics (Sprint 5.3). */
+export function jobStatusToBadgeSemantic(status: JobStatusLike): StatusBadgeSemantic {
+  const s = (status || '').trim().toLowerCase();
+  switch (s) {
+    case 'succeeded':
+      return 'success';
+    case 'failed':
+    case 'timed_out':
+      return 'error';
+    case 'running':
+    case 'queued':
+      return 'info';
+    case 'cancel_requested':
+    case 'canceled':
+      return 'warning';
+    default:
+      return 'neutral';
   }
 }

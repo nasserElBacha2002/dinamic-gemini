@@ -218,7 +218,7 @@ export default function ReviewQueuePage() {
     <>
       <PageHeader
         title="Review Queue"
-        subtitle="Cross-inventory operational queue for result review."
+        subtitle="Prioritize and complete review work across inventories and aisles."
         actions={
           <Button size="small" variant="outlined" onClick={() => queueQuery.refetch()} disabled={queueQuery.isFetching}>
             Refresh

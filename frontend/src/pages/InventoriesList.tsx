@@ -19,6 +19,7 @@ import { PageHeader } from '../components/shell';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
 import { useInventoriesList, useCreateInventory } from '../hooks';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
+import { inventoryListEmpty } from '../constants/uiCopy';
 
 export default function InventoriesList() {
   const navigate = useNavigate();
@@ -59,7 +60,7 @@ export default function InventoriesList() {
     () => [
       {
         id: 'name',
-        label: 'Name',
+        label: 'Inventory',
         sortable: true,
         cell: (inv) => (
           <Link
@@ -119,7 +120,7 @@ export default function InventoriesList() {
     <>
       <PageHeader
         title="Inventories"
-        subtitle="Manage inventories and open them for aisle processing and review."
+        subtitle="Manage inventories, aisles, processing, and review."
         actions={
           <Button
             variant="contained"
@@ -136,15 +137,15 @@ export default function InventoriesList() {
       {errorMessage && <ErrorAlert message={errorMessage} onRetry={() => refetch()} />}
 
       {!errorMessage ? (
-      <SectionCard title="All inventories" subtitle="Open an inventory to manage aisles, processing, and review.">
+      <SectionCard title="All inventories" subtitle="Select an inventory to manage aisles, uploads, processing, and review.">
         <DataTable<InventoryListItem>
           rows={inventories}
           rowKey={(inv) => inv.id}
           columns={columns}
           loading={isLoading}
           emptyState={{
-            title: 'No inventories yet',
-            message: 'Create one to capture aisles, runs, and review work.',
+            title: inventoryListEmpty.title,
+            message: inventoryListEmpty.message,
             action: (
               <Button
                 variant="contained"
