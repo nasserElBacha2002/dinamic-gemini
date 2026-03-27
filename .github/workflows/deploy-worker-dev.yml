@@ -18,70 +18,50 @@ env:
   ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
   ECS_SERVICE: ${{ vars.WORKER_ECS_SERVICE }}
   DB_SCHEMA_SERVICE_NAME: inventory-api
+  MIGRATION_TASK_DEFINITION: ${{ vars.MIGRATION_TASK_DEFINITION }}
+  MIGRATION_CONTAINER_NAME: ${{ vars.MIGRATION_CONTAINER_NAME }}
+  MIGRATION_SUBNETS: ${{ vars.MIGRATION_SUBNETS }}
+  MIGRATION_SECURITY_GROUPS: ${{ vars.MIGRATION_SECURITY_GROUPS }}
+  MIGRATION_ASSIGN_PUBLIC_IP: ${{ vars.MIGRATION_ASSIGN_PUBLIC_IP }}
+  MIGRATION_LAUNCH_TYPE: ${{ vars.MIGRATION_LAUNCH_TYPE }}
+  MIGRATION_PLATFORM_VERSION: ${{ vars.MIGRATION_PLATFORM_VERSION }}
 
 jobs:
-  db-config:
+  ecs-migration-preflight:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    env:
-      SQLSERVER_ENABLED: "true"
-      SQLSERVER_CONNECTION_STRING: ${{ secrets.SQLSERVER_CONNECTION_STRING }}
-      SQLSERVER_SERVER: ${{ secrets.SQLSERVER_SERVER }}
-      SQLSERVER_DATABASE: ${{ secrets.SQLSERVER_DATABASE }}
-      SQLSERVER_UID: ${{ secrets.SQLSERVER_UID }}
-      SQLSERVER_PWD: ${{ secrets.SQLSERVER_PWD }}
-      SQLSERVER_DRIVER: ${{ vars.SQLSERVER_DRIVER }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install backend dependencies
+      - name: Validate ECS migration task settings
         run: |
-          pip install -e .
-
-      - name: SQL Server config preflight (no secrets logged)
-        run: |
-          dinamic-db-migrate config-check
+          for key in AWS_REGION ECS_CLUSTER MIGRATION_TASK_DEFINITION MIGRATION_CONTAINER_NAME MIGRATION_SUBNETS MIGRATION_SECURITY_GROUPS; do
+            if [ -z "${!key}" ]; then
+              echo "Missing required workflow env: ${key}" >&2
+              exit 1
+            fi
+          done
 
   schema-validate:
     runs-on: ubuntu-latest
-    needs: db-config
+    needs: ecs-migration-preflight
     defaults:
       run:
         working-directory: backend
-    env:
-      SQLSERVER_ENABLED: "true"
-      SQLSERVER_CONNECTION_STRING: ${{ secrets.SQLSERVER_CONNECTION_STRING }}
-      SQLSERVER_SERVER: ${{ secrets.SQLSERVER_SERVER }}
-      SQLSERVER_DATABASE: ${{ secrets.SQLSERVER_DATABASE }}
-      SQLSERVER_UID: ${{ secrets.SQLSERVER_UID }}
-      SQLSERVER_PWD: ${{ secrets.SQLSERVER_PWD }}
-      SQLSERVER_DRIVER: ${{ vars.SQLSERVER_DRIVER }}
-      # Cannot use ${{ env.* }} in job env — mirror workflow env DB_SCHEMA_SERVICE_NAME above.
-      DB_SCHEMA_SERVICE_NAME: inventory-api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          python-version: "3.11"
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install backend dependencies
+      - name: Validate schema compatibility via ECS task (inside AWS/VPC)
+        env:
+          MIGRATION_COMMAND: >-
+            dinamic-db-migrate config-check
+            && dinamic-db-migrate validate
         run: |
-          pip install -e .
-
-      - name: Validate schema compatibility before worker rollout
-        run: |
-          dinamic-db-migrate validate
+          ../.github/scripts/run-ecs-migration-task.sh
 
   deploy:
     runs-on: ubuntu-latest

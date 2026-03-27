@@ -20,37 +20,26 @@ env:
   ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
   DB_SCHEMA_SERVICE_NAME: inventory-api
   DEPLOYMENT_ID: backend-dev-${{ github.sha }}
+  MIGRATION_TASK_DEFINITION: ${{ vars.MIGRATION_TASK_DEFINITION }}
+  MIGRATION_CONTAINER_NAME: ${{ vars.MIGRATION_CONTAINER_NAME }}
+  MIGRATION_SUBNETS: ${{ vars.MIGRATION_SUBNETS }}
+  MIGRATION_SECURITY_GROUPS: ${{ vars.MIGRATION_SECURITY_GROUPS }}
+  MIGRATION_ASSIGN_PUBLIC_IP: ${{ vars.MIGRATION_ASSIGN_PUBLIC_IP }}
+  MIGRATION_LAUNCH_TYPE: ${{ vars.MIGRATION_LAUNCH_TYPE }}
+  MIGRATION_PLATFORM_VERSION: ${{ vars.MIGRATION_PLATFORM_VERSION }}
 
 jobs:
-  db-config:
+  ecs-migration-preflight:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    env:
-      SQLSERVER_ENABLED: "true"
-      SQLSERVER_CONNECTION_STRING: ${{ secrets.SQLSERVER_CONNECTION_STRING }}
-      SQLSERVER_SERVER: ${{ secrets.SQLSERVER_SERVER }}
-      SQLSERVER_DATABASE: ${{ secrets.SQLSERVER_DATABASE }}
-      SQLSERVER_UID: ${{ secrets.SQLSERVER_UID }}
-      SQLSERVER_PWD: ${{ secrets.SQLSERVER_PWD }}
-      SQLSERVER_DRIVER: ${{ vars.SQLSERVER_DRIVER }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install backend dependencies
+      - name: Validate ECS migration task settings
         run: |
-          pip install -e .
-
-      - name: SQL Server config preflight (no secrets logged)
-        run: |
-          dinamic-db-migrate config-check
+          for key in AWS_REGION ECS_CLUSTER MIGRATION_TASK_DEFINITION MIGRATION_CONTAINER_NAME MIGRATION_SUBNETS MIGRATION_SECURITY_GROUPS; do
+            if [ -z "${!key}" ]; then
+              echo "Missing required workflow env: ${key}" >&2
+              exit 1
+            fi
+          done
 
   schema-guard:
     runs-on: ubuntu-latest
@@ -66,48 +55,9 @@ jobs:
             --base-ref "${{ github.event.before }}" \
             --head-ref "${{ github.sha }}"
 
-  migrate:
-    runs-on: ubuntu-latest
-    needs: [db-config, schema-guard]
-    defaults:
-      run:
-        working-directory: backend
-    # Pass both connection-string and split-var secrets; resolver prefers SQLSERVER_CONNECTION_STRING when set.
-    env:
-      SQLSERVER_ENABLED: "true"
-      SQLSERVER_CONNECTION_STRING: ${{ secrets.SQLSERVER_CONNECTION_STRING }}
-      SQLSERVER_SERVER: ${{ secrets.SQLSERVER_SERVER }}
-      SQLSERVER_DATABASE: ${{ secrets.SQLSERVER_DATABASE }}
-      SQLSERVER_UID: ${{ secrets.SQLSERVER_UID }}
-      SQLSERVER_PWD: ${{ secrets.SQLSERVER_PWD }}
-      SQLSERVER_DRIVER: ${{ vars.SQLSERVER_DRIVER }}
-      # Cannot use ${{ env.* }} here — job-level env is not in env context. Mirror workflow env: above.
-      DB_SCHEMA_SERVICE_NAME: inventory-api
-      DEPLOYMENT_ID: backend-dev-${{ github.sha }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install backend dependencies
-        run: |
-          pip install -e .
-
-      - name: Apply pending schema migrations
-        run: |
-          dinamic-db-migrate apply
-
-      - name: Validate schema compatibility after migration
-        run: |
-          dinamic-db-migrate validate
-
   deploy:
     runs-on: ubuntu-latest
-    needs: migrate
+    needs: [ecs-migration-preflight, schema-guard]
 
     defaults:
       run:
@@ -142,6 +92,15 @@ jobs:
         run: |
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.IMAGE_TAG }}
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+
+      - name: Run ECS migration task (config-check + apply + validate)
+        env:
+          MIGRATION_COMMAND: >-
+            dinamic-db-migrate config-check
+            && dinamic-db-migrate apply
+            && dinamic-db-migrate validate
+        run: |
+          ../.github/scripts/run-ecs-migration-task.sh
 
       - name: Force new deployment
         run: |
