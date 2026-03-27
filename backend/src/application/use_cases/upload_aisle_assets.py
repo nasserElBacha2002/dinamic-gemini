@@ -21,6 +21,7 @@ from typing import BinaryIO, List, Sequence
 from uuid import uuid4
 
 from src.application.errors import EmptyUploadError, UnsupportedAssetTypeError
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
 from src.application.ports.clock import Clock
@@ -79,11 +80,13 @@ class UploadAisleAssetsUseCase:
         asset_repo: SourceAssetRepository,
         artifact_storage: ArtifactStorage,
         clock: Clock,
+        status_reconciler: InventoryStatusReconciler,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
         self._artifact_storage = artifact_storage
         self._clock = clock
+        self._status_reconciler = status_reconciler
 
     def execute(
         self,
@@ -130,6 +133,7 @@ class UploadAisleAssetsUseCase:
                 created.append(asset)
             aisle.mark_assets_uploaded(now)
             self._aisle_repo.save(aisle)
+            self._status_reconciler.reconcile(inventory_id)
             return created
         except Exception:
             if created:

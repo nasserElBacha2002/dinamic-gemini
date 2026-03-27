@@ -11,7 +11,8 @@ import pytest
 
 from src.application.errors import AisleNotFoundError, EmptyUploadError, UnsupportedAssetTypeError
 from src.application.ports.contracts import AisleAssetRollup
-from src.application.ports.repositories import AisleRepository, SourceAssetRepository
+from src.application.ports.repositories import AisleRepository, InventoryRepository, SourceAssetRepository
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.ports.services import ArtifactStorage
 from src.application.ports.clock import Clock
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
@@ -27,6 +28,20 @@ class FixedClock:
 
     def now(self) -> datetime:
         return self._now
+
+
+class StubInventoryRepo(InventoryRepository):
+    def __init__(self, inventories: list[Inventory] | None = None) -> None:
+        self._store = {i.id: i for i in (inventories or [])}
+
+    def save(self, inventory: Inventory) -> None:
+        self._store[inventory.id] = inventory
+
+    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+        return self._store.get(inventory_id)
+
+    def list_all(self) -> Sequence[Inventory]:
+        return list(self._store.values())
 
 
 class StubAisleRepo(AisleRepository):
@@ -93,18 +108,22 @@ class StubArtifactStorage(ArtifactStorage):
 
 def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+    inv_repo = StubInventoryRepo([inv])
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
     asset_repo = StubAssetRepo()
     storage = StubArtifactStorage()
     clock = FixedClock(now)
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
 
     use_case = UploadAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
         artifact_storage=storage,
         clock=clock,
+        status_reconciler=reconciler,
     )
     files = [
         UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg"),
@@ -122,19 +141,24 @@ def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() ->
     assert updated_aisle.status == AisleStatus.ASSETS_UPLOADED
     listed = asset_repo.list_by_aisle("a1")
     assert len(listed) == 2
+    assert inv_repo.get_by_id("inv1") is not None
+    assert inv_repo.get_by_id("inv1").status != InventoryStatus.DRAFT
 
 
 def test_upload_aisle_assets_raises_when_aisle_not_found() -> None:
     aisle_repo = StubAisleRepo()
+    inv_repo = StubInventoryRepo([])
     asset_repo = StubAssetRepo()
     storage = StubArtifactStorage()
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
 
     use_case = UploadAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
         artifact_storage=storage,
         clock=FixedClock(now),
+        status_reconciler=reconciler,
     )
     files = [UploadedFile("x.jpg", BytesIO(b"x"), "image/jpeg")]
 
@@ -147,14 +171,17 @@ def test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory() -> N
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
+    inv_repo = StubInventoryRepo([])
     asset_repo = StubAssetRepo()
     storage = StubArtifactStorage()
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
 
     use_case = UploadAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
         artifact_storage=storage,
         clock=FixedClock(now),
+        status_reconciler=reconciler,
     )
     files = [UploadedFile("x.jpg", BytesIO(b"x"), "image/jpeg")]
 
@@ -167,14 +194,17 @@ def test_upload_aisle_assets_raises_when_unsupported_content_type() -> None:
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
     asset_repo = StubAssetRepo()
     storage = StubArtifactStorage()
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
 
     use_case = UploadAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
         artifact_storage=storage,
         clock=FixedClock(now),
+        status_reconciler=reconciler,
     )
     files = [UploadedFile("doc.pdf", BytesIO(b"pdf"), "application/pdf")]
 
@@ -187,14 +217,17 @@ def test_upload_aisle_assets_raises_when_empty_files() -> None:
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
     asset_repo = StubAssetRepo()
     storage = StubArtifactStorage()
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
 
     use_case = UploadAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
         artifact_storage=storage,
         clock=FixedClock(now),
+        status_reconciler=reconciler,
     )
 
     with pytest.raises(EmptyUploadError, match="At least one file"):
@@ -206,14 +239,17 @@ def test_upload_aisle_assets_rejects_video_extension_labeled_as_image() -> None:
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
     asset_repo = StubAssetRepo()
     storage = StubArtifactStorage()
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
 
     use_case = UploadAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
         artifact_storage=storage,
         clock=FixedClock(now),
+        status_reconciler=reconciler,
     )
     files = [UploadedFile("camera_capture.mp4", BytesIO(b"bad"), "image/jpeg")]
 

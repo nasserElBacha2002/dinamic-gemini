@@ -29,6 +29,7 @@ from src.application.use_cases.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.inventory_visual_reference_resolver import (
     InventoryVisualReferenceResolver,
 )
@@ -102,11 +103,17 @@ class V3JobExecutor:
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
+        self._inventory_repo = inventory_repo
         self._source_asset_repo = source_asset_repo
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
         self._evidence_repo = evidence_repo
         self._clock = clock
+        self._inventory_status_reconciler = InventoryStatusReconciler(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            clock=clock,
+        )
         self._persist_use_case = PersistAisleResultUseCase(
             position_repo=position_repo,
             product_record_repo=product_record_repo,
@@ -121,6 +128,9 @@ class V3JobExecutor:
             reference_repo=inventory_visual_reference_repo,
         )
         self._context_builder = AisleAnalysisContextBuilder(resolver)
+
+    def _reconcile_inventory_for_aisle(self, aisle: Aisle) -> None:
+        self._inventory_status_reconciler.reconcile(aisle.inventory_id)
 
     def execute(self, base_path: Path, job_id: str) -> bool:
         """
@@ -442,6 +452,7 @@ class V3JobExecutor:
             self._job_repo.save(job)
         aisle.mark_processing(now)
         self._aisle_repo.save(aisle)
+        self._reconcile_inventory_for_aisle(aisle)
 
     def _mark_success(
         self,
@@ -471,6 +482,7 @@ class V3JobExecutor:
             self._job_repo.save(job)
         aisle.mark_processed(now)
         self._aisle_repo.save(aisle)
+        self._reconcile_inventory_for_aisle(aisle)
 
     def _fail_job(self, job_id: str, error_message: str) -> None:
         job = self._job_repo.get_by_id(job_id)
@@ -502,6 +514,7 @@ class V3JobExecutor:
             retryable=True,
         )
         self._aisle_repo.save(aisle)
+        self._reconcile_inventory_for_aisle(aisle)
 
     def _cancel_job_and_aisle(
         self, job_id: str, aisle: Aisle, reason: str
@@ -515,3 +528,4 @@ class V3JobExecutor:
             retryable=True,
         )
         self._aisle_repo.save(aisle)
+        self._reconcile_inventory_for_aisle(aisle)

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from src.application.ports.clock import Clock
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.errors import InventoryNotFoundError, DuplicateAisleCodeError
 from src.domain.aisle.entities import Aisle, AisleStatus
@@ -28,10 +29,12 @@ class CreateAisleUseCase:
         inventory_repo: InventoryRepository,
         aisle_repo: AisleRepository,
         clock: Clock,
+        status_reconciler: InventoryStatusReconciler,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._clock = clock
+        self._status_reconciler = status_reconciler
 
     def execute(self, command: CreateAisleCommand) -> Aisle:
         code = (command.code or "").strip()
@@ -55,4 +58,5 @@ class CreateAisleUseCase:
             updated_at=now,
         )
         self._aisle_repo.save(aisle)
+        self._status_reconciler.reconcile(command.inventory_id)
         return aisle
