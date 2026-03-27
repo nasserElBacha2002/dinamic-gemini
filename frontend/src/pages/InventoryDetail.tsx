@@ -9,6 +9,7 @@ import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../utils/aisleS
 import { formatDate } from '../utils/formatDate';
 import { pathToAislePositions } from '../utils/resultRoutes';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
+import { exportInventoryResultsCsv } from '../api/client';
 import {
   DataTable,
   EmptyState,
@@ -54,6 +55,7 @@ export default function InventoryDetail() {
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [logDialog, setLogDialog] = useState<{ aisleId: string; jobId: string; aisleCode: string } | null>(null);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
 
@@ -327,11 +329,30 @@ export default function InventoryDetail() {
               </Box>
             }
             actions={
-              <>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  disabled={!inventoryId || exportingCsv}
+                  onClick={async () => {
+                    if (!inventoryId) return;
+                    setExportingCsv(true);
+                    try {
+                      await exportInventoryResultsCsv(inventoryId);
+                    } catch (e) {
+                      const err = e instanceof ApiError ? e : new ApiError(String(e));
+                      showSnackbar(getApiErrorMessage(err, 'Export failed'), 'error');
+                    } finally {
+                      setExportingCsv(false);
+                    }
+                  }}
+                >
+                  {exportingCsv ? 'Exporting…' : 'Export CSV'}
+                </Button>
                 <Button variant="contained" size="small" onClick={() => setCreateAisleOpen(true)}>
                   Create aisle
                 </Button>
-              </>
+              </Box>
             }
           />
 

@@ -1,10 +1,15 @@
-"""Build CSV bytes for v3 inventory results export (single table, UTF-8)."""
+"""Build CSV text for v3 inventory results export (single table, UTF-8).
+
+Output is prefixed with a UTF-8 BOM so Excel recognizes UTF-8 and renders accented text correctly.
+"""
 
 from __future__ import annotations
 
 import csv
 import io
 from typing import Any, Mapping, Sequence
+
+UTF8_BOM = "\ufeff"
 
 # Column order matches product/API spec (snake_case headers).
 INVENTORY_RESULTS_CSV_FIELDS: tuple[str, ...] = (
@@ -50,7 +55,7 @@ class CsvInventoryExporter:
         for row in rows:
             out = {k: CsvInventoryExporter._cell(row.get(k)) for k in INVENTORY_RESULTS_CSV_FIELDS}
             writer.writerow(out)
-        return buf.getvalue()
+        return f"{UTF8_BOM}{buf.getvalue()}"
 
     @staticmethod
     def _cell(value: Any) -> str:

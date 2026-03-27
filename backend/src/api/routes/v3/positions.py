@@ -19,6 +19,7 @@ from src.api.schemas.position_schemas import (
 )
 from src.application.errors import AisleNotFoundError, InventoryNotFoundError, PositionNotFoundError
 from src.api.schemas.listing_schemas import compute_total_pages
+from src.application.services.display_primary_product import select_display_primary_product
 from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 
@@ -77,10 +78,7 @@ def list_aisle_positions(
         summaries = []
         for p in result.positions:
             products = product_record_repo.list_by_position(p.id)
-            primary = (
-                sorted(products, key=lambda x: (x.created_at, x.id))[0]
-                if products else None
-            )
+            primary = select_display_primary_product(products)
             corrected_quantity = (
                 primary.corrected_quantity if primary is not None else None
             )
@@ -118,14 +116,9 @@ def get_position_detail(
     """Get position detail with evidences and review history (Épica 6)."""
     try:
         result = use_case.execute(inventory_id, aisle_id, position_id)
-        # Use deterministic "display primary" for corrected_quantity: first product by (created_at, id).
         # GetPositionDetailUseCase returns products from list_by_position (order not guaranteed by port);
-        # SQL repo orders by created_at ASC, id ASC; memory repo is unordered — sort here for stability.
-        products_sorted = sorted(
-            result.products,
-            key=lambda p: (p.created_at, p.id),
-        )
-        primary_product = products_sorted[0] if products_sorted else None
+        # SQL repo orders by created_at ASC, id ASC; memory repo is unordered — use shared display-primary rule.
+        primary_product = select_display_primary_product(result.products)
         corrected_quantity = (
             primary_product.corrected_quantity if primary_product is not None else None
         )

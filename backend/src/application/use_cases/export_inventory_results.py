@@ -12,6 +12,9 @@ There is no explicit aisle ``display_order`` on the domain model today. Aisles a
 ``position_barcode`` → ``entity_uid``), then ``internal_code``, ``created_at``, ``id``.
 ``final_quantity`` is ``corrected_quantity`` when set on the primary product row, otherwise the same
 ``final_quantity`` as ``position_to_summary`` (detected/aggregated path).
+
+Primary product rows use ``select_display_primary_product`` — same rule as v3 list/detail/review-queue
+(earliest ``created_at``, then ``id``).
 """
 
 from __future__ import annotations
@@ -28,7 +31,8 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
 )
 from src.application.services.csv_inventory_exporter import CsvInventoryExporter
-from src.application.use_cases.list_aisle_positions import _consolidate_by_sku
+from src.application.services.display_primary_product import select_display_primary_product
+from src.application.services.position_sku_consolidation import consolidate_positions_by_sku
 from src.application.utils.natural_sort import natural_sort_key_parts
 from src.domain.positions.entities import Position, PositionStatus
 
@@ -57,6 +61,8 @@ class ExportInventoryResultsUseCase:
             key=lambda a: (natural_sort_key_parts(a.code), a.created_at, a.id),
         )
         aisle_ids = [a.id for a in sorted_aisles]
+        if not aisle_ids:
+            return CsvInventoryExporter.to_csv([])
         all_positions = list(self._position_repo.list_by_aisles(aisle_ids))
         by_aisle: DefaultDict[str, List[Position]] = defaultdict(list)
         for p in all_positions:
@@ -65,13 +71,11 @@ class ExportInventoryResultsUseCase:
         rows: List[dict] = []
         for seq, aisle in enumerate(sorted_aisles, start=1):
             raw = [p for p in by_aisle.get(aisle.id, []) if p.status != PositionStatus.DELETED]
-            consolidated = _consolidate_by_sku(raw)
+            consolidated = consolidate_positions_by_sku(raw)
             consolidated_sorted = sorted(consolidated, key=export_position_sort_key)
             for p in consolidated_sorted:
                 products = self._product_record_repo.list_by_position(p.id)
-                primary = (
-                    sorted(products, key=lambda x: (x.created_at, x.id))[0] if products else None
-                )
+                primary = select_display_primary_product(products)
                 rows.append(position_to_export_row_dict(inv, aisle, seq, p, primary))
 
         return CsvInventoryExporter.to_csv(rows)

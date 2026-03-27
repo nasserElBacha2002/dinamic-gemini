@@ -5,10 +5,11 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Alert, Box, Button, TextField } from '@mui/material';
+import { exportInventoryResultsCsv } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
-import { FilterToolbar, SectionCard } from '../components/ui';
+import { FilterToolbar, SectionCard, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import { useInventoryDetail, useAislesList } from '../hooks';
 import {
@@ -35,6 +36,7 @@ export default function AislePositionsPage() {
   const { inventoryId, aisleId } = useParams<{ inventoryId: string; aisleId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const { showSnackbar } = useAppSnackbar();
   const [filter, setFilter] = useState<ResultsFilterKind>(() =>
     getInitialFilterFromReturnState(location.state)
   );
@@ -42,6 +44,7 @@ export default function AislePositionsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
   const [quickContext, setQuickContext] = useState<QuickReviewContext | null>(null);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const consumedAisleRedirectKey = useRef<string | null>(null);
 
   const inventoryQuery = useInventoryDetail(inventoryId);
@@ -176,9 +179,30 @@ export default function AislePositionsPage() {
         title={aisle?.code ?? 'Aisle'}
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? 'Loading…' : '—')}
         actions={
-          <Button size="small" variant="outlined" onClick={() => refetch()} disabled={isLoading}>
-            Refresh
-          </Button>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={!inventoryId || exportingCsv}
+              onClick={async () => {
+                if (!inventoryId) return;
+                setExportingCsv(true);
+                try {
+                  await exportInventoryResultsCsv(inventoryId);
+                } catch (e) {
+                  const err = e instanceof ApiError ? e : new ApiError(String(e));
+                  showSnackbar(getApiErrorMessage(err, 'Export failed'), 'error');
+                } finally {
+                  setExportingCsv(false);
+                }
+              }}
+            >
+              {exportingCsv ? 'Exporting…' : 'Export CSV'}
+            </Button>
+            <Button size="small" variant="outlined" onClick={() => refetch()} disabled={isLoading}>
+              Refresh
+            </Button>
+          </Box>
         }
       />
 

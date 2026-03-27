@@ -146,7 +146,7 @@ def export_inventory_results(
         raise HTTPException(status_code=404, detail="Inventory not found")
     filename = f"inventory_{inventory_id}_results.csv"
     return Response(
-        content=body,
+        content=body.encode("utf-8"),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

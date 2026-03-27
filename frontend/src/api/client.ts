@@ -140,6 +140,51 @@ export async function getInventoryMetrics(inventoryId: string): Promise<Inventor
   return handleResponse<InventoryMetrics>(response);
 }
 
+function filenameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      /* ignore */
+    }
+  }
+  const quoted = /filename\s*=\s*"([^"]+)"/i.exec(header);
+  if (quoted?.[1]) return quoted[1].trim();
+  return fallback;
+}
+
+/**
+ * Download consolidated inventory results as CSV (same rows as operator-facing Results, all aisles).
+ * Uses Content-Disposition filename when present.
+ */
+export async function exportInventoryResultsCsv(inventoryId: string): Promise<void> {
+  const path = `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/export?format=csv`;
+  const response = await protectedFetch(path);
+  const fallbackName = `inventory_${inventoryId}_results.csv`;
+  if (!response.ok) {
+    const text = await response.text();
+    let data: ApiErrorDetail;
+    try {
+      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+    } catch {
+      data = {};
+    }
+    throwApiErrorIfNotOk(response, text, data);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function createInventory(body: CreateInventoryRequest): Promise<Inventory> {
   const response = await protectedFetch(`${API_BASE}/api/v3/inventories`, {
     method: 'POST',

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import pytest
 
 from src.application.errors import InventoryNotFoundError
-from src.application.services.csv_inventory_exporter import INVENTORY_RESULTS_CSV_FIELDS
+from src.application.services.csv_inventory_exporter import INVENTORY_RESULTS_CSV_FIELDS, UTF8_BOM
 from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -22,6 +22,8 @@ from src.infrastructure.repositories.memory_product_record_repository import Mem
 
 
 NOW = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+NOW_EARLY = datetime(2026, 3, 15, 10, 0, 0, tzinfo=timezone.utc)
+NOW_LATE = datetime(2026, 3, 15, 14, 0, 0, tzinfo=timezone.utc)
 
 
 def _uc(
@@ -46,6 +48,8 @@ def _uc(
 
 
 def _parse_csv(text: str) -> tuple[list[str], list[dict[str, str]]]:
+    if text.startswith(UTF8_BOM):
+        text = text[len(UTF8_BOM) :]
     r = csv.DictReader(io.StringIO(text))
     assert r.fieldnames is not None
     rows = list(r)
@@ -62,6 +66,7 @@ def test_export_headers_only_when_no_aisles() -> None:
     inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, NOW, NOW)
     uc = _uc(inv=inv, aisles=[], positions=[])
     csv_text = uc.execute_csv("inv-1")
+    assert csv_text.startswith(UTF8_BOM)
     headers, rows = _parse_csv(csv_text)
     assert headers == list(INVENTORY_RESULTS_CSV_FIELDS)
     assert rows == []
@@ -187,6 +192,53 @@ def test_export_final_quantity_prefers_corrected() -> None:
     assert rows[0]["final_quantity"] == "9"
     assert rows[0]["detected_quantity"] == "4"
     assert rows[0]["corrected_quantity"] == "9"
+
+
+def test_export_qty_source_uses_display_primary_product() -> None:
+    """Earliest product row by (created_at, id) drives qty provenance columns (matches list positions)."""
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle("a1", "inv-1", "B1", AisleStatus.COMPLETED, NOW, NOW)
+    pos = Position(
+        id="p1",
+        aisle_id="a1",
+        status=PositionStatus.REVIEWED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={"internal_code": "SKU-DUAL", "final_quantity": 3},
+    )
+    prod_newer = ProductRecord(
+        id="pr-late",
+        position_id="p1",
+        sku="SKU-DUAL",
+        description="Late row",
+        detected_quantity=3,
+        confidence=0.9,
+        created_at=NOW_LATE,
+        updated_at=NOW_LATE,
+        qty_source="detected",
+        qty_inference_reason="from_llm",
+    )
+    prod_older = ProductRecord(
+        id="pr-early",
+        position_id="p1",
+        sku="SKU-DUAL",
+        description="Early row",
+        detected_quantity=3,
+        confidence=0.9,
+        created_at=NOW_EARLY,
+        updated_at=NOW_EARLY,
+        qty_source="manual_review",
+        qty_inference_reason="operator",
+    )
+    uc = _uc(inv=inv, aisles=[aisle], positions=[pos], products=[prod_newer, prod_older])
+    _, rows = _parse_csv(uc.execute_csv("inv-1"))
+    assert len(rows) == 1
+    assert rows[0]["qty_source"] == "manual_review"
+    assert rows[0]["qty_inference_reason"] == "operator"
+    assert rows[0]["product_label"] == "Early row"
 
 
 def test_export_excludes_deleted_positions() -> None:
