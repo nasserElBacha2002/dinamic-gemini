@@ -24,7 +24,7 @@ export default function TrendBars({ title, subtitle, points, emptyMessage }: Tre
           </Typography>
         ) : null}
         <Typography variant="body2" color="text.secondary">
-          {emptyMessage ?? 'No trend data for this range. Trends require date_from and date_to on the backend.'}
+          {emptyMessage ?? 'No trend data for this range. Try widening the date range or clearing filters.'}
         </Typography>
       </Box>
     );

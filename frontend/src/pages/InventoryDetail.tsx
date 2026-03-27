@@ -245,13 +245,13 @@ export default function InventoryDetail() {
       },
       {
         id: 'actions',
-        label: 'Operations',
+        label: 'Actions',
         align: 'right',
         width: 56,
         cell: (a) => {
           return (
             <RowActionMenu
-              ariaLabel={`Operations for aisle ${a.code}`}
+              ariaLabel={`Actions for aisle ${a.code}`}
               items={[
                 {
                   id: 'upload_assets',
@@ -452,19 +452,19 @@ export default function InventoryDetail() {
               </SectionCard>
             </Box>
 
-            <SectionCard title="Activity" subtitle="Recent activity and log summary (pending contracts).">
+            <SectionCard title="Activity" subtitle="Timeline and job log shortcuts for this inventory.">
               <Box sx={{ display: 'grid', gap: 1.5 }}>
                 <Box>
                   <Box component="div" sx={{ typography: 'subtitle2', fontWeight: 700, mb: 0.75 }}>
                     Recent activity
                   </Box>
-                  <EmptyState message="Recent activity will appear here when the activity feed API is available." />
+                  <EmptyState message="Recent activity will appear here when activity tracking is enabled." />
                 </Box>
                 <Box sx={{ pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
                   <Box component="div" sx={{ typography: 'subtitle2', fontWeight: 700, mb: 0.75 }}>
                     Logs summary
                   </Box>
-                  <EmptyState message="Use View log from an aisle’s operations menu to open the job log. A summary view will be available when the contract ships." />
+                  <EmptyState message="Open View log from an aisle’s actions menu for a full job log. A roll-up summary will appear here when available." />
                 </Box>
               </Box>
             </SectionCard>

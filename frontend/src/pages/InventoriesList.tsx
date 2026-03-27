@@ -119,8 +119,7 @@ export default function InventoriesList() {
   return (
     <>
       <PageHeader
-        title="Inventories"
-        subtitle="Manage inventories, aisles, processing, and review."
+        a11yTitle="Inventories"
         actions={
           <Button
             variant="contained"

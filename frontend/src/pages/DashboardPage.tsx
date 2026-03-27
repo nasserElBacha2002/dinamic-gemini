@@ -104,8 +104,7 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Dashboard"
-        subtitle="Operational overview"
+        a11yTitle="Dashboard"
         actions={
           <Button
             variant="contained"

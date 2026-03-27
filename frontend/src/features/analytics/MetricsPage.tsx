@@ -128,7 +128,7 @@ export default function MetricsPage() {
       },
       {
         id: 'proc',
-        label: 'Processing success',
+        label: 'Job success rate',
         align: 'right',
         cell: (r) => formatPct(r.processing_success_rate),
       },
@@ -136,6 +136,7 @@ export default function MetricsPage() {
     []
   );
 
+  /** `total_results` counts positions in scope per aisle (SQL COUNT on positions); label "Positions" matches domain. */
   const aisleColumns = useMemo<DataTableColumn<AisleIssueRow>[]>(
     () => [
       {
@@ -192,7 +193,7 @@ export default function MetricsPage() {
     {
       label: 'Processing success rate',
       value: formatPct(summary?.processing_success_rate),
-      description: 'Succeeded jobs out of terminal outcomes',
+      description: 'Succeeded aisle jobs ÷ (succeeded + failed), scoped to the selected period',
     },
     {
       label: 'Average review time',
@@ -211,10 +212,7 @@ export default function MetricsPage() {
     <Box sx={{ pb: 4 }}>
       {errMsg ? <ErrorAlert message={errMsg} onRetry={() => refetchAll()} /> : null}
 
-      <PageHeader
-        title="Metrics"
-        subtitle="Quality, review workload, traceability, and processing performance. Filters apply to all sections below."
-      />
+      <PageHeader a11yTitle="Metrics" />
 
       <FilterToolbar
         onReset={() => {

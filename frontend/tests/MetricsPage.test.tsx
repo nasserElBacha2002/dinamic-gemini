@@ -107,7 +107,7 @@ describe('MetricsPage', () => {
 
   it('renders heading, settling-actions KPI, and quality copy aligned with backend buckets', () => {
     renderMetrics();
-    expect(screen.getByRole('heading', { name: /^Metrics$/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /metrics/i })).toBeInTheDocument();
     expect(screen.getByText('Auto-acceptance rate')).toBeInTheDocument();
     expect(screen.getByText('Settling actions / day')).toBeInTheDocument();
     expect(screen.getByText('4.0')).toBeInTheDocument();
