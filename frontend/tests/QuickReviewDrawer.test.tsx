@@ -3,10 +3,11 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import QuickReviewDrawer from '../src/features/reviewQueue/components/QuickReviewDrawer';
 import type { QuickReviewContext } from '../src/features/reviewQueue/quickReviewContext';
+import { AppSnackbarProvider } from '../src/components/ui';
 import { mapPositionDetailToResultDetail } from '../src/features/results/mappers/positionToResult';
 
 const basePosition = {
@@ -81,7 +82,9 @@ function renderDrawer(context: QuickReviewContext) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <QuickReviewDrawer open context={context} onClose={() => {}} />
+      <AppSnackbarProvider>
+        <QuickReviewDrawer open context={context} onClose={() => {}} />
+      </AppSnackbarProvider>
     </QueryClientProvider>
   );
 }
@@ -160,6 +163,23 @@ describe('QuickReviewDrawer', () => {
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     expect(screen.getByText('Evidence')).toBeInTheDocument();
     expect(screen.getByText(/No image evidence available/)).toBeInTheDocument();
+  });
+
+  it('opens shared confirm dialog when Mark result invalid is clicked', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderDrawer(baseContext);
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    fireEvent.click(screen.getByRole('button', { name: /Mark result invalid/i }));
+    expect(await screen.findByRole('heading', { name: /Mark result invalid\?/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   });
 
   it('shows Review actions and Confirm result', async () => {

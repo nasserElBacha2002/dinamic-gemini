@@ -13,6 +13,7 @@ import {
   KpiCard,
   SectionCard,
   StatusBadge,
+  useAppSnackbar,
   type DataTableColumn,
 } from '../components/ui';
 import { PageHeader } from '../components/shell';
@@ -28,6 +29,7 @@ import { useInventoriesList, useCreateInventory } from '../hooks';
  */
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { showSnackbar } = useAppSnackbar();
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const createMutation = useCreateInventory();
@@ -47,11 +49,11 @@ export default function DashboardPage() {
         : String(recentInvQuery.error)
       : null;
 
-  const handleCreateSuccess = (_created: Inventory) => {
+  const handleCreateSuccess = (created: Inventory) => {
     setCreateOpen(false);
     setCreateError(null);
-    // Always refresh so the Recent inventories table is not stale after creation.
-    recentInvQuery.refetch();
+    showSnackbar(`Inventory “${created.name}” created`, 'success');
+    void recentInvQuery.refetch();
   };
 
   const recentColumns = useMemo<DataTableColumn<InventoryListItem>[]>(
@@ -155,7 +157,22 @@ export default function DashboardPage() {
             rowKey={(inv) => inv.id}
             columns={recentColumns}
             loading={recentInvQuery.isLoading}
-            emptyState={{ message: 'No inventories yet.' }}
+            emptyState={{
+              title: 'No inventories yet',
+              message: 'Create an inventory to start aisles, processing, and review.',
+              action: (
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={() => {
+                    setCreateError(null);
+                    setCreateOpen(true);
+                  }}
+                >
+                  Create inventory
+                </Button>
+              ),
+            }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
             Showing the 10 most recently active inventories.

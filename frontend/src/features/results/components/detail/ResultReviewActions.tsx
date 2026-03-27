@@ -110,6 +110,8 @@ export default function ResultReviewActions({
   );
 }
 
+const SKU_MAX_LEN = 128;
+
 function ResultFieldsForm({
   result,
   actionLoading,
@@ -122,53 +124,99 @@ function ResultFieldsForm({
   onUpdateSku: (sku: string) => void;
 }) {
   const initialQty = result.correctedQty ?? result.detectedQty ?? 0;
-  const [qty, setQty] = useState<number>(initialQty);
+  const [qtyStr, setQtyStr] = useState(String(initialQty));
   const [sku, setSku] = useState(result.sku ?? '');
+  const [qtyError, setQtyError] = useState('');
+  const [skuError, setSkuError] = useState('');
 
   useEffect(() => {
-    setQty(result.correctedQty ?? result.detectedQty ?? 0);
+    const n = result.correctedQty ?? result.detectedQty ?? 0;
+    setQtyStr(String(n));
+    setQtyError('');
   }, [result.correctedQty, result.detectedQty]);
 
   useEffect(() => {
     setSku(result.sku ?? '');
+    setSkuError('');
   }, [result.sku]);
+
+  const submitQuantity = () => {
+    const trimmed = qtyStr.trim();
+    if (trimmed.includes('.') || trimmed.includes('e') || trimmed.includes('E')) {
+      setQtyError('Enter a whole number 0 or greater.');
+      return;
+    }
+    const n = Number.parseInt(trimmed, 10);
+    if (trimmed === '' || Number.isNaN(n) || n < 0) {
+      setQtyError('Enter a whole number 0 or greater.');
+      return;
+    }
+    setQtyError('');
+    onUpdateQuantity(n);
+  };
+
+  const submitSku = () => {
+    const t = sku.trim();
+    if (!t) {
+      setSkuError('SKU is required.');
+      return;
+    }
+    if (t.length > SKU_MAX_LEN) {
+      setSkuError(`SKU must be at most ${SKU_MAX_LEN} characters.`);
+      return;
+    }
+    setSkuError('');
+    onUpdateSku(t);
+  };
 
   return (
     <Stack spacing={1} sx={{ mt: 0.75 }}>
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Stack direction="row" spacing={1} alignItems="flex-start" flexWrap="wrap" useFlexGap>
         <TextField
           size="small"
-          type="number"
+          type="text"
+          inputMode="numeric"
           label="Corrected quantity"
-          value={qty}
-          onChange={(e) => setQty(Number(e.target.value) || 0)}
-          inputProps={{ min: 0 }}
-          sx={{ width: 144 }}
+          value={qtyStr}
+          onChange={(e) => {
+            setQtyStr(e.target.value);
+            if (qtyError) setQtyError('');
+          }}
+          inputProps={{ inputMode: 'numeric' }}
+          error={Boolean(qtyError)}
+          helperText={qtyError || ' '}
+          sx={{ width: 160 }}
         />
         <Button
           size="small"
           variant="outlined"
-          onClick={() => onUpdateQuantity(Math.max(0, qty))}
+          onClick={submitQuantity}
           disabled={actionLoading}
-          sx={{ flexShrink: 0 }}
+          sx={{ flexShrink: 0, mt: 0.5 }}
         >
           Update quantity
         </Button>
       </Stack>
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Stack direction="row" spacing={1} alignItems="flex-start" flexWrap="wrap" useFlexGap>
         <TextField
           size="small"
           label="SKU"
           value={sku}
-          onChange={(e) => setSku(e.target.value)}
-          sx={{ width: 176 }}
+          onChange={(e) => {
+            setSku(e.target.value);
+            if (skuError) setSkuError('');
+          }}
+          error={Boolean(skuError)}
+          helperText={skuError || ' '}
+          inputProps={{ maxLength: SKU_MAX_LEN }}
+          sx={{ width: 200 }}
         />
         <Button
           size="small"
           variant="outlined"
-          onClick={() => onUpdateSku(sku.trim())}
-          disabled={actionLoading || !sku.trim()}
-          sx={{ flexShrink: 0 }}
+          onClick={submitSku}
+          disabled={actionLoading}
+          sx={{ flexShrink: 0, mt: 0.5 }}
         >
           Update SKU
         </Button>

@@ -1,6 +1,6 @@
 /**
- * App snackbar — Re diseño 3.3 §14.4: lightweight success/error feedback after mutations.
- * Use `useAppSnackbar()` from screens; does not replace inline `ErrorAlert` for load failures.
+ * App snackbar — Re diseño 3.3 §14.4; Sprint 5.2: default transient success feedback for mutations.
+ * Use `useAppSnackbar()` from screens; keep `ErrorAlert` for failed queries and sticky action errors.
  */
 
 import {

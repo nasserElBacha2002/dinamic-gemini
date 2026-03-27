@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
+  Alert,
   Box,
   Button,
   FormControl,
@@ -24,6 +25,7 @@ import { PageHeader } from '../components/shell';
 import {
   ErrorAlert,
   FilterToolbar,
+  LoadingBlock,
   SectionCard,
   type DataTableSortDirection,
 } from '../components/ui';
@@ -155,6 +157,21 @@ export default function ReviewQueuePage() {
         : String(queueQuery.error)
       : null;
 
+  const minConfParsed = parseOptional01(minConfidenceStr);
+  const maxConfParsed = parseOptional01(maxConfidenceStr);
+  const minConfidenceFieldError =
+    minConfidenceStr.trim() !== '' && minConfParsed === null
+      ? 'Enter a decimal from 0 to 1 (e.g. 0.5).'
+      : '';
+  const maxConfidenceFieldError =
+    maxConfidenceStr.trim() !== '' && maxConfParsed === null
+      ? 'Enter a decimal from 0 to 1 (e.g. 0.5).'
+      : '';
+  const confidenceRangeError =
+    minConfParsed != null && maxConfParsed != null && minConfParsed > maxConfParsed
+      ? 'Min confidence cannot be greater than max.'
+      : '';
+
   const summary = queueQuery.data?.summary;
   const items = queueQuery.data?.items ?? [];
   const totalItems = queueQuery.data?.total_items ?? 0;
@@ -210,9 +227,7 @@ export default function ReviewQueuePage() {
       ) : null}
 
       {queueQuery.isLoading && !queueQuery.data ? (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Loading workload summary…
-        </Typography>
+        <LoadingBlock message="Loading review workload…" py={2} sx={{ mb: 2, justifyContent: 'flex-start' }} />
       ) : summary ? (
         <ReviewQueueKpiCards summary={summary} />
       ) : null}
@@ -322,6 +337,11 @@ export default function ReviewQueuePage() {
             <Typography variant="caption" color="text.secondary" sx={{ width: '100%', lineHeight: 1.2 }}>
               Quality &amp; SKU
             </Typography>
+            {confidenceRangeError ? (
+              <Alert severity="warning" sx={{ width: '100%', py: 0.5 }}>
+                {confidenceRangeError}
+              </Alert>
+            ) : null}
             <TextField
               size="small"
               label="Min confidence"
@@ -331,8 +351,10 @@ export default function ReviewQueuePage() {
                 setMinConfidenceStr(e.target.value);
                 setPage(1);
               }}
-              sx={{ width: 120 }}
+              sx={{ width: 140 }}
               inputProps={{ inputMode: 'decimal' }}
+              error={Boolean(minConfidenceFieldError)}
+              helperText={minConfidenceFieldError || ' '}
             />
             <TextField
               size="small"
@@ -343,8 +365,10 @@ export default function ReviewQueuePage() {
                 setMaxConfidenceStr(e.target.value);
                 setPage(1);
               }}
-              sx={{ width: 120 }}
+              sx={{ width: 140 }}
               inputProps={{ inputMode: 'decimal' }}
+              error={Boolean(maxConfidenceFieldError)}
+              helperText={maxConfidenceFieldError || ' '}
             />
 
             <FormControl size="small" sx={{ minWidth: 140 }}>

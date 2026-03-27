@@ -22,6 +22,8 @@ export interface ConfirmDialogProps {
   onConfirm: () => void | Promise<void>;
   /** When true, buttons are disabled and close-on-backdrop is blocked — set by parent during submit. */
   loading?: boolean;
+  /** Label for the confirm button while `loading` is true (e.g. Working…). */
+  confirmPendingLabel?: string;
   /** Use error-colored confirm for destructive flows. */
   confirmColor?: 'primary' | 'error';
 }
@@ -35,6 +37,7 @@ export default function ConfirmDialog({
   cancelLabel = 'Cancel',
   onConfirm,
   loading = false,
+  confirmPendingLabel = 'Working…',
   confirmColor = 'primary',
 }: ConfirmDialogProps) {
   return (
@@ -57,7 +60,7 @@ export default function ConfirmDialog({
             onClick={() => void onConfirm()}
             disabled={loading}
           >
-            {confirmLabel}
+            {loading ? confirmPendingLabel : confirmLabel}
           </Button>
         </>
       }

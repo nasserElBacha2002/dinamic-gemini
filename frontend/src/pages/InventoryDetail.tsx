@@ -1,13 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  Alert,
-} from '@mui/material';
+import { Box, Button, Dialog, DialogContent, DialogTitle } from '@mui/material';
 import type { Aisle } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
@@ -26,6 +19,7 @@ import {
   SectionCard,
   StatusBadge,
   StatusChip,
+  useAppSnackbar,
   type DataTableColumn,
 } from '../components/ui';
 import { PageHeader } from '../components/shell';
@@ -54,11 +48,12 @@ function getUploadContextFromInput(
 export default function InventoryDetail() {
   const { inventoryId } = useParams<{ inventoryId: string }>();
   const navigate = useNavigate();
+  const { showSnackbar } = useAppSnackbar();
   const [createAisleOpen, setCreateAisleOpen] = useState(false);
   const [processingAisleId, setProcessingAisleId] = useState<string | null>(null);
-  const [processMessage, setProcessMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [processError, setProcessError] = useState<string | null>(null);
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
-  const [uploadMessage, setUploadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [logDialog, setLogDialog] = useState<{ aisleId: string; jobId: string; aisleCode: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
@@ -124,21 +119,20 @@ export default function InventoryDetail() {
   };
 
   const handleCreateAisleSuccess = () => {
-    aislesQuery.refetch();
+    showSnackbar('Aisle created', 'success');
+    void aislesQuery.refetch();
   };
 
   const handleStartProcess = async (aisleId: string) => {
-    setProcessMessage(null);
+    setProcessError(null);
     setProcessingAisleId(aisleId);
     try {
       await processMutation.mutateAsync(aisleId);
-      setProcessMessage({ type: 'success', text: 'Processing started. List refreshed.' });
+      showSnackbar('Processing started', 'success');
+      void aislesQuery.refetch();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setProcessMessage({
-        type: 'error',
-        text: getApiErrorMessage(err, 'Failed to start processing'),
-      });
+      setProcessError(getApiErrorMessage(err, 'Failed to start processing'));
     } finally {
       setProcessingAisleId(null);
     }
@@ -150,7 +144,7 @@ export default function InventoryDetail() {
   };
 
   const handleUploadClick = (aisleId: string) => {
-    setUploadMessage(null);
+    setUploadError(null);
     pendingUploadAisleIdRef.current = aisleId;
     fileInputRef.current?.click();
   };
@@ -161,17 +155,15 @@ export default function InventoryDetail() {
     e.target.value = '';
     if (!inventoryId || !ctx) return;
 
-    setUploadMessage(null);
+    setUploadError(null);
     setUploadingAisleId(ctx.aisleId);
     try {
       const result = await uploadMutation.mutateAsync({ aisleId: ctx.aisleId, files: ctx.files });
-      setUploadMessage({
-        type: 'success',
-        text: `${result.assets.length} asset(s) uploaded. List refreshed.`,
-      });
+      showSnackbar(`${result.assets.length} asset(s) uploaded`, 'success');
+      void aislesQuery.refetch();
     } catch (err) {
       const apiErr = err instanceof ApiError ? err : new ApiError(String(err));
-      setUploadMessage({ type: 'error', text: getApiErrorMessage(apiErr, 'Upload failed') });
+      setUploadError(getApiErrorMessage(apiErr, 'Upload failed'));
     } finally {
       setUploadingAisleId(null);
     }
@@ -419,25 +411,13 @@ export default function InventoryDetail() {
             }}
           >
             <Box sx={{ minWidth: 0 }}>
-              {processMessage && (
-                <Alert
-                  severity={processMessage.type}
-                  sx={{ mb: 2 }}
-                  onClose={() => setProcessMessage(null)}
-                >
-                  {processMessage.text}
-                </Alert>
-              )}
+              {processError ? (
+                <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
+              ) : null}
 
-              {uploadMessage && (
-                <Alert
-                  severity={uploadMessage.type}
-                  sx={{ mb: 2 }}
-                  onClose={() => setUploadMessage(null)}
-                >
-                  {uploadMessage.text}
-                </Alert>
-              )}
+              {uploadError ? (
+                <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
+              ) : null}
 
               {aislesError ? <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} /> : null}
 

@@ -8,6 +8,7 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ReviewQueuePage from '../src/pages/ReviewQueuePage';
+import { AppSnackbarProvider } from '../src/components/ui';
 
 const mockRefetch = vi.fn();
 
@@ -77,9 +78,11 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <ReviewQueuePage />
-      </MemoryRouter>
+      <AppSnackbarProvider>
+        <MemoryRouter>
+          <ReviewQueuePage />
+        </MemoryRouter>
+      </AppSnackbarProvider>
     </QueryClientProvider>
   );
 }

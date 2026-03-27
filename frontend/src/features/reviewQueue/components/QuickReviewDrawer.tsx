@@ -3,20 +3,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import {
-  Alert,
-  Box,
-  Button,
-  Collapse,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  Drawer,
-  IconButton,
-  Typography,
-} from '@mui/material';
+import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { ApiError } from '../../../api/types';
 import { useResultDetail, getResultNavigationContext } from '../../results';
@@ -34,6 +21,7 @@ import {
   ResultDetailEmptyState,
 } from '../../results/components/detail';
 import type { QuickReviewContext } from '../quickReviewContext';
+import { ConfirmDialog, useAppSnackbar } from '../../../components/ui';
 
 function DrawerCollapsibleSection({
   title,
@@ -69,9 +57,11 @@ export default function QuickReviewDrawer({
   context,
   onClose,
 }: QuickReviewDrawerProps) {
+  const { showSnackbar } = useAppSnackbar();
   const [activePositionId, setActivePositionId] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [invalidConfirmOpen, setInvalidConfirmOpen] = useState(false);
+  const [invalidConfirmLoading, setInvalidConfirmLoading] = useState(false);
 
   useEffect(() => {
     if (context?.positionId) setActivePositionId(context.positionId);
@@ -81,6 +71,7 @@ export default function QuickReviewDrawer({
     if (!open) {
       setActionError(null);
       setInvalidConfirmOpen(false);
+      setInvalidConfirmLoading(false);
     }
   }, [open]);
 
@@ -103,39 +94,61 @@ export default function QuickReviewDrawer({
     [context, activePositionId]
   );
 
-  const runAction = useCallback(async (fn: () => Promise<void>) => {
-    setActionError(null);
-    try {
-      await fn();
-    } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setActionError(getApiErrorMessage(err, 'Review action failed'));
-    }
-  }, []);
+  const runAction = useCallback(
+    async (fn: () => Promise<void>, options?: { successMessage?: string }) => {
+      setActionError(null);
+      try {
+        await fn();
+        if (options?.successMessage) {
+          showSnackbar(options.successMessage, 'success');
+        }
+      } catch (e) {
+        const err = e instanceof ApiError ? e : new ApiError(String(e));
+        setActionError(getApiErrorMessage(err, 'Review action failed'));
+      }
+    },
+    [showSnackbar]
+  );
 
   const handleConfirm = useCallback(() => {
-    runAction(() => reviewMutation.mutateAsync({ action_type: 'confirm' }));
+    runAction(() => reviewMutation.mutateAsync({ action_type: 'confirm' }), {
+      successMessage: 'Result confirmed',
+    });
   }, [runAction, reviewMutation]);
 
   const handleUpdateQuantity = useCallback(
     (corrected_quantity: number) => {
-      runAction(() => reviewMutation.mutateAsync({ action_type: 'update_quantity', corrected_quantity }));
+      runAction(() => reviewMutation.mutateAsync({ action_type: 'update_quantity', corrected_quantity }), {
+        successMessage: 'Quantity updated',
+      });
     },
     [runAction, reviewMutation]
   );
 
   const handleUpdateSku = useCallback(
     (sku: string) => {
-      runAction(() => reviewMutation.mutateAsync({ action_type: 'update_sku', sku }));
+      runAction(() => reviewMutation.mutateAsync({ action_type: 'update_sku', sku }), {
+        successMessage: 'SKU updated',
+      });
     },
     [runAction, reviewMutation]
   );
 
   const handleDeleteClick = useCallback(() => setInvalidConfirmOpen(true), []);
-  const handleInvalidConfirm = useCallback(() => {
-    setInvalidConfirmOpen(false);
-    runAction(() => reviewMutation.mutateAsync({ action_type: 'delete_position' }));
-  }, [runAction, reviewMutation]);
+  const handleInvalidConfirm = useCallback(async () => {
+    setActionError(null);
+    setInvalidConfirmLoading(true);
+    try {
+      await reviewMutation.mutateAsync({ action_type: 'delete_position' });
+      showSnackbar('Result marked invalid', 'success');
+      setInvalidConfirmOpen(false);
+    } catch (e) {
+      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      setActionError(getApiErrorMessage(err, 'Could not invalidate result'));
+    } finally {
+      setInvalidConfirmLoading(false);
+    }
+  }, [reviewMutation, showSnackbar]);
 
   const handleNavigateToResult = useCallback((resultId: string) => {
     setActivePositionId(resultId);
@@ -267,20 +280,16 @@ export default function QuickReviewDrawer({
         )}
       </Drawer>
 
-      <Dialog open={invalidConfirmOpen} onClose={() => setInvalidConfirmOpen(false)}>
-        <DialogTitle>Mark result invalid?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            This sets the result to invalid review status and removes it from active review work.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setInvalidConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={handleInvalidConfirm} color="error" variant="contained" disabled={actionLoading}>
-            Mark invalid
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={invalidConfirmOpen}
+        onClose={() => setInvalidConfirmOpen(false)}
+        title="Mark result invalid?"
+        description="This sets the result to invalid review status and removes it from active review work. The record stays visible for audit."
+        confirmLabel="Mark invalid"
+        confirmColor="error"
+        loading={invalidConfirmLoading}
+        onConfirm={() => void handleInvalidConfirm()}
+      />
     </>
   );
 }

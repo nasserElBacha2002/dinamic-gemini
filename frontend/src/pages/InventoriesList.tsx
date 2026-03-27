@@ -11,6 +11,7 @@ import {
   ErrorAlert,
   SectionCard,
   StatusBadge,
+  useAppSnackbar,
   type DataTableColumn,
   type DataTableSortDirection,
 } from '../components/ui';
@@ -21,6 +22,7 @@ import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 
 export default function InventoriesList() {
   const navigate = useNavigate();
+  const { showSnackbar } = useAppSnackbar();
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -48,8 +50,8 @@ export default function InventoriesList() {
   const handleCreateSuccess = (created: Inventory) => {
     setCreateOpen(false);
     setCreateError(null);
-    // Always refresh list so page doesn't go stale.
-    refetch();
+    showSnackbar(`Inventory “${created.name}” created`, 'success');
+    void refetch();
     if (created.id) navigate(`/inventories/${created.id}`);
   };
 

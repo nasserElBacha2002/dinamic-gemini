@@ -8,6 +8,7 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import AislePositionsPage from '../src/pages/AislePositionsPage';
+import { AppSnackbarProvider } from '../src/components/ui';
 import type { ResultSummary } from '../src/features/results/types';
 import type { PositionSummary } from '../src/api/types';
 
@@ -83,14 +84,16 @@ function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/inventories/inv-1/aisles/aisle-1/positions']}>
-        <Routes>
-          <Route
-            path="/inventories/:inventoryId/aisles/:aisleId/positions"
-            element={<AislePositionsPage />}
-          />
-        </Routes>
-      </MemoryRouter>
+      <AppSnackbarProvider>
+        <MemoryRouter initialEntries={['/inventories/inv-1/aisles/aisle-1/positions']}>
+          <Routes>
+            <Route
+              path="/inventories/:inventoryId/aisles/:aisleId/positions"
+              element={<AislePositionsPage />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </AppSnackbarProvider>
     </QueryClientProvider>
   );
 }

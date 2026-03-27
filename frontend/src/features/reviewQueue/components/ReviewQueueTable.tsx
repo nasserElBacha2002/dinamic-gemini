@@ -207,7 +207,9 @@ export default function ReviewQueueTable({
       sort={sort}
       pagination={pagination}
       emptyState={{
-        message: 'No rows match the current filters. Adjust filters or reset to see the queue.',
+        title: 'No results in this queue',
+        message:
+          'No positions match the current filters. Adjust scope or filters, or reset to see the full queue.',
       }}
     />
   );
