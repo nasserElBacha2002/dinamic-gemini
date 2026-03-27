@@ -58,8 +58,8 @@ jobs:
       - name: Validate schema compatibility via ECS task (inside AWS/VPC)
         env:
           MIGRATION_COMMAND: >-
-            dinamic-db-migrate config-check
-            && dinamic-db-migrate validate
+            python scripts/db_migrate.py config-check
+            && python scripts/db_migrate.py validate
         run: |
           ../.github/scripts/run-ecs-migration-task.sh
 

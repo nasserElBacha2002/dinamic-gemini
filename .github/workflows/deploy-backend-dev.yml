@@ -96,9 +96,9 @@ jobs:
       - name: Run ECS migration task (config-check + apply + validate)
         env:
           MIGRATION_COMMAND: >-
-            dinamic-db-migrate config-check
-            && dinamic-db-migrate apply
-            && dinamic-db-migrate validate
+            python scripts/db_migrate.py config-check
+            && python scripts/db_migrate.py apply
+            && python scripts/db_migrate.py validate
         run: |
           ../.github/scripts/run-ecs-migration-task.sh
 
