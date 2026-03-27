@@ -16,6 +16,7 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
 )
 from src.application.errors import PositionDeletedError
+from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.use_cases.review_validation import resolve_position
 from src.domain.positions.entities import PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
@@ -29,12 +30,14 @@ class DeletePositionUseCase:
         position_repo: PositionRepository,
         review_repo: ReviewActionRepository,
         clock: Clock,
+        aisle_review_sync: AisleReviewLifecycleSync,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._position_repo = position_repo
         self._review_repo = review_repo
         self._clock = clock
+        self._aisle_review_sync = aisle_review_sync
 
     def execute(
         self,
@@ -70,3 +73,4 @@ class DeletePositionUseCase:
             created_at=now,
         )
         self._review_repo.save(review)
+        self._aisle_review_sync.after_review_mutation(inventory_id, aisle_id)

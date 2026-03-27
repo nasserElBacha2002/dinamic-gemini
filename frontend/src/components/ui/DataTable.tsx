@@ -17,7 +17,7 @@
  * **Limitations:** No built-in row selection or column resize; add per screen when contracts require them.
  */
 
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import {
   Box,
   Paper,
@@ -87,6 +87,34 @@ export interface DataTableProps<T> {
   rowHover?: boolean;
   /** Optional row tap target (e.g. navigate); use stopPropagation on nested interactive cells to avoid double handling. */
   onRowClick?: (row: T) => void;
+}
+
+function resolveClickElement(target: EventTarget | null): Element | null {
+  if (target instanceof Element) return target;
+  if (target instanceof Text) return target.parentElement;
+  return null;
+}
+
+/** Clicks on nested controls must not trigger row-level navigation (e.g. action menus, links). */
+function clickTargetShouldSkipRowNavigation(target: EventTarget | null): boolean {
+  const el = resolveClickElement(target);
+  if (!el) return false;
+  return Boolean(
+    el.closest(
+      [
+        'button',
+        'a[href]',
+        'input',
+        'textarea',
+        'select',
+        '[role="button"]',
+        '[role="menuitem"]',
+        '[role="menu"]',
+        'label',
+        '[data-datatable-skip-row-click]',
+      ].join(', ')
+    )
+  );
 }
 
 function SkeletonBody({ columns, rows }: { columns: number; rows: number }) {
@@ -178,7 +206,14 @@ export default function DataTable<T>({
               <TableRow
                 key={rowKey(row)}
                 hover={rowHover}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onClick={
+                  onRowClick
+                    ? (e: MouseEvent<HTMLTableRowElement>) => {
+                        if (clickTargetShouldSkipRowNavigation(e.target)) return;
+                        onRowClick(row);
+                      }
+                    : undefined
+                }
                 sx={onRowClick ? { cursor: 'pointer' } : undefined}
               >
                 {columns.map((col) => (

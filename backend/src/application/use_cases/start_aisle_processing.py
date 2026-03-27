@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import uuid
 
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.ports.services import JobQueue
 from src.application.ports.clock import Clock
@@ -32,11 +33,13 @@ class StartAisleProcessingUseCase:
         job_repo: JobRepository,
         job_queue: JobQueue,
         clock: Clock,
+        status_reconciler: InventoryStatusReconciler,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._job_repo = job_repo
         self._job_queue = job_queue
         self._clock = clock
+        self._status_reconciler = status_reconciler
 
     def execute(self, command: StartAisleProcessingCommand) -> str:
         aisle = self._aisle_repo.get_by_id(command.aisle_id)
@@ -75,6 +78,7 @@ class StartAisleProcessingUseCase:
 
         aisle.mark_queued(now)
         self._aisle_repo.save(aisle)
+        self._status_reconciler.reconcile(command.inventory_id)
 
         # Legacy/local dispatch: enqueue persisted job_id for in-memory queue consumers.
         # Production worker flow claims from DB and does not require this queue.
@@ -95,6 +99,7 @@ class StartAisleProcessingUseCase:
                 error_message=enqueue_error,
             )
             self._aisle_repo.save(aisle)
+            self._status_reconciler.reconcile(command.inventory_id)
             raise
 
         return job_id

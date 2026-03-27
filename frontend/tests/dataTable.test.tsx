@@ -131,6 +131,29 @@ describe('DataTable', () => {
     expect(onRowClick).toHaveBeenCalledWith({ id: '1', name: 'Alpha' });
   });
 
+  it('does not call onRowClick when the click target is a nested button (row guard)', () => {
+    const onRowClick = vi.fn();
+    const cols: DataTableColumn<Row>[] = [
+      {
+        id: 'name',
+        label: 'Name',
+        cell: (r) => <button type="button">{r.name}</button>,
+      },
+    ];
+    render(
+      <WithTheme>
+        <DataTable<Row>
+          rows={[{ id: '1', name: 'Alpha' }]}
+          rowKey={(r) => r.id}
+          columns={cols}
+          onRowClick={onRowClick}
+        />
+      </WithTheme>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
   it('calls onPageSizeChange and resets to page 1 when rows per page changes', () => {
     const onPageChange = vi.fn();
     const onPageSizeChange = vi.fn();

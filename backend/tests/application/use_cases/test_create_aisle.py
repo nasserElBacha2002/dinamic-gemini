@@ -8,6 +8,7 @@ from typing import Optional, Sequence
 import pytest
 
 from src.application.ports.repositories import AisleRepository, InventoryRepository
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.create_aisle import (
     CreateAisleCommand,
     CreateAisleUseCase,
@@ -67,10 +68,12 @@ def test_create_aisle_persists_and_returns_entity() -> None:
     aisle_repo = StubAisleRepo()
     clock = FixedClock(now)
 
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
     use_case = CreateAisleUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
         clock=clock,
+        status_reconciler=reconciler,
     )
     result = use_case.execute(CreateAisleCommand(inventory_id="inv-1", code="A-01"))
 
@@ -80,16 +83,21 @@ def test_create_aisle_persists_and_returns_entity() -> None:
     assert result.created_at == now
     assert aisle_repo.get_by_id(result.id) == result
     assert len(aisle_repo.list_by_inventory("inv-1")) == 1
+    updated_inv = inv_repo.get_by_id("inv-1")
+    assert updated_inv is not None
+    assert updated_inv.status != InventoryStatus.DRAFT
 
 
 def test_create_aisle_raises_when_inventory_not_found() -> None:
     aisle_repo = StubAisleRepo()
     inv_repo = StubInventoryRepo([])  # no inventories
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
     use_case = CreateAisleUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
         clock=FixedClock(now),
+        status_reconciler=reconciler,
     )
 
     with pytest.raises(InventoryNotFoundError):
@@ -104,10 +112,12 @@ def test_create_aisle_raises_when_duplicate_code() -> None:
     aisle_repo = StubAisleRepo()
     aisle_repo.save(existing)
 
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
     use_case = CreateAisleUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
         clock=FixedClock(now),
+        status_reconciler=reconciler,
     )
 
     with pytest.raises(DuplicateAisleCodeError):
@@ -120,10 +130,12 @@ def test_create_aisle_normalizes_code_for_duplicate_check_and_entity() -> None:
     inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now)
     inv_repo = StubInventoryRepo([inv])
     aisle_repo = StubAisleRepo()
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
     use_case = CreateAisleUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
         clock=FixedClock(now),
+        status_reconciler=reconciler,
     )
 
     result = use_case.execute(CreateAisleCommand(inventory_id="inv-1", code=" A-01 "))

@@ -1,7 +1,11 @@
 """
 Inventory domain entity — v3.0 (Documento técnico §7.1).
 
-Represents an inventory session. States: draft → processing → in_review | completed | failed.
+Represents an inventory session.
+
+Persisted states: draft → processing → in_review → completed | failed.
+`draft`: no aisles. Once aisles exist, status is reconciled from aisle aggregates
+(see `derive_inventory_status_from_aisles` + `InventoryStatusReconciler`).
 """
 
 from __future__ import annotations

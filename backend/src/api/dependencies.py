@@ -77,6 +77,8 @@ from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
 from src.application.services.analytics_query_service import AnalyticsQueryService
+from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
 logger = logging.getLogger(__name__)
@@ -138,15 +140,43 @@ def get_get_inventory_metrics_use_case(
     )
 
 
+def get_inventory_status_reconciler(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    clock: Clock = Depends(get_clock),
+) -> InventoryStatusReconciler:
+    return InventoryStatusReconciler(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        clock=clock,
+    )
+
+
+def get_aisle_review_lifecycle_sync(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    clock: Clock = Depends(get_clock),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+) -> AisleReviewLifecycleSync:
+    return AisleReviewLifecycleSync(
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        clock=clock,
+        status_reconciler=status_reconciler,
+    )
+
+
 def get_create_aisle_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     clock: Clock = Depends(get_clock),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ) -> CreateAisleUseCase:
     return CreateAisleUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         clock=clock,
+        status_reconciler=status_reconciler,
     )
 
 
@@ -181,12 +211,14 @@ def get_start_aisle_processing_use_case(
     job_repo: JobRepository = Depends(get_job_repo),
     job_queue=Depends(get_job_queue),
     clock: Clock = Depends(get_clock),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
         job_queue=job_queue,
         clock=clock,
+        status_reconciler=status_reconciler,
     )
 
 
@@ -217,12 +249,14 @@ def get_upload_aisle_assets_use_case(
     asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
     artifact_storage=Depends(get_artifact_storage),
     clock: Clock = Depends(get_clock),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ) -> UploadAisleAssetsUseCase:
     return UploadAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
         artifact_storage=artifact_storage,
         clock=clock,
+        status_reconciler=status_reconciler,
     )
 
 
@@ -311,6 +345,7 @@ def get_confirm_position_use_case(
     position_repo: PositionRepository = Depends(get_position_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
     clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
 ) -> ConfirmPositionUseCase:
     return ConfirmPositionUseCase(
         inventory_repo=inventory_repo,
@@ -318,6 +353,7 @@ def get_confirm_position_use_case(
         position_repo=position_repo,
         review_repo=review_repo,
         clock=clock,
+        aisle_review_sync=aisle_review_sync,
     )
 
 
@@ -328,6 +364,7 @@ def get_update_product_quantity_use_case(
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
     clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
 ) -> UpdateProductQuantityUseCase:
     return UpdateProductQuantityUseCase(
         inventory_repo=inventory_repo,
@@ -336,6 +373,7 @@ def get_update_product_quantity_use_case(
         product_record_repo=product_record_repo,
         review_repo=review_repo,
         clock=clock,
+        aisle_review_sync=aisle_review_sync,
     )
 
 
@@ -346,6 +384,7 @@ def get_update_product_sku_use_case(
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
     clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
 ) -> UpdateProductSkuUseCase:
     return UpdateProductSkuUseCase(
         inventory_repo=inventory_repo,
@@ -354,6 +393,7 @@ def get_update_product_sku_use_case(
         product_record_repo=product_record_repo,
         review_repo=review_repo,
         clock=clock,
+        aisle_review_sync=aisle_review_sync,
     )
 
 
@@ -363,6 +403,7 @@ def get_delete_position_use_case(
     position_repo: PositionRepository = Depends(get_position_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
     clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
 ) -> DeletePositionUseCase:
     return DeletePositionUseCase(
         inventory_repo=inventory_repo,
@@ -370,6 +411,7 @@ def get_delete_position_use_case(
         position_repo=position_repo,
         review_repo=review_repo,
         clock=clock,
+        aisle_review_sync=aisle_review_sync,
     )
 
 

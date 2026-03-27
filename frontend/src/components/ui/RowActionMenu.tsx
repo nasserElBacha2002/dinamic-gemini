@@ -3,7 +3,7 @@
  */
 
 import { useId, useState, type MouseEvent, type ReactNode } from 'react';
-import { IconButton, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material';
+import { Box, IconButton, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 
 export interface RowActionMenuItem {
@@ -41,7 +41,13 @@ export default function RowActionMenu({ items, ariaLabel, size = 'small' }: RowA
   const handleClose = () => setAnchor(null);
 
   return (
-    <>
+    <Box
+      component="span"
+      data-datatable-skip-row-click
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      sx={{ display: 'inline-flex', verticalAlign: 'middle' }}
+    >
       <IconButton
         size={size}
         aria-label={ariaLabel}
@@ -65,9 +71,12 @@ export default function RowActionMenu({ items, ariaLabel, size = 'small' }: RowA
           <MenuItem
             key={item.id}
             disabled={item.disabled}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               handleClose();
-              item.onClick();
+              // Defer so the menu can unmount without the same gesture delivering a stray click to the row below (portal menus).
+              const fn = item.onClick;
+              window.setTimeout(() => fn(), 0);
             }}
           >
             {item.icon ? (
@@ -83,6 +92,6 @@ export default function RowActionMenu({ items, ariaLabel, size = 'small' }: RowA
           </MenuItem>
         ))}
       </Menu>
-    </>
+    </Box>
   );
 }
