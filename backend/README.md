@@ -92,6 +92,7 @@ This backend now uses a versioned schema guard to prevent rolling out code again
 - CI/CD production path (recommended): run migrations via one-off ECS task inside VPC
   using `.github/scripts/run-ecs-migration-task.sh` with command
   `python scripts/db_migrate.py config-check && python scripts/db_migrate.py apply && python scripts/db_migrate.py validate`.
+- Backend container image includes SQL Server runtime support (`pyodbc`, `unixODBC`, `msodbcsql18`) and fails at build-time if ODBC Driver 18 is unavailable.
 - Runtime guard:
   - startup check compares DB version vs required version
   - `/ready` returns `503` when schema is incompatible
