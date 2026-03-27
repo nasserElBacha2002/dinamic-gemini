@@ -22,4 +22,18 @@ export const queryKeys = {
     mergeResults: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId] as const,
   },
+
+  analytics: {
+    all: ['v3', 'analytics'] as const,
+    summary: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'summary', params] as const,
+    trends: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'trends', params] as const,
+    inventories: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'inventories', params] as const,
+    aisles: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'aisles', params] as const,
+    quality: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'quality', params] as const,
+  },
 } as const;

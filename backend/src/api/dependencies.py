@@ -34,6 +34,7 @@ from src.application.ports.repositories import (
 from src.application.ports.services import MetricsCalculator
 from src.runtime.v3_deps import (
     get_aisle_repo,
+    get_analytics_repo,
     get_clock,
     get_evidence_repo,
     get_final_count_repo,
@@ -75,6 +76,7 @@ from src.application.use_cases.cancel_aisle_job import CancelAisleJobUseCase
 from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
+from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
 logger = logging.getLogger(__name__)
@@ -393,3 +395,9 @@ def get_get_aisle_merge_results_use_case(
         aisle_repo=aisle_repo,
         final_count_repo=final_count_repo,
     )
+
+
+def get_analytics_query_service(
+    repo=Depends(get_analytics_repo),
+) -> AnalyticsQueryService:
+    return AnalyticsQueryService(repo)

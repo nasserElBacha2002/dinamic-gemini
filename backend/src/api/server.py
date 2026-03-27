@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from src.api.routes.v3 import router as v3_router
+from src.api.routes.v3.analytics_api import router as v3_analytics_router
 from src.api.schema_guard import schema_guard_state
 from src.api.routes.v3.review_queue import router as v3_review_queue_router
 from src.api.schemas.responses import HealthResponse
@@ -47,6 +48,7 @@ app.add_middleware(
 
 # Include routers (v3 only for inventory operations; legacy v1 jobs/entities removed in Stage 3).
 app.include_router(v3_router)
+app.include_router(v3_analytics_router)
 app.include_router(v3_review_queue_router)
 app.include_router(auth_router)
 

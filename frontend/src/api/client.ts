@@ -26,6 +26,11 @@ import type {
   PaginatedInventoryListResponse,
   PaginatedAisleListResponse,
   ReviewQueueListResponse,
+  AnalyticsSummaryResponse,
+  AnalyticsTrendsResponse,
+  InventoryPerformanceListResponse,
+  AisleIssueListResponse,
+  QualityPatternListResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -492,4 +497,58 @@ export async function submitReviewAction(
   if (!response.ok) {
     throwApiErrorIfNotOk(response, text, data);
   }
+}
+
+/** Phase 5.1 analytics filters (ISO date strings YYYY-MM-DD). */
+export interface AnalyticsQueryParams {
+  date_from?: string | null;
+  date_to?: string | null;
+  inventory_id?: string | null;
+  aisle_id?: string | null;
+}
+
+function buildAnalyticsQueryString(q: AnalyticsQueryParams | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  if (q.date_from != null && String(q.date_from).trim() !== '') {
+    params.set('date_from', String(q.date_from).trim());
+  }
+  if (q.date_to != null && String(q.date_to).trim() !== '') {
+    params.set('date_to', String(q.date_to).trim());
+  }
+  if (q.inventory_id != null && String(q.inventory_id).trim() !== '') {
+    params.set('inventory_id', String(q.inventory_id).trim());
+  }
+  if (q.aisle_id != null && String(q.aisle_id).trim() !== '') {
+    params.set('aisle_id', String(q.aisle_id).trim());
+  }
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+export async function getAnalyticsSummary(q?: AnalyticsQueryParams): Promise<AnalyticsSummaryResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/summary${buildAnalyticsQueryString(q)}`);
+  return handleResponse<AnalyticsSummaryResponse>(response);
+}
+
+export async function getAnalyticsTrends(q?: AnalyticsQueryParams): Promise<AnalyticsTrendsResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/trends${buildAnalyticsQueryString(q)}`);
+  return handleResponse<AnalyticsTrendsResponse>(response);
+}
+
+export async function getAnalyticsInventoryPerformance(
+  q?: AnalyticsQueryParams
+): Promise<InventoryPerformanceListResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/inventories${buildAnalyticsQueryString(q)}`);
+  return handleResponse<InventoryPerformanceListResponse>(response);
+}
+
+export async function getAnalyticsAisleIssues(q?: AnalyticsQueryParams): Promise<AisleIssueListResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/aisles${buildAnalyticsQueryString(q)}`);
+  return handleResponse<AisleIssueListResponse>(response);
+}
+
+export async function getAnalyticsQualityPatterns(q?: AnalyticsQueryParams): Promise<QualityPatternListResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/quality${buildAnalyticsQueryString(q)}`);
+  return handleResponse<QualityPatternListResponse>(response);
 }

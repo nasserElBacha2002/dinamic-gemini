@@ -276,26 +276,10 @@ export default function InventoryDetail() {
         align: 'right',
         width: 56,
         cell: (a) => {
-          const viewResultsEnabled =
-            (typeof a.positions_count === 'number' && a.positions_count > 0) ||
-            a.status === 'processed' ||
-            a.status === 'in_review' ||
-            a.status === 'completed' ||
-            a.latest_job?.status === 'succeeded';
-
           return (
             <RowActionMenu
               ariaLabel={`Actions for aisle ${a.code}`}
               items={[
-                ...(viewResultsEnabled
-                  ? [
-                      {
-                        id: 'view_results',
-                        label: 'View results',
-                        onClick: () => navigate(pathToAislePositions(inventoryId ?? '', a.id)),
-                      },
-                    ]
-                  : []),
                 {
                   id: 'upload_assets',
                   label: uploadingAisleId === a.id ? 'Uploading…' : 'Upload assets',

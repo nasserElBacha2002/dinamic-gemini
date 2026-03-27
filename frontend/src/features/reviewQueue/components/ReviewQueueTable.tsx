@@ -8,7 +8,6 @@ import { Link as RouterLink } from 'react-router-dom';
 import type { ReviewQueueItem } from '../../../api/types';
 import {
   DataTable,
-  RowActionMenu,
   StatusBadge,
   TraceabilityChip,
   type DataTableColumn,
@@ -191,24 +190,6 @@ export default function ReviewQueueTable({
           <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
             {formatDate(item.position.updated_at)}
           </Typography>
-        ),
-      },
-      {
-        id: 'actions',
-        label: 'Actions',
-        align: 'right',
-        width: 64,
-        cell: (item) => (
-          <RowActionMenu
-            ariaLabel={`Actions for result ${displaySku(item)}`}
-            items={[
-              {
-                id: 'review',
-                label: 'Review',
-                onClick: () => onOpenReview(item),
-              },
-            ]}
-          />
         ),
       },
     ];

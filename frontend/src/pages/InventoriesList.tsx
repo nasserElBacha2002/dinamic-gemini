@@ -9,7 +9,6 @@ import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../u
 import {
   DataTable,
   ErrorAlert,
-  RowActionMenu,
   SectionCard,
   StatusBadge,
   type DataTableColumn,
@@ -109,18 +108,6 @@ export default function InventoriesList() {
         label: 'Last activity',
         sortable: true,
         cell: (inv) => formatDate(inv.last_activity_at ?? undefined),
-      },
-      {
-        id: 'actions',
-        label: 'Actions',
-        align: 'right',
-        width: 56,
-        cell: (inv) => (
-          <RowActionMenu
-            ariaLabel={`Actions for inventory ${inv.name}`}
-            items={[{ id: 'open', label: 'Open', onClick: () => navigate(`/inventories/${inv.id}`) }]}
-          />
-        ),
       },
     ],
     [navigate]

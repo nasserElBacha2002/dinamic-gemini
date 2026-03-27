@@ -113,7 +113,6 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getByRole('columnheader', { name: /quantity/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /review status/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /traceability/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /^Actions$/i })).toBeInTheDocument();
     expect(screen.getByText('SKU-001')).toBeInTheDocument();
     expect(screen.getByText('5')).toBeInTheDocument();
   });

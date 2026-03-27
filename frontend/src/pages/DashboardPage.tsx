@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Box, Button, Grid, Typography } from '@mui/material';
+import { Box, Button, Grid, Link, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import type { Inventory, InventoryListItem } from '../api/types';
 import { ApiError } from '../api/types';
@@ -11,7 +11,6 @@ import {
   EmptyState,
   ErrorAlert,
   KpiCard,
-  RowActionMenu,
   SectionCard,
   StatusBadge,
   type DataTableColumn,
@@ -57,7 +56,22 @@ export default function DashboardPage() {
 
   const recentColumns = useMemo<DataTableColumn<InventoryListItem>[]>(
     () => [
-      { id: 'name', label: 'Inventory name', cell: (inv) => inv.name },
+      {
+        id: 'name',
+        label: 'Inventory name',
+        cell: (inv) => (
+          <Link
+            component="button"
+            type="button"
+            underline="hover"
+            color="text.primary"
+            onClick={() => navigate(`/inventories/${inv.id}`)}
+            sx={{ fontWeight: 600, textAlign: 'left' }}
+          >
+            {inv.name}
+          </Link>
+        ),
+      },
       {
         id: 'status',
         label: 'Status',
@@ -79,18 +93,6 @@ export default function DashboardPage() {
         id: 'last_activity_at',
         label: 'Last activity',
         cell: (inv) => formatDate(inv.last_activity_at ?? undefined),
-      },
-      {
-        id: 'actions',
-        label: 'Action',
-        align: 'right',
-        width: 56,
-        cell: (inv) => (
-          <RowActionMenu
-            ariaLabel={`Actions for inventory ${inv.name}`}
-            items={[{ id: 'open', label: 'Open', onClick: () => navigate(`/inventories/${inv.id}`) }]}
-          />
-        ),
       },
     ],
     [navigate]

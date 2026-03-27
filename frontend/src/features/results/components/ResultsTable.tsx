@@ -7,7 +7,6 @@ import { Button, Typography } from '@mui/material';
 import type { ResultSummary } from '../types';
 import {
   DataTable,
-  RowActionMenu,
   StatusBadge,
   TraceabilityChip,
   type DataTableColumn,
@@ -157,18 +156,6 @@ export default function ResultsTable({
           <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
             {formatDate(r.updatedAt)}
           </Typography>
-        ),
-      },
-      {
-        id: 'actions',
-        label: 'Actions',
-        align: 'right',
-        width: 72,
-        cell: (r) => (
-          <RowActionMenu
-            ariaLabel={`Actions for ${displaySku(r)}`}
-            items={[{ id: 'review', label: 'Review', onClick: () => onOpenReview(r.id) }]}
-          />
         ),
       },
     ];
