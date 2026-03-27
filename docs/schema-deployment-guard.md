@@ -15,9 +15,9 @@ Prevent any deployment from reaching an environment when the target database sch
 - **Migration execution model (production)**
   - GitHub Actions **does not connect to SQL Server directly**.
   - Runner calls ECS API only, then runs one-off task in VPC:
-    - `dinamic-db-migrate config-check`
-    - `dinamic-db-migrate apply`
-    - `dinamic-db-migrate validate`
+    - `python scripts/db_migrate.py config-check`
+    - `python scripts/db_migrate.py apply`
+    - `python scripts/db_migrate.py validate`
   - Script used by workflows: `.github/scripts/run-ecs-migration-task.sh`
   - Task definition must use CloudWatch logs (`awslogs`) with configured `awslogs-group` and `awslogs-stream-prefix` for traceability.
 - **Runtime compatibility guard**
@@ -72,7 +72,7 @@ Prevent any deployment from reaching an environment when the target database sch
 | Symptom | Fix |
 |--------|-----|
 | ECS `run-task` failure before start | Check task definition, IAM role permissions, subnet/SG settings. |
-| Container exit non-zero in migration task | Check CloudWatch logs for `dinamic-db-migrate` output and DB schema/config errors. |
+| Container exit non-zero in migration task | Check CloudWatch logs for `python scripts/db_migrate.py ...` output and DB schema/config errors. |
 | Task cannot reach DB | Validate VPC routing, SG egress/ingress between task and RDS. |
 
 ## Observability

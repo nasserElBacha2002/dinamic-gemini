@@ -91,7 +91,7 @@ This backend now uses a versioned schema guard to prevent rolling out code again
   - `dinamic-db-migrate status|apply|validate` (console script from the install)
 - CI/CD production path (recommended): run migrations via one-off ECS task inside VPC
   using `.github/scripts/run-ecs-migration-task.sh` with command
-  `dinamic-db-migrate config-check && dinamic-db-migrate apply && dinamic-db-migrate validate`.
+  `python scripts/db_migrate.py config-check && python scripts/db_migrate.py apply && python scripts/db_migrate.py validate`.
 - Runtime guard:
   - startup check compares DB version vs required version
   - `/ready` returns `503` when schema is incompatible
