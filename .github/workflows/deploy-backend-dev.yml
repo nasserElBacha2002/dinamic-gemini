@@ -116,4 +116,4 @@ jobs:
     steps:
       - name: Readiness smoke check
         run: |
-          curl --fail --show-error --silent "${{ vars.BACKEND_BASE_URL }}/ready"
+          curl --fail --show-error --silent "${{ vars.BACKEND_BASE_URL }}/health"
