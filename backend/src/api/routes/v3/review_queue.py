@@ -17,6 +17,7 @@ from src.api.schemas.review_queue_schemas import (
 )
 from src.application.ports.contracts import ReviewQueueQuery
 from src.application.ports.repositories import ProductRecordRepository
+from src.application.services.display_primary_product import select_display_primary_product
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
 
 from .shared import position_to_summary
@@ -84,7 +85,7 @@ def list_review_queue_positions(
     items: list[ReviewQueueItemResponse] = []
     for row in rows:
         products = product_record_repo.list_by_position(row.position.id)
-        primary = sorted(products, key=lambda x: (x.created_at, x.id))[0] if products else None
+        primary = select_display_primary_product(products)
         corrected_quantity = primary.corrected_quantity if primary is not None else None
         items.append(
             ReviewQueueItemResponse(
