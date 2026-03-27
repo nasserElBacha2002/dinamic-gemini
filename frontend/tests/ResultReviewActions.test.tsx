@@ -49,12 +49,12 @@ describe('ResultReviewActions', () => {
     );
     const qtyInput = screen.getByLabelText(/Corrected quantity/i);
     fireEvent.change(qtyInput, { target: { value: '-1' } });
-    fireEvent.click(screen.getByRole('button', { name: /Update quantity/i }));
     expect(screen.getByText(/whole number 0 or greater/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Update quantity/i })).toBeDisabled();
     expect(onUpdateQuantity).not.toHaveBeenCalled();
   });
 
-  it('shows inline error when SKU is empty on update', () => {
+  it('disables SKU update when SKU is empty and shows hint', () => {
     const onUpdateSku = vi.fn();
     render(
       <WithTheme>
@@ -68,8 +68,8 @@ describe('ResultReviewActions', () => {
         />
       </WithTheme>
     );
-    fireEvent.click(screen.getByRole('button', { name: /Update SKU/i }));
-    expect(screen.getByText(/SKU is required/i)).toBeInTheDocument();
+    expect(screen.getByText(/Enter a SKU to update/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Update SKU/i })).toBeDisabled();
     expect(onUpdateSku).not.toHaveBeenCalled();
   });
 

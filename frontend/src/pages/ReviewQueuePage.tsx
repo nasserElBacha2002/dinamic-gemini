@@ -9,7 +9,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Alert,
   Box,
   Button,
   FormControl,
@@ -73,9 +72,26 @@ export default function ReviewQueuePage() {
   const inventoriesQuery = useInventoriesList({ page: 1, page_size: 200, sort_by: 'name', sort_dir: 'asc' });
   const aislesQuery = useAislesList(inventoryId || undefined, { enabled: Boolean(inventoryId) });
 
+  const minConfParsedRQ = parseOptional01(minConfidenceStr);
+  const maxConfParsedRQ = parseOptional01(maxConfidenceStr);
+  const minConfidenceFieldError =
+    minConfidenceStr.trim() !== '' && minConfParsedRQ === null
+      ? 'Enter a decimal from 0 to 1 (e.g. 0.5).'
+      : '';
+  const maxConfidenceFieldError =
+    maxConfidenceStr.trim() !== '' && maxConfParsedRQ === null
+      ? 'Enter a decimal from 0 to 1 (e.g. 0.5).'
+      : '';
+  const confidenceRangeError =
+    minConfParsedRQ != null && maxConfParsedRQ != null && minConfParsedRQ > maxConfParsedRQ
+      ? 'Min confidence cannot be greater than max.'
+      : '';
+  const confidenceFiltersInvalid =
+    minConfidenceFieldError !== '' || maxConfidenceFieldError !== '' || confidenceRangeError !== '';
+
   const listQuery = useMemo((): ReviewQueueListQuery => {
-    const minC = parseOptional01(minConfidenceStr);
-    const maxC = parseOptional01(maxConfidenceStr);
+    const minC = confidenceFiltersInvalid ? null : minConfParsedRQ;
+    const maxC = confidenceFiltersInvalid ? null : maxConfParsedRQ;
     let hasEv: boolean | null = null;
     if (hasEvidence === 'yes') hasEv = true;
     if (hasEvidence === 'no') hasEv = false;
@@ -102,6 +118,9 @@ export default function ReviewQueuePage() {
     aisleId,
     minConfidenceStr,
     maxConfidenceStr,
+    confidenceFiltersInvalid,
+    minConfParsedRQ,
+    maxConfParsedRQ,
     traceability,
     hasEvidence,
     qtyZero,
@@ -156,21 +175,6 @@ export default function ReviewQueuePage() {
         ? getApiErrorMessage(queueQuery.error, 'Failed to load review queue')
         : String(queueQuery.error)
       : null;
-
-  const minConfParsed = parseOptional01(minConfidenceStr);
-  const maxConfParsed = parseOptional01(maxConfidenceStr);
-  const minConfidenceFieldError =
-    minConfidenceStr.trim() !== '' && minConfParsed === null
-      ? 'Enter a decimal from 0 to 1 (e.g. 0.5).'
-      : '';
-  const maxConfidenceFieldError =
-    maxConfidenceStr.trim() !== '' && maxConfParsed === null
-      ? 'Enter a decimal from 0 to 1 (e.g. 0.5).'
-      : '';
-  const confidenceRangeError =
-    minConfParsed != null && maxConfParsed != null && minConfParsed > maxConfParsed
-      ? 'Min confidence cannot be greater than max.'
-      : '';
 
   const summary = queueQuery.data?.summary;
   const items = queueQuery.data?.items ?? [];
@@ -337,11 +341,6 @@ export default function ReviewQueuePage() {
             <Typography variant="caption" color="text.secondary" sx={{ width: '100%', lineHeight: 1.2 }}>
               Quality &amp; SKU
             </Typography>
-            {confidenceRangeError ? (
-              <Alert severity="warning" sx={{ width: '100%', py: 0.5 }}>
-                {confidenceRangeError}
-              </Alert>
-            ) : null}
             <TextField
               size="small"
               label="Min confidence"
@@ -353,8 +352,12 @@ export default function ReviewQueuePage() {
               }}
               sx={{ width: 140 }}
               inputProps={{ inputMode: 'decimal' }}
-              error={Boolean(minConfidenceFieldError)}
-              helperText={minConfidenceFieldError || ' '}
+              error={Boolean(minConfidenceFieldError || confidenceRangeError)}
+              helperText={
+                minConfidenceFieldError ||
+                (confidenceRangeError ? 'Cannot be greater than max.' : '') ||
+                ' '
+              }
             />
             <TextField
               size="small"
@@ -367,8 +370,12 @@ export default function ReviewQueuePage() {
               }}
               sx={{ width: 140 }}
               inputProps={{ inputMode: 'decimal' }}
-              error={Boolean(maxConfidenceFieldError)}
-              helperText={maxConfidenceFieldError || ' '}
+              error={Boolean(maxConfidenceFieldError || confidenceRangeError)}
+              helperText={
+                maxConfidenceFieldError ||
+                (confidenceRangeError ? 'Must be greater than or equal to min.' : '') ||
+                ' '
+              }
             />
 
             <FormControl size="small" sx={{ minWidth: 140 }}>

@@ -112,6 +112,24 @@ export default function ResultReviewActions({
 
 const SKU_MAX_LEN = 128;
 
+function qtyLiveValidationMessage(qtyStr: string): string {
+  const trimmed = qtyStr.trim();
+  if (trimmed === '') return 'Enter a whole number 0 or greater.';
+  if (trimmed.includes('.') || trimmed.includes('e') || trimmed.includes('E')) {
+    return 'Use a whole number (no decimals).';
+  }
+  const n = Number.parseInt(trimmed, 10);
+  if (Number.isNaN(n) || n < 0) return 'Enter a whole number 0 or greater.';
+  return '';
+}
+
+function skuLiveValidationMessage(sku: string): string {
+  const t = sku.trim();
+  if (t === '') return 'Enter a SKU to update.';
+  if (t.length > SKU_MAX_LEN) return `At most ${SKU_MAX_LEN} characters.`;
+  return '';
+}
+
 function ResultFieldsForm({
   result,
   actionLoading,
@@ -140,33 +158,27 @@ function ResultFieldsForm({
     setSkuError('');
   }, [result.sku]);
 
+  const qtyLive = qtyLiveValidationMessage(qtyStr);
+  const skuLive = skuLiveValidationMessage(sku);
+
   const submitQuantity = () => {
-    const trimmed = qtyStr.trim();
-    if (trimmed.includes('.') || trimmed.includes('e') || trimmed.includes('E')) {
-      setQtyError('Enter a whole number 0 or greater.');
-      return;
-    }
-    const n = Number.parseInt(trimmed, 10);
-    if (trimmed === '' || Number.isNaN(n) || n < 0) {
-      setQtyError('Enter a whole number 0 or greater.');
+    const msg = qtyLiveValidationMessage(qtyStr);
+    if (msg) {
+      setQtyError(msg);
       return;
     }
     setQtyError('');
-    onUpdateQuantity(n);
+    onUpdateQuantity(Number.parseInt(qtyStr.trim(), 10));
   };
 
   const submitSku = () => {
-    const t = sku.trim();
-    if (!t) {
-      setSkuError('SKU is required.');
-      return;
-    }
-    if (t.length > SKU_MAX_LEN) {
-      setSkuError(`SKU must be at most ${SKU_MAX_LEN} characters.`);
+    const msg = skuLiveValidationMessage(sku);
+    if (msg) {
+      setSkuError(msg);
       return;
     }
     setSkuError('');
-    onUpdateSku(t);
+    onUpdateSku(sku.trim());
   };
 
   return (
@@ -183,15 +195,15 @@ function ResultFieldsForm({
             if (qtyError) setQtyError('');
           }}
           inputProps={{ inputMode: 'numeric' }}
-          error={Boolean(qtyError)}
-          helperText={qtyError || ' '}
+          error={Boolean(qtyError || qtyLive)}
+          helperText={qtyError || qtyLive || ' '}
           sx={{ width: 160 }}
         />
         <Button
           size="small"
           variant="outlined"
           onClick={submitQuantity}
-          disabled={actionLoading}
+          disabled={actionLoading || Boolean(qtyLive)}
           sx={{ flexShrink: 0, mt: 0.5 }}
         >
           Update quantity
@@ -206,8 +218,8 @@ function ResultFieldsForm({
             setSku(e.target.value);
             if (skuError) setSkuError('');
           }}
-          error={Boolean(skuError)}
-          helperText={skuError || ' '}
+          error={Boolean(skuError || skuLive)}
+          helperText={skuError || skuLive || ' '}
           inputProps={{ maxLength: SKU_MAX_LEN }}
           sx={{ width: 200 }}
         />
@@ -215,7 +227,7 @@ function ResultFieldsForm({
           size="small"
           variant="outlined"
           onClick={submitSku}
-          disabled={actionLoading}
+          disabled={actionLoading || Boolean(skuLive)}
           sx={{ flexShrink: 0, mt: 0.5 }}
         >
           Update SKU

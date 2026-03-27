@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Button, Dialog, DialogContent, DialogTitle } from '@mui/material';
+import { Box, Button, Dialog, DialogContent, DialogTitle, Typography } from '@mui/material';
 import type { Aisle } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
@@ -125,6 +125,7 @@ export default function InventoryDetail() {
 
   const handleStartProcess = async (aisleId: string) => {
     setProcessError(null);
+    setUploadError(null);
     setProcessingAisleId(aisleId);
     try {
       await processMutation.mutateAsync(aisleId);
@@ -156,6 +157,7 @@ export default function InventoryDetail() {
     if (!inventoryId || !ctx) return;
 
     setUploadError(null);
+    setProcessError(null);
     setUploadingAisleId(ctx.aisleId);
     try {
       const result = await uploadMutation.mutateAsync({ aisleId: ctx.aisleId, files: ctx.files });
@@ -412,11 +414,21 @@ export default function InventoryDetail() {
           >
             <Box sx={{ minWidth: 0 }}>
               {processError ? (
-                <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
+                <Box sx={{ mb: 2 }} data-testid="inventory-process-error">
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                    Starting processing
+                  </Typography>
+                  <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
+                </Box>
               ) : null}
 
               {uploadError ? (
-                <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
+                <Box sx={{ mb: 2 }} data-testid="inventory-upload-error">
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                    Asset upload
+                  </Typography>
+                  <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
+                </Box>
               ) : null}
 
               {aislesError ? <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} /> : null}

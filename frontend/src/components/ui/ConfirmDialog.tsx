@@ -8,7 +8,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { Button, DialogContentText } from '@mui/material';
+import { Alert, Button, DialogContentText } from '@mui/material';
 import BaseDialog from './BaseDialog';
 
 export interface ConfirmDialogProps {
@@ -26,6 +26,8 @@ export interface ConfirmDialogProps {
   confirmPendingLabel?: string;
   /** Use error-colored confirm for destructive flows. */
   confirmColor?: 'primary' | 'error';
+  /** Inline error under the description (e.g. failed destructive confirm). Cleared by parent when dialog closes. */
+  errorMessage?: string | null;
 }
 
 export default function ConfirmDialog({
@@ -39,6 +41,7 @@ export default function ConfirmDialog({
   loading = false,
   confirmPendingLabel = 'Working…',
   confirmColor = 'primary',
+  errorMessage,
 }: ConfirmDialogProps) {
   return (
     <BaseDialog
@@ -66,6 +69,11 @@ export default function ConfirmDialog({
       }
     >
       <DialogContentText component="div">{description}</DialogContentText>
+      {errorMessage ? (
+        <Alert severity="error" sx={{ mt: 2 }}>
+          {errorMessage}
+        </Alert>
+      ) : null}
     </BaseDialog>
   );
 }

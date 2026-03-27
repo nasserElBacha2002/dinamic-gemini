@@ -2,10 +2,11 @@
  * Canonical review surface (Sprint v3.3) — drawer with detail fetch, evidence viewer, actions, prev/next, audit.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { ApiError } from '../../../api/types';
+import type { ReviewActionRequest } from '../../../api/types';
 import { useResultDetail, getResultNavigationContext } from '../../results';
 import { useSubmitReviewAction } from '../../../hooks';
 import { getApiErrorMessage } from '../../../utils/apiErrors';
@@ -62,6 +63,9 @@ export default function QuickReviewDrawer({
   const [actionError, setActionError] = useState<string | null>(null);
   const [invalidConfirmOpen, setInvalidConfirmOpen] = useState(false);
   const [invalidConfirmLoading, setInvalidConfirmLoading] = useState(false);
+  const [invalidConfirmError, setInvalidConfirmError] = useState<string | null>(null);
+  /** Prevents double-submits (e.g. rapid double-clicks) before React flips `isPending`. */
+  const reviewMutationInFlightRef = useRef(false);
 
   useEffect(() => {
     if (context?.positionId) setActivePositionId(context.positionId);
@@ -72,6 +76,8 @@ export default function QuickReviewDrawer({
       setActionError(null);
       setInvalidConfirmOpen(false);
       setInvalidConfirmLoading(false);
+      setInvalidConfirmError(null);
+      reviewMutationInFlightRef.current = false;
     }
   }, [open]);
 
@@ -94,49 +100,64 @@ export default function QuickReviewDrawer({
     [context, activePositionId]
   );
 
-  const runAction = useCallback(
-    async (fn: () => Promise<void>, options?: { successMessage?: string }) => {
+  /**
+   * Single path to the review mutation: one `mutateAsync` per user intent.
+   * Guards against overlapping calls (double-click, strict-replay edge cases).
+   */
+  const executeReviewAction = useCallback(
+    async (body: ReviewActionRequest, options?: { successMessage?: string }) => {
+      if (reviewMutationInFlightRef.current || reviewMutation.isPending) {
+        return;
+      }
+      reviewMutationInFlightRef.current = true;
       setActionError(null);
       try {
-        await fn();
+        await reviewMutation.mutateAsync(body);
         if (options?.successMessage) {
           showSnackbar(options.successMessage, 'success');
         }
       } catch (e) {
         const err = e instanceof ApiError ? e : new ApiError(String(e));
         setActionError(getApiErrorMessage(err, 'Review action failed'));
+      } finally {
+        reviewMutationInFlightRef.current = false;
       }
     },
-    [showSnackbar]
+    [reviewMutation, showSnackbar]
   );
 
   const handleConfirm = useCallback(() => {
-    runAction(() => reviewMutation.mutateAsync({ action_type: 'confirm' }), {
-      successMessage: 'Result confirmed',
-    });
-  }, [runAction, reviewMutation]);
+    void executeReviewAction({ action_type: 'confirm' }, { successMessage: 'Result confirmed' });
+  }, [executeReviewAction]);
 
   const handleUpdateQuantity = useCallback(
     (corrected_quantity: number) => {
-      runAction(() => reviewMutation.mutateAsync({ action_type: 'update_quantity', corrected_quantity }), {
-        successMessage: 'Quantity updated',
-      });
+      void executeReviewAction(
+        { action_type: 'update_quantity', corrected_quantity },
+        { successMessage: 'Quantity updated' }
+      );
     },
-    [runAction, reviewMutation]
+    [executeReviewAction]
   );
 
   const handleUpdateSku = useCallback(
     (sku: string) => {
-      runAction(() => reviewMutation.mutateAsync({ action_type: 'update_sku', sku }), {
-        successMessage: 'SKU updated',
-      });
+      void executeReviewAction({ action_type: 'update_sku', sku }, { successMessage: 'SKU updated' });
     },
-    [runAction, reviewMutation]
+    [executeReviewAction]
   );
 
-  const handleDeleteClick = useCallback(() => setInvalidConfirmOpen(true), []);
+  const handleDeleteClick = useCallback(() => {
+    setInvalidConfirmError(null);
+    setInvalidConfirmOpen(true);
+  }, []);
+
   const handleInvalidConfirm = useCallback(async () => {
-    setActionError(null);
+    if (reviewMutationInFlightRef.current || reviewMutation.isPending) {
+      return;
+    }
+    reviewMutationInFlightRef.current = true;
+    setInvalidConfirmError(null);
     setInvalidConfirmLoading(true);
     try {
       await reviewMutation.mutateAsync({ action_type: 'delete_position' });
@@ -144,8 +165,9 @@ export default function QuickReviewDrawer({
       setInvalidConfirmOpen(false);
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setActionError(getApiErrorMessage(err, 'Could not invalidate result'));
+      setInvalidConfirmError(getApiErrorMessage(err, 'Could not invalidate result'));
     } finally {
+      reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);
     }
   }, [reviewMutation, showSnackbar]);
@@ -282,12 +304,16 @@ export default function QuickReviewDrawer({
 
       <ConfirmDialog
         open={invalidConfirmOpen}
-        onClose={() => setInvalidConfirmOpen(false)}
+        onClose={() => {
+          setInvalidConfirmOpen(false);
+          setInvalidConfirmError(null);
+        }}
         title="Mark result invalid?"
         description="This sets the result to invalid review status and removes it from active review work. The record stays visible for audit."
         confirmLabel="Mark invalid"
         confirmColor="error"
         loading={invalidConfirmLoading}
+        errorMessage={invalidConfirmError}
         onConfirm={() => void handleInvalidConfirm()}
       />
     </>

@@ -51,6 +51,22 @@ describe('ConfirmDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('renders inline error when errorMessage is set', () => {
+    render(
+      <WithTheme>
+        <ConfirmDialog
+          open
+          title="T"
+          description="D"
+          onClose={vi.fn()}
+          onConfirm={vi.fn()}
+          errorMessage="Request failed — try again."
+        />
+      </WithTheme>
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/Request failed/i);
+  });
+
   it('shows confirmPendingLabel and disables actions while loading', () => {
     render(
       <WithTheme>

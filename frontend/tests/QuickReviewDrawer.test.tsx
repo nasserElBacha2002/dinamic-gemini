@@ -3,12 +3,15 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import QuickReviewDrawer from '../src/features/reviewQueue/components/QuickReviewDrawer';
 import type { QuickReviewContext } from '../src/features/reviewQueue/quickReviewContext';
-import { AppSnackbarProvider } from '../src/components/ui';
 import { mapPositionDetailToResultDetail } from '../src/features/results/mappers/positionToResult';
+import { ApiError } from '../src/api/types';
+
+const reviewMutateAsync = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const showSnackbarMock = vi.hoisted(() => vi.fn());
 
 const basePosition = {
   id: 'pos-1',
@@ -60,10 +63,21 @@ vi.mock('../src/hooks', async (importOriginal) => {
   return {
     ...actual,
     useSubmitReviewAction: () => ({
-      mutateAsync: vi.fn(),
+      mutateAsync: reviewMutateAsync,
       isPending: false,
       isError: false,
       error: null,
+    }),
+  };
+});
+
+vi.mock('../src/components/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/components/ui')>();
+  return {
+    ...actual,
+    useAppSnackbar: () => ({
+      showSnackbar: showSnackbarMock,
+      closeSnackbar: vi.fn(),
     }),
   };
 });
@@ -82,9 +96,7 @@ function renderDrawer(context: QuickReviewContext) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <AppSnackbarProvider>
-        <QuickReviewDrawer open context={context} onClose={() => {}} />
-      </AppSnackbarProvider>
+      <QuickReviewDrawer open context={context} onClose={() => {}} />
     </QueryClientProvider>
   );
 }
@@ -96,6 +108,128 @@ function mockResultDetail(overrides: Partial<ReturnType<typeof mapPositionDetail
 }
 
 describe('QuickReviewDrawer', () => {
+  beforeEach(() => {
+    reviewMutateAsync.mockClear();
+    showSnackbarMock.mockClear();
+  });
+
+  it('confirm result triggers exactly one mutation request', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderDrawer(baseContext);
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    fireEvent.click(screen.getByRole('button', { name: /Confirm result/i }));
+    expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
+    expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'confirm' });
+    await waitFor(() => {
+      expect(showSnackbarMock).toHaveBeenCalledTimes(1);
+    });
+    expect(showSnackbarMock).toHaveBeenCalledWith('Result confirmed', 'success');
+  });
+
+  it('rapid double-click confirm still triggers only one mutation', async () => {
+    let resolveMutate: (() => void) | undefined;
+    const mutatePromise = new Promise<void>((resolve) => {
+      resolveMutate = resolve;
+    });
+    reviewMutateAsync.mockImplementationOnce(() => mutatePromise);
+
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderDrawer(baseContext);
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    const confirmBtn = screen.getByRole('button', { name: /Confirm result/i });
+    fireEvent.click(confirmBtn);
+    fireEvent.click(confirmBtn);
+    expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
+    resolveMutate?.();
+  });
+
+  it('update quantity triggers exactly one mutation request', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderDrawer(baseContext);
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    fireEvent.change(screen.getByLabelText(/Corrected quantity/i), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /Update quantity/i }));
+    expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
+    expect(reviewMutateAsync).toHaveBeenCalledWith({
+      action_type: 'update_quantity',
+      corrected_quantity: 5,
+    });
+    await waitFor(() => {
+      expect(showSnackbarMock).toHaveBeenCalledTimes(1);
+    });
+    expect(showSnackbarMock).toHaveBeenCalledWith('Quantity updated', 'success');
+  });
+
+  it('update SKU triggers exactly one mutation request', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderDrawer(baseContext);
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    fireEvent.change(screen.getByLabelText(/^SKU$/i), { target: { value: 'NEW-SKU' } });
+    fireEvent.click(screen.getByRole('button', { name: /Update SKU/i }));
+    expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
+    expect(reviewMutateAsync).toHaveBeenCalledWith({
+      action_type: 'update_sku',
+      sku: 'NEW-SKU',
+    });
+    await waitFor(() => {
+      expect(showSnackbarMock).toHaveBeenCalledTimes(1);
+    });
+    expect(showSnackbarMock).toHaveBeenCalledWith('SKU updated', 'success');
+  });
+
+  it('mark invalid confirm shows inline error in dialog when mutation fails', async () => {
+    reviewMutateAsync.mockRejectedValueOnce(new ApiError('Not allowed', 403));
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderDrawer(baseContext);
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    fireEvent.click(screen.getByRole('button', { name: /Mark result invalid/i }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark invalid' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/Not allowed/i);
+    expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
+    expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'delete_position' });
+  });
+
   it('shows Result heading when result loads', async () => {
     const { useResultDetail } = await import('../src/features/results');
     vi.mocked(useResultDetail).mockReturnValue({

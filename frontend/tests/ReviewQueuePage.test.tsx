@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ReviewQueuePage from '../src/pages/ReviewQueuePage';
@@ -104,5 +104,15 @@ describe('ReviewQueuePage', () => {
     renderPage();
     expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Review SKU-QUEUE-1/i })).toBeInTheDocument();
+  });
+
+  it('shows validation errors on both confidence fields when min > max', () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/Min confidence/i), { target: { value: '0.9' } });
+    fireEvent.change(screen.getByLabelText(/Max confidence/i), { target: { value: '0.1' } });
+    expect(screen.getByText(/Cannot be greater than max/i)).toBeInTheDocument();
+    expect(screen.getByText(/Must be greater than or equal to min/i)).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /Min confidence/i })).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('textbox', { name: /Max confidence/i })).toHaveAttribute('aria-invalid', 'true');
   });
 });
