@@ -16,6 +16,7 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     ReviewActionRepository,
 )
+from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.use_cases.review_validation import (
     resolve_position,
     resolve_product_for_position,
@@ -35,6 +36,7 @@ class UpdateProductSkuUseCase:
         product_record_repo: ProductRecordRepository,
         review_repo: ReviewActionRepository,
         clock: Clock,
+        aisle_review_sync: AisleReviewLifecycleSync,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -42,6 +44,7 @@ class UpdateProductSkuUseCase:
         self._product_record_repo = product_record_repo
         self._review_repo = review_repo
         self._clock = clock
+        self._aisle_review_sync = aisle_review_sync
 
     def execute(
         self,
@@ -112,3 +115,4 @@ class UpdateProductSkuUseCase:
             created_at=now,
         )
         self._review_repo.save(review)
+        self._aisle_review_sync.after_review_mutation(inventory_id, aisle_id)

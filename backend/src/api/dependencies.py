@@ -77,6 +77,7 @@ from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
 from src.application.services.analytics_query_service import AnalyticsQueryService
+from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
@@ -148,6 +149,20 @@ def get_inventory_status_reconciler(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         clock=clock,
+    )
+
+
+def get_aisle_review_lifecycle_sync(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    clock: Clock = Depends(get_clock),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+) -> AisleReviewLifecycleSync:
+    return AisleReviewLifecycleSync(
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        clock=clock,
+        status_reconciler=status_reconciler,
     )
 
 
@@ -330,6 +345,7 @@ def get_confirm_position_use_case(
     position_repo: PositionRepository = Depends(get_position_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
     clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
 ) -> ConfirmPositionUseCase:
     return ConfirmPositionUseCase(
         inventory_repo=inventory_repo,
@@ -337,6 +353,7 @@ def get_confirm_position_use_case(
         position_repo=position_repo,
         review_repo=review_repo,
         clock=clock,
+        aisle_review_sync=aisle_review_sync,
     )
 
 
@@ -347,6 +364,7 @@ def get_update_product_quantity_use_case(
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
     clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
 ) -> UpdateProductQuantityUseCase:
     return UpdateProductQuantityUseCase(
         inventory_repo=inventory_repo,
@@ -355,6 +373,7 @@ def get_update_product_quantity_use_case(
         product_record_repo=product_record_repo,
         review_repo=review_repo,
         clock=clock,
+        aisle_review_sync=aisle_review_sync,
     )
 
 
@@ -365,6 +384,7 @@ def get_update_product_sku_use_case(
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
     clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
 ) -> UpdateProductSkuUseCase:
     return UpdateProductSkuUseCase(
         inventory_repo=inventory_repo,
@@ -373,6 +393,7 @@ def get_update_product_sku_use_case(
         product_record_repo=product_record_repo,
         review_repo=review_repo,
         clock=clock,
+        aisle_review_sync=aisle_review_sync,
     )
 
 
@@ -382,6 +403,7 @@ def get_delete_position_use_case(
     position_repo: PositionRepository = Depends(get_position_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
     clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
 ) -> DeletePositionUseCase:
     return DeletePositionUseCase(
         inventory_repo=inventory_repo,
@@ -389,6 +411,7 @@ def get_delete_position_use_case(
         position_repo=position_repo,
         review_repo=review_repo,
         clock=clock,
+        aisle_review_sync=aisle_review_sync,
     )
 
 

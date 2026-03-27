@@ -26,18 +26,19 @@ class InventoryStatusReconciler:
         self._aisle_repo = aisle_repo
         self._clock = clock
 
-    def reconcile(self, inventory_id: str) -> None:
-        """Recompute status from aisles and persist if it changed."""
+    def reconcile(self, inventory_id: str) -> bool:
+        """Recompute status from aisles and persist if it changed. Returns True if persisted."""
         inv = self._inventory_repo.get_by_id(inventory_id)
         if inv is None:
-            return
+            return False
         aisles = list(self._aisle_repo.list_by_inventory(inventory_id))
         new_status = derive_inventory_status_from_aisles(aisles)
         if new_status == inv.status:
-            return
+            return False
         now = self._clock.now()
         _apply_status_transition(inv, new_status, now)
         self._inventory_repo.save(inv)
+        return True
 
 
 def _apply_status_transition(inv: Inventory, new_status: InventoryStatus, now: datetime) -> None:
