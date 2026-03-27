@@ -10,9 +10,11 @@ from io import BytesIO
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 
 from src.api.dependencies import (
     get_create_inventory_use_case,
+    get_export_inventory_results_use_case,
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
     get_list_inventory_list_items_use_case,
@@ -37,6 +39,7 @@ from src.application.errors import (
     ZeroByteFileError,
 )
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
+from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
@@ -125,6 +128,27 @@ def list_inventories(
         page_size=ps,
         total_items=total,
         total_pages=compute_total_pages(total, ps),
+    )
+
+
+@router.get("/{inventory_id}/export")
+def export_inventory_results(
+    inventory_id: str,
+    export_format: str = Query("csv", alias="format", description="Export format (only csv supported)."),
+    use_case: ExportInventoryResultsUseCase = Depends(get_export_inventory_results_use_case),
+) -> Response:
+    """Download consolidated inventory results as CSV (one row per reviewable position after SKU consolidation)."""
+    if (export_format or "").strip().lower() != "csv":
+        raise HTTPException(status_code=422, detail="Only format=csv is supported")
+    try:
+        body = use_case.execute_csv(inventory_id)
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    filename = f"inventory_{inventory_id}_results.csv"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
