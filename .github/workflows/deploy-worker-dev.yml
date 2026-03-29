@@ -1,16 +1,15 @@
-# =============================================================================
-# Worker-only: optional validation (no ECS image deploy here)
-# =============================================================================
+# File: deploy-worker-dev.yml (name is historical). Runs only on workflow_dispatch.
 #
-# Production worker deploy runs in **deploy-backend-dev.yml** on every develop push
-# under `backend/**`: same commit builds API + worker images, runs migrations, then registers
-# digest-pinned task definitions for both services.
+# Optional manual job — does NOT build images, push ECR, or update ECS services.
 #
-# Use this workflow only when you need an extra **in-VPC schema validate** run without
-# redeploying the API (manual dispatch).
-# =============================================================================
+# Worker (and API) production deploys run exclusively in:
+#   .github/workflows/deploy-backend-dev.yml
+# (develop push or workflow_dispatch there: migrations + digest-pinned API + digest-pinned worker).
+#
+# Use this workflow when you need an extra in-VPC schema check (config-check + validate only)
+# without running a full deploy.
 
-name: Worker Dev (optional schema validate)
+name: Validate schema (manual, ECS task)
 
 on:
   workflow_dispatch:
@@ -38,7 +37,7 @@ jobs:
         run: |
           for key in AWS_REGION ECS_CLUSTER MIGRATION_TASK_DEFINITION MIGRATION_CONTAINER_NAME MIGRATION_SUBNETS MIGRATION_SECURITY_GROUPS; do
             if [ -z "${!key}" ]; then
-              echo "Missing required workflow env: ${key}" >&2
+              echo "Missing required repository variable: ${key}" >&2
               exit 1
             fi
           done
