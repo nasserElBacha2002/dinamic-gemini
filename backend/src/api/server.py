@@ -4,6 +4,7 @@ Run: uvicorn src.api.server:app --reload
 """
 
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -75,8 +76,10 @@ async def api_key_middleware(request: Request, call_next):
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     """Liveness with schema compatibility metadata."""
+    _sha = (os.environ.get("GIT_SHA") or "").strip() or None
     return HealthResponse(
         ok=True,
+        deploy_git_sha=_sha,
         schema_guard_checked=schema_guard_state.checked,
         schema_compatible=schema_guard_state.compatible,
         schema_service=schema_guard_state.service,
@@ -115,6 +118,9 @@ def _worker_thread_fn() -> None:
 @app.on_event("startup")
 def start_worker() -> None:
     """Run schema compatibility guard and start optional worker."""
+    _git_sha = (os.environ.get("GIT_SHA") or "").strip()
+    if _git_sha:
+        logger.info("API startup deploy_git_sha=%s", _git_sha)
     settings = load_settings()
     sql_res = resolve_sqlserver_connection_config()
     if settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_res.connection_string.strip():

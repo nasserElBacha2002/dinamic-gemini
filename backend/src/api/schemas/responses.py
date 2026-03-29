@@ -48,6 +48,10 @@ class ArtifactsResponse(BaseModel):
 class HealthResponse(BaseModel):
     """GET /health response."""
     ok: bool = True
+    deploy_git_sha: Optional[str] = Field(
+        default=None,
+        description="ECS deploy: set GIT_SHA on the task by the GitHub Actions deploy workflow.",
+    )
     schema_guard_checked: bool = False
     schema_compatible: bool = True
     schema_service: Optional[str] = None

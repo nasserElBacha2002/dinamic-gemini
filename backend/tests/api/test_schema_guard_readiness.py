@@ -34,6 +34,7 @@ def test_health_includes_schema_guard_metadata():
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
+    assert body.get("deploy_git_sha") in (None, "")
     assert body["schema_guard_checked"] is True
     assert body["schema_compatible"] is True
     assert body["required_schema_version"] == "0002"
