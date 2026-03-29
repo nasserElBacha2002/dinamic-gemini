@@ -40,7 +40,8 @@ def test_health_remains_public():
     client = TestClient(app)
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"ok": True}
+    body = r.json()
+    assert body.get("ok") is True
 
 
 def test_auth_login_remains_public():

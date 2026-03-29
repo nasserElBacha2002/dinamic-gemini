@@ -1,5 +1,10 @@
 name: Deploy Backend Dev
 
+# Required GitHub repository variables (example values):
+#   AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE, ECS_CONTAINER_NAME
+#   ECS_TASK_DEFINITION_FAMILY — e.g. "backend" (family name only; not revision)
+# Migration / network vars unchanged. Set ECS_TASK_DEFINITION_FAMILY to the API service task family.
+
 on:
   push:
     branches:
@@ -18,6 +23,7 @@ env:
   ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
   ECS_SERVICE: ${{ vars.ECS_SERVICE }}
   ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
+  ECS_TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
   DB_SCHEMA_SERVICE_NAME: inventory-api
   DEPLOYMENT_ID: backend-dev-${{ github.sha }}
   MIGRATION_TASK_DEFINITION: ${{ vars.MIGRATION_TASK_DEFINITION }}
@@ -32,11 +38,21 @@ jobs:
   ecs-migration-preflight:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate ECS migration task settings
+      - name: Validate ECS migration + deploy settings
         run: |
-          for key in AWS_REGION ECS_CLUSTER MIGRATION_TASK_DEFINITION MIGRATION_CONTAINER_NAME MIGRATION_SUBNETS MIGRATION_SECURITY_GROUPS; do
+          for key in \
+            AWS_REGION \
+            ECS_CLUSTER \
+            ECS_SERVICE \
+            ECS_CONTAINER_NAME \
+            ECS_TASK_DEFINITION_FAMILY \
+            MIGRATION_TASK_DEFINITION \
+            MIGRATION_CONTAINER_NAME \
+            MIGRATION_SUBNETS \
+            MIGRATION_SECURITY_GROUPS
+          do
             if [ -z "${!key}" ]; then
-              echo "Missing required workflow env: ${key}" >&2
+              echo "Missing required workflow env / repository variable: ${key}" >&2
               exit 1
             fi
           done
@@ -85,13 +101,11 @@ jobs:
         run: |
           docker build --platform linux/amd64 \
             -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.IMAGE_TAG }} \
-            -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest \
             .
 
-      - name: Push Docker image
+      - name: Push Docker image (immutable SHA tag only)
         run: |
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.IMAGE_TAG }}
-          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
       - name: Run ECS migration task (config-check + apply + validate)
         env:
@@ -102,13 +116,11 @@ jobs:
         run: |
           ../.github/scripts/run-ecs-migration-task.sh
 
-      - name: Force new deployment
-        run: |
-          aws ecs update-service \
-            --cluster "${{ env.ECS_CLUSTER }}" \
-            --service "${{ env.ECS_SERVICE }}" \
-            --force-new-deployment \
-            --region "${{ env.AWS_REGION }}"
+      - name: Register digest-pinned task definition and update ECS service
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
+        run: bash ../.github/scripts/ecs-register-task-and-deploy.sh
 
   smoke:
     runs-on: ubuntu-latest
