@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Register a new ECS task definition revision with a digest-pinned image, then point the
-# service at that revision. Eliminates "untagged ECR image" + force-only deploy drift.
+# Register a new ECS task definition with an ECR digest-pinned image, set GIT_SHA on the target
+# container, then update the service to that revision + force-new-deployment.
+# Same script for API and worker: only ECS_* / ECR_* env differs per step.
 #
-# Required env:
-#   AWS_REGION
-#   ECS_CLUSTER
-#   ECS_SERVICE
-#   ECS_TASK_DEFINITION_FAMILY   # e.g. backend (not revision)
-#   ECS_CONTAINER_NAME            # container in task def to set image on
-#   ECR_REGISTRY                 # xxx.dkr.ecr.region.amazonaws.com
-#   ECR_REPOSITORY               # repo name only
-#   IMAGE_TAG                    # immutable tag, typically full commit SHA
+# Rationale: mutable tags (including implicit default) cause drift; digest pins the exact layer.
+# Force-only deploy does not change revision; a new revision ties the service to this image.
+# CI pushes only :$GITHUB_SHA; this resolves digest for that tag (not `latest`).
+#
+# Required env: AWS_REGION, ECS_CLUSTER, ECS_SERVICE, ECS_TASK_DEFINITION_FAMILY,
+#               ECS_CONTAINER_NAME, ECR_REGISTRY, ECR_REPOSITORY, IMAGE_TAG
 #
 set -euo pipefail
 
@@ -30,7 +28,8 @@ do
   fi
 done
 
-echo "Resolving image digest for ${ECR_REPOSITORY}:${IMAGE_TAG}..."
+echo "ecs-register-task-and-deploy: service=${ECS_SERVICE} family=${ECS_TASK_DEFINITION_FAMILY} repo=${ECR_REPOSITORY} tag=${IMAGE_TAG}"
+
 DIGEST="$(aws ecr describe-images \
   --region "${AWS_REGION}" \
   --repository-name "${ECR_REPOSITORY}" \
@@ -44,7 +43,7 @@ if [[ -z "${DIGEST}" || "${DIGEST}" == "None" ]]; then
 fi
 
 IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}@${DIGEST}"
-echo "Pinned image URI: ${IMAGE_URI}"
+echo "image=${IMAGE_URI}"
 
 TD_JSON="$(aws ecs describe-task-definition \
   --region "${AWS_REGION}" \
@@ -86,16 +85,14 @@ TMP="$(mktemp)"
 trap 'rm -f "${TMP}"' EXIT
 echo "${NEW_TD}" > "${TMP}"
 
-echo "Registering new task definition revision for family ${ECS_TASK_DEFINITION_FAMILY}..."
 NEW_REV="$(aws ecs register-task-definition \
   --region "${AWS_REGION}" \
   --cli-input-json "file://${TMP}" \
   --query 'taskDefinition.revision' \
   --output text)"
 
-echo "Registered ${ECS_TASK_DEFINITION_FAMILY}:${NEW_REV}"
+echo "registered ${ECS_TASK_DEFINITION_FAMILY}:${NEW_REV}"
 
-echo "Updating service ${ECS_SERVICE} → ${ECS_TASK_DEFINITION_FAMILY}:${NEW_REV}..."
 aws ecs update-service \
   --region "${AWS_REGION}" \
   --cluster "${ECS_CLUSTER}" \
@@ -103,4 +100,4 @@ aws ecs update-service \
   --task-definition "${ECS_TASK_DEFINITION_FAMILY}:${NEW_REV}" \
   --force-new-deployment
 
-echo "ECS service update submitted. Rollout in progress."
+echo "update-service submitted (${ECS_SERVICE} → revision ${NEW_REV})"
