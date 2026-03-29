@@ -1,32 +1,33 @@
 """Fail CI when schema-affecting backend code changes without a migration SQL change.
 
-This check is intentionally narrow: operational noise (migration runner, docs, workflows)
-must not force a new *.sql migration.
+This check is intentionally conservative about *which* code edits imply a DDL review, so that
+persistence refactors and in-memory adapters do not demand a ``versions/*.sql`` artifact unless
+canonical schema definitions or obvious SQL DDL edits are involved.
 
 Examples that SHOULD require a ``backend/src/database/migrations/versions/*.sql`` change:
-  - backend/src/database/schema.sql
-  - backend/src/database/repository.py
-  - backend/src/infrastructure/repositories/sql_foo_repository.py (SQL / table access)
-  - backend/src/application/ports/repositories.py (persistence contract changes)
+  - Any change to ``backend/src/database/schema.sql`` (canonical schema source).
+  - Changes under ``backend/src/infrastructure/repositories/sql_*.py`` (or
+    ``backend/src/database/repository.py``) whose **git diff** contains DDL-shaped SQL fragments.
 
 Examples that SHOULD NOT require a migration:
-  - backend/src/database/migrations/*.py (runner, cli, service bookkeeping)
-  - backend/scripts/db_migrate.py, backend/scripts/check_migration_presence.py
-  - docs/** , backend/README.md , .github/workflows/**
-  - backend/pyproject.toml (packaging only)
-  - backend/src/api/** (HTTP layer without persistence changes)
-  - backend/src/infrastructure/pipeline/** (no SQL DDL/DML to app schema)
+  - ``backend/src/infrastructure/repositories/memory_*.py``
+  - Refactors in ``sql_*.py`` that only touch queries/parameters/mapping without DDL tokens
+  - ``backend/src/application/ports/repositories.py`` (contract-only; no automatic trigger)
+  - Operational files listed in ignore prefixes (runner, docs, tests, etc.)
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from typing import Iterable, List
 
 # Any change under this prefix whose path ends with ``.sql`` satisfies the migration requirement.
 MIGRATION_SQL_PREFIX = "backend/src/database/migrations/versions/"
+
+_REPO_PREFIX = "backend/src/infrastructure/repositories/"
 
 # Paths that never count as “schema-affecting” (operational / docs / runner noise).
 _IGNORE_PREFIXES: tuple[str, ...] = (
@@ -43,6 +44,18 @@ _IGNORE_EXACT: frozenset[str] = frozenset(
     }
 )
 
+# Strong DDL indicators only (case-insensitive). Intentionally excludes broad DML (SELECT/INSERT).
+_DDL_PATTERN = re.compile(
+    r"(?is)"
+    r"\bCREATE\s+TABLE\b"
+    r"|\bALTER\s+TABLE\b"
+    r"|\bDROP\s+TABLE\b"
+    r"|\bCREATE\s+(?:UNIQUE\s+)?INDEX\b"
+    r"|\bDROP\s+INDEX\b"
+    r"|\bADD\s+COLUMN\b"
+    r"|\bDROP\s+COLUMN\b",
+)
+
 
 def _is_migration_sql(path: str) -> bool:
     return path.startswith(MIGRATION_SQL_PREFIX) and path.endswith(".sql")
@@ -57,17 +70,34 @@ def _is_ignored_path(path: str) -> bool:
     return any(path.startswith(p) for p in _IGNORE_PREFIXES)
 
 
-def _is_schema_sensitive_path(path: str) -> bool:
-    """True when the change likely needs a DDL/DML migration reviewed by a human."""
-    if path.startswith("backend/src/infrastructure/repositories/") and path.endswith(".py"):
-        return True
-    if path == "backend/src/database/schema.sql":
-        return True
-    if path == "backend/src/database/repository.py":
-        return True
-    if path == "backend/src/application/ports/repositories.py":
-        return True
-    return False
+def _is_schema_definition_path(path: str) -> bool:
+    """Files that are the canonical schema artifact; any edit requires a paired migration review."""
+    return path == "backend/src/database/schema.sql"
+
+
+def _is_memory_repository_path(path: str) -> bool:
+    if not path.startswith(_REPO_PREFIX) or not path.endswith(".py"):
+        return False
+    filename = path.rsplit("/", 1)[-1]
+    return filename.startswith("memory_")
+
+
+def _is_sql_repository_path(path: str) -> bool:
+    if not path.startswith(_REPO_PREFIX) or not path.endswith(".py"):
+        return False
+    filename = path.rsplit("/", 1)[-1]
+    return filename.startswith("sql_")
+
+
+def _is_database_repository_path(path: str) -> bool:
+    return path == "backend/src/database/repository.py"
+
+
+def _diff_text_looks_schema_affecting(diff_text: str) -> bool:
+    """True when unified diff text (added/removed context lines) contains DDL-shaped SQL."""
+    if not diff_text or not diff_text.strip():
+        return False
+    return _DDL_PATTERN.search(diff_text) is not None
 
 
 def _git_changed_files(base_ref: str, head_ref: str) -> List[str]:
@@ -78,6 +108,33 @@ def _git_changed_files(base_ref: str, head_ref: str) -> List[str]:
         text=True,
     )
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _git_diff_for_path(base_ref: str, head_ref: str, path: str) -> str:
+    proc = subprocess.run(
+        ["git", "diff", f"{base_ref}...{head_ref}", "--", path],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout
+
+
+def _path_requires_migration_review(path: str, base_ref: str, head_ref: str) -> bool:
+    """
+    Whether this changed path demands that ``versions/*.sql`` also changed.
+
+    - ``schema.sql``: always (canonical DDL source of truth for humans).
+    - Memory repos: never.
+    - SQL repos / ``database/repository.py``: only when the diff contains DDL-shaped tokens.
+    """
+    if _is_schema_definition_path(path):
+        return True
+    if _is_memory_repository_path(path):
+        return False
+    if _is_sql_repository_path(path) or _is_database_repository_path(path):
+        return _diff_text_looks_schema_affecting(_git_diff_for_path(base_ref, head_ref, path))
+    return False
 
 
 def _any_predicate(paths: Iterable[str], pred) -> bool:
@@ -97,12 +154,12 @@ def main() -> int:
 
     migration_sql_changed = _any_predicate(changed_files, _is_migration_sql)
 
-    # Only files that are neither ignored nor “the migration SQL itself” can trigger the requirement.
-    schema_sensitive_hits = [
-        p
-        for p in changed_files
-        if not _is_ignored_path(p) and not _is_migration_sql(p) and _is_schema_sensitive_path(p)
-    ]
+    schema_sensitive_hits: List[str] = []
+    for p in changed_files:
+        if _is_ignored_path(p) or _is_migration_sql(p):
+            continue
+        if _path_requires_migration_review(p, args.base_ref, args.head_ref):
+            schema_sensitive_hits.append(p)
 
     if not schema_sensitive_hits:
         print("No schema-affecting persistence changes detected; migration check skipped.")
