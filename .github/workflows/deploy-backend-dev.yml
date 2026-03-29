@@ -1,9 +1,46 @@
-name: Deploy Backend Dev
+# =============================================================================
+# Deploy Backend API + Worker (develop) — digest-pinned ECS, single pipeline
+# =============================================================================
+#
+# GitHub repository variables (Settings → Secrets and variables → Actions → Variables):
+#
+# Shared
+#   AWS_REGION
+#   ECS_CLUSTER
+#   MIGRATION_TASK_DEFINITION
+#   MIGRATION_CONTAINER_NAME
+#   MIGRATION_SUBNETS
+#   MIGRATION_SECURITY_GROUPS
+#   MIGRATION_ASSIGN_PUBLIC_IP      (optional; migration script defaults exist)
+#   MIGRATION_LAUNCH_TYPE           (optional)
+#   MIGRATION_PLATFORM_VERSION      (optional)
+#
+# Backend (API) service
+#   ECR_REPOSITORY                  API image repo name in ECR (no registry prefix)
+#   ECS_SERVICE                     ECS service name for the API
+#   ECS_CONTAINER_NAME              Container name inside the API task definition
+#   ECS_TASK_DEFINITION_FAMILY      Task definition family for the API (e.g. backend)
+#
+# Worker service
+#   WORKER_ECR_REPOSITORY           Worker image repo name in ECR
+#   WORKER_ECS_SERVICE              ECS service name for the worker
+#   WORKER_ECS_CONTAINER_NAME       Container name inside the worker task definition
+#   WORKER_ECS_TASK_DEFINITION_FAMILY  Task definition family for the worker
+#
+# Smoke (optional)
+#   BACKEND_BASE_URL                Used only by the smoke job (e.g. https://api.example.com)
+#
+# We intentionally do NOT push `latest`: only `${{ github.sha }}` is pushed. The deploy script
+# resolves the digest for that tag and sets the task image to repo@sha256:... so ECS cannot drift
+# to an older or retagged layer. Each deploy registers a NEW task definition revision and updates
+# the service to that revision (force-new-deployment accelerates rollout).
+#
+# Secrets
+#   AWS_ROLE_TO_ASSUME              OIDC role for AWS (push ECR, ECS APIs)
+#
+# =============================================================================
 
-# Required GitHub repository variables (example values):
-#   AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE, ECS_CONTAINER_NAME
-#   ECS_TASK_DEFINITION_FAMILY — e.g. "backend" (family name only; not revision)
-# Migration / network vars unchanged. Set ECS_TASK_DEFINITION_FAMILY to the API service task family.
+name: Deploy Backend Dev
 
 on:
   push:
@@ -12,6 +49,7 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/deploy-backend-dev.yml"
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -24,6 +62,10 @@ env:
   ECS_SERVICE: ${{ vars.ECS_SERVICE }}
   ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
   ECS_TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
+  WORKER_ECR_REPOSITORY: ${{ vars.WORKER_ECR_REPOSITORY }}
+  WORKER_ECS_SERVICE: ${{ vars.WORKER_ECS_SERVICE }}
+  WORKER_ECS_CONTAINER_NAME: ${{ vars.WORKER_ECS_CONTAINER_NAME }}
+  WORKER_ECS_TASK_DEFINITION_FAMILY: ${{ vars.WORKER_ECS_TASK_DEFINITION_FAMILY }}
   DB_SCHEMA_SERVICE_NAME: inventory-api
   DEPLOYMENT_ID: backend-dev-${{ github.sha }}
   MIGRATION_TASK_DEFINITION: ${{ vars.MIGRATION_TASK_DEFINITION }}
@@ -38,21 +80,26 @@ jobs:
   ecs-migration-preflight:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate ECS migration + deploy settings
+      - name: Validate required repository variables
         run: |
           for key in \
             AWS_REGION \
+            ECR_REPOSITORY \
             ECS_CLUSTER \
             ECS_SERVICE \
             ECS_CONTAINER_NAME \
             ECS_TASK_DEFINITION_FAMILY \
+            WORKER_ECR_REPOSITORY \
+            WORKER_ECS_SERVICE \
+            WORKER_ECS_CONTAINER_NAME \
+            WORKER_ECS_TASK_DEFINITION_FAMILY \
             MIGRATION_TASK_DEFINITION \
             MIGRATION_CONTAINER_NAME \
             MIGRATION_SUBNETS \
             MIGRATION_SECURITY_GROUPS
           do
             if [ -z "${!key}" ]; then
-              echo "Missing required workflow env / repository variable: ${key}" >&2
+              echo "Missing required Actions repository variable: ${key}" >&2
               exit 1
             fi
           done
@@ -67,8 +114,13 @@ jobs:
 
       - name: Validate migration presence for DB-layer changes
         run: |
+          BASE="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" != "push" ] || [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "Skipping migration presence check (workflow_dispatch or missing base ref)."
+            exit 0
+          fi
           python backend/scripts/check_migration_presence.py \
-            --base-ref "${{ github.event.before }}" \
+            --base-ref "$BASE" \
             --head-ref "${{ github.sha }}"
 
   deploy:
@@ -93,17 +145,18 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set image tag
+      - name: Set image tag (immutable)
         id: vars
         run: echo "IMAGE_TAG=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Build Docker image
+      # --- Backend API image ---
+      - name: Build backend image (API Dockerfile)
         run: |
           docker build --platform linux/amd64 \
             -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.IMAGE_TAG }} \
             .
 
-      - name: Push Docker image (immutable SHA tag only)
+      - name: Push backend image (SHA tag only)
         run: |
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.IMAGE_TAG }}
 
@@ -116,9 +169,30 @@ jobs:
         run: |
           ../.github/scripts/run-ecs-migration-task.sh
 
-      - name: Register digest-pinned task definition and update ECS service
+      - name: Deploy backend ECS service (digest-pinned task definition)
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
+        run: bash ../.github/scripts/ecs-register-task-and-deploy.sh
+
+      # --- Worker image (same commit SHA, Dockerfile.worker) ---
+      - name: Build worker image
+        run: |
+          docker build --platform linux/amd64 -f Dockerfile.worker \
+            -t ${{ steps.login-ecr.outputs.registry }}/${{ env.WORKER_ECR_REPOSITORY }}:${{ steps.vars.outputs.IMAGE_TAG }} \
+            .
+
+      - name: Push worker image (SHA tag only)
+        run: |
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.WORKER_ECR_REPOSITORY }}:${{ steps.vars.outputs.IMAGE_TAG }}
+
+      - name: Deploy worker ECS service (digest-pinned task definition)
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.WORKER_ECR_REPOSITORY }}
+          ECS_SERVICE: ${{ env.WORKER_ECS_SERVICE }}
+          ECS_CONTAINER_NAME: ${{ env.WORKER_ECS_CONTAINER_NAME }}
+          ECS_TASK_DEFINITION_FAMILY: ${{ env.WORKER_ECS_TASK_DEFINITION_FAMILY }}
           IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
         run: bash ../.github/scripts/ecs-register-task-and-deploy.sh
 
@@ -126,6 +200,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: deploy
     steps:
-      - name: Readiness smoke check
+      - name: Readiness smoke check (backend /health)
         run: |
           curl --fail --show-error --silent "${{ vars.BACKEND_BASE_URL }}/health"

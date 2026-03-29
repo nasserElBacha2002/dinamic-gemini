@@ -1,16 +1,31 @@
 #!/usr/bin/env bash
-# Register a new ECS task definition revision with a digest-pinned image, then point the
-# service at that revision. Eliminates "untagged ECR image" + force-only deploy drift.
+# Generic ECS deploy: digest-pin image, register new task definition revision, update service.
+#
+# Use for both API and worker: set ECS_SERVICE / ECS_TASK_DEFINITION_FAMILY / ECS_CONTAINER_NAME /
+# ECR_REPOSITORY per invocation (same script, different env).
+#
+# Why digest (@sha256:...) not a tag:
+#   Tags are mutable; ECS can resolve "latest" or retagged SHA to unexpected layers. Pinning digest
+#   guarantees the running task uses the exact image built in CI.
+#
+# Why a new task definition revision every deploy:
+#   `update-service --force-new-deployment` alone restarts tasks on the *existing* revision. If the
+#   revision still references an ambiguous image, you get drift. Registering a revision with an
+#   explicit image URI ties the service to that artifact.
+#
+# Why not push `latest`:
+#   Same mutability problem. CI only pushes immutable `:GITHUB_SHA` tags; this script resolves digest
+#   for that tag after push.
 #
 # Required env:
 #   AWS_REGION
 #   ECS_CLUSTER
 #   ECS_SERVICE
-#   ECS_TASK_DEFINITION_FAMILY   # e.g. backend (not revision)
-#   ECS_CONTAINER_NAME            # container in task def to set image on
-#   ECR_REGISTRY                 # xxx.dkr.ecr.region.amazonaws.com
-#   ECR_REPOSITORY               # repo name only
-#   IMAGE_TAG                    # immutable tag, typically full commit SHA
+#   ECS_TASK_DEFINITION_FAMILY   # family name only (e.g. backend, worker-api)
+#   ECS_CONTAINER_NAME             # container name inside the task definition to retarget
+#   ECR_REGISTRY                   # xxx.dkr.ecr.region.amazonaws.com
+#   ECR_REPOSITORY                 # repository name only (no registry / no tag)
+#   IMAGE_TAG                      # immutable tag (full commit SHA recommended)
 #
 set -euo pipefail
 
@@ -29,6 +44,10 @@ do
     exit 2
   fi
 done
+
+echo "=== ecs-register-task-and-deploy ==="
+echo "service=${ECS_SERVICE} family=${ECS_TASK_DEFINITION_FAMILY} container=${ECS_CONTAINER_NAME}"
+echo "repository=${ECR_REPOSITORY} tag=${IMAGE_TAG}"
 
 echo "Resolving image digest for ${ECR_REPOSITORY}:${IMAGE_TAG}..."
 DIGEST="$(aws ecr describe-images \
@@ -95,7 +114,7 @@ NEW_REV="$(aws ecs register-task-definition \
 
 echo "Registered ${ECS_TASK_DEFINITION_FAMILY}:${NEW_REV}"
 
-echo "Updating service ${ECS_SERVICE} → ${ECS_TASK_DEFINITION_FAMILY}:${NEW_REV}..."
+echo "Updating service ${ECS_SERVICE} → taskDefinition ${ECS_TASK_DEFINITION_FAMILY}:${NEW_REV}..."
 aws ecs update-service \
   --region "${AWS_REGION}" \
   --cluster "${ECS_CLUSTER}" \
@@ -103,4 +122,4 @@ aws ecs update-service \
   --task-definition "${ECS_TASK_DEFINITION_FAMILY}:${NEW_REV}" \
   --force-new-deployment
 
-echo "ECS service update submitted. Rollout in progress."
+echo "Done. Service ${ECS_SERVICE} rollout started (revision ${NEW_REV}, digest ${DIGEST})."
