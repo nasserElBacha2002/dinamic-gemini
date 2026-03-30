@@ -6,8 +6,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import { fetchEvidenceImage } from '../../src/api/client';
+import {
+  fetchEvidenceImage,
+  FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL,
+} from '../../src/api/client';
 import { useEvidenceImageLoad } from '../../src/features/results/hooks/useEvidenceImageLoad';
+import * as authStorage from '../../src/features/auth/storage';
+
+vi.mock('../../src/features/auth/storage', () => ({
+  getStoredToken: vi.fn(),
+}));
 
 // Node/jsdom may lack URL.createObjectURL/revokeObjectURL; add no-op mocks so tests run
 function ensureBlobUrlSupport() {
@@ -22,10 +30,70 @@ function ensureBlobUrlSupport() {
 describe('fetchEvidenceImage', () => {
   beforeEach(() => {
     ensureBlobUrlSupport();
+    vi.mocked(authStorage.getStoredToken).mockReturnValue(null);
     vi.stubGlobal(
       'fetch',
       vi.fn((_input: string) => Promise.reject(new Error('network error')))
     );
+  });
+
+  it('calls fetch with redirect manual, credentials omit, and Authorization when token is set', async () => {
+    vi.mocked(authStorage.getStoredToken).mockReturnValue('test-jwt-token');
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      Promise.resolve(
+        new Response(null, {
+          status: 307,
+          headers: { Location: 'https://s3.example/signed' },
+        })
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await fetchEvidenceImage('https://api.example/v3/file');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init).toEqual(
+      expect.objectContaining({
+        credentials: 'omit',
+        redirect: 'manual',
+      })
+    );
+    const headers = init?.headers as Headers;
+    expect(headers.get('Authorization')).toBe('Bearer test-jwt-token');
+  });
+
+  it('calls fetch with redirect manual and credentials omit when token is absent (no Authorization header)', async () => {
+    vi.mocked(authStorage.getStoredToken).mockReturnValue(null);
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(new Blob(['x']), { status: 200, headers: { 'Content-Type': 'image/jpeg' } }))
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await fetchEvidenceImage('https://api.example/v3/file');
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init).toEqual(
+      expect.objectContaining({
+        credentials: 'omit',
+        redirect: 'manual',
+      })
+    );
+    const headers = init?.headers as Headers;
+    expect(headers.get('Authorization')).toBeNull();
+  });
+
+  it('returns opaque_redirect reason and detail when response type is opaqueredirect', async () => {
+    const opaque = {
+      type: 'opaqueredirect',
+      status: 0,
+      ok: false,
+      headers: new Headers(),
+    } as unknown as Response;
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(opaque)));
+    const result = await fetchEvidenceImage('http://api/assets/1/file');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(0);
+      expect(result.reason).toBe('opaque_redirect');
+      expect(result.detail).toBe(FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL);
+    }
   });
 
   it('returns not_found when backend returns 404 with Asset not found', async () => {
@@ -67,7 +135,7 @@ describe('fetchEvidenceImage', () => {
     }
   });
 
-  it('returns blobUrl when backend returns 200', async () => {
+  it('returns imageSrc object URL when backend returns 200', async () => {
     const blob = new Blob(['fake-image'], { type: 'image/jpeg' });
     vi.stubGlobal(
       'fetch',
@@ -83,8 +151,29 @@ describe('fetchEvidenceImage', () => {
     const result = await fetchEvidenceImage('http://api/assets/1/file');
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.blobUrl).toBe('blob:test-mock-url');
-      URL.revokeObjectURL(result.blobUrl);
+      expect(result.imageSrc).toBe('blob:test-mock-url');
+      expect(result.revoke).toBeDefined();
+      result.revoke?.();
+    }
+  });
+
+  it('returns presigned imageSrc on 307 Location (S3 redirect) without blob revoke', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(null, {
+            status: 307,
+            headers: { Location: 'https://s3.example/bucket/key?X-Amz-Signature=abc' },
+          })
+        )
+      )
+    );
+    const result = await fetchEvidenceImage('http://api/inv/a/assets/x/file');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.imageSrc).toBe('https://s3.example/bucket/key?X-Amz-Signature=abc');
+      expect(result.revoke).toBeUndefined();
     }
   });
 
@@ -114,6 +203,7 @@ describe('useEvidenceImageLoad', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     ensureBlobUrlSupport();
+    vi.mocked(authStorage.getStoredToken).mockReturnValue(null);
   });
 
   it('shows not_found message when backend returns 404 Asset not found', async () => {
@@ -175,6 +265,21 @@ describe('useEvidenceImageLoad', () => {
     await waitFor(() => {
       expect(screen.getByTestId('state').textContent).toBe('loaded');
     });
+  });
+
+  it('shows opaque_redirect message when fetch returns opaqueredirect', async () => {
+    const opaque = {
+      type: 'opaqueredirect',
+      status: 0,
+      ok: false,
+      headers: new Headers(),
+    } as unknown as Response;
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(opaque)));
+    render(<TestWrapper url="http://api/assets/1/file" />);
+    await waitFor(() => {
+      expect(screen.getByTestId('state').textContent).toBe(FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL);
+    });
+    expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('opaque_redirect');
   });
 
   it('shows heic_preview_unavailable when 404 detail contains Preview not available', async () => {

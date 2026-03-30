@@ -99,7 +99,7 @@ export default function ResultEvidencePanel({
             )}
             {loadState.status === 'loaded' && (
               <img
-                src={loadState.blobUrl}
+                src={loadState.imageSrc}
                 alt={
                   result.sourceFileName
                     ? `Source: ${result.sourceFileName}`
@@ -176,7 +176,7 @@ export default function ResultEvidencePanel({
         <DialogContent>
           {loadState.status === 'loaded' && (
             <img
-              src={loadState.blobUrl}
+              src={loadState.imageSrc}
               alt="Source image"
               style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
             />

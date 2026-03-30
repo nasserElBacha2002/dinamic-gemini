@@ -1,6 +1,6 @@
 /**
  * Sprint 4.3 — Evidence viewer: main image anchor, zoom, fullscreen, multi-image selection (label chips).
- * Auth-loaded images use useEvidenceImageLoad; switching images selects which URL to load.
+ * Images: useEvidenceImageLoad resolves API URL → presigned S3 URL or blob (local); <img src> uses that URL.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -212,7 +212,7 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
             {loadState.status === 'loaded' && (
               <Box
                 component="img"
-                src={loadState.blobUrl}
+                src={loadState.imageSrc}
                 alt={frames[safeIndex]?.fileName ? `Evidence: ${frames[safeIndex].fileName}` : 'Evidence image'}
                 sx={{
                   maxWidth: '100%',
@@ -350,7 +350,7 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
                 {loadState.status === 'loaded' && (
                   <Box
                     component="img"
-                    src={loadState.blobUrl}
+                    src={loadState.imageSrc}
                     alt={
                       frames[safeIndex]?.fileName
                         ? `Evidence: ${frames[safeIndex].fileName}`

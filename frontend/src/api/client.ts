@@ -352,22 +352,65 @@ export function getReferenceImageFileUrl(
   return `${base}${path}`;
 }
 
-/** Result of preflight fetch for evidence image. Used to distinguish 404/403/network and show the right message. */
+/** Result of resolving evidence/reference image for display. */
+export type FetchEvidenceImageFailureReason = 'opaque_redirect';
+
 export type FetchEvidenceImageResult =
-  | { ok: true; blobUrl: string }
-  | { ok: false; status: number; detail?: string };
+  | { ok: true; imageSrc: string; revoke?: () => void }
+  | { ok: false; status: number; detail?: string; reason?: FetchEvidenceImageFailureReason };
+
+/** Human-readable detail when the browser returns an opaque redirect (see ``fetchEvidenceImage``). */
+export const FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL =
+  'Could not read redirect to image (opaque response). The API may need CORS expose_headers including Location, or the browser hid the redirect for this cross-origin request.';
 
 /**
- * Fetch evidence/reference image with auth (same as protectedFetch). Returns blob URL on success
- * or status + detail on failure so the UI can show a differentiated error (not_found, forbidden, network).
- * Caller must revoke the returned blobUrl when no longer needed (e.g. URL.revokeObjectURL(blobUrl)).
+ * Resolve evidence/reference image URL for <img src>.
+ *
+ * **Authentication:** When ``getStoredToken()`` returns a value, the request to the **backend**
+ * includes ``Authorization: Bearer <token>`` on the ``Headers`` object. That is independent of
+ * ``credentials:`` — we pass ``credentials: 'omit'`` so **browser-managed** credentials (cookies,
+ * cached HTTP auth, client certificates) are **not** sent. Omitting credentials does **not** strip
+ * the manually attached Bearer header.
+ *
+ * **Why omit credentials:** With ``redirect: 'manual'``, we read ``Location`` and set
+ * ``<img src>`` to the presigned URL. We avoid ``credentials: 'include'`` so a hypothetical
+ * automatic follow to S3 would not be treated as a credentialed cross-origin request (which
+ * often breaks S3 CORS). The image is then loaded by the ``<img>`` tag without API cookies or
+ * Bearer on the S3 URL (the presigned query string is enough).
+ *
+ * **Flows:** (1) Backend **307** + ``Location`` → return that URL as ``imageSrc``. (2) Backend **200**
+ * body (e.g. local file) → blob URL + ``revoke``.
+ *
+ * **Opaque redirect:** In some cross-origin + ``redirect: 'manual'`` cases the browser reports
+ * ``response.type === 'opaqueredirect'`` with no readable status or headers. Then we cannot obtain
+ * ``Location``; see ``reason: 'opaque_redirect'`` and ``FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL``.
  */
 export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImageResult> {
   const token = getStoredToken();
   const headers = new Headers();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   try {
-    const response = await fetch(url, { credentials: 'include', headers });
+    const response = await fetch(url, {
+      credentials: 'omit',
+      headers,
+      redirect: 'manual',
+    });
+    if (response.type === 'opaqueredirect') {
+      return {
+        ok: false,
+        status: 0,
+        reason: 'opaque_redirect',
+        detail: FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL,
+      };
+    }
+    if (response.status >= 300 && response.status < 400) {
+      const loc = response.headers.get('Location');
+      if (loc && loc.trim()) {
+        const imageSrc = new URL(loc.trim(), url).href;
+        return { ok: true, imageSrc };
+      }
+      return { ok: false, status: response.status, detail: 'Redirect without Location' };
+    }
     if (!response.ok) {
       let detail: string | undefined;
       try {
@@ -380,7 +423,11 @@ export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImag
     }
     const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
-    return { ok: true, blobUrl };
+    return {
+      ok: true,
+      imageSrc: blobUrl,
+      revoke: () => URL.revokeObjectURL(blobUrl),
+    };
   } catch {
     return { ok: false, status: 0, detail: undefined };
   }
