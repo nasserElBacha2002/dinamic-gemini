@@ -1,6 +1,6 @@
 /**
  * Sprint 4.3 — Evidence viewer: main image anchor, zoom, fullscreen, multi-image selection (label chips).
- * Images: useEvidenceImageLoad resolves API URL → presigned S3 URL or blob (local); <img src> uses that URL.
+ * Images: useEvidenceImageLoad uses JSON image-display-url → presigned S3 or authenticated /file blob; <img src> uses that URL.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -21,7 +21,6 @@ import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import type { ResultDetail } from '../../types';
-import { getReferenceImageFileUrl } from '../../../../api/client';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
 
 export interface ResultEvidenceViewerProps {
@@ -38,7 +37,6 @@ interface EvidenceFrame {
   key: string;
   label: string;
   fileName: string | null;
-  imageUrl: string;
 }
 
 /** Desktop stage: stable minimum height without cropping; max avoids awkward vertical dominance. */
@@ -52,10 +50,9 @@ function jobIdFromResult(result: ResultDetail): string | null {
   return idx > 0 ? entityId.slice(0, idx) : null;
 }
 
-function buildFrames(result: ResultDetail, inventoryId: string, aisleId: string): EvidenceFrame[] {
-  const jobId = jobIdFromResult(result);
+function buildFrames(result: ResultDetail): EvidenceFrame[] {
   const seen = new Set<string>();
-  const drafts: Array<{ key: string; fileName: string | null; imageUrl: string }> = [];
+  const drafts: Array<{ key: string; fileName: string | null }> = [];
 
   const push = (assetId: string | null | undefined, fileName: string | null) => {
     const id = assetId != null ? String(assetId).trim() : '';
@@ -64,7 +61,6 @@ function buildFrames(result: ResultDetail, inventoryId: string, aisleId: string)
     drafts.push({
       key: id,
       fileName,
-      imageUrl: getReferenceImageFileUrl(inventoryId, aisleId, id, jobId),
     });
   };
 
@@ -80,17 +76,18 @@ function buildFrames(result: ResultDetail, inventoryId: string, aisleId: string)
 }
 
 export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: ResultEvidenceViewerProps) {
-  const frames = useMemo(
-    () => buildFrames(result, inventoryId, aisleId),
-    [result, inventoryId, aisleId]
-  );
+  const frames = useMemo(() => buildFrames(result), [result]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
 
   const safeIndex = Math.min(selectedIndex, Math.max(0, frames.length - 1));
-  const currentUrl = frames[safeIndex]?.imageUrl ?? null;
-  const loadState = useEvidenceImageLoad(currentUrl);
+  const currentFrame = frames[safeIndex];
+  const jobId = jobIdFromResult(result);
+  const imageSpec = currentFrame
+    ? { inventoryId, aisleId, assetId: currentFrame.key, jobId }
+    : null;
+  const loadState = useEvidenceImageLoad(imageSpec);
 
   useEffect(() => {
     setSelectedIndex((i) => Math.min(i, Math.max(0, frames.length - 1)));

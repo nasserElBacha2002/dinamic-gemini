@@ -1,15 +1,11 @@
 /**
- * Evidence image load — fetch preflight and differentiated error handling.
- * Ensures 404, 403, network and success are mapped to the right UI state/message.
+ * Evidence image load — JSON image-display-url + optional /file blob; differentiated error handling.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import {
-  fetchEvidenceImage,
-  FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL,
-} from '../../src/api/client';
+import { fetchEvidenceImageDisplay } from '../../src/api/client';
 import { useEvidenceImageLoad } from '../../src/features/results/hooks/useEvidenceImageLoad';
 import * as authStorage from '../../src/features/auth/storage';
 
@@ -17,7 +13,6 @@ vi.mock('../../src/features/auth/storage', () => ({
   getStoredToken: vi.fn(),
 }));
 
-// Node/jsdom may lack URL.createObjectURL/revokeObjectURL; add no-op mocks so tests run
 function ensureBlobUrlSupport() {
   if (typeof (URL as unknown as { createObjectURL?: (b: Blob) => string }).createObjectURL !== 'function') {
     (URL as unknown as { createObjectURL: (b: Blob) => string }).createObjectURL = vi.fn(() => 'blob:test-mock-url');
@@ -27,7 +22,14 @@ function ensureBlobUrlSupport() {
   }
 }
 
-describe('fetchEvidenceImage', () => {
+const SPEC = {
+  inventoryId: 'inv-1',
+  aisleId: 'aisle-1',
+  assetId: 'asset-1',
+  jobId: null as string | null,
+};
+
+describe('fetchEvidenceImageDisplay', () => {
   beforeEach(() => {
     ensureBlobUrlSupport();
     vi.mocked(authStorage.getStoredToken).mockReturnValue(null);
@@ -37,118 +39,94 @@ describe('fetchEvidenceImage', () => {
     );
   });
 
-  it('calls fetch with redirect manual, credentials omit, and Authorization when token is set', async () => {
+  it('requests image-display-url with Authorization when token is set', async () => {
     vi.mocked(authStorage.getStoredToken).mockReturnValue('test-jwt-token');
-    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
-      Promise.resolve(
-        new Response(null, {
-          status: 307,
-          headers: { Location: 'https://s3.example/signed' },
-        })
-      )
-    );
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      if (typeof _url === 'string' && _url.includes('image-display-url')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              image_url: 'https://s3.example/signed',
+              requires_authenticated_fetch: false,
+              display_strategy: 'presigned_url',
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        );
+      }
+      return Promise.reject(new Error('unexpected url'));
+    });
     vi.stubGlobal('fetch', fetchMock);
-    await fetchEvidenceImage('https://api.example/v3/file');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0];
-    expect(init).toEqual(
-      expect.objectContaining({
-        credentials: 'omit',
-        redirect: 'manual',
-      })
-    );
+    await fetchEvidenceImageDisplay(SPEC);
+    expect(fetchMock).toHaveBeenCalled();
+    const jsonCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('image-display-url'));
+    expect(jsonCall).toBeDefined();
+    const init = jsonCall![1] as RequestInit;
     const headers = init?.headers as Headers;
     expect(headers.get('Authorization')).toBe('Bearer test-jwt-token');
   });
 
-  it('calls fetch with redirect manual and credentials omit when token is absent (no Authorization header)', async () => {
-    vi.mocked(authStorage.getStoredToken).mockReturnValue(null);
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(new Response(new Blob(['x']), { status: 200, headers: { 'Content-Type': 'image/jpeg' } }))
+  it('returns presigned imageSrc when JSON includes image_url', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              image_url: 'https://s3.example/bucket/k?sig=1',
+              requires_authenticated_fetch: false,
+              display_strategy: 'presigned_url',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      )
     );
-    vi.stubGlobal('fetch', fetchMock);
-    await fetchEvidenceImage('https://api.example/v3/file');
-    const [, init] = fetchMock.mock.calls[0];
-    expect(init).toEqual(
-      expect.objectContaining({
-        credentials: 'omit',
-        redirect: 'manual',
+    const result = await fetchEvidenceImageDisplay(SPEC);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.imageSrc).toBe('https://s3.example/bucket/k?sig=1');
+      expect(result.revoke).toBeUndefined();
+    }
+  });
+
+  it('GETs /file with Bearer when JSON requests authenticated fetch', async () => {
+    vi.mocked(authStorage.getStoredToken).mockReturnValue('tok');
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce((url: string) => {
+        expect(String(url)).toContain('image-display-url');
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              image_url: null,
+              requires_authenticated_fetch: true,
+              display_strategy: 'authenticated_file_fetch',
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        );
       })
-    );
-    const headers = init?.headers as Headers;
-    expect(headers.get('Authorization')).toBeNull();
-  });
-
-  it('returns opaque_redirect reason and detail when response type is opaqueredirect', async () => {
-    const opaque = {
-      type: 'opaqueredirect',
-      status: 0,
-      ok: false,
-      headers: new Headers(),
-    } as unknown as Response;
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(opaque)));
-    const result = await fetchEvidenceImage('http://api/assets/1/file');
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.status).toBe(0);
-      expect(result.reason).toBe('opaque_redirect');
-      expect(result.detail).toBe(FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL);
-    }
-  });
-
-  it('returns not_found when backend returns 404 with Asset not found', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_url: string) =>
-        Promise.resolve(
-          new Response(JSON.stringify({ detail: 'Asset not found' }), {
-            status: 404,
-            headers: { 'Content-Type': 'application/json' },
-          })
-        )
-      )
-    );
-    const result = await fetchEvidenceImage('http://api/assets/1/file');
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.status).toBe(404);
-      expect(result.detail).toBe('Asset not found');
-    }
-  });
-
-  it('returns forbidden when backend returns 403', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_url: string) =>
-        Promise.resolve(
-          new Response(JSON.stringify({ detail: 'Forbidden' }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' },
-          })
-        )
-      )
-    );
-    const result = await fetchEvidenceImage('http://api/assets/1/file');
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.status).toBe(403);
-    }
-  });
-
-  it('returns imageSrc object URL when backend returns 200', async () => {
-    const blob = new Blob(['fake-image'], { type: 'image/jpeg' });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_url: string) =>
-        Promise.resolve(
-          new Response(blob, {
+      .mockImplementationOnce((url: string, init?: RequestInit) => {
+        expect(String(url)).toContain('/file');
+        expect(init).toEqual(expect.objectContaining({ credentials: 'omit' }));
+        expect((init?.headers as Headers).get('Authorization')).toBe('Bearer tok');
+        return Promise.resolve(
+          new Response(new Blob(['x'], { type: 'image/jpeg' }), {
             status: 200,
             headers: { 'Content-Type': 'image/jpeg' },
           })
-        )
-      )
-    );
-    const result = await fetchEvidenceImage('http://api/assets/1/file');
+        );
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await fetchEvidenceImageDisplay(SPEC);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.imageSrc).toBe('blob:test-mock-url');
@@ -157,29 +135,48 @@ describe('fetchEvidenceImage', () => {
     }
   });
 
-  it('returns presigned imageSrc on 307 Location (S3 redirect) without blob revoke', async () => {
+  it('returns not_found when image-display-url returns 404', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
         Promise.resolve(
-          new Response(null, {
-            status: 307,
-            headers: { Location: 'https://s3.example/bucket/key?X-Amz-Signature=abc' },
+          new Response(JSON.stringify({ detail: 'Asset not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
           })
         )
       )
     );
-    const result = await fetchEvidenceImage('http://api/inv/a/assets/x/file');
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.imageSrc).toBe('https://s3.example/bucket/key?X-Amz-Signature=abc');
-      expect(result.revoke).toBeUndefined();
+    const result = await fetchEvidenceImageDisplay(SPEC);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(404);
+      expect(result.detail).toBe('Asset not found');
     }
   });
 
-  it('returns status 0 and no detail on network error', async () => {
+  it('returns forbidden when image-display-url returns 403', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ detail: 'Forbidden' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      )
+    );
+    const result = await fetchEvidenceImageDisplay(SPEC);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(403);
+    }
+  });
+
+  it('returns status 0 on network error', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Network error'))));
-    const result = await fetchEvidenceImage('http://api/assets/1/file');
+    const result = await fetchEvidenceImageDisplay(SPEC);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(0);
@@ -187,8 +184,8 @@ describe('fetchEvidenceImage', () => {
   });
 });
 
-function TestWrapper({ url }: { url: string | null }) {
-  const state = useEvidenceImageLoad(url);
+function TestWrapper({ spec }: { spec: Parameters<typeof useEvidenceImageLoad>[0] }) {
+  const state = useEvidenceImageLoad(spec);
   if (state.status === 'idle') return <span data-testid="state">idle</span>;
   if (state.status === 'loading') return <span data-testid="state">loading</span>;
   if (state.status === 'loaded') return <span data-testid="state">loaded</span>;
@@ -206,10 +203,12 @@ describe('useEvidenceImageLoad', () => {
     vi.mocked(authStorage.getStoredToken).mockReturnValue(null);
   });
 
-  it('shows not_found message when backend returns 404 Asset not found', async () => {
+  const spec = { inventoryId: 'inv', aisleId: 'aisle', assetId: 'asset' };
+
+  it('shows not_found message when image-display-url returns 404', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn((_url: string) =>
+      vi.fn(() =>
         Promise.resolve(
           new Response(JSON.stringify({ detail: 'Asset not found' }), {
             status: 404,
@@ -218,17 +217,17 @@ describe('useEvidenceImageLoad', () => {
         )
       )
     );
-    render(<TestWrapper url="http://api/assets/1/file" />);
+    render(<TestWrapper spec={spec} />);
     await waitFor(() => {
       expect(screen.getByTestId('state').textContent).toBe('Source image is no longer available.');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('not_found');
   });
 
-  it('shows forbidden message when backend returns 403', async () => {
+  it('shows forbidden message when image-display-url returns 403', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn((_url: string) =>
+      vi.fn(() =>
         Promise.resolve(
           new Response(JSON.stringify({ detail: 'Forbidden' }), {
             status: 403,
@@ -237,7 +236,7 @@ describe('useEvidenceImageLoad', () => {
         )
       )
     );
-    render(<TestWrapper url="http://api/assets/1/file" />);
+    render(<TestWrapper spec={spec} />);
     await waitFor(() => {
       expect(screen.getByTestId('state').textContent).toBe('You do not have permission to load this image.');
     });
@@ -246,46 +245,70 @@ describe('useEvidenceImageLoad', () => {
 
   it('shows generic message on network error', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Network error'))));
-    render(<TestWrapper url="http://api/assets/1/file" />);
+    render(<TestWrapper spec={spec} />);
     await waitFor(() => {
       expect(screen.getByTestId('state').textContent).toBe('Image could not be loaded.');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('network');
   });
 
-  it('shows loaded when response is OK', async () => {
-    const blob = new Blob(['x'], { type: 'image/jpeg' });
+  it('shows loaded when JSON returns presigned URL', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn((_url: string) =>
-        Promise.resolve(new Response(blob, { status: 200, headers: { 'Content-Type': 'image/jpeg' } }))
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              image_url: 'https://signed.example/x',
+              requires_authenticated_fetch: false,
+              display_strategy: 'presigned_url',
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        )
       )
     );
-    render(<TestWrapper url="http://api/assets/1/file" />);
+    render(<TestWrapper spec={spec} />);
     await waitFor(() => {
       expect(screen.getByTestId('state').textContent).toBe('loaded');
     });
   });
 
-  it('shows opaque_redirect message when fetch returns opaqueredirect', async () => {
-    const opaque = {
-      type: 'opaqueredirect',
-      status: 0,
-      ok: false,
-      headers: new Headers(),
-    } as unknown as Response;
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(opaque)));
-    render(<TestWrapper url="http://api/assets/1/file" />);
+  it('shows loaded when JSON requests fetch and /file returns 200', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              image_url: null,
+              requires_authenticated_fetch: true,
+              display_strategy: 'authenticated_file_fetch',
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        )
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(new Response(new Blob(['x'], { type: 'image/jpeg' }), { status: 200 }))
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    render(<TestWrapper spec={spec} />);
     await waitFor(() => {
-      expect(screen.getByTestId('state').textContent).toBe(FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL);
+      expect(screen.getByTestId('state').textContent).toBe('loaded');
     });
-    expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('opaque_redirect');
   });
 
-  it('shows heic_preview_unavailable when 404 detail contains Preview not available', async () => {
+  it('shows heic_preview_unavailable when 404 detail matches preview message', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn((_url: string) =>
+      vi.fn(() =>
         Promise.resolve(
           new Response(JSON.stringify({ detail: 'Preview is not available for this image' }), {
             status: 404,
@@ -294,7 +317,7 @@ describe('useEvidenceImageLoad', () => {
         )
       )
     );
-    render(<TestWrapper url="http://api/assets/1/file" />);
+    render(<TestWrapper spec={spec} />);
     await waitFor(() => {
       expect(screen.getByTestId('state').textContent).toBe('Preview is not available for this image.');
     });

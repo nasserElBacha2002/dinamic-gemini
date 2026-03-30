@@ -352,65 +352,44 @@ export function getReferenceImageFileUrl(
   return `${base}${path}`;
 }
 
-/** Result of resolving evidence/reference image for display. */
-export type FetchEvidenceImageFailureReason = 'opaque_redirect';
+/**
+ * Authenticated JSON endpoint that returns how to display a reference asset (presigned URL vs fetch /file).
+ * Same ``job_id`` query semantics as {@link getReferenceImageFileUrl}.
+ */
+export function getReferenceImageDisplayUrl(
+  inventoryId: string,
+  aisleId: string,
+  assetId: string,
+  jobId?: string | null
+): string {
+  const base = import.meta.env.VITE_API_BASE_URL ?? '';
+  const path = `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/image-display-url`;
+  if (jobId != null && String(jobId).trim() !== '') {
+    return `${base}${path}?job_id=${encodeURIComponent(String(jobId).trim())}`;
+  }
+  return `${base}${path}`;
+}
 
+/** Identifies one aisle asset image for the evidence viewer (matches reference file routing). */
+export interface EvidenceImageLoadSpec {
+  inventoryId: string;
+  aisleId: string;
+  assetId: string;
+  jobId?: string | null;
+}
+
+/** Result of resolving evidence/reference image for display. */
 export type FetchEvidenceImageResult =
   | { ok: true; imageSrc: string; revoke?: () => void }
-  | { ok: false; status: number; detail?: string; reason?: FetchEvidenceImageFailureReason };
+  | { ok: false; status: number; detail?: string };
 
-/** Human-readable detail when the browser returns an opaque redirect (see ``fetchEvidenceImage``). */
-export const FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL =
-  'Could not read redirect to image (opaque response). The API may need CORS expose_headers including Location, or the browser hid the redirect for this cross-origin request.';
-
-/**
- * Resolve evidence/reference image URL for <img src>.
- *
- * **Authentication:** When ``getStoredToken()`` returns a value, the request to the **backend**
- * includes ``Authorization: Bearer <token>`` on the ``Headers`` object. That is independent of
- * ``credentials:`` — we pass ``credentials: 'omit'`` so **browser-managed** credentials (cookies,
- * cached HTTP auth, client certificates) are **not** sent. Omitting credentials does **not** strip
- * the manually attached Bearer header.
- *
- * **Why omit credentials:** With ``redirect: 'manual'``, we read ``Location`` and set
- * ``<img src>`` to the presigned URL. We avoid ``credentials: 'include'`` so a hypothetical
- * automatic follow to S3 would not be treated as a credentialed cross-origin request (which
- * often breaks S3 CORS). The image is then loaded by the ``<img>`` tag without API cookies or
- * Bearer on the S3 URL (the presigned query string is enough).
- *
- * **Flows:** (1) Backend **307** + ``Location`` → return that URL as ``imageSrc``. (2) Backend **200**
- * body (e.g. local file) → blob URL + ``revoke``.
- *
- * **Opaque redirect:** In some cross-origin + ``redirect: 'manual'`` cases the browser reports
- * ``response.type === 'opaqueredirect'`` with no readable status or headers. Then we cannot obtain
- * ``Location``; see ``reason: 'opaque_redirect'`` and ``FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL``.
- */
-export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImageResult> {
+async function fetchAuthorizedReferenceFileAsBlob(spec: EvidenceImageLoadSpec): Promise<FetchEvidenceImageResult> {
+  const fileUrl = getReferenceImageFileUrl(spec.inventoryId, spec.aisleId, spec.assetId, spec.jobId);
   const token = getStoredToken();
   const headers = new Headers();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   try {
-    const response = await fetch(url, {
-      credentials: 'omit',
-      headers,
-      redirect: 'manual',
-    });
-    if (response.type === 'opaqueredirect') {
-      return {
-        ok: false,
-        status: 0,
-        reason: 'opaque_redirect',
-        detail: FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL,
-      };
-    }
-    if (response.status >= 300 && response.status < 400) {
-      const loc = response.headers.get('Location');
-      if (loc && loc.trim()) {
-        const imageSrc = new URL(loc.trim(), url).href;
-        return { ok: true, imageSrc };
-      }
-      return { ok: false, status: response.status, detail: 'Redirect without Location' };
-    }
+    const response = await fetch(fileUrl, { credentials: 'omit', headers });
     if (!response.ok) {
       let detail: string | undefined;
       try {
@@ -428,6 +407,45 @@ export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImag
       imageSrc: blobUrl,
       revoke: () => URL.revokeObjectURL(blobUrl),
     };
+  } catch {
+    return { ok: false, status: 0, detail: undefined };
+  }
+}
+
+/**
+ * Resolve evidence/reference image for ``<img src>`` via the JSON ``image-display-url`` contract,
+ * then presigned URL or authenticated GET to ``.../file`` when the API requests it (local / legacy / HEIC preview).
+ */
+export async function fetchEvidenceImageDisplay(spec: EvidenceImageLoadSpec): Promise<FetchEvidenceImageResult> {
+  const url = getReferenceImageDisplayUrl(spec.inventoryId, spec.aisleId, spec.assetId, spec.jobId);
+  try {
+    const response = await protectedFetch(url);
+    if (!response.ok) {
+      let detail: string | undefined;
+      try {
+        const data = (await response.json()) as { detail?: unknown };
+        detail = typeof data?.detail === 'string' ? data.detail : undefined;
+      } catch {
+        detail = undefined;
+      }
+      return { ok: false, status: response.status, detail };
+    }
+    let data: { image_url?: unknown; requires_authenticated_fetch?: unknown };
+    try {
+      data = (await response.json()) as typeof data;
+    } catch {
+      return { ok: false, status: 502, detail: 'Invalid image display URL response' };
+    }
+    const imageUrl =
+      typeof data.image_url === 'string' && data.image_url.trim() !== '' ? data.image_url.trim() : null;
+    const needFetch = data.requires_authenticated_fetch === true;
+    if (imageUrl) {
+      return { ok: true, imageSrc: imageUrl };
+    }
+    if (needFetch) {
+      return fetchAuthorizedReferenceFileAsBlob(spec);
+    }
+    return { ok: false, status: 502, detail: 'Invalid image display URL response' };
   } catch {
     return { ok: false, status: 0, detail: undefined };
   }

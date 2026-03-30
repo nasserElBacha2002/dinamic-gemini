@@ -14,6 +14,7 @@ from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     read_execution_log_events_for_job,
     resolve_source_asset_file_response,
+    resolve_source_asset_image_display,
     resolve_visual_reference_file_response,
 )
 from src.domain.inventory.visual_reference import InventoryVisualReference
@@ -85,6 +86,159 @@ def test_resolve_source_asset_s3_uses_redirect(monkeypatch) -> None:
     resp = resolve_source_asset_file_response(asset, artifact_store=mock_store)
     assert resp.status_code == 307
     assert resp.headers["location"] == "https://example/presigned"
+
+
+def test_resolve_source_asset_image_display_s3_returns_presigned_url(monkeypatch) -> None:
+    asset = SourceAsset(
+        id="a1",
+        aisle_id="aisle",
+        type=SourceAssetType.PHOTO,
+        original_filename="p.jpg",
+        storage_path="legacy/ignored",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+        storage_provider="s3",
+        storage_bucket="myb",
+        storage_key="k1",
+    )
+    mock_store = MagicMock()
+    mock_store.bucket = "myb"
+    mock_store.generate_signed_url.return_value = "https://example/presigned"
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {"artifact_s3_signed_url_ttl_sec": 900, **_DEFAULT_STORE_ACCESS_SETTINGS},
+        )(),
+    )
+    url, need_fetch = resolve_source_asset_image_display(asset, artifact_store=mock_store)
+    assert url == "https://example/presigned"
+    assert need_fetch is False
+
+
+def test_resolve_source_asset_image_display_local_requires_authenticated_fetch(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "v3_uploads").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "v3_uploads" / "k.jpg").write_bytes(b"x")
+    asset = SourceAsset(
+        id="a1",
+        aisle_id="aisle",
+        type=SourceAssetType.PHOTO,
+        original_filename="p.jpg",
+        storage_path="",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+        storage_provider="local",
+        storage_bucket=None,
+        storage_key="k.jpg",
+    )
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "output_dir": str(tmp_path),
+                "artifact_s3_signed_url_ttl_sec": 900,
+                **_DEFAULT_STORE_ACCESS_SETTINGS,
+            },
+        )(),
+    )
+    store = MagicMock()
+    url, need_fetch = resolve_source_asset_image_display(asset, artifact_store=store)
+    assert url is None
+    assert need_fetch is True
+
+
+def test_resolve_source_asset_image_display_local_missing_file_raises(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "v3_uploads").mkdir(parents=True, exist_ok=True)
+    asset = SourceAsset(
+        id="a1",
+        aisle_id="aisle",
+        type=SourceAssetType.PHOTO,
+        original_filename="p.jpg",
+        storage_path="",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+        storage_provider="local",
+        storage_bucket=None,
+        storage_key="missing.jpg",
+    )
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "output_dir": str(tmp_path),
+                "artifact_s3_signed_url_ttl_sec": 900,
+                **_DEFAULT_STORE_ACCESS_SETTINGS,
+            },
+        )(),
+    )
+    with pytest.raises(StoredArtifactAccessError) as ei:
+        resolve_source_asset_image_display(asset, artifact_store=MagicMock())
+    assert ei.value.reason_code == "local_file_missing"
+
+
+def test_resolve_source_asset_image_display_legacy_raises_when_disabled(monkeypatch) -> None:
+    asset = SourceAsset(
+        id="a1",
+        aisle_id="aisle",
+        type=SourceAssetType.PHOTO,
+        original_filename="p.jpg",
+        storage_path="x/y.jpg",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "output_dir": "/nonexistent-out",
+                "artifact_storage_legacy_local_read_enabled": False,
+                "artifact_s3_signed_url_ttl_sec": 900,
+                **_DEFAULT_STORE_ACCESS_SETTINGS,
+            },
+        )(),
+    )
+    with pytest.raises(StoredArtifactAccessError) as ei:
+        resolve_source_asset_image_display(asset, artifact_store=MagicMock())
+    assert ei.value.reason_code == "legacy_local_disabled"
+
+
+def test_resolve_source_asset_image_display_legacy_ok_when_file_exists(tmp_path: Path, monkeypatch) -> None:
+    rel = Path("inv/a/p.jpg")
+    file_path = tmp_path / "v3_uploads" / rel
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_bytes(b"x")
+    asset = SourceAsset(
+        id="a1",
+        aisle_id="aisle",
+        type=SourceAssetType.PHOTO,
+        original_filename="p.jpg",
+        storage_path=str(rel).replace("\\", "/"),
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "output_dir": str(tmp_path),
+                "artifact_storage_legacy_local_read_enabled": True,
+                "artifact_s3_signed_url_ttl_sec": 900,
+                **_DEFAULT_STORE_ACCESS_SETTINGS,
+            },
+        )(),
+    )
+    url, need_fetch = resolve_source_asset_image_display(asset, artifact_store=MagicMock())
+    assert url is None
+    assert need_fetch is True
 
 
 def test_resolve_source_asset_legacy_requires_flag(monkeypatch) -> None:

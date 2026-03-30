@@ -53,3 +53,19 @@ def test_get_aisle_asset_file_returns_404_when_asset_not_found() -> None:
     )
     assert response.status_code == 404
     assert response.json().get("detail") == "Asset not found"
+
+
+def test_get_aisle_asset_image_display_url_returns_404_when_asset_not_found() -> None:
+    """image-display-url matches file endpoint when asset is missing."""
+    create_resp = client.post("/api/v3/inventories", json={"name": "Display URL Test"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "A1"})
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+
+    response = client.get(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/nonexistent-asset-id/image-display-url"
+    )
+    assert response.status_code == 404
+    assert response.json().get("detail") == "Asset not found"

@@ -21,8 +21,13 @@ from src.api.dependencies import (
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     resolve_source_asset_file_response,
+    resolve_source_asset_image_display,
 )
-from src.api.schemas.asset_schemas import SourceAssetResponse, UploadAisleAssetsResponse
+from src.api.schemas.asset_schemas import (
+    SourceAssetImageDisplayUrlResponse,
+    SourceAssetResponse,
+    UploadAisleAssetsResponse,
+)
 from src.application.ports.repositories import JobRepository
 from src.application.errors import AisleNotFoundError, EmptyUploadError, UnsupportedAssetTypeError
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
@@ -33,6 +38,25 @@ from .shared import asset_to_response, resolve_normalized_asset_path, heic_exten
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _source_asset_image_display_response(
+    *,
+    image_url: Optional[str],
+    need_fetch: bool,
+) -> SourceAssetImageDisplayUrlResponse:
+    """Build API model; ``need_fetch`` must be true when ``image_url`` is None."""
+    if image_url:
+        return SourceAssetImageDisplayUrlResponse(
+            image_url=image_url,
+            requires_authenticated_fetch=False,
+            display_strategy="presigned_url",
+        )
+    return SourceAssetImageDisplayUrlResponse(
+        image_url=None,
+        requires_authenticated_fetch=True,
+        display_strategy="authenticated_file_fetch",
+    )
 
 
 class AssetFileFailureReason(str, Enum):
@@ -188,3 +212,87 @@ def get_aisle_asset_file(
             e.detail,
         )
         raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/assets/{asset_id}/image-display-url",
+    response_model=SourceAssetImageDisplayUrlResponse,
+)
+def get_aisle_asset_image_display_url(
+    inventory_id: str,
+    aisle_id: str,
+    asset_id: str,
+    job_id: Optional[str] = Query(
+        None,
+        description="Optional job id to align HEIC preview behavior with the /file endpoint",
+    ),
+    use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
+    job_repo: JobRepository = Depends(get_job_repo),
+    artifact_storage=Depends(get_artifact_storage),
+) -> SourceAssetImageDisplayUrlResponse:
+    """Return how to display the asset image: presigned URL or authenticated GET on ``.../file``."""
+    try:
+        assets = use_case.execute(inventory_id, aisle_id)
+    except AisleNotFoundError:
+        logger.warning(
+            "Asset image-display-url: aisle_not_found inventory_id=%s aisle_id=%s asset_id=%s",
+            inventory_id,
+            aisle_id,
+            asset_id,
+        )
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    asset = next((a for a in assets if a.id == asset_id), None)
+    if asset is None:
+        logger.warning(
+            "Asset image-display-url: asset_not_found inventory_id=%s aisle_id=%s asset_id=%s",
+            inventory_id,
+            aisle_id,
+            asset_id,
+        )
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    def _asset_is_heic(a: SourceAsset) -> bool:
+        mt = (a.mime_type or "").lower()
+        if mt in ("image/heic", "image/heif"):
+            return True
+        if Path(a.storage_path or "").suffix.lower() in heic_extensions():
+            return True
+        if Path(a.original_filename or "").suffix.lower() in heic_extensions():
+            return True
+        return False
+
+    if _asset_is_heic(asset):
+        output_dir = Path(load_settings().output_dir)
+        request_job_id = job_id.strip() if job_id and job_id.strip() else None
+        normalized_path = resolve_normalized_asset_path(
+            output_dir, job_repo, aisle_id, asset_id, job_id=job_id
+        )
+        if normalized_path is not None:
+            # Same strategy as local/legacy: client must GET /file, which serves the normalized JPEG.
+            return SourceAssetImageDisplayUrlResponse(
+                image_url=None,
+                requires_authenticated_fetch=True,
+                display_strategy="authenticated_file_fetch",
+            )
+        logger.warning(
+            "Asset image-display-url: heic_preview_unavailable asset_id=%s request_job_id=%s",
+            asset_id,
+            request_job_id,
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="Preview is not available for this image",
+        )
+
+    try:
+        image_url, need_fetch = resolve_source_asset_image_display(asset, artifact_store=artifact_storage)
+    except StoredArtifactAccessError as e:
+        logger.warning(
+            "Asset image-display-url resolution failed: %s asset_id=%s reason=%s",
+            e.reason_code,
+            asset_id,
+            e.detail,
+        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+
+    return _source_asset_image_display_response(image_url=image_url, need_fetch=need_fetch)
