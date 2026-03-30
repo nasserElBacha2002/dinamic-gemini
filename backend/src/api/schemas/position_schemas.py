@@ -36,6 +36,7 @@ class PositionSummaryResponse(BaseModel):
         "manual_review",
         "label_explicit",
         "unknown",
+        "consolidated",
     ]
     qtyInferenceReason: Optional[str] = None
     """v3.2.2: When True/False, qty is from resolved decision; when None, legacy/compatibility path."""

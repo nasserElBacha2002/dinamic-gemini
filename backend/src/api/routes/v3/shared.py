@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from fastapi import HTTPException
 
@@ -50,11 +50,13 @@ from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.application.mappers.position_canonical_view import (
+    PositionCanonicalView,
     build_position_canonical_view,
     qty_contract_from_product,
     resolve_qty_contract_from_position_legacy,
     summary_sku_and_quantity_from_position,
 )
+from src.application.services.position_traceability import reset_traceability_cache_for_tests
 
 logger = logging.getLogger(__name__)
 
@@ -66,46 +68,6 @@ _resolve_qty_contract_from_position_legacy = resolve_qty_contract_from_position_
 _MANIFEST_FILENAME = "input_manifest.json"
 _NORMALIZED_SUBDIR = "input_photos_normalized"
 _HEIC_EXTENSIONS = (".heic", ".heif")
-
-# Simple in-process cache for traceability enrichment to avoid repeatedly loading
-# the same hybrid_report.json file for multiple positions from the same job.
-# Keyed by entity_uid from detected_summary_json.
-#
-# Best-effort only:
-# - Assumes hybrid_report.json is immutable once written by the pipeline.
-# - Lives for the life of the process; bounded to avoid unbounded growth.
-_TRACEABILITY_CACHE: Dict[str, Tuple[Optional[str], Optional[str], Optional[str]]] = {}
-_TRACEABILITY_REPORTS_LOADED: Set[str] = set()
-_MAX_TRACEABILITY_JOBS = 128
-_MAX_TRACEABILITY_ENTITIES = 4096
-
-
-def _maybe_evict_traceability_cache() -> None:
-    """Best-effort guard to keep the traceability cache bounded.
-
-    When the number of loaded jobs or cached entities grows beyond a small
-    threshold (per-process), the cache is cleared. This keeps memory usage
-    bounded while preserving the optimization for the common case where
-    only a limited set of jobs are being inspected in one process lifetime.
-    """
-    if (
-        len(_TRACEABILITY_REPORTS_LOADED) > _MAX_TRACEABILITY_JOBS
-        or len(_TRACEABILITY_CACHE) > _MAX_TRACEABILITY_ENTITIES
-    ):
-        _TRACEABILITY_CACHE.clear()
-        _TRACEABILITY_REPORTS_LOADED.clear()
-
-
-def _load_hybrid_report_for_traceability(job_id: str) -> Optional[Dict[str, object]]:
-    """Runtime-backed helper; avoids calling FastAPI dependency getters in non-route logic."""
-    from src.api.services.v3_stored_artifact_access import load_hybrid_report_json_for_job
-    from src.runtime.v3_deps import get_artifact_store, get_job_repo
-
-    return load_hybrid_report_json_for_job(
-        job_id,
-        job_repo=get_job_repo(),
-        artifact_store=get_artifact_store(),
-    )
 
 
 def _try_resolve_normalized_asset_for_job(
@@ -374,60 +336,31 @@ def asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
     )
 
 
-def _enrich_position_traceability_from_report(
-    p: Position,
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """Best-effort enrichment of traceability fields from hybrid_report.json.
-
-    Assumptions:
-    - hybrid_report.json is written once per job by the pipeline and treated as immutable
-      for the life of the backend process.
-    - Missing or invalid reports should not raise; instead, enrichment is skipped.
-    - This helper is an internal optimization: if the cache is empty or evicted, behavior
-      degrades gracefully to "no enrichment" for that entity.
-    """
-    summary = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
-    entity_uid = summary.get("entity_uid") if isinstance(summary.get("entity_uid"), str) else None
-    if not entity_uid or "_" not in entity_uid:
-        return None, None, None
-    # Fast path: cached enrichment for this entity.
-    cached = _TRACEABILITY_CACHE.get(entity_uid)
-    if cached is not None:
-        return cached
-    parts = entity_uid.rsplit("_", 1)
-    if len(parts) != 2:
-        return None, None, None
-    job_id, _ = parts
-    # If we've already attempted to load this job's report and the entity_uid is
-    # still not cached, avoid re-reading the same file.
-    if job_id in _TRACEABILITY_REPORTS_LOADED:
-        return None, None, None
-    try:
-        report = _load_hybrid_report_for_traceability(job_id)
-        if report is None:
-            return None, None, None
-        entities = report.get("entities") or []
-        for ent in entities:
-            if not isinstance(ent, dict):
-                continue
-            ent_uid = ent.get("entity_uid")
-            if not ent_uid or not isinstance(ent_uid, str):
-                continue
-            sid = ent.get("source_image_id")
-            ts = ent.get("traceability_status")
-            sof = ent.get("source_image_original_filename")
-            normalized: Tuple[Optional[str], Optional[str], Optional[str]] = (
-                str(sid).strip() if sid is not None and str(sid).strip() else None,
-                str(ts).strip() if ts is not None and str(ts).strip() else None,
-                str(sof).strip() if sof is not None and str(sof).strip() else None,
-            )
-            _TRACEABILITY_CACHE[ent_uid] = normalized
-        _TRACEABILITY_REPORTS_LOADED.add(job_id)
-        _maybe_evict_traceability_cache()
-        return _TRACEABILITY_CACHE.get(entity_uid, (None, None, None))
-    except Exception as e:
-        logger.debug("Enrich position traceability from report failed (entity_uid=%s): %s", entity_uid, e)
-        return None, None, None
+def _position_summary_response_from_view(p: Position, view: PositionCanonicalView) -> PositionSummaryResponse:
+    """Single construction site for ``PositionSummaryResponse`` from the Sprint 1 canonical view."""
+    detected_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
+    return PositionSummaryResponse(
+        id=p.id,
+        aisle_id=p.aisle_id,
+        status=view.review.status,
+        confidence=p.confidence,
+        needs_review=view.review.needs_review,
+        primary_evidence_id=view.review.primary_evidence_id,
+        created_at=p.created_at,
+        updated_at=p.updated_at,
+        detected_summary_json=detected_summary_json,
+        sku=view.product.public_sku,
+        detected_quantity=view.quantity.detected_quantity,
+        corrected_quantity=view.quantity.corrected_quantity,
+        qty=view.quantity.qty,
+        qtySource=view.quantity.qty_source,
+        qtyInferenceReason=view.quantity.qty_inference_reason,
+        qtyResolved=view.quantity.qty_resolved,
+        source_image_id=view.traceability.source_image_id,
+        traceability_status=view.traceability.traceability_status,
+        has_evidence=view.review.has_evidence,
+        source_image_original_filename=view.traceability.source_image_original_filename,
+    )
 
 
 def position_to_summary(
@@ -441,30 +374,12 @@ def position_to_summary(
     (ProductRecord vs technical snapshot vs aggregated row) lives in one module — see ADR
     ``docs/adr/inventory-v3-canonical-fields.md``.
     """
-    view = build_position_canonical_view(p, primary_product)
-    response_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
-    return PositionSummaryResponse(
-        id=p.id,
-        aisle_id=p.aisle_id,
-        status=view.review.status,
-        confidence=p.confidence,
-        needs_review=view.review.needs_review,
-        primary_evidence_id=view.review.primary_evidence_id,
-        created_at=p.created_at,
-        updated_at=p.updated_at,
-        detected_summary_json=response_summary_json,
-        sku=view.product.public_sku,
-        detected_quantity=view.quantity.detected_quantity,
+    view = build_position_canonical_view(
+        p,
+        primary_product,
         corrected_quantity=corrected_quantity,
-        qty=view.quantity.qty,
-        qtySource=view.quantity.qty_source,
-        qtyInferenceReason=view.quantity.qty_inference_reason,
-        qtyResolved=view.quantity.qty_resolved,
-        source_image_id=view.traceability.source_image_id,
-        traceability_status=view.traceability.traceability_status,
-        has_evidence=view.review.has_evidence,
-        source_image_original_filename=view.traceability.source_image_original_filename,
     )
+    return _position_summary_response_from_view(p, view)
 
 
 def evidence_to_response(e: Evidence) -> EvidenceResponse:
@@ -501,11 +416,6 @@ def heic_extensions() -> tuple[str, ...]:
 
 
 def _reset_traceability_cache_for_tests() -> None:
-    """Internal helper to clear the traceability cache.
-
-    Intended for tests or one-off scripts that need to isolate behavior
-    across runs. Not used by production code paths.
-    """
-    _TRACEABILITY_CACHE.clear()
-    _TRACEABILITY_REPORTS_LOADED.clear()
+    """Delegate to :func:`reset_traceability_cache_for_tests` (backward-compatible name for tests)."""
+    reset_traceability_cache_for_tests()
 

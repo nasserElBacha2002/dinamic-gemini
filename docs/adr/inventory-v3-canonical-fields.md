@@ -3,7 +3,7 @@
 **Estado:** Aceptado (Sprint 1 — implementación en curso)  
 **Fecha:** 2026-03-30  
 **Relacionado:** `docs/Duplicacion de datos - Plan implementacion.md` (Sprint 1–6), `docs/audits/inventory-v3-data-duplication-audit.md`  
-**Código:** `backend/src/application/mappers/position_canonical_view.py`, `backend/src/api/routes/v3/shared.py` (`position_to_summary`)
+**Código:** `backend/src/application/mappers/position_canonical_view.py`, `backend/src/application/services/position_traceability.py`, `backend/src/api/routes/v3/shared.py` (`position_to_summary`, `_position_summary_response_from_view`)
 
 ---
 
@@ -21,7 +21,7 @@ Fijar **una sola semántica de “qué dato manda”** antes de cambiar contrato
 
 - **Identidad:** El `sku` público se derivaba con fallback encadenado sobre `detected_summary_json` (`internal_code` → `review_display_label` → …) **incluso cuando existía `primary_product`**, pudiendo divergir de `product_records.sku`.
 - **Cantidad:** La verdad operativa está en `ProductRecord` para filas típicas, pero el JSON repite `final_quantity`, `qty_final`, etc.
-- **Trazabilidad:** `source_image_id` / `traceability_status` viven en el summary y pueden enriquecerse desde `hybrid_report.json` (`_enrich_position_traceability_from_report` en `shared.py`).
+- **Trazabilidad:** `source_image_id` / `traceability_status` viven en el summary y pueden enriquecerse desde `hybrid_report.json` vía `enrich_position_traceability_from_report` en `application/services/position_traceability.py` (sin depender de helpers privados de rutas).
 
 ## 4. Decisiones tomadas (Sprint 1)
 
@@ -52,9 +52,10 @@ Origen preferido cuando aplica:
 Construidos en ensamblado — deben **seguir** la vista canónica:
 
 - `qty`, `qtySource`, `qtyInferenceReason`, `qtyResolved`
-- `detected_quantity` (alineado a `qty` cuando manda `ProductRecord`, según comentarios existentes en `shared.py`)
+- `detected_quantity` (alineado a `qty` cuando manda `ProductRecord`; rama legacy puede diferir de `qty` — ver tests de la vista canónica)
 - `has_evidence` desde `primary_evidence_id`
 - `source_image_id`, `traceability_status`, `source_image_original_filename` (summary + enriquecimiento opcional)
+- **`corrected_quantity`** (Sprint 1 — opción A): campo de `PositionCanonicalQuantity`, resuelto en `_effective_corrected_quantity`: si el argumento `corrected_quantity` **no es** `None`, se usa tal cual (incl. `0`); si es `None` y hay `primary_product`, se usa `primary_product.corrected_quantity`; si no hay primary, `None`. No existe hoy forma de forzar “sin corrección” si el primary tiene `corrected_quantity` distinto de `None` sin ajustar el primary. `PositionSummaryResponse` se construye únicamente en `_position_summary_response_from_view`.
 
 ## 7. Campos técnicos (snapshot)
 

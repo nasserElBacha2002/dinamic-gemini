@@ -192,7 +192,8 @@ export interface PositionSummary {
     | 'merge_inferred'
     | 'manual_review'
     | 'label_explicit'
-    | 'unknown';
+    | 'unknown'
+    | 'consolidated';
   /** v3.2.2: non-null when qtySource='inferred'. */
   qtyInferenceReason?: string | null;
   /** v3.2.2: when true/false, qty is from resolved decision; when null, legacy/compatibility path. */

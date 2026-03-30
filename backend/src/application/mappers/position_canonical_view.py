@@ -6,7 +6,8 @@ except for **aggregated** consolidated rows where the summary carries ``aggregat
 authoritative totals today — see ADR ``docs/adr/inventory-v3-canonical-fields.md``.
 
 ``position_to_summary`` in :mod:`src.api.routes.v3.shared` maps this view to ``PositionSummaryResponse``
-without changing the HTTP contract (Sprint 1).
+without changing the HTTP contract (Sprint 1). Traceability enrichment lives in
+:mod:`src.application.services.position_traceability` (not in route helpers).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, Tuple
 
+from src.application.services.position_traceability import enrich_position_traceability_from_report
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.quantity.resolution import (
@@ -32,6 +34,7 @@ _QtySourcePublic = Literal[
     "manual_review",
     "label_explicit",
     "unknown",
+    "consolidated",
 ]
 _QtyContract = Tuple[int, _QtySourcePublic, Optional[str], Optional[bool]]
 
@@ -93,7 +96,7 @@ def qty_contract_from_product(primary: ProductRecord) -> _QtyContract:
     if src == "unknown":
         return (qty, "unknown", None, None)
     if src == "consolidated":
-        return (qty, "detected", None, True)
+        return (qty, "consolidated", None, True)
     if src == "unresolved":
         return (0, "detected", None, False)
     return (qty, "detected", None, True)
@@ -160,9 +163,7 @@ def _traceability_from_position(p: Position) -> tuple[Optional[str], Optional[st
         source_image_id is None or traceability_status is None or source_image_original_filename is None
     ):
         # Lazy import avoids circular import with api.routes.v3.shared at module load.
-        from src.api.routes.v3.shared import _enrich_position_traceability_from_report
-
-        sid_from_report, ts_from_report, sof_from_report = _enrich_position_traceability_from_report(p)
+        sid_from_report, ts_from_report, sof_from_report = enrich_position_traceability_from_report(p)
         if source_image_id is None and sid_from_report is not None:
             source_image_id = sid_from_report
         if traceability_status is None and ts_from_report is not None:
@@ -173,6 +174,18 @@ def _traceability_from_position(p: Position) -> tuple[Optional[str], Optional[st
 
 
 IdentitySource = Literal["primary_product", "summary_technical", "summary_aggregated"]
+
+
+def _effective_corrected_quantity(
+    corrected_quantity: Optional[int],
+    primary_product: Optional[ProductRecord],
+) -> Optional[int]:
+    """Prefer explicit ``corrected_quantity`` from ``position_to_summary``; else primary row."""
+    if corrected_quantity is not None:
+        return corrected_quantity
+    if primary_product is not None:
+        return primary_product.corrected_quantity
+    return None
 
 
 @dataclass(frozen=True)
@@ -186,7 +199,11 @@ class PositionCanonicalProduct:
 
 @dataclass(frozen=True)
 class PositionCanonicalQuantity:
-    """Resolved quantity contract (public-facing)."""
+    """Resolved quantity contract (public-facing).
+
+    ``corrected_quantity`` is the operator correction (``ProductRecord.corrected_quantity``),
+    threaded through the canonical view so ``PositionSummaryResponse`` is assembled from one place.
+    """
 
     qty: int
     qty_source: _QtySourcePublic
@@ -194,6 +211,7 @@ class PositionCanonicalQuantity:
     qty_resolved: Optional[bool]
     detected_quantity: int
     is_aggregated: bool
+    corrected_quantity: Optional[int]
 
 
 @dataclass(frozen=True)
@@ -225,8 +243,11 @@ class PositionCanonicalView:
 def build_position_canonical_view(
     p: Position,
     primary_product: Optional[ProductRecord] = None,
+    *,
+    corrected_quantity: Optional[int] = None,
 ) -> PositionCanonicalView:
     """Build :class:`PositionCanonicalView` with explicit source priority (ADR Sprint 1)."""
+    effective_corrected = _effective_corrected_quantity(corrected_quantity, primary_product)
     summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
     has_evidence = bool(
         p.primary_evidence_id is not None and str(p.primary_evidence_id).strip() != ""
@@ -258,11 +279,12 @@ def build_position_canonical_view(
             qty = 0
         quantity = PositionCanonicalQuantity(
             qty=qty,
-            qty_source="detected",
+            qty_source="consolidated",
             qty_inference_reason=None,
             qty_resolved=True,
             detected_quantity=qty,
             is_aggregated=True,
+            corrected_quantity=effective_corrected,
         )
         product = PositionCanonicalProduct(
             primary_product_id=(primary_product.id if primary_product is not None else None),
@@ -301,6 +323,7 @@ def build_position_canonical_view(
             qty_resolved=qty_resolved,
             detected_quantity=detected_quantity,
             is_aggregated=False,
+            corrected_quantity=effective_corrected,
         )
         return PositionCanonicalView(
             product=product,
@@ -323,6 +346,7 @@ def build_position_canonical_view(
         qty_resolved=qty_resolved,
         detected_quantity=summary_detected_qty,
         is_aggregated=False,
+        corrected_quantity=effective_corrected,
     )
     return PositionCanonicalView(
         product=product,
