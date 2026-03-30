@@ -87,3 +87,4 @@ BEGIN
     CREATE INDEX IX_inventory_visual_references_inventory_id ON inventory_visual_references(inventory_id);
 END;
 GO
+

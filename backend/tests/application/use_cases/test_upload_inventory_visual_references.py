@@ -27,6 +27,7 @@ from src.application.use_cases.upload_inventory_visual_references import (
 )
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.inventory.visual_reference import InventoryVisualReference
+from src.infrastructure.storage.artifact_store import StoredArtifact
 
 
 class FixedClock:
@@ -84,8 +85,34 @@ class StubArtifactStorage(ArtifactStorage):
         self._written.append((path, content, content_type))
         return path
 
+    def put_object(self, path: str, file_obj: BytesIO, content_type: str) -> StoredArtifact:
+        content = file_obj.read()
+        self._written.append((path, content, content_type))
+        return StoredArtifact(
+            storage_provider="s3",
+            storage_bucket="bucket-b",
+            storage_key=path,
+            content_type=content_type,
+            file_size_bytes=len(content),
+            etag="etag-ref",
+        )
+
     def delete_file(self, path: str) -> None:
         self._deleted.append(path)
+
+
+class PrefixedKeyArtifactStorage(StubArtifactStorage):
+    def put_object(self, path: str, file_obj: BytesIO, content_type: str) -> StoredArtifact:
+        content = file_obj.read()
+        self._written.append((path, content, content_type))
+        return StoredArtifact(
+            storage_provider="s3",
+            storage_bucket="bucket-b",
+            storage_key=f"v3/{path}",
+            content_type=content_type,
+            file_size_bytes=len(content),
+            etag="etag-ref",
+        )
 
 
 class FailingAfterFirstCreateRepo(StubVisualReferenceRepo):
@@ -129,6 +156,10 @@ def test_upload_inventory_visual_references_creates_references_and_writes_files(
     assert all(r.inventory_id == "inv-1" for r in created)
     assert created[0].file_size == 9
     assert created[1].file_size == 8
+    assert all(r.storage_provider == "s3" for r in created)
+    assert all(r.storage_bucket == "bucket-b" for r in created)
+    assert all((r.storage_key or "").startswith("inventories/inv-1/visual_references/") for r in created)
+    assert all((r.storage_path or "").startswith("inventories/inv-1/visual_references/") for r in created)
     assert len(storage._written) == 2
     paths = [p for (p, _, _) in storage._written]
     assert paths[0].startswith("inventories/inv-1/visual_references/")
@@ -293,6 +324,30 @@ def test_upload_inventory_visual_references_rolls_back_written_files_on_db_failu
     written_paths = [p for (p, _, _) in storage._written]
     assert storage._deleted == list(reversed(written_paths))
     assert len(ref_repo.list_by_inventory("inv-1")) == 0
+
+
+def test_upload_inventory_visual_references_rollback_uses_persisted_prefixed_storage_keys_verbatim() -> None:
+    now = datetime(2025, 3, 10, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo()
+    inv_repo.save(_inventory(now))
+    ref_repo = FailingAfterFirstCreateRepo()
+    storage = PrefixedKeyArtifactStorage()
+
+    use_case = UploadInventoryVisualReferencesUseCase(
+        inventory_repo=inv_repo,
+        reference_repo=ref_repo,
+        artifact_storage=storage,
+        clock=FixedClock(now),
+    )
+    files = [
+        UploadedVisualReferenceFile("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg", size=9),
+        UploadedVisualReferenceFile("ref2.png", BytesIO(b"png-data"), "image/png", size=8),
+    ]
+
+    with pytest.raises(RuntimeError, match="simulated db failure"):
+        use_case.execute("inv-1", files)
+    written_paths = [f"v3/{p}" for (p, _, _) in storage._written]
+    assert storage._deleted == list(reversed(written_paths))
 
 
 def test_list_inventory_visual_references_returns_ordered_references() -> None:

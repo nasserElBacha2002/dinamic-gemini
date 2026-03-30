@@ -38,18 +38,28 @@ def _row_to_evidence(row) -> Evidence:
     source_asset_id = getattr(row, "source_asset_id", None)
     if source_asset_id == "":
         source_asset_id = None
+    storage_path = (getattr(row, "storage_path", None) or "").strip()
+    storage_key = (getattr(row, "storage_key", None) or "").strip() or storage_path
+    # Canonical media type in current domain/API is type+storage_path usage; content_type remains storage metadata.
+    content_type = (getattr(row, "content_type", None) or "").strip()
     return Evidence(
         id=eid,
         entity_type=row.entity_type or "",
         entity_id=row.entity_id or "",
         type=_type_from_row(row, eid),
-        storage_path=row.storage_path or "",
+        storage_path=storage_path,
         source_asset_id=source_asset_id,
         is_primary=bool(getattr(row, "is_primary", False)),
         frame_index=getattr(row, "frame_index", None),
         timestamp_ms=getattr(row, "timestamp_ms", None),
         bbox_json=_parse_json(getattr(row, "bbox_json", None), f"evidence id={eid}"),
         quality_score=getattr(row, "quality_score", None),
+        storage_provider=(getattr(row, "storage_provider", None) or "").strip() or None,
+        storage_bucket=(getattr(row, "storage_bucket", None) or "").strip() or None,
+        storage_key=storage_key or None,
+        content_type=content_type or None,
+        file_size_bytes=getattr(row, "file_size_bytes", None),
+        etag=(getattr(row, "etag", None) or "").strip() or None,
     )
 
 
@@ -65,6 +75,7 @@ class SqlEvidenceRepository(EvidenceRepository):
                 """
                 UPDATE evidences
                 SET entity_type = ?, entity_id = ?, type = ?, storage_path = ?, source_asset_id = ?, is_primary = ?,
+                    storage_provider = ?, storage_bucket = ?, storage_key = ?, content_type = ?, file_size_bytes = ?, etag = ?,
                     frame_index = ?, timestamp_ms = ?, bbox_json = ?, quality_score = ?
                 WHERE id = ?
                 """,
@@ -75,6 +86,12 @@ class SqlEvidenceRepository(EvidenceRepository):
                     evidence.storage_path,
                     source_asset_id,
                     evidence.is_primary,
+                    evidence.storage_provider,
+                    evidence.storage_bucket,
+                    evidence.storage_key,
+                    evidence.content_type,
+                    evidence.file_size_bytes,
+                    evidence.etag,
                     evidence.frame_index,
                     evidence.timestamp_ms,
                     bbox_str,
@@ -85,8 +102,12 @@ class SqlEvidenceRepository(EvidenceRepository):
             if cur.rowcount == 0:
                 cur.execute(
                     """
-                    INSERT INTO evidences (id, entity_type, entity_id, type, storage_path, source_asset_id, is_primary, frame_index, timestamp_ms, bbox_json, quality_score)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO evidences (
+                        id, entity_type, entity_id, type, storage_path, source_asset_id, is_primary,
+                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                        frame_index, timestamp_ms, bbox_json, quality_score
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         evidence.id,
@@ -96,6 +117,12 @@ class SqlEvidenceRepository(EvidenceRepository):
                         evidence.storage_path,
                         source_asset_id,
                         evidence.is_primary,
+                        evidence.storage_provider,
+                        evidence.storage_bucket,
+                        evidence.storage_key,
+                        evidence.content_type,
+                        evidence.file_size_bytes,
+                        evidence.etag,
                         evidence.frame_index,
                         evidence.timestamp_ms,
                         bbox_str,
@@ -108,6 +135,7 @@ class SqlEvidenceRepository(EvidenceRepository):
             cur.execute(
                 """
                 SELECT id, entity_type, entity_id, type, storage_path, source_asset_id, is_primary,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
                        frame_index, timestamp_ms, bbox_json, quality_score
                 FROM evidences WHERE id = ?
                 """,
@@ -123,6 +151,7 @@ class SqlEvidenceRepository(EvidenceRepository):
             cur.execute(
                 """
                 SELECT id, entity_type, entity_id, type, storage_path, source_asset_id, is_primary,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
                        frame_index, timestamp_ms, bbox_json, quality_score
                 FROM evidences WHERE entity_type = ? AND entity_id = ?
                 ORDER BY is_primary DESC, id ASC

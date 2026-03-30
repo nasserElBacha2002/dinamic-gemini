@@ -53,15 +53,25 @@ def _row_to_asset(row) -> SourceAsset:
     uploaded = _ensure_utc(getattr(row, "uploaded_at", None))
     if uploaded is None:
         raise ValueError("source_assets row missing required uploaded_at")
+    storage_path = (getattr(row, "storage_path", None) or "").strip()
+    storage_key = (getattr(row, "storage_key", None) or "").strip() or storage_path
+    # Canonical media type in current domain/API is mime_type; content_type is transport/storage metadata.
+    content_type = (getattr(row, "content_type", None) or "").strip() or (getattr(row, "mime_type", None) or "")
     return SourceAsset(
         id=aid,
         aisle_id=row.aisle_id or "",
         type=_type_from_row(row, aid),
         original_filename=row.original_filename or "",
-        storage_path=row.storage_path or "",
+        storage_path=storage_path,
         mime_type=row.mime_type or "application/octet-stream",
         uploaded_at=uploaded,
         metadata_json=_parse_metadata(getattr(row, "metadata_json", None)),
+        storage_provider=(getattr(row, "storage_provider", None) or "").strip() or None,
+        storage_bucket=(getattr(row, "storage_bucket", None) or "").strip() or None,
+        storage_key=storage_key or None,
+        content_type=content_type or None,
+        file_size_bytes=getattr(row, "file_size_bytes", None),
+        etag=(getattr(row, "etag", None) or "").strip() or None,
     )
 
 
@@ -79,6 +89,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 """
                 UPDATE source_assets
                 SET aisle_id = ?, type = ?, original_filename = ?, storage_path = ?,
+                    storage_provider = ?, storage_bucket = ?, storage_key = ?,
+                    content_type = ?, file_size_bytes = ?, etag = ?,
                     mime_type = ?, uploaded_at = ?, metadata_json = ?
                 WHERE id = ?
                 """,
@@ -87,6 +99,12 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     asset.type.value,
                     asset.original_filename,
                     asset.storage_path,
+                    asset.storage_provider,
+                    asset.storage_bucket,
+                    asset.storage_key,
+                    asset.content_type,
+                    asset.file_size_bytes,
+                    asset.etag,
                     asset.mime_type,
                     uploaded,
                     meta_str,
@@ -96,8 +114,12 @@ class SqlSourceAssetRepository(SourceAssetRepository):
             if cur.rowcount == 0:
                 cur.execute(
                     """
-                    INSERT INTO source_assets (id, aisle_id, type, original_filename, storage_path, mime_type, uploaded_at, metadata_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO source_assets (
+                        id, aisle_id, type, original_filename, storage_path,
+                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                        mime_type, uploaded_at, metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         asset.id,
@@ -105,6 +127,12 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                         asset.type.value,
                         asset.original_filename,
                         asset.storage_path,
+                        asset.storage_provider,
+                        asset.storage_bucket,
+                        asset.storage_key,
+                        asset.content_type,
+                        asset.file_size_bytes,
+                        asset.etag,
                         asset.mime_type,
                         uploaded,
                         meta_str,
@@ -115,7 +143,9 @@ class SqlSourceAssetRepository(SourceAssetRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, aisle_id, type, original_filename, storage_path, mime_type, uploaded_at, metadata_json
+                SELECT id, aisle_id, type, original_filename, storage_path,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                       mime_type, uploaded_at, metadata_json
                 FROM source_assets WHERE id = ?
                 """,
                 (asset_id,),
@@ -129,7 +159,9 @@ class SqlSourceAssetRepository(SourceAssetRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, aisle_id, type, original_filename, storage_path, mime_type, uploaded_at, metadata_json
+                SELECT id, aisle_id, type, original_filename, storage_path,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                       mime_type, uploaded_at, metadata_json
                 FROM source_assets WHERE aisle_id = ? ORDER BY uploaded_at ASC
                 """,
                 (aisle_id,),

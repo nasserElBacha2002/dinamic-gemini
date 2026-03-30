@@ -604,6 +604,36 @@ class Settings(BaseModel):
             "Comma-separated IPs/CIDRs are supported; empty disables. Env: FORWARDED_TRUSTED_HOSTS."
         ),
     )
+    artifact_storage_provider: str = Field(
+        default_factory=lambda: (os.getenv("ARTIFACT_STORAGE_PROVIDER", "local") or "local").strip().lower(),
+        description="Artifact storage provider: local | s3. Env: ARTIFACT_STORAGE_PROVIDER.",
+    )
+    artifact_s3_bucket: str = Field(
+        default_factory=lambda: (os.getenv("ARTIFACT_S3_BUCKET", "") or "").strip(),
+        description="S3 bucket name for artifact storage when provider=s3. Env: ARTIFACT_S3_BUCKET.",
+    )
+    artifact_s3_region: str = Field(
+        default_factory=lambda: (os.getenv("ARTIFACT_S3_REGION", "") or "").strip(),
+        description="S3 region for artifact storage when provider=s3. Optional when AWS defaults are present.",
+    )
+    artifact_s3_prefix: str = Field(
+        default_factory=lambda: (os.getenv("ARTIFACT_S3_PREFIX", "v3") or "v3").strip().strip("/"),
+        description="S3 key prefix for artifact storage. Env: ARTIFACT_S3_PREFIX.",
+    )
+    artifact_s3_signed_url_ttl_sec: int = Field(
+        default_factory=lambda: int(os.getenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", "900")),
+        ge=30,
+        le=86400,
+        description="Signed URL TTL in seconds for S3 artifact URLs. Env: ARTIFACT_S3_SIGNED_URL_TTL_SEC.",
+    )
+    artifact_storage_legacy_local_read_enabled: bool = Field(
+        default_factory=lambda: os.getenv("ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED", "true").strip().lower()
+        in ("1", "true", "yes"),
+        description=(
+            "During migration, allow legacy local-path reads for records without provider metadata. "
+            "Env: ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED."
+        ),
+    )
     v3_positions_aisle_raw_cap: int = Field(
         default_factory=lambda: int(os.getenv("V3_POSITIONS_AISLE_RAW_CAP", "2000")),
         ge=50,
@@ -858,6 +888,23 @@ class Settings(BaseModel):
         if not s:
             return "output"
         return str(Path(s).expanduser())
+
+    @field_validator("artifact_storage_provider")
+    @classmethod
+    def validate_artifact_storage_provider(cls, v: str) -> str:
+        p = (v or "local").strip().lower()
+        if p not in ("local", "s3"):
+            raise ValueError("artifact_storage_provider must be one of: local, s3")
+        return p
+
+    @field_validator("artifact_s3_bucket")
+    @classmethod
+    def validate_artifact_s3_bucket(cls, v: str, info):
+        provider = (info.data.get("artifact_storage_provider") or "local").strip().lower()
+        bucket = (v or "").strip()
+        if provider == "s3" and not bucket:
+            raise ValueError("artifact_s3_bucket is required when artifact_storage_provider=s3")
+        return bucket
 
     def ensure_output_dir(self) -> Path:
         """Asegura que el directorio de salida existe y lo crea si es necesario.

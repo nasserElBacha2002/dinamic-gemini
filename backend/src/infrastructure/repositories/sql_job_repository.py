@@ -76,6 +76,8 @@ def _row_to_job(row: Any) -> Job:
 class SqlJobRepository(JobRepository):
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
+        # TODO(phase-3-s3-io): persist/read provider-aware artifact metadata in inventory_jobs
+        # once worker output upload migration is implemented.
 
     def save(self, job: Job) -> None:
         if job.created_at is None or job.updated_at is None:
