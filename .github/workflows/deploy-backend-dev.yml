@@ -19,7 +19,7 @@
 #   WORKER_ECS_SERVICE
 #   WORKER_ECS_CONTAINER_NAME
 #   WORKER_ECS_TASK_DEFINITION_FAMILY
-#   MIGRATION_TASK_DEFINITION
+#   MIGRATION_TASK_DEFINITION_FAMILY   # defaults to ECS_TASK_DEFINITION_FAMILY if unset
 #   MIGRATION_CONTAINER_NAME
 #   MIGRATION_SUBNETS
 #   MIGRATION_SECURITY_GROUPS
@@ -30,11 +30,6 @@
 # Optional (smoke job): BACKEND_BASE_URL — if unset/invalid, the final curl step fails.
 #
 # Secret: AWS_ROLE_TO_ASSUME
-#
-# Migration task note:
-#   MIGRATION_TASK_DEFINITION is whatever ECS run-task accepts (often `family:revision`, e.g.
-#   pinned in repo variables today). It does not auto-track the API/worker digest flow yet;
-#   revisit when you want migrations to use the same register-task pattern.
 #
 # =============================================================================
 
@@ -66,7 +61,7 @@ env:
   WORKER_ECS_TASK_DEFINITION_FAMILY: ${{ vars.WORKER_ECS_TASK_DEFINITION_FAMILY }}
   DB_SCHEMA_SERVICE_NAME: inventory-api
   DEPLOYMENT_ID: backend-dev-${{ github.sha }}
-  MIGRATION_TASK_DEFINITION: ${{ vars.MIGRATION_TASK_DEFINITION }}
+  MIGRATION_TASK_DEFINITION_FAMILY: ${{ vars.MIGRATION_TASK_DEFINITION_FAMILY || vars.ECS_TASK_DEFINITION_FAMILY }}
   MIGRATION_CONTAINER_NAME: ${{ vars.MIGRATION_CONTAINER_NAME }}
   MIGRATION_SUBNETS: ${{ vars.MIGRATION_SUBNETS }}
   MIGRATION_SECURITY_GROUPS: ${{ vars.MIGRATION_SECURITY_GROUPS }}
@@ -91,7 +86,6 @@ jobs:
             WORKER_ECS_SERVICE \
             WORKER_ECS_CONTAINER_NAME \
             WORKER_ECS_TASK_DEFINITION_FAMILY \
-            MIGRATION_TASK_DEFINITION \
             MIGRATION_CONTAINER_NAME \
             MIGRATION_SUBNETS \
             MIGRATION_SECURITY_GROUPS
@@ -157,9 +151,36 @@ jobs:
         run: |
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.IMAGE_TAG }}
 
-      # Uses MIGRATION_TASK_DEFINITION from repo vars (revision-pinned today; see file header).
+      - name: Resolve API image digest
+        id: api-image
+        env:
+          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
+        run: |
+          DIGEST=""
+          for attempt in 1 2 3 4 5; do
+            DIGEST="$(aws ecr describe-images \
+              --region "${AWS_REGION}" \
+              --repository-name "${ECR_REPOSITORY}" \
+              --image-ids "imageTag=${IMAGE_TAG}" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text || true)"
+            if [ -n "${DIGEST}" ] && [ "${DIGEST}" != "None" ]; then
+              break
+            fi
+            echo "Digest not available yet for ${ECR_REPOSITORY}:${IMAGE_TAG} (attempt ${attempt}/5), retrying..."
+            sleep 3
+          done
+          if [ -z "${DIGEST}" ] || [ "${DIGEST}" = "None" ]; then
+            echo "ERROR: failed to resolve API image digest from ECR tag ${ECR_REPOSITORY}:${IMAGE_TAG} after retries" >&2
+            exit 1
+          fi
+          echo "Resolved API digest: ${DIGEST}"
+          echo "IMAGE_DIGEST=${DIGEST}" >> "$GITHUB_OUTPUT"
+
       - name: Run ECS migration task (config-check + apply + validate)
         env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_DIGEST: ${{ steps.api-image.outputs.IMAGE_DIGEST }}
           MIGRATION_COMMAND: >-
             python scripts/db_migrate.py config-check
             && python scripts/db_migrate.py apply
@@ -170,6 +191,7 @@ jobs:
       - name: Deploy API ECS service (digest-pinned task definition)
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_DIGEST: ${{ steps.api-image.outputs.IMAGE_DIGEST }}
           IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
         run: bash ../.github/scripts/ecs-register-task-and-deploy.sh
 

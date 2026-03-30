@@ -5,8 +5,11 @@ set -euo pipefail
 # Required env:
 #   AWS_REGION
 #   ECS_CLUSTER
-#   MIGRATION_TASK_DEFINITION
+#   MIGRATION_TASK_DEFINITION_FAMILY
 #   MIGRATION_CONTAINER_NAME
+#   ECR_REGISTRY
+#   ECR_REPOSITORY
+#   IMAGE_DIGEST
 #   MIGRATION_SUBNETS              # comma-separated subnet ids
 #   MIGRATION_SECURITY_GROUPS      # comma-separated sg ids
 #   MIGRATION_COMMAND              # shell command executed as /bin/sh -lc "<cmd>"
@@ -14,12 +17,21 @@ set -euo pipefail
 #   MIGRATION_ASSIGN_PUBLIC_IP     # ENABLED|DISABLED (default DISABLED)
 #   MIGRATION_LAUNCH_TYPE          # default FARGATE
 #   MIGRATION_PLATFORM_VERSION     # default LATEST
+#
+# Behavior:
+#   Registers a temporary migration task definition revision derived from
+#   MIGRATION_TASK_DEFINITION_FAMILY and swaps only the migration container image.
+#   The temporary revision inherits taskRoleArn, executionRoleArn, environment,
+#   logging config, CPU/memory, and other runtime settings from the base family.
+#   Network placement remains controlled by run-task network configuration below.
 
 for var in \
   AWS_REGION \
   ECS_CLUSTER \
-  MIGRATION_TASK_DEFINITION \
   MIGRATION_CONTAINER_NAME \
+  ECR_REGISTRY \
+  ECR_REPOSITORY \
+  IMAGE_DIGEST \
   MIGRATION_SUBNETS \
   MIGRATION_SECURITY_GROUPS \
   MIGRATION_COMMAND
@@ -33,11 +45,24 @@ done
 MIGRATION_ASSIGN_PUBLIC_IP="${MIGRATION_ASSIGN_PUBLIC_IP:-DISABLED}"
 MIGRATION_LAUNCH_TYPE="${MIGRATION_LAUNCH_TYPE:-FARGATE}"
 MIGRATION_PLATFORM_VERSION="${MIGRATION_PLATFORM_VERSION:-LATEST}"
+MIGRATION_TASK_DEFINITION_FAMILY="${MIGRATION_TASK_DEFINITION_FAMILY:-${ECS_TASK_DEFINITION_FAMILY:-}}"
+if [[ -z "${MIGRATION_TASK_DEFINITION_FAMILY}" ]]; then
+  echo "ERROR: missing required env var: MIGRATION_TASK_DEFINITION_FAMILY (or ECS_TASK_DEFINITION_FAMILY)" >&2
+  exit 2
+fi
+MIGRATION_IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}@${IMAGE_DIGEST}"
+if [[ ! "${IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "ERROR: IMAGE_DIGEST is invalid (expected sha256:<64 hex>, got '${IMAGE_DIGEST}')" >&2
+  exit 2
+fi
 
 echo "Starting ECS migration task"
 echo " - cluster: ${ECS_CLUSTER}"
-echo " - task_definition: ${MIGRATION_TASK_DEFINITION}"
+echo " - task_definition_family: ${MIGRATION_TASK_DEFINITION_FAMILY}"
 echo " - container: ${MIGRATION_CONTAINER_NAME}"
+echo " - image: ${MIGRATION_IMAGE_URI}"
+echo " - inherited from base task definition: taskRoleArn, executionRoleArn, env, logging, cpu/memory"
+echo " - networking source: run-task awsvpcConfiguration (subnets/security groups/assignPublicIp)"
 echo " - launch_type: ${MIGRATION_LAUNCH_TYPE}"
 echo " - assign_public_ip: ${MIGRATION_ASSIGN_PUBLIC_IP}"
 echo " - command: ${MIGRATION_COMMAND}"
@@ -67,6 +92,58 @@ print(json.dumps({
 }))
 PY
 )"
+
+BASE_TD_JSON="$(aws ecs describe-task-definition \
+  --region "${AWS_REGION}" \
+  --task-definition "${MIGRATION_TASK_DEFINITION_FAMILY}" \
+  --query 'taskDefinition' \
+  --output json)"
+
+MATCH="$(echo "${BASE_TD_JSON}" | jq --arg NAME "${MIGRATION_CONTAINER_NAME}" '[.containerDefinitions[] | select(.name == $NAME)] | length')"
+if [[ "${MATCH}" -ne 1 ]]; then
+  echo "ERROR: expected exactly one containerDefinition named '${MIGRATION_CONTAINER_NAME}', found ${MATCH}" >&2
+  exit 4
+fi
+
+MIGRATION_TD_JSON="$(echo "${BASE_TD_JSON}" | jq \
+  --arg IMG "${MIGRATION_IMAGE_URI}" \
+  --arg NAME "${MIGRATION_CONTAINER_NAME}" \
+  '
+  del(
+    .taskDefinitionArn,
+    .revision,
+    .status,
+    .requiresAttributes,
+    .compatibilities,
+    .registeredAt,
+    .registeredBy,
+    .deregisteredAt
+  )
+  | .containerDefinitions |= map(
+      if .name == $NAME then
+        .image = $IMG
+      else . end
+    )
+  ')"
+
+TMP_FILES=()
+cleanup_tmp_files() {
+  for f in "${TMP_FILES[@]:-}"; do
+    [[ -n "${f}" ]] && rm -f "${f}"
+  done
+}
+trap cleanup_tmp_files EXIT
+
+TMP_TD="$(mktemp)"
+TMP_FILES+=("${TMP_TD}")
+echo "${MIGRATION_TD_JSON}" > "${TMP_TD}"
+
+MIGRATION_TASK_DEFINITION="$(aws ecs register-task-definition \
+  --region "${AWS_REGION}" \
+  --cli-input-json "file://${TMP_TD}" \
+  --query 'taskDefinition.taskDefinitionArn' \
+  --output text)"
+echo " - registered_migration_task_definition: ${MIGRATION_TASK_DEFINITION}"
 
 RUN_OUT="$(aws ecs run-task \
   --region "${AWS_REGION}" \
