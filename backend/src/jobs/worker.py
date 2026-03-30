@@ -52,6 +52,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
         logger.info("worker dispatch attempt: job_id=%s dispatch=v3_process_aisle", job_id)
         from src.runtime.v3_deps import (
             get_aisle_repo,
+            get_artifact_store,
             get_clock,
             get_evidence_repo,
             get_inventory_repo,
@@ -75,6 +76,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
             clock=get_clock(),
             inventory_repo=get_inventory_repo(),
             inventory_visual_reference_repo=get_inventory_visual_reference_repo(),
+            artifact_store=get_artifact_store(),
             raw_label_repo=get_raw_label_repo(),
             recompute_consolidated_uc=get_recompute_consolidated_counts_use_case(),
         )

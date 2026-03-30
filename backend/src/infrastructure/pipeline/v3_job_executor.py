@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -41,6 +40,7 @@ from src.config import load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.io.logging import setup_logger
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
@@ -55,27 +55,43 @@ from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
     default_empty_block,
 )
+from src.infrastructure.pipeline.input_artifact_resolver import WorkerInputArtifactResolver
 
 logger = logging.getLogger(__name__)
 
 RUN_ID = "run"
 
 
-def _resolve_visual_reference_paths(ctx: AnalysisContext, v3_base: Path) -> AnalysisContext:
-    """Return a new AnalysisContext with resolved_path set on each visual reference. Provider consumes these paths."""
+def _resolve_visual_reference_paths(
+    ctx: AnalysisContext,
+    *,
+    resolver: WorkerInputArtifactResolver,
+    references_by_id: dict[str, InventoryVisualReference],
+    target_dir: Path,
+) -> AnalysisContext:
+    """Return AnalysisContext with provider/local resolved temp paths for visual references."""
     if not ctx.visual_references:
         return ctx
-    resolved_refs = [
-        VisualReferenceContext(
-            reference_id=ref.reference_id,
+    resolved_refs = []
+    for i, ref in enumerate(ctx.visual_references):
+        ext = Path(ref.source_path or "").suffix or ".jpg"
+        temp_ref = target_dir / f"{i:04d}_{ref.reference_id}{ext}"
+        resolved_local = resolver.resolve_visual_reference(
+            ref.reference_id,
+            reference_record=references_by_id.get(ref.reference_id),
             source_path=ref.source_path,
-            mime_type=ref.mime_type,
-            role=ref.role,
-            created_at=ref.created_at,
-            resolved_path=str(v3_base / ref.source_path),
+            target_path=temp_ref,
         )
-        for ref in ctx.visual_references
-    ]
+        resolved_refs.append(
+            VisualReferenceContext(
+                reference_id=ref.reference_id,
+                source_path=ref.source_path,
+                mime_type=ref.mime_type,
+                role=ref.role,
+                created_at=ref.created_at,
+                resolved_path=str(resolved_local),
+            )
+        )
     return AnalysisContext(
         primary_evidence=ctx.primary_evidence,
         visual_references=resolved_refs,
@@ -98,6 +114,7 @@ class V3JobExecutor:
         clock: Clock,
         inventory_repo: InventoryRepository,
         inventory_visual_reference_repo: InventoryVisualReferenceRepository,
+        artifact_store=None,
         raw_label_repo: RawLabelRepository | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
     ) -> None:
@@ -108,6 +125,8 @@ class V3JobExecutor:
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
         self._evidence_repo = evidence_repo
+        self._inventory_visual_reference_repo = inventory_visual_reference_repo
+        self._artifact_store = artifact_store
         self._clock = clock
         self._inventory_status_reconciler = InventoryStatusReconciler(
             inventory_repo=inventory_repo,
@@ -221,7 +240,12 @@ class V3JobExecutor:
         try:
             analysis_context = self._build_analysis_context(aisle)
             job_input, video_path = self._build_pipeline_input(
-                assets, v3_base, job_dir, job_id, analysis_context=analysis_context
+                assets,
+                v3_base,
+                job_dir,
+                job_id,
+                analysis_context=analysis_context,
+                inventory_id=aisle.inventory_id,
             )
             logger.info(
                 "v3 pipeline input ready: job_id=%s inventory_id=%s aisle_id=%s input_type=%s video_path=%s",
@@ -369,19 +393,35 @@ class V3JobExecutor:
         job_id: str,
         *,
         analysis_context: AnalysisContext,
+        inventory_id: str,
     ) -> tuple:
         """Return (JobInput, video_path). video_path used as first arg to process_video."""
+        settings = load_settings()
+        input_assets_dir = job_dir / RUN_ID / "input_assets"
+        visual_refs_dir = job_dir / RUN_ID / "visual_references"
+        resolver = WorkerInputArtifactResolver(
+            self._artifact_store,
+            legacy_base=v3_base,
+            legacy_local_read_enabled=settings.artifact_storage_legacy_local_read_enabled,
+        )
+        refs = self._inventory_visual_reference_repo.list_by_inventory(inventory_id)
+        refs_by_id = {r.id: r for r in refs}
+        resolved_ctx = _resolve_visual_reference_paths(
+            analysis_context,
+            resolver=resolver,
+            references_by_id=refs_by_id,
+            target_dir=visual_refs_dir,
+        )
         single_video = (
             len(assets) == 1
             and getattr(assets[0], "type", None) == SourceAssetType.VIDEO
         )
         if single_video:
             asset = assets[0]
-            full = v3_base / asset.storage_path
-            if not full.exists():
-                raise FileNotFoundError(f"Asset file not found: {full}")
+            ext = Path(asset.storage_path or "").suffix or ".mp4"
+            target_video = input_assets_dir / f"0000_{asset.id}{ext}"
+            full = resolver.resolve_source_asset(asset, target_video)
             video_path = str(full)
-            resolved_ctx = _resolve_visual_reference_paths(analysis_context, v3_base)
             return (
                 JobInput(
                     video_path=video_path,
@@ -401,19 +441,15 @@ class V3JobExecutor:
                 "mixed or multi-video sets are not supported in photos normalization flow."
             )
 
-        # Photos (or multiple assets): copy into job_dir/input_photos, write manifest
+        # Photos (or multiple assets): resolve to job_dir/input_photos, write manifest
         photos_dir = job_dir / "input_photos"
         photos_dir.mkdir(parents=True, exist_ok=True)
         photos_list = []
         for i, asset in enumerate(assets):
-            src = v3_base / asset.storage_path
-            if not src.exists():
-                raise FileNotFoundError(f"Asset file not found: {src}")
             ext = Path(asset.storage_path).suffix or ".jpg"
             stored = f"{i:04d}_{asset.id}{ext}"
             dst = photos_dir / stored
-            if dst != src:
-                shutil.copy2(src, dst)
+            resolver.resolve_source_asset(asset, dst)
             # Expose image_id (asset.id) so pipeline/LLM use it as source_image_id; enables reference-image view.
             photos_list.append({
                 "index": i + 1,  # 1-based for load_job_images_from_manifest
@@ -431,7 +467,6 @@ class V3JobExecutor:
             json.dump(manifest, f, indent=2)
 
         # Paths relative to job dir for pipeline
-        resolved_ctx = _resolve_visual_reference_paths(analysis_context, v3_base)
         return (
             JobInput(
                 video_path="",
