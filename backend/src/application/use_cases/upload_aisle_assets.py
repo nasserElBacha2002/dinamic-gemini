@@ -17,7 +17,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, List, Sequence
+from typing import Any, BinaryIO, List, Sequence
 from uuid import uuid4
 
 from src.application.errors import EmptyUploadError, UnsupportedAssetTypeError
@@ -105,6 +105,7 @@ class UploadAisleAssetsUseCase:
             )
         now = self._clock.now()
         created: List[SourceAsset] = []
+        written_paths: List[str] = []
         n_files = len(files)
         logger.info("Uploading %d file(s) to aisle %s", n_files, aisle_id)
         try:
@@ -113,21 +114,42 @@ class UploadAisleAssetsUseCase:
                 _validate_filename_matches_type(uf.original_filename, asset_type)
                 asset_id = str(uuid4())
                 safe_name = _safe_filename(uf.original_filename)
-                storage_path = f"aisles/{aisle_id}/raw/{asset_id}_{safe_name}"
-                final_path = self._artifact_storage.save_file(
-                    storage_path,
-                    uf.file_obj,
-                    uf.content_type,
-                )
+                storage_path = f"uploads/aisles/{aisle_id}/raw/{asset_id}_{safe_name}"
+                storage_provider = None
+                storage_bucket = None
+                storage_key = None
+                content_type = uf.content_type or "application/octet-stream"
+                file_size_bytes = None
+                etag = None
+                put_object = getattr(self._artifact_storage, "put_object", None)
+                if callable(put_object):
+                    stored: Any = put_object(storage_path, uf.file_obj, content_type)
+                    storage_provider = getattr(stored, "storage_provider", None)
+                    storage_bucket = getattr(stored, "storage_bucket", None)
+                    storage_key = getattr(stored, "storage_key", None)
+                    content_type = getattr(stored, "content_type", None) or content_type
+                    file_size_bytes = getattr(stored, "file_size_bytes", None)
+                    etag = getattr(stored, "etag", None)
+                else:
+                    # Legacy adapter compatibility
+                    self._artifact_storage.save_file(storage_path, uf.file_obj, content_type)
+                    storage_key = storage_path
+                written_paths.append(storage_key or storage_path)
                 asset = SourceAsset(
                     id=asset_id,
                     aisle_id=aisle_id,
                     type=asset_type,
                     original_filename=uf.original_filename or "file",
-                    storage_path=final_path,
-                    mime_type=uf.content_type or "application/octet-stream",
+                    storage_path=storage_path,
+                    mime_type=content_type,
                     uploaded_at=now,
                     metadata_json=None,
+                    storage_provider=storage_provider,
+                    storage_bucket=storage_bucket,
+                    storage_key=storage_key or storage_path,
+                    content_type=content_type,
+                    file_size_bytes=file_size_bytes,
+                    etag=etag,
                 )
                 self._asset_repo.save(asset)
                 created.append(asset)
@@ -143,4 +165,9 @@ class UploadAisleAssetsUseCase:
                     aisle_id,
                     len(created),
                 )
+            for p in reversed(written_paths):
+                try:
+                    self._artifact_storage.delete_file(p)
+                except Exception as cleanup_e:
+                    logger.warning("Rollback cleanup failed for aisle asset file %s: %s", p, cleanup_e)
             raise

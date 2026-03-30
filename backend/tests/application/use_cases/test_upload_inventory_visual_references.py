@@ -27,6 +27,7 @@ from src.application.use_cases.upload_inventory_visual_references import (
 )
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.inventory.visual_reference import InventoryVisualReference
+from src.infrastructure.storage.artifact_store import StoredArtifact
 
 
 class FixedClock:
@@ -84,6 +85,18 @@ class StubArtifactStorage(ArtifactStorage):
         self._written.append((path, content, content_type))
         return path
 
+    def put_object(self, path: str, file_obj: BytesIO, content_type: str) -> StoredArtifact:
+        content = file_obj.read()
+        self._written.append((path, content, content_type))
+        return StoredArtifact(
+            storage_provider="s3",
+            storage_bucket="bucket-b",
+            storage_key=path,
+            content_type=content_type,
+            file_size_bytes=len(content),
+            etag="etag-ref",
+        )
+
     def delete_file(self, path: str) -> None:
         self._deleted.append(path)
 
@@ -129,6 +142,10 @@ def test_upload_inventory_visual_references_creates_references_and_writes_files(
     assert all(r.inventory_id == "inv-1" for r in created)
     assert created[0].file_size == 9
     assert created[1].file_size == 8
+    assert all(r.storage_provider == "s3" for r in created)
+    assert all(r.storage_bucket == "bucket-b" for r in created)
+    assert all((r.storage_key or "").startswith("inventories/inv-1/visual_references/") for r in created)
+    assert all((r.storage_path or "").startswith("inventories/inv-1/visual_references/") for r in created)
     assert len(storage._written) == 2
     paths = [p for (p, _, _) in storage._written]
     assert paths[0].startswith("inventories/inv-1/visual_references/")

@@ -20,6 +20,7 @@ from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.infrastructure.storage.artifact_store import StoredArtifact
 
 
 class FixedClock:
@@ -95,15 +96,32 @@ class StubAssetRepo(SourceAssetRepository):
 class StubArtifactStorage(ArtifactStorage):
     def __init__(self) -> None:
         self._written: list[tuple[str, bytes, str]] = []
+        self._deleted: list[str] = []
 
     def save_file(self, path: str, file_obj: BytesIO, content_type: str) -> str:
         content = file_obj.read()
         self._written.append((path, content, content_type))
         return path
 
+    def put_object(self, path: str, file_obj: BytesIO, content_type: str) -> StoredArtifact:
+        content = file_obj.read()
+        self._written.append((path, content, content_type))
+        return StoredArtifact(
+            storage_provider="s3",
+            storage_bucket="bucket-a",
+            storage_key=path,
+            content_type=content_type,
+            file_size_bytes=len(content),
+            etag="etag-test",
+        )
+
     def delete_file(self, path: str) -> None:
-        # UploadAisleAssetsUseCase does not currently require rollback semantics.
-        pass
+        self._deleted.append(path)
+
+
+class FailingAssetRepo(StubAssetRepo):
+    def save(self, asset: SourceAsset) -> None:
+        raise RuntimeError("simulated db failure")
 
 
 def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() -> None:
@@ -136,6 +154,11 @@ def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() ->
     types = {a.type for a in created}
     assert types == {SourceAssetType.PHOTO, SourceAssetType.VIDEO}
     assert len(storage._written) == 2
+    assert all(a.storage_provider == "s3" for a in created)
+    assert all(a.storage_bucket == "bucket-a" for a in created)
+    assert all((a.storage_key or "").startswith("uploads/aisles/a1/raw/") for a in created)
+    assert all(a.storage_path.startswith("uploads/aisles/a1/raw/") for a in created)
+    assert all(a.file_size_bytes is not None for a in created)
     updated_aisle = aisle_repo.get_by_id("a1")
     assert updated_aisle is not None
     assert updated_aisle.status == AisleStatus.ASSETS_UPLOADED
@@ -164,6 +187,31 @@ def test_upload_aisle_assets_raises_when_aisle_not_found() -> None:
 
     with pytest.raises(AisleNotFoundError):
         use_case.execute("inv1", "nonexistent", files)
+
+
+def test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+    inv_repo = StubInventoryRepo([inv])
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    asset_repo = FailingAssetRepo()
+    storage = StubArtifactStorage()
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
+
+    use_case = UploadAisleAssetsUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        artifact_storage=storage,
+        clock=FixedClock(now),
+        status_reconciler=reconciler,
+    )
+    files = [UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg")]
+
+    with pytest.raises(RuntimeError, match="simulated db failure"):
+        use_case.execute("inv1", "a1", files)
+    assert storage._deleted == [storage._written[0][0]]
 
 
 def test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory() -> None:
