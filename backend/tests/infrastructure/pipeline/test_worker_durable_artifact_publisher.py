@@ -21,7 +21,7 @@ from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactSto
 
 
 def test_canonical_storage_keys_single_run_segment_no_duplication() -> None:
-    """Keys must be v3/jobs/{job_id}/{run_segment}/<file> — never .../run/run/... for default segment."""
+    """Keys must be jobs/{job_id}/{run_segment}/<file> — never .../run/run/... for default segment."""
     job_id = "job-abc"
     keys = worker_output_storage_keys(job_id, DEFAULT_V3_WORKER_RUN_SEGMENT)
     prefix = worker_durable_artifact_key_prefix(job_id, DEFAULT_V3_WORKER_RUN_SEGMENT)
@@ -36,7 +36,7 @@ def test_canonical_storage_keys_single_run_segment_no_duplication() -> None:
 
 def test_worker_output_storage_keys_alternate_run_segment() -> None:
     keys = worker_output_storage_keys("job-abc", "custom-run")
-    assert keys[DURABLE_ARTIFACT_KIND_EXECUTION_LOG] == "v3/jobs/job-abc/custom-run/execution_log.jsonl"
+    assert keys[DURABLE_ARTIFACT_KIND_EXECUTION_LOG] == "jobs/job-abc/custom-run/execution_log.jsonl"
 
 
 def test_publish_local_provider_writes_expected_keys(tmp_path: Path) -> None:

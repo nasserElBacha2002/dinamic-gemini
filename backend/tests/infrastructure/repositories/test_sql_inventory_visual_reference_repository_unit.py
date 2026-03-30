@@ -14,7 +14,7 @@ def test_row_to_reference_prefers_provider_metadata() -> None:
         storage_path="inventories/inv-1/visual_references/ref-1.png",
         storage_provider="s3",
         storage_bucket="bucket-a",
-        storage_key="v3/inventories/inv-1/visual_references/ref-1.png",
+        storage_key="inventories/inv-1/visual_references/ref-1.png",
         content_type="image/png",
         file_size_bytes=2048,
         etag="etag-1",
@@ -25,7 +25,7 @@ def test_row_to_reference_prefers_provider_metadata() -> None:
     ref = _row_to_reference(row)
     assert ref.storage_provider == "s3"
     assert ref.storage_bucket == "bucket-a"
-    assert ref.storage_key == "v3/inventories/inv-1/visual_references/ref-1.png"
+    assert ref.storage_key == "inventories/inv-1/visual_references/ref-1.png"
     assert ref.content_type == "image/png"
     assert ref.file_size_bytes == 2048
     assert ref.etag == "etag-1"

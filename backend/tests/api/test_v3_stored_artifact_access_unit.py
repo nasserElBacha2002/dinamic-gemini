@@ -116,7 +116,7 @@ def test_resolve_source_asset_legacy_requires_flag(monkeypatch) -> None:
 
 
 def test_read_execution_log_events_durable(tmp_path: Path, monkeypatch) -> None:
-    key = "v3/jobs/j1/run/execution_log.jsonl"
+    key = "jobs/j1/run/execution_log.jsonl"
     body = b'{"ts":"t","stage":"s","level":"info","message":"hi"}\n'
     store = V3ArtifactStorageAdapter(tmp_path / "art")
     store.put_object(key, BytesIO(body), "application/x-ndjson")
@@ -162,7 +162,7 @@ def test_read_execution_log_events_durable(tmp_path: Path, monkeypatch) -> None:
 
 def test_read_execution_log_durable_uses_download_not_get_object(tmp_path: Path, monkeypatch) -> None:
     """Execution log path streams via download_to_path + temp file (no get_object)."""
-    key = "v3/jobs/j2/run/execution_log.jsonl"
+    key = "jobs/j2/run/execution_log.jsonl"
     body = b'{"ts":"t","stage":"s","level":"info","message":"dl"}\n'
 
     class _Store:
@@ -223,27 +223,36 @@ def test_read_execution_log_durable_uses_download_not_get_object(tmp_path: Path,
     assert events[0]["message"] == "dl"
 
 
-def test_fetch_json_payload_too_large(monkeypatch) -> None:
+def test_fetch_json_rejects_from_head_before_get_or_download(monkeypatch) -> None:
+    """``object_size_bytes`` over max → 413; no get_object / download_to_path."""
     from src.api.services.v3_stored_artifact_access import fetch_json_from_durable_meta
 
     meta = {
         "storage_provider": "local",
         "storage_bucket": None,
-        "storage_key": "k",
+        "storage_key": "jobs/j1/run/hybrid_report.json",
         "content_type": "application/json",
         "file_size_bytes": 1024,
         "etag": None,
     }
 
-    class _Huge:
+    class _Store:
+        def __init__(self) -> None:
+            self.get_calls = 0
+            self.download_calls = 0
+
         def object_size_bytes(self, key: str, *, bucket=None) -> int:
-            return 100
+            return 10_000
 
-        def get_object(self, key: str):
-            from src.infrastructure.storage.artifact_store import ArtifactDownload
+        def get_object(self, key: str) -> None:
+            self.get_calls += 1
+            raise AssertionError("get_object should not run when head size exceeds cap")
 
-            return ArtifactDownload(content=b"{}" * 2000, content_type="application/json", file_size_bytes=2000)
+        def download_to_path(self, key: str, target_path, *, bucket=None) -> None:
+            self.download_calls += 1
+            raise AssertionError("download_to_path should not run when head size exceeds cap")
 
+    store = _Store()
     monkeypatch.setattr(
         "src.api.services.v3_stored_artifact_access.load_settings",
         lambda: type(
@@ -256,8 +265,96 @@ def test_fetch_json_payload_too_large(monkeypatch) -> None:
         )(),
     )
     with pytest.raises(StoredArtifactAccessError) as ei:
-        fetch_json_from_durable_meta(meta, artifact_store=_Huge(), label="Hybrid report")
+        fetch_json_from_durable_meta(meta, artifact_store=store, label="Hybrid report")
     assert ei.value.reason_code == "payload_too_large"
+    assert store.get_calls == 0
+    assert store.download_calls == 0
+
+
+def test_fetch_json_when_head_fails_rejects_from_on_disk_stat(monkeypatch) -> None:
+    """Size unknown: stream to tempfile, reject when on-disk size exceeds cap (no full read)."""
+    from src.api.services.v3_stored_artifact_access import fetch_json_from_durable_meta
+
+    meta = {
+        "storage_provider": "local",
+        "storage_bucket": None,
+        "storage_key": "jobs/j1/run/hybrid_report.json",
+        "content_type": "application/json",
+        "file_size_bytes": 1,
+        "etag": None,
+    }
+
+    class _Store:
+        def __init__(self) -> None:
+            self.download_calls = 0
+
+        def object_size_bytes(self, key: str, *, bucket=None) -> int:
+            raise RuntimeError("head unavailable")
+
+        def get_object(self, key: str) -> None:
+            raise AssertionError("get_object must not run for unknown-size JSON load")
+
+        def download_to_path(self, key: str, target_path: Path, *, bucket=None) -> None:
+            self.download_calls += 1
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(b"x" * 500)
+
+    store = _Store()
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                **_DEFAULT_STORE_ACCESS_SETTINGS,
+                "artifact_store_max_json_load_bytes": 100,
+                "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            },
+        )(),
+    )
+    with pytest.raises(StoredArtifactAccessError) as ei:
+        fetch_json_from_durable_meta(meta, artifact_store=store, label="Hybrid report")
+    assert ei.value.reason_code == "payload_too_large"
+    assert store.download_calls == 1
+
+
+def test_fetch_json_when_head_fails_loads_when_under_cap(monkeypatch) -> None:
+    from src.api.services.v3_stored_artifact_access import fetch_json_from_durable_meta
+
+    meta = {
+        "storage_provider": "local",
+        "storage_bucket": None,
+        "storage_key": "jobs/j1/run/hybrid_report.json",
+        "content_type": "application/json",
+        "file_size_bytes": 1,
+        "etag": None,
+    }
+    payload = b'{"ok": true}'
+
+    class _Store:
+        def object_size_bytes(self, key: str, *, bucket=None) -> int:
+            raise RuntimeError("head unavailable")
+
+        def get_object(self, key: str) -> None:
+            raise AssertionError("no get_object")
+
+        def download_to_path(self, key: str, target_path: Path, *, bucket=None) -> None:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(payload)
+
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                **_DEFAULT_STORE_ACCESS_SETTINGS,
+                "artifact_store_max_json_load_bytes": 1024,
+            },
+        )(),
+    )
+    out = fetch_json_from_durable_meta(meta, artifact_store=_Store(), label="Hybrid report")
+    assert out == {"ok": True}
 
 
 def test_visual_reference_incomplete_provider_metadata_fails_without_legacy_fallback(monkeypatch) -> None:

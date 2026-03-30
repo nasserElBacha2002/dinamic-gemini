@@ -124,14 +124,16 @@ class FailingAssetRepo(StubAssetRepo):
         raise RuntimeError("simulated db failure")
 
 
-class PrefixedKeyArtifactStorage(StubArtifactStorage):
+class CanonicalLogicalKeyArtifactStorage(StubArtifactStorage):
+    """Like production S3 adapter: persisted ``storage_key`` is logical (no bucket prefix)."""
+
     def put_object(self, path: str, file_obj: BytesIO, content_type: str) -> StoredArtifact:
         content = file_obj.read()
         self._written.append((path, content, content_type))
         return StoredArtifact(
             storage_provider="s3",
             storage_bucket="bucket-a",
-            storage_key=f"v3/{path}",
+            storage_key=path,
             content_type=content_type,
             file_size_bytes=len(content),
             etag="etag-test",
@@ -228,7 +230,7 @@ def test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure() -> None:
     assert storage._deleted == [storage._written[0][0]]
 
 
-def test_upload_aisle_assets_rollback_uses_persisted_prefixed_storage_key_verbatim() -> None:
+def test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
     inv_repo = StubInventoryRepo([inv])
@@ -236,7 +238,7 @@ def test_upload_aisle_assets_rollback_uses_persisted_prefixed_storage_key_verbat
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
     asset_repo = FailingAssetRepo()
-    storage = PrefixedKeyArtifactStorage()
+    storage = CanonicalLogicalKeyArtifactStorage()
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
 
     use_case = UploadAisleAssetsUseCase(
@@ -250,7 +252,7 @@ def test_upload_aisle_assets_rollback_uses_persisted_prefixed_storage_key_verbat
 
     with pytest.raises(RuntimeError, match="simulated db failure"):
         use_case.execute("inv1", "a1", files)
-    assert storage._deleted == [f"v3/{storage._written[0][0]}"]
+    assert storage._deleted == [storage._written[0][0]]
 
 
 def test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory() -> None:

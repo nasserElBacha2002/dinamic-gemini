@@ -16,7 +16,7 @@ def test_row_to_evidence_prefers_provider_storage_fields() -> None:
         is_primary=True,
         storage_provider="s3",
         storage_bucket="bucket-a",
-        storage_key="v3/jobs/job-a/run/evidence/e1.jpg",
+        storage_key="jobs/job-a/run/evidence/e1.jpg",
         content_type="image/jpeg",
         file_size_bytes=111,
         etag="etag-ev",
@@ -26,7 +26,7 @@ def test_row_to_evidence_prefers_provider_storage_fields() -> None:
         quality_score=0.9,
     )
     e = _row_to_evidence(row)
-    assert e.storage_key == "v3/jobs/job-a/run/evidence/e1.jpg"
+    assert e.storage_key == "jobs/job-a/run/evidence/e1.jpg"
     assert e.storage_provider == "s3"
     assert e.storage_bucket == "bucket-a"
     assert e.content_type == "image/jpeg"

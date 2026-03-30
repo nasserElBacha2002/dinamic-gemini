@@ -6,14 +6,18 @@ S3, local filesystem, or composite adapters during migration.
 
 **storage_key (canonical)**
 
-- Persisted in the DB and passed to ArtifactStore methods as the **logical** application key:
-  **prefix-free** relative to any provider-specific root (e.g. S3 prefix is *not* part of
-  the stored value).
-- S3: adapters accept **logical** keys and also tolerate keys that already include the
-  configured bucket prefix (idempotent normalization — no double prefix). Return values from
-  ``put_object`` / ``StoredArtifact.storage_key`` are always **logical** (prefix stripped).
-- Local (``V3ArtifactStorageAdapter``): ``storage_key`` is the path relative to
-  ``v3_uploads`` / ``base_path`` (same string historically kept in ``storage_path`` for uploads).
+- Persisted in the DB and passed to ArtifactStore methods as the **logical** application key
+  relative to the configured **S3 bucket key prefix** (from env, e.g. ``v3``): that prefix
+  string must **not** be duplicated in ``storage_key`` (use ``jobs/{id}/run/log.jsonl``, not
+  ``v3/jobs/...``). Application path segments such as ``jobs/`` or ``uploads/`` are not the
+  same as the bucket prefix.
+- S3: adapters prepend the bucket prefix to logical keys, and tolerate caller keys that
+  already include that prefix (no double prefix). Return values from ``put_object`` /
+  ``StoredArtifact.storage_key`` use the same logical form the caller passed (bucket prefix
+  stripped only from values returned after an upload keyed with the full physical path—see
+  S3 adapter).
+- Local (``V3ArtifactStorageAdapter``): ``storage_key`` is the path relative to the adapter
+  base (typically the same relative layout as ``storage_path`` for uploads).
 
 **content_type vs domain mime_type**
 
@@ -39,9 +43,8 @@ from typing import BinaryIO, Optional
 class StoredArtifact:
     """Canonical metadata returned after writing an artifact.
 
-    Contract: ``storage_key`` is the logical application key (prefix-free), suitable
-    for DB persistence and passing back to ArtifactStore operations. Provider adapters
-    are responsible for mapping this logical key to physical object identifiers.
+    Contract: ``storage_key`` is the logical application key (no duplication of the
+    configured S3 bucket prefix). Suitable for DB persistence and ArtifactStore calls.
     """
 
     storage_provider: str

@@ -4,13 +4,19 @@ Upload durable worker outputs (Phase 3B) through ArtifactStore.
 Temp run_dir files remain the execution workspace; this module copies required
 artifacts to the configured provider and returns metadata for job.result_json.
 
-Canonical logical keys (prefix-free; S3 adapter may prepend a configured prefix):
-    v3/jobs/{job_id}/{run_segment}/{filename}
+Canonical logical keys (do **not** repeat the configured S3 bucket prefix; e.g. with
+``ARTIFACT_S3_PREFIX=v3`` use ``jobs/...`` not ``v3/jobs/...`` — the adapter composes
+the physical key):
+
+    jobs/{job_id}/{run_segment}/{filename}
 
 ``run_segment`` is the pipeline run directory basename (e.g. ``"run"``), matching
 local layout ``{output_dir}/{job_id}/{run_segment}/...``. There is only one path
-segment for the run — never ``.../run/run/...`` (avoid ``v3/jobs/{id}/run/{run_id}``
+segment for the run — never ``.../run/run/...`` (avoid ``jobs/{id}/run/{run_id}``
 when ``run_id`` is already the segment name).
+
+Older rows may still store keys prefixed with ``v3/``; S3 adapters accept those without
+double-prefixing.
 """
 
 from __future__ import annotations
@@ -30,11 +36,11 @@ DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV = "hybrid_report_csv"
 # Default run directory basename; must match ``RUN_ID`` in ``v3_job_executor`` (single source of truth here).
 DEFAULT_V3_WORKER_RUN_SEGMENT = "run"
 
-WORKER_DURABLE_LOGICAL_PREFIX_ROOT = "v3/jobs"
+WORKER_DURABLE_LOGICAL_PREFIX_ROOT = "jobs"
 
 
 def worker_durable_artifact_key_prefix(job_id: str, run_segment: str) -> str:
-    """Return ``v3/jobs/{job_id}/{run_segment}`` (no trailing slash).
+    """Return ``jobs/{job_id}/{run_segment}`` (no trailing slash).
 
     All durable worker object keys for this job run share this prefix.
     """

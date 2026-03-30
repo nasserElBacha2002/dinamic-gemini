@@ -18,9 +18,10 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
     """ArtifactStore adapter using boto3 S3 client.
 
     Key contract:
-    - public methods accept logical keys (prefix-free) and also tolerate already-prefixed keys
-      for rollout safety and backward compatibility.
-    - StoredArtifact.storage_key is always returned as a logical key.
+    - public methods accept logical keys (no duplication of the configured bucket prefix,
+      e.g. ``jobs/...`` when prefix is ``v3``) and tolerate keys that already include that prefix.
+    - ``put_object`` returns ``StoredArtifact.storage_key`` in logical form (prefix stripped from
+      the physical key when the upload path included it).
     """
 
     def __init__(

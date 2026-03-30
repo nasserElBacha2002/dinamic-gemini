@@ -1015,7 +1015,7 @@ def test_execution_log_from_durable_metadata_not_local_disk() -> None:
     aisle_repo.save(aisle)
 
     job_id = "job-p4-durable"
-    log_key = f"v3/jobs/{job_id}/run/execution_log.jsonl"
+    log_key = f"jobs/{job_id}/run/execution_log.jsonl"
     line = {"ts": "2026-01-01T00:00:00", "stage": "s", "level": "info", "message": "m"}
     payload = (json.dumps(line, ensure_ascii=False) + "\n").encode("utf-8")
 
@@ -1180,7 +1180,7 @@ def test_hybrid_report_api_from_durable_metadata() -> None:
     aisle_repo.save(aisle)
 
     job_id = "job-p4c"
-    rkey = f"v3/jobs/{job_id}/run/hybrid_report.json"
+    rkey = f"jobs/{job_id}/run/hybrid_report.json"
     report_body = {"entities": [{"entity_uid": f"{job_id}_e1"}]}
     raw = json.dumps(report_body).encode("utf-8")
 
