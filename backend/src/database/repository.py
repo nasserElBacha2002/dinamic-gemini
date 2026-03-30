@@ -125,6 +125,19 @@ class JobsRepository:
         report_json_path: Optional[str] = None,
         report_csv_path: Optional[str] = None,
         artifacts_dir: Optional[str] = None,
+        report_storage_provider: Optional[str] = None,
+        report_storage_bucket: Optional[str] = None,
+        report_json_storage_key: Optional[str] = None,
+        report_csv_storage_key: Optional[str] = None,
+        report_content_type: Optional[str] = None,
+        report_file_size_bytes: Optional[int] = None,
+        report_etag: Optional[str] = None,
+        log_storage_provider: Optional[str] = None,
+        log_storage_bucket: Optional[str] = None,
+        execution_log_storage_key: Optional[str] = None,
+        execution_log_content_type: Optional[str] = None,
+        execution_log_file_size_bytes: Optional[int] = None,
+        execution_log_etag: Optional[str] = None,
         frames_count_sent: Optional[int] = None,
         gemini_calls: Optional[int] = None,
         prompt_version: Optional[str] = None,
@@ -134,6 +147,10 @@ class JobsRepository:
                 """
                 UPDATE jobs SET updated_at = ?, status = ?,
                 report_json_path = ?, report_csv_path = ?, artifacts_dir = ?,
+                report_storage_provider = ?, report_storage_bucket = ?, report_json_storage_key = ?, report_csv_storage_key = ?,
+                report_content_type = ?, report_file_size_bytes = ?, report_etag = ?,
+                log_storage_provider = ?, log_storage_bucket = ?, execution_log_storage_key = ?,
+                execution_log_content_type = ?, execution_log_file_size_bytes = ?, execution_log_etag = ?,
                 frames_count_sent = ?, gemini_calls = ?, prompt_version = ?
                 WHERE id = ?
                 """,
@@ -143,6 +160,19 @@ class JobsRepository:
                     report_json_path,
                     report_csv_path,
                     artifacts_dir,
+                    report_storage_provider,
+                    report_storage_bucket,
+                    report_json_storage_key,
+                    report_csv_storage_key,
+                    report_content_type,
+                    report_file_size_bytes,
+                    report_etag,
+                    log_storage_provider,
+                    log_storage_bucket,
+                    execution_log_storage_key,
+                    execution_log_content_type,
+                    execution_log_file_size_bytes,
+                    execution_log_etag,
                     frames_count_sent,
                     gemini_calls,
                     prompt_version,
@@ -168,6 +198,10 @@ class JobsRepository:
                 SELECT id, created_at, updated_at, status, mode, confidence_threshold,
                        video_path, metadata, progress_stage, progress_percent,
                        error_code, error_message, report_json_path, report_csv_path, artifacts_dir,
+                       report_storage_provider, report_storage_bucket, report_json_storage_key, report_csv_storage_key,
+                       report_content_type, report_file_size_bytes, report_etag,
+                       log_storage_provider, log_storage_bucket, execution_log_storage_key,
+                       execution_log_content_type, execution_log_file_size_bytes, execution_log_etag,
                        input_type, input_manifest_path, photos_dir
                 FROM jobs WHERE id = ?
                 """,
@@ -184,12 +218,45 @@ class JobsRepository:
         report_json = getattr(row, "report_json_path", None)
         report_csv = getattr(row, "report_csv_path", None)
         artifacts_dir = getattr(row, "artifacts_dir", None)
+        report_json_storage_key = getattr(row, "report_json_storage_key", None)
+        report_csv_storage_key = getattr(row, "report_csv_storage_key", None)
+        report_storage_provider = getattr(row, "report_storage_provider", None)
+        report_storage_bucket = getattr(row, "report_storage_bucket", None)
+        report_content_type = getattr(row, "report_content_type", None)
+        report_file_size_bytes = getattr(row, "report_file_size_bytes", None)
+        report_etag = getattr(row, "report_etag", None)
+        execution_log_storage_key = getattr(row, "execution_log_storage_key", None)
+        log_storage_provider = getattr(row, "log_storage_provider", None)
+        log_storage_bucket = getattr(row, "log_storage_bucket", None)
+        execution_log_content_type = getattr(row, "execution_log_content_type", None)
+        execution_log_file_size_bytes = getattr(row, "execution_log_file_size_bytes", None)
+        execution_log_etag = getattr(row, "execution_log_etag", None)
         output = None
-        if report_json or report_csv or artifacts_dir:
+        if (
+            report_json
+            or report_csv
+            or artifacts_dir
+            or report_json_storage_key
+            or report_csv_storage_key
+            or execution_log_storage_key
+        ):
             output = {
                 "report_json_path": report_json,
                 "report_csv_path": report_csv,
                 "artifacts_dir": artifacts_dir,
+                "report_storage_provider": report_storage_provider,
+                "report_storage_bucket": report_storage_bucket,
+                "report_json_storage_key": report_json_storage_key,
+                "report_csv_storage_key": report_csv_storage_key,
+                "report_content_type": report_content_type,
+                "report_file_size_bytes": report_file_size_bytes,
+                "report_etag": report_etag,
+                "log_storage_provider": log_storage_provider,
+                "log_storage_bucket": log_storage_bucket,
+                "execution_log_storage_key": execution_log_storage_key,
+                "execution_log_content_type": execution_log_content_type,
+                "execution_log_file_size_bytes": execution_log_file_size_bytes,
+                "execution_log_etag": execution_log_etag,
             }
         code = getattr(row, "error_code", None)
         msg = getattr(row, "error_message", None)

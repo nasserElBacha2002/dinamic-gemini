@@ -83,15 +83,50 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
 logger = logging.getLogger(__name__)
+_artifact_storage_instance = None
 
 
 def get_artifact_storage():
-    """Return v3 ArtifactStorage adapter for aisle uploads. Base path: output_dir/v3_uploads."""
+    """Return configured artifact storage adapter (local or S3)."""
+    global _artifact_storage_instance
+    if _artifact_storage_instance is not None:
+        return _artifact_storage_instance
     from src.config import load_settings
+
+    settings = load_settings()
+    provider = (settings.artifact_storage_provider or "local").strip().lower()
+    if provider == "s3":
+        from src.infrastructure.storage.s3_artifact_storage_adapter import S3ArtifactStorageAdapter
+
+        if not settings.artifact_s3_bucket:
+            raise RuntimeError("ARTIFACT_S3_BUCKET is required when ARTIFACT_STORAGE_PROVIDER=s3")
+        _artifact_storage_instance = S3ArtifactStorageAdapter(
+            bucket=settings.artifact_s3_bucket,
+            region=settings.artifact_s3_region or None,
+            prefix=settings.artifact_s3_prefix,
+            signed_url_ttl_sec=settings.artifact_s3_signed_url_ttl_sec,
+        )
+        logger.info(
+            "Artifact storage configured: provider=s3 bucket=%s region=%s prefix=%s signed_url_ttl_sec=%s legacy_local_read=%s",
+            settings.artifact_s3_bucket,
+            settings.artifact_s3_region or "<default>",
+            settings.artifact_s3_prefix,
+            settings.artifact_s3_signed_url_ttl_sec,
+            settings.artifact_storage_legacy_local_read_enabled,
+        )
+        return _artifact_storage_instance
+
     from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
-    base = Path(load_settings().output_dir) / "v3_uploads"
+
+    base = Path(settings.output_dir) / "v3_uploads"
     base.mkdir(parents=True, exist_ok=True)
-    return V3ArtifactStorageAdapter(base)
+    _artifact_storage_instance = V3ArtifactStorageAdapter(base)
+    logger.info(
+        "Artifact storage configured: provider=local base_path=%s legacy_local_read=%s",
+        str(base),
+        settings.artifact_storage_legacy_local_read_enabled,
+    )
+    return _artifact_storage_instance
 
 
 def get_job_queue():

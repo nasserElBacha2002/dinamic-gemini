@@ -40,6 +40,23 @@ cors_allow_origins = (
 if not cors_allow_origins:
     cors_allow_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
+artifact_provider = (settings.artifact_storage_provider or "local").strip().lower()
+if artifact_provider == "s3":
+    logger.info(
+        "Artifact storage config: provider=s3 bucket=%s region=%s prefix=%s signed_url_ttl_sec=%s legacy_local_read=%s",
+        settings.artifact_s3_bucket,
+        settings.artifact_s3_region or "<default>",
+        settings.artifact_s3_prefix,
+        settings.artifact_s3_signed_url_ttl_sec,
+        settings.artifact_storage_legacy_local_read_enabled,
+    )
+else:
+    logger.info(
+        "Artifact storage config: provider=local output_dir=%s legacy_local_read=%s",
+        settings.output_dir,
+        settings.artifact_storage_legacy_local_read_enabled,
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allow_origins,

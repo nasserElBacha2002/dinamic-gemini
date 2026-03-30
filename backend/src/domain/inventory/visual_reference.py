@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 
 
 @dataclass
@@ -22,6 +23,13 @@ class InventoryVisualReference:
     mime_type: str
     file_size: int
     created_at: datetime
+    # Phase 1 S3 foundation (optional during rollout; legacy records may be path-only).
+    storage_provider: Optional[str] = None
+    storage_bucket: Optional[str] = None
+    storage_key: Optional[str] = None
+    content_type: Optional[str] = None
+    file_size_bytes: Optional[int] = None
+    etag: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.id or not self.id.strip():

@@ -57,12 +57,33 @@ def _log_sql_worker_health() -> None:
         logger.warning("Worker SQL health detail: repository init check failed: %s", repo_error)
 
 
+def _log_storage_provider() -> None:
+    settings = load_settings()
+    provider = (settings.artifact_storage_provider or "local").strip().lower()
+    if provider == "s3":
+        logger.info(
+            "Worker artifact storage: provider=s3 bucket=%s region=%s prefix=%s signed_url_ttl_sec=%s legacy_local_read=%s",
+            settings.artifact_s3_bucket,
+            settings.artifact_s3_region or "<default>",
+            settings.artifact_s3_prefix,
+            settings.artifact_s3_signed_url_ttl_sec,
+            settings.artifact_storage_legacy_local_read_enabled,
+        )
+    else:
+        logger.info(
+            "Worker artifact storage: provider=local output_dir=%s legacy_local_read=%s",
+            settings.output_dir,
+            settings.artifact_storage_legacy_local_read_enabled,
+        )
+
+
 def main() -> None:
     _configure_worker_logging()
     base_path = Path(load_settings().output_dir)
     base_path.mkdir(parents=True, exist_ok=True)
     logger.info("Worker process starting (output_dir=%s)", str(base_path))
     logger.info("Worker code profile: v3_executor_accepts_running_status=true")
+    _log_storage_provider()
     _log_sql_worker_health()
     worker_loop(base_path)
 

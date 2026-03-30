@@ -37,6 +37,12 @@ def _row_to_reference(row) -> InventoryVisualReference:
     storage_path = getattr(row, "storage_path", None)
     mime_type = getattr(row, "mime_type", None)
     file_size = getattr(row, "file_size", None)
+    storage_path = (getattr(row, "storage_path", None) or "").strip()
+    storage_key = (getattr(row, "storage_key", None) or "").strip() or storage_path
+    content_type = (getattr(row, "content_type", None) or "").strip() or (mime_type or "")
+    file_size_bytes = getattr(row, "file_size_bytes", None)
+    if file_size_bytes is None:
+        file_size_bytes = int(file_size or 0)
     created_raw = getattr(row, "created_at", None)
 
     if not id_value:
@@ -63,6 +69,12 @@ def _row_to_reference(row) -> InventoryVisualReference:
         mime_type=mime_type,
         file_size=int(file_size),
         created_at=created,
+        storage_provider=(getattr(row, "storage_provider", None) or "").strip() or None,
+        storage_bucket=(getattr(row, "storage_bucket", None) or "").strip() or None,
+        storage_key=storage_key or None,
+        content_type=content_type or None,
+        file_size_bytes=int(file_size_bytes),
+        etag=(getattr(row, "etag", None) or "").strip() or None,
     )
 
 
@@ -77,14 +89,24 @@ class SqlInventoryVisualReferenceRepository(InventoryVisualReferenceRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO inventory_visual_references (id, inventory_id, filename, storage_path, mime_type, file_size, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO inventory_visual_references (
+                    id, inventory_id, filename, storage_path,
+                    storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                    mime_type, file_size, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     reference.id,
                     reference.inventory_id,
                     reference.filename,
                     reference.storage_path,
+                    reference.storage_provider,
+                    reference.storage_bucket,
+                    reference.storage_key,
+                    reference.content_type,
+                    reference.file_size_bytes,
+                    reference.etag,
                     reference.mime_type,
                     reference.file_size,
                     created,
@@ -102,14 +124,24 @@ class SqlInventoryVisualReferenceRepository(InventoryVisualReferenceRepository):
                     raise ValueError("InventoryVisualReference.created_at is required")
                 cur.execute(
                     """
-                    INSERT INTO inventory_visual_references (id, inventory_id, filename, storage_path, mime_type, file_size, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO inventory_visual_references (
+                        id, inventory_id, filename, storage_path,
+                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                        mime_type, file_size, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         reference.id,
                         reference.inventory_id,
                         reference.filename,
                         reference.storage_path,
+                        reference.storage_provider,
+                        reference.storage_bucket,
+                        reference.storage_key,
+                        reference.content_type,
+                        reference.file_size_bytes,
+                        reference.etag,
                         reference.mime_type,
                         reference.file_size,
                         created,
@@ -120,7 +152,9 @@ class SqlInventoryVisualReferenceRepository(InventoryVisualReferenceRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, inventory_id, filename, storage_path, mime_type, file_size, created_at
+                SELECT id, inventory_id, filename, storage_path,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                       mime_type, file_size, created_at
                 FROM inventory_visual_references
                 WHERE inventory_id = ?
                 ORDER BY created_at ASC, id ASC

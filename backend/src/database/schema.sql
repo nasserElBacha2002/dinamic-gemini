@@ -22,6 +22,19 @@ BEGIN
         artifacts_dir NVARCHAR(1024) NULL,
         report_json_path NVARCHAR(1024) NULL,
         report_csv_path NVARCHAR(1024) NULL,
+        report_storage_provider VARCHAR(16) NULL,
+        report_storage_bucket NVARCHAR(255) NULL,
+        report_json_storage_key NVARCHAR(1024) NULL,
+        report_csv_storage_key NVARCHAR(1024) NULL,
+        report_content_type VARCHAR(128) NULL,
+        report_file_size_bytes BIGINT NULL,
+        report_etag NVARCHAR(128) NULL,
+        log_storage_provider VARCHAR(16) NULL,
+        log_storage_bucket NVARCHAR(255) NULL,
+        execution_log_storage_key NVARCHAR(1024) NULL,
+        execution_log_content_type VARCHAR(128) NULL,
+        execution_log_file_size_bytes BIGINT NULL,
+        execution_log_etag NVARCHAR(128) NULL,
         engine_version VARCHAR(32) NOT NULL,
         prompt_version VARCHAR(64) NULL,
         metadata NVARCHAR(MAX) NULL
@@ -36,6 +49,32 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND
     ALTER TABLE jobs ADD input_manifest_path NVARCHAR(1024) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'photos_dir')
     ALTER TABLE jobs ADD photos_dir NVARCHAR(1024) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'report_storage_provider')
+    ALTER TABLE jobs ADD report_storage_provider VARCHAR(16) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'report_storage_bucket')
+    ALTER TABLE jobs ADD report_storage_bucket NVARCHAR(255) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'report_json_storage_key')
+    ALTER TABLE jobs ADD report_json_storage_key NVARCHAR(1024) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'report_csv_storage_key')
+    ALTER TABLE jobs ADD report_csv_storage_key NVARCHAR(1024) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'report_content_type')
+    ALTER TABLE jobs ADD report_content_type VARCHAR(128) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'report_file_size_bytes')
+    ALTER TABLE jobs ADD report_file_size_bytes BIGINT NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'report_etag')
+    ALTER TABLE jobs ADD report_etag NVARCHAR(128) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'log_storage_provider')
+    ALTER TABLE jobs ADD log_storage_provider VARCHAR(16) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'log_storage_bucket')
+    ALTER TABLE jobs ADD log_storage_bucket NVARCHAR(255) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'execution_log_storage_key')
+    ALTER TABLE jobs ADD execution_log_storage_key NVARCHAR(1024) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'execution_log_content_type')
+    ALTER TABLE jobs ADD execution_log_content_type VARCHAR(128) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'execution_log_file_size_bytes')
+    ALTER TABLE jobs ADD execution_log_file_size_bytes BIGINT NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('jobs') AND name = 'execution_log_etag')
+    ALTER TABLE jobs ADD execution_log_etag NVARCHAR(128) NULL;
 GO
 
 -- Pallet results per job (one row per pallet)
@@ -165,6 +204,12 @@ BEGIN
         type VARCHAR(16) NOT NULL,
         original_filename NVARCHAR(512) NOT NULL,
         storage_path NVARCHAR(1024) NOT NULL,
+        storage_provider VARCHAR(16) NULL,
+        storage_bucket NVARCHAR(255) NULL,
+        storage_key NVARCHAR(1024) NULL,
+        content_type VARCHAR(128) NULL,
+        file_size_bytes BIGINT NULL,
+        etag NVARCHAR(128) NULL,
         mime_type VARCHAR(128) NOT NULL,
         uploaded_at DATETIME2 NOT NULL,
         metadata_json NVARCHAR(MAX) NULL,
@@ -172,6 +217,19 @@ BEGIN
     );
     CREATE INDEX IX_source_assets_aisle_id ON source_assets(aisle_id);
 END;
+GO
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'storage_provider')
+    ALTER TABLE source_assets ADD storage_provider VARCHAR(16) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'storage_bucket')
+    ALTER TABLE source_assets ADD storage_bucket NVARCHAR(255) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'storage_key')
+    ALTER TABLE source_assets ADD storage_key NVARCHAR(1024) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'content_type')
+    ALTER TABLE source_assets ADD content_type VARCHAR(128) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'file_size_bytes')
+    ALTER TABLE source_assets ADD file_size_bytes BIGINT NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'etag')
+    ALTER TABLE source_assets ADD etag NVARCHAR(128) NULL;
 GO
 
 -- v3.0 — Positions (Épica 6, Documento técnico §7.4)
@@ -233,6 +291,12 @@ BEGIN
         entity_id VARCHAR(36) NOT NULL,
         type VARCHAR(32) NOT NULL,
         storage_path NVARCHAR(1024) NOT NULL,
+        storage_provider VARCHAR(16) NULL,
+        storage_bucket NVARCHAR(255) NULL,
+        storage_key NVARCHAR(1024) NULL,
+        content_type VARCHAR(128) NULL,
+        file_size_bytes BIGINT NULL,
+        etag NVARCHAR(128) NULL,
         source_asset_id VARCHAR(36) NULL,
         is_primary BIT NOT NULL DEFAULT 0,
         frame_index INT NULL,
@@ -241,6 +305,19 @@ BEGIN
         quality_score FLOAT NULL
     );
 END;
+GO
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('evidences') AND name = 'storage_provider')
+    ALTER TABLE evidences ADD storage_provider VARCHAR(16) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('evidences') AND name = 'storage_bucket')
+    ALTER TABLE evidences ADD storage_bucket NVARCHAR(255) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('evidences') AND name = 'storage_key')
+    ALTER TABLE evidences ADD storage_key NVARCHAR(1024) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('evidences') AND name = 'content_type')
+    ALTER TABLE evidences ADD content_type VARCHAR(128) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('evidences') AND name = 'file_size_bytes')
+    ALTER TABLE evidences ADD file_size_bytes BIGINT NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('evidences') AND name = 'etag')
+    ALTER TABLE evidences ADD etag NVARCHAR(128) NULL;
 GO
 
 -- v3.0 — Review actions (Épica 8, Documento técnico §7.7)
@@ -343,6 +420,12 @@ BEGIN
         inventory_id VARCHAR(36) NOT NULL,
         filename NVARCHAR(512) NOT NULL,
         storage_path NVARCHAR(1024) NOT NULL,
+        storage_provider VARCHAR(16) NULL,
+        storage_bucket NVARCHAR(255) NULL,
+        storage_key NVARCHAR(1024) NULL,
+        content_type VARCHAR(128) NULL,
+        file_size_bytes BIGINT NULL,
+        etag NVARCHAR(128) NULL,
         mime_type VARCHAR(128) NOT NULL,
         file_size BIGINT NOT NULL,
         created_at DATETIME2 NOT NULL,
@@ -350,4 +433,17 @@ BEGIN
     );
     CREATE INDEX IX_inventory_visual_references_inventory_id ON inventory_visual_references(inventory_id);
 END;
+GO
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'storage_provider')
+    ALTER TABLE inventory_visual_references ADD storage_provider VARCHAR(16) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'storage_bucket')
+    ALTER TABLE inventory_visual_references ADD storage_bucket NVARCHAR(255) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'storage_key')
+    ALTER TABLE inventory_visual_references ADD storage_key NVARCHAR(1024) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'content_type')
+    ALTER TABLE inventory_visual_references ADD content_type VARCHAR(128) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'file_size_bytes')
+    ALTER TABLE inventory_visual_references ADD file_size_bytes BIGINT NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'etag')
+    ALTER TABLE inventory_visual_references ADD etag NVARCHAR(128) NULL;
 GO
