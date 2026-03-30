@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from src.config import load_settings
 from src.api.dependencies import (
@@ -99,6 +99,7 @@ def list_aisle_assets(
 
 @router.get(
     "/{inventory_id}/aisles/{aisle_id}/assets/{asset_id}/file",
+    response_model=None,
     response_class=FileResponse,
 )
 def get_aisle_asset_file(
@@ -109,7 +110,7 @@ def get_aisle_asset_file(
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
     job_repo: JobRepository = Depends(get_job_repo),
     artifact_storage=Depends(get_artifact_storage),
-) -> Union[FileResponse, object]:
+) -> Union[FileResponse, RedirectResponse]:
     """Serve the reference image/file for an aisle asset. HEIC/HEIF: serves normalized JPG when available (optional job_id)."""
     failure_reason: Optional[AssetFileFailureReason] = None
     try:

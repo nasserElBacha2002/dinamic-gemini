@@ -11,6 +11,10 @@ Legacy path-only records use `storage_path` under `v3_uploads` only when
 ``artifact_storage_legacy_local_read_enabled`` is true.
 
 Routes should catch :class:`StoredArtifactAccessError` and map to ``HTTPException``.
+
+This module intentionally separates two responsibilities:
+1) **File serving / redirect responses** for operator-facing file endpoints.
+2) **Artifact content loading/parsing** for JSON/structured API semantics.
 """
 
 from __future__ import annotations
@@ -51,6 +55,15 @@ def _provider_meta_complete(meta: Mapping[str, Any]) -> bool:
     if prov == "s3":
         return bool((meta.get("storage_bucket") or "").strip())
     return True
+
+
+def _provider_meta_has_any_fields(meta: Mapping[str, Any]) -> bool:
+    """True when any provider-aware field is present (including incomplete values)."""
+    return bool(
+        (meta.get("storage_provider") or "").strip()
+        or (meta.get("storage_key") or "").strip()
+        or (meta.get("storage_bucket") or "").strip()
+    )
 
 
 def _ensure_s3_bucket_matches_configured(meta: Mapping[str, Any], artifact_store: Any) -> None:
@@ -214,14 +227,14 @@ def resolve_source_asset_file_response(
     key = (getattr(asset, "storage_key", None) or "").strip()
     bucket = (getattr(asset, "storage_bucket", None) or "").strip() or None
 
-    if prov or key:
-        if not _provider_meta_complete(
-            {
-                "storage_provider": prov,
-                "storage_key": key,
-                "storage_bucket": bucket,
-            }
-        ):
+    provider_meta = {
+        "storage_provider": prov,
+        "storage_key": key,
+        "storage_bucket": bucket,
+    }
+
+    if _provider_meta_has_any_fields(provider_meta):
+        if not _provider_meta_complete(provider_meta):
             raise StoredArtifactAccessError(
                 404,
                 "Source asset storage metadata is incomplete for provider-backed access.",
@@ -253,23 +266,25 @@ def resolve_visual_reference_file_response(
     key = (getattr(ref, "storage_key", None) or "").strip()
     bucket = (getattr(ref, "storage_bucket", None) or "").strip() or None
 
-    if prov == "s3" and key:
+    provider_meta = {
+        "storage_provider": prov,
+        "storage_key": key,
+        "storage_bucket": bucket,
+    }
+
+    if _provider_meta_has_any_fields(provider_meta):
+        if not _provider_meta_complete(provider_meta):
+            raise StoredArtifactAccessError(
+                404,
+                "Visual reference storage metadata is incomplete for provider-backed access.",
+                "incomplete_metadata",
+            )
         return serve_provider_artifact_response(
             filename=getattr(ref, "filename", None) or "file",
             media_type=getattr(ref, "mime_type", None) or "application/octet-stream",
-            storage_provider="s3",
+            storage_provider=prov,
             storage_key=key,
             storage_bucket=bucket,
-            artifact_store=artifact_store,
-        )
-
-    if prov == "local" and key:
-        return serve_provider_artifact_response(
-            filename=getattr(ref, "filename", None) or "file",
-            media_type=getattr(ref, "mime_type", None) or "application/octet-stream",
-            storage_provider="local",
-            storage_key=key,
-            storage_bucket=None,
             artifact_store=artifact_store,
         )
 
@@ -278,6 +293,37 @@ def resolve_visual_reference_file_response(
         filename=getattr(ref, "filename", None) or "file",
         media_type=getattr(ref, "mime_type", None) or "application/octet-stream",
     )
+
+
+def load_artifact_content_from_provider_meta(
+    meta: Mapping[str, Any],
+    *,
+    artifact_store: Any,
+    label: str,
+) -> bytes:
+    """Content-loading helper: fetch raw bytes from ArtifactStore using provider metadata."""
+    if not _provider_meta_complete(meta):
+        raise StoredArtifactAccessError(
+            404,
+            f"{label}: incomplete storage metadata.",
+            "incomplete_metadata",
+        )
+    _ensure_s3_bucket_matches_configured(meta, artifact_store)
+    key = (meta.get("storage_key") or "").strip()
+    try:
+        downloaded = artifact_store.get_object(key)
+    except Exception as exc:
+        logger.exception(
+            "%s durable_fetch_failed storage_key=%s",
+            label,
+            key,
+        )
+        raise StoredArtifactAccessError(
+            502,
+            f"{label} could not be loaded from object storage.",
+            "durable_fetch_failed",
+        ) from exc
+    return downloaded.content
 
 
 def read_execution_log_events_for_job(
@@ -306,20 +352,12 @@ def read_execution_log_events_for_job(
             key,
             getattr(job, "id", "?"),
         )
-        try:
-            downloaded = artifact_store.get_object(key)
-        except Exception as exc:
-            logger.exception(
-                "execution_log_resolve durable_fetch_failed job_id=%s key=%s",
-                getattr(job, "id", "?"),
-                key,
-            )
-            raise StoredArtifactAccessError(
-                502,
-                "Execution log could not be loaded from object storage.",
-                "durable_fetch_failed",
-            ) from exc
-        return read_execution_log_bytes(downloaded.content)
+        raw = load_artifact_content_from_provider_meta(
+            meta,
+            artifact_store=artifact_store,
+            label="Execution log",
+        )
+        return read_execution_log_bytes(raw)
 
     if not settings.artifact_storage_legacy_local_read_enabled:
         raise StoredArtifactAccessError(
@@ -343,29 +381,13 @@ def fetch_json_from_durable_meta(
     artifact_store: Any,
     label: str,
 ) -> Dict[str, Any]:
-    if not _provider_meta_complete(meta):
-        raise StoredArtifactAccessError(
-            404,
-            f"{label}: incomplete storage metadata.",
-            "incomplete_metadata",
-        )
-    _ensure_s3_bucket_matches_configured(meta, artifact_store)
-    key = (meta.get("storage_key") or "").strip()
+    raw = load_artifact_content_from_provider_meta(
+        meta,
+        artifact_store=artifact_store,
+        label=label,
+    )
     try:
-        downloaded = artifact_store.get_object(key)
-    except Exception as exc:
-        logger.exception(
-            "%s durable_fetch_failed storage_key=%s",
-            label,
-            key,
-        )
-        raise StoredArtifactAccessError(
-            502,
-            f"{label} could not be loaded from object storage.",
-            "durable_fetch_failed",
-        ) from exc
-    try:
-        return json.loads(downloaded.content.decode("utf-8"))
+        return json.loads(raw.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise StoredArtifactAccessError(
             502,

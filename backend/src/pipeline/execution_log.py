@@ -191,15 +191,13 @@ def read_execution_log_bytes(content: bytes) -> list[Dict[str, Any]]:
 def read_execution_log(run_dir: Path) -> list[Dict[str, Any]]:
     """Read execution_log.jsonl and return list of event dicts. Empty if missing or invalid."""
     path = Path(run_dir) / EXECUTION_LOG_FILENAME
-    events: list[Dict[str, Any]] = []
     if not path.is_file():
-        return events
+        return []
     try:
         with open(path, encoding="utf-8") as f:
             return _parse_execution_log_lines(f.read())
     except OSError:
-        pass
-    return events
+        return []
 
 
 def read_last_stage_error(run_dir: Path) -> Optional[str]:
