@@ -26,6 +26,7 @@ export {
 export { useResultSummaries, useResultDetail } from './hooks/useResultSummaries';
 export { useEvidenceImageLoad } from './hooks/useEvidenceImageLoad';
 export type { EvidenceImageLoadState, EvidenceImageErrorKind } from './hooks/useEvidenceImageLoad';
+export type { EvidenceImageLoadSpec } from '../../api/client';
 
 export { computeResultsKpi, filterResults } from './selectors';
 export type { ResultsKpi, ResultsFilterKind } from './selectors';

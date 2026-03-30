@@ -1,18 +1,16 @@
 /**
- * Evidence image load state — authenticated fetch resolves to an <img>-safe URL
- * (presigned S3 Location or local blob URL). Caller: use imageSrc on <img>; hook revokes
- * object URLs on url change or unmount.
+ * Evidence image load state — authenticated JSON ``image-display-url`` then presigned URL or blob.
+ * Caller: use imageSrc on <img>; hook revokes object URLs on spec change or unmount.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchEvidenceImage, type FetchEvidenceImageFailureReason } from '../../../api/client';
+import { fetchEvidenceImageDisplay, type EvidenceImageLoadSpec } from '../../../api/client';
 
 export type EvidenceImageErrorKind =
   | 'not_found'
   | 'forbidden'
   | 'network'
-  | 'heic_preview_unavailable'
-  | 'opaque_redirect';
+  | 'heic_preview_unavailable';
 
 export type EvidenceImageLoadState =
   | { status: 'idle' }
@@ -20,8 +18,7 @@ export type EvidenceImageLoadState =
   | { status: 'loaded'; imageSrc: string }
   | { status: 'error'; kind: EvidenceImageErrorKind; message: string };
 
-function kindFromResponse(status: number, detail?: string, reason?: FetchEvidenceImageFailureReason): EvidenceImageErrorKind {
-  if (reason === 'opaque_redirect') return 'opaque_redirect';
+function kindFromResponse(status: number, detail?: string): EvidenceImageErrorKind {
   if (status === 403 || status === 401) return 'forbidden';
   if (status === 404) {
     if (typeof detail === 'string' && detail.includes('Preview') && detail.includes('not available')) {
@@ -40,10 +37,6 @@ function messageForKind(kind: EvidenceImageErrorKind, detail?: string): string {
       return 'You do not have permission to load this image.';
     case 'heic_preview_unavailable':
       return 'Preview is not available for this image.';
-    case 'opaque_redirect':
-      return typeof detail === 'string' && detail.trim()
-        ? detail
-        : 'Image redirect could not be resolved. Try again or contact support if this persists.';
     case 'network':
     default:
       return 'Image could not be loaded.';
@@ -51,14 +44,19 @@ function messageForKind(kind: EvidenceImageErrorKind, detail?: string): string {
 }
 
 /**
- * Resolve authenticated asset file URL for display: presigned redirect target or blob URL.
+ * Resolve reference asset image for display via ``/image-display-url`` + optional ``/file`` blob fetch.
  */
-export function useEvidenceImageLoad(imageUrl: string | null): EvidenceImageLoadState {
+export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): EvidenceImageLoadState {
   const [state, setState] = useState<EvidenceImageLoadState>({ status: 'idle' });
   const revokeRef = useRef<(() => void) | null>(null);
 
+  const inventoryId = spec?.inventoryId ?? '';
+  const aisleId = spec?.aisleId ?? '';
+  const assetId = spec?.assetId ?? '';
+  const jobId = spec?.jobId ?? null;
+
   useEffect(() => {
-    if (!imageUrl || imageUrl.trim() === '') {
+    if (!inventoryId.trim() || !aisleId.trim() || !assetId.trim()) {
       setState({ status: 'idle' });
       if (revokeRef.current) {
         revokeRef.current();
@@ -72,7 +70,13 @@ export function useEvidenceImageLoad(imageUrl: string | null): EvidenceImageLoad
       revokeRef.current();
       revokeRef.current = null;
     }
-    fetchEvidenceImage(imageUrl).then((result) => {
+    const payload: EvidenceImageLoadSpec = {
+      inventoryId: inventoryId.trim(),
+      aisleId: aisleId.trim(),
+      assetId: assetId.trim(),
+      jobId: jobId != null && String(jobId).trim() !== '' ? String(jobId).trim() : null,
+    };
+    fetchEvidenceImageDisplay(payload).then((result) => {
       if (cancelled) {
         if (result.ok && result.revoke) result.revoke();
         return;
@@ -83,7 +87,7 @@ export function useEvidenceImageLoad(imageUrl: string | null): EvidenceImageLoad
         }
         setState({ status: 'loaded', imageSrc: result.imageSrc });
       } else {
-        const kind = kindFromResponse(result.status, result.detail, result.reason);
+        const kind = kindFromResponse(result.status, result.detail);
         setState({
           status: 'error',
           kind,
@@ -98,7 +102,7 @@ export function useEvidenceImageLoad(imageUrl: string | null): EvidenceImageLoad
         revokeRef.current = null;
       }
     };
-  }, [imageUrl]);
+  }, [inventoryId, aisleId, assetId, jobId]);
 
   useEffect(() => {
     return () => {

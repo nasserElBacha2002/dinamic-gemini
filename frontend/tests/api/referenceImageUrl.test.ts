@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getReferenceImageFileUrl } from '../../src/api/client';
+import { getReferenceImageDisplayUrl, getReferenceImageFileUrl } from '../../src/api/client';
 
 describe('getReferenceImageFileUrl', () => {
   it('includes job_id query param when jobId is provided', () => {
@@ -33,5 +33,20 @@ describe('getReferenceImageFileUrl', () => {
     const url = getReferenceImageFileUrl('inv', 'aisle', 'asset-id', jobIdFromEntityUid);
     expect(url).toContain('job_id=');
     expect(url).toContain(jobIdFromEntityUid);
+  });
+});
+
+describe('getReferenceImageDisplayUrl', () => {
+  it('uses image-display-url path and job_id like getReferenceImageFileUrl', () => {
+    const url = getReferenceImageDisplayUrl('inv-1', 'aisle-1', 'asset-uuid', 'job-uuid-123');
+    expect(url).toContain('/image-display-url');
+    expect(url).toContain('job_id=');
+    expect(url).toContain('job-uuid-123');
+  });
+
+  it('omits job_id when not provided', () => {
+    const url = getReferenceImageDisplayUrl('inv-1', 'aisle-1', 'asset-uuid');
+    expect(url).toContain('/image-display-url');
+    expect(url).not.toContain('job_id=');
   });
 });

@@ -8,10 +8,9 @@
  * - No evidence: intentional "No evidence available" state.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Paper, Typography, Box, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
 import type { ResultDetail } from '../../types';
-import { getReferenceImageFileUrl } from '../../../../api/client';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
 
 export interface ResultEvidencePanelProps {
@@ -40,10 +39,14 @@ export default function ResultEvidencePanel({
     const idx = entityId.lastIndexOf('_');
     return idx > 0 ? entityId.slice(0, idx) : null;
   })();
-  const imageUrl = canShowImage
-    ? getReferenceImageFileUrl(inventoryId!, aisleId!, sourceImageId!, jobId)
-    : null;
-  const loadState = useEvidenceImageLoad(canShowImage ? imageUrl : null);
+  const imageSpec = useMemo(
+    () =>
+      canShowImage && inventoryId && aisleId && sourceImageId
+        ? { inventoryId, aisleId, assetId: sourceImageId, jobId }
+        : null,
+    [canShowImage, inventoryId, aisleId, sourceImageId, jobId]
+  );
+  const loadState = useEvidenceImageLoad(imageSpec);
 
   const handleOpenImage = useCallback(() => setDialogOpen(true), []);
   const handleCloseImage = useCallback(() => setDialogOpen(false), []);
