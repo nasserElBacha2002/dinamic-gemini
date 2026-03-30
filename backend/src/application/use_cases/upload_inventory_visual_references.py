@@ -134,7 +134,18 @@ class UploadInventoryVisualReferencesUseCase:
                 file_size_bytes = f.size
                 etag = None
                 put_object = getattr(self._artifact_storage, "put_object", None)
+                logger.info(
+                    "Visual reference upload start inventory_id=%s reference_id=%s target_key=%s content_type=%s",
+                    inventory_id,
+                    reference_id,
+                    storage_path,
+                    mime,
+                )
                 if callable(put_object):
+                    logger.info(
+                        "Visual reference upload write path=put_object target_key=%s",
+                        storage_path,
+                    )
                     stored: Any = put_object(storage_path, f.file_obj, mime)
                     storage_provider = getattr(stored, "storage_provider", None)
                     storage_bucket = getattr(stored, "storage_bucket", None)
@@ -144,8 +155,22 @@ class UploadInventoryVisualReferencesUseCase:
                     etag = getattr(stored, "etag", None)
                 else:
                     # Legacy adapter compatibility
+                    logger.info(
+                        "Visual reference upload write path=save_file target_key=%s",
+                        storage_path,
+                    )
                     self._artifact_storage.save_file(storage_path, f.file_obj, mime)
                     storage_key = storage_path
+                logger.info(
+                    "Visual reference upload success inventory_id=%s reference_id=%s storage_provider=%s storage_bucket=%s storage_key=%s file_size_bytes=%s etag=%s",
+                    inventory_id,
+                    reference_id,
+                    storage_provider or "local",
+                    storage_bucket or "",
+                    storage_key or storage_path,
+                    file_size_bytes if file_size_bytes is not None else "",
+                    etag or "",
+                )
                 written_paths.append(storage_key or storage_path)
                 created.append(
                     InventoryVisualReference(
@@ -178,6 +203,12 @@ class UploadInventoryVisualReferencesUseCase:
                         p,
                         cleanup_e,
                     )
+            logger.exception(
+                "Visual reference upload failed inventory_id=%s uploaded_count=%d attempted_count=%d",
+                inventory_id,
+                len(created),
+                len(files),
+            )
             raise
 
         return created

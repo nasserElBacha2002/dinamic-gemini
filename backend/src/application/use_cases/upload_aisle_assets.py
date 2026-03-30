@@ -122,7 +122,18 @@ class UploadAisleAssetsUseCase:
                 file_size_bytes = None
                 etag = None
                 put_object = getattr(self._artifact_storage, "put_object", None)
+                logger.info(
+                    "Aisle asset upload start aisle_id=%s asset_id=%s target_key=%s content_type=%s",
+                    aisle_id,
+                    asset_id,
+                    storage_path,
+                    content_type,
+                )
                 if callable(put_object):
+                    logger.info(
+                        "Aisle asset upload write path=put_object target_key=%s",
+                        storage_path,
+                    )
                     stored: Any = put_object(storage_path, uf.file_obj, content_type)
                     storage_provider = getattr(stored, "storage_provider", None)
                     storage_bucket = getattr(stored, "storage_bucket", None)
@@ -132,8 +143,22 @@ class UploadAisleAssetsUseCase:
                     etag = getattr(stored, "etag", None)
                 else:
                     # Legacy adapter compatibility
+                    logger.info(
+                        "Aisle asset upload write path=save_file target_key=%s",
+                        storage_path,
+                    )
                     self._artifact_storage.save_file(storage_path, uf.file_obj, content_type)
                     storage_key = storage_path
+                logger.info(
+                    "Aisle asset upload success aisle_id=%s asset_id=%s storage_provider=%s storage_bucket=%s storage_key=%s file_size_bytes=%s etag=%s",
+                    aisle_id,
+                    asset_id,
+                    storage_provider or "local",
+                    storage_bucket or "",
+                    storage_key or storage_path,
+                    file_size_bytes if file_size_bytes is not None else "",
+                    etag or "",
+                )
                 written_paths.append(storage_key or storage_path)
                 asset = SourceAsset(
                     id=asset_id,
@@ -170,4 +195,10 @@ class UploadAisleAssetsUseCase:
                     self._artifact_storage.delete_file(p)
                 except Exception as cleanup_e:
                     logger.warning("Rollback cleanup failed for aisle asset file %s: %s", p, cleanup_e)
+            logger.exception(
+                "Aisle asset upload failed aisle_id=%s uploaded_count=%d attempted_count=%d",
+                aisle_id,
+                len(created),
+                n_files,
+            )
             raise
