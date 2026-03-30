@@ -91,3 +91,29 @@ def test_s3_adapter_delete_round_trip_with_save_file_result() -> None:
     # Must not double-prefix when deleting a key previously returned by save_file.
     adapter.delete_file(key)
     assert adapter.object_exists(key) is False
+
+
+def test_s3_adapter_generate_signed_url_accepts_already_prefixed_key_without_double_prefix() -> None:
+    s3 = _FakeS3Client()
+    adapter = S3ArtifactStorageAdapter(
+        bucket="bucket-a",
+        prefix="v3",
+        s3_client=s3,
+    )
+    url = adapter.generate_signed_url("v3/inventories/inv-1/visual_references/r1.jpg", expires_in_sec=120)
+    assert "bucket-a/v3/inventories/inv-1/visual_references/r1.jpg" in url
+    assert "bucket-a/v3/v3/inventories" not in url
+
+
+def test_s3_adapter_delete_accepts_already_prefixed_key_without_double_prefix() -> None:
+    s3 = _FakeS3Client()
+    adapter = S3ArtifactStorageAdapter(
+        bucket="bucket-a",
+        prefix="v3",
+        s3_client=s3,
+    )
+    # Seed object using full physical key.
+    s3.upload_fileobj(BytesIO(b"abc"), Bucket="bucket-a", Key="v3/uploads/aisles/a1/raw/x.jpg", ExtraArgs={})
+    assert adapter.object_exists("v3/uploads/aisles/a1/raw/x.jpg") is True
+    adapter.delete_object("v3/uploads/aisles/a1/raw/x.jpg")
+    assert adapter.object_exists("v3/uploads/aisles/a1/raw/x.jpg") is False

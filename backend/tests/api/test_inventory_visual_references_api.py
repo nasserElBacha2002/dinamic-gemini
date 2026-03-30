@@ -53,12 +53,16 @@ def _create_inventory() -> str:
 
 
 class StubSignedUrlArtifactStorage:
+    def __init__(self, return_prefixed_key: bool = False) -> None:
+        self._return_prefixed_key = return_prefixed_key
+
     def put_object(self, path: str, file_obj, content_type: str) -> StoredArtifact:
         payload = file_obj.read()
+        key = f"v3/{path}" if self._return_prefixed_key else path
         return StoredArtifact(
             storage_provider="s3",
             storage_bucket="bucket-x",
-            storage_key=path,
+            storage_key=key,
             content_type=content_type,
             file_size_bytes=len(payload),
             etag="etag-x",
@@ -71,6 +75,7 @@ class StubSignedUrlArtifactStorage:
         return None
 
     def generate_signed_url(self, key: str, expires_in_sec: int) -> str:
+        assert "v3/v3/" not in key
         return f"https://signed.example/{key}?exp={expires_in_sec}"
 
 
@@ -206,6 +211,42 @@ def test_visual_reference_file_endpoint_redirects_to_signed_url_for_s3_backed_re
         assert file_resp.status_code == 307
         assert file_resp.headers["location"].startswith("https://signed.example/inventories/")
         assert "exp=777" in file_resp.headers["location"]
+    finally:
+        app.dependency_overrides.pop(get_artifact_storage, None)
+        monkeypatch.delenv("ARTIFACT_STORAGE_PROVIDER", raising=False)
+        monkeypatch.delenv("ARTIFACT_S3_BUCKET", raising=False)
+        monkeypatch.delenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", raising=False)
+        reload_settings()
+
+
+def test_visual_reference_file_endpoint_signed_url_handles_prefixed_persisted_key_without_double_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ARTIFACT_STORAGE_PROVIDER", "s3")
+    monkeypatch.setenv("ARTIFACT_S3_BUCKET", "bucket-x")
+    monkeypatch.setenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", "555")
+    reload_settings()
+    app.dependency_overrides[get_artifact_storage] = lambda: StubSignedUrlArtifactStorage(return_prefixed_key=True)
+    try:
+        inventory_id = _create_inventory()
+        files = [("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))]
+        upload_resp = client.post(
+            f"/api/v3/inventories/{inventory_id}/visual-references",
+            files=files,
+            headers=_auth_headers(),
+        )
+        assert upload_resp.status_code == 201
+        reference_id = upload_resp.json()["items"][0]["id"]
+
+        file_resp = client.get(
+            f"/api/v3/inventories/{inventory_id}/visual-references/{reference_id}/file",
+            headers=_auth_headers(),
+            follow_redirects=False,
+        )
+        assert file_resp.status_code == 307
+        location = file_resp.headers["location"]
+        assert "v3/v3/" not in location
+        assert "exp=555" in location
     finally:
         app.dependency_overrides.pop(get_artifact_storage, None)
         monkeypatch.delenv("ARTIFACT_STORAGE_PROVIDER", raising=False)

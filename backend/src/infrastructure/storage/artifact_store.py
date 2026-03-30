@@ -14,7 +14,12 @@ from typing import BinaryIO, Optional
 
 @dataclass(frozen=True)
 class StoredArtifact:
-    """Canonical metadata returned after writing an artifact."""
+    """Canonical metadata returned after writing an artifact.
+
+    Contract: ``storage_key`` is the logical application key (prefix-free), suitable
+    for DB persistence and passing back to ArtifactStore operations. Provider adapters
+    are responsible for mapping this logical key to physical object identifiers.
+    """
 
     storage_provider: str
     storage_bucket: Optional[str]

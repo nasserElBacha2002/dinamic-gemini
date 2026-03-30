@@ -14,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
-    """ArtifactStore adapter using boto3 S3 client."""
+    """ArtifactStore adapter using boto3 S3 client.
+
+    Key contract:
+    - public methods accept logical keys (prefix-free) and also tolerate already-prefixed keys
+      for rollout safety and backward compatibility.
+    - StoredArtifact.storage_key is always returned as a logical key.
+    """
 
     def __init__(
         self,
@@ -53,6 +59,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         return self._prefix
 
     def _object_key(self, key: str) -> str:
+        """Return full physical S3 key, idempotently applying configured prefix."""
         raw = (key or "").strip().lstrip("/")
         if not raw:
             raise ValueError("artifact key must not be empty")
@@ -64,7 +71,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         return raw
 
     def _client_key(self, key: str) -> str:
-        """Normalize incoming key from callers (logical key or full key) to full S3 object key."""
+        """Normalize caller key (logical or full) to full physical S3 key."""
         return self._object_key(key)
 
     def _logical_key(self, full_key: str) -> str:
