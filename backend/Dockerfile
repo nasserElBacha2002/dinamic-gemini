@@ -4,6 +4,8 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# ALB → container HTTP: trust proxy headers so redirects and absolute URLs use the client TLS scheme (https).
+ENV FORWARDED_TRUSTED_HOSTS=*
 
 # System deps:
 # - unixODBC runtime/dev needed by pyodbc

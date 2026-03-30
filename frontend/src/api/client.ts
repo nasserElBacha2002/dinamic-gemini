@@ -123,9 +123,8 @@ function buildInventoriesListQueryString(q: InventoriesListQuery | undefined): s
 export async function getInventories(
   listQuery?: InventoriesListQuery
 ): Promise<PaginatedInventoryListResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories${buildInventoriesListQueryString(listQuery)}`
-  );
+  const qs = buildInventoriesListQueryString(listQuery);
+  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/${qs}`);
   return handleResponse<PaginatedInventoryListResponse>(response);
 }
 
@@ -186,7 +185,7 @@ export async function exportInventoryResultsCsv(inventoryId: string): Promise<vo
 }
 
 export async function createInventory(body: CreateInventoryRequest): Promise<Inventory> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories`, {
+  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
