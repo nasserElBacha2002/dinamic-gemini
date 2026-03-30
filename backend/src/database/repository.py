@@ -22,6 +22,14 @@ class JobRecordDict(TypedDict, total=False):
     updated_at: str
 
 
+def _prefer_storage_value(provider_value: Optional[str], legacy_value: Optional[str]) -> Optional[str]:
+    pv = (provider_value or "").strip()
+    if pv:
+        return pv
+    lv = (legacy_value or "").strip()
+    return lv or None
+
+
 def _serialize_metadata(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
     if metadata is None:
         return None
@@ -218,14 +226,23 @@ class JobsRepository:
         report_json = getattr(row, "report_json_path", None)
         report_csv = getattr(row, "report_csv_path", None)
         artifacts_dir = getattr(row, "artifacts_dir", None)
-        report_json_storage_key = getattr(row, "report_json_storage_key", None)
-        report_csv_storage_key = getattr(row, "report_csv_storage_key", None)
+        report_json_storage_key = _prefer_storage_value(
+            getattr(row, "report_json_storage_key", None),
+            report_json,
+        )
+        report_csv_storage_key = _prefer_storage_value(
+            getattr(row, "report_csv_storage_key", None),
+            report_csv,
+        )
         report_storage_provider = getattr(row, "report_storage_provider", None)
         report_storage_bucket = getattr(row, "report_storage_bucket", None)
         report_content_type = getattr(row, "report_content_type", None)
         report_file_size_bytes = getattr(row, "report_file_size_bytes", None)
         report_etag = getattr(row, "report_etag", None)
-        execution_log_storage_key = getattr(row, "execution_log_storage_key", None)
+        execution_log_storage_key = _prefer_storage_value(
+            getattr(row, "execution_log_storage_key", None),
+            None,
+        )
         log_storage_provider = getattr(row, "log_storage_provider", None)
         log_storage_bucket = getattr(row, "log_storage_bucket", None)
         execution_log_content_type = getattr(row, "execution_log_content_type", None)

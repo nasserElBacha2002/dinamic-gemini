@@ -57,19 +57,42 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         if not raw:
             raise ValueError("artifact key must not be empty")
         if self._prefix:
+            prefix_with_sep = f"{self._prefix}/"
+            if raw.startswith(prefix_with_sep):
+                return raw
             return f"{self._prefix}/{raw}"
         return raw
 
+    def _client_key(self, key: str) -> str:
+        """Normalize incoming key from callers (logical key or full key) to full S3 object key."""
+        return self._object_key(key)
+
+    def _logical_key(self, full_key: str) -> str:
+        """Strip configured prefix from a full key for compatibility with existing storage_path usage."""
+        if self._prefix:
+            prefix_with_sep = f"{self._prefix}/"
+            if full_key.startswith(prefix_with_sep):
+                return full_key[len(prefix_with_sep) :]
+        return full_key
+
     def put_object(self, key: str, file_obj: BinaryIO, content_type: str) -> StoredArtifact:
-        object_key = self._object_key(key)
-        payload = file_obj.read()
-        size = len(payload)
+        object_key = self._client_key(key)
+        size: Optional[int] = None
         try:
-            result = self._client.put_object(
+            cur = file_obj.tell()
+            file_obj.seek(0, 2)
+            end = file_obj.tell()
+            file_obj.seek(cur)
+            if isinstance(end, int) and isinstance(cur, int):
+                size = max(0, end - cur)
+        except Exception:
+            size = None
+        try:
+            result = self._client.upload_fileobj(  # boto3 managed transfer; streaming-safe for large files
+                Fileobj=file_obj,
                 Bucket=self._bucket,
                 Key=object_key,
-                Body=payload,
-                ContentType=(content_type or "application/octet-stream"),
+                ExtraArgs={"ContentType": (content_type or "application/octet-stream")},
             )
         except Exception as exc:
             logger.exception(
@@ -81,18 +104,29 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             raise RuntimeError(
                 f"S3 upload failed for key={object_key!r} bucket={self._bucket!r}"
             ) from exc
-        etag = (result.get("ETag") or "").strip('"') or None
+        etag = None
+        if isinstance(result, dict):
+            etag = (result.get("ETag") or "").strip('"') or None
+        if size is None or etag is None:
+            try:
+                head = self._client.head_object(Bucket=self._bucket, Key=object_key)
+                size = int(head.get("ContentLength") or 0)
+                etag = (head.get("ETag") or "").strip('"') or etag
+            except Exception:
+                # Metadata enrichment is best-effort; keep operation successful.
+                if size is None:
+                    size = 0
         return StoredArtifact(
             storage_provider="s3",
             storage_bucket=self._bucket,
-            storage_key=object_key,
+            storage_key=self._logical_key(object_key),
             content_type=(content_type or "application/octet-stream"),
-            file_size_bytes=size,
+            file_size_bytes=int(size or 0),
             etag=etag,
         )
 
     def get_object(self, key: str) -> ArtifactDownload:
-        object_key = self._object_key(key)
+        object_key = self._client_key(key)
         try:
             result = self._client.get_object(Bucket=self._bucket, Key=object_key)
             body = result["Body"].read()
@@ -109,7 +143,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         )
 
     def delete_object(self, key: str) -> None:
-        object_key = self._object_key(key)
+        object_key = self._client_key(key)
         try:
             self._client.delete_object(Bucket=self._bucket, Key=object_key)
         except Exception as exc:
@@ -119,7 +153,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             ) from exc
 
     def object_exists(self, key: str) -> bool:
-        object_key = self._object_key(key)
+        object_key = self._client_key(key)
         try:
             self._client.head_object(Bucket=self._bucket, Key=object_key)
             return True
@@ -127,7 +161,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             return False
 
     def generate_signed_url(self, key: str, expires_in_sec: int) -> str:
-        object_key = self._object_key(key)
+        object_key = self._client_key(key)
         ttl = int(expires_in_sec or self._signed_url_ttl_sec)
         if ttl <= 0:
             ttl = self._signed_url_ttl_sec

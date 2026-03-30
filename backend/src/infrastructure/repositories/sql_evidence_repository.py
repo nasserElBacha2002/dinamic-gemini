@@ -40,6 +40,7 @@ def _row_to_evidence(row) -> Evidence:
         source_asset_id = None
     storage_path = (getattr(row, "storage_path", None) or "").strip()
     storage_key = (getattr(row, "storage_key", None) or "").strip() or storage_path
+    # Canonical media type in current domain/API is type+storage_path usage; content_type remains storage metadata.
     content_type = (getattr(row, "content_type", None) or "").strip()
     return Evidence(
         id=eid,

@@ -79,3 +79,24 @@ def test_jobs_repository_get_job_returns_provider_aware_output_fields() -> None:
     assert output["report_json_storage_key"] == "v3/jobs/job-1/report.json"
     assert output["execution_log_storage_key"] == "v3/jobs/job-1/execution_log.jsonl"
 
+
+class _LegacyOnlyRow(_Row):
+    report_storage_provider = None
+    report_storage_bucket = None
+    report_json_storage_key = None
+    report_csv_storage_key = None
+    log_storage_provider = None
+    log_storage_bucket = None
+    execution_log_storage_key = None
+
+
+def test_jobs_repository_get_job_falls_back_to_legacy_paths_when_provider_fields_missing() -> None:
+    repo = JobsRepository(_FakeClient(_LegacyOnlyRow()))
+    job = repo.get_job("job-1")
+    assert job is not None
+    output = job["output"]
+    assert output is not None
+    assert output["report_json_path"] == "legacy/report.json"
+    assert output["report_json_storage_key"] == "legacy/report.json"
+    assert output["report_csv_storage_key"] == "legacy/report.csv"
+

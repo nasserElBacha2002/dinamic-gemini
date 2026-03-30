@@ -55,6 +55,7 @@ def _row_to_asset(row) -> SourceAsset:
         raise ValueError("source_assets row missing required uploaded_at")
     storage_path = (getattr(row, "storage_path", None) or "").strip()
     storage_key = (getattr(row, "storage_key", None) or "").strip() or storage_path
+    # Canonical media type in current domain/API is mime_type; content_type is transport/storage metadata.
     content_type = (getattr(row, "content_type", None) or "").strip() or (getattr(row, "mime_type", None) or "")
     return SourceAsset(
         id=aid,

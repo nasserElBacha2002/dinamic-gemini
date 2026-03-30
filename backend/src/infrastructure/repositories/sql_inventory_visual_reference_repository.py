@@ -39,6 +39,7 @@ def _row_to_reference(row) -> InventoryVisualReference:
     file_size = getattr(row, "file_size", None)
     storage_path = (getattr(row, "storage_path", None) or "").strip()
     storage_key = (getattr(row, "storage_key", None) or "").strip() or storage_path
+    # Canonical media type in current domain/API is mime_type; content_type is transport/storage metadata.
     content_type = (getattr(row, "content_type", None) or "").strip() or (mime_type or "")
     file_size_bytes = getattr(row, "file_size_bytes", None)
     if file_size_bytes is None:

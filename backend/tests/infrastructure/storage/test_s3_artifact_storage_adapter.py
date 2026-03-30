@@ -17,9 +17,14 @@ class _FakeS3Client:
     def __init__(self) -> None:
         self._objects = {}
 
-    def put_object(self, Bucket: str, Key: str, Body: bytes, ContentType: str):
-        self._objects[(Bucket, Key)] = {"body": Body, "content_type": ContentType, "etag": "etag-1"}
-        return {"ETag": '"etag-1"'}
+    def upload_fileobj(self, Fileobj, Bucket: str, Key: str, ExtraArgs: dict):
+        body = Fileobj.read()
+        self._objects[(Bucket, Key)] = {
+            "body": body,
+            "content_type": ExtraArgs.get("ContentType") or "application/octet-stream",
+            "etag": "etag-1",
+        }
+        return None
 
     def get_object(self, Bucket: str, Key: str):
         obj = self._objects[(Bucket, Key)]
@@ -55,7 +60,8 @@ def test_s3_adapter_put_get_exists_delete_and_signed_url() -> None:
     stored = adapter.put_object("a/b.txt", BytesIO(b"hello"), "text/plain")
     assert stored.storage_provider == "s3"
     assert stored.storage_bucket == "bucket-a"
-    assert stored.storage_key == "v3/a/b.txt"
+    # save/put returns logical key (without prefix) for compatibility with existing storage_path usage.
+    assert stored.storage_key == "a/b.txt"
     assert stored.file_size_bytes == 5
     assert stored.etag == "etag-1"
 
@@ -71,3 +77,17 @@ def test_s3_adapter_put_get_exists_delete_and_signed_url() -> None:
 
     adapter.delete_object("a/b.txt")
     assert adapter.object_exists("a/b.txt") is False
+
+
+def test_s3_adapter_delete_round_trip_with_save_file_result() -> None:
+    s3 = _FakeS3Client()
+    adapter = S3ArtifactStorageAdapter(
+        bucket="bucket-a",
+        prefix="v3",
+        s3_client=s3,
+    )
+    key = adapter.save_file("nested/c.txt", BytesIO(b"abc"), "text/plain")
+    assert key == "nested/c.txt"
+    # Must not double-prefix when deleting a key previously returned by save_file.
+    adapter.delete_file(key)
+    assert adapter.object_exists(key) is False
