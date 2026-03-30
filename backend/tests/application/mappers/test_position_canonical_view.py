@@ -317,3 +317,11 @@ def test_position_to_summary_exposes_same_flat_fields_as_canonical_view() -> Non
     assert resp.has_evidence == view.review.has_evidence
     assert resp.status == view.review.status
     assert resp.needs_review == view.review.needs_review
+    # Sprint 2 nested blocks mirror canonical view + quantity.final rule
+    assert resp.product.sku == view.product.public_sku
+    assert resp.product.identity_source == view.product.identity_source
+    assert resp.quantity.detected == view.quantity.detected_quantity
+    assert resp.quantity.final == 8 and resp.quantity.corrected == 8
+    assert resp.quantity.source == view.quantity.qty_source
+    assert resp.traceability.source_image_id == view.traceability.source_image_id
+    assert resp.traceability.primary_evidence_id == view.review.primary_evidence_id

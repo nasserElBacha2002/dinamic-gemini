@@ -29,7 +29,7 @@ function kindFromResponse(status: number, detail?: string): EvidenceImageErrorKi
   return 'network';
 }
 
-function messageForKind(kind: EvidenceImageErrorKind, detail?: string): string {
+function messageForKind(kind: EvidenceImageErrorKind, _detail?: string): string {
   switch (kind) {
     case 'not_found':
       return 'Source image is no longer available.';

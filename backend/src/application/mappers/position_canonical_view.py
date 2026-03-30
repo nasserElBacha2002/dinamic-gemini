@@ -359,3 +359,36 @@ def build_position_canonical_view(
         review=review,
         technical_snapshot=snap,
     )
+
+
+def public_display_label(
+    view: PositionCanonicalView,
+    primary_product: Optional[ProductRecord],
+) -> Optional[str]:
+    """Operator-facing label: ``ProductRecord.description`` when non-empty; else ``review_display_label`` from snapshot."""
+    if primary_product is not None:
+        d = (primary_product.description or "").strip()
+        if d:
+            return d
+    snap = view.technical_snapshot if isinstance(view.technical_snapshot, dict) else {}
+    rdl = snap.get("review_display_label")
+    if isinstance(rdl, str) and rdl.strip():
+        return rdl.strip()
+    return None
+
+
+def public_barcode(view: PositionCanonicalView) -> Optional[str]:
+    """``position_barcode`` from technical snapshot when present (no inference)."""
+    snap = view.technical_snapshot if isinstance(view.technical_snapshot, dict) else {}
+    b = snap.get("position_barcode")
+    if isinstance(b, str) and b.strip():
+        return b.strip()
+    return None
+
+
+def quantity_final_display(view: PositionCanonicalView) -> int:
+    """Operator-visible line quantity: ``corrected_quantity`` when set, else system-resolved ``qty`` (CSV ``final_quantity`` rule)."""
+    c = view.quantity.corrected_quantity
+    if c is not None:
+        return max(0, int(c))
+    return int(view.quantity.qty)

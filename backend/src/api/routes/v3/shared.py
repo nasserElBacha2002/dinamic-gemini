@@ -22,7 +22,10 @@ from src.api.schemas.inventory_schemas import InventoryListItemResponse, Invento
 from src.application.ports.contracts import InventoryListItem
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
+    PositionProductBlock,
+    PositionQuantityBlock,
     PositionSummaryResponse,
+    PositionTraceabilityBlock,
     ReviewActionResponse,
 )
 from src.application.ports.repositories import JobRepository
@@ -51,6 +54,9 @@ from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.application.mappers.position_canonical_view import (
     PositionCanonicalView,
     build_position_canonical_view,
+    public_barcode,
+    public_display_label,
+    quantity_final_display,
 )
 from src.application.services.position_traceability import reset_traceability_cache_for_tests
 
@@ -327,9 +333,36 @@ def asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
     )
 
 
-def _position_summary_response_from_view(p: Position, view: PositionCanonicalView) -> PositionSummaryResponse:
-    """Single construction site for ``PositionSummaryResponse`` from the Sprint 1 canonical view."""
+def _position_summary_response_from_view(
+    p: Position,
+    view: PositionCanonicalView,
+    *,
+    primary_product: Optional[ProductRecord] = None,
+) -> PositionSummaryResponse:
+    """Single construction site for ``PositionSummaryResponse`` from the canonical view (Sprint 1–2)."""
     detected_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
+    product_block = PositionProductBlock(
+        id=view.product.primary_product_id,
+        sku=view.product.public_sku,
+        display_label=public_display_label(view, primary_product),
+        barcode=public_barcode(view),
+        identity_source=view.product.identity_source,
+    )
+    quantity_block = PositionQuantityBlock(
+        detected=view.quantity.detected_quantity,
+        corrected=view.quantity.corrected_quantity,
+        final=quantity_final_display(view),
+        source=view.quantity.qty_source,
+        inference_reason=view.quantity.qty_inference_reason,
+        resolved=view.quantity.qty_resolved,
+    )
+    trace_block = PositionTraceabilityBlock(
+        status=view.traceability.traceability_status,
+        source_image_id=view.traceability.source_image_id,
+        source_image_original_filename=view.traceability.source_image_original_filename,
+        primary_evidence_id=view.review.primary_evidence_id,
+        has_evidence=view.review.has_evidence,
+    )
     return PositionSummaryResponse(
         id=p.id,
         aisle_id=p.aisle_id,
@@ -340,6 +373,9 @@ def _position_summary_response_from_view(p: Position, view: PositionCanonicalVie
         created_at=p.created_at,
         updated_at=p.updated_at,
         detected_summary_json=detected_summary_json,
+        product=product_block,
+        quantity=quantity_block,
+        traceability=trace_block,
         sku=view.product.public_sku,
         detected_quantity=view.quantity.detected_quantity,
         corrected_quantity=view.quantity.corrected_quantity,
@@ -361,16 +397,15 @@ def position_to_summary(
 ) -> PositionSummaryResponse:
     """Map domain position (+ optional primary product) to the public summary contract.
 
-    Sprint 1 (cerrado): assembly is delegated to :func:`build_position_canonical_view` and
-    :func:`_position_summary_response_from_view`; see ADR ``docs/adr/inventory-v3-canonical-fields.md``
-    and ``docs/status/inventory-v3-sprint-1-closeout.md``.
+    Assembly delegates to :func:`build_position_canonical_view` and
+    :func:`_position_summary_response_from_view` (nested ``product`` / ``quantity`` / ``traceability`` — Sprint 2).
     """
     view = build_position_canonical_view(
         p,
         primary_product,
         corrected_quantity=corrected_quantity,
     )
-    return _position_summary_response_from_view(p, view)
+    return _position_summary_response_from_view(p, view, primary_product=primary_product)
 
 
 def evidence_to_response(e: Evidence) -> EvidenceResponse:

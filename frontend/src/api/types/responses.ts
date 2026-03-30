@@ -169,6 +169,49 @@ export interface UploadAisleAssetsResponse {
  * positions endpoints.
  */
 
+/** v3.2.2+ quantity provenance (legacy flat alias: `qtySource`). */
+export type PositionQtySourceV322 =
+  | 'detected'
+  | 'inferred'
+  | 'merge_inferred'
+  | 'manual_review'
+  | 'label_explicit'
+  | 'unknown'
+  | 'consolidated';
+
+/** Sprint 2 — canonical product block (prefer over flat `sku`). */
+export type PositionProductIdentitySource =
+  | 'primary_product'
+  | 'summary_technical'
+  | 'summary_aggregated';
+
+export interface PositionProductBlock {
+  id?: string | null;
+  sku?: string | null;
+  display_label?: string | null;
+  barcode?: string | null;
+  identity_source: PositionProductIdentitySource;
+}
+
+/** Sprint 2 — canonical quantity; `final` is operator line total (corrected ?? system qty). */
+export interface PositionQuantityBlock {
+  detected: number;
+  corrected?: number | null;
+  final: number;
+  source: PositionQtySourceV322;
+  inference_reason?: string | null;
+  resolved?: boolean | null;
+}
+
+/** Sprint 2 — canonical traceability (source image vs evidence). */
+export interface PositionTraceabilityBlock {
+  status?: ApiTraceabilityStatus | string | null;
+  source_image_id?: string | null;
+  source_image_original_filename?: string | null;
+  primary_evidence_id?: string | null;
+  has_evidence: boolean;
+}
+
 /** Position summary for list responses. Prefer optional sku and detected_quantity when present; detected_summary_json is retained for backward compatibility. */
 export interface PositionSummary {
   id: string;
@@ -180,31 +223,39 @@ export interface PositionSummary {
   created_at: string;
   updated_at: string;
   detected_summary_json?: Record<string, unknown> | null;
+  /** Sprint 2 — prefer nested blocks when present; flat fields below remain for backward compatibility. */
+  product?: PositionProductBlock;
+  quantity?: PositionQuantityBlock;
+  traceability?: PositionTraceabilityBlock;
+  /** @deprecated Prefer `product.sku`. */
   sku?: string | null;
+  /** @deprecated Prefer `quantity.detected`. */
   detected_quantity?: number | null;
+  /** @deprecated Prefer `quantity.corrected`. */
   corrected_quantity?: number | null;
-  /** v3.2.2: stable qty contract (backend-resolved). */
+  /** v3.2.2: system-resolved quantity (not overridden by correction); prefer `quantity.final` for UX line total. */
+  /** @deprecated Prefer `quantity.final` for display when corrections exist. */
   qty: number;
   /** Quantity provenance contract (authoritative + merge artifact). */
-  qtySource:
-    | 'detected'
-    | 'inferred'
-    | 'merge_inferred'
-    | 'manual_review'
-    | 'label_explicit'
-    | 'unknown'
-    | 'consolidated';
+  /** @deprecated Prefer `quantity.source`. */
+  qtySource: PositionQtySourceV322;
   /** v3.2.2: non-null when qtySource='inferred'. */
+  /** @deprecated Prefer `quantity.inference_reason`. */
   qtyInferenceReason?: string | null;
   /** v3.2.2: when true/false, qty is from resolved decision; when null, legacy/compatibility path. */
+  /** @deprecated Prefer `quantity.resolved`. */
   qtyResolved?: boolean | null;
   /** Epic 3.1.B: optional; when present, summary-level result-to-image traceability for this position. */
+  /** @deprecated Prefer `traceability.source_image_id`. */
   source_image_id?: string | null;
   /** Epic 5: optional; original filename of the source image when available (photos jobs). May be absent until the v3 position API is extended to expose it. */
+  /** @deprecated Prefer `traceability.source_image_original_filename`. */
   source_image_original_filename?: string | null;
   /** Epic 3.1.B: optional; summary-level traceability status when backend provides it. */
+  /** @deprecated Prefer `traceability.status`. */
   traceability_status?: ApiTraceabilityStatus | null;
   /** v3.2.5 Phase 2 Block 4: guaranteed boolean in active v3 contract; backend always sends it. */
+  /** @deprecated Prefer `traceability.has_evidence`. */
   has_evidence: boolean;
 }
 

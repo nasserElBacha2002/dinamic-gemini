@@ -38,6 +38,7 @@ export interface ResultSummary {
     | 'manual_review'
     | 'label_explicit'
     | 'unknown'
+    | 'consolidated'
     | null;
   qtyResolved?: boolean | null;
   qtyInferenceReason?: string | null;
@@ -88,6 +89,7 @@ export interface ResultDetail {
     | 'manual_review'
     | 'label_explicit'
     | 'unknown'
+    | 'consolidated'
     | null;
   qtyResolved?: boolean | null;
   qtyInferenceReason?: string | null;

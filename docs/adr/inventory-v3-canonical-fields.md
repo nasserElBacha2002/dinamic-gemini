@@ -91,6 +91,13 @@ Permanecen en **`detected_summary_json`** (no eliminar en Sprint 1):
 | **2** | Nuevos bloques en contrato público; alias legacy deprecados |
 | **3+** | CSV alineado / slim JSON / analytics sobre tablas |
 
+## 11. Sprint 2 — Contrato enriquecido (implementado)
+
+- **`PositionSummaryResponse`** incluye `product`, `quantity`, `traceability` (Pydantic) poblados desde la vista canónica y `primary_product` (label).
+- **`quantity.final`** = corrección operador si existe, si no `qty` canónico (misma regla que CSV); el campo plano **`qty`** se mantiene como cantidad sistema-resuelta para compatibilidad.
+- Campos planos duplicados marcados **`deprecated=True`** en schema (OpenAPI); sin remoción aún.
+- Detalle: `docs/status/inventory-v3-sprint-2-progress.md`.
+
 ---
 
 *Aprobación funcional/técnica: según proceso interno del equipo (documentación de ingeniería lista para revisión).*
