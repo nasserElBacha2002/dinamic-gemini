@@ -5,13 +5,14 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchEvidenceImage } from '../../../api/client';
+import { fetchEvidenceImage, type FetchEvidenceImageFailureReason } from '../../../api/client';
 
 export type EvidenceImageErrorKind =
   | 'not_found'
   | 'forbidden'
   | 'network'
-  | 'heic_preview_unavailable';
+  | 'heic_preview_unavailable'
+  | 'opaque_redirect';
 
 export type EvidenceImageLoadState =
   | { status: 'idle' }
@@ -19,7 +20,8 @@ export type EvidenceImageLoadState =
   | { status: 'loaded'; imageSrc: string }
   | { status: 'error'; kind: EvidenceImageErrorKind; message: string };
 
-function kindFromResponse(status: number, detail?: string): EvidenceImageErrorKind {
+function kindFromResponse(status: number, detail?: string, reason?: FetchEvidenceImageFailureReason): EvidenceImageErrorKind {
+  if (reason === 'opaque_redirect') return 'opaque_redirect';
   if (status === 403 || status === 401) return 'forbidden';
   if (status === 404) {
     if (typeof detail === 'string' && detail.includes('Preview') && detail.includes('not available')) {
@@ -30,7 +32,7 @@ function kindFromResponse(status: number, detail?: string): EvidenceImageErrorKi
   return 'network';
 }
 
-function messageForKind(kind: EvidenceImageErrorKind): string {
+function messageForKind(kind: EvidenceImageErrorKind, detail?: string): string {
   switch (kind) {
     case 'not_found':
       return 'Source image is no longer available.';
@@ -38,6 +40,10 @@ function messageForKind(kind: EvidenceImageErrorKind): string {
       return 'You do not have permission to load this image.';
     case 'heic_preview_unavailable':
       return 'Preview is not available for this image.';
+    case 'opaque_redirect':
+      return typeof detail === 'string' && detail.trim()
+        ? detail
+        : 'Image redirect could not be resolved. Try again or contact support if this persists.';
     case 'network':
     default:
       return 'Image could not be loaded.';
@@ -77,11 +83,11 @@ export function useEvidenceImageLoad(imageUrl: string | null): EvidenceImageLoad
         }
         setState({ status: 'loaded', imageSrc: result.imageSrc });
       } else {
-        const kind = kindFromResponse(result.status, result.detail);
+        const kind = kindFromResponse(result.status, result.detail, result.reason);
         setState({
           status: 'error',
           kind,
-          message: messageForKind(kind),
+          message: messageForKind(kind, result.detail),
         });
       }
     });

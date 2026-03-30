@@ -353,18 +353,37 @@ export function getReferenceImageFileUrl(
 }
 
 /** Result of resolving evidence/reference image for display. */
+export type FetchEvidenceImageFailureReason = 'opaque_redirect';
+
 export type FetchEvidenceImageResult =
   | { ok: true; imageSrc: string; revoke?: () => void }
-  | { ok: false; status: number; detail?: string };
+  | { ok: false; status: number; detail?: string; reason?: FetchEvidenceImageFailureReason };
+
+/** Human-readable detail when the browser returns an opaque redirect (see ``fetchEvidenceImage``). */
+export const FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL =
+  'Could not read redirect to image (opaque response). The API may need CORS expose_headers including Location, or the browser hid the redirect for this cross-origin request.';
 
 /**
  * Resolve evidence/reference image URL for <img src>.
  *
- * - S3-backed assets: API returns 307 to a presigned URL. We use ``redirect: 'manual'`` and
- *   ``credentials: 'omit'`` so the follow-up to S3 is not credentialed (avoids S3 CORS failures
- *   with Access-Control-Allow-Credentials). The presigned Location is returned as ``imageSrc``;
- *   the browser loads that URL in ``<img>`` without CORS issues for display.
- * - Local FileResponse: 200 body → object URL; call ``revoke`` when discarding.
+ * **Authentication:** When ``getStoredToken()`` returns a value, the request to the **backend**
+ * includes ``Authorization: Bearer <token>`` on the ``Headers`` object. That is independent of
+ * ``credentials:`` — we pass ``credentials: 'omit'`` so **browser-managed** credentials (cookies,
+ * cached HTTP auth, client certificates) are **not** sent. Omitting credentials does **not** strip
+ * the manually attached Bearer header.
+ *
+ * **Why omit credentials:** With ``redirect: 'manual'``, we read ``Location`` and set
+ * ``<img src>`` to the presigned URL. We avoid ``credentials: 'include'`` so a hypothetical
+ * automatic follow to S3 would not be treated as a credentialed cross-origin request (which
+ * often breaks S3 CORS). The image is then loaded by the ``<img>`` tag without API cookies or
+ * Bearer on the S3 URL (the presigned query string is enough).
+ *
+ * **Flows:** (1) Backend **307** + ``Location`` → return that URL as ``imageSrc``. (2) Backend **200**
+ * body (e.g. local file) → blob URL + ``revoke``.
+ *
+ * **Opaque redirect:** In some cross-origin + ``redirect: 'manual'`` cases the browser reports
+ * ``response.type === 'opaqueredirect'`` with no readable status or headers. Then we cannot obtain
+ * ``Location``; see ``reason: 'opaque_redirect'`` and ``FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL``.
  */
 export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImageResult> {
   const token = getStoredToken();
@@ -377,7 +396,12 @@ export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImag
       redirect: 'manual',
     });
     if (response.type === 'opaqueredirect') {
-      return { ok: false, status: 0, detail: undefined };
+      return {
+        ok: false,
+        status: 0,
+        reason: 'opaque_redirect',
+        detail: FETCH_EVIDENCE_IMAGE_OPAQUE_REDIRECT_DETAIL,
+      };
     }
     if (response.status >= 300 && response.status < 400) {
       const loc = response.headers.get('Location');
