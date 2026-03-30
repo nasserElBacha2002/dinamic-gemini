@@ -9,11 +9,10 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Optional, Tuple
 
 from fastapi import HTTPException
 
-from src.config import load_settings
 from src.utils.validation import validate_relative_path
 
 from src.api.schemas.aisle_schemas import AisleResponse, AisleJobSummary
@@ -52,18 +51,10 @@ from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.application.mappers.position_canonical_view import (
     PositionCanonicalView,
     build_position_canonical_view,
-    qty_contract_from_product,
-    resolve_qty_contract_from_position_legacy,
-    summary_sku_and_quantity_from_position,
 )
 from src.application.services.position_traceability import reset_traceability_cache_for_tests
 
 logger = logging.getLogger(__name__)
-
-# Backwards-compatible aliases for tests and any legacy importers of private helpers.
-_summary_sku_and_quantity_from_position = summary_sku_and_quantity_from_position
-_qty_contract_from_product = qty_contract_from_product
-_resolve_qty_contract_from_position_legacy = resolve_qty_contract_from_position_legacy
 
 _MANIFEST_FILENAME = "input_manifest.json"
 _NORMALIZED_SUBDIR = "input_photos_normalized"
@@ -370,9 +361,9 @@ def position_to_summary(
 ) -> PositionSummaryResponse:
     """Map domain position (+ optional primary product) to the public summary contract.
 
-    Sprint 1: assembly is delegated to :func:`build_position_canonical_view` so source priority
-    (ProductRecord vs technical snapshot vs aggregated row) lives in one module — see ADR
-    ``docs/adr/inventory-v3-canonical-fields.md``.
+    Sprint 1 (cerrado): assembly is delegated to :func:`build_position_canonical_view` and
+    :func:`_position_summary_response_from_view`; see ADR ``docs/adr/inventory-v3-canonical-fields.md``
+    and ``docs/status/inventory-v3-sprint-1-closeout.md``.
     """
     view = build_position_canonical_view(
         p,

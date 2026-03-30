@@ -4,10 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.api.routes.v3.shared import (
-    position_to_summary as _position_to_summary,
-    _summary_sku_and_quantity_from_position,
-)
+from src.api.routes.v3.shared import position_to_summary as _position_to_summary
+from src.application.mappers.position_canonical_view import summary_sku_and_quantity_from_position
 from src.api.schemas.position_schemas import PositionSummaryResponse
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
@@ -31,7 +29,7 @@ def test_summary_sku_and_quantity_from_detected_summary() -> None:
             "product_label_quantity": 5,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "SKU-001"
     assert qty == 5
 
@@ -53,7 +51,7 @@ def test_summary_sku_and_quantity_from_product_label_quantity() -> None:
             "product_label_quantity": 3,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "X-99"
     assert qty == 3
 
@@ -72,7 +70,7 @@ def test_summary_sku_and_quantity_empty_json_returns_none() -> None:
         updated_at=now,
         detected_summary_json=None,
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku is None
     assert qty == 0
 
@@ -166,7 +164,7 @@ def test_summary_quantity_parses_numeric_string() -> None:
             "final_quantity": "12",
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "Y"
     assert qty == 12
 
@@ -185,7 +183,7 @@ def test_summary_quantity_rejects_negative_and_invalid() -> None:
         updated_at=now,
         detected_summary_json={"internal_code": "Z", "final_quantity": -1},
     )
-    _, qty_neg = _summary_sku_and_quantity_from_position(p_neg)
+    _, qty_neg = summary_sku_and_quantity_from_position(p_neg)
     assert qty_neg == 0
 
     p_invalid = Position(
@@ -199,7 +197,7 @@ def test_summary_quantity_rejects_negative_and_invalid() -> None:
         updated_at=now,
         detected_summary_json={"internal_code": "W", "final_quantity": "not-a-number"},
     )
-    _, qty_invalid = _summary_sku_and_quantity_from_position(p_invalid)
+    _, qty_invalid = summary_sku_and_quantity_from_position(p_invalid)
     assert qty_invalid == 0
 
 
@@ -223,7 +221,7 @@ def test_summary_sku_fallback_to_review_display_label_when_internal_code_null() 
             "product_label_quantity": 2,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "P-001"
     assert qty == 2
 
@@ -248,7 +246,7 @@ def test_summary_sku_fallback_to_position_barcode_when_internal_code_and_rdl_nul
             "product_label_quantity": None,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "PALLET-42"
     assert qty == 0  # no quantity in summary → always show 0
 
@@ -274,7 +272,7 @@ def test_summary_sku_null_when_all_display_fields_missing() -> None:
             "count_status": "NEEDS_REVIEW",
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku is None
     assert qty == 0  # no quantity in summary → always show 0
 
@@ -298,7 +296,7 @@ def test_summary_sku_prefers_internal_code_over_fallbacks() -> None:
             "final_quantity": 1,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "SKU-REAL"
     assert qty == 1
 
@@ -324,7 +322,7 @@ def test_summary_sku_fallback_to_pallet_id_when_other_display_fields_null() -> N
             "count_status": "NEEDS_REVIEW",
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "1295612"
     assert qty == 0  # no quantity in summary → always show 0
 

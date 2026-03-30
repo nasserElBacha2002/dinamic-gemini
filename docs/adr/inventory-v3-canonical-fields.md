@@ -1,7 +1,8 @@
 # ADR: Campos canónicos para posiciones e inventario v3
 
-**Estado:** Aceptado (Sprint 1 — implementación en curso)  
+**Estado:** Cerrado — Sprint 1 completado (código y validación alineados con el plan)  
 **Fecha:** 2026-03-30  
+**Cierre formal:** ver `docs/status/inventory-v3-sprint-1-closeout.md`  
 **Relacionado:** `docs/Duplicacion de datos - Plan implementacion.md` (Sprint 1–6), `docs/audits/inventory-v3-data-duplication-audit.md`  
 **Código:** `backend/src/application/mappers/position_canonical_view.py`, `backend/src/application/services/position_traceability.py`, `backend/src/api/routes/v3/shared.py` (`position_to_summary`, `_position_summary_response_from_view`)
 
@@ -36,16 +37,19 @@ Fijar **una sola semántica de “qué dato manda”** antes de cambiar contrato
 
 ## 5. Campos canónicos (negocio)
 
-Origen preferido cuando aplica:
+Cierre **Ticket 1.1** (plan): identidad, cantidad, review, traceability, evidencia y timestamps quedan así cuando aplica la rama “primary + no agregada”.
 
 | Concepto | Fuente canónica | Notas |
 |----------|-----------------|-------|
-| **SKU / código producto (pantalla)** | `product_records.sku` del **primary** | `select_display_primary_product`; no aplica en rama agregada legacy. |
+| **SKU / código producto (pantalla)** | `product_records.sku` del **primary** | `select_display_primary_product`; no aplica en rama agregada legacy. Sin fallback silencioso sobre summary si el SKU del record es no vacío (incl. `UNKNOWN`). SKU vacío en record → fallback al summary (ver implementación). |
+| **Cantidad “display” / contrato público `qty`** | `ProductRecord` vía `qty_contract_from_product` cuando hay `qty_source`; si no, `detected_quantity` | Equivale hoy a “final display quantity” del plan; renombre explícito a `final_quantity` en API → **Sprint 2** (§9). |
 | **Cantidad detectada persistida** | `product_records.detected_quantity` | Alineada con resolución v3.2.2 al ingest. |
-| **Cantidad corregida** | `product_records.corrected_quantity` | Review / correcciones. |
-| **Procedencia cantidad (rica)** | `product_records.qty_source`, `qty_inference_reason`, `raw_qty_json`, `qty_parse_status` | Normalizada a contrato público simplificado (`qtySource`, …) en el mapper. |
-| **Estado revisión posición** | `positions.status`, `positions.needs_review` | |
-| **Evidencia primaria** | `positions.primary_evidence_id` | `has_evidence` derivado. |
+| **Cantidad corregida** | `product_records.corrected_quantity` (+ parámetro explícito en `build_position_canonical_view`) | Ver §6. |
+| **Procedencia cantidad (rica)** | `product_records.qty_source`, `qty_inference_reason`, etc. | Normalizada a `qtySource` público (`detected`, `inferred`, …, **`consolidated`** cuando aplica). |
+| **Estado revisión posición** | `positions.status`, `positions.needs_review` | Flujo revisión / cola; pipeline `count_status` sigue solo en snapshot técnico. |
+| **Traceability (foto)** | `detected_summary_json` + enriquecimiento opcional `hybrid_report.json` | `application/services/position_traceability.py`. |
+| **Evidencia primaria** | `positions.primary_evidence_id` | `has_evidence` derivado; no confundir con `source_image_id` (foto en reporte). |
+| **Timestamps actividad entidad** | `positions.created_at`, `positions.updated_at` | Frescura a nivel posición; `last_activity_at` de inventario/listas es otro agregado (fuera de esta vista). |
 
 ## 6. Campos derivados (API)
 
@@ -89,4 +93,4 @@ Permanecen en **`detected_summary_json`** (no eliminar en Sprint 1):
 
 ---
 
-*Aprobación funcional/técnica: pendiente según proceso interno del equipo.*
+*Aprobación funcional/técnica: según proceso interno del equipo (documentación de ingeniería lista para revisión).*

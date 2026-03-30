@@ -1,5 +1,5 @@
 """
-Canonical read-model for assembling public position summaries (v3 — Sprint 1).
+Canonical read-model for assembling public position summaries (v3 — Sprint 1, cerrado).
 
 Centralizes source-of-truth priority: ``ProductRecord`` (primary) over ``detected_summary_json``,
 except for **aggregated** consolidated rows where the summary carries ``aggregated_from_ids`` and
@@ -231,7 +231,11 @@ class PositionCanonicalReview:
 
 @dataclass(frozen=True)
 class PositionCanonicalView:
-    """Intermediate canonical layer before ``PositionSummaryResponse``."""
+    """Intermediate canonical layer before ``PositionSummaryResponse``.
+
+    ``technical_snapshot`` is the raw ``detected_summary_json`` dict when present (pipeline /
+    consolidation snapshot); the HTTP response still echoes it separately for backward compatibility.
+    """
 
     product: PositionCanonicalProduct
     quantity: PositionCanonicalQuantity
@@ -246,7 +250,7 @@ def build_position_canonical_view(
     *,
     corrected_quantity: Optional[int] = None,
 ) -> PositionCanonicalView:
-    """Build :class:`PositionCanonicalView` with explicit source priority (ADR Sprint 1)."""
+    """Build :class:`PositionCanonicalView` with explicit source priority (ADR + plan Sprint 1)."""
     effective_corrected = _effective_corrected_quantity(corrected_quantity, primary_product)
     summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
     has_evidence = bool(

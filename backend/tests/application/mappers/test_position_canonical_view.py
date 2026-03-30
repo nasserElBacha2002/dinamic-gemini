@@ -1,4 +1,8 @@
-"""Parity tests for :mod:`src.application.mappers.position_canonical_view` (Sprint 1 canonical layer)."""
+"""Parity tests for :mod:`src.application.mappers.position_canonical_view` (Sprint 1 / ticket 1.4).
+
+Covers primary vs summary, aggregated rows, UNKNOWN SKU, legacy divergence, traceability,
+and alignment with :func:`src.api.routes.v3.shared.position_to_summary` where useful.
+"""
 
 from __future__ import annotations
 
@@ -261,3 +265,55 @@ def test_traceability_enrichment_fills_missing_summary_fields() -> None:
     assert view.traceability.source_image_id == "src-img-99"
     assert view.traceability.traceability_status == "valid"
     assert view.traceability.source_image_original_filename == "frame.jpg"
+
+
+def test_position_to_summary_exposes_same_flat_fields_as_canonical_view() -> None:
+    """Regression: single HTTP assembly path mirrors :class:`PositionCanonicalView` (ticket 1.4)."""
+    from src.api.routes.v3.shared import position_to_summary
+
+    now = datetime.now(timezone.utc)
+    p = _pos(
+        detected_summary_json={
+            "internal_code": "API-PARITY",
+            "final_quantity": 50,
+            "source_image_id": "img-self",
+            "traceability_status": "valid",
+        },
+    )
+    primary = ProductRecord(
+        id="prod-p",
+        position_id=p.id,
+        sku="FROM-RECORD",
+        description="",
+        detected_quantity=2,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=8,
+        qty_source="detected",
+        qty_inference_reason=None,
+        raw_qty=2,
+        qty_parse_status="valid_positive",
+    )
+    view = build_position_canonical_view(
+        p,
+        primary,
+        corrected_quantity=primary.corrected_quantity,
+    )
+    resp = position_to_summary(
+        p,
+        corrected_quantity=primary.corrected_quantity,
+        primary_product=primary,
+    )
+    assert resp.sku == view.product.public_sku
+    assert resp.qty == view.quantity.qty
+    assert resp.qtySource == view.quantity.qty_source
+    assert resp.qtyInferenceReason == view.quantity.qty_inference_reason
+    assert resp.qtyResolved == view.quantity.qty_resolved
+    assert resp.detected_quantity == view.quantity.detected_quantity
+    assert resp.corrected_quantity == view.quantity.corrected_quantity
+    assert resp.source_image_id == view.traceability.source_image_id
+    assert resp.traceability_status == view.traceability.traceability_status
+    assert resp.has_evidence == view.review.has_evidence
+    assert resp.status == view.review.status
+    assert resp.needs_review == view.review.needs_review
