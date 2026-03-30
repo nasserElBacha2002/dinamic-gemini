@@ -595,6 +595,15 @@ class Settings(BaseModel):
             "If empty, the server falls back to localhost origins. Env: CORS_ALLOW_ORIGINS."
         ),
     )
+    forwarded_trusted_hosts: str = Field(
+        default_factory=lambda: (os.getenv("FORWARDED_TRUSTED_HOSTS", "") or "").strip(),
+        description=(
+            "If non-empty, enables uvicorn ProxyHeadersMiddleware so X-Forwarded-Proto / -For "
+            "from a trusted reverse proxy (e.g. AWS ALB) adjust request scheme and client. "
+            "Use * when the app only receives traffic from the load balancer (typical in ECS). "
+            "Comma-separated IPs/CIDRs are supported; empty disables. Env: FORWARDED_TRUSTED_HOSTS."
+        ),
+    )
     v3_positions_aisle_raw_cap: int = Field(
         default_factory=lambda: int(os.getenv("V3_POSITIONS_AISLE_RAW_CAP", "2000")),
         ge=50,

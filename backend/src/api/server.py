@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from src.api.routes.v3 import router as v3_router
 from src.api.routes.v3.analytics_api import router as v3_analytics_router
@@ -46,6 +47,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Behind HTTPS-terminating ALB, redirects must use https; middleware trusts X-Forwarded-Proto from listed hosts.
+_forwarded = (settings.forwarded_trusted_hosts or "").strip()
+if _forwarded:
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_forwarded)
 
 # Include routers (v3 only for inventory operations; legacy v1 jobs/entities removed in Stage 3).
 app.include_router(v3_router)
