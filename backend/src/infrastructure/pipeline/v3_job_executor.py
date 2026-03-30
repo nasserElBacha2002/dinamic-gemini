@@ -404,6 +404,17 @@ class V3JobExecutor:
             legacy_base=v3_base,
             legacy_local_read_enabled=settings.artifact_storage_legacy_local_read_enabled,
         )
+        single_video = (
+            len(assets) == 1
+            and getattr(assets[0], "type", None) == SourceAssetType.VIDEO
+        )
+        # Validate/classify asset shape first so we do not resolve visual references for unsupported sets.
+        has_video_asset = any(getattr(a, "type", None) == SourceAssetType.VIDEO for a in assets)
+        if has_video_asset and not single_video:
+            raise ValueError(
+                "Invalid aisle assets: videos must be uploaded/processed as a single video asset; "
+                "mixed or multi-video sets are not supported in photos normalization flow."
+            )
         refs = self._inventory_visual_reference_repo.list_by_inventory(inventory_id)
         refs_by_id = {r.id: r for r in refs}
         resolved_ctx = _resolve_visual_reference_paths(
@@ -411,10 +422,6 @@ class V3JobExecutor:
             resolver=resolver,
             references_by_id=refs_by_id,
             target_dir=visual_refs_dir,
-        )
-        single_video = (
-            len(assets) == 1
-            and getattr(assets[0], "type", None) == SourceAssetType.VIDEO
         )
         if single_video:
             asset = assets[0]
@@ -430,15 +437,6 @@ class V3JobExecutor:
                     metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
                 ),
                 video_path,
-            )
-
-        # Photos execution supports only photo assets. Any video in a multi-asset
-        # set would be routed into image normalization and fail opaquely later.
-        has_video_asset = any(getattr(a, "type", None) == SourceAssetType.VIDEO for a in assets)
-        if has_video_asset:
-            raise ValueError(
-                "Invalid aisle assets: videos must be uploaded/processed as a single video asset; "
-                "mixed or multi-video sets are not supported in photos normalization flow."
             )
 
         # Photos (or multiple assets): resolve to job_dir/input_photos, write manifest

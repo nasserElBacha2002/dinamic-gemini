@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import BinaryIO, Optional
 
 
@@ -48,6 +49,11 @@ class ArtifactStore(ABC):
 
     @abstractmethod
     def get_object(self, key: str) -> ArtifactDownload:
+        ...
+
+    @abstractmethod
+    def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
+        """Download object directly to local path without buffering full content in memory."""
         ...
 
     @abstractmethod

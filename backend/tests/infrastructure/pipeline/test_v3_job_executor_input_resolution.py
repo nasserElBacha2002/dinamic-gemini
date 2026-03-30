@@ -23,8 +23,6 @@ from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
-from src.infrastructure.storage.artifact_store import ArtifactDownload
-
 
 class _Clock(Clock):
     def now(self):
@@ -124,12 +122,22 @@ class _VisualRepo(InventoryVisualReferenceRepository):
 class _FakeArtifactStore:
     def __init__(self, objects: Dict[str, bytes]) -> None:
         self._objects = objects
+        self.bucket = "bucket-a"
+        self.download_calls: list[tuple[str, str, str]] = []
+        self.get_object_calls = 0
 
-    def get_object(self, key: str) -> ArtifactDownload:
+    def get_object(self, key: str):
+        self.get_object_calls += 1
         if key not in self._objects:
             raise RuntimeError(f"missing key: {key}")
-        data = self._objects[key]
-        return ArtifactDownload(content=data, content_type="application/octet-stream", file_size_bytes=len(data))
+        raise AssertionError("resolver should not call get_object in streaming mode")
+
+    def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
+        if key not in self._objects:
+            raise RuntimeError(f"missing key: {key}")
+        self.download_calls.append((bucket or "", key, str(target_path)))
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(self._objects[key])
 
 
 def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
@@ -158,7 +166,8 @@ def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualRefere
 def test_build_pipeline_input_downloads_s3_source_asset_to_temp_workspace(tmp_path: Path) -> None:
     job_dir = tmp_path / "job-1"
     job_dir.mkdir(parents=True, exist_ok=True)
-    ex = _executor("inv-1", [], _FakeArtifactStore({"uploads/aisles/a1/raw/asset-1.jpg": b"s3-photo"}))
+    store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-1.jpg": b"s3-photo"})
+    ex = _executor("inv-1", [], store)
     asset = SourceAsset(
         id="asset-1",
         aisle_id="a1",
@@ -183,6 +192,8 @@ def test_build_pipeline_input_downloads_s3_source_asset_to_temp_workspace(tmp_pa
     saved = job_dir / "input_photos" / "0000_asset-1.jpg"
     assert saved.exists()
     assert saved.read_bytes() == b"s3-photo"
+    assert store.download_calls
+    assert store.get_object_calls == 0
 
 
 def test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent(tmp_path: Path) -> None:
@@ -269,6 +280,7 @@ def test_build_pipeline_input_resolves_s3_visual_references_to_temp_files(tmp_pa
     resolved_path = Path(refs[0]["resolved_path"])
     assert resolved_path.exists()
     assert resolved_path.read_bytes() == b"refdata"
+    assert any(call[1] == "inventories/inv-3/visual_references/ref-1.jpg" for call in store.download_calls)
 
 
 def test_build_pipeline_input_missing_s3_object_fails_with_clear_error(tmp_path: Path) -> None:
@@ -299,3 +311,153 @@ def test_build_pipeline_input_missing_s3_object_fails_with_clear_error(tmp_path:
     msg = str(exc.value)
     assert "source asset asset-4" in msg
     assert "storage_key=uploads/aisles/a1/raw/asset-4.jpg" in msg
+
+
+def test_build_pipeline_input_fails_when_source_asset_bucket_mismatch(tmp_path: Path) -> None:
+    job_dir = tmp_path / "job-5"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-5.jpg": b"s3-photo"})
+    ex = _executor("inv-5", [], store)
+    asset = SourceAsset(
+        id="asset-5",
+        aisle_id="a1",
+        type=SourceAssetType.PHOTO,
+        original_filename="e.jpg",
+        storage_path="uploads/aisles/a1/raw/asset-5.jpg",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+        storage_provider="s3",
+        storage_bucket="other-bucket",
+        storage_key="uploads/aisles/a1/raw/asset-5.jpg",
+    )
+    with pytest.raises(RuntimeError, match="bucket mismatch"):
+        ex._build_pipeline_input(  # type: ignore[attr-defined]
+            [asset],
+            v3_base=tmp_path / "v3_uploads",
+            job_dir=job_dir,
+            job_id="job-5",
+            analysis_context=AnalysisContext(primary_evidence=[], visual_references=[], instructions=[]),
+            inventory_id="inv-5",
+        )
+
+
+def test_build_pipeline_input_fails_when_visual_reference_bucket_missing(tmp_path: Path) -> None:
+    job_dir = tmp_path / "job-6"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    ref = InventoryVisualReference(
+        id="ref-x",
+        inventory_id="inv-6",
+        filename="ref.jpg",
+        storage_path="inventories/inv-6/visual_references/ref-x.jpg",
+        mime_type="image/jpeg",
+        file_size=7,
+        created_at=datetime.now(timezone.utc),
+        storage_provider="s3",
+        storage_bucket=None,
+        storage_key="inventories/inv-6/visual_references/ref-x.jpg",
+    )
+    store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-6.jpg": b"asset"})
+    ex = _executor("inv-6", [ref], store)
+    asset = SourceAsset(
+        id="asset-6",
+        aisle_id="a1",
+        type=SourceAssetType.PHOTO,
+        original_filename="f.jpg",
+        storage_path="uploads/aisles/a1/raw/asset-6.jpg",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+        storage_provider="s3",
+        storage_bucket="bucket-a",
+        storage_key="uploads/aisles/a1/raw/asset-6.jpg",
+    )
+    ctx = AnalysisContext(
+        primary_evidence=[],
+        visual_references=[
+            VisualReferenceContext(
+                reference_id="ref-x",
+                source_path="inventories/inv-6/visual_references/ref-x.jpg",
+                mime_type="image/jpeg",
+            )
+        ],
+        instructions=[],
+    )
+    with pytest.raises(RuntimeError, match="storage_bucket is missing"):
+        ex._build_pipeline_input(  # type: ignore[attr-defined]
+            [asset],
+            v3_base=tmp_path / "v3_uploads",
+            job_dir=job_dir,
+            job_id="job-6",
+            analysis_context=ctx,
+            inventory_id="inv-6",
+        )
+
+
+def test_unsupported_mixed_assets_fail_before_visual_reference_download(tmp_path: Path) -> None:
+    job_dir = tmp_path / "job-7"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    ref = InventoryVisualReference(
+        id="ref-mixed",
+        inventory_id="inv-7",
+        filename="ref.jpg",
+        storage_path="inventories/inv-7/visual_references/ref-mixed.jpg",
+        mime_type="image/jpeg",
+        file_size=7,
+        created_at=datetime.now(timezone.utc),
+        storage_provider="s3",
+        storage_bucket="bucket-a",
+        storage_key="inventories/inv-7/visual_references/ref-mixed.jpg",
+    )
+    store = _FakeArtifactStore(
+        {
+            "uploads/aisles/a1/raw/asset-video.mp4": b"video",
+            "uploads/aisles/a1/raw/asset-photo.jpg": b"photo",
+            "inventories/inv-7/visual_references/ref-mixed.jpg": b"ref",
+        }
+    )
+    ex = _executor("inv-7", [ref], store)
+    assets = [
+        SourceAsset(
+            id="asset-video",
+            aisle_id="a1",
+            type=SourceAssetType.VIDEO,
+            original_filename="x.mp4",
+            storage_path="uploads/aisles/a1/raw/asset-video.mp4",
+            mime_type="video/mp4",
+            uploaded_at=datetime.now(timezone.utc),
+            storage_provider="s3",
+            storage_bucket="bucket-a",
+            storage_key="uploads/aisles/a1/raw/asset-video.mp4",
+        ),
+        SourceAsset(
+            id="asset-photo",
+            aisle_id="a1",
+            type=SourceAssetType.PHOTO,
+            original_filename="x.jpg",
+            storage_path="uploads/aisles/a1/raw/asset-photo.jpg",
+            mime_type="image/jpeg",
+            uploaded_at=datetime.now(timezone.utc),
+            storage_provider="s3",
+            storage_bucket="bucket-a",
+            storage_key="uploads/aisles/a1/raw/asset-photo.jpg",
+        ),
+    ]
+    with pytest.raises(ValueError, match="single video asset"):
+        ex._build_pipeline_input(  # type: ignore[attr-defined]
+            assets,
+            v3_base=tmp_path / "v3_uploads",
+            job_dir=job_dir,
+            job_id="job-7",
+            analysis_context=AnalysisContext(
+                primary_evidence=[],
+                visual_references=[
+                    VisualReferenceContext(
+                        reference_id="ref-mixed",
+                        source_path="inventories/inv-7/visual_references/ref-mixed.jpg",
+                        mime_type="image/jpeg",
+                    )
+                ],
+                instructions=[],
+            ),
+            inventory_id="inv-7",
+        )
+    assert store.download_calls == []

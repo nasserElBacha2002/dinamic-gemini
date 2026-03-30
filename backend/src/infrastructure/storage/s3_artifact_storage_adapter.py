@@ -5,6 +5,7 @@ S3-backed artifact storage adapter (Phase 1).
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import BinaryIO, Optional
 
 from src.application.ports.services import ArtifactStorage
@@ -148,6 +149,27 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             file_size_bytes=int(result.get("ContentLength") or len(body)),
             etag=(result.get("ETag") or "").strip('"') or None,
         )
+
+    def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
+        if bucket and bucket != self._bucket:
+            raise RuntimeError(
+                f"S3 bucket mismatch for download: record_bucket={bucket!r} configured_bucket={self._bucket!r}"
+            )
+        object_key = self._client_key(key)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(target_path, "wb") as fh:
+                self._client.download_fileobj(self._bucket, object_key, fh)
+        except Exception as exc:
+            logger.exception(
+                "S3 download_to_path failed bucket=%s key=%s target=%s",
+                self._bucket,
+                object_key,
+                str(target_path),
+            )
+            raise RuntimeError(
+                f"S3 download_to_path failed for key={object_key!r} bucket={self._bucket!r}"
+            ) from exc
 
     def delete_object(self, key: str) -> None:
         object_key = self._client_key(key)

@@ -29,46 +29,64 @@ class WorkerInputArtifactResolver:
             raise RuntimeError(f"legacy storage_path escapes base dir: {raw}") from exc
         return full
 
-    def _download_provider_key(self, *, provider: str, key: str, target_path: Path, label: str) -> Path:
-        if self._artifact_store is None or not hasattr(self._artifact_store, "get_object"):
+    def _download_provider_key(
+        self,
+        *,
+        provider: str,
+        bucket: str,
+        key: str,
+        target_path: Path,
+        label: str,
+    ) -> Path:
+        if self._artifact_store is None or not hasattr(self._artifact_store, "download_to_path"):
             raise RuntimeError(
-                f"{label}: storage_provider={provider} storage_key={key} but artifact store is unavailable"
+                f"{label}: storage_provider={provider} storage_bucket={bucket} storage_key={key} but artifact store is unavailable"
+            )
+        configured_bucket = (getattr(self._artifact_store, "bucket", None) or "").strip()
+        if configured_bucket and bucket and configured_bucket != bucket:
+            raise RuntimeError(
+                f"{label}: bucket mismatch record_bucket={bucket} configured_bucket={configured_bucket}"
             )
         logger.info(
-            "%s source selected provider=%s storage_key=%s target=%s",
+            "%s source selected provider=%s storage_bucket=%s storage_key=%s target=%s",
             label,
             provider,
+            bucket,
             key,
             str(target_path),
         )
         try:
-            obj = self._artifact_store.get_object(key)
+            self._artifact_store.download_to_path(key, target_path, bucket=bucket)
         except Exception as exc:
             raise RuntimeError(
-                f"{label}: failed to download provider object provider={provider} storage_key={key}"
+                f"{label}: failed to download provider object provider={provider} storage_bucket={bucket} storage_key={key}"
             ) from exc
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(obj.content)
+        size = target_path.stat().st_size if target_path.exists() else 0
         logger.info(
-            "%s source resolved provider=%s storage_key=%s target=%s bytes=%s",
+            "%s source resolved provider=%s storage_bucket=%s storage_key=%s target=%s bytes=%s",
             label,
             provider,
+            bucket,
             key,
             str(target_path),
-            len(obj.content),
+            size,
         )
         return target_path
 
     def resolve_source_asset(self, asset: SourceAsset, target_path: Path) -> Path:
         provider = (asset.storage_provider or "").strip().lower()
+        bucket = (asset.storage_bucket or "").strip()
         key = (asset.storage_key or "").strip()
-        if provider or key:
+        if provider or key or bucket:
             if not provider:
                 raise RuntimeError(f"source asset {asset.id}: storage_key is set but storage_provider is missing")
+            if not bucket:
+                raise RuntimeError(f"source asset {asset.id}: storage_provider={provider} but storage_bucket is missing")
             if not key:
                 raise RuntimeError(f"source asset {asset.id}: storage_provider={provider} but storage_key is missing")
             return self._download_provider_key(
                 provider=provider,
+                bucket=bucket,
                 key=key,
                 target_path=target_path,
                 label=f"source asset {asset.id}",
@@ -99,11 +117,16 @@ class WorkerInputArtifactResolver:
         target_path: Path,
     ) -> Path:
         provider = (getattr(reference_record, "storage_provider", None) or "").strip().lower()
+        bucket = (getattr(reference_record, "storage_bucket", None) or "").strip()
         key = (getattr(reference_record, "storage_key", None) or "").strip()
-        if provider or key:
+        if provider or key or bucket:
             if not provider:
                 raise RuntimeError(
                     f"visual reference {reference_id}: storage_key is set but storage_provider is missing"
+                )
+            if not bucket:
+                raise RuntimeError(
+                    f"visual reference {reference_id}: storage_provider={provider} but storage_bucket is missing"
                 )
             if not key:
                 raise RuntimeError(
@@ -111,6 +134,7 @@ class WorkerInputArtifactResolver:
                 )
             return self._download_provider_key(
                 provider=provider,
+                bucket=bucket,
                 key=key,
                 target_path=target_path,
                 label=f"visual reference {reference_id}",

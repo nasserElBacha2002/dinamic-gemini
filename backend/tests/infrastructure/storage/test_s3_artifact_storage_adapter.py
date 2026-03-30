@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 
 from src.infrastructure.storage.s3_artifact_storage_adapter import S3ArtifactStorageAdapter
 
@@ -46,6 +47,10 @@ class _FakeS3Client:
 
     def generate_presigned_url(self, op: str, Params: dict, ExpiresIn: int) -> str:
         return f"https://example.test/{Params['Bucket']}/{Params['Key']}?ttl={ExpiresIn}"
+
+    def download_fileobj(self, Bucket: str, Key: str, Fileobj):
+        obj = self._objects[(Bucket, Key)]
+        Fileobj.write(obj["body"])
 
 
 def test_s3_adapter_put_get_exists_delete_and_signed_url() -> None:
@@ -117,3 +122,16 @@ def test_s3_adapter_delete_accepts_already_prefixed_key_without_double_prefix() 
     assert adapter.object_exists("v3/uploads/aisles/a1/raw/x.jpg") is True
     adapter.delete_object("v3/uploads/aisles/a1/raw/x.jpg")
     assert adapter.object_exists("v3/uploads/aisles/a1/raw/x.jpg") is False
+
+
+def test_s3_adapter_download_to_path_streams_without_get_object_buffering(tmp_path: Path) -> None:
+    s3 = _FakeS3Client()
+    adapter = S3ArtifactStorageAdapter(
+        bucket="bucket-a",
+        prefix="v3",
+        s3_client=s3,
+    )
+    adapter.put_object("uploads/aisles/a1/raw/asset.jpg", BytesIO(b"hello-world"), "image/jpeg")
+    out = tmp_path / "asset.jpg"
+    adapter.download_to_path("uploads/aisles/a1/raw/asset.jpg", out, bucket="bucket-a")
+    assert out.read_bytes() == b"hello-world"
