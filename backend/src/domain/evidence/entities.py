@@ -33,10 +33,11 @@ class Evidence:
     timestamp_ms: Optional[int] = None
     bbox_json: Optional[Dict[str, Any]] = None
     quality_score: Optional[float] = None
-    # Phase 1 S3 foundation (optional during rollout; legacy records may be path-only).
+    # storage_path: legacy-relative path; storage_key: canonical ArtifactStore key when using a provider.
     storage_provider: Optional[str] = None
     storage_bucket: Optional[str] = None
     storage_key: Optional[str] = None
+    # HTTP/storage Content-Type for this artifact (no separate mime_type on Evidence).
     content_type: Optional[str] = None
     file_size_bytes: Optional[int] = None
     etag: Optional[str] = None

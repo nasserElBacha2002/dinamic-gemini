@@ -7,8 +7,10 @@ Strategy:
 - **Local** adapter (`storage_provider == "local"`): **FileResponse** from ``{output_dir}/v3_uploads/{storage_key}``
   with path traversal checks (signed URLs are not supported for local).
 
-Legacy path-only records use `storage_path` under `v3_uploads` only when
-``artifact_storage_legacy_local_read_enabled`` is true.
+Legacy path-only rows (no ``storage_provider`` / incomplete provider fields) use ``storage_path``
+under ``v3_uploads`` only when ``artifact_storage_legacy_local_read_enabled`` is true.
+Provider-backed access always uses ``storage_key`` (+ bucket for S3); ``storage_path`` is not a
+fallback for missing keys (see SQL loaders and :func:`resolve_source_asset_file_response`).
 
 Routes should catch :class:`StoredArtifactAccessError` and map to ``HTTPException``.
 
@@ -21,6 +23,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -32,7 +36,7 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
     DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
 )
-from src.pipeline.execution_log import read_execution_log, read_execution_log_bytes
+from src.pipeline.execution_log import read_execution_log, read_execution_log_file
 
 logger = logging.getLogger(__name__)
 
@@ -301,29 +305,95 @@ def load_artifact_content_from_provider_meta(
     artifact_store: Any,
     label: str,
 ) -> bytes:
-    """Content-loading helper: fetch raw bytes from ArtifactStore using provider metadata."""
+    """Content-loading helper: fetch raw bytes from ArtifactStore using provider metadata.
+
+    Large objects use ``download_to_path`` to a temporary file first, then read bytes once,
+    to avoid an extra full copy inside the S3 client's in-memory buffer. Small objects use
+    ``get_object`` directly.
+    """
     if not _provider_meta_complete(meta):
         raise StoredArtifactAccessError(
             404,
-            f"{label}: incomplete storage metadata.",
+            f"{label}: incomplete storage metadata (provider, key, and for S3 a bucket are required).",
             "incomplete_metadata",
         )
     _ensure_s3_bucket_matches_configured(meta, artifact_store)
     key = (meta.get("storage_key") or "").strip()
+    prov = (meta.get("storage_provider") or "").strip().lower()
+    bucket = (meta.get("storage_bucket") or "").strip() or None
+    dl_bucket = bucket if prov == "s3" else None
+    settings = load_settings()
+    threshold = int(settings.artifact_store_max_in_memory_get_bytes)
+
     try:
-        downloaded = artifact_store.get_object(key)
+        size = int(artifact_store.object_size_bytes(key, bucket=dl_bucket))
+    except Exception as head_exc:
+        logger.warning(
+            "%s object_size_bytes failed storage_key=%s provider=%s: %s; falling back to get_object",
+            label,
+            key,
+            prov,
+            head_exc,
+        )
+        size = -1
+
+    if 0 <= size <= threshold:
+        try:
+            downloaded = artifact_store.get_object(key)
+        except Exception as exc:
+            logger.exception(
+                "%s durable_fetch_failed mode=get_object provider=%s bucket=%s storage_key=%s",
+                label,
+                prov,
+                bucket or "",
+                key,
+            )
+            raise StoredArtifactAccessError(
+                502,
+                f"{label} could not be loaded from object storage (missing object or read error).",
+                "durable_fetch_failed",
+            ) from exc
+        logger.info(
+            "%s artifact_bytes_loaded mode=get_object provider=%s bucket=%s storage_key=%s bytes=%s",
+            label,
+            prov,
+            bucket or "",
+            key,
+            len(downloaded.content),
+        )
+        return downloaded.content
+
+    fd, tmp_name = tempfile.mkstemp(prefix="artifact_", suffix=".bin")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        artifact_store.download_to_path(key, tmp_path, bucket=dl_bucket)
+        data = tmp_path.read_bytes()
     except Exception as exc:
         logger.exception(
-            "%s durable_fetch_failed storage_key=%s",
+            "%s durable_fetch_failed mode=download_to_path provider=%s bucket=%s storage_key=%s",
             label,
+            prov,
+            bucket or "",
             key,
         )
         raise StoredArtifactAccessError(
             502,
-            f"{label} could not be loaded from object storage.",
+            f"{label} could not be loaded from object storage (missing object or read error).",
             "durable_fetch_failed",
         ) from exc
-    return downloaded.content
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    logger.info(
+        "%s artifact_bytes_loaded mode=download_temp provider=%s bucket=%s storage_key=%s bytes=%s",
+        label,
+        prov,
+        bucket or "",
+        key,
+        len(data),
+    )
+    return data
 
 
 def read_execution_log_events_for_job(
@@ -346,23 +416,43 @@ def read_execution_log_events_for_job(
         _ensure_s3_bucket_matches_configured(meta, artifact_store)
         prov = (meta.get("storage_provider") or "").strip().lower()
         key = (meta.get("storage_key") or "").strip()
+        bucket = (meta.get("storage_bucket") or "").strip() or None
+        dl_bucket = bucket if prov == "s3" else None
         logger.info(
-            "execution_log_resolve source=durable_metadata provider=%s storage_key=%s job_id=%s",
+            "execution_log_resolve source=durable_download provider=%s bucket=%s storage_key=%s job_id=%s",
             prov,
+            bucket or "",
             key,
             getattr(job, "id", "?"),
         )
-        raw = load_artifact_content_from_provider_meta(
-            meta,
-            artifact_store=artifact_store,
-            label="Execution log",
-        )
-        return read_execution_log_bytes(raw)
+        fd, tmp_name = tempfile.mkstemp(prefix="exec_log_", suffix=".jsonl")
+        os.close(fd)
+        tmp_path = Path(tmp_name)
+        try:
+            artifact_store.download_to_path(key, tmp_path, bucket=dl_bucket)
+        except Exception as exc:
+            tmp_path.unlink(missing_ok=True)
+            logger.exception(
+                "execution_log durable_fetch_failed provider=%s bucket=%s storage_key=%s job_id=%s",
+                prov,
+                bucket or "",
+                key,
+                getattr(job, "id", "?"),
+            )
+            raise StoredArtifactAccessError(
+                502,
+                "Execution log could not be loaded from object storage.",
+                "durable_fetch_failed",
+            ) from exc
+        try:
+            return read_execution_log_file(tmp_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     if not settings.artifact_storage_legacy_local_read_enabled:
         raise StoredArtifactAccessError(
             404,
-            "Execution log is not available: no durable artifact metadata and legacy local read is disabled.",
+            "Execution log is not available: incomplete or missing durable metadata and legacy local read is disabled.",
             "no_durable_metadata_legacy_disabled",
         )
 
@@ -381,11 +471,19 @@ def fetch_json_from_durable_meta(
     artifact_store: Any,
     label: str,
 ) -> Dict[str, Any]:
+    settings = load_settings()
     raw = load_artifact_content_from_provider_meta(
         meta,
         artifact_store=artifact_store,
         label=label,
     )
+    max_json = int(settings.artifact_store_max_json_load_bytes)
+    if len(raw) > max_json:
+        raise StoredArtifactAccessError(
+            413,
+            f"{label} exceeds configured max JSON load size ({max_json} bytes).",
+            "payload_too_large",
+        )
     try:
         return json.loads(raw.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -488,7 +586,7 @@ def load_hybrid_report_json_for_api(
     if not settings.artifact_storage_legacy_local_read_enabled:
         raise StoredArtifactAccessError(
             404,
-            "Hybrid report is not available: no durable artifact metadata and legacy local read is disabled.",
+            "Hybrid report is not available: incomplete or missing durable metadata and legacy local read is disabled.",
             "no_durable_metadata_legacy_disabled",
         )
     path = Path(settings.output_dir) / job_id / RUN_ID / "hybrid_report.json"

@@ -76,7 +76,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         return self._object_key(key)
 
     def _logical_key(self, full_key: str) -> str:
-        """Strip configured prefix from a full key for compatibility with existing storage_path usage."""
+        """Strip configured prefix from a physical key so ``StoredArtifact.storage_key`` stays logical."""
         if self._prefix:
             prefix_with_sep = f"{self._prefix}/"
             if full_key.startswith(prefix_with_sep):
@@ -149,6 +149,21 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             file_size_bytes=int(result.get("ContentLength") or len(body)),
             etag=(result.get("ETag") or "").strip('"') or None,
         )
+
+    def object_size_bytes(self, key: str, *, bucket: Optional[str] = None) -> int:
+        if bucket and bucket != self._bucket:
+            raise RuntimeError(
+                f"S3 bucket mismatch for head_object: record_bucket={bucket!r} configured_bucket={self._bucket!r}"
+            )
+        object_key = self._client_key(key)
+        try:
+            head = self._client.head_object(Bucket=self._bucket, Key=object_key)
+            return int(head.get("ContentLength") or 0)
+        except Exception as exc:
+            logger.exception("S3 head_object failed bucket=%s key=%s", self._bucket, object_key)
+            raise RuntimeError(
+                f"S3 head_object failed for key={object_key!r} bucket={self._bucket!r}"
+            ) from exc
 
     def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
         if bucket and bucket != self._bucket:

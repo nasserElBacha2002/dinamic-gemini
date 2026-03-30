@@ -12,6 +12,7 @@ from src.pipeline.execution_log import (
     _sanitize_payload,
     read_execution_log,
     read_execution_log_bytes,
+    read_execution_log_file,
     read_last_stage_error,
 )
 
@@ -100,6 +101,15 @@ def test_read_execution_log_bytes_parses_valid_and_skips_invalid_lines():
 def test_read_execution_log_bytes_handles_empty_and_non_utf8():
     assert read_execution_log_bytes(b"") == []
     assert read_execution_log_bytes(b"\xff\xfe\x00") == []
+
+
+def test_read_execution_log_file_matches_read_execution_log(tmp_path):
+    path = tmp_path / "execution_log.jsonl"
+    path.write_text(
+        '{"ts":"2025-01-01T00:00:00Z","stage":"S1","level":"info","message":"ok"}\n',
+        encoding="utf-8",
+    )
+    assert read_execution_log_file(path) == read_execution_log(tmp_path)
 
 
 def test_read_last_stage_error_missing():

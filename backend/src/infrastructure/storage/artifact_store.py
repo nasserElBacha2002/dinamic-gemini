@@ -1,8 +1,30 @@
 """
-Provider-aware artifact storage abstraction (Phase 1 S3 foundation).
+Provider-aware artifact storage abstraction (Phase 1 S3 foundation; Phase 6 contract).
 
 This abstraction is intentionally infrastructure-facing and can be implemented by
 S3, local filesystem, or composite adapters during migration.
+
+**storage_key (canonical)**
+
+- Persisted in the DB and passed to ArtifactStore methods as the **logical** application key:
+  **prefix-free** relative to any provider-specific root (e.g. S3 prefix is *not* part of
+  the stored value).
+- S3: adapters accept **logical** keys and also tolerate keys that already include the
+  configured bucket prefix (idempotent normalization — no double prefix). Return values from
+  ``put_object`` / ``StoredArtifact.storage_key`` are always **logical** (prefix stripped).
+- Local (``V3ArtifactStorageAdapter``): ``storage_key`` is the path relative to
+  ``v3_uploads`` / ``base_path`` (same string historically kept in ``storage_path`` for uploads).
+
+**content_type vs domain mime_type**
+
+- ``StoredArtifact.content_type`` / DB ``content_type`` = object storage metadata (HTTP Content-Type).
+- Domain/API fields named ``mime_type`` describe the asset for business rules and responses.
+  Populate both on upload when they align; conversions belong at boundaries, not inside adapters.
+
+**storage_path (legacy)**
+
+- Legacy-only relative filesystem path for rows without provider metadata. Do not use it to
+  infer ``storage_key`` when ``storage_provider`` is set (see ``sql_storage_fields``).
 """
 
 from __future__ import annotations
@@ -50,6 +72,10 @@ class ArtifactStore(ABC):
     @abstractmethod
     def get_object(self, key: str) -> ArtifactDownload:
         ...
+
+    @abstractmethod
+    def object_size_bytes(self, key: str, *, bucket: Optional[str] = None) -> int:
+        """Return object size without reading the body (e.g. S3 head or local stat)."""
 
     @abstractmethod
     def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:

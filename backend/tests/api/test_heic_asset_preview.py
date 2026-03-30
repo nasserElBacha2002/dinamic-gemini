@@ -54,6 +54,8 @@ def _patch_local_asset_settings(output_dir: Path):
             "output_dir": str(output_dir),
             "artifact_storage_legacy_local_read_enabled": True,
             "artifact_s3_signed_url_ttl_sec": 900,
+            "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
         },
     )()
     with patch("src.api.routes.v3.assets.load_settings", return_value=s), patch(

@@ -73,7 +73,16 @@ class _NoopRepo(
     def list_by_aisle(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return []
 
+    def list_by_aisle_query(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return []
+
+    def list_by_aisles(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return []
+
     def list_by_position(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return []
+
+    def list_by_entity(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return []
 
     def save_many(self, *args, **kwargs):  # type: ignore[no-untyped-def]
@@ -131,6 +140,11 @@ class _FakeArtifactStore:
         if key not in self._objects:
             raise RuntimeError(f"missing key: {key}")
         raise AssertionError("resolver should not call get_object in streaming mode")
+
+    def object_size_bytes(self, key: str, *, bucket: Optional[str] = None) -> int:
+        if key not in self._objects:
+            raise RuntimeError(f"missing key: {key}")
+        return len(self._objects[key])
 
     def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
         if key not in self._objects:

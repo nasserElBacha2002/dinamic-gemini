@@ -563,6 +563,8 @@ def test_execution_log_returns_200_empty_events_when_run_dir_exists_but_file_mis
                 "output_dir": str(base),
                 "artifact_storage_legacy_local_read_enabled": True,
                 "artifact_s3_signed_url_ttl_sec": 900,
+                "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+                "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
             },
         )()
         mock_load = patch(
@@ -1057,6 +1059,8 @@ def test_execution_log_from_durable_metadata_not_local_disk() -> None:
             "output_dir": str(bogus_out),
             "artifact_storage_legacy_local_read_enabled": False,
             "artifact_s3_signed_url_ttl_sec": 900,
+            "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
         },
     )()
     mock_st = patch(
@@ -1124,6 +1128,8 @@ def test_execution_log_legacy_disabled_without_durable_returns_404() -> None:
             "output_dir": str(bogus_out),
             "artifact_storage_legacy_local_read_enabled": False,
             "artifact_s3_signed_url_ttl_sec": 900,
+            "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
         },
     )()
     mock_st = patch(
@@ -1214,6 +1220,8 @@ def test_hybrid_report_api_from_durable_metadata() -> None:
             "output_dir": str(bogus_out),
             "artifact_storage_legacy_local_read_enabled": False,
             "artifact_s3_signed_url_ttl_sec": 900,
+            "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
         },
     )()
     mock_st = patch(
