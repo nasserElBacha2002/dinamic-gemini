@@ -6,14 +6,17 @@ GET /{id} and POST / return InventoryResponse (entity without list aggregates).
 
 from __future__ import annotations
 
+import logging
 from io import BytesIO
 from typing import List, Optional
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import Response
 
+from src.api.services.v3_stored_artifact_access import (
+    StoredArtifactAccessError,
+    resolve_visual_reference_file_response,
+)
 from src.api.dependencies import (
     get_create_inventory_use_case,
     get_artifact_storage,
@@ -53,6 +56,8 @@ from src.application.use_cases.upload_inventory_visual_references import (
 )
 
 from .shared import inventory_list_item_to_response, inventory_to_response
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -264,35 +269,14 @@ def get_inventory_visual_reference_file(
     if ref is None:
         raise HTTPException(status_code=404, detail="Visual reference not found")
 
-    # S3/provider-aware path for new records.
-    if (ref.storage_provider or "").strip().lower() == "s3" and (ref.storage_key or "").strip():
-        sign = getattr(artifact_storage, "generate_signed_url", None)
-        if not callable(sign):
-            raise HTTPException(status_code=500, detail="Artifact storage does not support signed URL generation")
-        from src.config import load_settings
-
-        ttl = int(load_settings().artifact_s3_signed_url_ttl_sec)
-        url = sign(ref.storage_key, ttl)
-        return RedirectResponse(url=url, status_code=307)
-
-    # Legacy local fallback during rollout.
-    from src.config import load_settings
-
-    settings = load_settings()
-    if not settings.artifact_storage_legacy_local_read_enabled:
-        raise HTTPException(status_code=404, detail="Visual reference file not found")
-    if not ref.storage_path:
-        raise HTTPException(status_code=404, detail="Visual reference file not found")
-    base = Path(settings.output_dir) / "v3_uploads"
-    file_path = (base / ref.storage_path).resolve()
     try:
-        file_path.relative_to(base.resolve())
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Visual reference file path invalid")
-    if not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Visual reference file not found")
-    return FileResponse(
-        path=str(file_path),
-        media_type=ref.mime_type or "application/octet-stream",
-        filename=ref.filename or "file",
-    )
+        return resolve_visual_reference_file_response(ref, artifact_store=artifact_storage)
+    except StoredArtifactAccessError as e:
+        logger.warning(
+            "Visual reference file resolution failed: inventory_id=%s reference_id=%s reason=%s detail=%s",
+            inventory_id,
+            reference_id,
+            e.reason_code,
+            e.detail,
+        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e

@@ -164,6 +164,30 @@ class ExecutionLogWriter:
         return self._last_error_path
 
 
+def _parse_execution_log_lines(text: str) -> list[Dict[str, Any]]:
+    events: list[Dict[str, Any]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+def read_execution_log_bytes(content: bytes) -> list[Dict[str, Any]]:
+    """Parse execution_log.jsonl from raw bytes (e.g. S3 GET body). Empty if invalid or empty."""
+    if not content:
+        return []
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return []
+    return _parse_execution_log_lines(text)
+
+
 def read_execution_log(run_dir: Path) -> list[Dict[str, Any]]:
     """Read execution_log.jsonl and return list of event dicts. Empty if missing or invalid."""
     path = Path(run_dir) / EXECUTION_LOG_FILENAME
@@ -172,14 +196,7 @@ def read_execution_log(run_dir: Path) -> list[Dict[str, Any]]:
         return events
     try:
         with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    events.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+            return _parse_execution_log_lines(f.read())
     except OSError:
         pass
     return events

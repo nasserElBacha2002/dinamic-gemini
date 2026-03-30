@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import List, Optional
+import logging
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-
-from src.config import load_settings
 from src.api.dependencies import (
+    get_artifact_storage,
     get_create_aisle_use_case,
     get_list_aisles_with_status_use_case,
     get_start_aisle_processing_use_case,
@@ -18,6 +17,11 @@ from src.api.dependencies import (
     get_get_aisle_merge_results_use_case,
     get_job_repo,
     get_run_aisle_merge_use_case,
+)
+from src.api.services.v3_stored_artifact_access import (
+    StoredArtifactAccessError,
+    load_hybrid_report_json_for_api,
+    read_execution_log_events_for_job,
 )
 from src.api.schemas.merge_schemas import (
     MergeResultItemResponse,
@@ -48,10 +52,9 @@ from src.application.use_cases.run_aisle_merge import (
     RunAisleMergeCommand,
     RunAisleMergeUseCase,
 )
-from src.infrastructure.pipeline.v3_job_executor import RUN_ID
-from src.pipeline.execution_log import read_execution_log
-
 from .shared import aisle_to_response, status_response_from_result
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -196,6 +199,7 @@ def get_job_execution_log(
     job_id: str,
     job_repo: JobRepository = Depends(get_job_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    artifact_storage=Depends(get_artifact_storage),
 ) -> ExecutionLogResponse:
     """Return structured execution log for a job (v3.1.1). Job must belong to this aisle and inventory."""
     job = job_repo.get_by_id(job_id)
@@ -206,11 +210,51 @@ def get_job_execution_log(
     aisle = aisle_repo.get_by_id(aisle_id)
     if aisle is None or aisle.inventory_id != inventory_id:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    run_dir = Path(load_settings().output_dir) / job_id / RUN_ID
-    events = read_execution_log(run_dir)
+    try:
+        raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
+    except StoredArtifactAccessError as e:
+        logger.warning(
+            "execution_log_http_error job_id=%s reason=%s detail=%s",
+            job_id,
+            e.reason_code,
+            e.detail,
+        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
     return ExecutionLogResponse(
-        events=[ExecutionLogEvent.model_validate(e) for e in events],
+        events=[ExecutionLogEvent.model_validate(e) for e in raw_events],
     )
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/hybrid-report",
+)
+def get_job_hybrid_report(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    artifact_storage=Depends(get_artifact_storage),
+) -> dict[str, Any]:
+    """Return pipeline hybrid_report.json (dict) from durable artifact metadata or legacy disk."""
+    job = job_repo.get_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.target_type != "aisle" or job.target_id != aisle_id:
+        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle")
+    aisle = aisle_repo.get_by_id(aisle_id)
+    if aisle is None or aisle.inventory_id != inventory_id:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    try:
+        return load_hybrid_report_json_for_api(job, artifact_store=artifact_storage)
+    except StoredArtifactAccessError as e:
+        logger.warning(
+            "hybrid_report_http_error job_id=%s reason=%s detail=%s",
+            job_id,
+            e.reason_code,
+            e.detail,
+        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
 
 @router.post(
