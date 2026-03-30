@@ -24,6 +24,11 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
+from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
+    DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
+)
+from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.pipeline.contracts.analysis_context import AnalysisContext
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 from src.pipeline.run_metadata import (
@@ -457,6 +462,10 @@ def test_execute_accepts_running_status_after_db_claim() -> None:
             ]
 
     noop = NoopRepo()
+    base_path = Path("/tmp/test_execute_running_status")
+    base_path.mkdir(parents=True, exist_ok=True)
+    artifact_root = base_path / "durable_artifact_root"
+    artifact_store = V3ArtifactStorageAdapter(artifact_root)
     executor = V3JobExecutor(
         job_repo=job_repo,
         aisle_repo=aisle_repo,
@@ -468,14 +477,18 @@ def test_execute_accepts_running_status_after_db_claim() -> None:
         inventory_repo=noop,
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
+        artifact_store=artifact_store,
     )
 
-    base_path = Path("/tmp/test_execute_running_status")
-    base_path.mkdir(parents=True, exist_ok=True)
     (base_path / job_id).mkdir(parents=True, exist_ok=True)
     run_dir = base_path / job_id / RUN_ID
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "hybrid_report.json").write_text(json.dumps({"entities": []}), encoding="utf-8")
+    (run_dir / "execution_log.jsonl").write_text(
+        '{"ts":"2025-01-01T00:00:00+00:00","stage":"test","level":"info","message":"ok"}\n',
+        encoding="utf-8",
+    )
+    (run_dir / "hybrid_report.csv").write_text("col\nval\n", encoding="utf-8")
     v3_base = base_path / "v3_uploads"
     v3_base.mkdir(parents=True, exist_ok=True)
     (v3_base / "a1").mkdir(parents=True, exist_ok=True)
@@ -505,6 +518,123 @@ def test_execute_accepts_running_status_after_db_claim() -> None:
     updated_job = job_repo.get_by_id(job_id)
     assert updated_job is not None
     assert updated_job.status == JobStatus.SUCCEEDED
+    assert updated_job.result_json is not None
+    da = updated_job.result_json.get("durable_artifacts")
+    assert da is not None
+    assert DURABLE_ARTIFACT_KIND_EXECUTION_LOG in da
+    assert DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON in da
+    log_key = da[DURABLE_ARTIFACT_KIND_EXECUTION_LOG]["storage_key"]
+    assert log_key == f"v3/jobs/{job_id}/run/execution_log.jsonl"
+    assert da[DURABLE_ARTIFACT_KIND_EXECUTION_LOG]["storage_provider"] == "local"
+    assert (artifact_root / log_key).is_file()
+
+
+def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
+    """Phase 3B: failed artifact upload must not mark job succeeded or write durable metadata."""
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_id = "j-upload-fail"
+    aisle_id = "aisle-1"
+    job_repo = InMemoryJobRepo()
+    job = Job(
+        id=job_id,
+        target_type="aisle",
+        target_id=aisle_id,
+        job_type="process_aisle",
+        status=JobStatus.RUNNING,
+        payload_json={"aisle_id": aisle_id},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+
+    aisle = Aisle(
+        id=aisle_id,
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.QUEUED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+
+    class AssetRepoWithOnePhoto:
+        def list_by_aisle(self, aid: str):
+            if aid != aisle_id:
+                return []
+            return [
+                SourceAsset(
+                    id="asset-1",
+                    aisle_id=aisle_id,
+                    type=SourceAssetType.PHOTO,
+                    original_filename="photo.jpg",
+                    storage_path="a1/photo.jpg",
+                    mime_type="image/jpeg",
+                    uploaded_at=now,
+                )
+            ]
+
+    noop = NoopRepo()
+    base_path = Path("/tmp/test_execute_upload_fail")
+    base_path.mkdir(parents=True, exist_ok=True)
+    artifact_root = base_path / "durable_artifact_root"
+    artifact_store = V3ArtifactStorageAdapter(artifact_root)
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=AssetRepoWithOnePhoto(),
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+        artifact_store=artifact_store,
+    )
+
+    (base_path / job_id).mkdir(parents=True, exist_ok=True)
+    run_dir = base_path / job_id / RUN_ID
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "hybrid_report.json").write_text(json.dumps({"entities": []}), encoding="utf-8")
+    (run_dir / "execution_log.jsonl").write_text(
+        '{"ts":"2025-01-01T00:00:00+00:00","stage":"test","level":"info","message":"ok"}\n',
+        encoding="utf-8",
+    )
+    (run_dir / "hybrid_report.csv").write_text("c\n", encoding="utf-8")
+    v3_base = base_path / "v3_uploads"
+    v3_base.mkdir(parents=True, exist_ok=True)
+    (v3_base / "a1").mkdir(parents=True, exist_ok=True)
+    (v3_base / "a1" / "photo.jpg").write_bytes(b"fake")
+
+    with patch.object(artifact_store, "put_object", side_effect=RuntimeError("S3 unavailable")):
+        with patch.object(executor, "_persist_use_case", MagicMock(return_value=None)):
+            with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
+                mock_settings.return_value.output_dir = str(base_path)
+                with patch(
+                    "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+                ) as mock_pipeline_cls:
+                    mock_pipeline_cls.return_value.process_video.return_value = PipelineRunResult(
+                        exit_code=0, run_metadata=None
+                    )
+                    with patch.object(
+                        executor,
+                        "_build_analysis_context",
+                        return_value=AnalysisContext(
+                            primary_evidence=[],
+                            visual_references=[],
+                            instructions="",
+                        ),
+                    ):
+                        handled = executor.execute(base_path, job_id)
+
+    assert handled is True
+    updated_job = job_repo.get_by_id(job_id)
+    assert updated_job is not None
+    assert updated_job.status == JobStatus.FAILED
+    assert updated_job.error_message is not None
+    assert "Durable artifact upload failed" in updated_job.error_message
+    assert updated_job.result_json is None or "durable_artifacts" not in (updated_job.result_json or {})
 
 
 def test_execute_rejects_mixed_video_and_photo_assets() -> None:

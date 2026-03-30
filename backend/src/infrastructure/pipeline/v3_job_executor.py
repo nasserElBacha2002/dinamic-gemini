@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
@@ -56,6 +56,10 @@ from src.pipeline.run_metadata import (
     default_empty_block,
 )
 from src.infrastructure.pipeline.input_artifact_resolver import WorkerInputArtifactResolver
+from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    merge_durable_into_result_json,
+    publish_worker_durable_artifacts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -344,9 +348,50 @@ class V3JobExecutor:
                 self._fail_job_and_aisle(job_id, aisle, f"Persist: {persist_e}")
                 return True
 
+            # Phase 3B: durable execution outputs via ArtifactStore (S3 or local adapter).
+            if self._artifact_store is None:
+                msg = "Artifact store not configured; cannot upload durable worker outputs"
+                logger.error("v3_job_id=%s %s", job_id, msg)
+                exec_log.error("Artifacts", msg)
+                self._fail_job_and_aisle(job_id, aisle, msg)
+                return True
+            try:
+                durable_meta = publish_worker_durable_artifacts(
+                    self._artifact_store,
+                    job_id=job_id,
+                    run_id=RUN_ID,
+                    run_dir=run_dir,
+                )
+                logger.info(
+                    "worker_durable_artifacts_ready_for_job_metadata job_id=%s kinds=%s",
+                    job_id,
+                    sorted(durable_meta.keys()),
+                )
+            except Exception as artifact_exc:
+                logger.exception(
+                    "worker_durable_artifact_publish_failed job_id=%s",
+                    job_id,
+                )
+                exec_log.error(
+                    "Artifacts",
+                    f"Durable artifact upload failed: {artifact_exc}",
+                    payload={"error": str(artifact_exc)[:500]},
+                )
+                self._fail_job_and_aisle(
+                    job_id,
+                    aisle,
+                    f"Durable artifact upload failed: {artifact_exc}",
+                )
+                return True
+
             # Phase 5: persist visual_reference_context from in-memory run_metadata (no file read)
             self._mark_success(
-                job_id, aisle, report_path, now, run_metadata=result.run_metadata
+                job_id,
+                aisle,
+                report_path,
+                now,
+                run_metadata=result.run_metadata,
+                durable_artifacts=durable_meta,
             )
             logger.info(
                 "v3 mark success: job_id=%s inventory_id=%s aisle_id=%s report_path=%s",
@@ -495,6 +540,7 @@ class V3JobExecutor:
         now,
         *,
         run_metadata: Optional[dict] = None,
+        durable_artifacts: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
         job = self._job_repo.get_by_id(job_id)
         if job:
@@ -511,8 +557,20 @@ class V3JobExecutor:
             }
             if meta.get("prompt_key"):
                 job.result_json["prompt_key"] = meta["prompt_key"]
+            if durable_artifacts:
+                merge_durable_into_result_json(job.result_json, durable_artifacts)
+                logger.info(
+                    "v3_job_metadata_persist_durable_artifacts job_id=%s kinds=%s",
+                    job_id,
+                    sorted(durable_artifacts.keys()),
+                )
             job.error_message = None
             self._job_repo.save(job)
+            logger.info(
+                "v3_job_metadata_save_ok job_id=%s has_durable_artifacts=%s",
+                job_id,
+                bool(durable_artifacts),
+            )
         aisle.mark_processed(now)
         self._aisle_repo.save(aisle)
         self._reconcile_inventory_for_aisle(aisle)
