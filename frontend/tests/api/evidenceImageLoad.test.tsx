@@ -44,10 +44,17 @@ describe('fetchEvidenceImageDisplay', () => {
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
       if (typeof _url === 'string' && _url.includes('image-display-url')) {
         return Promise.resolve(
-          new Response(JSON.stringify({ image_url: 'https://s3.example/signed', requires_authenticated_fetch: false }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          })
+          new Response(
+            JSON.stringify({
+              image_url: 'https://s3.example/signed',
+              requires_authenticated_fetch: false,
+              display_strategy: 'presigned_url',
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
         );
       }
       return Promise.reject(new Error('unexpected url'));
@@ -68,7 +75,11 @@ describe('fetchEvidenceImageDisplay', () => {
       vi.fn(() =>
         Promise.resolve(
           new Response(
-            JSON.stringify({ image_url: 'https://s3.example/bucket/k?sig=1', requires_authenticated_fetch: false }),
+            JSON.stringify({
+              image_url: 'https://s3.example/bucket/k?sig=1',
+              requires_authenticated_fetch: false,
+              display_strategy: 'presigned_url',
+            }),
             { status: 200, headers: { 'Content-Type': 'application/json' } }
           )
         )
@@ -89,10 +100,17 @@ describe('fetchEvidenceImageDisplay', () => {
       .mockImplementationOnce((url: string) => {
         expect(String(url)).toContain('image-display-url');
         return Promise.resolve(
-          new Response(JSON.stringify({ image_url: null, requires_authenticated_fetch: true }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          })
+          new Response(
+            JSON.stringify({
+              image_url: null,
+              requires_authenticated_fetch: true,
+              display_strategy: 'authenticated_file_fetch',
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
         );
       })
       .mockImplementationOnce((url: string, init?: RequestInit) => {
@@ -239,10 +257,17 @@ describe('useEvidenceImageLoad', () => {
       'fetch',
       vi.fn(() =>
         Promise.resolve(
-          new Response(JSON.stringify({ image_url: 'https://signed.example/x', requires_authenticated_fetch: false }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          })
+          new Response(
+            JSON.stringify({
+              image_url: 'https://signed.example/x',
+              requires_authenticated_fetch: false,
+              display_strategy: 'presigned_url',
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
         )
       )
     );
@@ -257,10 +282,17 @@ describe('useEvidenceImageLoad', () => {
       .fn()
       .mockImplementationOnce(() =>
         Promise.resolve(
-          new Response(JSON.stringify({ requires_authenticated_fetch: true }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          })
+          new Response(
+            JSON.stringify({
+              image_url: null,
+              requires_authenticated_fetch: true,
+              display_strategy: 'authenticated_file_fetch',
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
         )
       )
       .mockImplementationOnce(() =>

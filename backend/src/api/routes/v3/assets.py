@@ -40,6 +40,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _source_asset_image_display_response(
+    *,
+    image_url: Optional[str],
+    need_fetch: bool,
+) -> SourceAssetImageDisplayUrlResponse:
+    """Build API model; ``need_fetch`` must be true when ``image_url`` is None."""
+    if image_url:
+        return SourceAssetImageDisplayUrlResponse(
+            image_url=image_url,
+            requires_authenticated_fetch=False,
+            display_strategy="presigned_url",
+        )
+    return SourceAssetImageDisplayUrlResponse(
+        image_url=None,
+        requires_authenticated_fetch=True,
+        display_strategy="authenticated_file_fetch",
+    )
+
+
 class AssetFileFailureReason(str, Enum):
     """Internal reason for asset file endpoint returning 404 or failure. Used for logging and observability."""
     AISLE_NOT_FOUND = "aisle_not_found"
@@ -211,7 +230,7 @@ def get_aisle_asset_image_display_url(
     job_repo: JobRepository = Depends(get_job_repo),
     artifact_storage=Depends(get_artifact_storage),
 ) -> SourceAssetImageDisplayUrlResponse:
-    """Return a display strategy for an aisle asset image (presigned URL or authenticated /file fetch)."""
+    """Return how to display the asset image: presigned URL or authenticated GET on ``.../file``."""
     try:
         assets = use_case.execute(inventory_id, aisle_id)
     except AisleNotFoundError:
@@ -249,9 +268,11 @@ def get_aisle_asset_image_display_url(
             output_dir, job_repo, aisle_id, asset_id, job_id=job_id
         )
         if normalized_path is not None:
+            # Same strategy as local/legacy: client must GET /file, which serves the normalized JPEG.
             return SourceAssetImageDisplayUrlResponse(
                 image_url=None,
                 requires_authenticated_fetch=True,
+                display_strategy="authenticated_file_fetch",
             )
         logger.warning(
             "Asset image-display-url: heic_preview_unavailable asset_id=%s request_job_id=%s",
@@ -274,7 +295,4 @@ def get_aisle_asset_image_display_url(
         )
         raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
-    return SourceAssetImageDisplayUrlResponse(
-        image_url=image_url,
-        requires_authenticated_fetch=need_fetch,
-    )
+    return _source_asset_image_display_response(image_url=image_url, need_fetch=need_fetch)

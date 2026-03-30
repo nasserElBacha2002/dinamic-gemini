@@ -83,6 +83,72 @@ def _ensure_s3_bucket_matches_configured(meta: Mapping[str, Any], artifact_store
         )
 
 
+def _local_provider_resolved_file_path(*, storage_key: str) -> Path:
+    """Resolve ``storage_key`` under ``{output_dir}/v3_uploads`` with path-safety checks."""
+    settings = load_settings()
+    key = (storage_key or "").strip()
+    if not key:
+        raise StoredArtifactAccessError(
+            404,
+            "Stored artifact metadata is incomplete (missing key).",
+            "incomplete_metadata",
+        )
+    base = Path(settings.output_dir) / "v3_uploads"
+    resolved_base = base.resolve()
+    file_path = (base / key).resolve()
+    try:
+        file_path.relative_to(resolved_base)
+    except ValueError as exc:
+        raise StoredArtifactAccessError(
+            404,
+            "Artifact path failed safety validation.",
+            "path_invalid",
+        ) from exc
+    if not file_path.is_file():
+        raise StoredArtifactAccessError(
+            404,
+            "Stored artifact file not found under local artifact root.",
+            "local_file_missing",
+        )
+    return file_path
+
+
+def _legacy_v3_uploads_resolved_file_path(*, storage_path: str) -> Path:
+    """Validate legacy rows can read ``storage_path`` under ``v3_uploads``; return resolved path."""
+    settings = load_settings()
+    if not settings.artifact_storage_legacy_local_read_enabled:
+        raise StoredArtifactAccessError(
+            404,
+            "Legacy local file access is disabled; this record has no provider metadata.",
+            "legacy_local_disabled",
+        )
+    raw = (storage_path or "").strip()
+    if not raw:
+        raise StoredArtifactAccessError(
+            404,
+            "No storage path on record.",
+            "legacy_path_missing",
+        )
+    base = Path(settings.output_dir) / "v3_uploads"
+    resolved_base = base.resolve()
+    file_path = (base / raw).resolve()
+    try:
+        file_path.relative_to(resolved_base)
+    except ValueError as exc:
+        raise StoredArtifactAccessError(
+            404,
+            "Legacy asset path failed safety validation.",
+            "path_invalid",
+        ) from exc
+    if not file_path.is_file():
+        raise StoredArtifactAccessError(
+            404,
+            "Legacy asset file not found.",
+            "legacy_file_missing",
+        )
+    return file_path
+
+
 def presigned_s3_get_url_for_provider_key(
     *,
     storage_key: str,
@@ -172,23 +238,7 @@ def serve_provider_artifact_response(
         return RedirectResponse(url=url, status_code=307)
 
     if prov == "local":
-        base = Path(settings.output_dir) / "v3_uploads"
-        resolved_base = base.resolve()
-        file_path = (base / key).resolve()
-        try:
-            file_path.relative_to(resolved_base)
-        except ValueError as exc:
-            raise StoredArtifactAccessError(
-                404,
-                "Artifact path failed safety validation.",
-                "path_invalid",
-            ) from exc
-        if not file_path.is_file():
-            raise StoredArtifactAccessError(
-                404,
-                "Stored artifact file not found under local artifact root.",
-                "local_file_missing",
-            )
+        file_path = _local_provider_resolved_file_path(storage_key=key)
         logger.info(
             "artifact_access source=local mode=file_response storage_key=%s path=%s",
             key,
@@ -213,40 +263,10 @@ def _legacy_v3_uploads_file_response(
     filename: str,
     media_type: str,
 ) -> FileResponse:
-    settings = load_settings()
-    if not settings.artifact_storage_legacy_local_read_enabled:
-        raise StoredArtifactAccessError(
-            404,
-            "Legacy local file access is disabled; this record has no provider metadata.",
-            "legacy_local_disabled",
-        )
-    raw = (storage_path or "").strip()
-    if not raw:
-        raise StoredArtifactAccessError(
-            404,
-            "No storage path on record.",
-            "legacy_path_missing",
-        )
-    base = Path(settings.output_dir) / "v3_uploads"
-    resolved_base = base.resolve()
-    file_path = (base / raw).resolve()
-    try:
-        file_path.relative_to(resolved_base)
-    except ValueError as exc:
-        raise StoredArtifactAccessError(
-            404,
-            "Legacy asset path failed safety validation.",
-            "path_invalid",
-        ) from exc
-    if not file_path.is_file():
-        raise StoredArtifactAccessError(
-            404,
-            "Legacy asset file not found.",
-            "legacy_file_missing",
-        )
+    file_path = _legacy_v3_uploads_resolved_file_path(storage_path=storage_path)
     logger.info(
         "artifact_access source=legacy_local mode=file_response storage_path=%s",
-        raw,
+        (storage_path or "").strip(),
     )
     return FileResponse(
         path=str(file_path),
@@ -299,12 +319,18 @@ def resolve_source_asset_image_display(
     *,
     artifact_store: Any,
 ) -> tuple[Optional[str], bool]:
-    """Resolve how the SPA should display a source asset image.
+    """Resolve how the SPA should display a non-HEIC source asset image.
 
     Returns ``(image_url, requires_authenticated_fetch)``:
     - **S3:** ``(presigned_https_url, False)`` — safe for ``<img src>`` without Bearer.
-    - **Local provider, legacy rows, HEIC (caller handles separately):**
-      ``(None, True)`` — client should GET the authenticated ``.../file`` endpoint and use a blob URL.
+    - **Local provider / legacy path-only rows:** ``(None, True)`` only after the same path checks
+      ``GET .../file`` would pass for readable bytes under ``v3_uploads``. If the file is missing,
+      legacy is disabled, or the path is unsafe, raises :class:`StoredArtifactAccessError` (same as
+      ``/file`` would for that row).
+
+    **HEIC / HEIF** is handled only in the HTTP route: when a normalized preview exists, the route
+    returns the authenticated-fetch strategy pointing at ``.../file`` (which serves the normalized
+    JPEG). The helper is not called for HEIC assets.
     """
     prov = (getattr(asset, "storage_provider", None) or "").strip().lower()
     key = (getattr(asset, "storage_key", None) or "").strip()
@@ -331,6 +357,7 @@ def resolve_source_asset_image_display(
             )
             return (signed, False)
         if prov == "local":
+            _local_provider_resolved_file_path(storage_key=key)
             return (None, True)
         raise StoredArtifactAccessError(
             400,
@@ -338,6 +365,9 @@ def resolve_source_asset_image_display(
             "unsupported_provider",
         )
 
+    _legacy_v3_uploads_resolved_file_path(
+        storage_path=getattr(asset, "storage_path", "") or "",
+    )
     return (None, True)
 
 
