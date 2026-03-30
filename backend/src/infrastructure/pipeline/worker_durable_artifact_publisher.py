@@ -3,6 +3,14 @@ Upload durable worker outputs (Phase 3B) through ArtifactStore.
 
 Temp run_dir files remain the execution workspace; this module copies required
 artifacts to the configured provider and returns metadata for job.result_json.
+
+Canonical logical keys (prefix-free; S3 adapter may prepend a configured prefix):
+    v3/jobs/{job_id}/{run_segment}/{filename}
+
+``run_segment`` is the pipeline run directory basename (e.g. ``"run"``), matching
+local layout ``{output_dir}/{job_id}/{run_segment}/...``. There is only one path
+segment for the run — never ``.../run/run/...`` (avoid ``v3/jobs/{id}/run/{run_id}``
+when ``run_id`` is already the segment name).
 """
 
 from __future__ import annotations
@@ -19,13 +27,29 @@ DURABLE_ARTIFACT_KIND_EXECUTION_LOG = "execution_log"
 DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON = "hybrid_report_json"
 DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV = "hybrid_report_csv"
 
+# Default run directory basename; must match ``RUN_ID`` in ``v3_job_executor`` (single source of truth here).
+DEFAULT_V3_WORKER_RUN_SEGMENT = "run"
 
-def worker_output_storage_keys(job_id: str, run_id: str) -> Mapping[str, str]:
+WORKER_DURABLE_LOGICAL_PREFIX_ROOT = "v3/jobs"
+
+
+def worker_durable_artifact_key_prefix(job_id: str, run_segment: str) -> str:
+    """Return ``v3/jobs/{job_id}/{run_segment}`` (no trailing slash).
+
+    All durable worker object keys for this job run share this prefix.
+    """
+    return f"{WORKER_DURABLE_LOGICAL_PREFIX_ROOT}/{job_id}/{run_segment}"
+
+
+def worker_output_storage_keys(job_id: str, run_segment: str) -> Mapping[str, str]:
     """Logical storage keys (prefix-free) for durable worker artifacts.
 
-    ``run_id`` is the run directory name (same as ``RUN_ID`` in the executor, e.g. ``\"run\"``).
+    Args:
+        job_id: v3 inventory job id.
+        run_segment: Run directory name under the job folder (normally
+            :data:`DEFAULT_V3_WORKER_RUN_SEGMENT`).
     """
-    base = f"v3/jobs/{job_id}/{run_id}"
+    base = worker_durable_artifact_key_prefix(job_id, run_segment)
     return {
         DURABLE_ARTIFACT_KIND_EXECUTION_LOG: f"{base}/execution_log.jsonl",
         DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON: f"{base}/hybrid_report.json",
@@ -48,14 +72,14 @@ def publish_worker_durable_artifacts(
     store: ArtifactStore,
     *,
     job_id: str,
-    run_id: str,
+    run_segment: str,
     run_dir: Path,
 ) -> Dict[str, Dict[str, Any]]:
     """Upload durable artifacts from run_dir. Raises if a required file is missing or upload fails.
 
     Optional ``hybrid_report.csv`` is uploaded only when present (pipeline always generates it in normal runs).
     """
-    keys = worker_output_storage_keys(job_id, run_id)
+    keys = worker_output_storage_keys(job_id, run_segment)
     run_dir = Path(run_dir)
     out: Dict[str, Dict[str, Any]] = {}
 
@@ -86,13 +110,13 @@ def publish_worker_durable_artifacts(
             if required:
                 raise FileNotFoundError(
                     f"Required durable artifact missing before upload: {path.name} "
-                    f"(job_id={job_id} run_id={run_id})"
+                    f"(job_id={job_id} run_segment={run_segment})"
                 )
             logger.info(
                 "worker_durable_artifact_skip_missing",
                 extra={
                     "job_id": job_id,
-                    "run_id": run_id,
+                    "run_segment": run_segment,
                     "artifact_kind": kind,
                     "path": str(path),
                 },
@@ -104,7 +128,7 @@ def publish_worker_durable_artifacts(
             "worker_durable_artifact_upload_start",
             extra={
                 "job_id": job_id,
-                "run_id": run_id,
+                "run_segment": run_segment,
                 "artifact_kind": kind,
                 "storage_key": logical_key,
                 "local_path": str(path),
@@ -118,7 +142,7 @@ def publish_worker_durable_artifacts(
             "worker_durable_artifact_upload_ok",
             extra={
                 "job_id": job_id,
-                "run_id": run_id,
+                "run_segment": run_segment,
                 "artifact_kind": kind,
                 "storage_provider": stored.storage_provider,
                 "storage_bucket": stored.storage_bucket,

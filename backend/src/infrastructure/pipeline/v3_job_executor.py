@@ -57,13 +57,15 @@ from src.pipeline.run_metadata import (
 )
 from src.infrastructure.pipeline.input_artifact_resolver import WorkerInputArtifactResolver
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    DEFAULT_V3_WORKER_RUN_SEGMENT,
     merge_durable_into_result_json,
     publish_worker_durable_artifacts,
 )
 
 logger = logging.getLogger(__name__)
 
-RUN_ID = "run"
+# Pipeline/output directory segment under {base}/{job_id}/; must match DEFAULT_V3_WORKER_RUN_SEGMENT.
+RUN_ID = DEFAULT_V3_WORKER_RUN_SEGMENT
 
 
 def _resolve_visual_reference_paths(
@@ -328,6 +330,16 @@ class V3JobExecutor:
             with open(report_path, encoding="utf-8") as f:
                 report = json.load(f)
 
+            # Finalization order (intentional):
+            # 1) PersistAisleResult — domain rows (positions, product_records, evidences, …).
+            # 2) Durable artifact upload — execution log + reports to ArtifactStore.
+            # 3) _mark_success — job SUCCEEDED + result_json including durable_artifacts metadata.
+            #
+            # If step (2) fails after step (1), the job and aisle are marked FAILED with a clear error.
+            # Domain data from (1) may already be committed (partial finalization). There is no automatic
+            # compensation; operators should treat FAILED as "processing did not fully complete" and use
+            # a new or explicitly reset job if work must be redone. Re-running the same job id without
+            # reset is out of band for this executor (claim path expects terminal FAILED to stay terminal).
             exec_log = ExecutionLogWriter(run_dir)
             exec_log.info("Persist", "Persist started", payload={"aisle_id": aisle_id})
             try:
@@ -348,6 +360,12 @@ class V3JobExecutor:
                 self._fail_job_and_aisle(job_id, aisle, f"Persist: {persist_e}")
                 return True
 
+            logger.info(
+                "v3_job_domain_persist_complete job_id=%s aisle_id=%s next_step=durable_artifact_upload",
+                job_id,
+                aisle_id,
+            )
+
             # Phase 3B: durable execution outputs via ArtifactStore (S3 or local adapter).
             if self._artifact_store is None:
                 msg = "Artifact store not configured; cannot upload durable worker outputs"
@@ -359,7 +377,7 @@ class V3JobExecutor:
                 durable_meta = publish_worker_durable_artifacts(
                     self._artifact_store,
                     job_id=job_id,
-                    run_id=RUN_ID,
+                    run_segment=RUN_ID,
                     run_dir=run_dir,
                 )
                 logger.info(
@@ -371,6 +389,16 @@ class V3JobExecutor:
                 logger.exception(
                     "worker_durable_artifact_publish_failed job_id=%s",
                     job_id,
+                )
+                logger.error(
+                    "v3_job_finalization_partial_state job_id=%s aisle_id=%s "
+                    "domain_persist_completed=true durable_upload_succeeded=false "
+                    "operator_hint=%s",
+                    job_id,
+                    aisle_id,
+                    "PersistAisleResult may have committed domain data; job/aisle FAILED; "
+                    "no durable_artifacts in DB. Ops: inspect aisle/product state; use new job or "
+                    "reset workflow if reprocessing is required.",
                 )
                 exec_log.error(
                     "Artifacts",
