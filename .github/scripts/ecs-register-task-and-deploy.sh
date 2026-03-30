@@ -8,7 +8,10 @@
 # CI pushes only :$GITHUB_SHA; this resolves digest for that tag (not `latest`).
 #
 # Required env: AWS_REGION, ECS_CLUSTER, ECS_SERVICE, ECS_TASK_DEFINITION_FAMILY,
-#               ECS_CONTAINER_NAME, ECR_REGISTRY, ECR_REPOSITORY, IMAGE_TAG
+#               ECS_CONTAINER_NAME, ECR_REGISTRY, ECR_REPOSITORY
+# Image selection:
+#   - IMAGE_DIGEST is preferred source of truth when provided.
+#   - Otherwise IMAGE_TAG is required and digest is resolved from ECR.
 #
 set -euo pipefail
 
@@ -19,8 +22,7 @@ for var in \
   ECS_TASK_DEFINITION_FAMILY \
   ECS_CONTAINER_NAME \
   ECR_REGISTRY \
-  ECR_REPOSITORY \
-  IMAGE_TAG
+  ECR_REPOSITORY
 do
   if [[ -z "${!var:-}" ]]; then
     echo "ERROR: missing required env var: ${var}" >&2
@@ -28,22 +30,41 @@ do
   fi
 done
 
-echo "ecs-register-task-and-deploy: service=${ECS_SERVICE} family=${ECS_TASK_DEFINITION_FAMILY} repo=${ECR_REPOSITORY} tag=${IMAGE_TAG}"
+if [[ -z "${IMAGE_DIGEST:-}" && -z "${IMAGE_TAG:-}" ]]; then
+  echo "ERROR: either IMAGE_DIGEST or IMAGE_TAG must be set" >&2
+  exit 2
+fi
 
-DIGEST="$(aws ecr describe-images \
-  --region "${AWS_REGION}" \
-  --repository-name "${ECR_REPOSITORY}" \
-  --image-ids "imageTag=${IMAGE_TAG}" \
-  --query 'imageDetails[0].imageDigest' \
-  --output text)"
+echo "ecs-register-task-and-deploy: service=${ECS_SERVICE} family=${ECS_TASK_DEFINITION_FAMILY} repo=${ECR_REPOSITORY}"
 
-if [[ -z "${DIGEST}" || "${DIGEST}" == "None" ]]; then
-  echo "ERROR: could not resolve digest for ${ECR_REPOSITORY}:${IMAGE_TAG}" >&2
-  exit 3
+if [[ -n "${IMAGE_DIGEST:-}" ]]; then
+  DIGEST="${IMAGE_DIGEST}"
+  if [[ ! "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "ERROR: IMAGE_DIGEST is set but invalid (expected sha256:<64 hex>, got '${DIGEST}')" >&2
+    exit 3
+  fi
+  echo "digest source=provided IMAGE_DIGEST"
+else
+  if [[ -z "${IMAGE_TAG:-}" ]]; then
+    echo "ERROR: IMAGE_TAG is required when IMAGE_DIGEST is not provided" >&2
+    exit 2
+  fi
+  echo "digest source=resolved from IMAGE_TAG (${IMAGE_TAG})"
+  DIGEST="$(aws ecr describe-images \
+    --region "${AWS_REGION}" \
+    --repository-name "${ECR_REPOSITORY}" \
+    --image-ids "imageTag=${IMAGE_TAG}" \
+    --query 'imageDetails[0].imageDigest' \
+    --output text)"
+  if [[ -z "${DIGEST}" || "${DIGEST}" == "None" ]]; then
+    echo "ERROR: failed to resolve image digest from ECR tag ${ECR_REPOSITORY}:${IMAGE_TAG}" >&2
+    exit 3
+  fi
 fi
 
 IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}@${DIGEST}"
 echo "image=${IMAGE_URI}"
+DEPLOY_SHA="${IMAGE_TAG:-${GITHUB_SHA:-unknown}}"
 
 TD_JSON="$(aws ecs describe-task-definition \
   --region "${AWS_REGION}" \
@@ -60,7 +81,7 @@ fi
 NEW_TD="$(echo "${TD_JSON}" | jq \
   --arg IMG "${IMAGE_URI}" \
   --arg NAME "${ECS_CONTAINER_NAME}" \
-  --arg SHA "${IMAGE_TAG}" \
+  --arg SHA "${DEPLOY_SHA}" \
   '
   del(
     .taskDefinitionArn,
