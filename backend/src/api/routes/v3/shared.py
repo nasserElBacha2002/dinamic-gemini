@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from fastapi import HTTPException
 
@@ -49,16 +49,19 @@ from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
-from src.domain.quantity.resolution import (
-    QtyParseStatus,
-    QtySource,
-    has_strong_identity_for_qty_inference,
-    is_product_present_for_qty_inference,
-    normalize_raw_qty,
-    resolve_final_qty,
+from src.application.mappers.position_canonical_view import (
+    build_position_canonical_view,
+    qty_contract_from_product,
+    resolve_qty_contract_from_position_legacy,
+    summary_sku_and_quantity_from_position,
 )
 
 logger = logging.getLogger(__name__)
+
+# Backwards-compatible aliases for tests and any legacy importers of private helpers.
+_summary_sku_and_quantity_from_position = summary_sku_and_quantity_from_position
+_qty_contract_from_product = qty_contract_from_product
+_resolve_qty_contract_from_position_legacy = resolve_qty_contract_from_position_legacy
 
 _MANIFEST_FILENAME = "input_manifest.json"
 _NORMALIZED_SUBDIR = "input_photos_normalized"
@@ -371,142 +374,6 @@ def asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
     )
 
 
-def _parse_summary_quantity(raw: object) -> Optional[int]:
-    if raw is None:
-        return None
-    if isinstance(raw, (int, float)):
-        try:
-            v = int(raw)
-            return v if v >= 0 else None
-        except (TypeError, ValueError):
-            return None
-    if isinstance(raw, str) and raw.strip():
-        try:
-            v = int(raw.strip())
-            return v if v >= 0 else None
-        except (ValueError, TypeError):
-            return None
-    return None
-
-
-def _summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str], int]:
-    """Returns (sku, detected_quantity). detected_quantity is always an int (0 when unresolved)."""
-    j = p.detected_summary_json
-    if not j or not isinstance(j, dict):
-        return None, 0
-    sku_raw = j.get("internal_code")
-    sku = None
-    if sku_raw is not None and isinstance(sku_raw, str) and sku_raw.strip():
-        sku = sku_raw.strip()
-    if sku is None:
-        fallback = (
-            j.get("review_display_label")
-            or j.get("position_barcode")
-            or j.get("pallet_id")
-        )
-        if fallback is not None and isinstance(fallback, str) and fallback.strip():
-            sku = fallback.strip()
-    q_raw = j.get("final_quantity") if j.get("final_quantity") is not None else j.get("product_label_quantity")
-    qty = _parse_summary_quantity(q_raw)
-    return sku, qty if qty is not None else 0
-
-
-_ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
-# (qty, qtySource, qtyInferenceReason, qtyResolved or None)
-_QtyContract = Tuple[
-    int,
-    Literal[
-        "detected",
-        "inferred",
-        "merge_inferred",
-        "manual_review",
-        "label_explicit",
-        "unknown",
-    ],
-    Optional[str],
-    Optional[bool],
-]
-
-
-def _qty_contract_from_product(primary: ProductRecord) -> _QtyContract:
-    """Build stable qty contract from authoritative ProductRecord."""
-    qty = max(0, primary.detected_quantity)
-    src = (primary.qty_source or "").strip()
-    if src == "inferred":
-        return (qty, "inferred", primary.qty_inference_reason or None, True)
-    if src == "merge_inferred":
-        return (qty, "merge_inferred", None, True)
-    if src == "manual_review":
-        return (qty, "manual_review", None, True)
-    if src == "label_explicit":
-        return (qty, "label_explicit", None, True)
-    # Normalize richer/internal variants to stable public contract.
-    if src in {"ocr", "llm_extracted", "fallback"}:
-        return (qty, "detected", primary.qty_inference_reason or None, True)
-    if src == "unknown":
-        return (qty, "unknown", None, None)
-    if src == "consolidated":
-        # Keep "consolidated" internal. Public contract remains simplified/stable.
-        return (qty, "detected", None, True)
-    if src == "unresolved":
-        return (0, "detected", None, False)
-    # detected (and legacy/empty): "detected", resolved
-    return (qty, "detected", None, True)
-
-
-def _resolve_qty_contract_from_position_legacy(p: Position, *, has_evidence: bool) -> _QtyContract:
-    """Legacy fallback when no ProductRecord is available or for backward compatibility.
-    Uses detected_summary_json only. Returns qtyResolved when present in summary or from recomputation."""
-    j = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
-
-    qty_final = j.get("qty_final")
-    qty_source = j.get("qty_source")
-    qty_reason = j.get("qty_inference_reason")
-    qty_is_resolved = j.get("qty_is_resolved")
-    if isinstance(qty_final, int) and isinstance(qty_source, str) and qty_source.strip():
-        api_source: Literal["detected", "inferred"] = (
-            "inferred" if qty_source.strip() == QtySource.INFERRED.value else "detected"
-        )
-        resolved = qty_is_resolved if isinstance(qty_is_resolved, bool) else None
-        return (int(qty_final), api_source, (str(qty_reason) if qty_reason is not None else None), resolved)
-
-    if "final_quantity" in j:
-        raw = j.get("final_quantity")
-        present = True
-    elif "product_label_quantity" in j:
-        raw = j.get("product_label_quantity")
-        present = True
-    else:
-        raw = None
-        present = False
-    normalized = normalize_raw_qty(raw, field_was_present=present)
-    entity_type = (j.get("entity_type") or "").strip().upper()
-    count_status = (j.get("count_status") or "").strip().upper()
-
-    has_identity = has_strong_identity_for_qty_inference(
-        internal_code=j.get("internal_code"),
-        review_display_label=j.get("review_display_label"),
-        position_barcode=j.get("position_barcode"),
-        pallet_id=j.get("pallet_id"),
-    )
-    is_product_present = is_product_present_for_qty_inference(
-        count_status=count_status,
-        entity_type=entity_type,
-        has_valid_evidence=has_evidence,
-        has_identity=has_identity,
-        traceability_status=j.get("traceability_status"),
-    )
-    allow_zero = entity_type == "EMPTY_PALLET"
-    res = resolve_final_qty(
-        has_valid_evidence=has_evidence,
-        is_product_present=is_product_present,
-        normalized_qty=normalized,
-        allow_zero_as_valid=allow_zero,
-    )
-    api_source = "inferred" if res.qty_source == QtySource.INFERRED else "detected"
-    return (res.qty_final, api_source, (res.qty_inference_reason.value if res.qty_inference_reason else None), res.is_resolved)
-
-
 def _enrich_position_traceability_from_report(
     p: Position,
 ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -568,105 +435,35 @@ def position_to_summary(
     corrected_quantity: Optional[int] = None,
     primary_product: Optional[ProductRecord] = None,
 ) -> PositionSummaryResponse:
-    sku, detected_quantity = _summary_sku_and_quantity_from_position(p)
-    summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
-    source_image_id = summary_json.get("source_image_id") or None
-    traceability_status = summary_json.get("traceability_status") or None
-    source_image_original_filename = summary_json.get("source_image_original_filename") or None
-    if summary_json.get("entity_uid") and (
-        source_image_id is None or traceability_status is None or source_image_original_filename is None
-    ):
-        sid_from_report, ts_from_report, sof_from_report = _enrich_position_traceability_from_report(p)
-        if source_image_id is None and sid_from_report is not None:
-            source_image_id = sid_from_report
-        if traceability_status is None and ts_from_report is not None:
-            traceability_status = ts_from_report
-        if source_image_original_filename is None and sof_from_report is not None:
-            source_image_original_filename = sof_from_report
-    has_evidence = bool(
-        p.primary_evidence_id is not None and str(p.primary_evidence_id).strip() != ""
-    )
-    # Aggregated SKU-level rows (v3.2.3): when detected_summary_json carries an
-    # "aggregated_from_ids" list, final_quantity represents the consolidated SKU
-    # quantity across multiple physical positions. In this case we treat the
-    # final_quantity in the summary as authoritative for qty and detected_quantity,
-    # instead of any single ProductRecord.
-    aggregated_from = summary_json.get("aggregated_from_ids")
-    if isinstance(aggregated_from, list) and aggregated_from:
-        raw_q = summary_json.get("final_quantity")
-        try:
-            qty = max(0, int(raw_q))
-        except (TypeError, ValueError):
-            qty = 0
-        # "consolidated" remains internal provenance; API exposes simplified contract.
-        qty_source = "detected"
-        qty_reason = None
-        # This is an explicit consolidation result; treat as resolved.
-        qty_resolved = True
-        detected_quantity = qty
-        response_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
-        return PositionSummaryResponse(
-            id=p.id,
-            aisle_id=p.aisle_id,
-            status=p.status.value,
-            confidence=p.confidence,
-            needs_review=p.needs_review,
-            primary_evidence_id=p.primary_evidence_id,
-            created_at=p.created_at,
-            updated_at=p.updated_at,
-            detected_summary_json=response_summary_json,
-            sku=sku,
-            detected_quantity=detected_quantity,
-            corrected_quantity=corrected_quantity,
-            qty=qty,
-            qtySource=qty_source,
-            qtyInferenceReason=qty_reason,
-            qtyResolved=qty_resolved,
-            source_image_id=source_image_id,
-            traceability_status=traceability_status,
-            has_evidence=has_evidence,
-            source_image_original_filename=source_image_original_filename,
-        )
-    # Authoritative source: ProductRecord when present. Use full provenance when qty_source is set;
-    # when qty_source is empty (legacy/pre-v3.2.2 rows), use ProductRecord.detected_quantity so the
-    # numeric qty never diverges from persistence; provenance is then "detected" by convention.
-    if primary_product is not None:
-        src = (primary_product.qty_source or "").strip()
-        if src:
-            qty, qty_source, qty_reason, qty_resolved = _qty_contract_from_product(primary_product)
-        else:
-            # Legacy compatibility: ProductRecord exists but qty_source not set; use persisted qty.
-            qty = max(0, primary_product.detected_quantity)
-            qty_source = "detected"
-            qty_reason = None
-            qty_resolved = None
-        # v3.2.3: When ProductRecord is authoritative, align detected_quantity so response
-        # does not expose stale values from detected_summary_json (e.g. pre-consolidation).
-        detected_quantity = qty
-    else:
-        qty, qty_source, qty_reason, qty_resolved = _resolve_qty_contract_from_position_legacy(p, has_evidence=has_evidence)
+    """Map domain position (+ optional primary product) to the public summary contract.
+
+    Sprint 1: assembly is delegated to :func:`build_position_canonical_view` so source priority
+    (ProductRecord vs technical snapshot vs aggregated row) lives in one module — see ADR
+    ``docs/adr/inventory-v3-canonical-fields.md``.
+    """
+    view = build_position_canonical_view(p, primary_product)
     response_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
     return PositionSummaryResponse(
         id=p.id,
         aisle_id=p.aisle_id,
-        status=p.status.value,
+        status=view.review.status,
         confidence=p.confidence,
-        needs_review=p.needs_review,
-        primary_evidence_id=p.primary_evidence_id,
+        needs_review=view.review.needs_review,
+        primary_evidence_id=view.review.primary_evidence_id,
         created_at=p.created_at,
         updated_at=p.updated_at,
         detected_summary_json=response_summary_json,
-        sku=sku,
-        detected_quantity=detected_quantity,
+        sku=view.product.public_sku,
+        detected_quantity=view.quantity.detected_quantity,
         corrected_quantity=corrected_quantity,
-        qty=qty,
-        qtySource=qty_source,
-        qtyInferenceReason=qty_reason,
-        qtyResolved=qty_resolved,
-        source_image_id=source_image_id,
-        traceability_status=traceability_status,
-        has_evidence=has_evidence,
-        source_image_original_filename=source_image_original_filename,
+        qty=view.quantity.qty,
+        qtySource=view.quantity.qty_source,
+        qtyInferenceReason=view.quantity.qty_inference_reason,
+        qtyResolved=view.quantity.qty_resolved,
+        source_image_id=view.traceability.source_image_id,
+        traceability_status=view.traceability.traceability_status,
+        has_evidence=view.review.has_evidence,
+        source_image_original_filename=view.traceability.source_image_original_filename,
     )
 
 
