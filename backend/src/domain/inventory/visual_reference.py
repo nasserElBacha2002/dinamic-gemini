@@ -2,7 +2,9 @@
 Inventory visual reference — v3.2.4 (Documento técnico §9.1).
 
 Represents an image of reference associated with an inventory, for optional use
-as visual context during aisle analysis. Provider-agnostic; no provider-specific metadata.
+as visual context during aisle analysis. ``storage_path`` / ``mime_type`` are legacy-first
+fields; provider-aware access uses ``storage_provider``, ``storage_bucket``, ``storage_key``,
+and ``content_type`` (object metadata) per ``artifact_store`` contract.
 """
 
 from __future__ import annotations

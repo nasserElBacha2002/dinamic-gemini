@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from src.api.server import app
 from src.api.dependencies import (
+    get_artifact_storage,
     get_aisle_repo,
     get_evidence_repo,
     get_inventory_repo,
@@ -482,10 +483,16 @@ def test_execution_log_and_lifecycle_when_artifacts_missing() -> None:
     )
     job_repo.save(job)
 
+    from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+
+    _art_base = Path(tempfile.mkdtemp(prefix="exec_log_art_"))
+    store = V3ArtifactStorageAdapter(_art_base)
+
     app.dependency_overrides[get_current_admin] = _fake_admin
     app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
     app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
     app.dependency_overrides[get_job_repo] = lambda: job_repo
+    app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
         c = TestClient(app)
         status_resp = c.get(
@@ -514,6 +521,10 @@ def test_execution_log_and_lifecycle_when_artifacts_missing() -> None:
         app.dependency_overrides.pop(get_inventory_repo, None)
         app.dependency_overrides.pop(get_aisle_repo, None)
         app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_artifact_storage, None)
+        import shutil
+
+        shutil.rmtree(_art_base, ignore_errors=True)
 
 
 def test_execution_log_returns_200_empty_events_when_run_dir_exists_but_file_missing() -> None:
@@ -543,14 +554,29 @@ def test_execution_log_returns_200_empty_events_when_run_dir_exists_but_file_mis
     run_dir = base / "job-el-1" / "run"
     run_dir.mkdir(parents=True)
     try:
+        from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+
+        fake_settings = type(
+            "Settings",
+            (),
+            {
+                "output_dir": str(base),
+                "artifact_storage_legacy_local_read_enabled": True,
+                "artifact_s3_signed_url_ttl_sec": 900,
+                "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+                "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
+            },
+        )()
         mock_load = patch(
-            "src.api.routes.v3.aisles.load_settings",
-            return_value=type("Settings", (), {"output_dir": base})(),
+            "src.api.services.v3_stored_artifact_access.load_settings",
+            return_value=fake_settings,
         )
+        store = V3ArtifactStorageAdapter(base.parent / "artifact_store_unused")
         app.dependency_overrides[get_current_admin] = _fake_admin
         app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
         app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
         app.dependency_overrides[get_job_repo] = lambda: job_repo
+        app.dependency_overrides[get_artifact_storage] = lambda: store
         try:
             mock_load.start()
             c = TestClient(app)
@@ -565,6 +591,7 @@ def test_execution_log_returns_200_empty_events_when_run_dir_exists_but_file_mis
             app.dependency_overrides.pop(get_inventory_repo, None)
             app.dependency_overrides.pop(get_aisle_repo, None)
             app.dependency_overrides.pop(get_job_repo, None)
+            app.dependency_overrides.pop(get_artifact_storage, None)
     finally:
         try:
             import shutil
@@ -965,3 +992,261 @@ def test_positions_list_and_detail_degrade_only_enrichment_when_hybrid_report_mi
             empty_output.rmdir()
         except OSError:
             pass
+
+
+def test_execution_log_from_durable_metadata_not_local_disk() -> None:
+    """Phase 4: execution log is read from ArtifactStore when durable metadata exists."""
+    import json
+    import shutil
+
+    from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+        DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
+    )
+    from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv = Inventory("inv-p4", "Phase4", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-p4", "inv-p4", "P4", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+
+    job_id = "job-p4-durable"
+    log_key = f"jobs/{job_id}/run/execution_log.jsonl"
+    line = {"ts": "2026-01-01T00:00:00", "stage": "s", "level": "info", "message": "m"}
+    payload = (json.dumps(line, ensure_ascii=False) + "\n").encode("utf-8")
+
+    art_root = Path(tempfile.mkdtemp(prefix="p4_exec_"))
+    store = V3ArtifactStorageAdapter(art_root)
+    from io import BytesIO
+
+    store.put_object(log_key, BytesIO(payload), "application/x-ndjson")
+
+    job = Job(
+        id=job_id,
+        target_type="aisle",
+        target_id="aisle-p4",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={"aisle_id": "aisle-p4"},
+        created_at=now,
+        updated_at=now,
+        result_json={
+            "durable_artifacts": {
+                DURABLE_ARTIFACT_KIND_EXECUTION_LOG: {
+                    "storage_provider": "local",
+                    "storage_bucket": None,
+                    "storage_key": log_key,
+                    "content_type": "application/x-ndjson",
+                    "file_size_bytes": len(payload),
+                    "etag": None,
+                }
+            }
+        },
+    )
+    job_repo.save(job)
+
+    # output_dir has no job/run — proves durable path is used
+    bogus_out = Path(tempfile.mkdtemp(prefix="p4_bogus_out_"))
+
+    fake_settings = type(
+        "Settings",
+        (),
+        {
+            "output_dir": str(bogus_out),
+            "artifact_storage_legacy_local_read_enabled": False,
+            "artifact_s3_signed_url_ttl_sec": 900,
+            "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
+        },
+    )()
+    mock_st = patch(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        return_value=fake_settings,
+    )
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    app.dependency_overrides[get_artifact_storage] = lambda: store
+    try:
+        mock_st.start()
+        c = TestClient(app)
+        log_resp = c.get(
+            f"/api/v3/inventories/inv-p4/aisles/aisle-p4/jobs/{job_id}/execution-log",
+        )
+        assert log_resp.status_code == 200, log_resp.text
+        assert len(log_resp.json()["events"]) == 1
+        assert log_resp.json()["events"][0]["message"] == "m"
+    finally:
+        mock_st.stop()
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_artifact_storage, None)
+        shutil.rmtree(art_root, ignore_errors=True)
+        shutil.rmtree(bogus_out, ignore_errors=True)
+
+
+def test_execution_log_legacy_disabled_without_durable_returns_404() -> None:
+    import shutil
+
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv = Inventory("inv-p4b", "Phase4b", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-p4b", "inv-p4b", "P4b", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+    job = Job(
+        id="job-p4b",
+        target_type="aisle",
+        target_id="aisle-p4b",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={"aisle_id": "aisle-p4b"},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+
+    bogus_out = Path(tempfile.mkdtemp(prefix="p4b_out_"))
+    from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+
+    store = V3ArtifactStorageAdapter(Path(tempfile.mkdtemp(prefix="p4b_art_")))
+
+    fake_settings = type(
+        "Settings",
+        (),
+        {
+            "output_dir": str(bogus_out),
+            "artifact_storage_legacy_local_read_enabled": False,
+            "artifact_s3_signed_url_ttl_sec": 900,
+            "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
+        },
+    )()
+    mock_st = patch(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        return_value=fake_settings,
+    )
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    app.dependency_overrides[get_artifact_storage] = lambda: store
+    try:
+        mock_st.start()
+        c = TestClient(app)
+        log_resp = c.get(
+            "/api/v3/inventories/inv-p4b/aisles/aisle-p4b/jobs/job-p4b/execution-log",
+        )
+        assert log_resp.status_code == 404
+        assert "not available" in log_resp.json().get("detail", "").lower()
+    finally:
+        mock_st.stop()
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_artifact_storage, None)
+        shutil.rmtree(bogus_out, ignore_errors=True)
+
+
+def test_hybrid_report_api_from_durable_metadata() -> None:
+    import json
+    import shutil
+    from io import BytesIO
+
+    from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+        DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    )
+    from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv = Inventory("inv-p4c", "Phase4c", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-p4c", "inv-p4c", "P4c", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+
+    job_id = "job-p4c"
+    rkey = f"jobs/{job_id}/run/hybrid_report.json"
+    report_body = {"entities": [{"entity_uid": f"{job_id}_e1"}]}
+    raw = json.dumps(report_body).encode("utf-8")
+
+    art_root = Path(tempfile.mkdtemp(prefix="p4c_art_"))
+    store = V3ArtifactStorageAdapter(art_root)
+    store.put_object(rkey, BytesIO(raw), "application/json")
+
+    job = Job(
+        id=job_id,
+        target_type="aisle",
+        target_id="aisle-p4c",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={"aisle_id": "aisle-p4c"},
+        created_at=now,
+        updated_at=now,
+        result_json={
+            "durable_artifacts": {
+                DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON: {
+                    "storage_provider": "local",
+                    "storage_bucket": None,
+                    "storage_key": rkey,
+                    "content_type": "application/json",
+                    "file_size_bytes": len(raw),
+                    "etag": None,
+                }
+            }
+        },
+    )
+    job_repo.save(job)
+
+    bogus_out = Path(tempfile.mkdtemp(prefix="p4c_out_"))
+    fake_settings = type(
+        "Settings",
+        (),
+        {
+            "output_dir": str(bogus_out),
+            "artifact_storage_legacy_local_read_enabled": False,
+            "artifact_s3_signed_url_ttl_sec": 900,
+            "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
+        },
+    )()
+    mock_st = patch(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        return_value=fake_settings,
+    )
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    app.dependency_overrides[get_artifact_storage] = lambda: store
+    try:
+        mock_st.start()
+        c = TestClient(app)
+        hr = c.get(
+            f"/api/v3/inventories/inv-p4c/aisles/aisle-p4c/jobs/{job_id}/hybrid-report",
+        )
+        assert hr.status_code == 200, hr.text
+        assert hr.json()["entities"][0]["entity_uid"] == f"{job_id}_e1"
+    finally:
+        mock_st.stop()
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_artifact_storage, None)
+        shutil.rmtree(art_root, ignore_errors=True)
+        shutil.rmtree(bogus_out, ignore_errors=True)

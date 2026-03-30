@@ -52,14 +52,14 @@ class _Row:
     artifacts_dir = "legacy/job-dir"
     report_storage_provider = "s3"
     report_storage_bucket = "bucket-a"
-    report_json_storage_key = "v3/jobs/job-1/report.json"
-    report_csv_storage_key = "v3/jobs/job-1/report.csv"
+    report_json_storage_key = "jobs/job-1/report.json"
+    report_csv_storage_key = "jobs/job-1/report.csv"
     report_content_type = "application/json"
     report_file_size_bytes = 500
     report_etag = "etag-report"
     log_storage_provider = "s3"
     log_storage_bucket = "bucket-a"
-    execution_log_storage_key = "v3/jobs/job-1/execution_log.jsonl"
+    execution_log_storage_key = "jobs/job-1/execution_log.jsonl"
     execution_log_content_type = "application/x-ndjson"
     execution_log_file_size_bytes = 123
     execution_log_etag = "etag-log"
@@ -76,8 +76,8 @@ def test_jobs_repository_get_job_returns_provider_aware_output_fields() -> None:
     assert output is not None
     assert output["report_storage_provider"] == "s3"
     assert output["report_storage_bucket"] == "bucket-a"
-    assert output["report_json_storage_key"] == "v3/jobs/job-1/report.json"
-    assert output["execution_log_storage_key"] == "v3/jobs/job-1/execution_log.jsonl"
+    assert output["report_json_storage_key"] == "jobs/job-1/report.json"
+    assert output["execution_log_storage_key"] == "jobs/job-1/execution_log.jsonl"
 
 
 class _LegacyOnlyRow(_Row):

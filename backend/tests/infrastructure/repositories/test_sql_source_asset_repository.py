@@ -46,7 +46,7 @@ def test_row_to_asset_prefers_provider_storage_key_when_present() -> None:
         storage_path="aisles/aisle-1/raw/legacy.jpg",
         storage_provider="s3",
         storage_bucket="bucket-a",
-        storage_key="v3/uploads/aisles/aisle-1/raw/object.jpg",
+        storage_key="uploads/aisles/aisle-1/raw/object.jpg",
         content_type="image/jpeg",
         file_size_bytes=1234,
         etag="abc123",
@@ -56,7 +56,7 @@ def test_row_to_asset_prefers_provider_storage_key_when_present() -> None:
     )
     asset = _row_to_asset(row)
     assert asset.storage_path == "aisles/aisle-1/raw/legacy.jpg"
-    assert asset.storage_key == "v3/uploads/aisles/aisle-1/raw/object.jpg"
+    assert asset.storage_key == "uploads/aisles/aisle-1/raw/object.jpg"
     assert asset.storage_provider == "s3"
     assert asset.storage_bucket == "bucket-a"
     assert asset.content_type == "image/jpeg"

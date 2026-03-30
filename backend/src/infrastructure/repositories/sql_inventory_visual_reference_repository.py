@@ -13,6 +13,7 @@ from typing import Optional, Sequence
 from src.application.ports.repositories import InventoryVisualReferenceRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.inventory.visual_reference import InventoryVisualReference
+from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,13 @@ def _row_to_reference(row) -> InventoryVisualReference:
     mime_type = getattr(row, "mime_type", None)
     file_size = getattr(row, "file_size", None)
     storage_path = (getattr(row, "storage_path", None) or "").strip()
-    storage_key = (getattr(row, "storage_key", None) or "").strip() or storage_path
-    # Canonical media type in current domain/API is mime_type; content_type is transport/storage metadata.
+    storage_provider_raw = (getattr(row, "storage_provider", None) or "").strip() or None
+    storage_key = resolved_storage_key_for_row(
+        storage_provider=storage_provider_raw,
+        storage_key_raw=getattr(row, "storage_key", None),
+        storage_path=storage_path,
+    )
+    # mime_type: domain; content_type: storage metadata (legacy rows may only have mime_type).
     content_type = (getattr(row, "content_type", None) or "").strip() or (mime_type or "")
     file_size_bytes = getattr(row, "file_size_bytes", None)
     if file_size_bytes is None:
@@ -70,7 +76,7 @@ def _row_to_reference(row) -> InventoryVisualReference:
         mime_type=mime_type,
         file_size=int(file_size),
         created_at=created,
-        storage_provider=(getattr(row, "storage_provider", None) or "").strip() or None,
+        storage_provider=storage_provider_raw,
         storage_bucket=(getattr(row, "storage_bucket", None) or "").strip() or None,
         storage_key=storage_key or None,
         content_type=content_type or None,

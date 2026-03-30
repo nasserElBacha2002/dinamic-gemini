@@ -17,14 +17,18 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
 
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_job_repo, get_list_aisle_assets_use_case
+from src.api.dependencies import get_artifact_storage, get_job_repo, get_list_aisle_assets_use_case
 from src.api.server import app
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
+from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
@@ -38,6 +42,26 @@ class StubListAisleAssetsUseCase:
 
     def execute(self, inventory_id: str, aisle_id: str) -> Sequence[SourceAsset]:
         return self._assets
+
+
+@contextmanager
+def _patch_local_asset_settings(output_dir: Path):
+    """Patch settings for asset file route + Phase 4 stored-artifact service (same output_dir, legacy on)."""
+    s = type(
+        "Settings",
+        (),
+        {
+            "output_dir": str(output_dir),
+            "artifact_storage_legacy_local_read_enabled": True,
+            "artifact_s3_signed_url_ttl_sec": 900,
+            "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
+        },
+    )()
+    with patch("src.api.routes.v3.assets.load_settings", return_value=s), patch(
+        "src.api.services.v3_stored_artifact_access.load_settings", return_value=s
+    ):
+        yield
 
 
 class StubJobRepo:
@@ -59,6 +83,20 @@ class StubJobRepo:
 @pytest.fixture
 def output_dir(tmp_path: Path) -> Path:
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def _phase4_api_dependency_stubs(output_dir: Path) -> None:
+    """Router requires admin auth and artifact storage for asset file endpoint (Phase 4)."""
+    app.dependency_overrides[get_current_admin] = lambda: AuthUser(
+        id="admin", username="admin", role="administrator"
+    )
+    stub_root = output_dir / "_artifact_store_stub"
+    stub_root.mkdir(parents=True, exist_ok=True)
+    app.dependency_overrides[get_artifact_storage] = lambda: V3ArtifactStorageAdapter(stub_root)
+    yield
+    app.dependency_overrides.pop(get_current_admin, None)
+    app.dependency_overrides.pop(get_artifact_storage, None)
 
 
 def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) -> None:
@@ -116,10 +154,8 @@ def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) 
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
-        mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
-
-        try:
+    try:
+        with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
@@ -127,8 +163,8 @@ def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) 
             assert resp.status_code == 200
             assert resp.content == jpeg_content
             assert resp.headers.get("content-type", "").startswith("image/jpeg")
-        finally:
-            app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_heic_asset_file_returns_404_when_no_normalized_preview(output_dir: Path) -> None:
@@ -157,18 +193,16 @@ def test_heic_asset_file_returns_404_when_no_normalized_preview(output_dir: Path
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
-        mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
-
-        try:
+    try:
+        with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
             )
             assert resp.status_code == 404
             assert resp.json().get("detail") == "Preview is not available for this image"
-        finally:
-            app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_jpg_asset_file_serves_original_unchanged(output_dir: Path) -> None:
@@ -197,18 +231,16 @@ def test_jpg_asset_file_serves_original_unchanged(output_dir: Path) -> None:
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
-        mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
-
-        try:
+    try:
+        with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
             )
             assert resp.status_code == 200
             assert resp.content == original_content
-        finally:
-            app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_asset_file_returns_404_file_not_found_when_missing_on_disk(output_dir: Path) -> None:
@@ -235,18 +267,16 @@ def test_asset_file_returns_404_file_not_found_when_missing_on_disk(output_dir: 
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
-        mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
-
-        try:
+    try:
+        with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
             )
             assert resp.status_code == 404
-            assert resp.json().get("detail") == "Asset file not found"
-        finally:
-            app.dependency_overrides.clear()
+            assert "not found" in resp.json().get("detail", "").lower()
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) -> None:
@@ -303,18 +333,16 @@ def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) ->
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
-        mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
-
-        try:
+    try:
+        with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
             )
             assert resp.status_code == 404
             assert "preview" in (resp.json().get("detail") or "").lower() or "not available" in (resp.json().get("detail") or "").lower()
-        finally:
-            app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_dir: Path) -> None:
@@ -370,18 +398,16 @@ def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
-        mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
-
-        try:
+    try:
+        with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
             )
             assert resp.status_code == 404
             assert resp.json().get("detail") == "Preview is not available for this image"
-        finally:
-            app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(output_dir: Path) -> None:
@@ -445,10 +471,8 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
-        mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
-
-        try:
+    try:
+        with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp_no_job = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
@@ -462,8 +486,8 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
             assert resp_with_job.status_code == 200
             assert resp_with_job.content == jpeg_content
             assert resp_with_job.headers.get("content-type", "").startswith("image/jpeg")
-        finally:
-            app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_heic_asset_file_fallback_to_latest_when_job_id_fails(output_dir: Path) -> None:
@@ -534,10 +558,8 @@ def test_heic_asset_file_fallback_to_latest_when_job_id_fails(output_dir: Path) 
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
     app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
-    with patch("src.api.routes.v3.assets.load_settings") as mock_settings:
-        mock_settings.return_value = type("Settings", (), {"output_dir": str(output_dir)})()
-
-        try:
+    try:
+        with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file",
@@ -545,5 +567,5 @@ def test_heic_asset_file_fallback_to_latest_when_job_id_fails(output_dir: Path) 
             )
             assert resp.status_code == 200, "fallback to latest job should succeed"
             assert resp.content == jpeg_content
-        finally:
-            app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()

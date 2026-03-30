@@ -11,6 +11,8 @@ from src.pipeline.execution_log import (
     ExecutionLogWriter,
     _sanitize_payload,
     read_execution_log,
+    read_execution_log_bytes,
+    read_execution_log_file,
     read_last_stage_error,
 )
 
@@ -75,6 +77,39 @@ def test_read_execution_log_all_malformed_returns_empty():
         path = Path(d) / "execution_log.jsonl"
         path.write_text("not json\n{invalid}\n", encoding="utf-8")
         assert read_execution_log(Path(d)) == []
+
+
+def test_read_execution_log_empty_file_returns_empty_list():
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "execution_log.jsonl"
+        path.write_text("", encoding="utf-8")
+        assert read_execution_log(Path(d)) == []
+
+
+def test_read_execution_log_bytes_parses_valid_and_skips_invalid_lines():
+    content = (
+        b'{"ts":"2025-01-01T00:00:00Z","stage":"S1","level":"info","message":"ok"}\n'
+        b'not json\n'
+        b'{"ts":"2025-01-01T00:00:01Z","stage":"S2","level":"error","message":"fail"}\n'
+    )
+    events = read_execution_log_bytes(content)
+    assert len(events) == 2
+    assert events[0]["message"] == "ok"
+    assert events[1]["message"] == "fail"
+
+
+def test_read_execution_log_bytes_handles_empty_and_non_utf8():
+    assert read_execution_log_bytes(b"") == []
+    assert read_execution_log_bytes(b"\xff\xfe\x00") == []
+
+
+def test_read_execution_log_file_matches_read_execution_log(tmp_path):
+    path = tmp_path / "execution_log.jsonl"
+    path.write_text(
+        '{"ts":"2025-01-01T00:00:00Z","stage":"S1","level":"info","message":"ok"}\n',
+        encoding="utf-8",
+    )
+    assert read_execution_log_file(path) == read_execution_log(tmp_path)
 
 
 def test_read_last_stage_error_missing():

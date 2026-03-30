@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 
 from src.application.ports.clock import Clock
@@ -43,6 +44,7 @@ _raw_label_repo: Optional[RawLabelRepository] = None
 _normalized_label_repo: Optional[NormalizedLabelRepository] = None
 _final_count_repo: Optional[FinalCountRepository] = None
 _v3_sql_client = None
+_artifact_store = None
 
 
 def _v3_allow_in_memory_fallback() -> bool:
@@ -303,6 +305,35 @@ def get_metrics_calculator() -> MetricsCalculator:
 def get_clock() -> Clock:
     from src.infrastructure.adapters.clock import UtcClock
     return UtcClock()
+
+
+def get_artifact_store():
+    """Runtime artifact store getter shared by API/worker (local or S3)."""
+    global _artifact_store
+    if _artifact_store is not None:
+        return _artifact_store
+    from src.config import load_settings
+
+    settings = load_settings()
+    provider = (settings.artifact_storage_provider or "local").strip().lower()
+    if provider == "s3":
+        from src.infrastructure.storage.s3_artifact_storage_adapter import S3ArtifactStorageAdapter
+
+        if not settings.artifact_s3_bucket:
+            raise RuntimeError("ARTIFACT_S3_BUCKET is required when ARTIFACT_STORAGE_PROVIDER=s3")
+        _artifact_store = S3ArtifactStorageAdapter(
+            bucket=settings.artifact_s3_bucket,
+            region=settings.artifact_s3_region or None,
+            prefix=settings.artifact_s3_prefix,
+            signed_url_ttl_sec=settings.artifact_s3_signed_url_ttl_sec,
+        )
+        return _artifact_store
+
+    from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+
+    base = os.path.join(settings.output_dir, "v3_uploads")
+    _artifact_store = V3ArtifactStorageAdapter(Path(base))
+    return _artifact_store
 
 
 # --- v3.2.3 label consolidation (in-memory only for now) ---

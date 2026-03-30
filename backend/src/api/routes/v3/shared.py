@@ -93,6 +93,18 @@ def _maybe_evict_traceability_cache() -> None:
         _TRACEABILITY_REPORTS_LOADED.clear()
 
 
+def _load_hybrid_report_for_traceability(job_id: str) -> Optional[Dict[str, object]]:
+    """Runtime-backed helper; avoids calling FastAPI dependency getters in non-route logic."""
+    from src.api.services.v3_stored_artifact_access import load_hybrid_report_json_for_job
+    from src.runtime.v3_deps import get_artifact_store, get_job_repo
+
+    return load_hybrid_report_json_for_job(
+        job_id,
+        job_repo=get_job_repo(),
+        artifact_store=get_artifact_store(),
+    )
+
+
 def _try_resolve_normalized_asset_for_job(
     output_dir: Path,
     job_id: str,
@@ -524,12 +536,9 @@ def _enrich_position_traceability_from_report(
     if job_id in _TRACEABILITY_REPORTS_LOADED:
         return None, None, None
     try:
-        base = Path(load_settings().output_dir)
-        report_path = base / job_id / "run" / "hybrid_report.json"
-        if not report_path.is_file():
+        report = _load_hybrid_report_for_traceability(job_id)
+        if report is None:
             return None, None, None
-        with open(report_path, encoding="utf-8") as f:
-            report = json.load(f)
         entities = report.get("entities") or []
         for ent in entities:
             if not isinstance(ent, dict):

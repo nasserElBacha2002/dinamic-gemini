@@ -1,14 +1,41 @@
 """
-Provider-aware artifact storage abstraction (Phase 1 S3 foundation).
+Provider-aware artifact storage abstraction (Phase 1 S3 foundation; Phase 6 contract).
 
 This abstraction is intentionally infrastructure-facing and can be implemented by
 S3, local filesystem, or composite adapters during migration.
+
+**storage_key (canonical)**
+
+- Persisted in the DB and passed to ArtifactStore methods as the **logical** application key
+  relative to the configured **S3 bucket key prefix** (from env, e.g. ``v3``): that prefix
+  string must **not** be duplicated in ``storage_key`` (use ``jobs/{id}/run/log.jsonl``, not
+  ``v3/jobs/...``). Application path segments such as ``jobs/`` or ``uploads/`` are not the
+  same as the bucket prefix.
+- S3: adapters prepend the bucket prefix to logical keys, and tolerate caller keys that
+  already include that prefix (no double prefix). Return values from ``put_object`` /
+  ``StoredArtifact.storage_key`` use the same logical form the caller passed (bucket prefix
+  stripped only from values returned after an upload keyed with the full physical path—see
+  S3 adapter).
+- Local (``V3ArtifactStorageAdapter``): ``storage_key`` is the path relative to the adapter
+  base (typically the same relative layout as ``storage_path`` for uploads).
+
+**content_type vs domain mime_type**
+
+- ``StoredArtifact.content_type`` / DB ``content_type`` = object storage metadata (HTTP Content-Type).
+- Domain/API fields named ``mime_type`` describe the asset for business rules and responses.
+  Populate both on upload when they align; conversions belong at boundaries, not inside adapters.
+
+**storage_path (legacy)**
+
+- Legacy-only relative filesystem path for rows without provider metadata. Do not use it to
+  infer ``storage_key`` when ``storage_provider`` is set (see ``sql_storage_fields``).
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import BinaryIO, Optional
 
 
@@ -16,9 +43,8 @@ from typing import BinaryIO, Optional
 class StoredArtifact:
     """Canonical metadata returned after writing an artifact.
 
-    Contract: ``storage_key`` is the logical application key (prefix-free), suitable
-    for DB persistence and passing back to ArtifactStore operations. Provider adapters
-    are responsible for mapping this logical key to physical object identifiers.
+    Contract: ``storage_key`` is the logical application key (no duplication of the
+    configured S3 bucket prefix). Suitable for DB persistence and ArtifactStore calls.
     """
 
     storage_provider: str
@@ -48,6 +74,15 @@ class ArtifactStore(ABC):
 
     @abstractmethod
     def get_object(self, key: str) -> ArtifactDownload:
+        ...
+
+    @abstractmethod
+    def object_size_bytes(self, key: str, *, bucket: Optional[str] = None) -> int:
+        """Return object size without reading the body (e.g. S3 head or local stat)."""
+
+    @abstractmethod
+    def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
+        """Download object directly to local path without buffering full content in memory."""
         ...
 
     @abstractmethod

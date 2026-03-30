@@ -634,6 +634,24 @@ class Settings(BaseModel):
             "Env: ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED."
         ),
     )
+    artifact_store_max_in_memory_get_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("ARTIFACT_STORE_MAX_IN_MEMORY_GET_BYTES", str(8 * 1024 * 1024))),
+        ge=64 * 1024,
+        le=512 * 1024 * 1024,
+        description=(
+            "When loading artifact bytes in the API layer, objects larger than this use "
+            "download-to-disk first instead of get_object buffering. Env: ARTIFACT_STORE_MAX_IN_MEMORY_GET_BYTES."
+        ),
+    )
+    artifact_store_max_json_load_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("ARTIFACT_STORE_MAX_JSON_LOAD_BYTES", str(32 * 1024 * 1024))),
+        ge=64 * 1024,
+        le=512 * 1024 * 1024,
+        description=(
+            "Max JSON artifact size (e.g. hybrid_report) loaded from object storage into memory. "
+            "Env: ARTIFACT_STORE_MAX_JSON_LOAD_BYTES."
+        ),
+    )
     v3_positions_aisle_raw_cap: int = Field(
         default_factory=lambda: int(os.getenv("V3_POSITIONS_AISLE_RAW_CAP", "2000")),
         ge=50,

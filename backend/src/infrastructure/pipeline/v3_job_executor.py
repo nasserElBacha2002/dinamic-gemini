@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
@@ -41,6 +40,7 @@ from src.config import load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.io.logging import setup_logger
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
@@ -55,27 +55,49 @@ from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
     default_empty_block,
 )
+from src.infrastructure.pipeline.input_artifact_resolver import WorkerInputArtifactResolver
+from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    DEFAULT_V3_WORKER_RUN_SEGMENT,
+    merge_durable_into_result_json,
+    publish_worker_durable_artifacts,
+)
 
 logger = logging.getLogger(__name__)
 
-RUN_ID = "run"
+# Pipeline/output directory segment under {base}/{job_id}/; must match DEFAULT_V3_WORKER_RUN_SEGMENT.
+RUN_ID = DEFAULT_V3_WORKER_RUN_SEGMENT
 
 
-def _resolve_visual_reference_paths(ctx: AnalysisContext, v3_base: Path) -> AnalysisContext:
-    """Return a new AnalysisContext with resolved_path set on each visual reference. Provider consumes these paths."""
+def _resolve_visual_reference_paths(
+    ctx: AnalysisContext,
+    *,
+    resolver: WorkerInputArtifactResolver,
+    references_by_id: dict[str, InventoryVisualReference],
+    target_dir: Path,
+) -> AnalysisContext:
+    """Return AnalysisContext with provider/local resolved temp paths for visual references."""
     if not ctx.visual_references:
         return ctx
-    resolved_refs = [
-        VisualReferenceContext(
-            reference_id=ref.reference_id,
+    resolved_refs = []
+    for i, ref in enumerate(ctx.visual_references):
+        ext = Path(ref.source_path or "").suffix or ".jpg"
+        temp_ref = target_dir / f"{i:04d}_{ref.reference_id}{ext}"
+        resolved_local = resolver.resolve_visual_reference(
+            ref.reference_id,
+            reference_record=references_by_id.get(ref.reference_id),
             source_path=ref.source_path,
-            mime_type=ref.mime_type,
-            role=ref.role,
-            created_at=ref.created_at,
-            resolved_path=str(v3_base / ref.source_path),
+            target_path=temp_ref,
         )
-        for ref in ctx.visual_references
-    ]
+        resolved_refs.append(
+            VisualReferenceContext(
+                reference_id=ref.reference_id,
+                source_path=ref.source_path,
+                mime_type=ref.mime_type,
+                role=ref.role,
+                created_at=ref.created_at,
+                resolved_path=str(resolved_local),
+            )
+        )
     return AnalysisContext(
         primary_evidence=ctx.primary_evidence,
         visual_references=resolved_refs,
@@ -98,6 +120,7 @@ class V3JobExecutor:
         clock: Clock,
         inventory_repo: InventoryRepository,
         inventory_visual_reference_repo: InventoryVisualReferenceRepository,
+        artifact_store=None,
         raw_label_repo: RawLabelRepository | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
     ) -> None:
@@ -108,6 +131,8 @@ class V3JobExecutor:
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
         self._evidence_repo = evidence_repo
+        self._inventory_visual_reference_repo = inventory_visual_reference_repo
+        self._artifact_store = artifact_store
         self._clock = clock
         self._inventory_status_reconciler = InventoryStatusReconciler(
             inventory_repo=inventory_repo,
@@ -221,7 +246,12 @@ class V3JobExecutor:
         try:
             analysis_context = self._build_analysis_context(aisle)
             job_input, video_path = self._build_pipeline_input(
-                assets, v3_base, job_dir, job_id, analysis_context=analysis_context
+                assets,
+                v3_base,
+                job_dir,
+                job_id,
+                analysis_context=analysis_context,
+                inventory_id=aisle.inventory_id,
             )
             logger.info(
                 "v3 pipeline input ready: job_id=%s inventory_id=%s aisle_id=%s input_type=%s video_path=%s",
@@ -300,6 +330,16 @@ class V3JobExecutor:
             with open(report_path, encoding="utf-8") as f:
                 report = json.load(f)
 
+            # Finalization order (intentional):
+            # 1) PersistAisleResult — domain rows (positions, product_records, evidences, …).
+            # 2) Durable artifact upload — execution log + reports to ArtifactStore.
+            # 3) _mark_success — job SUCCEEDED + result_json including durable_artifacts metadata.
+            #
+            # If step (2) fails after step (1), the job and aisle are marked FAILED with a clear error.
+            # Domain data from (1) may already be committed (partial finalization). There is no automatic
+            # compensation; operators should treat FAILED as "processing did not fully complete" and use
+            # a new or explicitly reset job if work must be redone. Re-running the same job id without
+            # reset is out of band for this executor (claim path expects terminal FAILED to stay terminal).
             exec_log = ExecutionLogWriter(run_dir)
             exec_log.info("Persist", "Persist started", payload={"aisle_id": aisle_id})
             try:
@@ -320,9 +360,66 @@ class V3JobExecutor:
                 self._fail_job_and_aisle(job_id, aisle, f"Persist: {persist_e}")
                 return True
 
+            logger.info(
+                "v3_job_domain_persist_complete job_id=%s aisle_id=%s next_step=durable_artifact_upload",
+                job_id,
+                aisle_id,
+            )
+
+            # Phase 3B: durable execution outputs via ArtifactStore (S3 or local adapter).
+            if self._artifact_store is None:
+                msg = "Artifact store not configured; cannot upload durable worker outputs"
+                logger.error("v3_job_id=%s %s", job_id, msg)
+                exec_log.error("Artifacts", msg)
+                self._fail_job_and_aisle(job_id, aisle, msg)
+                return True
+            try:
+                durable_meta = publish_worker_durable_artifacts(
+                    self._artifact_store,
+                    job_id=job_id,
+                    run_segment=RUN_ID,
+                    run_dir=run_dir,
+                )
+                logger.info(
+                    "worker_durable_artifacts_ready_for_job_metadata job_id=%s kinds=%s",
+                    job_id,
+                    sorted(durable_meta.keys()),
+                )
+            except Exception as artifact_exc:
+                logger.exception(
+                    "worker_durable_artifact_publish_failed job_id=%s",
+                    job_id,
+                )
+                logger.error(
+                    "v3_job_finalization_partial_state job_id=%s aisle_id=%s "
+                    "domain_persist_completed=true durable_upload_succeeded=false "
+                    "operator_hint=%s",
+                    job_id,
+                    aisle_id,
+                    "PersistAisleResult may have committed domain data; job/aisle FAILED; "
+                    "no durable_artifacts in DB. Ops: inspect aisle/product state; use new job or "
+                    "reset workflow if reprocessing is required.",
+                )
+                exec_log.error(
+                    "Artifacts",
+                    f"Durable artifact upload failed: {artifact_exc}",
+                    payload={"error": str(artifact_exc)[:500]},
+                )
+                self._fail_job_and_aisle(
+                    job_id,
+                    aisle,
+                    f"Durable artifact upload failed: {artifact_exc}",
+                )
+                return True
+
             # Phase 5: persist visual_reference_context from in-memory run_metadata (no file read)
             self._mark_success(
-                job_id, aisle, report_path, now, run_metadata=result.run_metadata
+                job_id,
+                aisle,
+                report_path,
+                now,
+                run_metadata=result.run_metadata,
+                durable_artifacts=durable_meta,
             )
             logger.info(
                 "v3 mark success: job_id=%s inventory_id=%s aisle_id=%s report_path=%s",
@@ -369,19 +466,42 @@ class V3JobExecutor:
         job_id: str,
         *,
         analysis_context: AnalysisContext,
+        inventory_id: str,
     ) -> tuple:
         """Return (JobInput, video_path). video_path used as first arg to process_video."""
+        settings = load_settings()
+        input_assets_dir = job_dir / RUN_ID / "input_assets"
+        visual_refs_dir = job_dir / RUN_ID / "visual_references"
+        resolver = WorkerInputArtifactResolver(
+            self._artifact_store,
+            legacy_base=v3_base,
+            legacy_local_read_enabled=settings.artifact_storage_legacy_local_read_enabled,
+        )
         single_video = (
             len(assets) == 1
             and getattr(assets[0], "type", None) == SourceAssetType.VIDEO
         )
+        # Validate/classify asset shape first so we do not resolve visual references for unsupported sets.
+        has_video_asset = any(getattr(a, "type", None) == SourceAssetType.VIDEO for a in assets)
+        if has_video_asset and not single_video:
+            raise ValueError(
+                "Invalid aisle assets: videos must be uploaded/processed as a single video asset; "
+                "mixed or multi-video sets are not supported in photos normalization flow."
+            )
+        refs = self._inventory_visual_reference_repo.list_by_inventory(inventory_id)
+        refs_by_id = {r.id: r for r in refs}
+        resolved_ctx = _resolve_visual_reference_paths(
+            analysis_context,
+            resolver=resolver,
+            references_by_id=refs_by_id,
+            target_dir=visual_refs_dir,
+        )
         if single_video:
             asset = assets[0]
-            full = v3_base / asset.storage_path
-            if not full.exists():
-                raise FileNotFoundError(f"Asset file not found: {full}")
+            ext = Path(asset.storage_path or "").suffix or ".mp4"
+            target_video = input_assets_dir / f"0000_{asset.id}{ext}"
+            full = resolver.resolve_source_asset(asset, target_video)
             video_path = str(full)
-            resolved_ctx = _resolve_visual_reference_paths(analysis_context, v3_base)
             return (
                 JobInput(
                     video_path=video_path,
@@ -392,28 +512,15 @@ class V3JobExecutor:
                 video_path,
             )
 
-        # Photos execution supports only photo assets. Any video in a multi-asset
-        # set would be routed into image normalization and fail opaquely later.
-        has_video_asset = any(getattr(a, "type", None) == SourceAssetType.VIDEO for a in assets)
-        if has_video_asset:
-            raise ValueError(
-                "Invalid aisle assets: videos must be uploaded/processed as a single video asset; "
-                "mixed or multi-video sets are not supported in photos normalization flow."
-            )
-
-        # Photos (or multiple assets): copy into job_dir/input_photos, write manifest
+        # Photos (or multiple assets): resolve to job_dir/input_photos, write manifest
         photos_dir = job_dir / "input_photos"
         photos_dir.mkdir(parents=True, exist_ok=True)
         photos_list = []
         for i, asset in enumerate(assets):
-            src = v3_base / asset.storage_path
-            if not src.exists():
-                raise FileNotFoundError(f"Asset file not found: {src}")
             ext = Path(asset.storage_path).suffix or ".jpg"
             stored = f"{i:04d}_{asset.id}{ext}"
             dst = photos_dir / stored
-            if dst != src:
-                shutil.copy2(src, dst)
+            resolver.resolve_source_asset(asset, dst)
             # Expose image_id (asset.id) so pipeline/LLM use it as source_image_id; enables reference-image view.
             photos_list.append({
                 "index": i + 1,  # 1-based for load_job_images_from_manifest
@@ -431,7 +538,6 @@ class V3JobExecutor:
             json.dump(manifest, f, indent=2)
 
         # Paths relative to job dir for pipeline
-        resolved_ctx = _resolve_visual_reference_paths(analysis_context, v3_base)
         return (
             JobInput(
                 video_path="",
@@ -462,6 +568,7 @@ class V3JobExecutor:
         now,
         *,
         run_metadata: Optional[dict] = None,
+        durable_artifacts: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
         job = self._job_repo.get_by_id(job_id)
         if job:
@@ -478,8 +585,20 @@ class V3JobExecutor:
             }
             if meta.get("prompt_key"):
                 job.result_json["prompt_key"] = meta["prompt_key"]
+            if durable_artifacts:
+                merge_durable_into_result_json(job.result_json, durable_artifacts)
+                logger.info(
+                    "v3_job_metadata_persist_durable_artifacts job_id=%s kinds=%s",
+                    job_id,
+                    sorted(durable_artifacts.keys()),
+                )
             job.error_message = None
             self._job_repo.save(job)
+            logger.info(
+                "v3_job_metadata_save_ok job_id=%s has_durable_artifacts=%s",
+                job_id,
+                bool(durable_artifacts),
+            )
         aisle.mark_processed(now)
         self._aisle_repo.save(aisle)
         self._reconcile_inventory_for_aisle(aisle)

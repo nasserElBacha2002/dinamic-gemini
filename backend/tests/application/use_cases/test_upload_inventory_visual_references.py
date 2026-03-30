@@ -101,14 +101,16 @@ class StubArtifactStorage(ArtifactStorage):
         self._deleted.append(path)
 
 
-class PrefixedKeyArtifactStorage(StubArtifactStorage):
+class CanonicalLogicalKeyArtifactStorage(StubArtifactStorage):
+    """Persisted ``storage_key`` matches logical path (canonical contract)."""
+
     def put_object(self, path: str, file_obj: BytesIO, content_type: str) -> StoredArtifact:
         content = file_obj.read()
         self._written.append((path, content, content_type))
         return StoredArtifact(
             storage_provider="s3",
             storage_bucket="bucket-b",
-            storage_key=f"v3/{path}",
+            storage_key=path,
             content_type=content_type,
             file_size_bytes=len(content),
             etag="etag-ref",
@@ -326,12 +328,12 @@ def test_upload_inventory_visual_references_rolls_back_written_files_on_db_failu
     assert len(ref_repo.list_by_inventory("inv-1")) == 0
 
 
-def test_upload_inventory_visual_references_rollback_uses_persisted_prefixed_storage_keys_verbatim() -> None:
+def test_upload_inventory_visual_references_rollback_uses_persisted_storage_keys_verbatim() -> None:
     now = datetime(2025, 3, 10, 12, 0, 0, tzinfo=timezone.utc)
     inv_repo = StubInventoryRepo()
     inv_repo.save(_inventory(now))
     ref_repo = FailingAfterFirstCreateRepo()
-    storage = PrefixedKeyArtifactStorage()
+    storage = CanonicalLogicalKeyArtifactStorage()
 
     use_case = UploadInventoryVisualReferencesUseCase(
         inventory_repo=inv_repo,
@@ -346,7 +348,7 @@ def test_upload_inventory_visual_references_rollback_uses_persisted_prefixed_sto
 
     with pytest.raises(RuntimeError, match="simulated db failure"):
         use_case.execute("inv-1", files)
-    written_paths = [f"v3/{p}" for (p, _, _) in storage._written]
+    written_paths = [p for (p, _, _) in storage._written]
     assert storage._deleted == list(reversed(written_paths))
 
 

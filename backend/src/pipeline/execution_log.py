@@ -164,12 +164,39 @@ class ExecutionLogWriter:
         return self._last_error_path
 
 
-def read_execution_log(run_dir: Path) -> list[Dict[str, Any]]:
-    """Read execution_log.jsonl and return list of event dicts. Empty if missing or invalid."""
-    path = Path(run_dir) / EXECUTION_LOG_FILENAME
+def _parse_execution_log_lines(text: str) -> list[Dict[str, Any]]:
     events: list[Dict[str, Any]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+def read_execution_log_bytes(content: bytes) -> list[Dict[str, Any]]:
+    """Parse execution_log.jsonl from raw bytes (e.g. S3 GET body). Empty if invalid or empty.
+
+    Prefer :func:`read_execution_log_file` when bytes already live on disk (large logs).
+    """
+    if not content:
+        return []
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return []
+    return _parse_execution_log_lines(text)
+
+
+def read_execution_log_file(path: Path) -> list[Dict[str, Any]]:
+    """Parse JSONL execution log from a file path; line-oriented read (no full-file string for the raw blob)."""
+    path = Path(path)
     if not path.is_file():
-        return events
+        return []
+    events: list[Dict[str, Any]] = []
     try:
         with open(path, encoding="utf-8") as f:
             for line in f:
@@ -181,8 +208,14 @@ def read_execution_log(run_dir: Path) -> list[Dict[str, Any]]:
                 except json.JSONDecodeError:
                     continue
     except OSError:
-        pass
+        return []
     return events
+
+
+def read_execution_log(run_dir: Path) -> list[Dict[str, Any]]:
+    """Read execution_log.jsonl and return list of event dicts. Empty if missing or invalid."""
+    path = Path(run_dir) / EXECUTION_LOG_FILENAME
+    return read_execution_log_file(path)
 
 
 def read_last_stage_error(run_dir: Path) -> Optional[str]:

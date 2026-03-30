@@ -13,6 +13,7 @@ from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.application.ports.repositories import SourceAssetRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +55,13 @@ def _row_to_asset(row) -> SourceAsset:
     if uploaded is None:
         raise ValueError("source_assets row missing required uploaded_at")
     storage_path = (getattr(row, "storage_path", None) or "").strip()
-    storage_key = (getattr(row, "storage_key", None) or "").strip() or storage_path
-    # Canonical media type in current domain/API is mime_type; content_type is transport/storage metadata.
+    storage_provider_raw = (getattr(row, "storage_provider", None) or "").strip() or None
+    storage_key = resolved_storage_key_for_row(
+        storage_provider=storage_provider_raw,
+        storage_key_raw=getattr(row, "storage_key", None),
+        storage_path=storage_path,
+    )
+    # mime_type: domain/API; content_type: storage metadata (falls back to mime for legacy rows).
     content_type = (getattr(row, "content_type", None) or "").strip() or (getattr(row, "mime_type", None) or "")
     return SourceAsset(
         id=aid,
@@ -66,7 +72,7 @@ def _row_to_asset(row) -> SourceAsset:
         mime_type=row.mime_type or "application/octet-stream",
         uploaded_at=uploaded,
         metadata_json=_parse_metadata(getattr(row, "metadata_json", None)),
-        storage_provider=(getattr(row, "storage_provider", None) or "").strip() or None,
+        storage_provider=storage_provider_raw,
         storage_bucket=(getattr(row, "storage_bucket", None) or "").strip() or None,
         storage_key=storage_key or None,
         content_type=content_type or None,

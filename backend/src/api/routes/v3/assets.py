@@ -6,22 +6,28 @@ import logging
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from src.config import load_settings
 from src.api.dependencies import (
+    get_artifact_storage,
     get_list_aisle_assets_use_case,
     get_upload_aisle_assets_use_case,
     get_job_repo,
+)
+from src.api.services.v3_stored_artifact_access import (
+    StoredArtifactAccessError,
+    resolve_source_asset_file_response,
 )
 from src.api.schemas.asset_schemas import SourceAssetResponse, UploadAisleAssetsResponse
 from src.application.ports.repositories import JobRepository
 from src.application.errors import AisleNotFoundError, EmptyUploadError, UnsupportedAssetTypeError
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
+from src.domain.assets.entities import SourceAsset
 
 from .shared import asset_to_response, resolve_normalized_asset_path, heic_extensions
 
@@ -93,6 +99,7 @@ def list_aisle_assets(
 
 @router.get(
     "/{inventory_id}/aisles/{aisle_id}/assets/{asset_id}/file",
+    response_model=None,
     response_class=FileResponse,
 )
 def get_aisle_asset_file(
@@ -102,7 +109,8 @@ def get_aisle_asset_file(
     job_id: Optional[str] = Query(None, description="Optional job id to resolve HEIC normalized preview from that run"),
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
     job_repo: JobRepository = Depends(get_job_repo),
-) -> FileResponse:
+    artifact_storage=Depends(get_artifact_storage),
+) -> Union[FileResponse, RedirectResponse]:
     """Serve the reference image/file for an aisle asset. HEIC/HEIF: serves normalized JPG when available (optional job_id)."""
     failure_reason: Optional[AssetFileFailureReason] = None
     try:
@@ -128,32 +136,19 @@ def get_aisle_asset_file(
             asset_id,
         )
         raise HTTPException(status_code=404, detail="Asset not found")
-    base = Path(load_settings().output_dir) / "v3_uploads"
-    file_path = (base / asset.storage_path).resolve()
-    try:
-        if not file_path.is_file():
-            failure_reason = AssetFileFailureReason.FILE_NOT_FOUND
-            logger.warning(
-                "Asset file: %s asset_id=%s storage_path=%s resolved=%s",
-                failure_reason.value,
-                asset_id,
-                asset.storage_path,
-                str(file_path),
-            )
-            raise HTTPException(status_code=404, detail="Asset file not found")
-        file_path.relative_to(base.resolve())
-    except ValueError:
-        failure_reason = AssetFileFailureReason.PATH_INVALID
-        logger.warning(
-            "Asset file: %s asset_id=%s storage_path=%s",
-            failure_reason.value,
-            asset_id,
-            asset.storage_path,
-        )
-        raise HTTPException(status_code=404, detail="Asset path invalid")
 
-    suffix = file_path.suffix.lower()
-    if suffix in heic_extensions():
+    def _asset_is_heic(a: SourceAsset) -> bool:
+        mt = (a.mime_type or "").lower()
+        if mt in ("image/heic", "image/heif"):
+            return True
+        if Path(a.storage_path or "").suffix.lower() in heic_extensions():
+            return True
+        if Path(a.original_filename or "").suffix.lower() in heic_extensions():
+            return True
+        return False
+
+    # HEIC/HEIF: serve normalized JPEG from local pipeline output when available (unchanged contract).
+    if _asset_is_heic(asset):
         output_dir = Path(load_settings().output_dir)
         request_job_id = job_id.strip() if job_id and job_id.strip() else None
         logger.debug(
@@ -183,8 +178,13 @@ def get_aisle_asset_file(
             detail="Preview is not available for this image",
         )
 
-    return FileResponse(
-        path=str(file_path),
-        media_type=asset.mime_type or "application/octet-stream",
-        filename=asset.original_filename or "file",
-    )
+    try:
+        return resolve_source_asset_file_response(asset, artifact_store=artifact_storage)
+    except StoredArtifactAccessError as e:
+        logger.warning(
+            "Asset file resolution failed: %s asset_id=%s reason=%s",
+            e.reason_code,
+            asset_id,
+            e.detail,
+        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e

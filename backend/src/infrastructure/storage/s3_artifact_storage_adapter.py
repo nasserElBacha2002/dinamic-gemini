@@ -5,6 +5,7 @@ S3-backed artifact storage adapter (Phase 1).
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import BinaryIO, Optional
 
 from src.application.ports.services import ArtifactStorage
@@ -17,9 +18,10 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
     """ArtifactStore adapter using boto3 S3 client.
 
     Key contract:
-    - public methods accept logical keys (prefix-free) and also tolerate already-prefixed keys
-      for rollout safety and backward compatibility.
-    - StoredArtifact.storage_key is always returned as a logical key.
+    - public methods accept logical keys (no duplication of the configured bucket prefix,
+      e.g. ``jobs/...`` when prefix is ``v3``) and tolerate keys that already include that prefix.
+    - ``put_object`` returns ``StoredArtifact.storage_key`` in logical form (prefix stripped from
+      the physical key when the upload path included it).
     """
 
     def __init__(
@@ -75,7 +77,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         return self._object_key(key)
 
     def _logical_key(self, full_key: str) -> str:
-        """Strip configured prefix from a full key for compatibility with existing storage_path usage."""
+        """Strip configured prefix from a physical key so ``StoredArtifact.storage_key`` stays logical."""
         if self._prefix:
             prefix_with_sep = f"{self._prefix}/"
             if full_key.startswith(prefix_with_sep):
@@ -148,6 +150,42 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             file_size_bytes=int(result.get("ContentLength") or len(body)),
             etag=(result.get("ETag") or "").strip('"') or None,
         )
+
+    def object_size_bytes(self, key: str, *, bucket: Optional[str] = None) -> int:
+        if bucket and bucket != self._bucket:
+            raise RuntimeError(
+                f"S3 bucket mismatch for head_object: record_bucket={bucket!r} configured_bucket={self._bucket!r}"
+            )
+        object_key = self._client_key(key)
+        try:
+            head = self._client.head_object(Bucket=self._bucket, Key=object_key)
+            return int(head.get("ContentLength") or 0)
+        except Exception as exc:
+            logger.exception("S3 head_object failed bucket=%s key=%s", self._bucket, object_key)
+            raise RuntimeError(
+                f"S3 head_object failed for key={object_key!r} bucket={self._bucket!r}"
+            ) from exc
+
+    def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
+        if bucket and bucket != self._bucket:
+            raise RuntimeError(
+                f"S3 bucket mismatch for download: record_bucket={bucket!r} configured_bucket={self._bucket!r}"
+            )
+        object_key = self._client_key(key)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(target_path, "wb") as fh:
+                self._client.download_fileobj(self._bucket, object_key, fh)
+        except Exception as exc:
+            logger.exception(
+                "S3 download_to_path failed bucket=%s key=%s target=%s",
+                self._bucket,
+                object_key,
+                str(target_path),
+            )
+            raise RuntimeError(
+                f"S3 download_to_path failed for key={object_key!r} bucket={self._bucket!r}"
+            ) from exc
 
     def delete_object(self, key: str) -> None:
         object_key = self._client_key(key)

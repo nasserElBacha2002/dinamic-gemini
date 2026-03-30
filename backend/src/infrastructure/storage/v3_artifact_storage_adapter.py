@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Optional
 
 from src.application.ports.services import ArtifactStorage
 from src.infrastructure.storage.artifact_store import ArtifactDownload, ArtifactStore, StoredArtifact
@@ -54,6 +54,19 @@ class V3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             file_size_bytes=len(data),
             etag=None,
         )
+
+    def object_size_bytes(self, key: str, *, bucket: Optional[str] = None) -> int:
+        _ = bucket  # local provider has no bucket
+        full = self._resolve_safe(key)
+        if not full.is_file():
+            raise FileNotFoundError(f"local artifact not found: {key!r}")
+        return int(full.stat().st_size)
+
+    def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
+        src = self._resolve_safe(key)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if src != target_path:
+            shutil.copyfile(src, target_path)
 
     def delete_object(self, key: str) -> None:
         full = self._resolve_safe(key)
