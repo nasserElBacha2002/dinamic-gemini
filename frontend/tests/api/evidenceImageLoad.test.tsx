@@ -67,7 +67,7 @@ describe('fetchEvidenceImage', () => {
     }
   });
 
-  it('returns blobUrl when backend returns 200', async () => {
+  it('returns imageSrc object URL when backend returns 200', async () => {
     const blob = new Blob(['fake-image'], { type: 'image/jpeg' });
     vi.stubGlobal(
       'fetch',
@@ -83,8 +83,29 @@ describe('fetchEvidenceImage', () => {
     const result = await fetchEvidenceImage('http://api/assets/1/file');
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.blobUrl).toBe('blob:test-mock-url');
-      URL.revokeObjectURL(result.blobUrl);
+      expect(result.imageSrc).toBe('blob:test-mock-url');
+      expect(result.revoke).toBeDefined();
+      result.revoke?.();
+    }
+  });
+
+  it('returns presigned imageSrc on 307 Location (S3 redirect) without blob revoke', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(null, {
+            status: 307,
+            headers: { Location: 'https://s3.example/bucket/key?X-Amz-Signature=abc' },
+          })
+        )
+      )
+    );
+    const result = await fetchEvidenceImage('http://api/inv/a/assets/x/file');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.imageSrc).toBe('https://s3.example/bucket/key?X-Amz-Signature=abc');
+      expect(result.revoke).toBeUndefined();
     }
   });
 

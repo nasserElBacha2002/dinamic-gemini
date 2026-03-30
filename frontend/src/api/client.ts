@@ -352,22 +352,41 @@ export function getReferenceImageFileUrl(
   return `${base}${path}`;
 }
 
-/** Result of preflight fetch for evidence image. Used to distinguish 404/403/network and show the right message. */
+/** Result of resolving evidence/reference image for display. */
 export type FetchEvidenceImageResult =
-  | { ok: true; blobUrl: string }
+  | { ok: true; imageSrc: string; revoke?: () => void }
   | { ok: false; status: number; detail?: string };
 
 /**
- * Fetch evidence/reference image with auth (same as protectedFetch). Returns blob URL on success
- * or status + detail on failure so the UI can show a differentiated error (not_found, forbidden, network).
- * Caller must revoke the returned blobUrl when no longer needed (e.g. URL.revokeObjectURL(blobUrl)).
+ * Resolve evidence/reference image URL for <img src>.
+ *
+ * - S3-backed assets: API returns 307 to a presigned URL. We use ``redirect: 'manual'`` and
+ *   ``credentials: 'omit'`` so the follow-up to S3 is not credentialed (avoids S3 CORS failures
+ *   with Access-Control-Allow-Credentials). The presigned Location is returned as ``imageSrc``;
+ *   the browser loads that URL in ``<img>`` without CORS issues for display.
+ * - Local FileResponse: 200 body → object URL; call ``revoke`` when discarding.
  */
 export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImageResult> {
   const token = getStoredToken();
   const headers = new Headers();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   try {
-    const response = await fetch(url, { credentials: 'include', headers });
+    const response = await fetch(url, {
+      credentials: 'omit',
+      headers,
+      redirect: 'manual',
+    });
+    if (response.type === 'opaqueredirect') {
+      return { ok: false, status: 0, detail: undefined };
+    }
+    if (response.status >= 300 && response.status < 400) {
+      const loc = response.headers.get('Location');
+      if (loc && loc.trim()) {
+        const imageSrc = new URL(loc.trim(), url).href;
+        return { ok: true, imageSrc };
+      }
+      return { ok: false, status: response.status, detail: 'Redirect without Location' };
+    }
     if (!response.ok) {
       let detail: string | undefined;
       try {
@@ -380,7 +399,11 @@ export async function fetchEvidenceImage(url: string): Promise<FetchEvidenceImag
     }
     const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
-    return { ok: true, blobUrl };
+    return {
+      ok: true,
+      imageSrc: blobUrl,
+      revoke: () => URL.revokeObjectURL(blobUrl),
+    };
   } catch {
     return { ok: false, status: 0, detail: undefined };
   }

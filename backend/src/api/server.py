@@ -63,6 +63,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Let the browser read Location on asset 307 → presigned S3 (fetch redirect: manual).
+    expose_headers=["Location"],
 )
 
 # Behind HTTPS-terminating ALB, redirects must use https; middleware trusts X-Forwarded-Proto from listed hosts.
