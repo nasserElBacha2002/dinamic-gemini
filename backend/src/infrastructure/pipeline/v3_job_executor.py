@@ -203,7 +203,7 @@ class V3JobExecutor:
             logger.info("v3 job %s cancel requested before start; marking canceled", job_id)
             self._cancel_job(job_id, "Job canceled before execution")
             return True
-        if job.status not in (JobStatus.QUEUED, JobStatus.STARTING, JobStatus.RUNNING):
+        if job.status != JobStatus.STARTING:
             logger.warning("v3 job %s invalid status for execution (status=%s), skip", job_id, job.status.value)
             return True
 
@@ -313,14 +313,16 @@ class V3JobExecutor:
 
         def heartbeat_loop() -> None:
             while not stop_heartbeat.wait(self._heartbeat_interval_sec):
-                self._heartbeat(job_id)
+                current_job = self._heartbeat(job_id)
+                if current_job is None:
+                    continue
                 exec_log.structured_event(
                     job_id=job_id,
                     inventory_id=aisle.inventory_id,
                     aisle_id=aisle_id,
-                    attempt=job.attempt_count,
-                    stage=self._job_repo.get_by_id(job_id).current_stage if self._job_repo.get_by_id(job_id) else "Pipeline",
-                    substep=self._job_repo.get_by_id(job_id).current_substep if self._job_repo.get_by_id(job_id) else None,
+                    attempt=current_job.attempt_count,
+                    stage=current_job.current_stage or "Pipeline",
+                    substep=current_job.current_substep,
                     event="job.heartbeat",
                 )
 
@@ -702,23 +704,27 @@ class V3JobExecutor:
             job.error_message = reason[:2048] if len(reason) > 2048 else reason
             self._job_repo.save(job)
 
-    def _heartbeat(self, job_id: str) -> None:
+    def _heartbeat(self, job_id: str) -> Optional[Job]:
         job = self._job_repo.get_by_id(job_id)
         if job is None or job.status not in (JobStatus.STARTING, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
-            return
+            return None
         now = self._clock.now()
         job.last_heartbeat_at = now
         job.updated_at = now
         self._job_repo.save(job)
+        return job
 
     def _update_runtime_status(self, job_id: str, *, stage: str, substep: Optional[str]) -> None:
         job = self._job_repo.get_by_id(job_id)
         if job is None or job.status in (JobStatus.FAILED, JobStatus.CANCELED, JobStatus.SUCCEEDED):
             return
         now = self._clock.now()
+        stage_changed = job.current_stage != stage
+        substep_changed = job.current_substep != substep
         job.current_stage = stage
         job.current_substep = substep
-        job.current_step_started_at = now
+        if stage_changed or substep_changed or job.current_step_started_at is None:
+            job.current_step_started_at = now
         job.last_heartbeat_at = now
         job.updated_at = now
         self._job_repo.save(job)

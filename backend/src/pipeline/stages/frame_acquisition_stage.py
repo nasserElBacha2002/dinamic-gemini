@@ -36,6 +36,10 @@ class AcquiredFrames:
 class FrameAcquisitionStage:
     """Stage: select FrameSource, acquire frames, load into RAM, validate availability."""
 
+    def _read_image(self, path: Path):  # type: ignore[no-untyped-def]
+        """Isolated native image-read boundary for future timeout/process guarding."""
+        return cv2.imread(str(path))
+
     def _emit_substep(
         self,
         context: RunContext,
@@ -163,7 +167,8 @@ class FrameAcquisitionStage:
                 event="substep.started",
                 details=file_details,
             )
-            img = cv2.imread(str(p))
+            context.metadata["frame_acquisition_last_path"] = str(p)
+            img = self._read_image(p)
             self._emit_substep(
                 context,
                 substep="image_open",

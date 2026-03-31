@@ -9,6 +9,11 @@ import pytest
 
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.job_stale_reconciler import (
+    JobStaleReconciler,
+    STALE_FAILURE_CODE,
+    STALE_FAILURE_MESSAGE,
+)
 from src.application.ports.services import WorkerLaunchService
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.start_aisle_processing import (
@@ -105,6 +110,14 @@ class StubWorkerLaunchService(WorkerLaunchService):
         return f"exec-{job_id}"
 
 
+def make_stale_reconciler(job_repo: JobRepository, clock: FixedClock, stale_after_seconds: int = 900) -> JobStaleReconciler:
+    return JobStaleReconciler(
+        job_repo=job_repo,
+        clock=clock,
+        stale_after_seconds=stale_after_seconds,
+    )
+
+
 def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
@@ -122,6 +135,7 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
         worker_launch_service=queue,
         clock=clock,
         status_reconciler=reconciler,
+        stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
     job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
     assert queue.launched == [job_id]
@@ -133,6 +147,7 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     assert saved_job.status == JobStatus.STARTING
     assert saved_job.payload_json == {"aisle_id": "a1"}
     assert saved_job.execution_id == f"exec-{job_id}"
+    assert saved_job.current_substep == "spawn_succeeded"
 
     updated_aisle = aisle_repo.get_by_id("a1")
     assert updated_aisle is not None
@@ -172,6 +187,7 @@ def test_start_aisle_processing_persists_job_before_enqueue() -> None:
         worker_launch_service=queue,
         clock=clock,
         status_reconciler=reconciler,
+        stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
 
     job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
@@ -204,6 +220,7 @@ def test_start_aisle_processing_marks_failed_when_enqueue_fails() -> None:
         worker_launch_service=queue,
         clock=clock,
         status_reconciler=reconciler,
+        stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
 
     with pytest.raises(RuntimeError):
@@ -226,6 +243,84 @@ def test_start_aisle_processing_marks_failed_when_enqueue_fails() -> None:
     assert inv_repo.get_by_id("inv1").status == InventoryStatus.FAILED
 
 
+def test_start_aisle_processing_persists_starting_before_worker_launch() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    job_repo = StubJobRepo()
+
+    class InspectingLaunchService(WorkerLaunchService):
+        def launch(self, job_id: str) -> str:
+            persisted = job_repo.get_by_id(job_id)
+            assert persisted is not None
+            assert persisted.status == JobStatus.STARTING
+            assert persisted.current_stage == "worker_launch"
+            assert persisted.current_substep == "spawn_requested"
+            assert persisted.execution_id is None
+            return "exec-started"
+
+    clock = FixedClock(now)
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+    use_case = StartAisleProcessingUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        worker_launch_service=InspectingLaunchService(),
+        clock=clock,
+        status_reconciler=reconciler,
+        stale_reconciler=make_stale_reconciler(job_repo, clock),
+    )
+
+    job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    saved_job = job_repo.get_by_id(job_id)
+    assert saved_job is not None
+    assert saved_job.execution_id == "exec-started"
+
+
+def test_start_aisle_processing_reconciles_stale_active_job_before_new_launch() -> None:
+    now = datetime(2025, 3, 6, 12, 15, 0, tzinfo=timezone.utc)
+    stale_time = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    job_repo = StubJobRepo()
+    job_repo.save(
+        Job(
+            id="stale-job",
+            target_type="aisle",
+            target_id="a1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "a1"},
+            created_at=stale_time,
+            updated_at=stale_time,
+            last_heartbeat_at=stale_time,
+        )
+    )
+    queue = StubWorkerLaunchService()
+    clock = FixedClock(now)
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+    use_case = StartAisleProcessingUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        worker_launch_service=queue,
+        clock=clock,
+        status_reconciler=reconciler,
+        stale_reconciler=make_stale_reconciler(job_repo, clock, stale_after_seconds=60),
+    )
+
+    new_job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+
+    stale_job = job_repo.get_by_id("stale-job")
+    assert stale_job is not None
+    assert stale_job.status == JobStatus.FAILED
+    assert stale_job.failure_code == STALE_FAILURE_CODE
+    assert stale_job.failure_message == STALE_FAILURE_MESSAGE
+    assert new_job_id in queue.launched
+
+
 def test_start_aisle_processing_raises_when_aisle_not_found() -> None:
     aisle_repo = StubAisleRepo()
     inv_repo = StubInventoryRepo([])
@@ -240,6 +335,7 @@ def test_start_aisle_processing_raises_when_aisle_not_found() -> None:
         worker_launch_service=queue,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
     )
 
     with pytest.raises(AisleNotFoundError):
@@ -262,6 +358,7 @@ def test_start_aisle_processing_raises_when_aisle_belongs_to_other_inventory() -
         worker_launch_service=queue,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
     )
 
     with pytest.raises(AisleNotFoundError):
@@ -296,6 +393,7 @@ def test_start_aisle_processing_raises_when_active_job_exists() -> None:
         worker_launch_service=queue,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
     )
 
     with pytest.raises(ActiveJobExistsError):
@@ -320,7 +418,12 @@ def test_get_aisle_processing_status_returns_aisle_and_latest_job() -> None:
     job_repo = StubJobRepo()
     job_repo.save(job)
 
-    use_case = GetAisleProcessingStatusUseCase(aisle_repo=aisle_repo, job_repo=job_repo)
+    clock = FixedClock(now)
+    use_case = GetAisleProcessingStatusUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        stale_reconciler=make_stale_reconciler(job_repo, clock),
+    )
     result = use_case.execute("inv1", "a1")
 
     assert result.aisle.id == "a1"
@@ -337,17 +440,61 @@ def test_get_aisle_processing_status_returns_none_job_when_no_job() -> None:
     aisle_repo.save(aisle)
     job_repo = StubJobRepo()
 
-    use_case = GetAisleProcessingStatusUseCase(aisle_repo=aisle_repo, job_repo=job_repo)
+    clock = FixedClock(now)
+    use_case = GetAisleProcessingStatusUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        stale_reconciler=make_stale_reconciler(job_repo, clock),
+    )
     result = use_case.execute("inv1", "a1")
 
     assert result.aisle.id == "a1"
     assert result.latest_job is None
 
 
+def test_get_aisle_processing_status_reconciles_stale_job() -> None:
+    now = datetime(2025, 3, 6, 12, 15, 0, tzinfo=timezone.utc)
+    stale_time = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.PROCESSING, stale_time, stale_time)
+    job = Job(
+        id="j-stale",
+        target_type="aisle",
+        target_id="a1",
+        job_type="process_aisle",
+        status=JobStatus.RUNNING,
+        payload_json={"aisle_id": "a1"},
+        created_at=stale_time,
+        updated_at=stale_time,
+        last_heartbeat_at=stale_time,
+    )
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    job_repo = StubJobRepo()
+    job_repo.save(job)
+    clock = FixedClock(now)
+    use_case = GetAisleProcessingStatusUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        stale_reconciler=make_stale_reconciler(job_repo, clock, stale_after_seconds=60),
+    )
+
+    result = use_case.execute("inv1", "a1")
+
+    assert result.latest_job is not None
+    assert result.latest_job.status == JobStatus.FAILED
+    assert result.latest_job.failure_code == STALE_FAILURE_CODE
+
+
 def test_get_aisle_processing_status_raises_when_aisle_not_found() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     aisle_repo = StubAisleRepo()
     job_repo = StubJobRepo()
-    use_case = GetAisleProcessingStatusUseCase(aisle_repo=aisle_repo, job_repo=job_repo)
+    clock = FixedClock(now)
+    use_case = GetAisleProcessingStatusUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        stale_reconciler=make_stale_reconciler(job_repo, clock),
+    )
 
     with pytest.raises(AisleNotFoundError):
         use_case.execute("inv1", "nonexistent")

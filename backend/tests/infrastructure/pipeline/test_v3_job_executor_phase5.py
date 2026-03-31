@@ -66,6 +66,16 @@ class InMemoryJobRepo(JobRepository):
         return {}
 
 
+class CountingJobRepo(InMemoryJobRepo):
+    def __init__(self) -> None:
+        super().__init__()
+        self.get_calls = 0
+
+    def get_by_id(self, job_id: str) -> Optional[Job]:
+        self.get_calls += 1
+        return super().get_by_id(job_id)
+
+
 class InMemoryAisleRepo(AisleRepository):
     def __init__(self) -> None:
         self._store: Dict[str, Aisle] = {}
@@ -217,6 +227,9 @@ class FixedClock(Clock):
     def now(self) -> datetime:
         return self._now
 
+    def set_now(self, now: datetime) -> None:
+        self._now = now
+
 
 def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
     """Backward compatibility: _mark_success without run_metadata sets report_path and default empty visual_reference_context."""
@@ -268,6 +281,141 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
     # Phase 7: provider key always present; None when run_metadata absent
     assert "provider" in updated.result_json
     assert updated.result_json["provider"] is None
+
+
+def test_mark_running_transitions_starting_job_to_running() -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="job-running",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.STARTING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.QUEUED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+
+    executor._mark_running("job-running", aisle, now)
+
+    updated = job_repo.get_by_id("job-running")
+    assert updated is not None
+    assert updated.status == JobStatus.RUNNING
+    assert updated.current_stage == "Pipeline"
+    assert updated.current_substep == "startup_confirmed"
+
+
+def test_update_runtime_status_only_resets_step_started_at_when_stage_or_substep_changes() -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    later = datetime(2025, 3, 17, 12, 1, 0, tzinfo=timezone.utc)
+    much_later = datetime(2025, 3, 17, 12, 2, 0, tzinfo=timezone.utc)
+    clock = FixedClock(now)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="job-steps",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+            current_stage="FrameAcquisitionStage",
+            current_substep="image_open",
+            current_step_started_at=now,
+        )
+    )
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=InMemoryAisleRepo(),
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=clock,
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+
+    clock.set_now(later)
+    executor._update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_open")
+    unchanged = job_repo.get_by_id("job-steps")
+    assert unchanged is not None
+    assert unchanged.current_step_started_at == now
+
+    clock.set_now(much_later)
+    executor._update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_decode")
+    changed = job_repo.get_by_id("job-steps")
+    assert changed is not None
+    assert changed.current_step_started_at == much_later
+
+
+def test_heartbeat_reads_job_once_and_updates_timestamp() -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    later = datetime(2025, 3, 17, 12, 0, 10, tzinfo=timezone.utc)
+    clock = FixedClock(later)
+    job_repo = CountingJobRepo()
+    job_repo.save(
+        Job(
+            id="job-heartbeat",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+            last_heartbeat_at=now,
+        )
+    )
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=InMemoryAisleRepo(),
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=clock,
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+
+    updated = executor._heartbeat("job-heartbeat")
+
+    assert updated is not None
+    assert job_repo.get_calls == 1
+    assert updated.last_heartbeat_at == later
 
 
 def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
@@ -406,7 +554,7 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.QUEUED,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -627,7 +775,7 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.QUEUED,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -720,8 +868,8 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
     assert "simulated persist error" in updated_job.error_message
 
 
-def test_execute_accepts_running_status_after_db_claim() -> None:
-    """Worker DB-claim sets RUNNING before dispatch; executor must still execute."""
+def test_execute_rejects_running_status_reentry() -> None:
+    """Corrected contract: executor accepts STARTING only, not re-entry from RUNNING."""
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_id = "j-claimed-running"
     aisle_id = "aisle-1"
@@ -731,7 +879,7 @@ def test_execute_accepts_running_status_after_db_claim() -> None:
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.RUNNING,  # claimed already
+        status=JobStatus.RUNNING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -821,16 +969,8 @@ def test_execute_accepts_running_status_after_db_claim() -> None:
     assert handled is True
     updated_job = job_repo.get_by_id(job_id)
     assert updated_job is not None
-    assert updated_job.status == JobStatus.SUCCEEDED
-    assert updated_job.result_json is not None
-    da = updated_job.result_json.get("durable_artifacts")
-    assert da is not None
-    assert DURABLE_ARTIFACT_KIND_EXECUTION_LOG in da
-    assert DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON in da
-    log_key = da[DURABLE_ARTIFACT_KIND_EXECUTION_LOG]["storage_key"]
-    assert log_key == worker_output_storage_keys(job_id, RUN_ID)[DURABLE_ARTIFACT_KIND_EXECUTION_LOG]
-    assert da[DURABLE_ARTIFACT_KIND_EXECUTION_LOG]["storage_provider"] == "local"
-    assert (artifact_root / log_key).is_file()
+    assert updated_job.status == JobStatus.RUNNING
+    assert updated_job.result_json is None
 
 
 def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
@@ -844,7 +984,7 @@ def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.RUNNING,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -956,7 +1096,7 @@ def test_execute_durable_upload_failure_after_persist_partial_finalization_expli
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.RUNNING,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -1067,7 +1207,7 @@ def test_execute_rejects_mixed_video_and_photo_assets() -> None:
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.RUNNING,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,

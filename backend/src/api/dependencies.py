@@ -85,6 +85,7 @@ from src.application.use_cases.get_aisle_merge_results import (
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,20 @@ def get_artifact_storage():
 
 def get_worker_launch_service_dep() -> WorkerLaunchService:
     return get_worker_launch_service()
+
+
+def get_job_stale_reconciler(
+    job_repo: JobRepository = Depends(get_job_repo),
+    clock: Clock = Depends(get_clock),
+) -> JobStaleReconciler:
+    from src.config import load_settings
+
+    settings = load_settings()
+    return JobStaleReconciler(
+        job_repo=job_repo,
+        clock=clock,
+        stale_after_seconds=int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0),
+    )
 
 
 def get_create_inventory_use_case(
@@ -265,6 +280,7 @@ def get_start_aisle_processing_use_case(
     worker_launch_service: WorkerLaunchService = Depends(get_worker_launch_service_dep),
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+    stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
@@ -272,16 +288,19 @@ def get_start_aisle_processing_use_case(
         worker_launch_service=worker_launch_service,
         clock=clock,
         status_reconciler=status_reconciler,
+        stale_reconciler=stale_reconciler,
     )
 
 
 def get_get_aisle_processing_status_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
+    stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> GetAisleProcessingStatusUseCase:
     return GetAisleProcessingStatusUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
+        stale_reconciler=stale_reconciler,
     )
 
 

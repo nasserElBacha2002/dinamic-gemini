@@ -82,7 +82,7 @@ class CancelAisleJobUseCase:
         if status == JobStatus.QUEUED:
             job.status = JobStatus.CANCELED
             job.updated_at = now
-            job.cancel_requested_at = now
+            job.cancel_requested_at = None
             job.finished_at = now
             if not job.error_message:
                 job.error_message = "Job canceled before execution"

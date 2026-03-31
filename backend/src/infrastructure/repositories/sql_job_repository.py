@@ -13,6 +13,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from src.application.ports.repositories import JobRepository
+from src.application.services.job_stale_reconciler import (
+    STALE_FAILURE_CODE,
+    STALE_FAILURE_MESSAGE,
+    STALE_RECONCILE_STATUSES,
+)
 from src.database.sqlserver import SqlServerClient
 from src.domain.jobs.entities import Job, JobStatus
 
@@ -285,29 +290,29 @@ class SqlJobRepository(JobRepository):
         return self.get_by_id(claimed_job_id)
 
     def reclaim_stale_running_jobs(self, stale_after_seconds: int) -> int:
-        """Reset stale RUNNING jobs back to QUEUED for recovery.
-
-        Intended for operational recovery when a worker crashes after claim.
-        Returns number of rows reset.
-        """
+        """Fail stale active jobs using the shared stale-reconciliation contract."""
         if stale_after_seconds <= 0:
             return 0
+        stale_statuses = ", ".join(f"'{status.value}'" for status in STALE_RECONCILE_STATUSES)
         with self._client.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 UPDATE inventory_jobs
                 SET status = 'failed',
                     updated_at = ?,
                     finished_at = ?,
-                    failure_code = 'STALE_JOB',
-                    failure_message = 'Job heartbeat expired before completion',
-                    error_message = 'Job heartbeat expired before completion'
-                WHERE status IN ('starting', 'running', 'cancel_requested')
+                    failure_code = ?,
+                    failure_message = ?,
+                    error_message = ?
+                WHERE status IN ({stale_statuses})
                   AND DATEDIFF(SECOND, COALESCE(last_heartbeat_at, updated_at), ?) >= ?
                 """,
                 (
                     datetime.now(timezone.utc),
                     datetime.now(timezone.utc),
+                    STALE_FAILURE_CODE,
+                    STALE_FAILURE_MESSAGE,
+                    STALE_FAILURE_MESSAGE,
                     datetime.now(timezone.utc),
                     stale_after_seconds,
                 ),

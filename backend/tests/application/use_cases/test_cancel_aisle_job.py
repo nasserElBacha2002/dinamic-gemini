@@ -107,6 +107,8 @@ def test_cancel_queued_job_marks_canceled() -> None:
     assert updated is not None
     assert updated.status == JobStatus.CANCELED
     assert "canceled" in (updated.error_message or "").lower()
+    assert updated.cancel_requested_at is None
+    assert updated.finished_at == now
 
 
 def test_cancel_running_job_marks_cancel_requested() -> None:
@@ -140,6 +142,7 @@ def test_cancel_running_job_marks_cancel_requested() -> None:
     updated = job_repo.get_by_id("job-1")
     assert updated is not None
     assert updated.status == JobStatus.CANCEL_REQUESTED
+    assert updated.cancel_requested_at == now
 
 
 def test_cancel_terminal_job_raises() -> None:
