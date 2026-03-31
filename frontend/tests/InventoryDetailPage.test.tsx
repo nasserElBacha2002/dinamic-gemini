@@ -10,6 +10,9 @@ import { AppSnackbarProvider } from '../src/components/ui';
 const { useInventoryVisualReferencesMock } = vi.hoisted(() => ({
   useInventoryVisualReferencesMock: vi.fn(),
 }));
+const { useUploadInventoryVisualReferencesMock } = vi.hoisted(() => ({
+  useUploadInventoryVisualReferencesMock: vi.fn(),
+}));
 
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
@@ -55,6 +58,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useCreateAisle: () => ({ mutateAsync: vi.fn() }),
     useStartAisleProcessing: () => ({ mutateAsync: vi.fn() }),
     useUploadAisleAssetsFlex: () => ({ mutateAsync: vi.fn() }),
+    useUploadInventoryVisualReferences: useUploadInventoryVisualReferencesMock,
   };
 });
 
@@ -84,6 +88,13 @@ function renderPage() {
 describe('InventoryDetail', () => {
   beforeEach(() => {
     useInventoryVisualReferencesMock.mockReset();
+    useUploadInventoryVisualReferencesMock.mockReset();
+    useUploadInventoryVisualReferencesMock.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+      isError: false,
+      error: null,
+    });
   });
 
   it('keeps reference images lazy until the drawer opens', () => {
@@ -179,8 +190,10 @@ describe('InventoryDetail', () => {
 
     expect(screen.getByRole('heading', { name: 'Reference images' })).toBeInTheDocument();
     expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
-    expect(screen.getByText(/future processing runs only/i)).toBeInTheDocument();
-    expect(screen.getByText(/management actions/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/reference images are used for future processing runs only\./i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^management$/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /close reference images drawer/i })).toBeInTheDocument();
   });
 });

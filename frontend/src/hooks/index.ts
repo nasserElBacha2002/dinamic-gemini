@@ -8,5 +8,6 @@ export {
   useStartAisleProcessing,
   useUploadAisleAssets,
   useUploadAisleAssetsFlex,
+  useUploadInventoryVisualReferences,
   useSubmitReviewAction,
 } from './useMutations';

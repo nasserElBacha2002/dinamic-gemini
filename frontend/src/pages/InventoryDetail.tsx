@@ -32,6 +32,7 @@ import {
   useCreateAisle,
   useStartAisleProcessing,
   useUploadAisleAssetsFlex,
+  useUploadInventoryVisualReferences,
 } from '../hooks';
 
 function getUploadContextFromInput(
@@ -79,6 +80,7 @@ export default function InventoryDetail() {
   const createAisleMutation = useCreateAisle(inventoryId ?? '');
   const processMutation = useStartAisleProcessing(inventoryId ?? '');
   const uploadMutation = useUploadAisleAssetsFlex(inventoryId ?? '');
+  const uploadReferenceImagesMutation = useUploadInventoryVisualReferences(inventoryId ?? '');
 
   const inventory = inventoryQuery.data ?? null;
   const inventoryLoading = inventoryQuery.isLoading;
@@ -102,6 +104,11 @@ export default function InventoryDetail() {
   const handleCreateAisleSuccess = () => {
     showSnackbar('Aisle created', 'success');
     void aislesQuery.refetch();
+  };
+
+  const handleCloseReferenceImages = () => {
+    setReferenceImagesOpen(false);
+    uploadReferenceImagesMutation.reset();
   };
 
   const handleStartProcess = async (aisleId: string) => {
@@ -417,12 +424,20 @@ export default function InventoryDetail() {
       />
 
       <ReferenceImagesDrawer
+        inventoryId={inventoryId ?? ''}
         open={referenceImagesOpen}
-        onClose={() => setReferenceImagesOpen(false)}
+        onClose={handleCloseReferenceImages}
         items={visualReferences}
         isLoading={visualReferencesQuery.isLoading}
         errorMessage={visualReferencesError}
         onRetry={() => visualReferencesQuery.refetch()}
+        onUpload={(files) => uploadReferenceImagesMutation.mutateAsync(files)}
+        isUploading={uploadReferenceImagesMutation.isPending}
+        uploadError={
+          uploadReferenceImagesMutation.isError && uploadReferenceImagesMutation.error
+            ? getApiErrorMessage(uploadReferenceImagesMutation.error, 'Failed to upload reference images')
+            : null
+        }
       />
 
       <Dialog

@@ -1,26 +1,116 @@
-import { Box, Button, Divider, Drawer, IconButton, Typography } from '@mui/material';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  Drawer,
+  IconButton,
+  Typography,
+} from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import { ApiError } from '../api/types';
 import type { InventoryVisualReference } from '../api/types';
+import { fetchInventoryVisualReferenceFile } from '../api/client';
 import { formatDate } from '../utils/formatDate';
+import { getApiErrorMessage } from '../utils/apiErrors';
 import { EmptyState, ErrorAlert, LoadingBlock } from './ui';
 
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, Math.round(bytes || 0))} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
 export interface ReferenceImagesDrawerProps {
+  inventoryId: string;
   open: boolean;
   onClose: () => void;
   items: InventoryVisualReference[];
   isLoading: boolean;
   errorMessage?: string | null;
   onRetry?: () => void;
+  onUpload: (files: File[]) => Promise<unknown>;
+  isUploading?: boolean;
+  uploadError?: string | null;
 }
 
 export default function ReferenceImagesDrawer({
+  inventoryId,
   open,
   onClose,
   items,
   isLoading,
   errorMessage,
   onRetry,
+  onUpload,
+  isUploading = false,
+  uploadError,
 }: ReferenceImagesDrawerProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const previewRevokeRef = useRef<(() => void) | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<InventoryVisualReference | null>(null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewRevokeRef.current) {
+        previewRevokeRef.current();
+        previewRevokeRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      clearPreview();
+    }
+  }, [open]);
+
+  const clearPreview = () => {
+    if (previewRevokeRef.current) {
+      previewRevokeRef.current();
+      previewRevokeRef.current = null;
+    }
+    setPreviewTarget(null);
+    setPreviewSrc(null);
+    setPreviewLoading(false);
+    setPreviewError(null);
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files ? Array.from(event.target.files) : [];
+    event.target.value = '';
+    if (files.length === 0) return;
+    await onUpload(files);
+  };
+
+  const handlePreview = async (item: InventoryVisualReference) => {
+    clearPreview();
+    setPreviewTarget(item);
+    setPreviewLoading(true);
+    try {
+      const result = await fetchInventoryVisualReferenceFile(inventoryId, item.id);
+      previewRevokeRef.current = result.revoke;
+      setPreviewSrc(result.imageSrc);
+    } catch (error) {
+      const apiError = error instanceof ApiError ? error : new ApiError(String(error));
+      setPreviewError(getApiErrorMessage(apiError, 'Reference image preview could not be loaded'));
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   return (
     <Drawer
       anchor="right"
@@ -70,12 +160,46 @@ export default function ReferenceImagesDrawer({
         </Box>
 
         <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, py: 2 }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            multiple
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
           {isLoading ? <LoadingBlock /> : null}
 
           {!isLoading && errorMessage ? <ErrorAlert message={errorMessage} onRetry={onRetry} /> : null}
 
           {!isLoading && !errorMessage ? (
             <Box sx={{ display: 'grid', gap: 2 }}>
+              <Box
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  p: 2,
+                  display: 'grid',
+                  gap: 1,
+                }}
+              >
+                <Typography variant="subtitle2">Management</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Add inventory-level reference images here. These references are used for future processing runs only.
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Button variant="contained" size="small" onClick={handleUploadClick} disabled={isUploading}>
+                    {isUploading ? 'Uploading…' : 'Upload references'}
+                  </Button>
+                </Box>
+                {uploadError ? <ErrorAlert message={uploadError} /> : null}
+                <Typography variant="caption" color="text.secondary">
+                  Replace and delete actions are not exposed yet because dedicated backend routes are not available in
+                  the current contract.
+                </Typography>
+              </Box>
+
               {items.length === 0 ? (
                 <EmptyState
                   title="No reference images uploaded yet"
@@ -96,7 +220,7 @@ export default function ReferenceImagesDrawer({
                             px: 2,
                             py: 1.5,
                             display: 'grid',
-                            gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) repeat(2, minmax(120px, 1fr))' },
+                            gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) repeat(3, minmax(96px, auto))' },
                             gap: 1,
                             alignItems: 'center',
                           }}
@@ -110,46 +234,46 @@ export default function ReferenceImagesDrawer({
                             {item.mime_type}
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
+                            {formatFileSize(item.file_size)}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
                             Uploaded {formatDate(item.created_at)}
                           </Typography>
+                          <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+                            <Button variant="outlined" size="small" onClick={() => void handlePreview(item)}>
+                              View
+                            </Button>
+                          </Box>
                         </Box>
                       </Box>
                     ))}
                   </Box>
                 </>
               )}
-
-              <Box
-                sx={{
-                  border: '1px dashed',
-                  borderColor: 'divider',
-                  borderRadius: 2,
-                  p: 2,
-                  display: 'grid',
-                  gap: 1,
-                }}
-              >
-                <Typography variant="subtitle2">Management actions</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Upload, preview, replace, and delete actions will live in this panel once the next phase wires the
-                  existing backend capabilities into this drawer flow.
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button variant="outlined" size="small" disabled>
-                    Upload references
-                  </Button>
-                  <Button variant="outlined" size="small" disabled>
-                    Replace
-                  </Button>
-                  <Button variant="outlined" size="small" disabled>
-                    Delete
-                  </Button>
-                </Box>
-              </Box>
             </Box>
           ) : null}
         </Box>
       </Box>
+
+      <Dialog open={Boolean(previewTarget)} onClose={clearPreview} maxWidth="md" fullWidth>
+        <DialogTitle>{previewTarget?.filename ?? 'Reference image'}</DialogTitle>
+        <DialogContent>
+          {previewLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress aria-label="Loading reference image preview" />
+            </Box>
+          ) : null}
+          {!previewLoading && previewError ? <ErrorAlert message={previewError} onClose={() => setPreviewError(null)} /> : null}
+          {!previewLoading && !previewError && previewSrc ? (
+            <Box
+              component="img"
+              src={previewSrc}
+              alt={previewTarget?.filename ?? 'Reference image preview'}
+              sx={{ width: '100%', height: 'auto', display: 'block', borderRadius: 1 }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </Drawer>
   );
 }

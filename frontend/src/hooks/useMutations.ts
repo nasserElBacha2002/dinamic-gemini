@@ -9,6 +9,7 @@ import {
   startAisleProcessing,
   runAisleMerge,
   uploadAisleAssets,
+  uploadInventoryVisualReferences,
   submitReviewAction,
 } from '../api/client';
 import type { CreateInventoryRequest, CreateAisleRequest, ReviewActionRequest } from '../api/types';
@@ -74,6 +75,17 @@ export function useUploadAisleAssetsFlex(inventoryId: string) {
       uploadAisleAssets(inventoryId, aisleId, files),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+    },
+  });
+}
+
+export function useUploadInventoryVisualReferences(inventoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (files: File[]) => uploadInventoryVisualReferences(inventoryId, files),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
     },
   });
 }
