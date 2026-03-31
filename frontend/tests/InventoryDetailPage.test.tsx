@@ -284,4 +284,85 @@ describe('InventoryDetail', () => {
     });
     expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).not.toHaveProperty('refetchInterval');
   });
+
+  it('renders compact reference usage summaries in the aisles table while keeping the log as the detail path', () => {
+    useInventoryVisualReferencesMock.mockImplementation(() => ({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'processed',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            assets_count: 3,
+            positions_count: 7,
+            pending_review_positions_count: 1,
+            latest_job: {
+              id: 'job-1',
+              status: 'succeeded',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+              error_message: null,
+              reference_usage: {
+                resolved: true,
+                resolved_count: 2,
+                provider_consumed: true,
+                provider_consumed_count: 2,
+                reference_ids: ['ref-1', 'ref-2'],
+                resolution_error: null,
+              },
+            },
+          },
+          {
+            id: 'aisle-2',
+            inventory_id: 'inv-1',
+            code: 'A-02',
+            status: 'failed',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            assets_count: 1,
+            positions_count: 0,
+            pending_review_positions_count: 0,
+            latest_job: {
+              id: 'job-2',
+              status: 'failed',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+              error_message: 'Reference resolution failed',
+              reference_usage: {
+                resolved: true,
+                resolved_count: 1,
+                provider_consumed: false,
+                provider_consumed_count: 0,
+                reference_ids: ['ref-missing'],
+                resolution_error: 'visual reference ref-missing could not be resolved',
+              },
+            },
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText('Reference usage')).toBeInTheDocument();
+    expect(screen.getByText('Gemini received 2 references')).toBeInTheDocument();
+    expect(screen.getByText('2 references resolved')).toBeInTheDocument();
+    expect(screen.getByText('Resolution failed')).toBeInTheDocument();
+    expect(screen.getByText('1 reference resolved. Gemini received 0 references.')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /actions for aisle/i })).toHaveLength(2);
+  });
 });

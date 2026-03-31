@@ -47,6 +47,52 @@ function getUploadContextFromInput(
   return { files: Array.from(files), aisleId };
 }
 
+function formatReferenceUsageSummary(aisle: Aisle): { label: string; detail?: string; semantic: 'success' | 'warning' | 'error' | 'neutral' } | null {
+  const usage = aisle.latest_job?.reference_usage;
+  if (!aisle.latest_job) return null;
+  if (!usage) {
+    return ['queued', 'running'].includes(String(aisle.latest_job.status).toLowerCase())
+      ? { label: 'Pending run summary', semantic: 'neutral' }
+      : { label: 'Summary unavailable', semantic: 'neutral' };
+  }
+
+  const resolvedLabel =
+    usage.resolved_count === 1 ? '1 reference resolved' : `${usage.resolved_count} references resolved`;
+  const consumedLabel =
+    usage.provider_consumed_count === 1
+      ? 'Gemini received 1 reference'
+      : `Gemini received ${usage.provider_consumed_count} references`;
+
+  if (usage.resolution_error) {
+    return {
+      label: 'Resolution failed',
+      detail: `${resolvedLabel}. Gemini received 0 references.`,
+      semantic: 'error',
+    };
+  }
+
+  if (usage.provider_consumed) {
+    return {
+      label: consumedLabel,
+      detail: resolvedLabel,
+      semantic: 'success',
+    };
+  }
+
+  if (usage.resolved) {
+    return {
+      label: resolvedLabel,
+      detail: 'Gemini did not receive reference images.',
+      semantic: 'warning',
+    };
+  }
+
+  return {
+    label: 'Processed without references',
+    semantic: 'neutral',
+  };
+}
+
 export default function InventoryDetail() {
   const { inventoryId } = useParams<{ inventoryId: string }>();
   const navigate = useNavigate();
@@ -218,6 +264,24 @@ export default function InventoryDetail() {
           ) : (
             '—'
           ),
+      },
+      {
+        id: 'reference_usage',
+        label: 'Reference usage',
+        cell: (a) => {
+          const summary = formatReferenceUsageSummary(a);
+          if (!summary) return '—';
+          return (
+            <Box sx={{ display: 'grid', gap: 0.75 }}>
+              <StatusBadge label={summary.label} semantic={summary.semantic} />
+              {summary.detail ? (
+                <Typography variant="caption" color="text.secondary">
+                  {summary.detail}
+                </Typography>
+              ) : null}
+            </Box>
+          );
+        },
       },
       {
         id: 'results_found',

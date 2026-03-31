@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 from src.api.schemas.aisle_schemas import AisleResponse
+from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 
 
 class ProcessAisleResponse(BaseModel):
@@ -20,6 +21,7 @@ class JobSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     error_message: Optional[str] = None
+    reference_usage: Optional[ReferenceUsageSummary] = None
 
 
 class AisleStatusResponse(BaseModel):

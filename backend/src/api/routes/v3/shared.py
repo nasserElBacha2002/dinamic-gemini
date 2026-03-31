@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from fastapi import HTTPException
 
@@ -57,12 +57,40 @@ from src.application.mappers.position_canonical_view import (
     build_position_canonical_view,
 )
 from src.application.services.position_traceability import reset_traceability_cache_for_tests
+from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 logger = logging.getLogger(__name__)
 
 _MANIFEST_FILENAME = "input_manifest.json"
 _NORMALIZED_SUBDIR = "input_photos_normalized"
 _HEIC_EXTENSIONS = (".heic", ".heif")
+
+
+def _parse_reference_usage_summary(result_json: Any) -> Optional[dict[str, Any]]:
+    """Map persisted visual_reference_context into the compact API summary shape."""
+    if not isinstance(result_json, dict):
+        return None
+    raw = result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
+    if not isinstance(raw, dict):
+        return None
+
+    reference_ids_raw = raw.get("reference_ids")
+    reference_ids = (
+        [str(item).strip() for item in reference_ids_raw if isinstance(item, str) and str(item).strip()]
+        if isinstance(reference_ids_raw, list)
+        else []
+    )
+    resolved_count = int(raw.get("resolved_count", 0) or 0)
+    provider_consumed_count = int(raw.get("provider_consumed_count", 0) or 0)
+    resolution_error = raw.get("resolution_error")
+    return {
+        "resolved": bool(raw.get("resolved")),
+        "resolved_count": max(0, resolved_count),
+        "provider_consumed": bool(raw.get("provider_consumed")),
+        "provider_consumed_count": max(0, provider_consumed_count),
+        "reference_ids": reference_ids,
+        "resolution_error": resolution_error[:2048] if isinstance(resolution_error, str) else None,
+    }
 
 
 def _try_resolve_normalized_asset_for_job(
@@ -284,6 +312,7 @@ def aisle_to_response(
             created_at=latest_job.created_at,
             updated_at=latest_job.updated_at,
             error_message=latest_job.error_message,
+            reference_usage=_parse_reference_usage_summary(latest_job.result_json),
         )
     return AisleResponse(
         id=a.id,
@@ -312,6 +341,7 @@ def status_response_from_result(result: AisleProcessingStatusResult) -> AisleSta
             created_at=j.created_at,
             updated_at=j.updated_at,
             error_message=j.error_message,
+            reference_usage=_parse_reference_usage_summary(j.result_json),
         )
     return AisleStatusResponse(
         aisle=aisle_to_response(result.aisle, result.latest_job),
