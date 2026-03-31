@@ -13,6 +13,7 @@ import pytest
 
 from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.execution_log import ExecutionLogWriter, read_execution_log_file
 from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE,
@@ -270,3 +271,50 @@ def test_gemini_provider_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     assert payload["visual_reference_attachments"][0]["resolved"] is True
     assert "source_path" not in payload["visual_reference_attachments"][0]
     assert "resolved_path" not in payload["visual_reference_attachments"][0]
+
+
+def test_gemini_provider_persists_structured_request_event_to_execution_log_file(tmp_path: Path) -> None:
+    import cv2
+
+    ref_full = tmp_path / "reference-image.jpg"
+    ref_full.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(ref_full), np.zeros((24, 24, 3), dtype=np.uint8))
+
+    context = _run_context(
+        metadata={
+            "analysis_context": {
+                "primary_evidence": [],
+                "visual_references": [
+                    {
+                        "reference_id": "ref-1",
+                        "source_path": "inventories/inv-1/visual_references/reference-image.jpg",
+                        "mime_type": "image/jpeg",
+                        "resolved_path": str(ref_full),
+                    },
+                ],
+                "instructions": ["Use refs as context."],
+            },
+        },
+        settings_output_dir=str(tmp_path),
+    )
+    run_dir = tmp_path / "job-1" / "run"
+    context.run_dir = run_dir
+    context.execution_log = ExecutionLogWriter(run_dir)
+
+    provider = GeminiAnalysisProvider()
+    provider.analyze(
+        context=context,
+        frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/input/photo-01.jpg")],
+        frame_refs=["img_001"],
+        metadata={"frame_count": 1},
+    )
+
+    events = read_execution_log_file(run_dir / "execution_log.jsonl")
+    prepared_event = next((event for event in events if event.get("message") == "Gemini request prepared"), None)
+    assert prepared_event is not None
+    payload = prepared_event["payload"]
+    assert payload["event_type"] == "gemini_request"
+    assert payload["attachment_summary"]["total_count"] == 2
+    assert payload["primary_evidence_attachments"][0]["filename"] == "photo-01.jpg"
+    assert payload["visual_reference_attachments"][0]["reference_id"] == "ref-1"

@@ -49,11 +49,20 @@ echo "[dev] Runtime: OUTPUT_DIR=${OUTPUT_DIR:-output} SQLSERVER_ENABLED=${SQLSER
 # processes before starting fresh ones.
 echo "[dev] Limpiando procesos previos de backend/worker..."
 if command -v pgrep >/dev/null 2>&1; then
-  WORKER_PIDS="$(pgrep -f "python -m src.jobs.run_worker" || true)"
+  WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker$" || true)"
+  DEV_WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker_dev$" || true)"
+  if [[ -n "${DEV_WORKER_PIDS}" ]]; then
+    echo "${DEV_WORKER_PIDS}" | xargs kill 2>/dev/null || true
+    sleep 0.3
+    STILL_DEV_WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker_dev$" || true)"
+    if [[ -n "${STILL_DEV_WORKER_PIDS}" ]]; then
+      echo "${STILL_DEV_WORKER_PIDS}" | xargs kill -9 2>/dev/null || true
+    fi
+  fi
   if [[ -n "${WORKER_PIDS}" ]]; then
     echo "${WORKER_PIDS}" | xargs kill 2>/dev/null || true
     sleep 0.3
-    STILL_WORKER_PIDS="$(pgrep -f "python -m src.jobs.run_worker" || true)"
+    STILL_WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker$" || true)"
     if [[ -n "${STILL_WORKER_PIDS}" ]]; then
       echo "${STILL_WORKER_PIDS}" | xargs kill -9 2>/dev/null || true
     fi
@@ -74,10 +83,10 @@ echo "[dev] Arrancando backend en http://127.0.0.1:${PORT} ..."
 BE_PID=$!
 
 echo "[dev] Arrancando worker..."
-(cd "$ROOT/backend" && "$PYTHON" -m src.jobs.run_worker) &
+(cd "$ROOT/backend" && "$PYTHON" -m src.jobs.run_worker_dev) &
 WORKER_PID=$!
 sleep 0.4
-ACTIVE_WORKERS="$(pgrep -fc "python -m src.jobs.run_worker" || true)"
+ACTIVE_WORKERS="$(pgrep -fc "src\\.jobs\\.run_worker_dev$" || true)"
 echo "[dev] Workers activos detectados: ${ACTIVE_WORKERS:-0}"
 
 cleanup() {
