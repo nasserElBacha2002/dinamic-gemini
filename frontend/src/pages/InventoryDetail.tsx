@@ -12,9 +12,7 @@ import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../u
 import { exportInventoryResultsCsv } from '../api/client';
 import {
   DataTable,
-  EmptyState,
   ErrorAlert,
-  KpiCard,
   LoadingBlock,
   RowActionMenu,
   SectionCard,
@@ -25,11 +23,12 @@ import {
 import { PageHeader } from '../components/shell';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import ExecutionLogPanel from '../components/ExecutionLogPanel';
+import ReferenceImagesSection from '../components/ReferenceImagesSection';
 import {
   useInventoryDetail,
+  useInventoryVisualReferences,
   useAislesList,
   useExecutionLog,
-  useInventoryMetrics,
   useCreateAisle,
   useStartAisleProcessing,
   useUploadAisleAssetsFlex,
@@ -70,9 +69,11 @@ export default function InventoryDetail() {
   );
 
   const inventoryQuery = useInventoryDetail(inventoryId);
+  const visualReferencesQuery = useInventoryVisualReferences(inventoryId, {
+    enabled: Boolean(inventoryId && inventoryQuery.data),
+  });
   const aislesQuery = useAislesList(inventoryId, { enabled: Boolean(inventoryId && inventoryQuery.data) });
   const aisles = aislesQuery.data?.items ?? [];
-  const metricsQuery = useInventoryMetrics(inventoryId);
 
   const createAisleMutation = useCreateAisle(inventoryId ?? '');
   const processMutation = useStartAisleProcessing(inventoryId ?? '');
@@ -91,11 +92,10 @@ export default function InventoryDetail() {
     aislesQuery.isError && aislesQuery.error
       ? getApiErrorMessage(aislesQuery.error, 'Failed to load aisles')
       : null;
-  const metrics = metricsQuery.data ?? null;
-  const metricsLoading = metricsQuery.isLoading;
-  const metricsError =
-    metricsQuery.isError && metricsQuery.error
-      ? getApiErrorMessage(metricsQuery.error, 'Failed to load metrics')
+  const visualReferences = visualReferencesQuery.data?.items ?? [];
+  const visualReferencesError =
+    visualReferencesQuery.isError && visualReferencesQuery.error
+      ? getApiErrorMessage(visualReferencesQuery.error, 'Failed to load reference images')
       : null;
 
   const handleCreateAisleSuccess = () => {
@@ -150,28 +150,6 @@ export default function InventoryDetail() {
       setUploadingAisleId(null);
     }
   };
-
-  const aisleKpis = useMemo(() => {
-    const totalAisles = aisles.length;
-    const processedAisles = aisles.filter((a) => {
-      const s = String(a.status || '').toLowerCase();
-      return s === 'processed' || s === 'in_review' || s === 'completed';
-    }).length;
-    const aislesWithErrors = aisles.filter((a) => {
-      const s = String(a.status || '').toLowerCase();
-      return s === 'failed' || Boolean(a.error_message) || a.latest_job?.status === 'failed';
-    }).length;
-    const pendingAisles = Math.max(0, totalAisles - processedAisles - aislesWithErrors);
-    const pendingReviewResults = aisles.reduce((sum, a) => sum + (a.pending_review_positions_count ?? 0), 0);
-    return { totalAisles, processedAisles, pendingAisles, aislesWithErrors, pendingReviewResults };
-  }, [aisles]);
-
-  const reviewCompletionRate = useMemo(() => {
-    if (!metrics) return null;
-    if (!metrics.total_positions) return 0;
-    const r = (metrics.total_reviewed_positions / metrics.total_positions) * 100;
-    return Number.isFinite(r) ? Math.round(r) : null;
-  }, [metrics]);
 
   const aisleColumns = useMemo<DataTableColumn<Aisle>[]>(() => {
     return [
@@ -355,139 +333,74 @@ export default function InventoryDetail() {
               </Box>
             }
           />
+          <Box sx={{ display: 'grid', gap: 2 }}>
+            <ReferenceImagesSection
+              items={visualReferences}
+              isLoading={visualReferencesQuery.isLoading}
+              errorMessage={visualReferencesError}
+              onRetry={() => visualReferencesQuery.refetch()}
+            />
 
-          <Box
-            sx={{
-              mb: 2,
-              display: 'flex',
-              gap: 1.5,
-              flexWrap: { xs: 'wrap', md: 'nowrap' },
-              overflowX: { xs: 'visible', md: 'auto' },
-              pb: { xs: 0, md: 0.5 },
-              alignItems: 'stretch',
-            }}
-          >
-            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 180px' } }}>
-              <KpiCard label="Total aisles" value={aislesLoading ? '—' : aisleKpis.totalAisles} />
-            </Box>
-            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 180px' } }}>
-              <KpiCard label="Processed aisles" value={aislesLoading ? '—' : aisleKpis.processedAisles} />
-            </Box>
-            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 180px' } }}>
-              <KpiCard label="Pending aisles" value={aislesLoading ? '—' : aisleKpis.pendingAisles} />
-            </Box>
-            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 180px' } }}>
-              <KpiCard label="Aisles with errors" value={aislesLoading ? '—' : aisleKpis.aislesWithErrors} />
-            </Box>
-
-            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 260px' } }}>
-              <KpiCard
-                label="Review completion rate"
-                value={metricsLoading ? '—' : reviewCompletionRate == null ? '—' : `${reviewCompletionRate}%`}
-                description={metrics ? `${metrics.total_reviewed_positions}/${metrics.total_positions} reviewed` : undefined}
-              />
-            </Box>
-
-            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 220px' } }}>
-              <KpiCard label="Pending review results" value={aislesLoading ? '—' : aisleKpis.pendingReviewResults} />
-            </Box>
-            <Box sx={{ flex: { xs: '1 1 240px', md: '0 0 220px' } }}>
-              <KpiCard
-                label="Manual corrections"
-                value={metricsLoading ? '—' : metrics ? metrics.corrected_positions : '—'}
-              />
-            </Box>
-          </Box>
-
-          {metricsError ? <ErrorAlert message={metricsError} onRetry={() => metricsQuery.refetch()} /> : null}
-
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) minmax(320px, 1fr)' },
-              gap: 2,
-              alignItems: 'start',
-            }}
-          >
-            <Box sx={{ minWidth: 0 }}>
-              {processError ? (
-                <Box sx={{ mb: 2 }} data-testid="inventory-process-error">
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                    Starting processing
-                  </Typography>
-                  <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
-                </Box>
-              ) : null}
-
-              {uploadError ? (
-                <Box sx={{ mb: 2 }} data-testid="inventory-upload-error">
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                    Asset upload
-                  </Typography>
-                  <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
-                </Box>
-              ) : null}
-
-              {aislesError ? <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} /> : null}
-
-              <SectionCard
-                title="Aisles"
-                subtitle="Operational queue for this inventory."
-                actions={
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => aislesQuery.refetch()}
-                    disabled={aislesLoading}
-                  >
-                    Refresh
-                  </Button>
-                }
-                variant="elevation"
-                elevation={1}
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept="image/*,video/*"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={handleFileInputChange}
-                />
-                <DataTable<Aisle>
-                  rows={aisles}
-                  rowKey={(a) => a.id}
-                  columns={aisleColumns}
-                  loading={aislesLoading}
-                  onRowClick={(a) => navigate(pathToAislePositions(inventoryId ?? '', a.id))}
-                  emptyState={{
-                    title: 'No aisles yet',
-                    message: 'Create an aisle to start processing.',
-                    action: (
-                      <Button variant="contained" onClick={() => setCreateAisleOpen(true)}>
-                        Create aisle
-                      </Button>
-                    ),
-                  }}
-                />
-              </SectionCard>
-            </Box>
-
-            <SectionCard title="Activity" subtitle="Timeline and job log shortcuts for this inventory.">
-              <Box sx={{ display: 'grid', gap: 1.5 }}>
-                <Box>
-                  <Box component="div" sx={{ typography: 'subtitle2', fontWeight: 700, mb: 0.75 }}>
-                    Recent activity
-                  </Box>
-                  <EmptyState message="Recent activity will appear here when activity tracking is enabled." />
-                </Box>
-                <Box sx={{ pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
-                  <Box component="div" sx={{ typography: 'subtitle2', fontWeight: 700, mb: 0.75 }}>
-                    Logs summary
-                  </Box>
-                  <EmptyState message="Open View log from an aisle’s actions menu for a full job log. A roll-up summary will appear here when available." />
-                </Box>
+            {processError ? (
+              <Box data-testid="inventory-process-error">
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                  Starting processing
+                </Typography>
+                <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
               </Box>
+            ) : null}
+
+            {uploadError ? (
+              <Box data-testid="inventory-upload-error">
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                  Asset upload
+                </Typography>
+                <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
+              </Box>
+            ) : null}
+
+            {aislesError ? <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} /> : null}
+
+            <SectionCard
+              title="Aisles"
+              subtitle="Operational queue for this inventory."
+              actions={
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => aislesQuery.refetch()}
+                  disabled={aislesLoading}
+                >
+                  Refresh
+                </Button>
+              }
+              variant="elevation"
+              elevation={1}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*,video/*"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleFileInputChange}
+              />
+              <DataTable<Aisle>
+                rows={aisles}
+                rowKey={(a) => a.id}
+                columns={aisleColumns}
+                loading={aislesLoading}
+                onRowClick={(a) => navigate(pathToAislePositions(inventoryId ?? '', a.id))}
+                emptyState={{
+                  title: 'No aisles yet',
+                  message: 'Create an aisle to start processing.',
+                  action: (
+                    <Button variant="contained" onClick={() => setCreateAisleOpen(true)}>
+                      Create aisle
+                    </Button>
+                  ),
+                }}
+              />
             </SectionCard>
           </Box>
         </>

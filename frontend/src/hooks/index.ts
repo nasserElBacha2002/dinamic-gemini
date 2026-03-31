@@ -1,4 +1,4 @@
-export { useInventoriesList, useInventoryDetail } from './useInventories';
+export { useInventoriesList, useInventoryDetail, useInventoryVisualReferences } from './useInventories';
 export { useInventoryMetrics, useAislesList, useExecutionLog } from './useAisles';
 export { useAislePositions, usePositionDetail } from './usePositions';
 export { useReviewQueue } from './useReviewQueue';
