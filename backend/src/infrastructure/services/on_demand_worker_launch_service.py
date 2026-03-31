@@ -35,7 +35,7 @@ class OnDemandWorkerLaunchService:
         launch_log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(launch_log_path, "a", encoding="utf-8") as launch_log:
             launch_log.write(
-                f"launch_requested execution_id={execution_id} job_id={job_id} cwd={cwd} command={command}\n"
+                f"launch_requested execution_id={execution_id} job_id={job_id} cwd={cwd} python={sys.executable} command={command}\n"
             )
             launch_log.flush()
             try:
@@ -61,6 +61,10 @@ class OnDemandWorkerLaunchService:
             time.sleep(WORKER_STARTUP_GRACE_SEC)
             exit_code = process.poll()
             if exit_code is not None:
+                launch_log.write(
+                    f"process_exited_during_startup execution_id={execution_id} job_id={job_id} pid={process.pid} exit_code={exit_code}\n"
+                )
+                launch_log.flush()
                 logger.error(
                     "on-demand worker exited during startup: job_id=%s execution_id=%s pid=%s exit_code=%s log_path=%s",
                     job_id,
@@ -80,6 +84,10 @@ class OnDemandWorkerLaunchService:
                 command,
                 str(launch_log_path),
             )
+            launch_log.write(
+                f"process_spawn_observed execution_id={execution_id} job_id={job_id} pid={process.pid} grace_sec={WORKER_STARTUP_GRACE_SEC}\n"
+            )
+            launch_log.flush()
         return execution_id
 
     def _build_command(self) -> list[str]:

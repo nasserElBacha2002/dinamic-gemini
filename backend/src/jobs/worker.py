@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from src.config import load_settings
+from src.jobs.worker_bootstrap import (
+    append_worker_bootstrap_event,
+    checkpoint_v3_job_bootstrap,
+    fail_v3_job_bootstrap,
+)
 from src.jobs.job_store import _db_repos, claim_next_job, get_job, update_job
 from src.jobs.models import JobStatus
 from src.io.logging import setup_logger
@@ -18,38 +23,35 @@ from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 logger = logging.getLogger(__name__)
 
 
-def _mark_v3_job_failed(job_id: str, error_message: str) -> None:
+def _mark_v3_job_failed(job_id: str, error_message: str, *, execution_id: str | None = None, substep: str = "bootstrap_failed") -> None:
     """Persist FAILED on the v3 job row when setup/executor fails (legacy store will not have this id)."""
     try:
-        from dataclasses import replace
-        from datetime import datetime, timezone
-
-        from src.domain.jobs.entities import JobStatus as V3JobStatus
-        from src.runtime.v3_deps import get_job_repo
-
-        repo = get_job_repo()
-        job = repo.get_by_id(job_id)
-        if job is None:
-            logger.debug("v3 mark failed skipped: job_id=%s not in v3 JobRepository", job_id)
-            return
-        msg = (error_message or "v3 worker error")[:8000]
-        repo.save(
-            replace(
-                job,
-                status=V3JobStatus.FAILED,
-                error_message=msg,
-                updated_at=datetime.now(timezone.utc),
-            )
+        fail_v3_job_bootstrap(
+            job_id=job_id,
+            execution_id=execution_id,
+            error_message=error_message,
+            substep=substep,
         )
         logger.warning("v3 job_id=%s marked FAILED (worker setup/executor error)", job_id)
     except Exception:
         logger.warning("could not mark v3 job_id=%s as FAILED", job_id, exc_info=True)
 
 
-def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
+def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | None = None) -> bool:
     """If job_id is a v3 process_aisle job, run it and return True. Otherwise return False."""
     try:
         logger.info("worker dispatch attempt: job_id=%s dispatch=v3_process_aisle", job_id)
+        append_worker_bootstrap_event(
+            job_id=job_id,
+            execution_id=execution_id,
+            event="worker.job_load_started",
+            details={"dispatch": "v3_process_aisle"},
+        )
+        checkpoint_v3_job_bootstrap(
+            job_id=job_id,
+            execution_id=execution_id,
+            substep="job_load_started",
+        )
         from src.runtime.v3_deps import (
             get_aisle_repo,
             get_artifact_store,
@@ -65,9 +67,37 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
             get_source_asset_repo,
         )
         from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
+        from src.domain.jobs.entities import JobStatus as V3JobStatus
 
+        job_repo = get_job_repo()
+        job = job_repo.get_by_id(job_id)
+        append_worker_bootstrap_event(
+            job_id=job_id,
+            execution_id=execution_id or (job.execution_id if job is not None else None),
+            event="worker.job_load_completed",
+            details={
+                "job_found": job is not None,
+                "job_type": getattr(job, "job_type", None),
+                "target_type": getattr(job, "target_type", None),
+                "target_id": getattr(job, "target_id", None),
+                "status": getattr(getattr(job, "status", None), "value", None),
+            },
+        )
+        if job is not None and job.status in (V3JobStatus.STARTING, V3JobStatus.RUNNING, V3JobStatus.CANCEL_REQUESTED):
+            checkpoint_v3_job_bootstrap(
+                job_id=job_id,
+                execution_id=execution_id or job.execution_id,
+                substep="job_load_completed",
+            )
+
+        append_worker_bootstrap_event(
+            job_id=job_id,
+            execution_id=execution_id or (job.execution_id if job is not None else None),
+            event="worker.executor_bootstrap_started",
+            details={"base_path": str(base_path)},
+        )
         executor = V3JobExecutor(
-            job_repo=get_job_repo(),
+            job_repo=job_repo,
             aisle_repo=get_aisle_repo(),
             source_asset_repo=get_source_asset_repo(),
             position_repo=get_position_repo(),
@@ -80,6 +110,18 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
             raw_label_repo=get_raw_label_repo(),
             recompute_consolidated_uc=get_recompute_consolidated_counts_use_case(),
         )
+        append_worker_bootstrap_event(
+            job_id=job_id,
+            execution_id=execution_id or (job.execution_id if job is not None else None),
+            event="worker.executor_bootstrap_completed",
+            details={},
+        )
+        if job is not None and job.status in (V3JobStatus.STARTING, V3JobStatus.RUNNING, V3JobStatus.CANCEL_REQUESTED):
+            checkpoint_v3_job_bootstrap(
+                job_id=job_id,
+                execution_id=execution_id or job.execution_id,
+                substep="executor_bootstrap_completed",
+            )
         handled = executor.execute(base_path, job_id)
         logger.info(
             "worker dispatch result: job_id=%s dispatch=v3_process_aisle handled=%s",
@@ -89,7 +131,12 @@ def _try_v3_process_aisle(base_path: Path, job_id: str) -> bool:
         return handled
     except Exception as e:
         logger.exception("v3 process_aisle attempt failed (will try legacy): job_id=%s", job_id)
-        _mark_v3_job_failed(job_id, str(e))
+        _mark_v3_job_failed(
+            job_id,
+            str(e),
+            execution_id=execution_id,
+            substep="executor_bootstrap_failed",
+        )
         return False
 
 
@@ -158,10 +205,10 @@ def _push_success_to_db(
         logger.warning("DB push after success failed: %s", e)
 
 
-def run_job(base_path: Path, job_id: str) -> None:
+def run_job(base_path: Path, job_id: str, execution_id: str | None = None) -> None:
     """Load job, run hybrid pipeline, update status and output. Try v3 process_aisle first."""
     logger.info("worker run_job start: job_id=%s base_path=%s", job_id, str(base_path))
-    if _try_v3_process_aisle(base_path, job_id):
+    if _try_v3_process_aisle(base_path, job_id, execution_id=execution_id):
         logger.info("worker run_job handled by v3 executor: job_id=%s", job_id)
         return
     logger.info("worker run_job fallback to legacy flow: job_id=%s", job_id)

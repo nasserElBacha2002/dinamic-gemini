@@ -83,3 +83,35 @@ def test_launch_uses_json_command_without_splitting_paths_with_spaces(
     assert command[-4:-2] == ["--job-id", "job-123"]
     assert command[-2] == "--execution-id"
     assert command[-1] == execution_id
+
+
+def test_launch_writes_process_spawn_observed_to_launch_log(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeProcess:
+        pid = 45678
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "src.infrastructure.services.on_demand_worker_launch_service.load_settings",
+        lambda: SimpleNamespace(output_dir=str(tmp_path)),
+    )
+    monkeypatch.setattr(
+        "src.infrastructure.services.on_demand_worker_launch_service.subprocess.Popen",
+        lambda *_args, **_kwargs: FakeProcess(),
+    )
+    monkeypatch.setattr(
+        "src.infrastructure.services.on_demand_worker_launch_service.time.sleep",
+        lambda _: None,
+    )
+
+    service = OnDemandWorkerLaunchService()
+    execution_id = service.launch("job-123")
+
+    launch_log = tmp_path / "job-123" / "worker-launch.log"
+    contents = launch_log.read_text(encoding="utf-8")
+    assert f"launch_requested execution_id={execution_id} job_id=job-123" in contents
+    assert f"process_spawn_observed execution_id={execution_id} job_id=job-123 pid=45678" in contents

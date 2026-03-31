@@ -65,6 +65,7 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     merge_durable_into_result_json,
     publish_worker_durable_artifacts,
 )
+from src.jobs.worker_bootstrap import append_worker_bootstrap_event, checkpoint_v3_job_bootstrap
 
 logger = logging.getLogger(__name__)
 
@@ -227,8 +228,12 @@ class V3JobExecutor:
             aisle.inventory_id,
             aisle_id,
         )
-
         assets = list(self._source_asset_repo.list_by_aisle(aisle_id))
+        checkpoint_v3_job_bootstrap(
+            job_id=job_id,
+            execution_id=job.execution_id,
+            substep="executor_bootstrap_completed",
+        )
         if not assets:
             self._fail_job_and_aisle(job_id, aisle, "No source assets for aisle")
             return True
@@ -243,7 +248,19 @@ class V3JobExecutor:
             aisle.inventory_id,
             aisle_id,
         )
+        append_worker_bootstrap_event(
+            job_id=job_id,
+            execution_id=job.execution_id,
+            event="worker.starting_to_running_transition_started",
+            details={"inventory_id": aisle.inventory_id, "aisle_id": aisle_id},
+        )
         self._mark_running(job_id, aisle, now)
+        append_worker_bootstrap_event(
+            job_id=job_id,
+            execution_id=job.execution_id,
+            event="worker.starting_to_running_transition_completed",
+            details={"inventory_id": aisle.inventory_id, "aisle_id": aisle_id},
+        )
 
         settings = load_settings()
         output_dir = Path(settings.output_dir)
