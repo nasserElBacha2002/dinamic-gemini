@@ -11,6 +11,10 @@ from src.domain.jobs.entities import Job, JobStatus
 
 logger = logging.getLogger(__name__)
 
+# Phase 7 retry lineage semantics:
+# - retry_of_job_id always points to the immediate previous attempt
+# - retries form one linear chain per aisle processing flow
+# - only the latest retryable terminal attempt may be retried
 RETRYABLE_JOB_STATUSES = (JobStatus.FAILED, JobStatus.CANCELED)
 NON_RETRYABLE_JOB_STATUSES = (
     JobStatus.QUEUED,
@@ -69,6 +73,10 @@ class RetryAisleJobUseCase:
         if latest is not None and latest.status in NON_RETRYABLE_JOB_STATUSES:
             raise ActiveJobExistsError(
                 f"Aisle {command.aisle_id} already has an active job (status={latest.status.value})"
+            )
+        if latest is not None and latest.id != original_job.id:
+            raise ValueError(
+                f"Cannot retry job {command.job_id}: latest retryable terminal attempt is {latest.id}"
             )
 
         payload = dict(original_job.payload_json or {})
