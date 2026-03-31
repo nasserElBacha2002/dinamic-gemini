@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import {
   Box,
   Button,
-  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -10,7 +9,6 @@ import {
   Divider,
   Drawer,
   IconButton,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
@@ -19,7 +17,7 @@ import type { InventoryVisualReference } from '../api/types';
 import { fetchInventoryVisualReferenceFile } from '../api/client';
 import { formatDate } from '../utils/formatDate';
 import { getApiErrorMessage } from '../utils/apiErrors';
-import { EmptyState, ErrorAlert, LoadingBlock } from './ui';
+import { EmptyState, ErrorAlert, LoadingBlock, ImageAssetCard, ImagePreviewDialog } from './ui';
 
 function formatFileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, Math.round(bytes || 0))} B`;
@@ -289,36 +287,13 @@ export default function ReferenceImagesDrawer({
                   {items.map((item, index) => (
                     <Box key={item.id}>
                       {index > 0 ? <Divider /> : null}
-                      <Box
-                        sx={{
-                          px: 2.5,
-                          py: 2,
-                          display: 'grid',
-                          gap: 1.25,
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            justifyContent: 'space-between',
-                            gap: 2,
-                            minWidth: 0,
-                            flexWrap: { xs: 'wrap', sm: 'nowrap' },
-                          }}
-                        >
-                          <Box sx={{ minWidth: 0, flex: 1 }}>
-                            <Tooltip title={item.filename} placement="top-start">
-                              <Typography
-                                variant="subtitle2"
-                                noWrap
-                                sx={{ maxWidth: '100%', textOverflow: 'ellipsis', overflow: 'hidden' }}
-                              >
-                                {item.filename}
-                              </Typography>
-                            </Tooltip>
-                          </Box>
-                          <Box sx={{ flexShrink: 0, display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <ImageAssetCard
+                        title={item.filename}
+                        subtitle={`${item.mime_type} \u2022 ${formatFileSize(item.file_size)} \u2022 Uploaded ${formatDate(
+                          item.created_at
+                        )}`}
+                        actions={
+                          <>
                             <Button variant="outlined" size="small" onClick={() => void handlePreview(item)}>
                               Preview
                             </Button>
@@ -339,14 +314,9 @@ export default function ReferenceImagesDrawer({
                             >
                               Delete
                             </Button>
-                          </Box>
-                        </Box>
-
-                        <Typography variant="body2" color="text.secondary">
-                          {item.mime_type} {'\u2022'} {formatFileSize(item.file_size)} {'\u2022'} Uploaded{' '}
-                          {formatDate(item.created_at)}
-                        </Typography>
-                      </Box>
+                          </>
+                        }
+                      />
                     </Box>
                   ))}
                 </Box>
@@ -356,25 +326,15 @@ export default function ReferenceImagesDrawer({
         </Box>
       </Box>
 
-      <Dialog open={Boolean(previewTarget)} onClose={clearPreview} maxWidth="md" fullWidth>
-        <DialogTitle>{previewTarget?.filename ?? 'Reference image'}</DialogTitle>
-        <DialogContent>
-          {previewLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress aria-label="Loading reference image preview" />
-            </Box>
-          ) : null}
-          {!previewLoading && previewError ? <ErrorAlert message={previewError} onClose={() => setPreviewError(null)} /> : null}
-          {!previewLoading && !previewError && previewSrc ? (
-            <Box
-              component="img"
-              src={previewSrc}
-              alt={previewTarget?.filename ?? 'Reference image preview'}
-              sx={{ width: '100%', height: 'auto', display: 'block', borderRadius: 1 }}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <ImagePreviewDialog
+        open={Boolean(previewTarget)}
+        onClose={clearPreview}
+        title={previewTarget?.filename ?? 'Reference image'}
+        src={previewSrc}
+        alt={previewTarget?.filename ?? 'Reference image preview'}
+        loading={previewLoading}
+        error={previewError}
+      />
 
       <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Delete reference image</DialogTitle>
