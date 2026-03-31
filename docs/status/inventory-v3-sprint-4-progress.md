@@ -99,6 +99,13 @@
   - prioriza `product_records.corrected_quantity` / `detected_quantity` en filas no agregadas
   - conserva fallback al snapshot para agregadas/legacy
   - alcance real de esta iteración: bucketing de analytics (`quantity_zero`) en `sql_analytics_repository.py`; no implica migración completa del repositorio SQL fuera del snapshot
+- **Review queue backend** ahora usa derivaciones canónicas para:
+  - `sku_contains`
+  - `qty_zero`
+  - `invalid_traceability`
+  - prioridad operativa
+  manteniendo fallback técnico solo cuando el builder canónico todavía necesita snapshot para aggregated/legacy.
+- **Review queue frontend** dejó de leer `position.sku` directo en la tabla y ahora pasa por el mapper/camino canónico ya existente.
 
 ### `corrected_summary_json`
 
@@ -130,6 +137,7 @@
 - `PositionSummaryResponse` continúa compartido entre list/detail.
 - Los aliases top-level legacy siguen presentes porque frontend y posibles clientes externos todavía los consumen.
 - La política definitiva de persistencia canónica para filas agregadas sigue pendiente de decisión funcional más profunda.
+- La gobernanza de uso del snapshot técnico sigue siendo principalmente una restricción de arquitectura/documentación, no una enforcement rule automática.
 
 ---
 
@@ -156,3 +164,18 @@
 - **Alta** para endurecer deprecaciones y seguir retirando dependencias al snapshot.
 - **Media** para remoción final de aliases top-level.
 - **Baja** para remoción física de blobs persistidos sin una verificación adicional de consumers externos / estrategia de migración.
+
+---
+
+## 5. Closure update
+
+- Los blockers principales detectados por `inventory-v3-refactor-dod-verification.md` para Sprint 4 fueron corregidos en esta iteración:
+  - review queue backend más alineado a fuentes canónicas
+  - review queue frontend sin lectura directa de `sku` legacy en la tabla
+  - tests específicos para la lógica Sprint 4 de SQL analytics
+- Sprint 4 queda en estado **cerrable con deuda aceptada**, no como cleanup final absoluto.
+- Deuda aceptada que sigue abierta:
+  - schema compartido list/detail
+  - aggregated rows como excepción documentada
+  - `corrected_summary_json` persistido hasta verificación externa
+  - remoción final de aliases legacy en una fase posterior pequeña

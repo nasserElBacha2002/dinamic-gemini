@@ -8,14 +8,20 @@ deployments; very large multi-inventory installs may need a dedicated SQL path l
 from __future__ import annotations
 
 from datetime import timezone
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from src.application.ports.contracts import (
     ReviewQueueListRow,
     ReviewQueueQuery,
     ReviewQueueSummary,
 )
-from src.application.ports.repositories import AisleRepository, InventoryRepository, PositionRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    PositionRepository,
+    ProductRecordRepository,
+)
+from src.application.services.display_primary_product import select_display_primary_product
 from src.application.utils.review_queue_derived import (
     LOW_CONFIDENCE_THRESHOLD,
     position_has_primary_evidence,
@@ -25,15 +31,21 @@ from src.application.utils.review_queue_derived import (
     updated_at_sort_ts,
 )
 from src.domain.positions.entities import Position, PositionStatus
+from src.domain.products.entities import ProductRecord
 
 
-def _sort_key(row: ReviewQueueListRow, sort_by: str, sort_dir: str) -> tuple:
+def _sort_key(
+    row: ReviewQueueListRow,
+    sort_by: str,
+    sort_dir: str,
+    primary_product: Optional[ProductRecord],
+) -> tuple:
     """Sort key with reverse=False on list.sort: negate numeric primary key when desc."""
     p = row.position
     sb = (sort_by or "priority").strip().lower()
     desc = (sort_dir or "desc").strip().lower() == "desc"
     if sb == "priority":
-        tier = priority_tier(p)
+        tier = priority_tier(p, primary_product)
         ts = updated_at_sort_ts(p)
         # Tier ascending (P1 first); within tier, newer first (operational queue default).
         return (tier, -ts, p.id)
@@ -66,7 +78,11 @@ def _position_status_matches(p: Position, raw: Optional[str]) -> bool:
     return True
 
 
-def _row_matches_query(p: Position, q: ReviewQueueQuery) -> bool:
+def _row_matches_query(
+    p: Position,
+    q: ReviewQueueQuery,
+    primary_product: Optional[ProductRecord],
+) -> bool:
     if q.min_confidence is not None and p.confidence < q.min_confidence:
         return False
     if q.max_confidence is not None and p.confidence > q.max_confidence:
@@ -76,7 +92,7 @@ def _row_matches_query(p: Position, q: ReviewQueueQuery) -> bool:
 
     if q.traceability is not None and str(q.traceability).strip() != "":
         want = str(q.traceability).strip().lower()
-        got = traceability_normalized(p)
+        got = traceability_normalized(p, primary_product)
         if want != got:
             return False
 
@@ -85,7 +101,7 @@ def _row_matches_query(p: Position, q: ReviewQueueQuery) -> bool:
         if q.has_evidence != has_ev:
             return False
 
-    _, qty = summary_sku_and_detected_quantity(p)
+    _, qty = summary_sku_and_detected_quantity(p, primary_product)
     if q.qty_zero is not None:
         is_zero = qty == 0
         if q.qty_zero != is_zero:
@@ -93,7 +109,7 @@ def _row_matches_query(p: Position, q: ReviewQueueQuery) -> bool:
 
     if q.sku_contains is not None and str(q.sku_contains).strip() != "":
         needle = str(q.sku_contains).strip().lower()
-        sku, _ = summary_sku_and_detected_quantity(p)
+        sku, _ = summary_sku_and_detected_quantity(p, primary_product)
         sku_l = (sku or "").lower()
         if needle not in sku_l:
             return False
@@ -101,7 +117,10 @@ def _row_matches_query(p: Position, q: ReviewQueueQuery) -> bool:
     return True
 
 
-def _build_summary(rows: List[ReviewQueueListRow]) -> ReviewQueueSummary:
+def _build_summary(
+    rows: List[ReviewQueueListRow],
+    primary_by_position: Dict[str, Optional[ProductRecord]],
+) -> ReviewQueueSummary:
     pending = len(rows)
     low_conf = 0
     invalid_tr = 0
@@ -109,11 +128,12 @@ def _build_summary(rows: List[ReviewQueueListRow]) -> ReviewQueueSummary:
     missing_ev = 0
     for r in rows:
         p = r.position
+        primary = primary_by_position.get(p.id)
         if p.confidence < LOW_CONFIDENCE_THRESHOLD:
             low_conf += 1
-        if traceability_normalized(p) == "invalid":
+        if traceability_normalized(p, primary) == "invalid":
             invalid_tr += 1
-        _, qty = summary_sku_and_detected_quantity(p)
+        _, qty = summary_sku_and_detected_quantity(p, primary)
         if qty == 0:
             qty_z += 1
         if not position_has_primary_evidence(p):
@@ -133,10 +153,12 @@ class ListReviewQueueUseCase:
         inventory_repo: InventoryRepository,
         aisle_repo: AisleRepository,
         position_repo: PositionRepository,
+        product_record_repo: ProductRecordRepository,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._position_repo = position_repo
+        self._product_record_repo = product_record_repo
 
     def execute(
         self, query: Optional[ReviewQueueQuery] = None
@@ -164,8 +186,12 @@ class ListReviewQueueUseCase:
         aisle_ids = [a.id for _, a in scope]
         by_aisle_id = {a.id: (inv, a) for inv, a in scope}
         positions = list(self._position_repo.list_by_aisles(aisle_ids))
+        primary_by_position: Dict[str, Optional[ProductRecord]] = {
+            p.id: select_display_primary_product(self._product_record_repo.list_by_position(p.id))
+            for p in positions
+        }
         pending = [p for p in positions if p.needs_review]
-        pending = [p for p in pending if _row_matches_query(p, q)]
+        pending = [p for p in pending if _row_matches_query(p, q, primary_by_position.get(p.id))]
 
         rows: List[ReviewQueueListRow] = []
         for p in pending:
@@ -180,9 +206,17 @@ class ListReviewQueueUseCase:
             )
 
         sb = (q.sort_by or "priority").strip().lower()
-        rows.sort(key=lambda r: _sort_key(r, sb, q.sort_dir), reverse=False)
+        rows.sort(
+            key=lambda r: _sort_key(
+                r,
+                sb,
+                q.sort_dir,
+                primary_by_position.get(r.position.id),
+            ),
+            reverse=False,
+        )
 
-        summary = _build_summary(rows)
+        summary = _build_summary(rows, primary_by_position)
         total = len(rows)
         page = max(1, q.page)
         page_size = max(1, min(q.page_size, 200))

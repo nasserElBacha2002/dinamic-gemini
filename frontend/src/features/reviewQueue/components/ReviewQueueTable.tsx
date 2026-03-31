@@ -43,7 +43,8 @@ function prioritySemantic(
 }
 
 function displaySku(item: ReviewQueueItem): string {
-  const s = item.position.sku;
+  const r = mapPositionSummaryToResultSummary(item.position);
+  const s = r.sku;
   if (s != null && String(s).trim() !== '') return String(s).trim();
   return '—';
 }

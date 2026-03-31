@@ -8,69 +8,52 @@ frontend `LOW_CONFIDENCE_THRESHOLD` (0.5) — single operational definition.
 from __future__ import annotations
 
 from datetime import timezone
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple
 
 from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
+from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.domain.positions.entities import Position
-
-
-def _parse_summary_quantity(raw: object) -> Optional[int]:
-    if raw is None:
-        return None
-    if isinstance(raw, (int, float)):
-        try:
-            v = int(raw)
-            return v if v >= 0 else None
-        except (TypeError, ValueError):
-            return None
-    if isinstance(raw, str) and raw.strip():
-        try:
-            v = int(raw.strip())
-            return v if v >= 0 else None
-        except (ValueError, TypeError):
-            return None
-    return None
+from src.domain.products.entities import ProductRecord
 
 
 def position_has_primary_evidence(position: Position) -> bool:
     return bool(position.primary_evidence_id and str(position.primary_evidence_id).strip())
 
 
-def summary_sku_and_detected_quantity(position: Position) -> Tuple[Optional[str], int]:
-    """SKU + quantity from detected_summary_json only (same rules as position list mapping)."""
-    j: Any = position.detected_summary_json
-    if not j or not isinstance(j, dict):
-        return None, 0
-    sku_raw = j.get("internal_code")
-    sku: Optional[str] = None
-    if sku_raw is not None and isinstance(sku_raw, str) and sku_raw.strip():
-        sku = sku_raw.strip()
-    if sku is None:
-        fallback = j.get("review_display_label") or j.get("position_barcode") or j.get("pallet_id")
-        if fallback is not None and isinstance(fallback, str) and fallback.strip():
-            sku = fallback.strip()
-    q_raw = j.get("final_quantity") if j.get("final_quantity") is not None else j.get("product_label_quantity")
-    qty = _parse_summary_quantity(q_raw)
-    return sku, qty if qty is not None else 0
+def summary_sku_and_detected_quantity(
+    position: Position,
+    primary_product: Optional[ProductRecord] = None,
+) -> Tuple[Optional[str], int]:
+    """Prefer canonical SKU/quantity; keep snapshot fallback for aggregated or legacy-only rows."""
+    view = build_position_canonical_view(position, primary_product)
+    sku = view.product.public_sku
+    qty = int(view.quantity.final_display_quantity)
+    return sku, qty
 
 
-def traceability_normalized(position: Position) -> str:
-    j = position.detected_summary_json if isinstance(position.detected_summary_json, dict) else {}
-    return str(j.get("traceability_status") or "").strip().lower()
+def traceability_normalized(
+    position: Position,
+    primary_product: Optional[ProductRecord] = None,
+) -> str:
+    view = build_position_canonical_view(position, primary_product)
+    return str(view.traceability.traceability_status or "").strip().lower()
 
 
-def priority_tier(position: Position) -> int:
+def priority_tier(
+    position: Position,
+    primary_product: Optional[ProductRecord] = None,
+) -> int:
     """
     Explainable tiers (lower = review sooner), matching frontend deriveResultPriority:
     P1: needs_review AND (invalid traceability OR missing evidence)
-    P2: needs_review AND (low confidence OR qty zero from summary json)
+    P2: needs_review AND (low confidence OR qty zero from canonical quantity)
     P3: needs_review only
     P4: else
     """
     needs = position.needs_review
-    invalid_trace = traceability_normalized(position) == "invalid"
+    invalid_trace = traceability_normalized(position, primary_product) == "invalid"
     missing_ev = not position_has_primary_evidence(position)
-    _, qty = summary_sku_and_detected_quantity(position)
+    _, qty = summary_sku_and_detected_quantity(position, primary_product)
     low_conf = position.confidence < LOW_CONFIDENCE_THRESHOLD
     qty0 = qty == 0
     if needs and (invalid_trace or missing_ev):
