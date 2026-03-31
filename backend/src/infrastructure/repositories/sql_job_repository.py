@@ -144,7 +144,7 @@ class SqlJobRepository(JobRepository):
                         started_at, finished_at, last_heartbeat_at, cancel_requested_at,
                         current_stage, current_substep, current_step_started_at,
                         attempt_count, failure_code, failure_message, execution_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,

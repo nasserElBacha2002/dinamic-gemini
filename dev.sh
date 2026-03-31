@@ -41,9 +41,9 @@ export PYTHONPATH="${ROOT}/backend${PYTHONPATH:+:${PYTHONPATH}}"
 # Keep embedded worker loop disabled: backend should spawn workers on demand.
 export EMBEDDED_WORKER_ENABLED=false
 # Local sessions should not auto-reclaim stale RUNNING jobs from previous runs.
-export WORKER_STALE_RUNNING_TIMEOUT_SEC=0
+export WORKER_STALE_RUNNING_TIMEOUT_SEC=900
 if [[ -z "${WORKER_ON_DEMAND_COMMAND:-}" ]]; then
-  export WORKER_ON_DEMAND_COMMAND="$PYTHON -m src.jobs.run_worker"
+  export WORKER_ON_DEMAND_COMMAND="$("$PYTHON" -c 'import json,sys; print(json.dumps([sys.argv[1], "-m", "src.jobs.run_worker"]))' "$PYTHON")"
 fi
 echo "[dev] Runtime: OUTPUT_DIR=${OUTPUT_DIR:-output} SQLSERVER_ENABLED=${SQLSERVER_ENABLED:-unset} EMBEDDED_WORKER_ENABLED=${EMBEDDED_WORKER_ENABLED:-unset}"
 echo "[dev] On-demand worker command: ${WORKER_ON_DEMAND_COMMAND}"

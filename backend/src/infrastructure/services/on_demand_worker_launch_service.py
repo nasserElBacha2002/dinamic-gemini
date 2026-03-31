@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+import json
 import shlex
 import subprocess
 import sys
@@ -23,11 +24,7 @@ class OnDemandWorkerLaunchService:
     def launch(self, job_id: str) -> str:
         execution_id = str(uuid.uuid4())
         settings = load_settings()
-        raw_command = (os.getenv("WORKER_ON_DEMAND_COMMAND") or "").strip()
-        if raw_command:
-            command = shlex.split(raw_command)
-        else:
-            command = [sys.executable, "-m", "src.jobs.run_worker"]
+        command = self._build_command()
         command = [*command, "--job-id", job_id, "--execution-id", execution_id]
         env = os.environ.copy()
         env["DINAMIC_JOB_ID"] = job_id
@@ -84,3 +81,21 @@ class OnDemandWorkerLaunchService:
                 str(launch_log_path),
             )
         return execution_id
+
+    def _build_command(self) -> list[str]:
+        raw_command = (os.getenv("WORKER_ON_DEMAND_COMMAND") or "").strip()
+        if not raw_command:
+            return [sys.executable, "-m", "src.jobs.run_worker"]
+        if raw_command.startswith("["):
+            try:
+                parsed = json.loads(raw_command)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    "WORKER_ON_DEMAND_COMMAND must be valid JSON array or a shell-style command string"
+                ) from exc
+            if not isinstance(parsed, list) or not parsed or not all(isinstance(item, str) and item for item in parsed):
+                raise RuntimeError(
+                    "WORKER_ON_DEMAND_COMMAND JSON value must be a non-empty array of strings"
+                )
+            return parsed
+        return shlex.split(raw_command)
