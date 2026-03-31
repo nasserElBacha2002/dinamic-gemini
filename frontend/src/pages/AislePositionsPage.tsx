@@ -4,7 +4,7 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Alert, Box, Button, TextField } from '@mui/material';
+import { Alert, Box, Button, TextField, Typography } from '@mui/material';
 import { exportInventoryResultsCsv } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import { ApiError } from '../api/types';
@@ -23,7 +23,6 @@ import {
 import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDrawer';
 import type { OpenReviewDrawerPayload, QuickReviewContext } from '../features/reviewQueue/quickReviewContext';
 import {
-  ResultsKpiCards,
   ResultsQuickFilters,
   ResultsTable,
   ResultsEmptyState,
@@ -212,7 +211,15 @@ export default function AislePositionsPage() {
 
       {!errorMessage && !isLoading && results.length === 0 ? (
         <>
-          <ResultsKpiCards kpi={kpi} />
+          <Box sx={{ mb: 3, mt: 1 }}>
+            <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+              Counted total
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
+              {kpi.aisleTotalCounted}
+            </Typography>
+          </Box>
+
           <FilterToolbar
             onReset={handleResetFilters}
             resetDisabled={filter === 'all' && !skuSearch.trim()}
@@ -250,7 +257,14 @@ export default function AislePositionsPage() {
 
       {!errorMessage && !isLoading && results.length > 0 ? (
         <>
-          <ResultsKpiCards kpi={kpi} />
+          <Box sx={{ mb: 3, mt: 1 }}>
+            <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+              Counted total
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
+              {kpi.aisleTotalCounted}
+            </Typography>
+          </Box>
 
           <FilterToolbar
             onReset={handleResetFilters}

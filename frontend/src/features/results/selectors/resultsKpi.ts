@@ -16,6 +16,8 @@ export interface ResultsKpi {
   withEvidence: number;
   /** Results with confidence < threshold (when confidence is present). */
   lowConfidence: number;
+  /** v3.2.5 Phase 1 UX: overall counted quantity for the aisle (sum of resolvedQty ?? detectedQty). */
+  aisleTotalCounted: number;
 }
 
 /**
@@ -29,6 +31,7 @@ export function computeResultsKpi(results: ResultSummary[]): ResultsKpi {
     qtyZero: 0,
     withEvidence: 0,
     lowConfidence: 0,
+    aisleTotalCounted: 0,
   };
 
   for (const r of results) {
@@ -42,6 +45,7 @@ export function computeResultsKpi(results: ResultSummary[]): ResultsKpi {
     if (r.confidence != null && r.confidence < LOW_CONFIDENCE_THRESHOLD) {
       kpi.lowConfidence += 1;
     }
+    kpi.aisleTotalCounted += (r.resolvedQty ?? r.detectedQty ?? 0);
   }
 
   return kpi;
