@@ -24,6 +24,7 @@ import type {
   ReviewActionRequest,
   InventoryMetrics,
   ExecutionLogResponse,
+  JobSummary,
   PaginatedInventoryListResponse,
   PaginatedAisleListResponse,
   ReviewQueueListResponse,
@@ -377,6 +378,41 @@ export async function getExecutionLog(
     `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/execution-log`
   );
   return handleResponse<ExecutionLogResponse>(response);
+}
+
+export async function getAisleJobDetail(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<JobSummary> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}`
+  );
+  return handleResponse<JobSummary>(response);
+}
+
+export async function cancelAisleJob(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<JobSummary> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/cancel`,
+    { method: 'POST' }
+  );
+  return handleResponse<JobSummary>(response);
+}
+
+export async function retryAisleJob(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<JobSummary> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/retry`,
+    { method: 'POST' }
+  );
+  return handleResponse<JobSummary>(response);
 }
 
 export async function uploadAisleAssets(

@@ -7,6 +7,8 @@ import {
   createInventory,
   createAisle,
   startAisleProcessing,
+  cancelAisleJob,
+  retryAisleJob,
   runAisleMerge,
   uploadAisleAssets,
   uploadInventoryVisualReferences,
@@ -44,6 +46,30 @@ export function useStartAisleProcessing(inventoryId: string) {
     mutationFn: (aisleId: string) => startAisleProcessing(inventoryId, aisleId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+    },
+  });
+}
+
+export function useCancelAisleJob(inventoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ aisleId, jobId }: { aisleId: string; jobId: string }) =>
+      cancelAisleJob(inventoryId, aisleId, jobId),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
+    },
+  });
+}
+
+export function useRetryAisleJob(inventoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ aisleId, jobId }: { aisleId: string; jobId: string }) =>
+      retryAisleJob(inventoryId, aisleId, jobId),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
     },
   });
 }

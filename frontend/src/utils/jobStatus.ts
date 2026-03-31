@@ -17,6 +17,7 @@ export function getJobStatusLabel(status: JobStatusLike): string {
   if (!s) return '—';
   const known: Record<string, string> = {
     queued: 'Queued',
+    starting: 'Starting',
     running: 'Running',
     cancel_requested: 'Cancel requested',
     canceled: 'Canceled',
@@ -39,6 +40,7 @@ export function getJobStatusColor(status: JobStatusLike): ChipColor {
     case 'timed_out':
       return 'error';
     case 'running':
+    case 'starting':
     case 'queued':
       return 'primary';
     case 'cancel_requested':
@@ -59,6 +61,7 @@ export function jobStatusToBadgeSemantic(status: JobStatusLike): StatusBadgeSema
     case 'timed_out':
       return 'error';
     case 'running':
+    case 'starting':
     case 'queued':
       return 'info';
     case 'cancel_requested':
