@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from src.jobs.models import JobInput
+from src.pipeline.errors import PipelineCancellationRequestedError
 
 JobExecutionObserver = Callable[[str, Optional[str], str, Optional[Dict[str, Any]]], None]
 
@@ -84,3 +85,19 @@ class RunContext:
             )
         if self.execution_observer is not None:
             self.execution_observer(stage, substep, event, details)
+
+    def check_cancellation(
+        self,
+        *,
+        stage: str,
+        substep: Optional[str] = None,
+        reason: str = "Job cancellation requested",
+    ) -> None:
+        self.emit_stage_event(
+            stage=stage,
+            substep=substep,
+            event="job.cancel_check",
+            details={"reason": reason},
+        )
+        if self.metadata.get("cancel_requested"):
+            raise PipelineCancellationRequestedError(reason)

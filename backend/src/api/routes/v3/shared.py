@@ -373,29 +373,32 @@ def aisle_to_response(
 def status_response_from_result(result: AisleProcessingStatusResult) -> AisleStatusResponse:
     job_summary = None
     if result.latest_job is not None:
-        j = result.latest_job
-        job_summary = JobSummary(
-            id=j.id,
-            status=j.status.value,
-            created_at=j.created_at,
-            updated_at=j.updated_at,
-            error_message=j.error_message,
-            reference_usage=_parse_reference_usage_summary(j.result_json),
-            started_at=j.started_at,
-            finished_at=j.finished_at,
-            last_heartbeat_at=j.last_heartbeat_at,
-            cancel_requested_at=j.cancel_requested_at,
-            current_stage=j.current_stage,
-            current_substep=j.current_substep,
-            current_step_started_at=j.current_step_started_at,
-            attempt_count=j.attempt_count,
-            failure_code=j.failure_code,
-            failure_message=j.failure_message,
-            execution_id=j.execution_id,
-        )
+        job_summary = job_to_summary(result.latest_job)
     return AisleStatusResponse(
         aisle=aisle_to_response(result.aisle, result.latest_job),
         latest_job=job_summary,
+    )
+
+
+def job_to_summary(j: Job) -> JobSummary:
+    return JobSummary(
+        id=j.id,
+        status=j.status.value,
+        created_at=j.created_at,
+        updated_at=j.updated_at,
+        error_message=j.error_message,
+        reference_usage=_parse_reference_usage_summary(j.result_json),
+        started_at=j.started_at,
+        finished_at=j.finished_at,
+        last_heartbeat_at=j.last_heartbeat_at,
+        cancel_requested_at=j.cancel_requested_at,
+        current_stage=j.current_stage,
+        current_substep=j.current_substep,
+        current_step_started_at=j.current_step_started_at,
+        attempt_count=j.attempt_count,
+        failure_code=j.failure_code,
+        failure_message=j.failure_message,
+        execution_id=j.execution_id,
     )
 
 

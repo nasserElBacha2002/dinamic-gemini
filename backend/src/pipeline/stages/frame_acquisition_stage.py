@@ -131,6 +131,11 @@ class FrameAcquisitionStage:
         loaded_frame_indices: List[int] = []
 
         for i, p in enumerate(frames_to_load):
+            context.check_cancellation(
+                stage="FrameAcquisitionStage",
+                substep="file_validation",
+                reason="Job cancellation requested during frame acquisition",
+            )
             file_details = {
                 "index": i,
                 "path": str(p),
@@ -169,6 +174,11 @@ class FrameAcquisitionStage:
             )
             context.metadata["frame_acquisition_last_path"] = str(p)
             img = self._read_image(p)
+            context.check_cancellation(
+                stage="FrameAcquisitionStage",
+                substep="image_open",
+                reason="Job cancellation requested after image read",
+            )
             self._emit_substep(
                 context,
                 substep="image_open",

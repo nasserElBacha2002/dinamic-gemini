@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.errors import AisleNotFoundError
-from src.domain.jobs.entities import JobStatus
+from src.domain.jobs.entities import Job, JobStatus
 
 
 @dataclass
@@ -37,7 +37,7 @@ class CancelAisleJobUseCase:
         self._job_repo = job_repo
         self._clock = clock
 
-    def execute(self, command: CancelAisleJobCommand) -> None:
+    def execute(self, command: CancelAisleJobCommand) -> Job:
         """Request cancellation for a v3 process_aisle job.
 
         Behaviour:
@@ -87,11 +87,11 @@ class CancelAisleJobUseCase:
             if not job.error_message:
                 job.error_message = "Job canceled before execution"
             self._job_repo.save(job)
-            return
+            return job
 
         if status == JobStatus.CANCEL_REQUESTED:
             # Idempotent: already requested.
-            return
+            return job
 
         # RUNNING (or any other non-terminal, non-queued state) → CANCEL_REQUESTED.
         job.status = JobStatus.CANCEL_REQUESTED
@@ -100,4 +100,5 @@ class CancelAisleJobUseCase:
         if not job.error_message:
             job.error_message = "Job cancellation requested"
         self._job_repo.save(job)
+        return job
 

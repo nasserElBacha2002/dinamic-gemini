@@ -973,6 +973,112 @@ def test_execute_rejects_running_status_reentry() -> None:
     assert updated_job.result_json is None
 
 
+def test_execute_cooperatively_cancels_when_cancel_requested_detected(tmp_path: Path) -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_id = "j-cancel-during-execution"
+    aisle_id = "aisle-1"
+    job_repo = InMemoryJobRepo()
+    job = Job(
+        id=job_id,
+        target_type="aisle",
+        target_id=aisle_id,
+        job_type="process_aisle",
+        status=JobStatus.STARTING,
+        payload_json={"aisle_id": aisle_id},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+
+    aisle = Aisle(
+        id=aisle_id,
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.QUEUED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+
+    class AssetRepoWithOnePhoto:
+        def list_by_aisle(self, aid: str):
+            if aid != aisle_id:
+                return []
+            return [
+                SourceAsset(
+                    id="asset-1",
+                    aisle_id=aisle_id,
+                    type=SourceAssetType.PHOTO,
+                    original_filename="photo.jpg",
+                    storage_path="a1/photo.jpg",
+                    mime_type="image/jpeg",
+                    uploaded_at=now,
+                )
+            ]
+
+    noop = NoopRepo()
+    artifact_root = tmp_path / "durable_artifact_root"
+    artifact_store = V3ArtifactStorageAdapter(artifact_root)
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=AssetRepoWithOnePhoto(),
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+        artifact_store=artifact_store,
+    )
+
+    v3_base = tmp_path / "v3_uploads"
+    v3_base.mkdir(parents=True, exist_ok=True)
+    (v3_base / "a1").mkdir(parents=True, exist_ok=True)
+    (v3_base / "a1" / "photo.jpg").write_bytes(b"fake")
+
+    def process_video_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
+        executing_job = job_repo.get_by_id(job_id)
+        assert executing_job is not None
+        executing_job.status = JobStatus.CANCEL_REQUESTED
+        executing_job.cancel_requested_at = now
+        job_repo.save(executing_job)
+        kwargs["execution_observer"]("AnalysisStage", "provider_call", "stage.started", None)
+        raise AssertionError("execution_observer should have raised cancellation before pipeline completed")
+
+    with patch.object(executor, "_persist_use_case", MagicMock(return_value=None)):
+        with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
+            mock_settings.return_value.output_dir = str(tmp_path)
+            with patch(
+                "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+            ) as mock_pipeline_cls:
+                mock_pipeline_cls.return_value.process_video.side_effect = process_video_side_effect
+                with patch.object(
+                    executor,
+                    "_build_analysis_context",
+                    return_value=AnalysisContext(
+                        primary_evidence=[],
+                        visual_references=[],
+                        instructions="",
+                    ),
+                ):
+                    handled = executor.execute(tmp_path, job_id)
+
+    assert handled is True
+    updated_job = job_repo.get_by_id(job_id)
+    assert updated_job is not None
+    assert updated_job.status == JobStatus.CANCELED
+    assert updated_job.failure_code == "CANCELED"
+    assert updated_job.finished_at == now
+    run_log_path = tmp_path / job_id / RUN_ID / "execution_log.jsonl"
+    log_text = run_log_path.read_text(encoding="utf-8")
+    assert "job.cancel_requested" in log_text
+    assert "job.cancel_detected" in log_text
+    assert "job.canceled" in log_text
+
+
 def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
     """Phase 3B: failed artifact upload must not mark job succeeded or write durable metadata."""
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)

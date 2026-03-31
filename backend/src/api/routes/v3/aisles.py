@@ -35,6 +35,7 @@ from src.api.schemas.processing_schemas import (
     AisleStatusResponse,
     ExecutionLogEvent,
     ExecutionLogResponse,
+    JobSummary,
     ProcessAisleResponse,
 )
 from src.application.ports.repositories import AisleRepository, JobRepository
@@ -52,7 +53,7 @@ from src.application.use_cases.run_aisle_merge import (
     RunAisleMergeCommand,
     RunAisleMergeUseCase,
 )
-from .shared import aisle_to_response, status_response_from_result
+from .shared import aisle_to_response, job_to_summary, status_response_from_result
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,7 @@ def get_aisle_status(
 
 @router.post(
     "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
+    response_model=JobSummary,
     status_code=202,
 )
 def cancel_aisle_job(
@@ -166,7 +168,7 @@ def cancel_aisle_job(
     aisle_id: str,
     job_id: str,
     use_case: CancelAisleJobUseCase = Depends(get_cancel_aisle_job_use_case),
-) -> None:
+) -> JobSummary:
     """Request cancellation of an active v3 process_aisle job.
 
     Cancellation is cooperative:
@@ -175,18 +177,41 @@ def cancel_aisle_job(
       transition to CANCELED at the next safe checkpoint.
     """
     try:
-        use_case.execute(
+        job = use_case.execute(
             CancelAisleJobCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
                 job_id=job_id,
             )
         )
+        return job_to_summary(job)
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle/inventory")
     except ValueError as e:
         # Terminal or invalid state for cancellation.
         raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}",
+    response_model=JobSummary,
+)
+def get_aisle_job_detail(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+) -> JobSummary:
+    job = job_repo.get_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.target_type != "aisle" or job.target_id != aisle_id:
+        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle")
+    aisle = aisle_repo.get_by_id(aisle_id)
+    if aisle is None or aisle.inventory_id != inventory_id:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    return job_to_summary(job)
 
 
 @router.get(
