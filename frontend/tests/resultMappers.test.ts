@@ -297,12 +297,8 @@ describe('mapPositionDetailToResultDetail', () => {
         qty: 1,
         qtySource: 'inferred',
         qtyResolved: true,
-        detected_summary_json: {
-          entity_uid: 'job_E1',
-          source_image_id: 'img-1',
-          source_image_original_filename: 'photo.jpg',
-        },
         source_image_id: 'img-1',
+        source_image_original_filename: 'photo.jpg',
         traceability_status: 'valid',
         has_evidence: true,
       },
@@ -366,10 +362,6 @@ describe('mapPositionDetailToResultDetail', () => {
         qty: 5,
         qtySource: 'detected',
         qtyResolved: true,
-        detected_summary_json: {
-          source_image_id: 'legacy-from-json',
-          source_image_original_filename: 'legacy.jpg',
-        },
         source_image_id: 'canonical-id',
         source_image_original_filename: 'canonical.jpg',
         traceability_status: 'valid',
@@ -387,7 +379,7 @@ describe('mapPositionDetailToResultDetail', () => {
     expect(r.technicalMetadata?.entityId).toBe('job_override');
   });
 
-  it('Case 2 — legacy detected_summary_json still works when typed fields absent', () => {
+  it('Case 2 — typed source image fields are required when technical snapshot is separate', () => {
     const data: PositionDetailResponse = {
       position: {
         id: 'pos-fallback',
@@ -404,10 +396,6 @@ describe('mapPositionDetailToResultDetail', () => {
         qty: 2,
         qtySource: 'detected',
         qtyResolved: null,
-        detected_summary_json: {
-          source_image_id: 'from-json-id',
-          source_image_original_filename: 'from_json.jpg',
-        },
         source_image_id: null,
         source_image_original_filename: null,
         traceability_status: null,
@@ -417,8 +405,8 @@ describe('mapPositionDetailToResultDetail', () => {
       review_actions: [],
     };
     const r = mapPositionDetailToResultDetail(data);
-    expect(r.sourceImageId).toBe('from-json-id');
-    expect(r.sourceFileName).toBe('from_json.jpg');
+    expect(r.sourceImageId).toBeNull();
+    expect(r.sourceFileName).toBeNull();
   });
 
   it('Case 2b — technical_snapshot is preferred for technical metadata when present', () => {
@@ -438,9 +426,6 @@ describe('mapPositionDetailToResultDetail', () => {
         qty: 2,
         qtySource: 'detected',
         qtyResolved: null,
-        detected_summary_json: {
-          entity_uid: 'job_legacy',
-        },
         source_image_id: null,
         source_image_original_filename: null,
         traceability_status: null,
@@ -473,7 +458,6 @@ describe('mapPositionDetailToResultDetail', () => {
         qty: 0,
         qtySource: 'detected',
         qtyResolved: false,
-        detected_summary_json: null,
         source_image_id: null,
         source_image_original_filename: null,
         traceability_status: null,

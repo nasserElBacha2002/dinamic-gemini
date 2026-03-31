@@ -32,6 +32,9 @@ class PositionTechnicalSnapshot(BaseModel):
 
     Keeps audit/replay-oriented data separate from the operational contract blocks
     (`product`, `quantity`, `traceability`).
+
+    ``audit`` is intentionally a flexible technical blob. Its shape is not a stable public
+    contract yet, so detail consumers should treat it as debug metadata rather than business data.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -49,7 +52,10 @@ class PositionTechnicalSnapshot(BaseModel):
     aggregated_from_ids: Optional[List[str]] = None
     audit: Optional[Dict[str, Any]] = Field(
         None,
-        description="Technical audit payload from the immutable pipeline snapshot (`_audit`).",
+        description=(
+            "Flexible technical audit payload from the immutable pipeline snapshot (`_audit`). "
+            "Keys may evolve between pipeline versions; treat as debug/audit metadata, not a stable business contract."
+        ),
     )
 
 
@@ -122,6 +128,10 @@ class PositionSummaryResponse(BaseModel):
 
     **Sprint 2:** Prefer nested ``product``, ``quantity``, and ``traceability``. Top-level SKU/qty/traceability
     fields are deprecated aliases preserved for existing clients.
+
+    **Sprint 3 note:** this model is still shared by list and detail for compatibility. List now
+    omits ``detected_summary_json`` by default while detail can still carry it as a legacy field.
+    Splitting list/detail response models remains an explicit Sprint 4 decision.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -240,7 +250,11 @@ class ReviewActionResponse(BaseModel):
 
 class PositionDetailResponse(BaseModel):
     """Response for GET .../aisles/{aisle_id}/positions/{position_id}.
-    v3.1.1: Result is the only visible review object; products are no longer returned."""
+    v3.1.1: Result is the only visible review object; products are no longer returned.
+
+    Sprint 3 keeps ``position`` on the shared summary schema for compatibility, and adds
+    ``technical_snapshot`` as the preferred detail-only technical surface.
+    """
     position: PositionSummaryResponse
     technical_snapshot: Optional[PositionTechnicalSnapshot] = Field(
         None,

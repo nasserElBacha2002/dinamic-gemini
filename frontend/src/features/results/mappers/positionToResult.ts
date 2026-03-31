@@ -19,7 +19,6 @@ import type {
   ReviewStatus,
   TraceabilityStatus,
 } from '../types';
-import { getSummaryString } from './detectedSummary';
 
 /** Backend traceability is lowercase; visible model uses uppercase.
  * Unknown/missing → UNVALIDATED (document-only fallback: backend sends valid|missing|invalid|unvalidated). */
@@ -151,8 +150,9 @@ export function mapPositionDetailToResultDetail(
   const review_actions = data.review_actions ?? [];
 
   const technicalSnapshot = data.technical_snapshot ?? null;
-  const legacySummaryJson = position.detected_summary_json ?? null;
-  /** Canonical: Sprint 2 ``traceability`` block, then typed fields; then legacy detail summary fallback. */
+  /** Canonical: Sprint 2 ``traceability`` block, then typed fields.
+   * Sprint 3 removes the frontend dependency on `detected_summary_json`; detail technical metadata
+   * now flows through `technical_snapshot` only. */
   const typedSourceImageId =
     (position.traceability?.source_image_id != null &&
       String(position.traceability.source_image_id).trim() !== ''
@@ -170,15 +170,16 @@ export function mapPositionDetailToResultDetail(
     String(position.source_image_original_filename).trim() !== ''
       ? position.source_image_original_filename.trim()
       : null);
-  const sourceImageId =
-    typedSourceImageId ?? getSummaryString(legacySummaryJson, 'source_image_id');
-  const sourceFileName =
-    typedSourceFileName ??
-    getSummaryString(legacySummaryJson, 'source_image_original_filename');
-
+  const sourceImageId = typedSourceImageId;
+  const sourceFileName = typedSourceFileName;
   const entityId =
-    getSummaryString(technicalSnapshot, 'entity_uid') ??
-    getSummaryString(legacySummaryJson, 'entity_uid');
+    technicalSnapshot != null &&
+    typeof technicalSnapshot === 'object' &&
+    'entity_uid' in technicalSnapshot &&
+    typeof technicalSnapshot.entity_uid === 'string' &&
+    technicalSnapshot.entity_uid.trim() !== ''
+      ? technicalSnapshot.entity_uid.trim()
+      : null;
 
   const sku = position.product?.sku ?? position.sku ?? null;
   const detectedQty =

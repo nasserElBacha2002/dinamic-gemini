@@ -11,9 +11,9 @@
 
 | Ticket | Estado | Resumen |
 |--------|--------|---------|
-| **3.1 — Acotar `detected_summary_json` en list** | **Implementado** | Se adoptó una variante de **Opción B/C**: el list endpoint **ya no expone el blob técnico por defecto**; `position_to_summary(..., include_technical_snapshot=False)` deja `detected_summary_json = null/omitido según serialización`. Para clientes transicionales existe `?include_technical=true` en list. |
+| **3.1 — Acotar `detected_summary_json` en list** | **Implementado** | El list endpoint **ya no expone el blob técnico por defecto**; `position_to_summary(..., include_technical_snapshot=False)` deja `detected_summary_json = null/omitido según serialización`. Para clientes internos/transicionales existe `?include_technical=true` en list. |
 | **3.2 — `technical_snapshot` explícito en detail** | **Implementado** | `PositionDetailResponse` agrega `technical_snapshot` con shape técnico claro (`entity_uid`, `entity_type`, `internal_code`, `review_display_label`, `position_barcode`, `pallet_id`, `count_status`, `raw_qty`, `qty_parse_status`, `qty_origin_field`, `aggregated_from_ids`, `audit`). `position.detected_summary_json` queda como **legacy** y marcado deprecated en schema. |
-| **3.3 — CSV estándar alineado al contrato canónico** | **Implementado** | El export estándar usa columnas operativas alineadas al contrato público: `product_sku`, `product_display_label`, `barcode`, `detected_quantity`, `corrected_quantity`, `final_quantity`, `qty_source`, `traceability_status`, etc. La construcción sale de `position_to_summary` / bloques canónicos, no de lecturas ad hoc del snapshot. |
+| **3.3 — CSV estándar alineado al contrato canónico** | **Implementado** | El export estándar usa columnas operativas alineadas al contrato público: `product_sku`, `product_display_label`, `barcode`, `detected_quantity`, `corrected_quantity`, `final_quantity`, `qty_source`, `traceability_status`, etc. La construcción sale de `PositionCanonicalView`, no del serializer HTTP ni de lecturas ad hoc del snapshot. |
 | **3.4 — CSV técnico opcional** | **Implementado** | Nuevo modo `technical=true` en `/api/v3/inventories/{inventory_id}/export`, con CSV separado para campos del snapshot (`internal_code`, `review_display_label`, `position_barcode`, `raw_qty`, `qty_parse_status`, `qty_origin_field`, `entity_uid`, `entity_type`, `_audit`, ...). |
 | **3.5 — Paridad API vs CSV** | **Implementado (focalizado)** | Tests validan que el CSV estándar represente `product`, `quantity` y `traceability` del contrato operativo; también hay tests del serializer para list sin snapshot y detail con `technical_snapshot`. |
 
@@ -26,7 +26,7 @@
 - Sin ese flag, el list deja de depender normalmente de `detected_summary_json`.
 - Con `include_technical=true`, el blob legacy puede seguir saliendo temporalmente para debugging/compatibilidad.
 
-**Decisión:** no se removió todavía el campo del schema compartido porque list/detail siguen reutilizando `PositionSummaryResponse`; en cambio se desactiva su población por defecto en list para evitar romper el detalle y mantener transición controlada.
+**Decisión:** no se removió todavía el campo del schema compartido porque list/detail siguen reutilizando `PositionSummaryResponse`; en cambio se desactiva su población por defecto en list para evitar romper el detalle y mantener transición controlada. La separación explícita de schemas queda documentada como deuda intencional para Sprint 4, no como refactor incompleto de Sprint 3.
 
 ---
 
@@ -34,7 +34,7 @@
 
 - `GET /api/v3/inventories/{inventory_id}/aisles/{aisle_id}/positions/{position_id}`
   agrega `technical_snapshot` top-level.
-- `position.detected_summary_json` se conserva como payload legacy/deprecated.
+- `position.detected_summary_json` queda como campo legacy/deprecated de schema, pero el backend ya no lo puebla en las superficies consumidas por frontend (`list`, `detail`, `review_queue`).
 - El frontend detail ahora puede leer:
   - contrato operativo: `position.product`, `position.quantity`, `position.traceability`
   - snapshot técnico: `technical_snapshot`
@@ -71,6 +71,7 @@
 - El bloque sale del snapshot técnico real (`detected_summary_json`) vía `PositionCanonicalView.technical_snapshot`.
 - No duplica semántica canónica ya expuesta en `product`, `quantity`, `traceability`.
 - `source_image_id` / `primary_evidence_id` siguen viviendo en `traceability`, no en `technical_snapshot`.
+- `audit` queda explícitamente documentado como **blob técnico flexible**: útil para debugging/auditoría, pero todavía no tratado como contrato público estable por clave.
 
 ---
 
@@ -103,6 +104,8 @@
 ### Notas
 
 - `position_code` y `aisle_sequence` se mantienen como columnas operativas auxiliares por compatibilidad razonable.
+- `position_code` sigue siendo útil para operadores porque representa la referencia humana estable de ubicación/slot (`pallet_id` → `position_barcode` → `entity_uid` → `position.id`) y además es la base del orden natural del export dentro del pasillo.
+- `aisle_sequence` se mantiene como ayuda operativa/exportable para preservar el orden determinista por pasillo ya usado en el CSV, sin obligar a consumidores a reconstruirlo externamente.
 - `internal_code` y `_audit` salen del CSV estándar; quedan en el CSV técnico.
 
 ---
@@ -133,7 +136,8 @@ Campos principales:
 ## 7. Frontend
 
 - La lista ya no necesita `detected_summary_json` para el flujo normal.
-- En detail, `positionToResult.ts` prioriza el contrato nuevo y usa `technical_snapshot` para metadata técnica (`entity_uid`), manteniendo fallback legacy a `position.detected_summary_json` solo donde todavía aporta compatibilidad.
+- En detail, `positionToResult.ts` prioriza el contrato nuevo y usa `technical_snapshot` para metadata técnica (`entity_uid`).
+- El frontend ya no depende de `position.detected_summary_json`; el fallback legacy fue retirado para que el front no reciba ni consuma más ese blob.
 
 ---
 
@@ -163,6 +167,7 @@ Campos principales:
 
 - Remoción final o estrechamiento más agresivo de aliases legacy top-level.
 - Decidir si `PositionSummaryResponse` se divide formalmente entre list/detail en schema público.
+- Decidir si el campo deprecated `detected_summary_json` se elimina por completo del contrato backend o se conserva solo para clientes internos no-frontend.
 - Cleanup adicional de consumers API HTTP del export si se requiere migración externa de encabezados.
 - Analytics SQL y persistencia slim del snapshot.
 - Reglas de negocio más profundas para filas consolidadas/agregadas si producto define cambios.

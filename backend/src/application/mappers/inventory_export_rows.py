@@ -1,6 +1,7 @@
 """Map consolidated positions to flat dict rows for CSV export.
 
-Delegates quantity/traceability/summary semantics to ``position_to_summary`` (v3 API parity).
+The operational export is built from :class:`PositionCanonicalView` so it stays aligned with the
+public contract (`product` / `quantity` / `traceability`) without depending on HTTP serializers.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.utils.natural_sort import natural_sort_key_parts
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import Inventory
@@ -66,16 +68,13 @@ def position_to_operational_export_row_dict(
     position: Position,
     primary_product: Optional[ProductRecord],
 ) -> Dict[str, Any]:
-    # Local import avoids circular import: api.dependencies → export use case → this module → api.shared → router.
-    from src.api.routes.v3.shared import position_to_summary
-
     corrected = primary_product.corrected_quantity if primary_product is not None else None
-    summary = position_to_summary(
+    view = build_position_canonical_view(
         position,
+        primary_product,
         corrected_quantity=corrected,
-        primary_product=primary_product,
     )
-    updated: datetime = summary.updated_at
+    updated: datetime = position.updated_at
     return {
         "inventory_id": inventory.id,
         "inventory_name": inventory.name,
@@ -83,20 +82,20 @@ def position_to_operational_export_row_dict(
         "aisle_code": aisle.code,
         "aisle_sequence": aisle_sequence,
         "position_id": position.id,
-        "position_status": summary.status,
-        "needs_review": summary.needs_review,
+        "position_status": view.review.status,
+        "needs_review": view.review.needs_review,
         "position_code": export_position_code(position),
-        "product_sku": summary.product.sku or summary.sku or "",
-        "product_display_label": summary.product.display_label or "",
-        "barcode": summary.product.barcode or "",
-        "detected_quantity": summary.quantity.detected,
+        "product_sku": view.product.public_sku or "",
+        "product_display_label": view.product.display_label or "",
+        "barcode": view.product.barcode or "",
+        "detected_quantity": view.quantity.detected_quantity,
         "corrected_quantity": "" if corrected is None else corrected,
-        "final_quantity": summary.quantity.final,
-        "qty_source": summary.quantity.source,
-        "qty_inference_reason": summary.quantity.inference_reason or "",
-        "traceability_status": summary.traceability.status or "",
-        "source_image_id": summary.traceability.source_image_id or "",
-        "primary_evidence_id": summary.traceability.primary_evidence_id or "",
+        "final_quantity": view.quantity.final_display_quantity,
+        "qty_source": view.quantity.qty_source,
+        "qty_inference_reason": view.quantity.qty_inference_reason or "",
+        "traceability_status": view.traceability.traceability_status or "",
+        "source_image_id": view.traceability.source_image_id or "",
+        "primary_evidence_id": view.review.primary_evidence_id or "",
         "updated_at": updated.isoformat(),
     }
 

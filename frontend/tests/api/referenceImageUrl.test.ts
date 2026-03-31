@@ -3,7 +3,7 @@
  * Ensures the frontend builds the URL that backend needs to resolve normalized preview from the correct job.
  *
  * jobId is derived in ResultEvidencePanel from result.technicalMetadata.entityId (backend contract:
- * position.detected_summary_json.entity_uid, format "<job_id>_<entity_suffix>", e.g. "uuid_E1").
+ * detail `technical_snapshot.entity_uid`, format "<job_id>_<entity_suffix>", e.g. "uuid_E1").
  */
 
 import { describe, it, expect } from 'vitest';

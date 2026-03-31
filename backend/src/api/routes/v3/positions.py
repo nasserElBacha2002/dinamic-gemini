@@ -139,7 +139,7 @@ def get_position_detail(
                 result.position,
                 corrected_quantity=corrected_quantity,
                 primary_product=primary_product,
-                include_technical_snapshot=True,
+                include_technical_snapshot=False,
             ),
             technical_snapshot=technical_snapshot_from_view(view),
             evidences=[evidence_to_response(e) for e in result.evidences],

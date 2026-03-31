@@ -96,6 +96,7 @@ def list_review_queue_positions(
                     row.position,
                     corrected_quantity=corrected_quantity,
                     primary_product=primary,
+                    include_technical_snapshot=False,
                 ),
             )
         )
