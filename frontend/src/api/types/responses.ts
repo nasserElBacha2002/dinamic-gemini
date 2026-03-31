@@ -228,7 +228,7 @@ export interface PositionTechnicalSnapshot {
   audit?: Record<string, unknown> | null;
 }
 
-/** Position summary for frontend consumers. `detected_summary_json` is legacy/deprecated and no longer expected from active frontend APIs in Sprint 3. */
+/** Position summary for frontend consumers. `detected_summary_json` is a legacy technical snapshot and is no longer expected from active frontend APIs. */
 export interface PositionSummary {
   id: string;
   aisle_id: string;

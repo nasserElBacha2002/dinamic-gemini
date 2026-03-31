@@ -340,7 +340,9 @@ def _position_summary_response_from_view(
     """Single construction site for ``PositionSummaryResponse`` from the canonical view (Sprint 1–2).
 
     Nested ``product`` / ``quantity`` blocks read only ``view`` — display label, barcode, and
-    ``quantity.final`` are resolved in :func:`build_position_canonical_view`.
+    ``quantity.final`` are resolved in :func:`build_position_canonical_view`. The legacy
+    ``detected_summary_json`` surface is passed through only when an endpoint explicitly opts into
+    the deprecated technical snapshot for transitional/internal clients.
     """
     detected_summary_json = (
         p.detected_summary_json if include_technical_snapshot and isinstance(p.detected_summary_json, dict) else None

@@ -129,9 +129,10 @@ class PositionSummaryResponse(BaseModel):
     **Sprint 2:** Prefer nested ``product``, ``quantity``, and ``traceability``. Top-level SKU/qty/traceability
     fields are deprecated aliases preserved for existing clients.
 
-    **Sprint 3 note:** this model is still shared by list and detail for compatibility. List now
-    omits ``detected_summary_json`` by default while detail can still carry it as a legacy field.
-    Splitting list/detail response models remains an explicit Sprint 4 decision.
+    **Sprint 3-4 note:** this model is still shared by list and detail for compatibility.
+    ``detected_summary_json`` is now a deprecated technical snapshot surface only: list omits it by
+    default, detail prefers top-level ``technical_snapshot``, and operational fields must come from
+    canonical blocks / aliases rather than from the raw JSON blob.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -152,8 +153,9 @@ class PositionSummaryResponse(BaseModel):
         None,
         deprecated=True,
         description=(
-            "Legacy raw technical snapshot. List endpoints omit it by default in Sprint 3; "
-            "detail prefers top-level `technical_snapshot`."
+            "Legacy raw technical snapshot for audit/debug/replay only. It is not the canonical "
+            "public contract source. List endpoints omit it by default; detail prefers top-level "
+            "`technical_snapshot`."
         ),
     )
 
@@ -258,7 +260,7 @@ class PositionDetailResponse(BaseModel):
     position: PositionSummaryResponse
     technical_snapshot: Optional[PositionTechnicalSnapshot] = Field(
         None,
-        description="Explicit technical/debug snapshot (Sprint 3). Prefer this over legacy `position.detected_summary_json`.",
+        description="Explicit technical/debug snapshot (Sprint 3-4). Prefer this over legacy `position.detected_summary_json`.",
     )
     evidences: List[EvidenceResponse]
     review_actions: List[ReviewActionResponse] = Field(default_factory=list)

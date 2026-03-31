@@ -102,4 +102,39 @@ Permanecen en **`detected_summary_json`** (no eliminar en Sprint 1):
 
 ---
 
+## 12. Sprint 4 — Política final de snapshots técnicos
+
+- **`detected_summary_json`** queda formalmente definido como **snapshot técnico inmutable** para:
+  - auditoría
+  - debug
+  - replay
+  - compatibilidad legacy controlada
+- **No** es fuente principal del contrato público, del ensamblado operativo ni del CSV estándar cuando existe reemplazo canónico claro (`PositionCanonicalView`, `ProductRecord`, bloques `product` / `quantity` / `traceability`).
+- **Uso permitido y esperado**:
+  - `technical_snapshot` detail
+  - CSV técnico
+  - trazabilidad/enriquecimiento técnico cuando aún no existe una persistencia canónica equivalente
+  - fallback legacy o transicional explícitamente marcado
+- **Uso no permitido como nueva dependencia**:
+  - introducir campos operativos nuevos leyendo directo del blob
+  - reabrir dependencias frontend sobre el JSON
+  - reconstruir el CSV operativo desde el snapshot
+
+## 13. Sprint 4 — Aggregated rows y persistencia
+
+- Las filas con **`aggregated_from_ids`** siguen siendo, por ahora, una **proyección consolidada** generada sobre el snapshot técnico representativo.
+- La cantidad visible de una fila agregada puede seguir viniendo del snapshot consolidado (`final_quantity`) y, por diseño actual, **no implica** que exista una fila canónica persistida equivalente en `ProductRecord` con esa misma semántica.
+- Cuando hay una fila **no agregada** y existe `primary_product`, los readers nuevos deben preferir la vista canónica / `ProductRecord`.
+- Cuando hay una fila **agregada**, si no existe una persistencia canónica inequívoca para esa semántica consolidada, se mantiene el fallback técnico y debe quedar documentado como tal.
+
+## 14. Sprint 4 — `corrected_summary_json`
+
+- La auditoría Sprint 4 encontró **persistencia** de `corrected_summary_json` en `positions`, pero **sin readers funcionales relevantes** en el flujo operativo actual.
+- Decisión actual: **deuda técnica a deprecar**, no remover destructivamente todavía.
+- Condición para remoción futura:
+  - confirmar en producción/consumidores externos que no existe lectura fuera del repositorio SQL
+  - mantener trazabilidad de correcciones en `ReviewAction` y en los campos canónicos persistidos antes de cualquier cleanup físico
+
+---
+
 *Aprobación funcional/técnica: según proceso interno del equipo (documentación de ingeniería lista para revisión).*

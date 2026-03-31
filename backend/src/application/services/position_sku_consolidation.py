@@ -4,6 +4,9 @@ SKU-level position consolidation for v3 aisle results / export.
 Same algorithm as historical ``ListAislePositionsUseCase`` consolidation: group by
 (``aisle_id``, ``internal_code`` from ``detected_summary_json``), sum quantities into
 representative row, attach ``aggregated_from_ids``.
+
+Sprint 4 note: this remains a projection-time technical mutation on the representative snapshot.
+It does not by itself establish a new persisted source of truth for aggregated rows.
 """
 
 from __future__ import annotations
