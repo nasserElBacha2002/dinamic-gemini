@@ -262,7 +262,7 @@ def test_gemini_provider_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     payload = prepared_call.kwargs["payload"]
     assert payload["event_type"] == "gemini_request"
     assert payload["provider"] == "gemini"
-    assert "Analyze the frames from a warehouse aisle video" in payload["prompt_text"]
+    assert "Analyze the provided warehouse aisle evidence (photos and/or extracted frames)." in payload["prompt_text"]
     assert payload["attachment_summary"]["primary_evidence_count"] == 1
     assert payload["attachment_summary"]["visual_reference_count"] == 1
     assert payload["primary_evidence_attachments"][0]["frame_ref"] == "img_001"

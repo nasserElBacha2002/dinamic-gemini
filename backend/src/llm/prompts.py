@@ -12,19 +12,24 @@ from src.jobs.image_identity import JobImage
 
 # Textos base (referenciados por PROMPTS)
 _GLOBAL_V21: Final[str] = """\
-Analyze the frames from a warehouse aisle video. Detect all distinct logistic entities (one per entity).
+Analyze the provided warehouse aisle evidence (photos and/or extracted frames). Detect all distinct visible logistic entities, one entity per visible unit.
 
 Entity types:
 - PALLET: pallet structure, may have boxes and position/product labels.
 - EMPTY_PALLET: pallet structure with no boxes on top.
-- LOOSE_BOXES: grouped boxes without pallet (do NOT count as pallet).
+- LOOSE_BOXES: non-palletized boxed units or grouped boxes without pallet structure (do NOT count as pallet).
 
 Rules:
-- One entity per detection. Do NOT duplicate or merge. Do NOT infer hidden entities.
+- Treat each clearly visible logistic unit as its own entity. If adjacent boxed units are visibly distinct, return them separately.
+- If a visible unit has its own label or a clear visual boundary, prefer treating it as an individual entity.
+- Do NOT collapse multiple labeled or clearly separable visible boxes into one entity.
+- Do NOT duplicate, merge, or infer hidden entities.
 - Do not invent values. Use null if not clearly readable.
+- Do not return quantity 0 for a clearly visible logistic unit unless the evidence strongly supports that.
 - model_entity_id: unique string (e.g. E1, E2). confidence: 0 to 1.
 - Bbox: if you provide position_label_bbox or product_label_bbox, use NORMALIZED coords only: [x1,y1,x2,y2] with floats in [0,1], x1<x2, y1<y2. Use null if region unknown.
 - has_boxes: true if boxes visible on pallet or for LOOSE_BOXES.
+- Inventory visual reference images, when provided, are comparative context only. They may help interpret label style, packaging conventions, or the expected visual standard, but they are NOT primary evidence and must not be treated as direct evidence for detections.
 """
 
 _SYSTEM_PALLET_COUNT: Final[str] = """\
