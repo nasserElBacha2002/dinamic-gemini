@@ -71,7 +71,7 @@ export function mapPositionStatusToReviewStatus(
 export function mapPositionSummaryToResultSummary(
   p: PositionSummary
 ): ResultSummary {
-  /** Sprint 2: prefer nested ``traceability`` / ``quantity`` when present. */
+  /** Sprint 2: nested blocks first, then deprecated flat aliases, then historical inference. */
   const hasEvidence =
     typeof p.traceability?.has_evidence === 'boolean'
       ? p.traceability.has_evidence
@@ -80,23 +80,32 @@ export function mapPositionSummaryToResultSummary(
         : Boolean(
             p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
           );
+  const sku = p.product?.sku ?? p.sku ?? null;
+  const detectedQty = p.quantity?.detected ?? p.detected_quantity ?? null;
+  const correctedQty = p.quantity?.corrected ?? p.corrected_quantity ?? null;
   const resolvedQty =
     p.quantity?.final ??
     (p.corrected_quantity != null ? p.corrected_quantity : p.qty ?? null);
+  const qtySource = p.quantity?.source ?? p.qtySource ?? 'detected';
+  const qtyResolved = p.quantity?.resolved ?? p.qtyResolved ?? null;
+  const qtyInferenceReason =
+    p.quantity?.inference_reason ?? p.qtyInferenceReason ?? null;
+  const traceabilityStatus = mapTraceabilityToVisible(
+    p.traceability?.status ?? p.traceability_status
+  );
 
-  // qtySource fallback: Keep for historical payloads only; backend now always sends qtySource.
   return {
     id: p.id,
-    sku: p.product?.sku ?? p.sku ?? null,
-    detectedQty: p.quantity?.detected ?? p.detected_quantity ?? null,
-    correctedQty: p.quantity?.corrected ?? p.corrected_quantity ?? null,
+    sku,
+    detectedQty,
+    correctedQty,
     resolvedQty,
-    qtySource: p.quantity?.source ?? p.qtySource ?? 'detected',
-    qtyResolved: p.quantity?.resolved ?? p.qtyResolved ?? null,
-    qtyInferenceReason: p.quantity?.inference_reason ?? p.qtyInferenceReason ?? null,
+    qtySource,
+    qtyResolved,
+    qtyInferenceReason,
     confidence: p.confidence ?? null,
     reviewStatus: mapPositionStatusToReviewStatus(p.status, p.needs_review),
-    traceabilityStatus: mapTraceabilityToVisible(p.traceability?.status ?? p.traceability_status),
+    traceabilityStatus,
     needsReview: p.needs_review,
     updatedAt: p.updated_at,
     hasEvidence,
@@ -165,30 +174,41 @@ export function mapPositionDetailToResultDetail(
 
   const entityId = getSummaryString(summaryJson, 'entity_uid');
 
+  const sku = position.product?.sku ?? position.sku ?? null;
+  const detectedQty =
+    position.quantity?.detected ?? position.detected_quantity ?? null;
+  const correctedQty =
+    position.quantity?.corrected ?? position.corrected_quantity ?? null;
   const resolvedQty =
     position.quantity?.final ??
-    (position.corrected_quantity != null ? position.corrected_quantity : position.qty ?? null);
+    (position.corrected_quantity != null
+      ? position.corrected_quantity
+      : position.qty ?? null);
   const systemQty = position.qty ?? null;
+  const qtySource = position.quantity?.source ?? position.qtySource ?? 'detected';
+  const qtyResolved = position.quantity?.resolved ?? position.qtyResolved ?? null;
+  const qtyInferenceReason =
+    position.quantity?.inference_reason ?? position.qtyInferenceReason ?? null;
+  const traceabilityStatus = mapTraceabilityToVisible(
+    position.traceability?.status ?? position.traceability_status
+  );
 
   return {
     id: position.id,
-    sku: position.product?.sku ?? position.sku ?? null,
-    detectedQty: position.quantity?.detected ?? position.detected_quantity ?? null,
-    correctedQty: position.quantity?.corrected ?? position.corrected_quantity ?? null,
+    sku,
+    detectedQty,
+    correctedQty,
     resolvedQty,
     systemQty,
-    // qtySource fallback: Keep for historical payloads only; backend sends qtySource in active v3.
-    qtySource: position.quantity?.source ?? position.qtySource ?? 'detected',
-    qtyResolved: position.quantity?.resolved ?? position.qtyResolved ?? null,
-    qtyInferenceReason: position.quantity?.inference_reason ?? position.qtyInferenceReason ?? null,
+    qtySource,
+    qtyResolved,
+    qtyInferenceReason,
     confidence: position.confidence ?? null,
     reviewStatus: mapPositionStatusToReviewStatus(
       position.status,
       position.needs_review
     ),
-    traceabilityStatus: mapTraceabilityToVisible(
-      position.traceability?.status ?? position.traceability_status
-    ),
+    traceabilityStatus,
     needsReview: position.needs_review,
     updatedAt: position.updated_at,
     sourceImageId:

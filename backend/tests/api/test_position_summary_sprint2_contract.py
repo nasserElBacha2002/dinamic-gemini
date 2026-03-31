@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from src.api.routes.v3.shared import position_to_summary
+from src.api.schemas.position_schemas import PositionSummaryResponse
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 
@@ -241,6 +242,36 @@ def test_display_label_falls_back_to_review_display_label() -> None:
     )
     r = position_to_summary(p, primary_product=primary)
     assert r.product.display_label == "Shelf tag"
+
+
+def test_position_summary_response_has_unique_field_names() -> None:
+    names = list(PositionSummaryResponse.model_fields.keys())
+    assert len(names) == len(set(names))
+
+
+def test_nested_blocks_and_legacy_aliases_present_together() -> None:
+    """Sprint 2: clients may read nested blocks and deprecated flat fields in one payload."""
+    now = _now()
+    p = Position(
+        id="p-dual",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="pe",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "Z", "final_quantity": 5},
+    )
+    r = position_to_summary(p, primary_product=None)
+    assert r.product.sku == "Z"
+    assert r.sku == "Z"
+    assert r.quantity.detected == 5
+    assert r.detected_quantity == 5
+    assert r.quantity.source == "detected"
+    assert r.qtySource == "detected"
+    assert r.traceability.primary_evidence_id == "pe"
+    assert r.primary_evidence_id == "pe"
 
 
 def test_barcode_from_snapshot() -> None:

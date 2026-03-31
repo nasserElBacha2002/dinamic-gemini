@@ -118,6 +118,49 @@ describe('mapPositionSummaryToResultSummary', () => {
     expect(r.reviewStatus).toBe('CONFIRMED');
   });
 
+  it('Sprint 2: prefers nested product/quantity/traceability blocks over divergent legacy flat fields', () => {
+    const p: PositionSummary = {
+      id: 'pos-s2-blocks',
+      aisle_id: 'aisle-1',
+      status: 'detected',
+      confidence: 0.9,
+      needs_review: false,
+      primary_evidence_id: 'ev-legacy',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-02T00:00:00Z',
+      sku: 'FLAT-SKU',
+      detected_quantity: 1,
+      corrected_quantity: null,
+      qty: 1,
+      qtySource: 'detected',
+      qtyResolved: null,
+      has_evidence: false,
+      product: {
+        sku: 'BLOCK-SKU',
+        identity_source: 'primary_product',
+      },
+      quantity: {
+        detected: 9,
+        final: 9,
+        source: 'merge_inferred',
+        resolved: true,
+      },
+      traceability: {
+        status: 'missing',
+        has_evidence: true,
+        primary_evidence_id: 'ev-block',
+      },
+    };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.sku).toBe('BLOCK-SKU');
+    expect(r.detectedQty).toBe(9);
+    expect(r.qtySource).toBe('merge_inferred');
+    expect(r.qtyResolved).toBe(true);
+    expect(r.resolvedQty).toBe(9);
+    expect(r.traceabilityStatus).toBe('MISSING');
+    expect(r.hasEvidence).toBe(true);
+  });
+
   it('preserves qtySource = consolidated (Phase 5 Block 1) and keeps visible qty rule', () => {
     const p: PositionSummary = {
       id: 'pos-consolidated',

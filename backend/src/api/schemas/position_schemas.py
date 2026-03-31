@@ -5,7 +5,7 @@ SKU / traceability fields remain as deprecated aliases for backward compatibilit
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,6 +22,9 @@ _QtySourcePublic = Literal[
 ]
 
 _ProductIdentitySource = Literal["primary_product", "summary_technical", "summary_aggregated"]
+
+# Aligns with frontend `TRACEABILITY_STATUSES` / `ApiTraceabilityStatus`; union with str for forward compatibility.
+_TraceabilityStatusPublic = Literal["valid", "missing", "invalid", "unvalidated"]
 
 
 class PositionProductBlock(BaseModel):
@@ -71,7 +74,14 @@ class PositionTraceabilityBlock(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    status: Optional[str] = Field(None, description="Traceability validity; mirrors deprecated ``traceability_status``.")
+    status: Optional[Union[_TraceabilityStatusPublic, str]] = Field(
+        None,
+        description=(
+            "Traceability validity; mirrors deprecated ``traceability_status``. "
+            "Known v3 values: valid, missing, invalid, unvalidated. "
+            "Other strings may appear for forward-compatible extensions."
+        ),
+    )
     source_image_id: Optional[str] = Field(None, description="Report source image; mirrors deprecated field.")
     source_image_original_filename: Optional[str] = None
     primary_evidence_id: Optional[str] = Field(
@@ -116,7 +126,11 @@ class PositionSummaryResponse(BaseModel):
     qtyInferenceReason: Optional[str] = Field(None, deprecated=True, description="Deprecated: use `quantity.inference_reason`.")
     qtyResolved: Optional[bool] = Field(None, deprecated=True, description="Deprecated: use `quantity.resolved`.")
     source_image_id: Optional[str] = Field(None, deprecated=True, description="Deprecated: use `traceability.source_image_id`.")
-    traceability_status: Optional[str] = Field(None, deprecated=True, description="Deprecated: use `traceability.status`.")
+    traceability_status: Optional[Union[_TraceabilityStatusPublic, str]] = Field(
+        None,
+        deprecated=True,
+        description="Deprecated: use `traceability.status` (known v3 values: valid, missing, invalid, unvalidated).",
+    )
     has_evidence: bool = Field(False, deprecated=True, description="Deprecated: use `traceability.has_evidence`.")
     source_image_original_filename: Optional[str] = Field(
         None,

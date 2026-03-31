@@ -54,9 +54,6 @@ from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.application.mappers.position_canonical_view import (
     PositionCanonicalView,
     build_position_canonical_view,
-    public_barcode,
-    public_display_label,
-    quantity_final_display,
 )
 from src.application.services.position_traceability import reset_traceability_cache_for_tests
 
@@ -336,22 +333,24 @@ def asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
 def _position_summary_response_from_view(
     p: Position,
     view: PositionCanonicalView,
-    *,
-    primary_product: Optional[ProductRecord] = None,
 ) -> PositionSummaryResponse:
-    """Single construction site for ``PositionSummaryResponse`` from the canonical view (Sprint 1–2)."""
+    """Single construction site for ``PositionSummaryResponse`` from the canonical view (Sprint 1–2).
+
+    Nested ``product`` / ``quantity`` blocks read only ``view`` — display label, barcode, and
+    ``quantity.final`` are resolved in :func:`build_position_canonical_view`.
+    """
     detected_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
     product_block = PositionProductBlock(
         id=view.product.primary_product_id,
         sku=view.product.public_sku,
-        display_label=public_display_label(view, primary_product),
-        barcode=public_barcode(view),
+        display_label=view.product.display_label,
+        barcode=view.product.barcode,
         identity_source=view.product.identity_source,
     )
     quantity_block = PositionQuantityBlock(
         detected=view.quantity.detected_quantity,
         corrected=view.quantity.corrected_quantity,
-        final=quantity_final_display(view),
+        final=view.quantity.final_display_quantity,
         source=view.quantity.qty_source,
         inference_reason=view.quantity.qty_inference_reason,
         resolved=view.quantity.qty_resolved,
@@ -405,7 +404,7 @@ def position_to_summary(
         primary_product,
         corrected_quantity=corrected_quantity,
     )
-    return _position_summary_response_from_view(p, view, primary_product=primary_product)
+    return _position_summary_response_from_view(p, view)
 
 
 def evidence_to_response(e: Evidence) -> EvidenceResponse:

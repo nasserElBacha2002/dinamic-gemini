@@ -6,7 +6,7 @@ except for **aggregated** consolidated rows where the summary carries ``aggregat
 authoritative totals today — see ADR ``docs/adr/inventory-v3-canonical-fields.md``.
 
 ``position_to_summary`` in :mod:`src.api.routes.v3.shared` maps this view to ``PositionSummaryResponse``
-without changing the HTTP contract (Sprint 1). Traceability enrichment lives in
+(incl. bloques Sprint 2) sin duplicar derivación en rutas. Traceability enrichment lives in
 :mod:`src.application.services.position_traceability` (not in route helpers).
 """
 
@@ -188,13 +188,51 @@ def _effective_corrected_quantity(
     return None
 
 
+def _canonical_display_label(
+    technical_snapshot: Optional[Dict[str, Any]],
+    primary_product: Optional[ProductRecord],
+) -> Optional[str]:
+    """Operator-facing label: primary ``description`` when non-empty; else ``review_display_label`` from snapshot."""
+    if primary_product is not None:
+        d = (primary_product.description or "").strip()
+        if d:
+            return d
+    snap = technical_snapshot if isinstance(technical_snapshot, dict) else {}
+    rdl = snap.get("review_display_label")
+    if isinstance(rdl, str) and rdl.strip():
+        return rdl.strip()
+    return None
+
+
+def _canonical_barcode(technical_snapshot: Optional[Dict[str, Any]]) -> Optional[str]:
+    """``position_barcode`` from technical snapshot when present (no inference)."""
+    snap = technical_snapshot if isinstance(technical_snapshot, dict) else {}
+    b = snap.get("position_barcode")
+    if isinstance(b, str) and b.strip():
+        return b.strip()
+    return None
+
+
+def _final_display_quantity(corrected_quantity: Optional[int], system_qty: int) -> int:
+    """Operator-visible line quantity: correction when set, else system-resolved qty (CSV ``final_quantity`` rule)."""
+    if corrected_quantity is not None:
+        return max(0, int(corrected_quantity))
+    return int(system_qty)
+
+
 @dataclass(frozen=True)
 class PositionCanonicalProduct:
-    """Product identity for public summary assembly."""
+    """Product identity for public summary assembly.
+
+    ``display_label`` and ``barcode`` are resolved here so HTTP assembly only reads the view
+    (Sprint 2 — no extra ``primary_product`` pass-through in :func:`position_to_summary`).
+    """
 
     primary_product_id: Optional[str]
     public_sku: Optional[str]
     identity_source: IdentitySource
+    display_label: Optional[str]
+    barcode: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -212,6 +250,7 @@ class PositionCanonicalQuantity:
     detected_quantity: int
     is_aggregated: bool
     corrected_quantity: Optional[int]
+    final_display_quantity: int
 
 
 @dataclass(frozen=True)
@@ -289,11 +328,14 @@ def build_position_canonical_view(
             detected_quantity=qty,
             is_aggregated=True,
             corrected_quantity=effective_corrected,
+            final_display_quantity=_final_display_quantity(effective_corrected, qty),
         )
         product = PositionCanonicalProduct(
             primary_product_id=(primary_product.id if primary_product is not None else None),
             public_sku=summary_sku,
             identity_source="summary_aggregated",
+            display_label=_canonical_display_label(snap, primary_product),
+            barcode=_canonical_barcode(snap),
         )
         return PositionCanonicalView(
             product=product,
@@ -319,6 +361,8 @@ def build_position_canonical_view(
             primary_product_id=primary_product.id,
             public_sku=sku_display,
             identity_source="primary_product",
+            display_label=_canonical_display_label(snap, primary_product),
+            barcode=_canonical_barcode(snap),
         )
         quantity = PositionCanonicalQuantity(
             qty=qty,
@@ -328,6 +372,7 @@ def build_position_canonical_view(
             detected_quantity=detected_quantity,
             is_aggregated=False,
             corrected_quantity=effective_corrected,
+            final_display_quantity=_final_display_quantity(effective_corrected, qty),
         )
         return PositionCanonicalView(
             product=product,
@@ -342,6 +387,8 @@ def build_position_canonical_view(
         primary_product_id=None,
         public_sku=summary_sku,
         identity_source="summary_technical",
+        display_label=_canonical_display_label(snap, None),
+        barcode=_canonical_barcode(snap),
     )
     quantity = PositionCanonicalQuantity(
         qty=qty,
@@ -351,6 +398,7 @@ def build_position_canonical_view(
         detected_quantity=summary_detected_qty,
         is_aggregated=False,
         corrected_quantity=effective_corrected,
+        final_display_quantity=_final_display_quantity(effective_corrected, qty),
     )
     return PositionCanonicalView(
         product=product,
@@ -359,36 +407,3 @@ def build_position_canonical_view(
         review=review,
         technical_snapshot=snap,
     )
-
-
-def public_display_label(
-    view: PositionCanonicalView,
-    primary_product: Optional[ProductRecord],
-) -> Optional[str]:
-    """Operator-facing label: ``ProductRecord.description`` when non-empty; else ``review_display_label`` from snapshot."""
-    if primary_product is not None:
-        d = (primary_product.description or "").strip()
-        if d:
-            return d
-    snap = view.technical_snapshot if isinstance(view.technical_snapshot, dict) else {}
-    rdl = snap.get("review_display_label")
-    if isinstance(rdl, str) and rdl.strip():
-        return rdl.strip()
-    return None
-
-
-def public_barcode(view: PositionCanonicalView) -> Optional[str]:
-    """``position_barcode`` from technical snapshot when present (no inference)."""
-    snap = view.technical_snapshot if isinstance(view.technical_snapshot, dict) else {}
-    b = snap.get("position_barcode")
-    if isinstance(b, str) and b.strip():
-        return b.strip()
-    return None
-
-
-def quantity_final_display(view: PositionCanonicalView) -> int:
-    """Operator-visible line quantity: ``corrected_quantity`` when set, else system-resolved ``qty`` (CSV ``final_quantity`` rule)."""
-    c = view.quantity.corrected_quantity
-    if c is not None:
-        return max(0, int(c))
-    return int(view.quantity.qty)

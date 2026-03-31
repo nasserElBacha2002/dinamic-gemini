@@ -2,6 +2,7 @@
 
 **Plan:** `docs/Duplicacion de datos - Plan implementacion.md` (tickets 2.1–2.5)  
 **Fecha:** 2026-03-30  
+**Cierre formal:** `docs/status/inventory-v3-sprint-2-closeout.md`  
 **Compatibilidad:** campos planos legacy conservados; sin remoción; sin cambio CSV/DB/analytics.
 
 ---
@@ -13,10 +14,10 @@
 | **2.1** | Bloque `product` (`PositionProductBlock`): `id`, `sku`, `display_label`, `barcode`, `identity_source` |
 | **2.2** | Bloque `quantity` (`PositionQuantityBlock`): `detected`, `corrected`, `final`, `source`, `inference_reason`, `resolved` |
 | **2.3** | Bloque `traceability` (`PositionTraceabilityBlock`): `status`, `source_image_id`, `source_image_original_filename`, `primary_evidence_id`, `has_evidence` |
-| **2.4** | Identidad alineada a `PositionCanonicalView` + `public_display_label` / `public_barcode`; `UNKNOWN` sin sustitución por summary |
+| **2.4** | Identidad + `display_label` / `barcode` / `final_display_quantity` en `PositionCanonicalView`; `UNKNOWN` sin sustitución por summary |
 | **2.5** | Campos planos marcados `deprecated=True` en Pydantic (OpenAPI) con descripción de reemplazo |
 
-**Ensamblado:** `backend/src/api/routes/v3/shared.py` — `_position_summary_response_from_view` construye bloques desde la vista canónica + `primary_product` (label) + helpers `public_display_label`, `public_barcode`, `quantity_final_display` en `position_canonical_view.py`.
+**Ensamblado:** `position_to_summary` → `build_position_canonical_view` → `_position_summary_response_from_view`. Los bloques anidados leen únicamente la vista canónica (`product.display_label`, `product.barcode`, `quantity.final_display_quantity`, etc.).
 
 **Semántica clave**
 
@@ -24,6 +25,7 @@
 - **`detected_quantity` plano / `quantity.detected`:** cantidad detectada resuelta en el contrato v3.2.2 (alineada con primary cuando aplica).
 - **`display_label`:** `ProductRecord.description` si no vacío; si no, `review_display_label` del snapshot.
 - **`barcode`:** solo `position_barcode` del snapshot si existe.
+- **`quantity.source === "consolidated"` (Opción A — contrato público Sprint 2):** valor oficial para filas SKU consolidadas agregadas (`aggregated_from_ids`); no es semántica experimental: backend, tests, tipos FE (`PositionQtySourceV322`) y OpenAPI lo tratan como miembro estable del union de proveniencia.
 
 ---
 
@@ -33,7 +35,7 @@
 |------|---------|
 | Schemas | `backend/src/api/schemas/position_schemas.py` |
 | Mapper | `backend/src/api/routes/v3/shared.py` |
-| Canónico | `backend/src/application/mappers/position_canonical_view.py` (`public_display_label`, `public_barcode`, `quantity_final_display`) |
+| Canónico | `backend/src/application/mappers/position_canonical_view.py` (`PositionCanonicalProduct` / `PositionCanonicalQuantity` incl. display fields) |
 | Tests API | `backend/tests/api/test_position_summary_sprint2_contract.py` |
 | FE tipos | `frontend/src/api/types/responses.ts` |
 | FE mapper | `frontend/src/features/results/mappers/positionToResult.ts` (prefiere bloques cuando existen) |

@@ -41,6 +41,39 @@ def _pos(**kwargs: object) -> Position:
     return Position(**defaults)  # type: ignore[arg-type]
 
 
+def test_canonical_view_exposes_display_label_barcode_final_display() -> None:
+    """Sprint 2: UX fields are on the view so HTTP mappers do not re-derive them."""
+    now = datetime.now(timezone.utc)
+    p = _pos(
+        detected_summary_json={
+            "internal_code": "X",
+            "final_quantity": 3,
+            "review_display_label": "Tag",
+            "position_barcode": " BC ",
+        },
+    )
+    primary = ProductRecord(
+        id="prod-1",
+        position_id=p.id,
+        sku="X",
+        description="From primary",
+        detected_quantity=3,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
+        corrected_quantity=8,
+        qty_source="detected",
+        qty_inference_reason=None,
+        raw_qty=3,
+        qty_parse_status="valid_positive",
+    )
+    view = build_position_canonical_view(p, primary, corrected_quantity=8)
+    assert view.product.display_label == "From primary"
+    assert view.product.barcode == "BC"
+    assert view.quantity.final_display_quantity == 8
+    assert view.quantity.qty == 3
+
+
 def test_primary_product_sku_wins_over_divergent_summary_internal_code() -> None:
     now = datetime.now(timezone.utc)
     p = _pos(

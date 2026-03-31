@@ -93,10 +93,12 @@ Permanecen en **`detected_summary_json`** (no eliminar en Sprint 1):
 
 ## 11. Sprint 2 — Contrato enriquecido (implementado)
 
-- **`PositionSummaryResponse`** incluye `product`, `quantity`, `traceability` (Pydantic) poblados desde la vista canónica y `primary_product` (label).
-- **`quantity.final`** = corrección operador si existe, si no `qty` canónico (misma regla que CSV); el campo plano **`qty`** se mantiene como cantidad sistema-resuelta para compatibilidad.
-- Campos planos duplicados marcados **`deprecated=True`** en schema (OpenAPI); sin remoción aún.
-- Detalle: `docs/status/inventory-v3-sprint-2-progress.md`.
+- **`PositionSummaryResponse`** incluye `product`, `quantity`, `traceability` (Pydantic) poblados **solo** desde `PositionCanonicalView` vía `build_position_canonical_view` + `_position_summary_response_from_view` (sin segundo paso con `primary_product` solo para label).
+- **`quantity.final`** = corrección operador si existe, si no `qty` canónico (misma regla que CSV); el campo plano **`qty`** se mantiene como cantidad sistema-resuelta para compatibilidad. En la vista canónica esto es `PositionCanonicalQuantity.final_display_quantity`.
+- **`display_label`** y **`barcode`** viven en `PositionCanonicalProduct`; el snapshot técnico y `ProductRecord` se combinan únicamente al construir la vista.
+- **`qtySource` / `quantity.source` — `consolidated`:** valor público oficial en Sprint 2 para filas agregadas (`aggregated_from_ids`): indica cantidad consolidada en el summary; alineado con `product_records.qty_source == "consolidated"` cuando aplica la rama de producto.
+- Campos planos duplicados marcados **`deprecated=True`** en schema (OpenAPI); sin remoción aún. Cada campo plano tiene una sola declaración en el modelo Pydantic (sin duplicar Field solo para deprecación).
+- Detalle y cierre formal Sprint 2: `docs/status/inventory-v3-sprint-2-progress.md`, `docs/status/inventory-v3-sprint-2-closeout.md`.
 
 ---
 
