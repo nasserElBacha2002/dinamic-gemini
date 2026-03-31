@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Dict, Optional, Sequence
 from unittest.mock import MagicMock, patch
@@ -20,8 +21,17 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     SourceAssetRepository,
 )
+from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
+from src.application.services.inventory_visual_reference_resolver import InventoryVisualReferenceResolver
+from src.application.use_cases.manage_inventory_visual_references import DeleteInventoryVisualReferenceUseCase
+from src.application.use_cases.upload_inventory_visual_references import (
+    UploadInventoryVisualReferencesUseCase,
+    UploadedVisualReferenceFile,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
@@ -34,6 +44,7 @@ from src.pipeline.contracts.analysis_context import AnalysisContext, VisualRefer
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
+    build_run_metadata,
     default_empty_block,
 )
 
@@ -123,8 +134,80 @@ class NoopRepo(
     def create_many(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         pass
 
+    def update(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        pass
+
+    def delete(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        pass
+
     def summarize_assets_for_aisles(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return {}
+
+
+class InMemoryInventoryRepo(InventoryRepository):
+    def __init__(self) -> None:
+        self._store: Dict[str, Inventory] = {}
+
+    def save(self, inventory: Inventory) -> None:
+        self._store[inventory.id] = inventory
+
+    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+        return self._store.get(inventory_id)
+
+    def list_all(self) -> Sequence[Inventory]:
+        return list(self._store.values())
+
+
+class InMemoryVisualReferenceRepo(InventoryVisualReferenceRepository):
+    def __init__(self) -> None:
+        self._store: Dict[str, InventoryVisualReference] = {}
+
+    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+        return self._store.get(reference_id)
+
+    def create(self, reference: InventoryVisualReference) -> None:
+        self._store[reference.id] = reference
+
+    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
+        for reference in references:
+            self._store[reference.id] = reference
+
+    def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
+        refs = [r for r in self._store.values() if r.inventory_id == inventory_id]
+        refs.sort(key=lambda r: (r.created_at, r.id))
+        return refs
+
+    def update(self, reference: InventoryVisualReference) -> None:
+        self._store[reference.id] = reference
+
+    def delete(self, reference_id: str) -> None:
+        self._store.pop(reference_id, None)
+
+
+class StubArtifactStorage:
+    def __init__(self) -> None:
+        self.deleted: list[str] = []
+
+    def save_file(self, path: str, file_obj, content_type: str):  # type: ignore[no-untyped-def]
+        return path
+
+    def put_object(self, path: str, file_obj, content_type: str):  # type: ignore[no-untyped-def]
+        payload = file_obj.read()
+        return type(
+            "StoredArtifactStub",
+            (),
+            {
+                "storage_provider": "local",
+                "storage_bucket": None,
+                "storage_key": path,
+                "content_type": content_type,
+                "file_size_bytes": len(payload),
+                "etag": "etag-test",
+            },
+        )()
+
+    def delete_file(self, path: str) -> None:
+        self.deleted.append(path)
 
 
 class FixedClock(Clock):
@@ -407,6 +490,130 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
     assert vrc["provider_consumed_count"] == 0
     assert vrc["resolution_stage"] == "input_artifact_resolution"
     assert "visual reference ref-missing" in vrc["resolution_error"]
+
+
+def test_reference_updates_affect_only_future_jobs_and_preserve_historical_traceability() -> None:
+    now = datetime(2025, 4, 2, 12, 0, 0, tzinfo=timezone.utc)
+    clock = FixedClock(now)
+    inventory_repo = InMemoryInventoryRepo()
+    inventory_repo.save(
+        Inventory(
+            id="inv-1",
+            name="Inventory",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    reference_repo = InMemoryVisualReferenceRepo()
+    artifact_storage = StubArtifactStorage()
+    upload_use_case = UploadInventoryVisualReferencesUseCase(
+        inventory_repo=inventory_repo,
+        reference_repo=reference_repo,
+        artifact_storage=artifact_storage,
+        clock=clock,
+    )
+    delete_use_case = DeleteInventoryVisualReferenceUseCase(
+        inventory_repo=inventory_repo,
+        reference_repo=reference_repo,
+        artifact_storage=artifact_storage,
+    )
+    resolver = InventoryVisualReferenceResolver(inventory_repo, reference_repo)
+    context_builder = AisleAnalysisContextBuilder(resolver)
+
+    refs_a = upload_use_case.execute(
+        "inv-1",
+        [UploadedVisualReferenceFile("front-a.jpg", BytesIO(b"image-a"), "image/jpeg", size=7)],
+    )
+    ctx_a = context_builder.build(inventory_id="inv-1", primary_evidence=[], metadata=None)
+    assert [ref.reference_id for ref in ctx_a.visual_references] == [refs_a[0].id]
+    run_metadata_a = build_run_metadata(
+        ctx_a,
+        {
+            "visual_references_consumed": True,
+            "visual_reference_count": len(ctx_a.visual_references),
+        },
+    )
+
+    job_repo = InMemoryJobRepo()
+    aisle_repo = InMemoryAisleRepo()
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.PROCESSED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo.save(aisle)
+    job_a = Job(
+        id="job-a",
+        target_type="aisle",
+        target_id="aisle-1",
+        job_type="process_aisle",
+        status=JobStatus.RUNNING,
+        payload_json={"aisle_id": "aisle-1"},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job_a)
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=NoopRepo(),
+        position_repo=NoopRepo(),
+        product_record_repo=NoopRepo(),
+        evidence_repo=NoopRepo(),
+        clock=clock,
+        inventory_repo=inventory_repo,
+        inventory_visual_reference_repo=reference_repo,
+        raw_label_repo=NoopRepo(),
+    )
+    executor._mark_success("job-a", aisle, Path("/tmp/run-a/hybrid_report.json"), now, run_metadata=run_metadata_a)
+
+    delete_use_case.execute("inv-1", refs_a[0].id)
+    refs_b = upload_use_case.execute(
+        "inv-1",
+        [UploadedVisualReferenceFile("front-b.png", BytesIO(b"image-b"), "image/png", size=7)],
+    )
+    ctx_b = context_builder.build(inventory_id="inv-1", primary_evidence=[], metadata=None)
+    assert [ref.reference_id for ref in ctx_b.visual_references] == [refs_b[0].id]
+    run_metadata_b = build_run_metadata(
+        ctx_b,
+        {
+            "visual_references_consumed": True,
+            "visual_reference_count": len(ctx_b.visual_references),
+        },
+    )
+
+    job_b = Job(
+        id="job-b",
+        target_type="aisle",
+        target_id="aisle-1",
+        job_type="process_aisle",
+        status=JobStatus.RUNNING,
+        payload_json={"aisle_id": "aisle-1"},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job_b)
+    executor._mark_success("job-b", aisle, Path("/tmp/run-b/hybrid_report.json"), now, run_metadata=run_metadata_b)
+
+    stored_job_a = job_repo.get_by_id("job-a")
+    stored_job_b = job_repo.get_by_id("job-b")
+    assert stored_job_a is not None
+    assert stored_job_b is not None
+    assert stored_job_a.result_json is not None
+    assert stored_job_b.result_json is not None
+
+    vrc_a = stored_job_a.result_json[RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT]
+    vrc_b = stored_job_b.result_json[RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT]
+    assert vrc_a["reference_ids"] == [refs_a[0].id]
+    assert vrc_b["reference_ids"] == [refs_b[0].id]
+    assert refs_a[0].id != refs_b[0].id
+    assert vrc_a["provider_consumed_count"] == 1
+    assert vrc_b["provider_consumed_count"] == 1
+    assert [ref.id for ref in reference_repo.list_by_inventory("inv-1")] == [refs_b[0].id]
 
 
 def test_persist_failure_sets_error_message_with_persist_prefix() -> None:

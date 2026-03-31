@@ -25,3 +25,16 @@ def test_main_watches_backend_and_runs_standard_worker(monkeypatch) -> None:
     assert calls["paths"] == (str(run_worker_dev.backend_root()),)
     assert calls["target"] is run_worker_dev.run_worker_once
     assert calls["debounce"] == 500
+
+
+def test_run_worker_once_delegates_to_standard_worker_entrypoint(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    def _fake_main() -> None:
+        calls["count"] += 1
+
+    monkeypatch.setattr("src.jobs.run_worker.main", _fake_main)
+
+    run_worker_dev.run_worker_once()
+
+    assert calls["count"] == 1

@@ -114,7 +114,7 @@ Debe contener:
 * fecha de creación;  
 * acciones principales.
 
-### **B. Sección de Reference Images**
+### **B. Superficie de gestión de Reference Images**
 
 Debe permitir:
 
@@ -124,6 +124,9 @@ Debe permitir:
 * subir nuevas imágenes;  
 * reemplazar o eliminar existentes;  
 * entender si se usarán en futuros procesamientos.
+
+**Decisión final de producto implementada:** la gestión de `Reference images` queda accesible desde el **header** mediante un botón que abre un **right-side drawer**.  
+Esta decisión reemplaza la hipótesis inicial de un bloque inline arriba de la tabla y mantiene la pantalla enfocada en operación (`header + aisles`) sin perder acceso directo a referencias.
 
 ### **C. Tabla de Aisles**
 
@@ -164,15 +167,15 @@ Estas piezas deben salir completamente de esta pantalla.
   * Create aisle  
   * Manage reference images o Upload references
 
-### **Bloque 1: Reference Images**
+### **Bloque 1: Access to Reference Images**
 
-Ubicación recomendada: arriba de la tabla de aisles.
+**Decisión final:** el acceso principal a `Reference images` vive en el **header** (`Manage reference images`) y abre un **right-side drawer** de gestión.
 
-Contenido:
+Contenido esperado del drawer:
 
 * título;  
 * subtítulo explicativo corto;  
-* grilla horizontal o cards;  
+* listado administrable con metadata básica;  
 * empty state;  
 * acciones de gestión.
 
@@ -182,21 +185,20 @@ Tabla con foco operativo.
 
 ---
 
-## **5.2 Contenido de la sección Reference Images**
+## **5.2 Contenido final de la superficie de Reference Images**
 
-Cada card debería incluir:
+Cada item del drawer debe incluir:
 
-* miniatura;  
+* acceso a preview;  
 * nombre o label interno;  
 * fecha de carga;  
 * tamaño o tipo;  
-* indicador de estado;  
 * acciones:  
   * view  
   * replace  
   * delete
 
-La sección debe incluir:
+La superficie debe incluir:
 
 * botón de upload;  
 * mensaje explicando impacto funcional;  
@@ -458,7 +460,7 @@ Si no existen o son incompletos:
 
 ### **Definition of Done**
 
-* desde inventory detail se ven las reference images;  
+* desde inventory detail se accede claramente a las reference images;  
 * se pueden subir, borrar y actualizar;  
 * la UI se refresca correctamente;  
 * el usuario entiende que son referencias del inventario.
@@ -520,10 +522,11 @@ Terminar de definir el comportamiento de negocio y la experiencia del operador.
 3. definir validaciones de formato y tamaño;  
 4. definir comportamiento de reemplazo;  
 5. definir si se muestra metadata de uso en jobs o aisle detail;  
-6. revisar nomenclatura final:  
-   * `reference images`  
-   * `inventory references`  
-   * `analysis references`
+6. revisar nomenclatura final y separación de contratos:  
+  * término operatorio/UI: `reference images`  
+  * término interno backend/storage: `visual references`  
+  * metadata persistida de trazabilidad: `visual_reference_context`  
+  * resumen compacto expuesto a frontend: `reference_usage`
 
 ### **Mejora opcional**
 
@@ -538,6 +541,15 @@ Mostrar en cada corrida o estado del aisle algo como:
 * reglas de negocio cerradas;  
 * nomenclatura consistente;  
 * sistema auditable.
+
+### **Decisiones finales de cierre**
+
+* **UI / producto:** el surface final de gestión es `header action + right-side drawer`; no queda un bloque inline obligatorio en `Inventory Detail`.  
+* **Término operatorio:** en UI y documentación funcional se usa `Reference images`.  
+* **Término técnico interno:** backend, storage y repositorios mantienen `visual references` para evitar churn innecesario en contratos internos y nombres de código.  
+* **Metadata persistida canónica:** `visual_reference_context` en `job.result_json`.  
+* **Resumen operador/frontend canónico:** `reference_usage` dentro de `latest_job` para aisle list/status.  
+* **Modelo summary vs detail:** la tabla muestra resumen compacto; el log modal sigue siendo la capa de deep inspection.
 
 ### **Duración estimada**
 
