@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Dict, Optional, Sequence
 
 import pytest
@@ -22,6 +23,7 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
+from src.infrastructure.repositories.sql_source_asset_repository import _row_to_asset
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
 
 class _Clock(Clock):
@@ -223,6 +225,47 @@ def test_build_pipeline_input_downloads_s3_source_asset_to_temp_workspace(tmp_pa
     assert store.get_object_calls == 0
 
 
+def test_build_pipeline_input_accepts_sql_mapped_source_asset_with_provider_metadata(tmp_path: Path) -> None:
+    job_dir = tmp_path / "job-sql-mapped"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-sql.jpg": b"s3-photo"})
+    ex = _executor("inv-sql", [], store)
+    asset = _row_to_asset(
+        SimpleNamespace(
+            id="asset-sql",
+            aisle_id="a1",
+            type="photo",
+            original_filename="mapped.jpg",
+            storage_path="legacy/asset-sql.jpg",
+            storage_provider="s3",
+            storage_bucket="bucket-a",
+            storage_key="uploads/aisles/a1/raw/asset-sql.jpg",
+            content_type="image/jpeg",
+            file_size_bytes=8,
+            etag="etag-1",
+            mime_type="image/jpeg",
+            uploaded_at=datetime.now(timezone.utc),
+            metadata_json=None,
+        )
+    )
+
+    job_input, _ = ex._build_pipeline_input(  # type: ignore[attr-defined]
+        [asset],
+        v3_base=tmp_path / "v3_uploads",
+        job_dir=job_dir,
+        job_id="job-sql-mapped",
+        analysis_context=AnalysisContext(primary_evidence=[], visual_references=[], instructions=[]),
+        inventory_id="inv-sql",
+    )
+
+    assert job_input.input_type == "photos"
+    saved = job_dir / "input_photos" / "0000_asset-sql.jpg"
+    assert saved.exists()
+    assert saved.read_bytes() == b"s3-photo"
+    assert asset.storage_provider == "s3"
+    assert asset.storage_key == "uploads/aisles/a1/raw/asset-sql.jpg"
+
+
 def test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent(tmp_path: Path) -> None:
     legacy_base = tmp_path / "v3_uploads"
     (legacy_base / "legacy").mkdir(parents=True, exist_ok=True)
@@ -248,6 +291,36 @@ def test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent(t
         inventory_id="inv-2",
     )
     assert (job_dir / "input_photos" / "0000_asset-2.jpg").read_bytes() == b"legacy"
+
+
+def test_build_pipeline_input_resolves_local_provider_source_asset_without_bucket(tmp_path: Path) -> None:
+    job_dir = tmp_path / "job-local-asset"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-local.jpg": b"local-photo"})
+    ex = _executor("inv-local-asset", [], store)
+    asset = SourceAsset(
+        id="asset-local",
+        aisle_id="a1",
+        type=SourceAssetType.PHOTO,
+        original_filename="local.jpg",
+        storage_path="uploads/aisles/a1/raw/asset-local.jpg",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+        storage_provider="local",
+        storage_bucket=None,
+        storage_key="uploads/aisles/a1/raw/asset-local.jpg",
+    )
+
+    ex._build_pipeline_input(  # type: ignore[attr-defined]
+        [asset],
+        v3_base=tmp_path / "v3_uploads",
+        job_dir=job_dir,
+        job_id="job-local-asset",
+        analysis_context=AnalysisContext(primary_evidence=[], visual_references=[], instructions=[]),
+        inventory_id="inv-local-asset",
+    )
+
+    assert (job_dir / "input_photos" / "0000_asset-local.jpg").read_bytes() == b"local-photo"
 
 
 def test_build_pipeline_input_resolves_s3_visual_references_to_temp_files(tmp_path: Path) -> None:
@@ -308,6 +381,67 @@ def test_build_pipeline_input_resolves_s3_visual_references_to_temp_files(tmp_pa
     assert resolved_path.exists()
     assert resolved_path.read_bytes() == b"refdata"
     assert any(call[1] == "inventories/inv-3/visual_references/ref-1.jpg" for call in store.download_calls)
+
+
+def test_build_pipeline_input_resolves_local_provider_visual_reference_without_bucket(tmp_path: Path) -> None:
+    job_dir = tmp_path / "job-local-ref"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    ref = InventoryVisualReference(
+        id="ref-local",
+        inventory_id="inv-local-ref",
+        filename="ref-local.jpg",
+        storage_path="inventories/inv-local-ref/visual_references/ref-local.jpg",
+        mime_type="image/jpeg",
+        file_size=8,
+        created_at=datetime.now(timezone.utc),
+        storage_provider="local",
+        storage_bucket=None,
+        storage_key="inventories/inv-local-ref/visual_references/ref-local.jpg",
+    )
+    store = _FakeArtifactStore(
+        {
+            "uploads/aisles/a1/raw/asset-local-ref.jpg": b"asset",
+            "inventories/inv-local-ref/visual_references/ref-local.jpg": b"ref-local",
+        }
+    )
+    ex = _executor("inv-local-ref", [ref], store)
+    asset = SourceAsset(
+        id="asset-local-ref",
+        aisle_id="a1",
+        type=SourceAssetType.PHOTO,
+        original_filename="asset.jpg",
+        storage_path="uploads/aisles/a1/raw/asset-local-ref.jpg",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+        storage_provider="local",
+        storage_bucket=None,
+        storage_key="uploads/aisles/a1/raw/asset-local-ref.jpg",
+    )
+    ctx = AnalysisContext(
+        primary_evidence=[],
+        visual_references=[
+            VisualReferenceContext(
+                reference_id="ref-local",
+                source_path="inventories/inv-local-ref/visual_references/ref-local.jpg",
+                mime_type="image/jpeg",
+            )
+        ],
+        instructions=[],
+    )
+
+    job_input, _ = ex._build_pipeline_input(  # type: ignore[attr-defined]
+        [asset],
+        v3_base=tmp_path / "v3_uploads",
+        job_dir=job_dir,
+        job_id="job-local-ref",
+        analysis_context=ctx,
+        inventory_id="inv-local-ref",
+    )
+
+    refs = job_input.metadata["analysis_context"]["visual_references"]  # type: ignore[index]
+    resolved_path = Path(refs[0]["resolved_path"])
+    assert resolved_path.exists()
+    assert resolved_path.read_bytes() == b"ref-local"
 
 
 def test_build_pipeline_input_missing_s3_object_fails_with_clear_error(tmp_path: Path) -> None:
