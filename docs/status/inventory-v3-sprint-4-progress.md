@@ -81,6 +81,10 @@
   - list no lo debe poblar por defecto
   - detail debe preferir `technical_snapshot`
   - bloques canónicos y aliases públicos no deben reconstruirse desde el blob salvo fallback legacy explícito
+- Se endureció la regla de gobernanza:
+  - todo reader nuevo debe justificar explícitamente por qué consulta el snapshot técnico
+  - si existe reemplazo canónico claro, el snapshot no debe consultarse
+  - las únicas excepciones aceptadas sin nueva persistencia canónica son audit/debug/replay, compatibilidad transitoria explícita y filas aggregated
 
 ### Readers / analytics migrados
 
@@ -89,16 +93,26 @@
   - `invalid_traceability`
   - `quantity_zero`
   ahora prefiere `PositionCanonicalView` + `primary_product` cuando existe.
+- `MemoryAnalyticsRepository` ahora precalcula y reutiliza `primary_by_position` por conjunto de posiciones relevante, evitando resolver repetidamente `list_by_position(...)` + `select_display_primary_product(...)` dentro de loops.
 - Para filas **agregadas**, se mantiene fallback técnico intencional porque todavía no hay una persistencia canónica inequívoca para esa semántica consolidada.
 - **SQL analytics** redujo dependencia del blob para `quantity_zero`:
   - prioriza `product_records.corrected_quantity` / `detected_quantity` en filas no agregadas
   - conserva fallback al snapshot para agregadas/legacy
+  - alcance real de esta iteración: bucketing de analytics (`quantity_zero`) en `sql_analytics_repository.py`; no implica migración completa del repositorio SQL fuera del snapshot
 
 ### `corrected_summary_json`
 
 - Decisión adoptada: **Opción B**.
 - Se documenta como deuda técnica persistida sin readers operativos relevantes detectados.
 - No se elimina todavía del schema/persistencia porque faltaría verificar consumidores externos y estrategia de cleanup físico.
+
+| Aspecto | Estado |
+|--------|--------|
+| **Writers** | `backend/src/infrastructure/pipeline/v3_report_mapper.py` lo inicializa en `None`; `backend/src/infrastructure/repositories/sql_position_repository.py` persiste el valor presente en `Position.corrected_summary_json`. |
+| **Readers** | `backend/src/infrastructure/repositories/sql_position_repository.py` lo hidrata al leer filas; no se detectaron readers operativos relevantes adicionales. |
+| **Persistencia** | Columna `positions.corrected_summary_json`, parseo/hidratación en entidad `Position`. |
+| **Estado actual** | Blob legacy persistido, visible en repositorio/entidad, sin rol canónico ni consumo funcional importante identificado. |
+| **Condición de remoción** | Verificar consumidores externos reales fuera del repositorio SQL y asegurar que la trazabilidad de correcciones ya quede cubierta por `ReviewAction` + campos canónicos persistidos. |
 
 ### Aggregated rows
 

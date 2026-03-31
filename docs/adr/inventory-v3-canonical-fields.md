@@ -115,10 +115,15 @@ Permanecen en **`detected_summary_json`** (no eliminar en Sprint 1):
   - CSV técnico
   - trazabilidad/enriquecimiento técnico cuando aún no existe una persistencia canónica equivalente
   - fallback legacy o transicional explícitamente marcado
+  - filas aggregated donde todavía no exista una semántica canónica inequívoca persistida
 - **Uso no permitido como nueva dependencia**:
   - introducir campos operativos nuevos leyendo directo del blob
   - reabrir dependencias frontend sobre el JSON
   - reconstruir el CSV operativo desde el snapshot
+- **Regla para readers nuevos**:
+  - todo reader nuevo que consulte `detected_summary_json` debe justificar explícitamente por qué necesita snapshot técnico
+  - si existe reemplazo canónico claro (`ProductRecord`, `PositionCanonicalView`, bloques públicos ya derivados), el snapshot **no debe** consultarse
+  - si el reader queda obligado a usar snapshot por compatibilidad o por aggregated rows, esa excepción debe quedar documentada en código o en doc de estado
 
 ## 13. Sprint 4 — Aggregated rows y persistencia
 
@@ -131,6 +136,11 @@ Permanecen en **`detected_summary_json`** (no eliminar en Sprint 1):
 
 - La auditoría Sprint 4 encontró **persistencia** de `corrected_summary_json` en `positions`, pero **sin readers funcionales relevantes** en el flujo operativo actual.
 - Decisión actual: **deuda técnica a deprecar**, no remover destructivamente todavía.
+- Matriz actual:
+  - **Writers:** `v3_report_mapper.py` lo inicializa en `None`; `sql_position_repository.py` lo persiste cuando la entidad `Position` trae valor
+  - **Readers:** `sql_position_repository.py` lo hidrata al leer `positions`; no se detectaron readers operativos relevantes adicionales
+  - **Persistencia:** columna `positions.corrected_summary_json` en schema SQL + campo en entidad `Position`
+  - **Estado actual:** blob legacy persistido pero sin rol canónico activo ni consumo funcional relevante identificado
 - Condición para remoción futura:
   - confirmar en producción/consumidores externos que no existe lectura fuera del repositorio SQL
   - mantener trazabilidad de correcciones en `ReviewAction` y en los campos canónicos persistidos antes de cualquier cleanup físico
