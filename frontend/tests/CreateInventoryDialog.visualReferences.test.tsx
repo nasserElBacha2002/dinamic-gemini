@@ -37,7 +37,7 @@ function renderDialog(props?: Partial<ComponentProps<typeof CreateInventoryDialo
   return { onClose, onSuccess, onError, createInventoryFn };
 }
 
-describe('CreateInventoryDialog (visual references step)', () => {
+describe('CreateInventoryDialog (reference images step)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Make object URLs deterministic and assertable for lifecycle tests.
@@ -52,7 +52,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    expect(screen.getByText(/visual reference images/i)).toBeInTheDocument();
+    expect(screen.getByText(/reference images/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /create without references/i }));
 
@@ -66,7 +66,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select visual reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
     const bad = new File(['x'], 'doc.pdf', { type: 'application/pdf' });
     fireEvent.change(input, { target: { files: [bad] } });
     expect(screen.getByText(/only jpg/i)).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select visual reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
@@ -113,7 +113,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select visual reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
@@ -122,10 +122,10 @@ describe('CreateInventoryDialog (visual references step)', () => {
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(screen.getByText(/inventory created, but visual reference upload failed/i)).toBeInTheDocument(),
+      expect(screen.getByText(/inventory created, but reference image upload failed/i)).toBeInTheDocument(),
     );
     // Partial failure should not bubble as a "create failed" page-level error.
-    expect(onError).not.toHaveBeenCalledWith(expect.stringMatching(/visual reference upload failed/i));
+    expect(onError).not.toHaveBeenCalledWith(expect.stringMatching(/reference image upload failed/i));
   });
 
   it('after upload failure, retry does not create a second inventory', async () => {
@@ -136,7 +136,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select visual reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
@@ -157,7 +157,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select visual reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     const f2 = new File(['b'], 'b.png', { type: 'image/png' });
     fireEvent.change(input, { target: { files: [f1, f2] } });
@@ -178,7 +178,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const dropzone = screen.getByRole('region', { name: /visual reference dropzone/i });
+    const dropzone = screen.getByRole('region', { name: /reference images dropzone/i });
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.drop(dropzone, { dataTransfer: { files: [f1] } });
     expect(screen.getByText('a.jpg')).toBeInTheDocument();
@@ -194,7 +194,7 @@ describe('CreateInventoryDialog (visual references step)', () => {
     expect(screen.getByRole('button', { name: /^create inventory$/i })).toBeInTheDocument();
 
     // select a file → Create inventory and upload references
-    const input = screen.getByLabelText(/select visual reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
     expect(

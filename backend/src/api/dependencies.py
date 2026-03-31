@@ -73,6 +73,10 @@ from src.application.use_cases.upload_inventory_visual_references import (
     ListInventoryVisualReferencesUseCase,
     UploadInventoryVisualReferencesUseCase,
 )
+from src.application.use_cases.manage_inventory_visual_references import (
+    DeleteInventoryVisualReferenceUseCase,
+    ReplaceInventoryVisualReferenceUseCase,
+)
 from src.application.use_cases.cancel_aisle_job import CancelAisleJobUseCase
 from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
@@ -341,6 +345,30 @@ def get_list_inventory_visual_references_use_case(
     return ListInventoryVisualReferencesUseCase(
         inventory_repo=inventory_repo,
         reference_repo=reference_repo,
+    )
+
+
+def get_delete_inventory_visual_reference_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    reference_repo: InventoryVisualReferenceRepository = Depends(get_inventory_visual_reference_repo),
+    artifact_storage=Depends(get_artifact_storage),
+) -> DeleteInventoryVisualReferenceUseCase:
+    return DeleteInventoryVisualReferenceUseCase(
+        inventory_repo=inventory_repo,
+        reference_repo=reference_repo,
+        artifact_storage=artifact_storage,
+    )
+
+
+def get_replace_inventory_visual_reference_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    reference_repo: InventoryVisualReferenceRepository = Depends(get_inventory_visual_reference_repo),
+    artifact_storage=Depends(get_artifact_storage),
+) -> ReplaceInventoryVisualReferenceUseCase:
+    return ReplaceInventoryVisualReferenceUseCase(
+        inventory_repo=inventory_repo,
+        reference_repo=reference_repo,
+        artifact_storage=artifact_storage,
     )
 
 

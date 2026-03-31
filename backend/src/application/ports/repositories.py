@@ -242,6 +242,11 @@ class InventoryVisualReferenceRepository(ABC):
     """
 
     @abstractmethod
+    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+        """Return one reference by id, or None when it does not exist."""
+        ...
+
+    @abstractmethod
     def create(self, reference: InventoryVisualReference) -> None:
         """Insert a new reference. Must fail if the id already exists."""
         ...
@@ -257,4 +262,14 @@ class InventoryVisualReferenceRepository(ABC):
     @abstractmethod
     def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
         """Return all visual references for the given inventory ordered by created_at ASC, id ASC."""
+        ...
+
+    @abstractmethod
+    def update(self, reference: InventoryVisualReference) -> None:
+        """Update an existing reference in place. Must fail when the id does not exist."""
+        ...
+
+    @abstractmethod
+    def delete(self, reference_id: str) -> None:
+        """Delete one reference by id. Should be idempotent for storage cleanup callers."""
         ...

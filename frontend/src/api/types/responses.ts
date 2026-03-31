@@ -61,6 +61,15 @@ export interface InventoryVisualReferenceListResponse {
   items: InventoryVisualReference[];
 }
 
+export interface ReferenceUsageSummary {
+  resolved: boolean;
+  resolved_count: number;
+  provider_consumed: boolean;
+  provider_consumed_count: number;
+  reference_ids: string[];
+  resolution_error?: string | null;
+}
+
 /** GET /api/v3/inventories/{inventory_id}/metrics response — Épica 9 (§9.6). */
 export interface InventoryMetrics {
   total_positions: number;
@@ -81,6 +90,7 @@ export interface AisleJobSummary {
   created_at: string;
   updated_at: string;
   error_message?: string | null;
+  reference_usage?: ReferenceUsageSummary | null;
 }
 
 export interface Aisle {
@@ -128,6 +138,7 @@ export interface JobSummary {
   created_at: string;
   updated_at: string;
   error_message?: string | null;
+  reference_usage?: ReferenceUsageSummary | null;
 }
 
 /** Single execution log event (v3.1.1). */

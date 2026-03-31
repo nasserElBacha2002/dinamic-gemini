@@ -4,7 +4,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { InventoriesListQuery } from '../api/client';
-import { getInventories, getInventory } from '../api/client';
+import { getInventories, getInventory, getInventoryVisualReferences } from '../api/client';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import { queryKeys } from '../api/queryKeys';
 
@@ -28,6 +28,17 @@ export function useInventoryDetail(inventoryId: string | undefined, options?: { 
   return useQuery({
     queryKey: queryKeys.inventories.detail(inventoryId ?? ''),
     queryFn: () => getInventory(inventoryId!),
+    enabled: Boolean(inventoryId) && (options?.enabled !== false),
+  });
+}
+
+export function useInventoryVisualReferences(
+  inventoryId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.inventories.visualReferences(inventoryId ?? ''),
+    queryFn: () => getInventoryVisualReferences(inventoryId!),
     enabled: Boolean(inventoryId) && (options?.enabled !== false),
   });
 }

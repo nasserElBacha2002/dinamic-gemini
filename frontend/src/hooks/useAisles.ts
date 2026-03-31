@@ -31,7 +31,7 @@ export function useExecutionLog(
   inventoryId: string | undefined,
   aisleId: string | undefined,
   jobId: string | undefined,
-  options?: { enabled?: boolean; refetchInterval?: number | false }
+  options?: { enabled?: boolean }
 ) {
   return useQuery({
     queryKey: queryKeys.inventories.executionLog(
@@ -42,6 +42,6 @@ export function useExecutionLog(
     queryFn: () => getExecutionLog(inventoryId!, aisleId!, jobId!),
     enabled:
       Boolean(inventoryId && aisleId && jobId) && (options?.enabled !== false),
-    refetchInterval: options?.refetchInterval,
+    refetchOnWindowFocus: false,
   });
 }

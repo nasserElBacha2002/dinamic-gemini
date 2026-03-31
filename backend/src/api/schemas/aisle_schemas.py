@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
+from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 
 
 class CreateAisleRequest(BaseModel):
@@ -18,6 +19,7 @@ class AisleJobSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     error_message: Optional[str] = None
+    reference_usage: Optional[ReferenceUsageSummary] = None
 
 
 class AisleResponse(BaseModel):

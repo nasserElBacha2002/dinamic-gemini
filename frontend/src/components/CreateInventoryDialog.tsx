@@ -223,8 +223,8 @@ export default function CreateInventoryDialog({
         setUploadState('failed');
         setUploadError(
           typeof msg === 'string'
-            ? `Inventory created, but visual reference upload failed: ${msg}`
-            : 'Inventory created, but visual reference upload failed.',
+            ? `Inventory created, but reference image upload failed: ${msg}`
+            : 'Inventory created, but reference image upload failed.',
         );
       }
     } catch (e) {
@@ -252,8 +252,8 @@ export default function CreateInventoryDialog({
       setUploadState('failed');
       setUploadError(
         typeof msg === 'string'
-          ? `Inventory created, but visual reference upload failed: ${msg}`
-          : 'Inventory created, but visual reference upload failed.',
+          ? `Inventory created, but reference image upload failed: ${msg}`
+          : 'Inventory created, but reference image upload failed.',
       );
     } finally {
       setSubmitting(false);
@@ -346,7 +346,7 @@ export default function CreateInventoryDialog({
       ) : (
         <Box>
           <Typography variant="h6" sx={{ mb: 1 }}>
-            Visual reference images (optional)
+            Reference images (optional)
           </Typography>
           <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
             These images help the system better understand what valid labels, pallets, or expected visual standards look like for this inventory.
@@ -390,7 +390,7 @@ export default function CreateInventoryDialog({
               handleDropFiles(e.dataTransfer?.files ?? null);
             }}
             role="region"
-            aria-label="Visual reference dropzone"
+            aria-label="Reference images dropzone"
             aria-describedby={dropzoneHelpId}
             sx={{
               mb: 2,
@@ -433,7 +433,7 @@ export default function CreateInventoryDialog({
                   handleAddFiles(e.target.files);
                   e.currentTarget.value = '';
                 }}
-                aria-label="Select visual reference images"
+                aria-label="Select reference images"
               />
             </Button>
           </Box>

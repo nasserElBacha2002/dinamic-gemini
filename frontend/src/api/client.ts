@@ -16,6 +16,7 @@ import type {
   UploadAisleAssetsResponse,
   UploadInventoryVisualReferencesResponse,
   InventoryVisualReferenceListResponse,
+  InventoryVisualReference,
   PositionListResponse,
   PositionDetailResponse,
   RunMergeResponse,
@@ -213,6 +214,65 @@ export async function getInventoryVisualReferences(
     `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references`
   );
   return handleResponse<InventoryVisualReferenceListResponse>(response);
+}
+
+export async function deleteInventoryVisualReference(
+  inventoryId: string,
+  referenceId: string
+): Promise<void> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
+    { method: 'DELETE' }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    let data: ApiErrorDetail;
+    try {
+      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+    } catch {
+      data = {};
+    }
+    throwApiErrorIfNotOk(response, text, data);
+  }
+}
+
+export async function replaceInventoryVisualReference(
+  inventoryId: string,
+  referenceId: string,
+  file: File
+): Promise<InventoryVisualReference> {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
+    { method: 'PUT', body: form }
+  );
+  return handleResponse<InventoryVisualReference>(response);
+}
+
+export async function fetchInventoryVisualReferenceFile(
+  inventoryId: string,
+  referenceId: string
+): Promise<{ imageSrc: string; revoke: () => void }> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}/file`
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    let data: ApiErrorDetail;
+    try {
+      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+    } catch {
+      data = {};
+    }
+    throwApiErrorIfNotOk(response, text, data);
+  }
+  const blob = await response.blob();
+  const imageSrc = URL.createObjectURL(blob);
+  return {
+    imageSrc,
+    revoke: () => URL.revokeObjectURL(imageSrc),
+  };
 }
 
 export interface AislesListQuery {

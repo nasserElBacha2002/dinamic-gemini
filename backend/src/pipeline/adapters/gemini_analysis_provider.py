@@ -35,6 +35,51 @@ from src.pipeline.ports.analysis_provider import (
 logger = logging.getLogger(__name__)
 
 
+def _attachment_name_from_path(path: Path) -> str:
+    name = path.name.strip()
+    return name or str(path)
+
+
+def _build_primary_evidence_attachments(
+    frame_paths: List[Path],
+    frame_refs: List[str],
+) -> List[Dict[str, Any]]:
+    attachments: List[Dict[str, Any]] = []
+    for index, path in enumerate(frame_paths):
+        ref = frame_refs[index] if index < len(frame_refs) else ""
+        attachments.append(
+            {
+                "role": "primary_evidence",
+                "index": index,
+                "frame_ref": ref or None,
+                "filename": _attachment_name_from_path(path),
+            }
+        )
+    return attachments
+
+
+def _build_visual_reference_attachments(
+    analysis_context: Optional[AnalysisContext],
+) -> List[Dict[str, Any]]:
+    if not analysis_context or not analysis_context.visual_references:
+        return []
+    attachments: List[Dict[str, Any]] = []
+    for index, ref in enumerate(analysis_context.visual_references):
+        source_path = (ref.source_path or "").strip()
+        resolved_path = (ref.resolved_path or "").strip() or None
+        attachments.append(
+            {
+                "role": "visual_reference",
+                "index": index,
+                "reference_id": ref.reference_id,
+                "filename": Path(source_path).name or source_path or ref.reference_id,
+                "mime_type": ref.mime_type,
+                "resolved": bool(resolved_path),
+            }
+        )
+    return attachments
+
+
 def _load_pil_from_path(path: Path) -> Any:  # PIL.Image.Image | None
     """Load image from path as PIL RGB; return None if missing or unreadable."""
     try:
@@ -149,6 +194,25 @@ class GeminiAnalysisProvider:
         )
         exec_log = getattr(context, "execution_log", None)
         if exec_log:
+            primary_attachments = _build_primary_evidence_attachments(frame_paths, frame_refs)
+            visual_reference_attachments = _build_visual_reference_attachments(analysis_context)
+            exec_log.info(
+                "AnalysisStage",
+                "Gemini request prepared",
+                payload={
+                    "event_type": "gemini_request",
+                    "provider": "gemini",
+                    "prompt_text": prompt_text,
+                    "context_instruction": context_instruction,
+                    "attachment_summary": {
+                        "primary_evidence_count": len(primary_attachments),
+                        "visual_reference_count": len(visual_reference_attachments),
+                        "total_count": len(primary_attachments) + len(visual_reference_attachments),
+                    },
+                    "primary_evidence_attachments": primary_attachments,
+                    "visual_reference_attachments": visual_reference_attachments,
+                },
+            )
             exec_log.info("AnalysisStage", "Gemini analysis request started", payload={"frames_count": len(frames_nd)})
         try:
             response = provider.analyze_global(request)

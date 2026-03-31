@@ -53,6 +53,7 @@ from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, PipelineRunResult
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
+    build_visual_reference_context,
     default_empty_block,
 )
 from src.infrastructure.pipeline.input_artifact_resolver import WorkerInputArtifactResolver
@@ -66,6 +67,16 @@ logger = logging.getLogger(__name__)
 
 # Pipeline/output directory segment under {base}/{job_id}/; must match DEFAULT_V3_WORKER_RUN_SEGMENT.
 RUN_ID = DEFAULT_V3_WORKER_RUN_SEGMENT
+
+
+def _visual_reference_failure_metadata(
+    analysis_context: Optional[AnalysisContext],
+    error_message: str,
+) -> Dict[str, Any]:
+    block = build_visual_reference_context(analysis_context, provider_metadata=None)
+    block["resolution_error"] = error_message[:2048] if len(error_message) > 2048 else error_message
+    block["resolution_stage"] = "input_artifact_resolution"
+    return block
 
 
 def _resolve_visual_reference_paths(
@@ -263,6 +274,16 @@ class V3JobExecutor:
             )
         except Exception as e:
             logger.exception("v3 job %s: build pipeline input failed: %s", job_id, e)
+            if 'analysis_context' in locals() and analysis_context.visual_references:
+                job = self._job_repo.get_by_id(job_id)
+                if job is not None:
+                    result_json = dict(job.result_json or {})
+                    result_json[RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT] = _visual_reference_failure_metadata(
+                        analysis_context,
+                        str(e),
+                    )
+                    job.result_json = result_json
+                    self._job_repo.save(job)
             self._fail_job_and_aisle(job_id, aisle, str(e))
             return True
 

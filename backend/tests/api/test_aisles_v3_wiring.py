@@ -217,6 +217,121 @@ def test_get_aisle_status_returns_aisle_and_latest_job() -> None:
     assert data2["aisle"]["status"] == "queued"
 
 
+def test_status_and_list_expose_reference_usage_summary_from_job_result_json() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv_repo.save(Inventory("inv-reference-usage", "Reference Usage", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-reference-usage", "inv-reference-usage", "RU-01", AisleStatus.PROCESSED, now, now))
+    job_repo.save(
+        Job(
+            id="job-reference-usage",
+            target_type="aisle",
+            target_id="aisle-reference-usage",
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={"aisle_id": "aisle-reference-usage"},
+            result_json={
+                "visual_reference_context": {
+                    "resolved": True,
+                    "resolved_count": 2,
+                    "provider_consumed": True,
+                    "provider_consumed_count": 2,
+                    "reference_ids": ["ref-1", "ref-2"],
+                    "resolution_error": None,
+                }
+            },
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        status_resp = c.get("/api/v3/inventories/inv-reference-usage/aisles/aisle-reference-usage/status")
+        assert status_resp.status_code == 200
+        status_data = status_resp.json()
+        assert status_data["latest_job"]["reference_usage"] == {
+            "resolved": True,
+            "resolved_count": 2,
+            "provider_consumed": True,
+            "provider_consumed_count": 2,
+            "reference_ids": ["ref-1", "ref-2"],
+            "resolution_error": None,
+        }
+
+        list_resp = c.get("/api/v3/inventories/inv-reference-usage/aisles")
+        assert list_resp.status_code == 200
+        list_item = list_resp.json()["items"][0]
+        assert list_item["latest_job"]["reference_usage"] == status_data["latest_job"]["reference_usage"]
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+
+
+def test_reference_usage_summary_tolerates_malformed_persisted_counts() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv_repo.save(Inventory("inv-malformed-usage", "Malformed Usage", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-malformed-usage", "inv-malformed-usage", "MU-01", AisleStatus.FAILED, now, now))
+    job_repo.save(
+        Job(
+            id="job-malformed-usage",
+            target_type="aisle",
+            target_id="aisle-malformed-usage",
+            job_type="process_aisle",
+            status=JobStatus.FAILED,
+            payload_json={"aisle_id": "aisle-malformed-usage"},
+            result_json={
+                "visual_reference_context": {
+                    "resolved": True,
+                    "resolved_count": "bad-value",
+                    "provider_consumed": True,
+                    "provider_consumed_count": None,
+                    "reference_ids": [" ref-1 ", "", None, "ref-1", 3],
+                    "resolution_error": "resolution warning",
+                }
+            },
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        response = c.get("/api/v3/inventories/inv-malformed-usage/aisles/aisle-malformed-usage/status")
+        assert response.status_code == 200
+        usage = response.json()["latest_job"]["reference_usage"]
+        assert usage == {
+            "resolved": True,
+            "resolved_count": 0,
+            "provider_consumed": True,
+            "provider_consumed_count": 0,
+            "reference_ids": ["ref-1"],
+            "resolution_error": "resolution warning",
+        }
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+
+
 def test_list_aisles_latest_job_includes_created_at() -> None:
     """v3.2.5 Phase 2 Block 2: GET .../aisles returns latest_job.created_at when present."""
     create_resp = client.post("/api/v3/inventories", json={"name": "For List Job CreatedAt"})

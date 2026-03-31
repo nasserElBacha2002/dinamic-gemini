@@ -20,15 +20,18 @@ logger = logging.getLogger(__name__)
 EXECUTION_LOG_FILENAME = "execution_log.jsonl"
 LAST_STAGE_ERROR_FILENAME = "last_stage_error.txt"
 
-# Max length for string values in payloads to avoid huge log lines
+# Max length for generic string values in payloads to avoid huge log lines
 _PAYLOAD_STRING_MAX = 512
+_UNTRUNCATED_PAYLOAD_KEYS = frozenset({"prompt_text"})
 
 
-def _sanitize_payload_value(value: Any) -> Any:
+def _sanitize_payload_value(value: Any, *, key: Optional[str] = None) -> Any:
     """Convert a value to a JSON-serializable form. Recurses into dict/list; stringifies others."""
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
+        if key in _UNTRUNCATED_PAYLOAD_KEYS:
+            return value
         return value[:_PAYLOAD_STRING_MAX] if len(value) > _PAYLOAD_STRING_MAX else value
     if isinstance(value, (datetime, Path)):
         s = str(value)
@@ -37,9 +40,14 @@ def _sanitize_payload_value(value: Any) -> Any:
         s = f"{type(value).__name__}: {value}"
         return s[:_PAYLOAD_STRING_MAX] if len(s) > _PAYLOAD_STRING_MAX else s
     if isinstance(value, dict):
-        return {str(k)[:_PAYLOAD_STRING_MAX]: _sanitize_payload_value(v) for k, v in value.items()}
+        out: Dict[str, Any] = {}
+        for k, v in value.items():
+            key_name = str(k)
+            safe_key = key_name[:_PAYLOAD_STRING_MAX]
+            out[safe_key] = _sanitize_payload_value(v, key=key_name)
+        return out
     if isinstance(value, (list, tuple)):
-        return [_sanitize_payload_value(v) for v in value]
+        return [_sanitize_payload_value(v, key=key) for v in value]
     try:
         s = str(value)
         return s[:_PAYLOAD_STRING_MAX] if len(s) > _PAYLOAD_STRING_MAX else s

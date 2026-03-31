@@ -33,7 +33,7 @@ class WorkerInputArtifactResolver:
         self,
         *,
         provider: str,
-        bucket: str,
+        bucket: Optional[str],
         key: str,
         target_path: Path,
         label: str,
@@ -43,7 +43,7 @@ class WorkerInputArtifactResolver:
                 f"{label}: storage_provider={provider} storage_bucket={bucket} storage_key={key} but artifact store is unavailable"
             )
         configured_bucket = (getattr(self._artifact_store, "bucket", None) or "").strip()
-        if configured_bucket and bucket and configured_bucket != bucket:
+        if provider == "s3" and configured_bucket and bucket and configured_bucket != bucket:
             raise RuntimeError(
                 f"{label}: bucket mismatch record_bucket={bucket} configured_bucket={configured_bucket}"
             )
@@ -73,6 +73,20 @@ class WorkerInputArtifactResolver:
         )
         return target_path
 
+    def _copy_local_provider_path(self, rel_path: str, target_path: Path, *, label: str) -> Path:
+        src = self._safe_legacy_path(rel_path)
+        if not src.exists():
+            raise RuntimeError(f"{label}: local provider file not found at {src}")
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(src.read_bytes())
+        logger.info(
+            "%s source selected provider=local storage_path=%s target=%s",
+            label,
+            rel_path,
+            str(target_path),
+        )
+        return target_path
+
     def resolve_source_asset(self, asset: SourceAsset, target_path: Path) -> Path:
         provider = (asset.storage_provider or "").strip().lower()
         bucket = (asset.storage_bucket or "").strip()
@@ -80,17 +94,33 @@ class WorkerInputArtifactResolver:
         if provider or key or bucket:
             if not provider:
                 raise RuntimeError(f"source asset {asset.id}: storage_key is set but storage_provider is missing")
-            if not bucket:
-                raise RuntimeError(f"source asset {asset.id}: storage_provider={provider} but storage_bucket is missing")
-            if not key:
-                raise RuntimeError(f"source asset {asset.id}: storage_provider={provider} but storage_key is missing")
-            return self._download_provider_key(
-                provider=provider,
-                bucket=bucket,
-                key=key,
-                target_path=target_path,
-                label=f"source asset {asset.id}",
-            )
+            if provider == "s3":
+                if not bucket:
+                    raise RuntimeError(f"source asset {asset.id}: storage_provider={provider} but storage_bucket is missing")
+                if not key:
+                    raise RuntimeError(f"source asset {asset.id}: storage_provider={provider} but storage_key is missing")
+                return self._download_provider_key(
+                    provider=provider,
+                    bucket=bucket,
+                    key=key,
+                    target_path=target_path,
+                    label=f"source asset {asset.id}",
+                )
+            if provider == "local":
+                if key:
+                    return self._download_provider_key(
+                        provider=provider,
+                        bucket=None,
+                        key=key,
+                        target_path=target_path,
+                        label=f"source asset {asset.id}",
+                    )
+                return self._copy_local_provider_path(
+                    asset.storage_path,
+                    target_path,
+                    label=f"source asset {asset.id}",
+                )
+            raise RuntimeError(f"source asset {asset.id}: unsupported storage_provider={provider}")
         if not self._legacy_local_read_enabled:
             raise RuntimeError(
                 f"source asset {asset.id}: provider metadata absent and legacy local fallback is disabled"
@@ -124,21 +154,37 @@ class WorkerInputArtifactResolver:
                 raise RuntimeError(
                     f"visual reference {reference_id}: storage_key is set but storage_provider is missing"
                 )
-            if not bucket:
-                raise RuntimeError(
-                    f"visual reference {reference_id}: storage_provider={provider} but storage_bucket is missing"
+            if provider == "s3":
+                if not bucket:
+                    raise RuntimeError(
+                        f"visual reference {reference_id}: storage_provider={provider} but storage_bucket is missing"
+                    )
+                if not key:
+                    raise RuntimeError(
+                        f"visual reference {reference_id}: storage_provider={provider} but storage_key is missing"
+                    )
+                return self._download_provider_key(
+                    provider=provider,
+                    bucket=bucket,
+                    key=key,
+                    target_path=target_path,
+                    label=f"visual reference {reference_id}",
                 )
-            if not key:
-                raise RuntimeError(
-                    f"visual reference {reference_id}: storage_provider={provider} but storage_key is missing"
+            if provider == "local":
+                if key:
+                    return self._download_provider_key(
+                        provider=provider,
+                        bucket=None,
+                        key=key,
+                        target_path=target_path,
+                        label=f"visual reference {reference_id}",
+                    )
+                return self._copy_local_provider_path(
+                    source_path,
+                    target_path,
+                    label=f"visual reference {reference_id}",
                 )
-            return self._download_provider_key(
-                provider=provider,
-                bucket=bucket,
-                key=key,
-                target_path=target_path,
-                label=f"visual reference {reference_id}",
-            )
+            raise RuntimeError(f"visual reference {reference_id}: unsupported storage_provider={provider}")
         if not self._legacy_local_read_enabled:
             raise RuntimeError(
                 f"visual reference {reference_id}: provider metadata absent and legacy local fallback is disabled"

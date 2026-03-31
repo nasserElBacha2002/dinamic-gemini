@@ -52,6 +52,48 @@ From this directory:
 cd backend && pytest
 ```
 
+## Local/dev worker verification
+
+For the reference-images flow, local/dev closure depends on the worker using the current backend code and local artifact paths without fake S3 requirements.
+
+### Expected local/dev behavior
+
+- `ARTIFACT_STORAGE_PROVIDER=local` works without an S3 bucket.
+- `python -m src.jobs.run_worker_dev` watches the backend directory and restarts the standard worker entrypoint on code changes.
+- The standard worker still logs the active storage mode through `src.jobs.run_worker.main()`.
+- A local run with reference images should resolve artifacts from the local filesystem and persist the same `visual_reference_context` / execution-log traceability used in other environments.
+
+### Smoke verification checklist
+
+Run from the repository root:
+
+```bash
+# 1) Start the API and dev worker
+uvicorn src.api.server:app --reload --port 8000
+python -m src.jobs.run_worker_dev
+
+# 2) Create an inventory and upload 1-3 reference images
+# 3) Create an aisle and upload aisle assets
+# 4) Start aisle processing
+```
+
+Verify all of the following:
+
+- worker log includes `Worker dev reloader watching .../backend`
+- worker log includes `Worker artifact storage: provider=local`
+- processing completes without requiring `artifact_s3_bucket`
+- job execution log contains the Gemini request payload with `visual_reference_attachments`
+- aisle status/list exposes `latest_job.reference_usage`
+- replacing or deleting references changes only future jobs, not historical `job.result_json`
+
+### Regression tests that support this checklist
+
+- `backend/tests/jobs/test_run_worker_dev.py`
+- `backend/tests/jobs/test_run_worker_entrypoint.py`
+- `backend/tests/api/test_v3_stored_artifact_access_unit.py`
+- `backend/tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py`
+- `backend/tests/infrastructure/pipeline/test_v3_job_executor_phase5.py`
+
 ## Docs
 
 See the repository root **README.md** and **docs/** for full project documentation.

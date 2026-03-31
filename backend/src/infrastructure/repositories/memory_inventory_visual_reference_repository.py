@@ -16,6 +16,9 @@ class MemoryInventoryVisualReferenceRepository(InventoryVisualReferenceRepositor
     def __init__(self) -> None:
         self._store: Dict[str, InventoryVisualReference] = {}
 
+    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
+        return self._store.get(reference_id)
+
     def create(self, reference: InventoryVisualReference) -> None:
         if reference.id in self._store:
             raise ValueError(f"InventoryVisualReference with id={reference.id!r} already exists")
@@ -33,3 +36,11 @@ class MemoryInventoryVisualReferenceRepository(InventoryVisualReferenceRepositor
         refs = [r for r in self._store.values() if r.inventory_id == inventory_id]
         refs.sort(key=lambda r: (r.created_at, r.id))
         return refs
+
+    def update(self, reference: InventoryVisualReference) -> None:
+        if reference.id not in self._store:
+            raise KeyError(reference.id)
+        self._store[reference.id] = reference
+
+    def delete(self, reference_id: str) -> None:
+        self._store.pop(reference_id, None)
