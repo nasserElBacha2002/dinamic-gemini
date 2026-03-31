@@ -350,5 +350,5 @@ def test_gemini_provider_fallback_to_hybrid_prompt_when_request_prompt_empty():
 
     call_args = mock_client.generate_global_analysis_structured.call_args
     passed_prompt = call_args[0][1]
-    assert "Analyze the frames" in passed_prompt
+    assert "Analyze the provided warehouse aisle evidence" in passed_prompt
     assert passed_prompt == get_hybrid_prompt("global_v21")

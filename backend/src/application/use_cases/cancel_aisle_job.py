@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.errors import AisleNotFoundError
-from src.domain.jobs.entities import JobStatus
+from src.domain.jobs.entities import Job, JobStatus
 
 
 @dataclass
@@ -37,14 +37,14 @@ class CancelAisleJobUseCase:
         self._job_repo = job_repo
         self._clock = clock
 
-    def execute(self, command: CancelAisleJobCommand) -> None:
+    def execute(self, command: CancelAisleJobCommand) -> Job:
         """Request cancellation for a v3 process_aisle job.
 
         Behaviour:
         - If aisle or job do not exist or do not belong to the given inventory/aisle:
           raise AisleNotFoundError (mapped to 404 by the API).
         - If job is QUEUED: mark CANCELED immediately (never started).
-        - If job is RUNNING: mark CANCEL_REQUESTED (executor will cooperatively cancel).
+        - If job is STARTING or RUNNING: mark CANCEL_REQUESTED (executor will cooperatively cancel).
         - If job is already CANCEL_REQUESTED: no-op (idempotent).
         - If job is terminal (SUCCEEDED / FAILED / CANCELED / TIMED_OUT): raise ValueError.
         """
@@ -82,19 +82,23 @@ class CancelAisleJobUseCase:
         if status == JobStatus.QUEUED:
             job.status = JobStatus.CANCELED
             job.updated_at = now
+            job.cancel_requested_at = None
+            job.finished_at = now
             if not job.error_message:
                 job.error_message = "Job canceled before execution"
             self._job_repo.save(job)
-            return
+            return job
 
         if status == JobStatus.CANCEL_REQUESTED:
             # Idempotent: already requested.
-            return
+            return job
 
         # RUNNING (or any other non-terminal, non-queued state) → CANCEL_REQUESTED.
         job.status = JobStatus.CANCEL_REQUESTED
         job.updated_at = now
+        job.cancel_requested_at = now
         if not job.error_message:
             job.error_message = "Job cancellation requested"
         self._job_repo.save(job)
+        return job
 

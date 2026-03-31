@@ -25,6 +25,9 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from src.jobs.models import JobInput
 
+JobExecutionObserver = Callable[[str, Optional[str], str, Optional[Dict[str, Any]]], None]
+JobCancellationCheckpoint = Callable[[str, Optional[str], str], None]
+
 if TYPE_CHECKING:
     from src.pipeline.execution_log import ExecutionLogWriter
     from src.pipeline.contracts.analysis_context import AnalysisContext
@@ -51,6 +54,45 @@ class RunContext:
     progress_callback: Optional[Callable[[str, int], None]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     execution_log: Optional["ExecutionLogWriter"] = None
+    execution_observer: Optional[JobExecutionObserver] = None
+    cancellation_checkpoint: Optional[JobCancellationCheckpoint] = None
     # Phase 3/4/5: typed, provider-agnostic analysis context prepared upstream.
     # This is *input* to analysis, not a stage output; avoids relying on raw metadata dicts.
     analysis_context: Optional["AnalysisContext"] = None
+
+    def emit_stage_event(
+        self,
+        *,
+        stage: str,
+        event: str,
+        substep: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        duration_ms: Optional[int] = None,
+        level: str = "info",
+    ) -> None:
+        if self.execution_log is not None:
+            metadata = self.job_input.metadata or {}
+            self.execution_log.structured_event(
+                job_id=self.job_id,
+                inventory_id=metadata.get("inventory_id"),
+                aisle_id=metadata.get("aisle_id"),
+                attempt=int(metadata.get("attempt_count") or 1),
+                stage=stage,
+                substep=substep,
+                event=event,
+                duration_ms=duration_ms,
+                details=details,
+                level=level,
+            )
+        if self.execution_observer is not None:
+            self.execution_observer(stage, substep, event, details)
+
+    def check_cancellation(
+        self,
+        *,
+        stage: str,
+        substep: Optional[str] = None,
+        reason: str = "Job cancellation requested",
+    ) -> None:
+        if self.cancellation_checkpoint is not None:
+            self.cancellation_checkpoint(stage, substep, reason)

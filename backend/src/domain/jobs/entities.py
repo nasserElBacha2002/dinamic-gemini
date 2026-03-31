@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 
 class JobStatus(str, Enum):
     QUEUED = "queued"
+    STARTING = "starting"
     RUNNING = "running"
     # Cancellation-related states — Stage 6:
     # - CANCEL_REQUESTED: operator requested cancellation; job may still be running.
@@ -38,3 +39,16 @@ class Job:
     updated_at: datetime
     result_json: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    last_heartbeat_at: Optional[datetime] = None
+    cancel_requested_at: Optional[datetime] = None
+    current_stage: Optional[str] = None
+    current_substep: Optional[str] = None
+    current_step_started_at: Optional[datetime] = None
+    attempt_count: int = 1
+    # Immediate previous attempt in a linear retry chain. Null on the original attempt.
+    retry_of_job_id: Optional[str] = None
+    failure_code: Optional[str] = None
+    failure_message: Optional[str] = None
+    execution_id: Optional[str] = None

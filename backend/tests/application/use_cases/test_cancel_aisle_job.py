@@ -107,6 +107,8 @@ def test_cancel_queued_job_marks_canceled() -> None:
     assert updated is not None
     assert updated.status == JobStatus.CANCELED
     assert "canceled" in (updated.error_message or "").lower()
+    assert updated.cancel_requested_at is None
+    assert updated.finished_at == now
 
 
 def test_cancel_running_job_marks_cancel_requested() -> None:
@@ -140,6 +142,41 @@ def test_cancel_running_job_marks_cancel_requested() -> None:
     updated = job_repo.get_by_id("job-1")
     assert updated is not None
     assert updated.status == JobStatus.CANCEL_REQUESTED
+    assert updated.cancel_requested_at == now
+
+
+def test_cancel_starting_job_marks_cancel_requested() -> None:
+    now = datetime(2025, 3, 10, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle("aisle-1", "inv-1", "R01", AisleStatus.CREATED, now, now)
+    job = Job(
+        id="job-1",
+        target_type="aisle",
+        target_id="aisle-1",
+        job_type="process_aisle",
+        status=JobStatus.STARTING,
+        payload_json={"aisle_id": "aisle-1"},
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo([aisle])
+    job_repo = InMemoryJobRepo()
+    job_repo.save(job)
+    clock = FixedClock(now)
+
+    use_case = CancelAisleJobUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        clock=clock,
+    )
+    returned = use_case.execute(
+        CancelAisleJobCommand(inventory_id="inv-1", aisle_id="aisle-1", job_id="job-1")
+    )
+
+    updated = job_repo.get_by_id("job-1")
+    assert updated is not None
+    assert returned is updated
+    assert updated.status == JobStatus.CANCEL_REQUESTED
+    assert updated.cancel_requested_at == now
 
 
 def test_cancel_terminal_job_raises() -> None:

@@ -22,6 +22,7 @@ from src.pipeline.context.run_context import RunContext
 PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE = "visual_references_available"
 PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED = "visual_references_consumed"
 PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT = "visual_reference_count"
+PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS = "visual_reference_ids"
 
 
 @dataclass

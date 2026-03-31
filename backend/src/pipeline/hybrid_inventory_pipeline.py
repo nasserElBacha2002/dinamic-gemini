@@ -7,6 +7,7 @@ v3.2.4 Phase 5: produce run_metadata in memory (visual_reference_context) for jo
 import json
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Any, Callable, Dict, Optional
 
 import cv2
@@ -17,6 +18,7 @@ from src.jobs.models import JobInput
 from src.llm.errors import LLMProviderError
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
@@ -100,6 +102,7 @@ class HybridInventoryPipeline:
         progress_callback: Optional[Callable[[str, int], None]] = None,
         job_input: Optional[JobInput] = None,
         analysis_context: Optional[AnalysisContext] = None,
+        execution_observer=None,
         **_: object,
     ) -> PipelineRunResult:
         """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5)."""
@@ -124,6 +127,8 @@ class HybridInventoryPipeline:
             progress_callback=progress_callback,
             metadata={},
             analysis_context=analysis_context,
+            execution_observer=execution_observer,
+            cancellation_checkpoint=_.get("cancellation_checkpoint"),
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)
@@ -141,54 +146,115 @@ class HybridInventoryPipeline:
         def _fail(stage: str, e: BaseException) -> PipelineRunResult:
             msg = str(e).strip() or repr(e)
             exec_log.error(stage, f"{stage} failed: {msg}", payload={"error": msg[:500]})
+            context.emit_stage_event(
+                stage=stage,
+                event="stage.failed",
+                details={"error": msg[:500]},
+                level="error",
+            )
             exec_log.write_last_stage_error(stage, msg)
             logger.exception("Stage failure: %s (job_id=%s): %s", stage, context.job_id, e)
             return PipelineRunResult(exit_code=1, run_metadata=None)
 
         exec_log.info("Pipeline", "Job started", payload={"job_id": execution_id})
+        context.emit_stage_event(stage="Pipeline", event="job.started")
         try:
+            context.check_cancellation(stage="InputPreparationStage", reason="Job canceled before input preparation")
+            stage_started = time.monotonic()
             exec_log.info("InputPreparationStage", "Input preparation started")
+            context.emit_stage_event(stage="InputPreparationStage", event="stage.started")
             prepared: PreparedInput = self._input_stage.run(context, None)
+            duration_ms = int((time.monotonic() - stage_started) * 1000)
             exec_log.info("InputPreparationStage", "Input preparation completed")
+            context.emit_stage_event(
+                stage="InputPreparationStage",
+                event="stage.completed",
+                duration_ms=duration_ms,
+            )
+        except PipelineCancellationRequestedError:
+            raise
         except (FileNotFoundError, ValueError) as e:
             return _fail("InputPreparationStage", e)
 
         _report("extract_frames", 10)
         try:
+            context.check_cancellation(stage="FrameAcquisitionStage", reason="Job canceled before frame acquisition")
+            stage_started = time.monotonic()
             exec_log.info("FrameAcquisitionStage", "Frame acquisition started")
+            context.emit_stage_event(stage="FrameAcquisitionStage", event="stage.started")
             acquired: AcquiredFrames = self._frame_acquisition_stage.run(context, prepared)
+            duration_ms = int((time.monotonic() - stage_started) * 1000)
             exec_log.info("FrameAcquisitionStage", "Frame acquisition completed", payload={"frames": len(acquired.frames_nd)})
+            context.emit_stage_event(
+                stage="FrameAcquisitionStage",
+                event="stage.completed",
+                details={"frames": len(acquired.frames_nd)},
+                duration_ms=duration_ms,
+            )
+        except PipelineCancellationRequestedError:
+            raise
         except (ValueError, FileNotFoundError, RuntimeError) as e:
             return _fail("FrameAcquisitionStage", e)
 
         _report("gemini_global_call", 50)
         try:
+            context.check_cancellation(stage="AnalysisStage", reason="Job canceled before analysis")
+            stage_started = time.monotonic()
             exec_log.info("AnalysisStage", "Gemini/LLM analysis started")
+            context.emit_stage_event(stage="AnalysisStage", event="stage.started")
             analysis_result = self._analysis_stage.run(context, acquired)
+            duration_ms = int((time.monotonic() - stage_started) * 1000)
             exec_log.info("AnalysisStage", "Gemini/LLM analysis succeeded")
+            context.emit_stage_event(stage="AnalysisStage", event="stage.completed", duration_ms=duration_ms)
+        except PipelineCancellationRequestedError:
+            raise
         except LLMProviderError as e:
             exec_log.error("AnalysisStage", f"Gemini/LLM analysis failed: {e}", payload={"error": str(e)[:500]})
+            context.emit_stage_event(
+                stage="AnalysisStage",
+                event="stage.failed",
+                details={"error": str(e)[:500]},
+                level="error",
+            )
             exec_log.write_last_stage_error("AnalysisStage", str(e))
             logger.exception("Stage failure: AnalysisStage (job_id=%s): %s", context.job_id, e)
             return PipelineRunResult(exit_code=1, run_metadata=None)
 
         try:
+            context.check_cancellation(stage="EntityResolutionStage", reason="Job canceled before entity resolution")
+            stage_started = time.monotonic()
             exec_log.info("EntityResolutionStage", "Entity resolution started")
+            context.emit_stage_event(stage="EntityResolutionStage", event="stage.started")
             resolved = self._entity_resolution_stage.run(context, analysis_result)
+            duration_ms = int((time.monotonic() - stage_started) * 1000)
             exec_log.info("EntityResolutionStage", "Entity resolution completed")
+            context.emit_stage_event(
+                stage="EntityResolutionStage",
+                event="stage.completed",
+                duration_ms=duration_ms,
+            )
+        except PipelineCancellationRequestedError:
+            raise
         except GlobalAnalysisParseError as e:
             return _fail("EntityResolutionStage", e)
 
         _report("evidence_pack", 85)
         try:
+            context.check_cancellation(stage="EvidenceStage", reason="Job canceled before evidence generation")
+            stage_started = time.monotonic()
             exec_log.info("EvidenceStage", "Evidence generation started")
+            context.emit_stage_event(stage="EvidenceStage", event="stage.started")
             evidence_input = EvidenceStageInput(
                 entities=resolved.entities,
                 frames_nd=acquired.frames_nd,
                 metadata=acquired.metadata,
             )
             self._evidence_stage.run(context, evidence_input)
+            duration_ms = int((time.monotonic() - stage_started) * 1000)
             exec_log.info("EvidenceStage", "Evidence generation completed")
+            context.emit_stage_event(stage="EvidenceStage", event="stage.completed", duration_ms=duration_ms)
+        except PipelineCancellationRequestedError:
+            raise
         except Exception as e:
             return _fail("EvidenceStage", e)
 
@@ -205,9 +271,16 @@ class HybridInventoryPipeline:
         if getattr(settings, "debug_save_frames", False):
             _save_frames_sent_to_gemini(context.run_dir, acquired.frames_nd, acquired.metadata.get("frame_indices"))
         try:
+            context.check_cancellation(stage="ReportingStage", reason="Job canceled before reporting")
+            stage_started = time.monotonic()
             exec_log.info("ReportingStage", "Reporting started")
+            context.emit_stage_event(stage="ReportingStage", event="stage.started")
             self._reporting_stage.run(context, reporting_input)
+            duration_ms = int((time.monotonic() - stage_started) * 1000)
             exec_log.info("ReportingStage", "Reporting completed")
+            context.emit_stage_event(stage="ReportingStage", event="stage.completed", duration_ms=duration_ms)
+        except PipelineCancellationRequestedError:
+            raise
         except Exception as e:
             return _fail("ReportingStage", e)
         # Phase 5: build run_metadata in memory (formal AnalysisContext); optional file as debug artifact
@@ -226,5 +299,6 @@ class HybridInventoryPipeline:
             except OSError as e:
                 logger.warning("Failed to write run_metadata.json (job_id=%s): %s", context.job_id, e)
         exec_log.info("Pipeline", "Job completed successfully")
+        context.emit_stage_event(stage="Pipeline", event="job.succeeded")
         _report("done", 100)
         return PipelineRunResult(exit_code=0, run_metadata=run_metadata)

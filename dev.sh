@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Levanta backend (Python), worker y frontend (Vite) para desarrollo local.
+# Levanta backend (Python) y frontend (Vite) para desarrollo local.
 # Uso: ./dev.sh   (desde la raíz del repo)
 
 set -e
@@ -8,7 +8,7 @@ cd "$ROOT"
 
 PORT="${PORT:-8000}"
 
-# Load shared env once so backend + worker inherit identical runtime config.
+# Load shared env once so backend + spawned workers inherit identical runtime config.
 # Parse .env safely (supports optional spaces around "=" without shell-eval).
 if [[ -f "${ROOT}/.env" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -36,20 +36,22 @@ fi
 # Ensure backend package is installed
 "$PYTHON" -m pip install -e "$ROOT/backend" -q 2>/dev/null || true
 
-# Shared env for backend + worker
+# Shared env for backend + on-demand workers
 export PYTHONPATH="${ROOT}/backend${PYTHONPATH:+:${PYTHONPATH}}"
-# dev.sh always starts a dedicated worker process, so keep API embedded worker disabled
-# to avoid duplicate worker loops and reduce local/runtime ambiguity.
+# Keep embedded worker loop disabled: backend should spawn workers on demand.
 export EMBEDDED_WORKER_ENABLED=false
 # Local sessions should not auto-reclaim stale RUNNING jobs from previous runs.
-export WORKER_STALE_RUNNING_TIMEOUT_SEC=0
+export WORKER_STALE_RUNNING_TIMEOUT_SEC=900
+if [[ -z "${WORKER_ON_DEMAND_COMMAND:-}" ]]; then
+  export WORKER_ON_DEMAND_COMMAND="$("$PYTHON" -c 'import json,sys; print(json.dumps([sys.argv[1], "-m", "src.jobs.run_worker"]))' "$PYTHON")"
+fi
 echo "[dev] Runtime: OUTPUT_DIR=${OUTPUT_DIR:-output} SQLSERVER_ENABLED=${SQLSERVER_ENABLED:-unset} EMBEDDED_WORKER_ENABLED=${EMBEDDED_WORKER_ENABLED:-unset}"
+echo "[dev] On-demand worker command: ${WORKER_ON_DEMAND_COMMAND}"
 
-# Prevent stale mixed runtimes: kill previously running local backend/worker
+# Prevent stale mixed runtimes: kill previously running local backend/legacy worker
 # processes before starting fresh ones.
-echo "[dev] Limpiando procesos previos de backend/worker..."
+echo "[dev] Limpiando procesos previos de backend/legacy worker..."
 if command -v pgrep >/dev/null 2>&1; then
-  WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker$" || true)"
   DEV_WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker_dev$" || true)"
   if [[ -n "${DEV_WORKER_PIDS}" ]]; then
     echo "${DEV_WORKER_PIDS}" | xargs kill 2>/dev/null || true
@@ -57,14 +59,6 @@ if command -v pgrep >/dev/null 2>&1; then
     STILL_DEV_WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker_dev$" || true)"
     if [[ -n "${STILL_DEV_WORKER_PIDS}" ]]; then
       echo "${STILL_DEV_WORKER_PIDS}" | xargs kill -9 2>/dev/null || true
-    fi
-  fi
-  if [[ -n "${WORKER_PIDS}" ]]; then
-    echo "${WORKER_PIDS}" | xargs kill 2>/dev/null || true
-    sleep 0.3
-    STILL_WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker$" || true)"
-    if [[ -n "${STILL_WORKER_PIDS}" ]]; then
-      echo "${STILL_WORKER_PIDS}" | xargs kill -9 2>/dev/null || true
     fi
   fi
   API_PIDS="$(pgrep -f "uvicorn src.api.server:app --reload --port ${PORT}" || true)"
@@ -82,21 +76,13 @@ echo "[dev] Arrancando backend en http://127.0.0.1:${PORT} ..."
 (cd "$ROOT/backend" && "$PYTHON" -m uvicorn src.api.server:app --reload --port "$PORT") &
 BE_PID=$!
 
-echo "[dev] Arrancando worker..."
-(cd "$ROOT/backend" && "$PYTHON" -m src.jobs.run_worker_dev) &
-WORKER_PID=$!
-sleep 0.4
-ACTIVE_WORKERS="$(pgrep -fc "src\\.jobs\\.run_worker_dev$" || true)"
-echo "[dev] Workers activos detectados: ${ACTIVE_WORKERS:-0}"
-
 cleanup() {
   echo "[dev] Cerrando procesos..."
   kill "$BE_PID" 2>/dev/null || true
-  kill "$WORKER_PID" 2>/dev/null || true
   exit 0
 }
 trap cleanup INT TERM EXIT
 
-# Frontend en primer plano (Ctrl+C cierra backend + worker)
+# Frontend en primer plano (Ctrl+C cierra backend)
 echo "[dev] Arrancando frontend..."
 cd "$ROOT/frontend" && npm run dev

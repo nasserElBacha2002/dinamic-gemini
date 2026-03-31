@@ -31,7 +31,7 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     ReviewActionRepository,
 )
-from src.application.ports.services import MetricsCalculator
+from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.runtime.v3_deps import (
     get_aisle_repo,
     get_analytics_repo,
@@ -47,6 +47,7 @@ from src.runtime.v3_deps import (
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
     get_source_asset_repo,
+    get_worker_launch_service,
 )
 from src.application.use_cases.create_aisle import CreateAisleUseCase
 from src.application.use_cases.create_inventory import CreateInventoryUseCase
@@ -68,6 +69,7 @@ from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.application.use_cases.persist_aisle_result import PersistAisleResultUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
+from src.application.use_cases.retry_aisle_job import RetryAisleJobUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
 from src.application.use_cases.upload_inventory_visual_references import (
     ListInventoryVisualReferencesUseCase,
@@ -83,7 +85,9 @@ from src.application.use_cases.get_aisle_merge_results import (
 )
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
+from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
 logger = logging.getLogger(__name__)
@@ -133,10 +137,22 @@ def get_artifact_storage():
     return _artifact_storage_instance
 
 
-def get_job_queue():
-    """Return v3 JobQueue adapter (enqueue(job_id) -> None). Stateless."""
-    from src.infrastructure.queue.v3_job_queue_adapter import V3JobQueueAdapter
-    return V3JobQueueAdapter()
+def get_worker_launch_service_dep() -> WorkerLaunchService:
+    return get_worker_launch_service()
+
+
+def get_job_stale_reconciler(
+    job_repo: JobRepository = Depends(get_job_repo),
+    clock: Clock = Depends(get_clock),
+) -> JobStaleReconciler:
+    from src.config import load_settings
+
+    settings = load_settings()
+    return JobStaleReconciler(
+        job_repo=job_repo,
+        clock=clock,
+        stale_after_seconds=int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0),
+    )
 
 
 def get_create_inventory_use_case(
@@ -260,29 +276,45 @@ def get_list_aisles_with_status_use_case(
     )
 
 
+def get_aisle_job_launch_service(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    worker_launch_service: WorkerLaunchService = Depends(get_worker_launch_service_dep),
+    clock: Clock = Depends(get_clock),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+) -> AisleJobLaunchService:
+    return AisleJobLaunchService(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        worker_launch_service=worker_launch_service,
+        clock=clock,
+        status_reconciler=status_reconciler,
+    )
+
+
 def get_start_aisle_processing_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
-    job_queue=Depends(get_job_queue),
-    clock: Clock = Depends(get_clock),
-    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+    launch_service: AisleJobLaunchService = Depends(get_aisle_job_launch_service),
+    stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        job_queue=job_queue,
-        clock=clock,
-        status_reconciler=status_reconciler,
+        launch_service=launch_service,
+        stale_reconciler=stale_reconciler,
     )
 
 
 def get_get_aisle_processing_status_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
+    stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> GetAisleProcessingStatusUseCase:
     return GetAisleProcessingStatusUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
+        stale_reconciler=stale_reconciler,
     )
 
 
@@ -295,6 +327,20 @@ def get_cancel_aisle_job_use_case(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
         clock=clock,
+    )
+
+
+def get_retry_aisle_job_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    launch_service: AisleJobLaunchService = Depends(get_aisle_job_launch_service),
+    stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
+) -> RetryAisleJobUseCase:
+    return RetryAisleJobUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        launch_service=launch_service,
+        stale_reconciler=stale_reconciler,
     )
 
 

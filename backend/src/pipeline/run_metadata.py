@@ -17,6 +17,7 @@ from src.pipeline.contracts.analysis_context import (
 )
 from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
 
@@ -63,6 +64,20 @@ def _reference_ids_from_context(ctx: Optional[AnalysisContext]) -> List[str]:
     return ids
 
 
+def _reference_ids_from_provider_metadata(meta: Dict[str, Any]) -> List[str]:
+    raw_ids = meta.get(PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS)
+    if not isinstance(raw_ids, list):
+        return []
+    out: List[str] = []
+    seen: set[str] = set()
+    for item in raw_ids:
+        rid = str(item).strip() if item is not None else ""
+        if rid and rid not in seen:
+            seen.add(rid)
+            out.append(rid)
+    return out
+
+
 def build_visual_reference_context(
     analysis_context: Optional[Union[AnalysisContext, Dict[str, Any]]],
     provider_metadata: Optional[Dict[str, Any]],
@@ -77,22 +92,25 @@ def build_visual_reference_context(
     ctx: Optional[AnalysisContext] = None
     if isinstance(analysis_context, dict):
         ctx = analysis_context_from_dict(analysis_context)
-        reference_ids = _reference_ids_from_context(ctx) if ctx else _sanitize_reference_ids(
+        context_reference_ids = _reference_ids_from_context(ctx) if ctx else _sanitize_reference_ids(
             (analysis_context or {}).get("visual_references", [])
         )
     else:
         ctx = analysis_context
-        reference_ids = _reference_ids_from_context(ctx) if ctx else []
-
-    resolved_count = len(reference_ids)
-    resolved = resolved_count > 0
 
     meta = provider_metadata or {}
+    provider_reference_ids = _reference_ids_from_provider_metadata(meta)
+    reference_ids = provider_reference_ids or context_reference_ids
     provider_consumed = bool(meta.get(PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED))
     raw_count = int(meta.get(PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT, 0))
     if not provider_consumed:
         raw_count = 0
-    provider_consumed_count = max(0, min(raw_count, resolved_count))
+    provider_consumed_count = max(0, min(raw_count, len(reference_ids)))
+    resolved_count = len(reference_ids)
+    if provider_reference_ids or PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT in meta:
+        resolved_count = provider_consumed_count
+        reference_ids = provider_reference_ids[:provider_consumed_count] if provider_reference_ids else reference_ids[:provider_consumed_count]
+    resolved = resolved_count > 0
 
     return {
         "resolved": resolved,

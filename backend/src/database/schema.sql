@@ -188,11 +188,48 @@ BEGIN
             result_json NVARCHAR(MAX) NULL,
             error_message NVARCHAR(2048) NULL,
             created_at DATETIME2 NOT NULL,
-            updated_at DATETIME2 NOT NULL
+            updated_at DATETIME2 NOT NULL,
+            started_at DATETIME2 NULL,
+            finished_at DATETIME2 NULL,
+            last_heartbeat_at DATETIME2 NULL,
+            cancel_requested_at DATETIME2 NULL,
+            current_stage NVARCHAR(128) NULL,
+            current_substep NVARCHAR(128) NULL,
+            current_step_started_at DATETIME2 NULL,
+            attempt_count INT NOT NULL DEFAULT 1,
+            retry_of_job_id VARCHAR(36) NULL,
+            failure_code VARCHAR(64) NULL,
+            failure_message NVARCHAR(2048) NULL,
+            execution_id VARCHAR(64) NULL
         );
         CREATE INDEX IX_inventory_jobs_target ON inventory_jobs(target_type, target_id);
     END
 END;
+GO
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'started_at')
+    ALTER TABLE inventory_jobs ADD started_at DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'finished_at')
+    ALTER TABLE inventory_jobs ADD finished_at DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'last_heartbeat_at')
+    ALTER TABLE inventory_jobs ADD last_heartbeat_at DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'cancel_requested_at')
+    ALTER TABLE inventory_jobs ADD cancel_requested_at DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'current_stage')
+    ALTER TABLE inventory_jobs ADD current_stage NVARCHAR(128) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'current_substep')
+    ALTER TABLE inventory_jobs ADD current_substep NVARCHAR(128) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'current_step_started_at')
+    ALTER TABLE inventory_jobs ADD current_step_started_at DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'attempt_count')
+    ALTER TABLE inventory_jobs ADD attempt_count INT NOT NULL DEFAULT 1;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'retry_of_job_id')
+    ALTER TABLE inventory_jobs ADD retry_of_job_id VARCHAR(36) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'failure_code')
+    ALTER TABLE inventory_jobs ADD failure_code VARCHAR(64) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'failure_message')
+    ALTER TABLE inventory_jobs ADD failure_message NVARCHAR(2048) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'execution_id')
+    ALTER TABLE inventory_jobs ADD execution_id VARCHAR(64) NULL;
 GO
 
 -- v3.0 — Source assets (Épica 4, Documento técnico §7.3)

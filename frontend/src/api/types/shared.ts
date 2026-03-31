@@ -30,6 +30,7 @@ export type AisleStatus = (typeof AISLE_STATUSES)[number];
 /** Backend job status values (v3 API). */
 export const JOB_STATUSES = [
   'queued',
+  'starting',
   'running',
   'cancel_requested',
   'canceled',

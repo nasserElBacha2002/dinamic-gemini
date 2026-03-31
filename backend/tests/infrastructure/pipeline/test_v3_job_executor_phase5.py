@@ -40,7 +40,9 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     worker_output_storage_keys,
 )
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
+from src.pipeline.context.run_context import RunContext
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
@@ -64,6 +66,16 @@ class InMemoryJobRepo(JobRepository):
 
     def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> Dict[str, Job]:
         return {}
+
+
+class CountingJobRepo(InMemoryJobRepo):
+    def __init__(self) -> None:
+        super().__init__()
+        self.get_calls = 0
+
+    def get_by_id(self, job_id: str) -> Optional[Job]:
+        self.get_calls += 1
+        return super().get_by_id(job_id)
 
 
 class InMemoryAisleRepo(AisleRepository):
@@ -217,6 +229,9 @@ class FixedClock(Clock):
     def now(self) -> datetime:
         return self._now
 
+    def set_now(self, now: datetime) -> None:
+        self._now = now
+
 
 def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
     """Backward compatibility: _mark_success without run_metadata sets report_path and default empty visual_reference_context."""
@@ -268,6 +283,141 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
     # Phase 7: provider key always present; None when run_metadata absent
     assert "provider" in updated.result_json
     assert updated.result_json["provider"] is None
+
+
+def test_mark_running_transitions_starting_job_to_running() -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="job-running",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.STARTING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.QUEUED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+
+    executor._mark_running("job-running", aisle, now)
+
+    updated = job_repo.get_by_id("job-running")
+    assert updated is not None
+    assert updated.status == JobStatus.RUNNING
+    assert updated.current_stage == "Pipeline"
+    assert updated.current_substep == "startup_confirmed"
+
+
+def test_update_runtime_status_only_resets_step_started_at_when_stage_or_substep_changes() -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    later = datetime(2025, 3, 17, 12, 1, 0, tzinfo=timezone.utc)
+    much_later = datetime(2025, 3, 17, 12, 2, 0, tzinfo=timezone.utc)
+    clock = FixedClock(now)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="job-steps",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+            current_stage="FrameAcquisitionStage",
+            current_substep="image_open",
+            current_step_started_at=now,
+        )
+    )
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=InMemoryAisleRepo(),
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=clock,
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+
+    clock.set_now(later)
+    executor._update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_open")
+    unchanged = job_repo.get_by_id("job-steps")
+    assert unchanged is not None
+    assert unchanged.current_step_started_at == now
+
+    clock.set_now(much_later)
+    executor._update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_decode")
+    changed = job_repo.get_by_id("job-steps")
+    assert changed is not None
+    assert changed.current_step_started_at == much_later
+
+
+def test_heartbeat_reads_job_once_and_updates_timestamp() -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    later = datetime(2025, 3, 17, 12, 0, 10, tzinfo=timezone.utc)
+    clock = FixedClock(later)
+    job_repo = CountingJobRepo()
+    job_repo.save(
+        Job(
+            id="job-heartbeat",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+            last_heartbeat_at=now,
+        )
+    )
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=InMemoryAisleRepo(),
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=clock,
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+
+    updated = executor._heartbeat("job-heartbeat")
+
+    assert updated is not None
+    assert job_repo.get_calls == 1
+    assert updated.last_heartbeat_at == later
 
 
 def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
@@ -406,7 +556,7 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.QUEUED,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -483,13 +633,127 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
     assert updated_job.result_json is not None
     vrc = updated_job.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
     assert vrc is not None
-    assert vrc["resolved"] is True
-    assert vrc["reference_ids"] == ["ref-missing"]
-    assert vrc["resolved_count"] == 1
+    assert vrc["resolved"] is False
+    assert vrc["reference_ids"] == []
+    assert vrc["resolved_count"] == 0
     assert vrc["provider_consumed"] is False
     assert vrc["provider_consumed_count"] == 0
     assert vrc["resolution_stage"] == "input_artifact_resolution"
     assert "visual reference ref-missing" in vrc["resolution_error"]
+
+
+def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: Path) -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_id = "j-ref-context-resolved"
+    aisle_id = "aisle-1"
+    inventory_id = "inv-1"
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id=job_id,
+            target_type="aisle",
+            target_id=aisle_id,
+            job_type="process_aisle",
+            status=JobStatus.STARTING,
+            payload_json={"aisle_id": aisle_id},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    aisle = Aisle(
+        id=aisle_id,
+        inventory_id=inventory_id,
+        code="A01",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+
+    inventory_repo = InMemoryInventoryRepo()
+    inventory_repo.save(Inventory(id=inventory_id, name="Inv", status=InventoryStatus.DRAFT, created_at=now, updated_at=now))
+    reference_repo = InMemoryVisualReferenceRepo()
+    reference = InventoryVisualReference(
+        id="ref-1",
+        inventory_id=inventory_id,
+        filename="ref.jpg",
+        storage_path="inventories/inv-1/visual_references/ref.jpg",
+        mime_type="image/jpeg",
+        file_size=7,
+        created_at=now,
+    )
+    reference_repo.create(reference)
+
+    class AssetRepoWithOnePhoto:
+        def list_by_aisle(self, aid: str):
+            if aid != aisle_id:
+                return []
+            return [
+                SourceAsset(
+                    id="asset-1",
+                    aisle_id=aisle_id,
+                    type=SourceAssetType.PHOTO,
+                    original_filename="photo.jpg",
+                    storage_path="a1/photo.jpg",
+                    mime_type="image/jpeg",
+                    uploaded_at=now,
+                )
+            ]
+
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=AssetRepoWithOnePhoto(),
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=inventory_repo,
+        inventory_visual_reference_repo=reference_repo,
+        artifact_store=StubArtifactStorage(),
+        raw_label_repo=noop,
+    )
+
+    base_path = tmp_path
+    v3_base = base_path / "v3_uploads"
+    (v3_base / "a1").mkdir(parents=True, exist_ok=True)
+    (v3_base / "a1" / "photo.jpg").write_bytes(b"fake")
+    (v3_base / "inventories" / "inv-1" / "visual_references").mkdir(parents=True, exist_ok=True)
+    (v3_base / "inventories" / "inv-1" / "visual_references" / "ref.jpg").write_bytes(b"ref")
+
+    unresolved_context = AnalysisContext(
+        primary_evidence=[],
+        visual_references=[
+            VisualReferenceContext(
+                reference_id="ref-1",
+                source_path="inventories/inv-1/visual_references/ref.jpg",
+                mime_type="image/jpeg",
+            )
+        ],
+        instructions=["Use references as context."],
+    )
+    captured: dict[str, AnalysisContext | None] = {"analysis_context": None}
+
+    class FakePipeline:
+        def process_video(self, _video_path, **kwargs):
+            captured["analysis_context"] = kwargs.get("analysis_context")
+            return PipelineRunResult(exit_code=1, run_metadata=None)
+
+    with patch.object(executor, "_build_analysis_context", return_value=unresolved_context):
+        with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
+            mock_settings.return_value.output_dir = str(base_path)
+            with patch("src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline", return_value=FakePipeline()):
+                handled = executor.execute(base_path, job_id)
+
+    assert handled is True
+    passed_context = captured["analysis_context"]
+    assert passed_context is not None
+    assert len(passed_context.visual_references) == 1
+    assert passed_context.visual_references[0].resolved_path is not None
+    assert Path(passed_context.visual_references[0].resolved_path).exists()
 
 
 def test_reference_updates_affect_only_future_jobs_and_preserve_historical_traceability() -> None:
@@ -627,7 +891,7 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.QUEUED,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -720,8 +984,8 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
     assert "simulated persist error" in updated_job.error_message
 
 
-def test_execute_accepts_running_status_after_db_claim() -> None:
-    """Worker DB-claim sets RUNNING before dispatch; executor must still execute."""
+def test_execute_rejects_running_status_reentry() -> None:
+    """Corrected contract: executor accepts STARTING only, not re-entry from RUNNING."""
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_id = "j-claimed-running"
     aisle_id = "aisle-1"
@@ -731,7 +995,7 @@ def test_execute_accepts_running_status_after_db_claim() -> None:
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.RUNNING,  # claimed already
+        status=JobStatus.RUNNING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -821,16 +1085,142 @@ def test_execute_accepts_running_status_after_db_claim() -> None:
     assert handled is True
     updated_job = job_repo.get_by_id(job_id)
     assert updated_job is not None
-    assert updated_job.status == JobStatus.SUCCEEDED
-    assert updated_job.result_json is not None
-    da = updated_job.result_json.get("durable_artifacts")
-    assert da is not None
-    assert DURABLE_ARTIFACT_KIND_EXECUTION_LOG in da
-    assert DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON in da
-    log_key = da[DURABLE_ARTIFACT_KIND_EXECUTION_LOG]["storage_key"]
-    assert log_key == worker_output_storage_keys(job_id, RUN_ID)[DURABLE_ARTIFACT_KIND_EXECUTION_LOG]
-    assert da[DURABLE_ARTIFACT_KIND_EXECUTION_LOG]["storage_provider"] == "local"
-    assert (artifact_root / log_key).is_file()
+    assert updated_job.status == JobStatus.RUNNING
+    assert updated_job.result_json is None
+
+
+def test_execute_cooperatively_cancels_when_cancel_requested_detected(tmp_path: Path) -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_id = "j-cancel-during-execution"
+    aisle_id = "aisle-1"
+    job_repo = InMemoryJobRepo()
+    job = Job(
+        id=job_id,
+        target_type="aisle",
+        target_id=aisle_id,
+        job_type="process_aisle",
+        status=JobStatus.STARTING,
+        payload_json={"aisle_id": aisle_id},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+
+    aisle = Aisle(
+        id=aisle_id,
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.QUEUED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+
+    class AssetRepoWithOnePhoto:
+        def list_by_aisle(self, aid: str):
+            if aid != aisle_id:
+                return []
+            return [
+                SourceAsset(
+                    id="asset-1",
+                    aisle_id=aisle_id,
+                    type=SourceAssetType.PHOTO,
+                    original_filename="photo.jpg",
+                    storage_path="a1/photo.jpg",
+                    mime_type="image/jpeg",
+                    uploaded_at=now,
+                )
+            ]
+
+    noop = NoopRepo()
+    artifact_root = tmp_path / "durable_artifact_root"
+    artifact_store = V3ArtifactStorageAdapter(artifact_root)
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=AssetRepoWithOnePhoto(),
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+        artifact_store=artifact_store,
+    )
+
+    v3_base = tmp_path / "v3_uploads"
+    v3_base.mkdir(parents=True, exist_ok=True)
+    (v3_base / "a1").mkdir(parents=True, exist_ok=True)
+    (v3_base / "a1" / "photo.jpg").write_bytes(b"fake")
+
+    def process_video_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
+        executing_job = job_repo.get_by_id(job_id)
+        assert executing_job is not None
+        executing_job.status = JobStatus.CANCEL_REQUESTED
+        executing_job.cancel_requested_at = now
+        job_repo.save(executing_job)
+        kwargs["execution_observer"]("AnalysisStage", "provider_call", "stage.started", None)
+        raise AssertionError("execution_observer should have raised cancellation before pipeline completed")
+
+    with patch.object(executor, "_persist_use_case", MagicMock(return_value=None)):
+        with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
+            mock_settings.return_value.output_dir = str(tmp_path)
+            with patch(
+                "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+            ) as mock_pipeline_cls:
+                mock_pipeline_cls.return_value.process_video.side_effect = process_video_side_effect
+                with patch.object(
+                    executor,
+                    "_build_analysis_context",
+                    return_value=AnalysisContext(
+                        primary_evidence=[],
+                        visual_references=[],
+                        instructions="",
+                    ),
+                ):
+                    handled = executor.execute(tmp_path, job_id)
+
+    assert handled is True
+    updated_job = job_repo.get_by_id(job_id)
+    assert updated_job is not None
+    assert updated_job.status == JobStatus.CANCELED
+    assert updated_job.failure_code == "CANCELED"
+    assert updated_job.finished_at == now
+    updated_aisle = aisle_repo.get_by_id(aisle_id)
+    assert updated_aisle is not None
+    assert updated_aisle.status == AisleStatus.FAILED
+    assert updated_aisle.error_code == "CANCELED"
+    run_log_path = tmp_path / job_id / RUN_ID / "execution_log.jsonl"
+    log_text = run_log_path.read_text(encoding="utf-8")
+    assert log_text.count("job.cancel_requested") == 1
+    assert log_text.count("job.cancel_detected") == 1
+    assert log_text.count("job.canceled") == 1
+    assert log_text.index("job.cancel_requested") < log_text.index("job.cancel_detected") < log_text.index("job.canceled")
+
+
+def test_run_context_cancellation_uses_injected_checkpoint_not_metadata_flag() -> None:
+    observed: list[tuple[str, str | None, str]] = []
+
+    def checkpoint(stage: str, substep: str | None, reason: str) -> None:
+        observed.append((stage, substep, reason))
+
+    context = RunContext(
+        job_id="job-1",
+        run_id="run",
+        workspace_path=Path("/tmp"),
+        run_dir=Path("/tmp/run"),
+        job_input=JobInput(video_path="", mode="hybrid", input_type="video"),
+        settings=object(),
+        logger=MagicMock(),
+        metadata={"cancel_requested": True},
+        cancellation_checkpoint=checkpoint,
+    )
+
+    context.check_cancellation(stage="AnalysisStage", substep="provider_call", reason="repo-backed cancellation")
+
+    assert observed == [("AnalysisStage", "provider_call", "repo-backed cancellation")]
 
 
 def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
@@ -844,7 +1234,7 @@ def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.RUNNING,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -956,7 +1346,7 @@ def test_execute_durable_upload_failure_after_persist_partial_finalization_expli
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.RUNNING,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,
@@ -1067,7 +1457,7 @@ def test_execute_rejects_mixed_video_and_photo_assets() -> None:
         target_type="aisle",
         target_id=aisle_id,
         job_type="process_aisle",
-        status=JobStatus.RUNNING,
+        status=JobStatus.STARTING,
         payload_json={"aisle_id": aisle_id},
         created_at=now,
         updated_at=now,

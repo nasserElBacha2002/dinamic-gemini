@@ -153,6 +153,35 @@ class ExecutionLogWriter:
     def error(self, stage: str, message: str, payload: Optional[Dict[str, Any]] = None) -> None:
         self.append(stage, "error", message, payload)
 
+    def structured_event(
+        self,
+        *,
+        job_id: str,
+        inventory_id: Optional[str],
+        aisle_id: Optional[str],
+        attempt: int,
+        stage: str,
+        substep: Optional[str],
+        event: str,
+        duration_ms: Optional[int] = None,
+        details: Optional[Dict[str, Any]] = None,
+        level: str = "info",
+    ) -> None:
+        payload: Dict[str, Any] = {
+            "job_id": job_id,
+            "inventory_id": inventory_id,
+            "aisle_id": aisle_id,
+            "attempt": attempt,
+            "event": event,
+        }
+        if substep:
+            payload["substep"] = substep
+        if duration_ms is not None:
+            payload["duration_ms"] = duration_ms
+        if details:
+            payload["details"] = details
+        self.append(stage, level, event, payload)
+
     def write_last_stage_error(self, stage: str, error_message: str) -> None:
         """Write a short last-stage error file for executor to read and expose."""
         try:

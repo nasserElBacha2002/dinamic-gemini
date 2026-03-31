@@ -28,6 +28,7 @@ from src.pipeline.ports.analysis_provider import (
     AnalysisResult,
     ProviderCapabilities,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
@@ -58,28 +59,6 @@ def _build_primary_evidence_attachments(
     return attachments
 
 
-def _build_visual_reference_attachments(
-    analysis_context: Optional[AnalysisContext],
-) -> List[Dict[str, Any]]:
-    if not analysis_context or not analysis_context.visual_references:
-        return []
-    attachments: List[Dict[str, Any]] = []
-    for index, ref in enumerate(analysis_context.visual_references):
-        source_path = (ref.source_path or "").strip()
-        resolved_path = (ref.resolved_path or "").strip() or None
-        attachments.append(
-            {
-                "role": "visual_reference",
-                "index": index,
-                "reference_id": ref.reference_id,
-                "filename": Path(source_path).name or source_path or ref.reference_id,
-                "mime_type": ref.mime_type,
-                "resolved": bool(resolved_path),
-            }
-        )
-    return attachments
-
-
 def _load_pil_from_path(path: Path) -> Any:  # PIL.Image.Image | None
     """Load image from path as PIL RGB; return None if missing or unreadable."""
     try:
@@ -97,12 +76,56 @@ def _provider_metadata(
     visual_references_available: bool,
     visual_references_consumed: bool,
     visual_reference_count: int = 0,
+    visual_reference_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     return {
         PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE: visual_references_available,
         PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED: visual_references_consumed,
         PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT: visual_reference_count,
+        PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS: list(visual_reference_ids or []),
     }
+
+
+def _prepare_visual_reference_inputs(
+    analysis_context: Optional[AnalysisContext],
+    *,
+    job_id: str,
+) -> tuple[List[Any], List[Dict[str, Any]], List[str]]:
+    if not analysis_context or not analysis_context.visual_references:
+        return [], [], []
+
+    loaded_images: List[Any] = []
+    attachments: List[Dict[str, Any]] = []
+    resolved_reference_ids: List[str] = []
+    for index, ref in enumerate(analysis_context.visual_references):
+        source_path = (ref.source_path or "").strip()
+        resolved_path = (ref.resolved_path or "").strip() or None
+        resolved = False
+        if resolved_path:
+            path = Path(resolved_path)
+            if path.is_file():
+                pil_img = _load_pil_from_path(path)
+                if pil_img is not None:
+                    loaded_images.append(pil_img)
+                    resolved = True
+                    resolved_reference_ids.append(ref.reference_id)
+            else:
+                logger.warning(
+                    "Visual reference file not found, skipping: %s",
+                    path,
+                    extra={"job_id": job_id},
+                )
+        attachments.append(
+            {
+                "role": "visual_reference",
+                "index": index,
+                "reference_id": ref.reference_id,
+                "filename": Path(source_path).name or source_path or ref.reference_id,
+                "mime_type": ref.mime_type,
+                "resolved": resolved,
+            }
+        )
+    return loaded_images, attachments, resolved_reference_ids
 
 
 class GeminiAnalysisProvider:
@@ -158,28 +181,24 @@ class GeminiAnalysisProvider:
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
         context_instruction = None
         context_images: Optional[ContextImageSequence] = None
+        visual_reference_attachments: List[Dict[str, Any]] = []
+        resolved_reference_ids: List[str] = []
         consumed_count = 0
         if analysis_context and analysis_context.instructions:
             context_instruction = "\n".join(analysis_context.instructions).strip() or None
         if self.get_capabilities().supports_visual_reference_context and analysis_context and analysis_context.visual_references:
-            loaded: List[Any] = []
-            for ref in analysis_context.visual_references:
-                if not ref.resolved_path or not ref.resolved_path.strip():
-                    continue
-                path = Path(ref.resolved_path)
-                if not path.is_file():
-                    logger.warning(
-                        "Visual reference file not found, skipping: %s",
-                        path,
-                        extra={"job_id": job_id},
-                    )
-                    continue
-                pil_img = _load_pil_from_path(path)
-                if pil_img is not None:
-                    loaded.append(pil_img)
+            loaded, visual_reference_attachments, resolved_reference_ids = _prepare_visual_reference_inputs(
+                analysis_context,
+                job_id=job_id,
+            )
             if loaded:
                 context_images = loaded
                 consumed_count = len(loaded)
+        elif analysis_context and analysis_context.visual_references:
+            _, visual_reference_attachments, _ = _prepare_visual_reference_inputs(
+                analysis_context,
+                job_id=job_id,
+            )
 
         request = LLMRequest(
             job_id=job_id,
@@ -195,7 +214,6 @@ class GeminiAnalysisProvider:
         exec_log = getattr(context, "execution_log", None)
         if exec_log:
             primary_attachments = _build_primary_evidence_attachments(frame_paths, frame_refs)
-            visual_reference_attachments = _build_visual_reference_attachments(analysis_context)
             exec_log.info(
                 "AnalysisStage",
                 "Gemini request prepared",
@@ -206,8 +224,8 @@ class GeminiAnalysisProvider:
                     "context_instruction": context_instruction,
                     "attachment_summary": {
                         "primary_evidence_count": len(primary_attachments),
-                        "visual_reference_count": len(visual_reference_attachments),
-                        "total_count": len(primary_attachments) + len(visual_reference_attachments),
+                        "visual_reference_count": consumed_count,
+                        "total_count": len(primary_attachments) + consumed_count,
                     },
                     "primary_evidence_attachments": primary_attachments,
                     "visual_reference_attachments": visual_reference_attachments,
@@ -226,6 +244,7 @@ class GeminiAnalysisProvider:
                     visual_references_available=visual_references_available,
                     visual_references_consumed=consumed,
                     visual_reference_count=consumed_count,
+                    visual_reference_ids=resolved_reference_ids,
                 ),
             )
         except Exception as e:

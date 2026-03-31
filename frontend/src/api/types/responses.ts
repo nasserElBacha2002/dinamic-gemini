@@ -91,6 +91,18 @@ export interface AisleJobSummary {
   updated_at: string;
   error_message?: string | null;
   reference_usage?: ReferenceUsageSummary | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  last_heartbeat_at?: string | null;
+  cancel_requested_at?: string | null;
+  current_stage?: string | null;
+  current_substep?: string | null;
+  current_step_started_at?: string | null;
+  attempt_count?: number;
+  retry_of_job_id?: string | null;
+  failure_code?: string | null;
+  failure_message?: string | null;
+  execution_id?: string | null;
 }
 
 export interface Aisle {
@@ -139,6 +151,18 @@ export interface JobSummary {
   updated_at: string;
   error_message?: string | null;
   reference_usage?: ReferenceUsageSummary | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  last_heartbeat_at?: string | null;
+  cancel_requested_at?: string | null;
+  current_stage?: string | null;
+  current_substep?: string | null;
+  current_step_started_at?: string | null;
+  attempt_count?: number;
+  retry_of_job_id?: string | null;
+  failure_code?: string | null;
+  failure_message?: string | null;
+  execution_id?: string | null;
 }
 
 /** Single execution log event (v3.1.1). */

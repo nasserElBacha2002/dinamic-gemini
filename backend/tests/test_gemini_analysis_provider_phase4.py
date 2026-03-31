@@ -16,6 +16,7 @@ from src.pipeline.context.run_context import RunContext
 from src.pipeline.execution_log import ExecutionLogWriter, read_execution_log_file
 from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
     ProviderCapabilities,
@@ -216,6 +217,7 @@ def test_gemini_provider_capable_with_refs_and_existing_file(tmp_path: Path) -> 
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE] is True
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED] is True
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT] == 1
+    assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS] == ["r1"]
     assert "total_entities_detected" in result.parsed_json
     assert "entities" in result.parsed_json
 
@@ -260,7 +262,7 @@ def test_gemini_provider_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     payload = prepared_call.kwargs["payload"]
     assert payload["event_type"] == "gemini_request"
     assert payload["provider"] == "gemini"
-    assert "Analyze the frames from a warehouse aisle video" in payload["prompt_text"]
+    assert "Analyze the provided warehouse aisle evidence (photos and/or extracted frames)." in payload["prompt_text"]
     assert payload["attachment_summary"]["primary_evidence_count"] == 1
     assert payload["attachment_summary"]["visual_reference_count"] == 1
     assert payload["primary_evidence_attachments"][0]["frame_ref"] == "img_001"
@@ -271,6 +273,45 @@ def test_gemini_provider_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     assert payload["visual_reference_attachments"][0]["resolved"] is True
     assert "source_path" not in payload["visual_reference_attachments"][0]
     assert "resolved_path" not in payload["visual_reference_attachments"][0]
+
+
+def test_gemini_provider_logs_unresolved_visual_reference_without_counting_it_as_consumed() -> None:
+    context = _run_context(
+        metadata={
+            "analysis_context": {
+                "primary_evidence": [],
+                "visual_references": [
+                    {
+                        "reference_id": "ref-1",
+                        "source_path": "inventories/inv-1/visual_references/missing.jpg",
+                        "mime_type": "image/jpeg",
+                    },
+                ],
+                "instructions": ["Use refs as context."],
+            },
+        },
+    )
+    context.execution_log = MagicMock()
+
+    provider = GeminiAnalysisProvider()
+    result = provider.analyze(
+        context=context,
+        frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/input/photo-01.jpg")],
+        frame_refs=["img_001"],
+        metadata={"frame_count": 1},
+    )
+
+    prepared_call = next((call for call in context.execution_log.info.call_args_list if call.args[1] == "Gemini request prepared"), None)
+    assert prepared_call is not None
+    payload = prepared_call.kwargs["payload"]
+    assert payload["attachment_summary"]["visual_reference_count"] == 0
+    assert payload["visual_reference_attachments"][0]["reference_id"] == "ref-1"
+    assert payload["visual_reference_attachments"][0]["resolved"] is False
+    assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE] is True
+    assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED] is False
+    assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT] == 0
+    assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS] == []
 
 
 def test_gemini_provider_persists_structured_request_event_to_execution_log_file(tmp_path: Path) -> None:

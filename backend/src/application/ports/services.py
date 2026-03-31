@@ -47,6 +47,15 @@ class JobQueue(ABC):
         ...
 
 
+class WorkerLaunchService(ABC):
+    """Launch an on-demand worker execution for one persisted job."""
+
+    @abstractmethod
+    def launch(self, job_id: str) -> str:
+        """Start worker execution for job_id and return an execution identifier."""
+        ...
+
+
 class AnalysisProvider(ABC):
     """Port for running analysis on an aisle's assets. Returns result per §9.4 (AnalysisResultPayload)."""
 

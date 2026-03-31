@@ -14,6 +14,8 @@ from src.api.dependencies import (
     get_evidence_repo,
     get_inventory_repo,
     get_job_repo,
+    get_aisle_job_launch_service,
+    get_job_stale_reconciler,
     get_position_repo,
     get_product_record_repo,
     get_review_action_repo,
@@ -398,6 +400,11 @@ def test_cancel_queued_job_returns_202_and_list_and_status_show_canceled() -> No
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
     )
     assert cancel_resp.status_code == 202
+    cancel_data = cancel_resp.json()
+    assert cancel_data["id"] == job_id
+    assert cancel_data["status"] == "canceled"
+    assert cancel_data["finished_at"] is not None
+    assert cancel_data["cancel_requested_at"] is None
 
     list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert list_resp.status_code == 200
@@ -474,6 +481,10 @@ def test_cancel_running_job_returns_202_and_list_and_status_show_cancel_requeste
             "/api/v3/inventories/inv-running/aisles/aisle-running/jobs/job-running/cancel",
         )
         assert cancel_resp.status_code == 202
+        cancel_data = cancel_resp.json()
+        assert cancel_data["id"] == "job-running"
+        assert cancel_data["status"] == "cancel_requested"
+        assert cancel_data["cancel_requested_at"] is not None
 
         list_resp = c.get("/api/v3/inventories/inv-running/aisles")
         assert list_resp.status_code == 200
@@ -488,6 +499,322 @@ def test_cancel_running_job_returns_202_and_list_and_status_show_cancel_requeste
         assert status_resp.status_code == 200
         assert status_resp.json()["latest_job"] is not None
         assert status_resp.json()["latest_job"]["status"] == "cancel_requested"
+        assert status_resp.json()["latest_job"]["cancel_requested_at"] is not None
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+
+
+def test_get_job_detail_returns_operational_metadata() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv_repo.save(Inventory("inv-job-detail", "Job Detail", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-job-detail", "inv-job-detail", "JD-01", AisleStatus.PROCESSING, now, now))
+    job_repo.save(
+        Job(
+            id="job-job-detail",
+            target_type="aisle",
+            target_id="aisle-job-detail",
+            job_type="process_aisle",
+            status=JobStatus.CANCEL_REQUESTED,
+            payload_json={"aisle_id": "aisle-job-detail"},
+            created_at=now,
+            updated_at=now,
+            started_at=now,
+            last_heartbeat_at=now,
+            cancel_requested_at=now,
+            current_stage="AnalysisStage",
+            current_substep="provider_call",
+            current_step_started_at=now,
+            failure_code=None,
+            failure_message="Job cancellation requested",
+            execution_id="exec-123",
+        )
+    )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        response = c.get("/api/v3/inventories/inv-job-detail/aisles/aisle-job-detail/jobs/job-job-detail")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "cancel_requested"
+        assert data["started_at"] is not None
+        assert data["last_heartbeat_at"] is not None
+        assert data["cancel_requested_at"] is not None
+        assert data["current_stage"] == "AnalysisStage"
+        assert data["current_substep"] == "provider_call"
+        assert data["execution_id"] == "exec-123"
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+
+
+def test_get_job_detail_applies_same_stale_reconciliation_as_status() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv_repo.save(Inventory("inv-job-stale", "Job Stale", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-job-stale", "inv-job-stale", "JS-01", AisleStatus.PROCESSING, now, now))
+    job_repo.save(
+        Job(
+            id="job-job-stale",
+            target_type="aisle",
+            target_id="aisle-job-stale",
+            job_type="process_aisle",
+            status=JobStatus.CANCEL_REQUESTED,
+            payload_json={"aisle_id": "aisle-job-stale"},
+            created_at=now,
+            updated_at=now,
+            started_at=now,
+            last_heartbeat_at=now,
+            cancel_requested_at=now,
+            current_stage="AnalysisStage",
+            current_substep="provider_call",
+        )
+    )
+
+    class StubStaleReconciler:
+        def reconcile(self, job):  # type: ignore[no-untyped-def]
+            if job is None:
+                return None
+            job.status = JobStatus.FAILED
+            job.failure_code = "STALE_JOB"
+            job.failure_message = "Job heartbeat expired before completion"
+            job.error_message = "Job heartbeat expired before completion"
+            return job
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    app.dependency_overrides[get_job_stale_reconciler] = lambda: StubStaleReconciler()
+    try:
+        c = TestClient(app)
+        job_resp = c.get("/api/v3/inventories/inv-job-stale/aisles/aisle-job-stale/jobs/job-job-stale")
+        status_resp = c.get("/api/v3/inventories/inv-job-stale/aisles/aisle-job-stale/status")
+        assert job_resp.status_code == 200
+        assert status_resp.status_code == 200
+        assert job_resp.json()["status"] == "failed"
+        assert job_resp.json()["failure_code"] == "STALE_JOB"
+        assert status_resp.json()["latest_job"]["status"] == "failed"
+        assert status_resp.json()["latest_job"]["failure_code"] == "STALE_JOB"
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_job_stale_reconciler, None)
+
+
+def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    class StubLaunchService:
+        def __init__(self) -> None:
+            self.launched: list[str] = []
+
+        def create_and_launch_attempt(self, *, aisle, payload, attempt_count, retry_of_job_id=None, log_prefix="job.start_requested"):  # type: ignore[no-untyped-def]
+            job = Job(
+                id="job-retry-created",
+                target_type="aisle",
+                target_id=aisle.id,
+                job_type="process_aisle",
+                status=JobStatus.STARTING,
+                payload_json=dict(payload),
+                created_at=now,
+                updated_at=now,
+                attempt_count=attempt_count,
+                retry_of_job_id=retry_of_job_id,
+                execution_id="exec-job-retry-created",
+            )
+            self.launched.append(job.id)
+            job_repo.save(job)
+            return job
+
+    launch_service = StubLaunchService()
+
+    inv_repo.save(Inventory("inv-retry", "Retry", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-retry", "inv-retry", "RT-01", AisleStatus.FAILED, now, now))
+    job_repo.save(
+        Job(
+            id="job-failed",
+            target_type="aisle",
+            target_id="aisle-retry",
+            job_type="process_aisle",
+            status=JobStatus.FAILED,
+            payload_json={"aisle_id": "aisle-retry"},
+            created_at=now,
+            updated_at=now,
+            attempt_count=1,
+        )
+    )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    app.dependency_overrides[get_aisle_job_launch_service] = lambda: launch_service
+    try:
+        c = TestClient(app)
+        response = c.post("/api/v3/inventories/inv-retry/aisles/aisle-retry/jobs/job-failed/retry")
+        assert response.status_code == 202
+        data = response.json()
+        assert data["id"] == "job-retry-created"
+        assert data["status"] == "starting"
+        assert data["attempt_count"] == 2
+        assert data["retry_of_job_id"] == "job-failed"
+        assert data["execution_id"] == "exec-job-retry-created"
+        assert launch_service.launched == [data["id"]]
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_aisle_job_launch_service, None)
+
+
+def test_retry_endpoint_returns_409_for_non_retryable_status() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv_repo.save(Inventory("inv-retry-409", "Retry 409", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-retry-409", "inv-retry-409", "RT-02", AisleStatus.PROCESSING, now, now))
+    job_repo.save(
+        Job(
+            id="job-running",
+            target_type="aisle",
+            target_id="aisle-retry-409",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-retry-409"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        response = c.post("/api/v3/inventories/inv-retry-409/aisles/aisle-retry-409/jobs/job-running/retry")
+        assert response.status_code == 409
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+
+
+def test_retry_endpoint_returns_409_for_older_terminal_attempt_when_newer_retry_exists() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv_repo.save(Inventory("inv-retry-old", "Retry Old", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-retry-old", "inv-retry-old", "RT-OLD", AisleStatus.FAILED, now, now))
+    job_repo.save(
+        Job(
+            id="job-old",
+            target_type="aisle",
+            target_id="aisle-retry-old",
+            job_type="process_aisle",
+            status=JobStatus.FAILED,
+            payload_json={"aisle_id": "aisle-retry-old"},
+            created_at=now,
+            updated_at=now,
+            attempt_count=1,
+        )
+    )
+    later = datetime.now(timezone.utc)
+    job_repo.save(
+        Job(
+            id="job-newer",
+            target_type="aisle",
+            target_id="aisle-retry-old",
+            job_type="process_aisle",
+            status=JobStatus.CANCELED,
+            payload_json={"aisle_id": "aisle-retry-old"},
+            created_at=later,
+            updated_at=later,
+            attempt_count=2,
+            retry_of_job_id="job-old",
+        )
+    )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        response = c.post("/api/v3/inventories/inv-retry-old/aisles/aisle-retry-old/jobs/job-old/retry")
+        assert response.status_code == 409
+        assert "latest retryable terminal attempt is job-newer" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+
+
+def test_status_and_job_detail_expose_retry_lineage() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv_repo.save(Inventory("inv-retry-lineage", "Retry Lineage", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-retry-lineage", "inv-retry-lineage", "RT-03", AisleStatus.QUEUED, now, now))
+    job_repo.save(
+        Job(
+            id="job-retry-lineage",
+            target_type="aisle",
+            target_id="aisle-retry-lineage",
+            job_type="process_aisle",
+            status=JobStatus.STARTING,
+            payload_json={"aisle_id": "aisle-retry-lineage"},
+            created_at=now,
+            updated_at=now,
+            attempt_count=3,
+            retry_of_job_id="job-retry-parent",
+        )
+    )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        status_resp = c.get("/api/v3/inventories/inv-retry-lineage/aisles/aisle-retry-lineage/status")
+        detail_resp = c.get("/api/v3/inventories/inv-retry-lineage/aisles/aisle-retry-lineage/jobs/job-retry-lineage")
+        assert status_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        assert status_resp.json()["latest_job"]["retry_of_job_id"] == "job-retry-parent"
+        assert status_resp.json()["latest_job"]["attempt_count"] == 3
+        assert detail_resp.json()["retry_of_job_id"] == "job-retry-parent"
+        assert detail_resp.json()["attempt_count"] == 3
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         app.dependency_overrides.pop(get_inventory_repo, None)
@@ -713,6 +1040,77 @@ def test_execution_log_returns_200_empty_events_when_run_dir_exists_but_file_mis
             shutil.rmtree(base, ignore_errors=True)
         except Exception:
             pass
+
+
+def test_execution_log_returns_events_for_canceled_job() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv = Inventory("inv-cancel-log", "Canceled Log", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-cancel-log", "inv-cancel-log", "CL-01", AisleStatus.FAILED, now, now)
+    aisle_repo.save(aisle)
+    job = Job(
+        id="job-cancel-log",
+        target_type="aisle",
+        target_id="aisle-cancel-log",
+        job_type="process_aisle",
+        status=JobStatus.CANCELED,
+        payload_json={"aisle_id": "aisle-cancel-log"},
+        created_at=now,
+        updated_at=now,
+        finished_at=now,
+        error_message="Job canceled by operator request",
+    )
+    job_repo.save(job)
+
+    base = Path(tempfile.mkdtemp(prefix="phase8_cancel_exec_log_"))
+    run_dir = base / "job-cancel-log" / "run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "execution_log.jsonl").write_text(
+        '\n'.join(
+            [
+                '{"ts":"2025-01-01T00:00:00+00:00","stage":"AnalysisStage","level":"info","message":"job.cancel_requested","payload":{"event":"job.cancel_requested"}}',
+                '{"ts":"2025-01-01T00:00:01+00:00","stage":"Pipeline","level":"info","message":"job.canceled","payload":{"event":"job.canceled"}}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    try:
+        from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+
+        fake_settings = type(
+            "Settings",
+            (),
+            {"output_dir": str(base), "artifact_storage_legacy_local_read_enabled": True},
+        )()
+        store = V3ArtifactStorageAdapter(base / "artifact-root")
+        app.dependency_overrides[get_current_admin] = _fake_admin
+        app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+        app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+        app.dependency_overrides[get_job_repo] = lambda: job_repo
+        app.dependency_overrides[get_artifact_storage] = lambda: store
+        with patch("src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings):
+            c = TestClient(app)
+            response = c.get(
+                "/api/v3/inventories/inv-cancel-log/aisles/aisle-cancel-log/jobs/job-cancel-log/execution-log"
+            )
+        assert response.status_code == 200
+        messages = [event["message"] for event in response.json()["events"]]
+        assert "job.cancel_requested" in messages
+        assert "job.canceled" in messages
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_artifact_storage, None)
+        import shutil
+
+        shutil.rmtree(base, ignore_errors=True)
 
 
 def test_execution_log_job_not_found_returns_404() -> None:
