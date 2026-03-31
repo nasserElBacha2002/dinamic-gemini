@@ -27,7 +27,7 @@ def test_run_worker_main_uses_settings_output_dir(monkeypatch) -> None:
         "_import_worker_runtime",
         lambda: (lambda *_args, **_kwargs: None, fake_worker_loop),
     )
-    run_worker.main()
+    run_worker.main([])
 
     assert captured["base"] == Path("output/custom-worker")
 
