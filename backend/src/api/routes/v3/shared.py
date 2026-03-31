@@ -22,6 +22,7 @@ from src.api.schemas.inventory_schemas import InventoryListItemResponse, Invento
 from src.application.ports.contracts import InventoryListItem
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
+    PositionTechnicalSnapshot,
     PositionProductBlock,
     PositionQuantityBlock,
     PositionSummaryResponse,
@@ -333,13 +334,17 @@ def asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
 def _position_summary_response_from_view(
     p: Position,
     view: PositionCanonicalView,
+    *,
+    include_technical_snapshot: bool,
 ) -> PositionSummaryResponse:
     """Single construction site for ``PositionSummaryResponse`` from the canonical view (Sprint 1–2).
 
     Nested ``product`` / ``quantity`` blocks read only ``view`` — display label, barcode, and
     ``quantity.final`` are resolved in :func:`build_position_canonical_view`.
     """
-    detected_summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None
+    detected_summary_json = (
+        p.detected_summary_json if include_technical_snapshot and isinstance(p.detected_summary_json, dict) else None
+    )
     product_block = PositionProductBlock(
         id=view.product.primary_product_id,
         sku=view.product.public_sku,
@@ -389,10 +394,51 @@ def _position_summary_response_from_view(
     )
 
 
+def technical_snapshot_from_view(
+    view: PositionCanonicalView,
+) -> Optional[PositionTechnicalSnapshot]:
+    """Extract the detail/debug snapshot from the canonical view without re-reading route inputs."""
+    snap = view.technical_snapshot if isinstance(view.technical_snapshot, dict) else None
+    if snap is None:
+        return None
+    aggregated_raw = snap.get("aggregated_from_ids")
+    aggregated_from_ids = (
+        [str(v).strip() for v in aggregated_raw if isinstance(v, str) and str(v).strip()]
+        if isinstance(aggregated_raw, list)
+        else None
+    )
+    audit_raw = snap.get("_audit")
+    audit = audit_raw if isinstance(audit_raw, dict) else None
+    return PositionTechnicalSnapshot(
+        entity_uid=(snap.get("entity_uid") if isinstance(snap.get("entity_uid"), str) else None),
+        entity_type=(snap.get("entity_type") if isinstance(snap.get("entity_type"), str) else None),
+        internal_code=(snap.get("internal_code") if isinstance(snap.get("internal_code"), str) else None),
+        review_display_label=(
+            snap.get("review_display_label") if isinstance(snap.get("review_display_label"), str) else None
+        ),
+        position_barcode=(
+            snap.get("position_barcode") if isinstance(snap.get("position_barcode"), str) else None
+        ),
+        pallet_id=(snap.get("pallet_id") if isinstance(snap.get("pallet_id"), str) else None),
+        count_status=(snap.get("count_status") if isinstance(snap.get("count_status"), str) else None),
+        raw_qty=snap.get("raw_qty"),
+        qty_parse_status=(
+            snap.get("qty_parse_status") if isinstance(snap.get("qty_parse_status"), str) else None
+        ),
+        qty_origin_field=(
+            snap.get("qty_origin_field") if isinstance(snap.get("qty_origin_field"), str) else None
+        ),
+        aggregated_from_ids=aggregated_from_ids,
+        audit=audit,
+    )
+
+
 def position_to_summary(
     p: Position,
     corrected_quantity: Optional[int] = None,
     primary_product: Optional[ProductRecord] = None,
+    *,
+    include_technical_snapshot: bool = True,
 ) -> PositionSummaryResponse:
     """Map domain position (+ optional primary product) to the public summary contract.
 
@@ -404,7 +450,11 @@ def position_to_summary(
         primary_product,
         corrected_quantity=corrected_quantity,
     )
-    return _position_summary_response_from_view(p, view)
+    return _position_summary_response_from_view(
+        p,
+        view,
+        include_technical_snapshot=include_technical_snapshot,
+    )
 
 
 def evidence_to_response(e: Evidence) -> EvidenceResponse:

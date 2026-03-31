@@ -143,16 +143,21 @@ def list_inventories(
 def export_inventory_results(
     inventory_id: str,
     export_format: str = Query("csv", alias="format", description="Export format (only csv supported)."),
+    technical: bool = Query(
+        False,
+        description="When true, export the technical snapshot CSV instead of the operational contract CSV.",
+    ),
     use_case: ExportInventoryResultsUseCase = Depends(get_export_inventory_results_use_case),
 ) -> Response:
     """Download consolidated inventory results as CSV (one row per reviewable position after SKU consolidation)."""
     if (export_format or "").strip().lower() != "csv":
         raise HTTPException(status_code=422, detail="Only format=csv is supported")
     try:
-        body = use_case.execute_csv(inventory_id)
+        body = use_case.execute_csv(inventory_id, technical=technical)
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
-    filename = f"inventory_{inventory_id}_results.csv"
+    suffix = "technical" if technical else "results"
+    filename = f"inventory_{inventory_id}_{suffix}.csv"
     return Response(
         content=body.encode("utf-8"),
         media_type="text/csv; charset=utf-8",

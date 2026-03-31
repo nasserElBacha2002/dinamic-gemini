@@ -9,7 +9,11 @@ from datetime import datetime, timezone
 import pytest
 
 from src.application.errors import InventoryNotFoundError
-from src.application.services.csv_inventory_exporter import INVENTORY_RESULTS_CSV_FIELDS, UTF8_BOM
+from src.application.services.csv_inventory_exporter import (
+    INVENTORY_RESULTS_CSV_FIELDS,
+    INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS,
+    UTF8_BOM,
+)
 from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -116,7 +120,7 @@ def test_export_aisle_natural_sort_order() -> None:
     ]
     uc = _uc(inv=inv, aisles=aisles, positions=positions)
     _, rows = _parse_csv(uc.execute_csv("inv-1"))
-    assert [r["aisle_name"] for r in rows] == ["A1", "A2", "A10"]
+    assert [r["aisle_code"] for r in rows] == ["A1", "A2", "A10"]
     assert [r["aisle_sequence"] for r in rows] == ["1", "2", "3"]
 
 
@@ -237,8 +241,8 @@ def test_export_qty_source_uses_display_primary_product() -> None:
     _, rows = _parse_csv(uc.execute_csv("inv-1"))
     assert len(rows) == 1
     assert rows[0]["qty_source"] == "manual_review"
-    assert rows[0]["qty_inference_reason"] == "operator"
-    assert rows[0]["product_label"] == "Early row"
+    assert rows[0]["qty_inference_reason"] == ""
+    assert rows[0]["product_display_label"] == "Early row"
 
 
 def test_export_excludes_deleted_positions() -> None:
@@ -305,6 +309,108 @@ def test_export_sku_consolidation_single_row() -> None:
     uc = _uc(inv=inv, aisles=[aisle], positions=positions)
     _, rows = _parse_csv(uc.execute_csv("inv-1"))
     assert len(rows) == 1
-    assert rows[0]["sku"] == "MERGE"
+    assert rows[0]["product_sku"] == "MERGE"
     assert rows[0]["detected_quantity"] == "5"
     assert rows[0]["final_quantity"] == "5"
+
+
+def test_export_operational_csv_aligns_with_public_contract_fields() -> None:
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle("a1", "inv-1", "B1", AisleStatus.COMPLETED, NOW, NOW)
+    pos = Position(
+        id="p1",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id="ev-1",
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={
+            "internal_code": "LEGACY",
+            "review_display_label": "Legacy label",
+            "position_barcode": "BC-1",
+            "final_quantity": 4,
+            "traceability_status": "valid",
+            "source_image_id": "img-1",
+        },
+    )
+    prod = ProductRecord(
+        id="pr1",
+        position_id="p1",
+        sku="SKU-1",
+        description="Display label",
+        detected_quantity=4,
+        corrected_quantity=6,
+        confidence=0.9,
+        created_at=NOW,
+        updated_at=NOW,
+        qty_source="manual_review",
+        qty_inference_reason="operator",
+    )
+    uc = _uc(inv=inv, aisles=[aisle], positions=[pos], products=[prod])
+    _, rows = _parse_csv(uc.execute_csv("inv-1"))
+    assert rows == [
+        {
+            "inventory_id": "inv-1",
+            "inventory_name": "Warehouse",
+            "aisle_id": "a1",
+            "aisle_code": "B1",
+            "aisle_sequence": "1",
+            "position_id": "p1",
+            "position_status": "detected",
+            "needs_review": "true",
+            "position_code": "BC-1",
+            "product_sku": "SKU-1",
+            "product_display_label": "Display label",
+            "barcode": "BC-1",
+            "detected_quantity": "4",
+            "corrected_quantity": "6",
+            "final_quantity": "6",
+            "qty_source": "manual_review",
+            "qty_inference_reason": "",
+            "traceability_status": "valid",
+            "source_image_id": "img-1",
+            "primary_evidence_id": "ev-1",
+            "updated_at": NOW.isoformat(),
+        }
+    ]
+
+
+def test_export_technical_csv_keeps_snapshot_fields_separate() -> None:
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle("a1", "inv-1", "B1", AisleStatus.COMPLETED, NOW, NOW)
+    pos = Position(
+        id="p1",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={
+            "internal_code": "SKU-TECH",
+            "review_display_label": "Tech label",
+            "position_barcode": "BAR-1",
+            "pallet_id": "PAL-1",
+            "entity_uid": "job_1_e1",
+            "entity_type": "PALLET",
+            "count_status": "COUNTED",
+            "raw_qty": "4x",
+            "qty_parse_status": "invalid",
+            "qty_origin_field": "product_label_quantity",
+            "aggregated_from_ids": ["p-a", "p-b"],
+            "_audit": {"explicit_quantity_missing": True},
+        },
+    )
+    uc = _uc(inv=inv, aisles=[aisle], positions=[pos])
+    csv_text = uc.execute_csv("inv-1", technical=True)
+    headers, rows = _parse_csv(csv_text)
+    assert headers == list(INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS)
+    assert rows[0]["internal_code"] == "SKU-TECH"
+    assert rows[0]["review_display_label"] == "Tech label"
+    assert rows[0]["position_barcode"] == "BAR-1"
+    assert rows[0]["pallet_id"] == "PAL-1"
+    assert rows[0]["aggregated_from_ids"] == "p-a|p-b"
+    assert '"explicit_quantity_missing": true' in rows[0]["audit_json"]

@@ -7,7 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.server import app
-from src.application.services.csv_inventory_exporter import INVENTORY_RESULTS_CSV_FIELDS, UTF8_BOM
+from src.application.services.csv_inventory_exporter import (
+    INVENTORY_RESULTS_CSV_FIELDS,
+    INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS,
+    UTF8_BOM,
+)
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 
@@ -86,4 +90,18 @@ def test_export_csv_headers_only_inventory_with_aisle_no_positions(client_v3: Te
     assert resp.status_code == 200
     headers, rows = _parse_csv_body(resp.content)
     assert headers == list(INVENTORY_RESULTS_CSV_FIELDS)
+    assert rows == []
+
+
+def test_export_csv_technical_mode_uses_technical_headers_and_filename(client_v3: TestClient) -> None:
+    create = client_v3.post("/api/v3/inventories", json={"name": "Technical export"})
+    assert create.status_code == 201
+    inv_id = create.json()["id"]
+
+    resp = client_v3.get(f"/api/v3/inventories/{inv_id}/export?technical=true")
+    assert resp.status_code == 200
+    cd = resp.headers.get("content-disposition") or ""
+    assert f"inventory_{inv_id}_technical.csv" in cd
+    headers, rows = _parse_csv_body(resp.content)
+    assert headers == list(INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS)
     assert rows == []

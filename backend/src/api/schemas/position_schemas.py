@@ -27,6 +27,32 @@ _ProductIdentitySource = Literal["primary_product", "summary_technical", "summar
 _TraceabilityStatusPublic = Literal["valid", "missing", "invalid", "unvalidated"]
 
 
+class PositionTechnicalSnapshot(BaseModel):
+    """Technical pipeline snapshot for detail/debug surfaces (Sprint 3).
+
+    Keeps audit/replay-oriented data separate from the operational contract blocks
+    (`product`, `quantity`, `traceability`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    entity_uid: Optional[str] = None
+    entity_type: Optional[str] = None
+    internal_code: Optional[str] = None
+    review_display_label: Optional[str] = None
+    position_barcode: Optional[str] = None
+    pallet_id: Optional[str] = None
+    count_status: Optional[str] = None
+    raw_qty: Optional[Union[int, float, str]] = None
+    qty_parse_status: Optional[str] = None
+    qty_origin_field: Optional[str] = None
+    aggregated_from_ids: Optional[List[str]] = None
+    audit: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Technical audit payload from the immutable pipeline snapshot (`_audit`).",
+    )
+
+
 class PositionProductBlock(BaseModel):
     """Canonical product identity for list + detail (Sprint 2)."""
 
@@ -112,7 +138,14 @@ class PositionSummaryResponse(BaseModel):
     )
     created_at: datetime
     updated_at: datetime
-    detected_summary_json: Optional[Dict[str, Any]] = None
+    detected_summary_json: Optional[Dict[str, Any]] = Field(
+        None,
+        deprecated=True,
+        description=(
+            "Legacy raw technical snapshot. List endpoints omit it by default in Sprint 3; "
+            "detail prefers top-level `technical_snapshot`."
+        ),
+    )
 
     product: PositionProductBlock = Field(..., description="Canonical product identity (Sprint 2).")
     quantity: PositionQuantityBlock = Field(..., description="Canonical quantity (Sprint 2).")
@@ -209,6 +242,10 @@ class PositionDetailResponse(BaseModel):
     """Response for GET .../aisles/{aisle_id}/positions/{position_id}.
     v3.1.1: Result is the only visible review object; products are no longer returned."""
     position: PositionSummaryResponse
+    technical_snapshot: Optional[PositionTechnicalSnapshot] = Field(
+        None,
+        description="Explicit technical/debug snapshot (Sprint 3). Prefer this over legacy `position.detected_summary_json`.",
+    )
     evidences: List[EvidenceResponse]
     review_actions: List[ReviewActionResponse] = Field(default_factory=list)
 

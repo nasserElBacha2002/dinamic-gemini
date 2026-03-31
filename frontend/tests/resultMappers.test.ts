@@ -306,6 +306,9 @@ describe('mapPositionDetailToResultDetail', () => {
         traceability_status: 'valid',
         has_evidence: true,
       },
+      technical_snapshot: {
+        entity_uid: 'job_E1',
+      },
       evidences: [
         {
           id: 'ev-1',
@@ -372,15 +375,19 @@ describe('mapPositionDetailToResultDetail', () => {
         traceability_status: 'valid',
         has_evidence: true,
       },
+      technical_snapshot: {
+        entity_uid: 'job_override',
+      },
       evidences: [],
       review_actions: [],
     };
     const r = mapPositionDetailToResultDetail(data);
     expect(r.sourceImageId).toBe('canonical-id');
     expect(r.sourceFileName).toBe('canonical.jpg');
+    expect(r.technicalMetadata?.entityId).toBe('job_override');
   });
 
-  it('Case 2 — falls back to detected_summary_json when typed fields absent (v3.2.5 Block 3)', () => {
+  it('Case 2 — legacy detected_summary_json still works when typed fields absent', () => {
     const data: PositionDetailResponse = {
       position: {
         id: 'pos-fallback',
@@ -412,6 +419,41 @@ describe('mapPositionDetailToResultDetail', () => {
     const r = mapPositionDetailToResultDetail(data);
     expect(r.sourceImageId).toBe('from-json-id');
     expect(r.sourceFileName).toBe('from_json.jpg');
+  });
+
+  it('Case 2b — technical_snapshot is preferred for technical metadata when present', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-technical-snapshot',
+        aisle_id: 'aisle-1',
+        status: 'detected',
+        confidence: 0.8,
+        needs_review: false,
+        primary_evidence_id: null,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        sku: 'SKU-B',
+        detected_quantity: 2,
+        corrected_quantity: null,
+        qty: 2,
+        qtySource: 'detected',
+        qtyResolved: null,
+        detected_summary_json: {
+          entity_uid: 'job_legacy',
+        },
+        source_image_id: null,
+        source_image_original_filename: null,
+        traceability_status: null,
+        has_evidence: false,
+      },
+      technical_snapshot: {
+        entity_uid: 'job_new',
+      },
+      evidences: [],
+      review_actions: [],
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.technicalMetadata?.entityId).toBe('job_new');
   });
 
   it('Case 3 — neither typed nor summary: source fields null, no crash (v3.2.5 Block 3)', () => {

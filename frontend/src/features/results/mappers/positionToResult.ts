@@ -150,8 +150,9 @@ export function mapPositionDetailToResultDetail(
   const evidences = data.evidences ?? [];
   const review_actions = data.review_actions ?? [];
 
-  const summaryJson = position.detected_summary_json ?? null;
-  /** Canonical: Sprint 2 ``traceability`` block, then typed fields; then JSON fallback (historical). */
+  const technicalSnapshot = data.technical_snapshot ?? null;
+  const legacySummaryJson = position.detected_summary_json ?? null;
+  /** Canonical: Sprint 2 ``traceability`` block, then typed fields; then legacy detail summary fallback. */
   const typedSourceImageId =
     (position.traceability?.source_image_id != null &&
       String(position.traceability.source_image_id).trim() !== ''
@@ -169,10 +170,15 @@ export function mapPositionDetailToResultDetail(
     String(position.source_image_original_filename).trim() !== ''
       ? position.source_image_original_filename.trim()
       : null);
-  const sourceImageId = typedSourceImageId ?? getSummaryString(summaryJson, 'source_image_id');
-  const sourceFileName = typedSourceFileName ?? getSummaryString(summaryJson, 'source_image_original_filename');
+  const sourceImageId =
+    typedSourceImageId ?? getSummaryString(legacySummaryJson, 'source_image_id');
+  const sourceFileName =
+    typedSourceFileName ??
+    getSummaryString(legacySummaryJson, 'source_image_original_filename');
 
-  const entityId = getSummaryString(summaryJson, 'entity_uid');
+  const entityId =
+    getSummaryString(technicalSnapshot, 'entity_uid') ??
+    getSummaryString(legacySummaryJson, 'entity_uid');
 
   const sku = position.product?.sku ?? position.sku ?? null;
   const detectedQty =

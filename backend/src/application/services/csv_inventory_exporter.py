@@ -11,30 +11,51 @@ from typing import Any, Mapping, Sequence
 
 UTF8_BOM = "\ufeff"
 
-# Column order matches product/API spec (snake_case headers).
+# Standard operational export aligned with the public contract (snake_case CSV view).
 INVENTORY_RESULTS_CSV_FIELDS: tuple[str, ...] = (
     "inventory_id",
     "inventory_name",
     "aisle_id",
-    "aisle_name",
+    "aisle_code",
     "aisle_sequence",
     "position_id",
+    "position_status",
+    "needs_review",
     "position_code",
-    "sku",
-    "product_label",
+    "product_sku",
+    "product_display_label",
     "barcode",
-    "internal_code",
     "detected_quantity",
     "corrected_quantity",
     "final_quantity",
     "qty_source",
     "qty_inference_reason",
-    "position_status",
     "traceability_status",
-    "has_evidence",
     "source_image_id",
     "primary_evidence_id",
-    "needs_review",
+    "updated_at",
+)
+
+INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS: tuple[str, ...] = (
+    "inventory_id",
+    "inventory_name",
+    "aisle_id",
+    "aisle_code",
+    "aisle_sequence",
+    "position_id",
+    "position_code",
+    "internal_code",
+    "review_display_label",
+    "position_barcode",
+    "pallet_id",
+    "entity_uid",
+    "entity_type",
+    "count_status",
+    "raw_qty",
+    "qty_parse_status",
+    "qty_origin_field",
+    "aggregated_from_ids",
+    "audit_json",
     "updated_at",
 )
 
@@ -43,17 +64,21 @@ class CsvInventoryExporter:
     """Turn export rows (flat dicts) into CSV text with stable headers."""
 
     @staticmethod
-    def to_csv(rows: Sequence[Mapping[str, Any]]) -> str:
+    def to_csv(
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        fieldnames: Sequence[str] = INVENTORY_RESULTS_CSV_FIELDS,
+    ) -> str:
         buf = io.StringIO(newline="")
         writer = csv.DictWriter(
             buf,
-            fieldnames=list(INVENTORY_RESULTS_CSV_FIELDS),
+            fieldnames=list(fieldnames),
             extrasaction="ignore",
             lineterminator="\n",
         )
         writer.writeheader()
         for row in rows:
-            out = {k: CsvInventoryExporter._cell(row.get(k)) for k in INVENTORY_RESULTS_CSV_FIELDS}
+            out = {k: CsvInventoryExporter._cell(row.get(k)) for k in fieldnames}
             writer.writerow(out)
         return f"{UTF8_BOM}{buf.getvalue()}"
 

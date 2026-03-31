@@ -4,7 +4,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.api.routes.v3.shared import position_to_summary as _position_to_summary
+from src.api.routes.v3.shared import (
+    position_to_summary as _position_to_summary,
+    technical_snapshot_from_view,
+)
+from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.mappers.position_canonical_view import summary_sku_and_quantity_from_position
 from src.api.schemas.position_schemas import PositionSummaryResponse
 from src.domain.positions.entities import Position, PositionStatus
@@ -353,6 +357,60 @@ def test_position_to_summary_non_dict_detected_summary_json_no_raise() -> None:
         assert resp.has_evidence is False
         assert resp.source_image_original_filename is None
         assert resp.source_image_id is None
+
+
+def test_position_to_summary_omits_legacy_snapshot_when_include_technical_false() -> None:
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-s3-list",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"entity_uid": "job_s3_E1", "internal_code": "SKU-S3", "final_quantity": 2},
+    )
+    resp = _position_to_summary(p, include_technical_snapshot=False)
+    assert resp.detected_summary_json is None
+
+
+def test_technical_snapshot_from_view_extracts_debug_fields() -> None:
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-s3-detail",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "entity_uid": "job_s3_E2",
+            "internal_code": "SKU-S3",
+            "review_display_label": "Tech label",
+            "position_barcode": "BC-S3",
+            "raw_qty": "4x",
+            "qty_parse_status": "invalid",
+            "qty_origin_field": "product_label_quantity",
+            "aggregated_from_ids": ["p1", "p2"],
+            "_audit": {"explicit_quantity_missing": True},
+        },
+    )
+    view = build_position_canonical_view(p)
+    snapshot = technical_snapshot_from_view(view)
+    assert snapshot is not None
+    assert snapshot.entity_uid == "job_s3_E2"
+    assert snapshot.internal_code == "SKU-S3"
+    assert snapshot.review_display_label == "Tech label"
+    assert snapshot.position_barcode == "BC-S3"
+    assert snapshot.raw_qty == "4x"
+    assert snapshot.qty_parse_status == "invalid"
+    assert snapshot.qty_origin_field == "product_label_quantity"
+    assert snapshot.aggregated_from_ids == ["p1", "p2"]
+    assert snapshot.audit == {"explicit_quantity_missing": True}
 
 
 def test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty() -> None:

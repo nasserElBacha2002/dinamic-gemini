@@ -212,7 +212,23 @@ export interface PositionTraceabilityBlock {
   has_evidence: boolean;
 }
 
-/** Position summary for list responses. Prefer optional sku and detected_quantity when present; detected_summary_json is retained for backward compatibility. */
+/** Sprint 3 — explicit technical/debug snapshot for detail responses. */
+export interface PositionTechnicalSnapshot {
+  entity_uid?: string | null;
+  entity_type?: string | null;
+  internal_code?: string | null;
+  review_display_label?: string | null;
+  position_barcode?: string | null;
+  pallet_id?: string | null;
+  count_status?: string | null;
+  raw_qty?: number | string | null;
+  qty_parse_status?: string | null;
+  qty_origin_field?: string | null;
+  aggregated_from_ids?: string[] | null;
+  audit?: Record<string, unknown> | null;
+}
+
+/** Position summary for list responses. `detected_summary_json` is legacy and omitted by default from list in Sprint 3. */
 export interface PositionSummary {
   id: string;
   aisle_id: string;
@@ -222,6 +238,7 @@ export interface PositionSummary {
   primary_evidence_id?: string | null;
   created_at: string;
   updated_at: string;
+  /** @deprecated Legacy raw technical snapshot. List omits it by default; detail prefers top-level `technical_snapshot`. */
   detected_summary_json?: Record<string, unknown> | null;
   /** Sprint 2 — prefer nested blocks when present; flat fields below remain for backward compatibility. */
   product?: PositionProductBlock;
@@ -343,6 +360,7 @@ export interface ReviewActionSummary {
 /** Response for GET .../aisles/{aisle_id}/positions/{position_id}. v3.1.1: Result-centric; products are not returned. Backend always sends review_actions (array). */
 export interface PositionDetailResponse {
   position: PositionSummary;
+  technical_snapshot?: PositionTechnicalSnapshot | null;
   evidences: EvidenceSummary[];
   /** Review audit history — Épica 8. v3.2.5 Phase 8: required; backend sends list (default_factory=list). */
   review_actions: ReviewActionSummary[];

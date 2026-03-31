@@ -25,9 +25,11 @@ from src.application.use_cases.get_position_detail import GetPositionDetailUseCa
 
 from .shared import (
     position_to_summary,
+    technical_snapshot_from_view,
     evidence_to_response,
     review_to_response,
 )
+from src.application.mappers.position_canonical_view import build_position_canonical_view
 
 router = APIRouter()
 
@@ -54,6 +56,10 @@ def list_aisle_positions(
         description="Post-consolidation sort: created_at | updated_at | confidence | sku | quantity",
     ),
     sort_dir: str = Query("asc", description="asc | desc"),
+    include_technical: bool = Query(
+        False,
+        description="When true, include legacy `detected_summary_json` in list rows for transitional/debug clients.",
+    ),
 ) -> PositionListResponse:
     """List result positions for an aisle (Aisle Results).
 
@@ -87,6 +93,7 @@ def list_aisle_positions(
                     p,
                     corrected_quantity=corrected_quantity,
                     primary_product=primary,
+                    include_technical_snapshot=include_technical,
                 )
             )
         return PositionListResponse(
@@ -122,12 +129,19 @@ def get_position_detail(
         corrected_quantity = (
             primary_product.corrected_quantity if primary_product is not None else None
         )
+        view = build_position_canonical_view(
+            result.position,
+            primary_product,
+            corrected_quantity=corrected_quantity,
+        )
         return PositionDetailResponse(
             position=position_to_summary(
                 result.position,
                 corrected_quantity=corrected_quantity,
                 primary_product=primary_product,
+                include_technical_snapshot=True,
             ),
+            technical_snapshot=technical_snapshot_from_view(view),
             evidences=[evidence_to_response(e) for e in result.evidences],
             review_actions=[review_to_response(ra) for ra in result.review_actions],
         )
