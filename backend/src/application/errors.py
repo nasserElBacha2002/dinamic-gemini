@@ -40,6 +40,10 @@ class MaxInventoryVisualReferencesExceededError(Exception):
     """Raised when uploading would exceed the maximum visual references per inventory."""
 
 
+class InventoryVisualReferenceNotFoundError(Exception):
+    """Raised when the requested inventory visual reference does not exist or is not owned by the inventory."""
+
+
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
 

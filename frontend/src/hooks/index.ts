@@ -9,5 +9,7 @@ export {
   useUploadAisleAssets,
   useUploadAisleAssetsFlex,
   useUploadInventoryVisualReferences,
+  useDeleteInventoryVisualReference,
+  useReplaceInventoryVisualReference,
   useSubmitReviewAction,
 } from './useMutations';

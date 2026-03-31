@@ -215,6 +215,40 @@ export async function getInventoryVisualReferences(
   return handleResponse<InventoryVisualReferenceListResponse>(response);
 }
 
+export async function deleteInventoryVisualReference(
+  inventoryId: string,
+  referenceId: string
+): Promise<void> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
+    { method: 'DELETE' }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    let data: ApiErrorDetail;
+    try {
+      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+    } catch {
+      data = {};
+    }
+    throwApiErrorIfNotOk(response, text, data);
+  }
+}
+
+export async function replaceInventoryVisualReference(
+  inventoryId: string,
+  referenceId: string,
+  file: File
+): Promise<InventoryVisualReference> {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
+    { method: 'PUT', body: form }
+  );
+  return handleResponse<InventoryVisualReference>(response);
+}
+
 export async function fetchInventoryVisualReferenceFile(
   inventoryId: string,
   referenceId: string

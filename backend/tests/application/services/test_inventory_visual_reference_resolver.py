@@ -32,6 +32,9 @@ class StubVisualReferenceRepo(InventoryVisualReferenceRepository):
     def __init__(self) -> None:
         self._store: Dict[str, InventoryVisualReference] = {}
 
+    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+        return self._store.get(reference_id)
+
     def create(self, reference: InventoryVisualReference) -> None:
         self._store[reference.id] = reference
 
@@ -43,6 +46,12 @@ class StubVisualReferenceRepo(InventoryVisualReferenceRepository):
         refs = [r for r in self._store.values() if r.inventory_id == inventory_id]
         refs.sort(key=lambda r: (r.created_at, r.id))
         return refs
+
+    def update(self, reference: InventoryVisualReference) -> None:
+        self._store[reference.id] = reference
+
+    def delete(self, reference_id: str) -> None:
+        self._store.pop(reference_id, None)
 
 
 def _inventory() -> Inventory:

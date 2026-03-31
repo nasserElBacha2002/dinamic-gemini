@@ -118,6 +118,9 @@ class _VisualRepo(InventoryVisualReferenceRepository):
     def __init__(self, refs: Sequence[InventoryVisualReference]) -> None:
         self._refs = list(refs)
 
+    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+        return next((r for r in self._refs if r.id == reference_id), None)
+
     def create(self, reference: InventoryVisualReference) -> None:
         self._refs.append(reference)
 
@@ -126,6 +129,16 @@ class _VisualRepo(InventoryVisualReferenceRepository):
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
         return [r for r in self._refs if r.inventory_id == inventory_id]
+
+    def update(self, reference: InventoryVisualReference) -> None:
+        for i, existing in enumerate(self._refs):
+            if existing.id == reference.id:
+                self._refs[i] = reference
+                return
+        raise KeyError(reference.id)
+
+    def delete(self, reference_id: str) -> None:
+        self._refs = [r for r in self._refs if r.id != reference_id]
 
 
 class _FakeArtifactStore:

@@ -20,11 +20,13 @@ from src.api.services.v3_stored_artifact_access import (
 from src.api.dependencies import (
     get_create_inventory_use_case,
     get_artifact_storage,
+    get_delete_inventory_visual_reference_use_case,
     get_export_inventory_results_use_case,
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
     get_list_inventory_list_items_use_case,
     get_list_inventory_visual_references_use_case,
+    get_replace_inventory_visual_reference_use_case,
     get_upload_inventory_visual_references_use_case,
 )
 from src.api.schemas.inventory_schemas import (
@@ -40,9 +42,14 @@ from src.application.ports.contracts import InventoryTableQuery
 from src.application.errors import (
     EmptyUploadError,
     InventoryNotFoundError,
+    InventoryVisualReferenceNotFoundError,
     MaxInventoryVisualReferencesExceededError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
+)
+from src.application.use_cases.manage_inventory_visual_references import (
+    DeleteInventoryVisualReferenceUseCase,
+    ReplaceInventoryVisualReferenceUseCase,
 )
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
 from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
@@ -227,6 +234,52 @@ async def upload_inventory_visual_references(
     except UnsupportedAssetTypeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except MaxInventoryVisualReferencesExceededError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/{inventory_id}/visual-references/{reference_id}", status_code=204)
+def delete_inventory_visual_reference(
+    inventory_id: str,
+    reference_id: str,
+    use_case: DeleteInventoryVisualReferenceUseCase = Depends(get_delete_inventory_visual_reference_use_case),
+) -> Response:
+    try:
+        use_case.execute(inventory_id, reference_id)
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except InventoryVisualReferenceNotFoundError:
+        raise HTTPException(status_code=404, detail="Visual reference not found")
+    return Response(status_code=204)
+
+
+@router.put(
+    "/{inventory_id}/visual-references/{reference_id}",
+    response_model=InventoryVisualReferenceResponse,
+)
+async def replace_inventory_visual_reference(
+    inventory_id: str,
+    reference_id: str,
+    file: UploadFile = File(..., description="Replacement image file"),
+    use_case: ReplaceInventoryVisualReferenceUseCase = Depends(get_replace_inventory_visual_reference_use_case),
+) -> InventoryVisualReferenceResponse:
+    uploaded = await _to_uploaded_visual_reference_files([file])
+    try:
+        updated = use_case.execute(inventory_id, reference_id, uploaded[0])
+        return InventoryVisualReferenceResponse(
+            id=updated.id,
+            inventory_id=updated.inventory_id,
+            filename=updated.filename,
+            mime_type=updated.mime_type,
+            file_size=updated.file_size,
+            created_at=updated.created_at,
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except InventoryVisualReferenceNotFoundError:
+        raise HTTPException(status_code=404, detail="Visual reference not found")
+    except ZeroByteFileError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except UnsupportedAssetTypeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 

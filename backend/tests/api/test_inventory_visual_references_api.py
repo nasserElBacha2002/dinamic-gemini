@@ -184,6 +184,63 @@ def test_list_inventory_visual_references_inventory_not_found_returns_404() -> N
     assert resp.status_code == 404
 
 
+def test_delete_inventory_visual_reference_removes_it_from_list() -> None:
+    inventory_id = _create_inventory()
+    upload_resp = client.post(
+        f"/api/v3/inventories/{inventory_id}/visual-references",
+        files=[("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))],
+        headers=_auth_headers(),
+    )
+    assert upload_resp.status_code == 201
+    reference_id = upload_resp.json()["items"][0]["id"]
+
+    delete_resp = client.delete(
+        f"/api/v3/inventories/{inventory_id}/visual-references/{reference_id}",
+        headers=_auth_headers(),
+    )
+    assert delete_resp.status_code == 204
+
+    list_resp = client.get(
+        f"/api/v3/inventories/{inventory_id}/visual-references",
+        headers=_auth_headers(),
+    )
+    assert list_resp.status_code == 200
+    assert list_resp.json()["items"] == []
+
+
+def test_replace_inventory_visual_reference_updates_metadata() -> None:
+    inventory_id = _create_inventory()
+    upload_resp = client.post(
+        f"/api/v3/inventories/{inventory_id}/visual-references",
+        files=[("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))],
+        headers=_auth_headers(),
+    )
+    assert upload_resp.status_code == 201
+    original = upload_resp.json()["items"][0]
+    reference_id = original["id"]
+
+    replace_resp = client.put(
+        f"/api/v3/inventories/{inventory_id}/visual-references/{reference_id}",
+        files={"file": ("replacement.png", BytesIO(b"png-data"), "image/png")},
+        headers=_auth_headers(),
+    )
+    assert replace_resp.status_code == 200
+    updated = replace_resp.json()
+    assert updated["id"] == reference_id
+    assert updated["filename"] == "replacement.png"
+    assert updated["mime_type"] == "image/png"
+    assert updated["inventory_id"] == inventory_id
+
+    list_resp = client.get(
+        f"/api/v3/inventories/{inventory_id}/visual-references",
+        headers=_auth_headers(),
+    )
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()["items"]) == 1
+    assert list_resp.json()["items"][0]["id"] == reference_id
+    assert list_resp.json()["items"][0]["filename"] == "replacement.png"
+
+
 def test_visual_reference_file_endpoint_redirects_to_signed_url_for_s3_backed_reference(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

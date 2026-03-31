@@ -4,6 +4,7 @@ import {
   Button,
   CircularProgress,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
@@ -38,6 +39,12 @@ export interface ReferenceImagesDrawerProps {
   onUpload: (files: File[]) => Promise<unknown>;
   isUploading?: boolean;
   uploadError?: string | null;
+  onDelete: (referenceId: string) => Promise<unknown>;
+  isDeleting?: boolean;
+  deleteError?: string | null;
+  onReplace: (referenceId: string, file: File) => Promise<unknown>;
+  isReplacing?: boolean;
+  replaceError?: string | null;
 }
 
 export default function ReferenceImagesDrawer({
@@ -51,12 +58,21 @@ export default function ReferenceImagesDrawer({
   onUpload,
   isUploading = false,
   uploadError,
+  onDelete,
+  isDeleting = false,
+  deleteError,
+  onReplace,
+  isReplacing = false,
+  replaceError,
 }: ReferenceImagesDrawerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const replaceInputRef = useRef<HTMLInputElement | null>(null);
+  const replaceTargetRef = useRef<InventoryVisualReference | null>(null);
   const previewRevokeRef = useRef<(() => void) | null>(null);
   const previewRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
   const [previewTarget, setPreviewTarget] = useState<InventoryVisualReference | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<InventoryVisualReference | null>(null);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -94,6 +110,11 @@ export default function ReferenceImagesDrawer({
     fileInputRef.current?.click();
   };
 
+  const handleReplaceClick = (item: InventoryVisualReference) => {
+    replaceTargetRef.current = item;
+    replaceInputRef.current?.click();
+  };
+
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = '';
@@ -102,6 +123,29 @@ export default function ReferenceImagesDrawer({
       await onUpload(files);
     } catch {
       // Upload errors are surfaced by the parent mutation state via `uploadError`.
+    }
+  };
+
+  const handleReplaceFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const target = replaceTargetRef.current;
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+    replaceTargetRef.current = null;
+    if (!target || !file) return;
+    try {
+      await onReplace(target.id, file);
+    } catch {
+      // Replace errors are surfaced by the parent mutation state via `replaceError`.
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    try {
+      await onDelete(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch {
+      // Delete errors are surfaced by the parent mutation state via `deleteError`.
     }
   };
 
@@ -188,6 +232,13 @@ export default function ReferenceImagesDrawer({
             style={{ display: 'none' }}
             onChange={handleFileChange}
           />
+          <input
+            ref={replaceInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            style={{ display: 'none' }}
+            onChange={handleReplaceFileChange}
+          />
           {isLoading ? <LoadingBlock /> : null}
 
           {!isLoading && errorMessage ? <ErrorAlert message={errorMessage} onRetry={onRetry} /> : null}
@@ -210,15 +261,18 @@ export default function ReferenceImagesDrawer({
                   does not modify existing results automatically.
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button variant="contained" size="small" onClick={handleUploadClick} disabled={isUploading}>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleUploadClick}
+                    disabled={isUploading || isDeleting || isReplacing}
+                  >
                     {isUploading ? 'Uploading…' : 'Upload references'}
                   </Button>
                 </Box>
                 {uploadError ? <ErrorAlert message={uploadError} /> : null}
-                <Typography variant="caption" color="text.secondary">
-                  Replace and delete actions are not exposed yet because dedicated backend routes are not available in
-                  the current contract.
-                </Typography>
+                {replaceError ? <ErrorAlert message={replaceError} /> : null}
+                {deleteError ? <ErrorAlert message={deleteError} /> : null}
               </Box>
 
               {items.length === 0 ? (
@@ -260,9 +314,26 @@ export default function ReferenceImagesDrawer({
                               </Typography>
                             </Tooltip>
                           </Box>
-                          <Box sx={{ flexShrink: 0 }}>
+                          <Box sx={{ flexShrink: 0, display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                             <Button variant="outlined" size="small" onClick={() => void handlePreview(item)}>
                               Preview
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              onClick={() => handleReplaceClick(item)}
+                              disabled={isUploading || isDeleting || isReplacing}
+                            >
+                              {isReplacing && replaceTargetRef.current?.id === item.id ? 'Replacing…' : 'Replace'}
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              color="error"
+                              size="small"
+                              onClick={() => setDeleteTarget(item)}
+                              disabled={isUploading || isDeleting || isReplacing}
+                            >
+                              Delete
                             </Button>
                           </Box>
                         </Box>
@@ -299,6 +370,24 @@ export default function ReferenceImagesDrawer({
             />
           ) : null}
         </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete reference image</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Delete <strong>{deleteTarget?.filename ?? 'this reference image'}</strong>? This affects future processing
+            runs only and does not modify existing results automatically.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
+            Cancel
+          </Button>
+          <Button color="error" variant="contained" onClick={() => void handleDeleteConfirm()} disabled={isDeleting}>
+            {isDeleting ? 'Deleting…' : 'Delete'}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Drawer>
   );

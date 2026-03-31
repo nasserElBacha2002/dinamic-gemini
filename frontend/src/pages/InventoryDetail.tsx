@@ -33,6 +33,8 @@ import {
   useStartAisleProcessing,
   useUploadAisleAssetsFlex,
   useUploadInventoryVisualReferences,
+  useDeleteInventoryVisualReference,
+  useReplaceInventoryVisualReference,
 } from '../hooks';
 
 function getUploadContextFromInput(
@@ -81,6 +83,8 @@ export default function InventoryDetail() {
   const processMutation = useStartAisleProcessing(inventoryId ?? '');
   const uploadMutation = useUploadAisleAssetsFlex(inventoryId ?? '');
   const uploadReferenceImagesMutation = useUploadInventoryVisualReferences(inventoryId ?? '');
+  const deleteReferenceImageMutation = useDeleteInventoryVisualReference(inventoryId ?? '');
+  const replaceReferenceImageMutation = useReplaceInventoryVisualReference(inventoryId ?? '');
 
   const inventory = inventoryQuery.data ?? null;
   const inventoryLoading = inventoryQuery.isLoading;
@@ -109,6 +113,8 @@ export default function InventoryDetail() {
   const handleCloseReferenceImages = () => {
     setReferenceImagesOpen(false);
     uploadReferenceImagesMutation.reset();
+    deleteReferenceImageMutation.reset();
+    replaceReferenceImageMutation.reset();
   };
 
   const handleStartProcess = async (aisleId: string) => {
@@ -436,6 +442,20 @@ export default function InventoryDetail() {
         uploadError={
           uploadReferenceImagesMutation.isError && uploadReferenceImagesMutation.error
             ? getApiErrorMessage(uploadReferenceImagesMutation.error, 'Failed to upload reference images')
+            : null
+        }
+        onDelete={(referenceId) => deleteReferenceImageMutation.mutateAsync(referenceId)}
+        isDeleting={deleteReferenceImageMutation.isPending}
+        deleteError={
+          deleteReferenceImageMutation.isError && deleteReferenceImageMutation.error
+            ? getApiErrorMessage(deleteReferenceImageMutation.error, 'Failed to delete reference image')
+            : null
+        }
+        onReplace={(referenceId, file) => replaceReferenceImageMutation.mutateAsync({ referenceId, file })}
+        isReplacing={replaceReferenceImageMutation.isPending}
+        replaceError={
+          replaceReferenceImageMutation.isError && replaceReferenceImageMutation.error
+            ? getApiErrorMessage(replaceReferenceImageMutation.error, 'Failed to replace reference image')
             : null
         }
       />

@@ -13,6 +13,12 @@ const { useInventoryVisualReferencesMock } = vi.hoisted(() => ({
 const { useUploadInventoryVisualReferencesMock } = vi.hoisted(() => ({
   useUploadInventoryVisualReferencesMock: vi.fn(),
 }));
+const { useDeleteInventoryVisualReferenceMock } = vi.hoisted(() => ({
+  useDeleteInventoryVisualReferenceMock: vi.fn(),
+}));
+const { useReplaceInventoryVisualReferenceMock } = vi.hoisted(() => ({
+  useReplaceInventoryVisualReferenceMock: vi.fn(),
+}));
 
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
@@ -59,6 +65,8 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useStartAisleProcessing: () => ({ mutateAsync: vi.fn() }),
     useUploadAisleAssetsFlex: () => ({ mutateAsync: vi.fn() }),
     useUploadInventoryVisualReferences: useUploadInventoryVisualReferencesMock,
+    useDeleteInventoryVisualReference: useDeleteInventoryVisualReferenceMock,
+    useReplaceInventoryVisualReference: useReplaceInventoryVisualReferenceMock,
   };
 });
 
@@ -89,11 +97,28 @@ describe('InventoryDetail', () => {
   beforeEach(() => {
     useInventoryVisualReferencesMock.mockReset();
     useUploadInventoryVisualReferencesMock.mockReset();
+    useDeleteInventoryVisualReferenceMock.mockReset();
+    useReplaceInventoryVisualReferenceMock.mockReset();
     useUploadInventoryVisualReferencesMock.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
       isError: false,
       error: null,
+      reset: vi.fn(),
+    });
+    useDeleteInventoryVisualReferenceMock.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+      isError: false,
+      error: null,
+      reset: vi.fn(),
+    });
+    useReplaceInventoryVisualReferenceMock.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+      isError: false,
+      error: null,
+      reset: vi.fn(),
     });
   });
 

@@ -89,6 +89,21 @@ class SqlInventoryVisualReferenceRepository(InventoryVisualReferenceRepository):
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
 
+    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, inventory_id, filename, storage_path,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                       mime_type, file_size, created_at
+                FROM inventory_visual_references
+                WHERE id = ?
+                """,
+                (reference_id,),
+            )
+            row = cur.fetchone()
+        return _row_to_reference(row) if row else None
+
     def create(self, reference: InventoryVisualReference) -> None:
         created = _to_utc(reference.created_at)
         if created is None:
@@ -170,3 +185,39 @@ class SqlInventoryVisualReferenceRepository(InventoryVisualReferenceRepository):
             )
             rows = cur.fetchall()
         return [_row_to_reference(row) for row in rows]
+
+    def update(self, reference: InventoryVisualReference) -> None:
+        created = _to_utc(reference.created_at)
+        if created is None:
+            raise ValueError("InventoryVisualReference.created_at is required")
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE inventory_visual_references
+                SET inventory_id = ?, filename = ?, storage_path = ?,
+                    storage_provider = ?, storage_bucket = ?, storage_key = ?, content_type = ?, file_size_bytes = ?, etag = ?,
+                    mime_type = ?, file_size = ?, created_at = ?
+                WHERE id = ?
+                """,
+                (
+                    reference.inventory_id,
+                    reference.filename,
+                    reference.storage_path,
+                    reference.storage_provider,
+                    reference.storage_bucket,
+                    reference.storage_key,
+                    reference.content_type,
+                    reference.file_size_bytes,
+                    reference.etag,
+                    reference.mime_type,
+                    reference.file_size,
+                    created,
+                    reference.id,
+                ),
+            )
+            if getattr(cur, "rowcount", 0) == 0:
+                raise KeyError(reference.id)
+
+    def delete(self, reference_id: str) -> None:
+        with self._client.cursor() as cur:
+            cur.execute("DELETE FROM inventory_visual_references WHERE id = ?", (reference_id,))
