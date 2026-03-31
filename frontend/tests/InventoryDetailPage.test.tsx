@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import InventoryDetail from '../src/pages/InventoryDetail';
@@ -94,25 +94,31 @@ function renderPage() {
 }
 
 describe('InventoryDetail', () => {
-  it('keeps the page focused on header, reference images, and aisles', () => {
+  it('keeps the page focused on header and aisles, with a header action for reference images', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Inventory One' })).toBeInTheDocument();
-    expect(screen.getByText('Reference images')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reference images' })).toBeInTheDocument();
     expect(screen.getByText('Aisles')).toBeInTheDocument();
 
     expect(screen.queryByText('Total aisles')).not.toBeInTheDocument();
     expect(screen.queryByText('Review completion rate')).not.toBeInTheDocument();
     expect(screen.queryByText('Activity')).not.toBeInTheDocument();
     expect(screen.queryByText('Logs summary')).not.toBeInTheDocument();
+    expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();
   });
 
-  it('renders real inventory reference data from the existing contract', () => {
+  it('opens the reference images drawer and renders inventory reference data there', () => {
     renderPage();
 
+    expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reference images' }));
+
+    expect(screen.getByRole('heading', { name: 'Reference images' })).toBeInTheDocument();
     expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
     expect(screen.getByText(/future processing runs only/i)).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /Aisle code/i })).toBeInTheDocument();
-    expect(screen.getByText('A-01')).toBeInTheDocument();
+    expect(screen.getByText(/management actions/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /close reference images drawer/i })).toBeInTheDocument();
   });
 });

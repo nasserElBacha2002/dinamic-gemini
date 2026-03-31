@@ -23,7 +23,7 @@ import {
 import { PageHeader } from '../components/shell';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import ExecutionLogPanel from '../components/ExecutionLogPanel';
-import ReferenceImagesSection from '../components/ReferenceImagesSection';
+import ReferenceImagesDrawer from '../components/ReferenceImagesDrawer';
 import {
   useInventoryDetail,
   useInventoryVisualReferences,
@@ -54,6 +54,7 @@ export default function InventoryDetail() {
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [logDialog, setLogDialog] = useState<{ aisleId: string; jobId: string; aisleCode: string } | null>(null);
+  const [referenceImagesOpen, setReferenceImagesOpen] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
@@ -70,7 +71,7 @@ export default function InventoryDetail() {
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const visualReferencesQuery = useInventoryVisualReferences(inventoryId, {
-    enabled: Boolean(inventoryId && inventoryQuery.data),
+    enabled: Boolean(referenceImagesOpen && inventoryId && inventoryQuery.data),
   });
   const aislesQuery = useAislesList(inventoryId, { enabled: Boolean(inventoryId && inventoryQuery.data) });
   const aisles = aislesQuery.data?.items ?? [];
@@ -311,6 +312,13 @@ export default function InventoryDetail() {
                 <Button
                   variant="outlined"
                   size="small"
+                  onClick={() => setReferenceImagesOpen(true)}
+                >
+                  Reference images
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
                   disabled={!inventoryId || exportingCsv}
                   onClick={async () => {
                     if (!inventoryId) return;
@@ -334,13 +342,6 @@ export default function InventoryDetail() {
             }
           />
           <Box sx={{ display: 'grid', gap: 2 }}>
-            <ReferenceImagesSection
-              items={visualReferences}
-              isLoading={visualReferencesQuery.isLoading}
-              errorMessage={visualReferencesError}
-              onRetry={() => visualReferencesQuery.refetch()}
-            />
-
             {processError ? (
               <Box data-testid="inventory-process-error">
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
@@ -413,6 +414,15 @@ export default function InventoryDetail() {
         onSuccess={handleCreateAisleSuccess}
         existingAisleCodes={aisles.map((a) => a.code)}
         createAisleFn={createAisleMutation.mutateAsync}
+      />
+
+      <ReferenceImagesDrawer
+        open={referenceImagesOpen}
+        onClose={() => setReferenceImagesOpen(false)}
+        items={visualReferences}
+        isLoading={visualReferencesQuery.isLoading}
+        errorMessage={visualReferencesError}
+        onRetry={() => visualReferencesQuery.refetch()}
       />
 
       <Dialog
