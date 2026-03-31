@@ -45,6 +45,7 @@ _normalized_label_repo: Optional[NormalizedLabelRepository] = None
 _final_count_repo: Optional[FinalCountRepository] = None
 _v3_sql_client = None
 _artifact_store = None
+_worker_launch_service = None
 
 
 def _v3_allow_in_memory_fallback() -> bool:
@@ -334,6 +335,18 @@ def get_artifact_store():
     base = os.path.join(settings.output_dir, "v3_uploads")
     _artifact_store = V3ArtifactStorageAdapter(Path(base))
     return _artifact_store
+
+
+def get_worker_launch_service():
+    global _worker_launch_service
+    if _worker_launch_service is not None:
+        return _worker_launch_service
+    from src.infrastructure.services.on_demand_worker_launch_service import (
+        OnDemandWorkerLaunchService,
+    )
+
+    _worker_launch_service = OnDemandWorkerLaunchService()
+    return _worker_launch_service
 
 
 # --- v3.2.3 label consolidation (in-memory only for now) ---

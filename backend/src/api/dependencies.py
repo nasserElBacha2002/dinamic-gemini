@@ -31,7 +31,7 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     ReviewActionRepository,
 )
-from src.application.ports.services import MetricsCalculator
+from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.runtime.v3_deps import (
     get_aisle_repo,
     get_analytics_repo,
@@ -47,6 +47,7 @@ from src.runtime.v3_deps import (
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
     get_source_asset_repo,
+    get_worker_launch_service,
 )
 from src.application.use_cases.create_aisle import CreateAisleUseCase
 from src.application.use_cases.create_inventory import CreateInventoryUseCase
@@ -133,10 +134,8 @@ def get_artifact_storage():
     return _artifact_storage_instance
 
 
-def get_job_queue():
-    """Return v3 JobQueue adapter (enqueue(job_id) -> None). Stateless."""
-    from src.infrastructure.queue.v3_job_queue_adapter import V3JobQueueAdapter
-    return V3JobQueueAdapter()
+def get_worker_launch_service_dep() -> WorkerLaunchService:
+    return get_worker_launch_service()
 
 
 def get_create_inventory_use_case(
@@ -263,14 +262,14 @@ def get_list_aisles_with_status_use_case(
 def get_start_aisle_processing_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
-    job_queue=Depends(get_job_queue),
+    worker_launch_service: WorkerLaunchService = Depends(get_worker_launch_service_dep),
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        job_queue=job_queue,
+        worker_launch_service=worker_launch_service,
         clock=clock,
         status_reconciler=status_reconciler,
     )

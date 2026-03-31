@@ -22,6 +22,17 @@ class JobSummary(BaseModel):
     updated_at: datetime
     error_message: Optional[str] = None
     reference_usage: Optional[ReferenceUsageSummary] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    last_heartbeat_at: Optional[datetime] = None
+    cancel_requested_at: Optional[datetime] = None
+    current_stage: Optional[str] = None
+    current_substep: Optional[str] = None
+    current_step_started_at: Optional[datetime] = None
+    attempt_count: int = 1
+    failure_code: Optional[str] = None
+    failure_message: Optional[str] = None
+    execution_id: Optional[str] = None
 
 
 class AisleStatusResponse(BaseModel):

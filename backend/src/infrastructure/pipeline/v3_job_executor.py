@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+import threading
+import time
 from typing import Any, Dict, Optional
 
 from src.application.ports.clock import Clock
@@ -164,6 +166,7 @@ class V3JobExecutor:
             reference_repo=inventory_visual_reference_repo,
         )
         self._context_builder = AisleAnalysisContextBuilder(resolver)
+        self._heartbeat_interval_sec = 10
 
     def _reconcile_inventory_for_aisle(self, aisle: Aisle) -> None:
         self._inventory_status_reconciler.reconcile(aisle.inventory_id)
@@ -200,7 +203,7 @@ class V3JobExecutor:
             logger.info("v3 job %s cancel requested before start; marking canceled", job_id)
             self._cancel_job(job_id, "Job canceled before execution")
             return True
-        if job.status not in (JobStatus.QUEUED, JobStatus.RUNNING):
+        if job.status not in (JobStatus.QUEUED, JobStatus.STARTING, JobStatus.RUNNING):
             logger.warning("v3 job %s invalid status for execution (status=%s), skip", job_id, job.status.value)
             return True
 
@@ -289,11 +292,47 @@ class V3JobExecutor:
 
         run_dir = base_path / job_id / RUN_ID
         log = setup_logger(str(job_dir), job_id, RUN_ID, console=False)
+        exec_log = ExecutionLogWriter(run_dir)
+        exec_log.structured_event(
+            job_id=job_id,
+            inventory_id=aisle.inventory_id,
+            aisle_id=aisle_id,
+            attempt=job.attempt_count,
+            stage="WorkerLaunch",
+            substep="startup_confirmation",
+            event="job.spawn_succeeded",
+            details={"execution_id": job.execution_id},
+        )
         logger.info(
             "v3 execution log initialized: job_id=%s run_dir=%s",
             job_id,
             str(run_dir),
         )
+
+        stop_heartbeat = threading.Event()
+
+        def heartbeat_loop() -> None:
+            while not stop_heartbeat.wait(self._heartbeat_interval_sec):
+                self._heartbeat(job_id)
+                exec_log.structured_event(
+                    job_id=job_id,
+                    inventory_id=aisle.inventory_id,
+                    aisle_id=aisle_id,
+                    attempt=job.attempt_count,
+                    stage=self._job_repo.get_by_id(job_id).current_stage if self._job_repo.get_by_id(job_id) else "Pipeline",
+                    substep=self._job_repo.get_by_id(job_id).current_substep if self._job_repo.get_by_id(job_id) else None,
+                    event="job.heartbeat",
+                )
+
+        heartbeat_thread = threading.Thread(target=heartbeat_loop, name=f"job-heartbeat-{job_id}", daemon=True)
+        heartbeat_thread.start()
+
+        def execution_observer(stage: str, substep: Optional[str], event: str, details: Optional[Dict[str, Any]]) -> None:
+            self._update_runtime_status(
+                job_id,
+                stage=stage,
+                substep=substep,
+            )
 
         try:
             logger.info(
@@ -317,6 +356,7 @@ class V3JobExecutor:
                 progress_callback=None,
                 job_input=job_input,
                 analysis_context=analysis_context,
+                execution_observer=execution_observer,
             )
             logger.info(
                 "v3 executor finished: job_id=%s exit_code=%s inventory_id=%s aisle_id=%s",
@@ -361,7 +401,6 @@ class V3JobExecutor:
             # compensation; operators should treat FAILED as "processing did not fully complete" and use
             # a new or explicitly reset job if work must be redone. Re-running the same job id without
             # reset is out of band for this executor (claim path expects terminal FAILED to stay terminal).
-            exec_log = ExecutionLogWriter(run_dir)
             exec_log.info("Persist", "Persist started", payload={"aisle_id": aisle_id})
             try:
                 self._persist_use_case.execute(
@@ -466,6 +505,9 @@ class V3JobExecutor:
                 aisle_id,
                 str(e),
             )
+        finally:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=1.0)
 
         return True
 
@@ -575,6 +617,11 @@ class V3JobExecutor:
         job = self._job_repo.get_by_id(job_id)
         if job:
             job.status = JobStatus.RUNNING
+            job.started_at = job.started_at or now
+            job.last_heartbeat_at = now
+            job.current_stage = "Pipeline"
+            job.current_substep = "startup_confirmed"
+            job.current_step_started_at = now
             job.updated_at = now
             self._job_repo.save(job)
         aisle.mark_processing(now)
@@ -595,6 +642,10 @@ class V3JobExecutor:
         if job:
             job.status = JobStatus.SUCCEEDED
             job.updated_at = now
+            job.finished_at = now
+            job.last_heartbeat_at = now
+            job.current_stage = "Pipeline"
+            job.current_substep = "completed"
             meta = run_metadata or {}
             vrc = meta.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
             job.result_json = {
@@ -614,6 +665,8 @@ class V3JobExecutor:
                     sorted(durable_artifacts.keys()),
                 )
             job.error_message = None
+            job.failure_code = None
+            job.failure_message = None
             self._job_repo.save(job)
             logger.info(
                 "v3_job_metadata_save_ok job_id=%s has_durable_artifacts=%s",
@@ -630,6 +683,10 @@ class V3JobExecutor:
             now = self._clock.now()
             job.status = JobStatus.FAILED
             job.updated_at = now
+            job.finished_at = now
+            job.last_heartbeat_at = now
+            job.failure_code = "PROCESSING_FAILED"
+            job.failure_message = error_message[:2048] if len(error_message) > 2048 else error_message
             job.error_message = error_message[:2048] if len(error_message) > 2048 else error_message
             self._job_repo.save(job)
 
@@ -639,8 +696,33 @@ class V3JobExecutor:
             now = self._clock.now()
             job.status = JobStatus.CANCELED
             job.updated_at = now
+            job.finished_at = now
+            job.last_heartbeat_at = now
+            job.current_substep = "canceled"
             job.error_message = reason[:2048] if len(reason) > 2048 else reason
             self._job_repo.save(job)
+
+    def _heartbeat(self, job_id: str) -> None:
+        job = self._job_repo.get_by_id(job_id)
+        if job is None or job.status not in (JobStatus.STARTING, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
+            return
+        now = self._clock.now()
+        job.last_heartbeat_at = now
+        job.updated_at = now
+        self._job_repo.save(job)
+
+    def _update_runtime_status(self, job_id: str, *, stage: str, substep: Optional[str]) -> None:
+        job = self._job_repo.get_by_id(job_id)
+        if job is None or job.status in (JobStatus.FAILED, JobStatus.CANCELED, JobStatus.SUCCEEDED):
+            return
+        now = self._clock.now()
+        job.current_stage = stage
+        job.current_substep = substep
+        job.current_step_started_at = now
+        job.last_heartbeat_at = now
+        job.updated_at = now
+        self._job_repo.save(job)
+
 
     def _fail_job_and_aisle(
         self, job_id: str, aisle: Aisle, error_message: str

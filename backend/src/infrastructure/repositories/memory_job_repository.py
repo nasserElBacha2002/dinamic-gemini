@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Dict, Optional, Sequence
 
 from src.application.ports.repositories import JobRepository
-from src.domain.jobs.entities import Job
+from src.domain.jobs.entities import Job, JobStatus
 
 
 class MemoryJobRepository(JobRepository):
@@ -36,6 +36,13 @@ class MemoryJobRepository(JobRepository):
 
     def list_all_jobs(self) -> Sequence[Job]:
         return list(self._store.values())
+
+    def claim_next_queued_job(self) -> Optional[Job]:
+        candidates = [j for j in self._store.values() if j.status == JobStatus.QUEUED]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda j: (j.created_at, j.id))
+        return candidates[0]
 
     def get_latest_by_targets(
         self, target_type: str, target_ids: Sequence[str]

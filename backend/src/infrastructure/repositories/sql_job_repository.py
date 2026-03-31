@@ -70,6 +70,17 @@ def _row_to_job(row: Any) -> Job:
         updated_at=updated,
         result_json=_parse_json(getattr(row, "result_json", None)) or None,
         error_message=getattr(row, "error_message", None),
+        started_at=_ensure_utc(getattr(row, "started_at", None)),
+        finished_at=_ensure_utc(getattr(row, "finished_at", None)),
+        last_heartbeat_at=_ensure_utc(getattr(row, "last_heartbeat_at", None)),
+        cancel_requested_at=_ensure_utc(getattr(row, "cancel_requested_at", None)),
+        current_stage=getattr(row, "current_stage", None),
+        current_substep=getattr(row, "current_substep", None),
+        current_step_started_at=_ensure_utc(getattr(row, "current_step_started_at", None)),
+        attempt_count=int(getattr(row, "attempt_count", 1) or 1),
+        failure_code=getattr(row, "failure_code", None),
+        failure_message=getattr(row, "failure_message", None),
+        execution_id=getattr(row, "execution_id", None),
     )
 
 
@@ -91,7 +102,10 @@ class SqlJobRepository(JobRepository):
                 """
                 UPDATE inventory_jobs
                 SET target_type = ?, target_id = ?, job_type = ?, status = ?,
-                    payload_json = ?, result_json = ?, error_message = ?, updated_at = ?
+                    payload_json = ?, result_json = ?, error_message = ?, updated_at = ?,
+                    started_at = ?, finished_at = ?, last_heartbeat_at = ?, cancel_requested_at = ?,
+                    current_stage = ?, current_substep = ?, current_step_started_at = ?,
+                    attempt_count = ?, failure_code = ?, failure_message = ?, execution_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -103,6 +117,17 @@ class SqlJobRepository(JobRepository):
                     result_str,
                     job.error_message,
                     updated,
+                    _ensure_utc(job.started_at),
+                    _ensure_utc(job.finished_at),
+                    _ensure_utc(job.last_heartbeat_at),
+                    _ensure_utc(job.cancel_requested_at),
+                    job.current_stage,
+                    job.current_substep,
+                    _ensure_utc(job.current_step_started_at),
+                    int(job.attempt_count or 1),
+                    job.failure_code,
+                    job.failure_message,
+                    job.execution_id,
                     job.id,
                 ),
             )
@@ -110,8 +135,11 @@ class SqlJobRepository(JobRepository):
                 cur.execute(
                     """
                     INSERT INTO inventory_jobs (id, target_type, target_id, job_type, status,
-                        payload_json, result_json, error_message, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        payload_json, result_json, error_message, created_at, updated_at,
+                        started_at, finished_at, last_heartbeat_at, cancel_requested_at,
+                        current_stage, current_substep, current_step_started_at,
+                        attempt_count, failure_code, failure_message, execution_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,
@@ -124,6 +152,17 @@ class SqlJobRepository(JobRepository):
                         job.error_message,
                         created,
                         updated,
+                        _ensure_utc(job.started_at),
+                        _ensure_utc(job.finished_at),
+                        _ensure_utc(job.last_heartbeat_at),
+                        _ensure_utc(job.cancel_requested_at),
+                        job.current_stage,
+                        job.current_substep,
+                        _ensure_utc(job.current_step_started_at),
+                        int(job.attempt_count or 1),
+                        job.failure_code,
+                        job.failure_message,
+                        job.execution_id,
                     ),
                 )
 
@@ -132,7 +171,10 @@ class SqlJobRepository(JobRepository):
             cur.execute(
                 """
                 SELECT id, target_type, target_id, job_type, status,
-                       payload_json, result_json, error_message, created_at, updated_at
+                       payload_json, result_json, error_message, created_at, updated_at,
+                       started_at, finished_at, last_heartbeat_at, cancel_requested_at,
+                       current_stage, current_substep, current_step_started_at,
+                       attempt_count, failure_code, failure_message, execution_id
                 FROM inventory_jobs WHERE id = ?
                 """,
                 (job_id,),
@@ -147,7 +189,10 @@ class SqlJobRepository(JobRepository):
             cur.execute(
                 """
                 SELECT TOP 1 id, target_type, target_id, job_type, status,
-                       payload_json, result_json, error_message, created_at, updated_at
+                       payload_json, result_json, error_message, created_at, updated_at,
+                       started_at, finished_at, last_heartbeat_at, cancel_requested_at,
+                       current_stage, current_substep, current_step_started_at,
+                       attempt_count, failure_code, failure_message, execution_id
                 FROM inventory_jobs
                 WHERE target_type = ? AND target_id = ?
                 ORDER BY updated_at DESC, created_at DESC
@@ -164,7 +209,10 @@ class SqlJobRepository(JobRepository):
             cur.execute(
                 """
                 SELECT id, target_type, target_id, job_type, status,
-                       payload_json, result_json, error_message, created_at, updated_at
+                       payload_json, result_json, error_message, created_at, updated_at,
+                       started_at, finished_at, last_heartbeat_at, cancel_requested_at,
+                       current_stage, current_substep, current_step_started_at,
+                       attempt_count, failure_code, failure_message, execution_id
                 FROM inventory_jobs
                 ORDER BY updated_at DESC, created_at DESC
                 """
@@ -181,7 +229,10 @@ class SqlJobRepository(JobRepository):
         params: List[Any] = [target_type, *target_ids]
         query = f"""
             SELECT id, target_type, target_id, job_type, status,
-                   payload_json, result_json, error_message, created_at, updated_at
+                   payload_json, result_json, error_message, created_at, updated_at,
+                   started_at, finished_at, last_heartbeat_at, cancel_requested_at,
+                   current_stage, current_substep, current_step_started_at,
+                   attempt_count, failure_code, failure_message, execution_id
             FROM (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY target_id ORDER BY updated_at DESC, created_at DESC
@@ -213,11 +264,11 @@ class SqlJobRepository(JobRepository):
                     ORDER BY created_at ASC, id ASC
                 )
                 UPDATE inventory_jobs
-                SET updated_at = ?, status = ?
+                SET updated_at = ?, status = ?, started_at = COALESCE(started_at, ?)
                 OUTPUT inserted.id
                 WHERE id IN (SELECT id FROM next_job)
                 """,
-                (datetime.now(timezone.utc), JobStatus.RUNNING.value),
+                (datetime.now(timezone.utc), JobStatus.STARTING.value, datetime.now(timezone.utc)),
             )
             row = cur.fetchone()
             if row is not None:
@@ -245,10 +296,20 @@ class SqlJobRepository(JobRepository):
             cur.execute(
                 """
                 UPDATE inventory_jobs
-                SET status = 'queued', updated_at = ?
-                WHERE status = 'running'
-                  AND DATEDIFF(SECOND, updated_at, ?) >= ?
+                SET status = 'failed',
+                    updated_at = ?,
+                    finished_at = ?,
+                    failure_code = 'STALE_JOB',
+                    failure_message = 'Job heartbeat expired before completion',
+                    error_message = 'Job heartbeat expired before completion'
+                WHERE status IN ('starting', 'running', 'cancel_requested')
+                  AND DATEDIFF(SECOND, COALESCE(last_heartbeat_at, updated_at), ?) >= ?
                 """,
-                (datetime.now(timezone.utc), datetime.now(timezone.utc), stale_after_seconds),
+                (
+                    datetime.now(timezone.utc),
+                    datetime.now(timezone.utc),
+                    datetime.now(timezone.utc),
+                    stale_after_seconds,
+                ),
             )
             return int(cur.rowcount or 0)
