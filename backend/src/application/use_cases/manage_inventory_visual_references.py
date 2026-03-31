@@ -8,9 +8,7 @@ without changing the product rule that references only affect future processing 
 from __future__ import annotations
 
 import logging
-from io import BytesIO
 from typing import Any
-from uuid import uuid4
 
 from src.application.errors import (
     InventoryNotFoundError,
@@ -18,7 +16,6 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
-from src.application.ports.clock import Clock
 from src.application.ports.repositories import InventoryRepository, InventoryVisualReferenceRepository
 from src.application.ports.services import ArtifactStorage
 from src.application.use_cases.upload_inventory_visual_references import (
@@ -72,12 +69,10 @@ class ReplaceInventoryVisualReferenceUseCase:
         inventory_repo: InventoryRepository,
         reference_repo: InventoryVisualReferenceRepository,
         artifact_storage: ArtifactStorage,
-        clock: Clock,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._reference_repo = reference_repo
         self._artifact_storage = artifact_storage
-        self._clock = clock
 
     def execute(
         self,
@@ -138,7 +133,7 @@ class ReplaceInventoryVisualReferenceUseCase:
                 storage_path=storage_path,
                 mime_type=mime,
                 file_size=file.size,
-                created_at=self._clock.now(),
+                created_at=current.created_at,
                 storage_provider=storage_provider,
                 storage_bucket=storage_bucket,
                 storage_key=new_storage_key,

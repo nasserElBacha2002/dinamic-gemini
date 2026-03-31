@@ -19,14 +19,6 @@ from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.infrastructure.storage.artifact_store import StoredArtifact
 
 
-class FixedClock:
-    def __init__(self, now: datetime) -> None:
-        self._now = now
-
-    def now(self) -> datetime:
-        return self._now
-
-
 class StubInventoryRepo(InventoryRepository):
     def __init__(self) -> None:
         self._store: Dict[str, Inventory] = {}
@@ -139,14 +131,13 @@ def test_delete_inventory_visual_reference_removes_record_and_artifact() -> None
 
 def test_replace_inventory_visual_reference_updates_record_and_cleans_old_artifact() -> None:
     now = datetime(2025, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
-    later = datetime(2025, 4, 2, 9, 0, 0, tzinfo=timezone.utc)
     inv_repo = StubInventoryRepo()
     inv_repo.save(_inventory(now))
     ref_repo = StubVisualReferenceRepo()
     ref_repo.create(_reference(now))
     storage = StubArtifactStorage()
 
-    use_case = ReplaceInventoryVisualReferenceUseCase(inv_repo, ref_repo, storage, FixedClock(later))
+    use_case = ReplaceInventoryVisualReferenceUseCase(inv_repo, ref_repo, storage)
     updated = use_case.execute(
         "inv-1",
         "ref-1",
@@ -161,10 +152,11 @@ def test_replace_inventory_visual_reference_updates_record_and_cleans_old_artifa
     assert updated.id == "ref-1"
     assert updated.filename == "updated.png"
     assert updated.mime_type == "image/png"
-    assert updated.created_at == later
+    assert updated.created_at == now
     stored = ref_repo.get_by_id("ref-1")
     assert stored is not None
     assert stored.filename == "updated.png"
+    assert stored.created_at == now
     assert storage.written == ["inventories/inv-1/visual_references/ref-1.png"]
     assert storage.deleted == ["inventories/inv-1/visual_references/ref-1.jpg"]
 
@@ -176,7 +168,7 @@ def test_replace_inventory_visual_reference_raises_when_reference_missing() -> N
     ref_repo = StubVisualReferenceRepo()
     storage = StubArtifactStorage()
 
-    use_case = ReplaceInventoryVisualReferenceUseCase(inv_repo, ref_repo, storage, FixedClock(now))
+    use_case = ReplaceInventoryVisualReferenceUseCase(inv_repo, ref_repo, storage)
     with pytest.raises(InventoryVisualReferenceNotFoundError):
         use_case.execute(
             "inv-1",

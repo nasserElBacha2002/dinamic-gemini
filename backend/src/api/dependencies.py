@@ -364,13 +364,11 @@ def get_replace_inventory_visual_reference_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     reference_repo: InventoryVisualReferenceRepository = Depends(get_inventory_visual_reference_repo),
     artifact_storage=Depends(get_artifact_storage),
-    clock: Clock = Depends(get_clock),
 ) -> ReplaceInventoryVisualReferenceUseCase:
     return ReplaceInventoryVisualReferenceUseCase(
         inventory_repo=inventory_repo,
         reference_repo=reference_repo,
         artifact_storage=artifact_storage,
-        clock=clock,
     )
 
 

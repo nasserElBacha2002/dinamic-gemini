@@ -3,6 +3,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ReferenceImagesDrawer from '../src/components/ReferenceImagesDrawer';
+import type { ReferenceImagesDrawerProps } from '../src/components/ReferenceImagesDrawer';
 
 const { fetchInventoryVisualReferenceFileMock } = vi.hoisted(() => ({
   fetchInventoryVisualReferenceFileMock: vi.fn(),
@@ -17,6 +18,41 @@ vi.mock('../src/api/client', async () => {
 });
 
 describe('ReferenceImagesDrawer', () => {
+  const defaultItem = {
+    id: 'ref-1',
+    inventory_id: 'inv-1',
+    filename: 'front-pallet.jpg',
+    mime_type: 'image/jpeg',
+    file_size: 1024,
+    created_at: '2024-01-02T00:00:00Z',
+  };
+
+  function renderDrawer(overrides: Partial<ReferenceImagesDrawerProps> = {}) {
+    const props: ReferenceImagesDrawerProps = {
+      inventoryId: 'inv-1',
+      open: true,
+      onClose: vi.fn(),
+      items: [],
+      isLoading: false,
+      errorMessage: null,
+      onRetry: vi.fn(),
+      onUpload: vi.fn().mockResolvedValue(undefined),
+      isUploading: false,
+      uploadError: null,
+      onDelete: vi.fn().mockResolvedValue(undefined),
+      isDeleting: false,
+      deleteError: null,
+      onReplace: vi.fn().mockResolvedValue(undefined),
+      isReplacing: false,
+      replaceError: null,
+      ...overrides,
+    };
+    return {
+      ...render(<ReferenceImagesDrawer {...props} />),
+      props,
+    };
+  }
+
   beforeEach(() => {
     fetchInventoryVisualReferenceFileMock.mockReset();
     fetchInventoryVisualReferenceFileMock.mockResolvedValue({
@@ -26,61 +62,14 @@ describe('ReferenceImagesDrawer', () => {
   });
 
   it('renders empty state and real upload entry point', () => {
-    render(
-      <ReferenceImagesDrawer
-        inventoryId="inv-1"
-        open
-        onClose={vi.fn()}
-        items={[]}
-        isLoading={false}
-        errorMessage={null}
-        onRetry={vi.fn()}
-        onUpload={vi.fn().mockResolvedValue(undefined)}
-        isUploading={false}
-        uploadError={null}
-        onDelete={vi.fn().mockResolvedValue(undefined)}
-        isDeleting={false}
-        deleteError={null}
-        onReplace={vi.fn().mockResolvedValue(undefined)}
-        isReplacing={false}
-        replaceError={null}
-      />,
-    );
+    renderDrawer();
 
     expect(screen.getByText(/no reference images uploaded yet/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /upload references/i })).toBeInTheDocument();
   });
 
   it('renders populated state with view action per reference', () => {
-    render(
-      <ReferenceImagesDrawer
-        inventoryId="inv-1"
-        open
-        onClose={vi.fn()}
-        items={[
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ]}
-        isLoading={false}
-        errorMessage={null}
-        onRetry={vi.fn()}
-        onUpload={vi.fn().mockResolvedValue(undefined)}
-        isUploading={false}
-        uploadError={null}
-        onDelete={vi.fn().mockResolvedValue(undefined)}
-        isDeleting={false}
-        deleteError={null}
-        onReplace={vi.fn().mockResolvedValue(undefined)}
-        isReplacing={false}
-        replaceError={null}
-      />,
-    );
+    renderDrawer({ items: [defaultItem] });
 
     expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
     expect(
@@ -95,35 +84,18 @@ describe('ReferenceImagesDrawer', () => {
     const longFilename =
       'very-long-reference-image-name-for-inventory-front-pallet-label-example-2026-03-31-version-final.png';
 
-    render(
-      <ReferenceImagesDrawer
-        inventoryId="inv-1"
-        open
-        onClose={vi.fn()}
-        items={[
-          {
-            id: 'ref-long',
-            inventory_id: 'inv-1',
-            filename: longFilename,
-            mime_type: 'image/png',
-            file_size: 740 * 1024,
-            created_at: '2026-03-31T11:12:00Z',
-          },
-        ]}
-        isLoading={false}
-        errorMessage={null}
-        onRetry={vi.fn()}
-        onUpload={vi.fn().mockResolvedValue(undefined)}
-        isUploading={false}
-        uploadError={null}
-        onDelete={vi.fn().mockResolvedValue(undefined)}
-        isDeleting={false}
-        deleteError={null}
-        onReplace={vi.fn().mockResolvedValue(undefined)}
-        isReplacing={false}
-        replaceError={null}
-      />,
-    );
+    renderDrawer({
+      items: [
+        {
+          id: 'ref-long',
+          inventory_id: 'inv-1',
+          filename: longFilename,
+          mime_type: 'image/png',
+          file_size: 740 * 1024,
+          created_at: '2026-03-31T11:12:00Z',
+        },
+      ],
+    });
 
     expect(screen.getByText(longFilename)).toBeInTheDocument();
     expect(screen.getByText(/image\/png/i)).toBeInTheDocument();
@@ -133,26 +105,7 @@ describe('ReferenceImagesDrawer', () => {
   it('passes selected files to the upload handler', () => {
     const onUpload = vi.fn().mockResolvedValue(undefined);
 
-    render(
-      <ReferenceImagesDrawer
-        inventoryId="inv-1"
-        open
-        onClose={vi.fn()}
-        items={[]}
-        isLoading={false}
-        errorMessage={null}
-        onRetry={vi.fn()}
-        onUpload={onUpload}
-        isUploading={false}
-        uploadError={null}
-        onDelete={vi.fn().mockResolvedValue(undefined)}
-        isDeleting={false}
-        deleteError={null}
-        onReplace={vi.fn().mockResolvedValue(undefined)}
-        isReplacing={false}
-        replaceError={null}
-      />,
-    );
+    renderDrawer({ onUpload });
 
     const file = new File(['abc'], 'ref.jpg', { type: 'image/jpeg' });
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -163,26 +116,7 @@ describe('ReferenceImagesDrawer', () => {
   });
 
   it('renders upload error from the parent mutation state', () => {
-    render(
-      <ReferenceImagesDrawer
-        inventoryId="inv-1"
-        open
-        onClose={vi.fn()}
-        items={[]}
-        isLoading={false}
-        errorMessage={null}
-        onRetry={vi.fn()}
-        onUpload={vi.fn().mockResolvedValue(undefined)}
-        isUploading={false}
-        uploadError="Upload failed for ref.jpg"
-        onDelete={vi.fn().mockResolvedValue(undefined)}
-        isDeleting={false}
-        deleteError={null}
-        onReplace={vi.fn().mockResolvedValue(undefined)}
-        isReplacing={false}
-        replaceError={null}
-      />,
-    );
+    renderDrawer({ uploadError: 'Upload failed for ref.jpg' });
 
     expect(screen.getByText('Upload failed for ref.jpg')).toBeInTheDocument();
   });
@@ -190,35 +124,7 @@ describe('ReferenceImagesDrawer', () => {
   it('renders preview error when preview loading fails', async () => {
     fetchInventoryVisualReferenceFileMock.mockRejectedValue(new Error('preview failed'));
 
-    render(
-      <ReferenceImagesDrawer
-        inventoryId="inv-1"
-        open
-        onClose={vi.fn()}
-        items={[
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ]}
-        isLoading={false}
-        errorMessage={null}
-        onRetry={vi.fn()}
-        onUpload={vi.fn().mockResolvedValue(undefined)}
-        isUploading={false}
-        uploadError={null}
-        onDelete={vi.fn().mockResolvedValue(undefined)}
-        isDeleting={false}
-        deleteError={null}
-        onReplace={vi.fn().mockResolvedValue(undefined)}
-        isReplacing={false}
-        replaceError={null}
-      />,
-    );
+    renderDrawer({ items: [defaultItem] });
 
     fireEvent.click(screen.getByRole('button', { name: /^preview$/i }));
 
@@ -230,35 +136,7 @@ describe('ReferenceImagesDrawer', () => {
   it('confirms delete and calls the delete handler', async () => {
     const onDelete = vi.fn().mockResolvedValue(undefined);
 
-    render(
-      <ReferenceImagesDrawer
-        inventoryId="inv-1"
-        open
-        onClose={vi.fn()}
-        items={[
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ]}
-        isLoading={false}
-        errorMessage={null}
-        onRetry={vi.fn()}
-        onUpload={vi.fn().mockResolvedValue(undefined)}
-        isUploading={false}
-        uploadError={null}
-        onDelete={onDelete}
-        isDeleting={false}
-        deleteError={null}
-        onReplace={vi.fn().mockResolvedValue(undefined)}
-        isReplacing={false}
-        replaceError={null}
-      />,
-    );
+    renderDrawer({ items: [defaultItem], onDelete });
 
     fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
     const dialog = screen.getByRole('dialog');
@@ -271,35 +149,7 @@ describe('ReferenceImagesDrawer', () => {
   it('passes the selected file to the replace handler', async () => {
     const onReplace = vi.fn().mockResolvedValue(undefined);
 
-    render(
-      <ReferenceImagesDrawer
-        inventoryId="inv-1"
-        open
-        onClose={vi.fn()}
-        items={[
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ]}
-        isLoading={false}
-        errorMessage={null}
-        onRetry={vi.fn()}
-        onUpload={vi.fn().mockResolvedValue(undefined)}
-        isUploading={false}
-        uploadError={null}
-        onDelete={vi.fn().mockResolvedValue(undefined)}
-        isDeleting={false}
-        deleteError={null}
-        onReplace={onReplace}
-        isReplacing={false}
-        replaceError={null}
-      />,
-    );
+    renderDrawer({ items: [defaultItem], onReplace });
 
     const file = new File(['replacement'], 'replacement.jpg', { type: 'image/jpeg' });
     const inputs = document.querySelectorAll('input[type="file"]');
@@ -309,5 +159,17 @@ describe('ReferenceImagesDrawer', () => {
     fireEvent.change(replaceInput, { target: { files: [file] } });
 
     await waitFor(() => expect(onReplace).toHaveBeenCalledWith('ref-1', file));
+  });
+
+  it('renders delete error from the parent mutation state', () => {
+    renderDrawer({ deleteError: 'Delete failed for front-pallet.jpg' });
+
+    expect(screen.getByText('Delete failed for front-pallet.jpg')).toBeInTheDocument();
+  });
+
+  it('renders replace error from the parent mutation state', () => {
+    renderDrawer({ replaceError: 'Replace failed for front-pallet.jpg' });
+
+    expect(screen.getByText('Replace failed for front-pallet.jpg')).toBeInTheDocument();
   });
 });

@@ -16,6 +16,7 @@ import type {
   UploadAisleAssetsResponse,
   UploadInventoryVisualReferencesResponse,
   InventoryVisualReferenceListResponse,
+  InventoryVisualReference,
   PositionListResponse,
   PositionDetailResponse,
   RunMergeResponse,

@@ -67,12 +67,13 @@ export default function ReferenceImagesDrawer({
 }: ReferenceImagesDrawerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
-  const replaceTargetRef = useRef<InventoryVisualReference | null>(null);
   const previewRevokeRef = useRef<(() => void) | null>(null);
   const previewRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
   const [previewTarget, setPreviewTarget] = useState<InventoryVisualReference | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InventoryVisualReference | null>(null);
+  const [replaceTarget, setReplaceTarget] = useState<InventoryVisualReference | null>(null);
+  const [replacingReferenceId, setReplacingReferenceId] = useState<string | null>(null);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -111,7 +112,7 @@ export default function ReferenceImagesDrawer({
   };
 
   const handleReplaceClick = (item: InventoryVisualReference) => {
-    replaceTargetRef.current = item;
+    setReplaceTarget(item);
     replaceInputRef.current?.click();
   };
 
@@ -127,15 +128,18 @@ export default function ReferenceImagesDrawer({
   };
 
   const handleReplaceFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const target = replaceTargetRef.current;
+    const target = replaceTarget;
     const file = event.target.files?.[0] ?? null;
     event.target.value = '';
-    replaceTargetRef.current = null;
+    setReplaceTarget(null);
     if (!target || !file) return;
+    setReplacingReferenceId(target.id);
     try {
       await onReplace(target.id, file);
     } catch {
       // Replace errors are surfaced by the parent mutation state via `replaceError`.
+    } finally {
+      setReplacingReferenceId(null);
     }
   };
 
@@ -324,7 +328,7 @@ export default function ReferenceImagesDrawer({
                               onClick={() => handleReplaceClick(item)}
                               disabled={isUploading || isDeleting || isReplacing}
                             >
-                              {isReplacing && replaceTargetRef.current?.id === item.id ? 'Replacing…' : 'Replace'}
+                              {isReplacing && replacingReferenceId === item.id ? 'Replacing…' : 'Replace'}
                             </Button>
                             <Button
                               variant="outlined"
