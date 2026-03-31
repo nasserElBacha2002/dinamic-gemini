@@ -359,10 +359,88 @@ describe('InventoryDetail', () => {
     renderPage();
 
     expect(screen.getByText('Reference usage')).toBeInTheDocument();
-    expect(screen.getByText('Gemini received 2 references')).toBeInTheDocument();
-    expect(screen.getByText('2 references resolved')).toBeInTheDocument();
-    expect(screen.getByText('Resolution failed')).toBeInTheDocument();
-    expect(screen.getByText('1 reference resolved. Gemini received 0 references.')).toBeInTheDocument();
+    expect(screen.getByText('2 sent to Gemini')).toBeInTheDocument();
+    expect(screen.getByText('2 prepared')).toBeInTheDocument();
+    expect(screen.getByText('Reference setup failed')).toBeInTheDocument();
+    expect(screen.getByText('1 prepared. Not sent to Gemini.')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /actions for aisle/i })).toHaveLength(2);
+  });
+
+  it('shows a pending summary label when a queued or running job has no reference_usage yet', () => {
+    useInventoryVisualReferencesMock.mockImplementation(() => ({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'queued',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            latest_job: {
+              id: 'job-1',
+              status: 'queued',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+              error_message: null,
+            },
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText('Pending run summary')).toBeInTheDocument();
+  });
+
+  it('shows summary unavailable when a completed job has no reference_usage payload', () => {
+    useInventoryVisualReferencesMock.mockImplementation(() => ({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'failed',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            latest_job: {
+              id: 'job-1',
+              status: 'failed',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+              error_message: 'failed',
+            },
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText('Summary unavailable')).toBeInTheDocument();
   });
 });

@@ -56,33 +56,29 @@ function formatReferenceUsageSummary(aisle: Aisle): { label: string; detail?: st
       : { label: 'Summary unavailable', semantic: 'neutral' };
   }
 
-  const resolvedLabel =
-    usage.resolved_count === 1 ? '1 reference resolved' : `${usage.resolved_count} references resolved`;
-  const consumedLabel =
-    usage.provider_consumed_count === 1
-      ? 'Gemini received 1 reference'
-      : `Gemini received ${usage.provider_consumed_count} references`;
+  const preparedLabel = usage.resolved_count === 1 ? '1 prepared' : `${usage.resolved_count} prepared`;
+  const sentLabel = usage.provider_consumed_count === 1 ? '1 sent to Gemini' : `${usage.provider_consumed_count} sent to Gemini`;
 
   if (usage.resolution_error) {
     return {
-      label: 'Resolution failed',
-      detail: `${resolvedLabel}. Gemini received 0 references.`,
+      label: 'Reference setup failed',
+      detail: `${preparedLabel}. Not sent to Gemini.`,
       semantic: 'error',
     };
   }
 
   if (usage.provider_consumed) {
     return {
-      label: consumedLabel,
-      detail: resolvedLabel,
+      label: sentLabel,
+      detail: preparedLabel,
       semantic: 'success',
     };
   }
 
   if (usage.resolved) {
     return {
-      label: resolvedLabel,
-      detail: 'Gemini did not receive reference images.',
+      label: 'References not sent',
+      detail: preparedLabel,
       semantic: 'warning',
     };
   }
@@ -272,10 +268,10 @@ export default function InventoryDetail() {
           const summary = formatReferenceUsageSummary(a);
           if (!summary) return '—';
           return (
-            <Box sx={{ display: 'grid', gap: 0.75 }}>
+            <Box sx={{ display: 'grid', gap: 0.5, maxWidth: 180 }}>
               <StatusBadge label={summary.label} semantic={summary.semantic} />
               {summary.detail ? (
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3 }}>
                   {summary.detail}
                 </Typography>
               ) : null}
