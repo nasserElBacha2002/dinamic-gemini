@@ -49,6 +49,7 @@ from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
     AnalysisImage,
     VisualReferenceContext,
+    analysis_context_from_dict,
     analysis_context_to_dict,
 )
 from src.pipeline.errors import PipelineCancellationRequestedError
@@ -285,6 +286,11 @@ class V3JobExecutor:
                 analysis_context=analysis_context,
                 inventory_id=aisle.inventory_id,
             )
+            resolved_analysis_context = analysis_context_from_dict(
+                (job_input.metadata or {}).get("analysis_context")
+            )
+            if resolved_analysis_context is not None:
+                analysis_context = resolved_analysis_context
             logger.info(
                 "v3 pipeline input ready: job_id=%s inventory_id=%s aisle_id=%s input_type=%s video_path=%s",
                 job_id,

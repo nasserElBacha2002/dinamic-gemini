@@ -633,13 +633,127 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
     assert updated_job.result_json is not None
     vrc = updated_job.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
     assert vrc is not None
-    assert vrc["resolved"] is True
-    assert vrc["reference_ids"] == ["ref-missing"]
-    assert vrc["resolved_count"] == 1
+    assert vrc["resolved"] is False
+    assert vrc["reference_ids"] == []
+    assert vrc["resolved_count"] == 0
     assert vrc["provider_consumed"] is False
     assert vrc["provider_consumed_count"] == 0
     assert vrc["resolution_stage"] == "input_artifact_resolution"
     assert "visual reference ref-missing" in vrc["resolution_error"]
+
+
+def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: Path) -> None:
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_id = "j-ref-context-resolved"
+    aisle_id = "aisle-1"
+    inventory_id = "inv-1"
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id=job_id,
+            target_type="aisle",
+            target_id=aisle_id,
+            job_type="process_aisle",
+            status=JobStatus.STARTING,
+            payload_json={"aisle_id": aisle_id},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    aisle = Aisle(
+        id=aisle_id,
+        inventory_id=inventory_id,
+        code="A01",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+
+    inventory_repo = InMemoryInventoryRepo()
+    inventory_repo.save(Inventory(id=inventory_id, name="Inv", status=InventoryStatus.DRAFT, created_at=now, updated_at=now))
+    reference_repo = InMemoryVisualReferenceRepo()
+    reference = InventoryVisualReference(
+        id="ref-1",
+        inventory_id=inventory_id,
+        filename="ref.jpg",
+        storage_path="inventories/inv-1/visual_references/ref.jpg",
+        mime_type="image/jpeg",
+        file_size=7,
+        created_at=now,
+    )
+    reference_repo.create(reference)
+
+    class AssetRepoWithOnePhoto:
+        def list_by_aisle(self, aid: str):
+            if aid != aisle_id:
+                return []
+            return [
+                SourceAsset(
+                    id="asset-1",
+                    aisle_id=aisle_id,
+                    type=SourceAssetType.PHOTO,
+                    original_filename="photo.jpg",
+                    storage_path="a1/photo.jpg",
+                    mime_type="image/jpeg",
+                    uploaded_at=now,
+                )
+            ]
+
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=AssetRepoWithOnePhoto(),
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=inventory_repo,
+        inventory_visual_reference_repo=reference_repo,
+        artifact_store=StubArtifactStorage(),
+        raw_label_repo=noop,
+    )
+
+    base_path = tmp_path
+    v3_base = base_path / "v3_uploads"
+    (v3_base / "a1").mkdir(parents=True, exist_ok=True)
+    (v3_base / "a1" / "photo.jpg").write_bytes(b"fake")
+    (v3_base / "inventories" / "inv-1" / "visual_references").mkdir(parents=True, exist_ok=True)
+    (v3_base / "inventories" / "inv-1" / "visual_references" / "ref.jpg").write_bytes(b"ref")
+
+    unresolved_context = AnalysisContext(
+        primary_evidence=[],
+        visual_references=[
+            VisualReferenceContext(
+                reference_id="ref-1",
+                source_path="inventories/inv-1/visual_references/ref.jpg",
+                mime_type="image/jpeg",
+            )
+        ],
+        instructions=["Use references as context."],
+    )
+    captured: dict[str, AnalysisContext | None] = {"analysis_context": None}
+
+    class FakePipeline:
+        def process_video(self, _video_path, **kwargs):
+            captured["analysis_context"] = kwargs.get("analysis_context")
+            return PipelineRunResult(exit_code=1, run_metadata=None)
+
+    with patch.object(executor, "_build_analysis_context", return_value=unresolved_context):
+        with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
+            mock_settings.return_value.output_dir = str(base_path)
+            with patch("src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline", return_value=FakePipeline()):
+                handled = executor.execute(base_path, job_id)
+
+    assert handled is True
+    passed_context = captured["analysis_context"]
+    assert passed_context is not None
+    assert len(passed_context.visual_references) == 1
+    assert passed_context.visual_references[0].resolved_path is not None
+    assert Path(passed_context.visual_references[0].resolved_path).exists()
 
 
 def test_reference_updates_affect_only_future_jobs_and_preserve_historical_traceability() -> None:
