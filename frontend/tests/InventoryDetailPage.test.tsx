@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import InventoryDetail from '../src/pages/InventoryDetail';
@@ -19,6 +19,12 @@ const { useDeleteInventoryVisualReferenceMock } = vi.hoisted(() => ({
 const { useReplaceInventoryVisualReferenceMock } = vi.hoisted(() => ({
   useReplaceInventoryVisualReferenceMock: vi.fn(),
 }));
+const { useExecutionLogMock } = vi.hoisted(() => ({
+  useExecutionLogMock: vi.fn(),
+}));
+const { useAislesListMock } = vi.hoisted(() => ({
+  useAislesListMock: vi.fn(),
+}));
 
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
@@ -32,35 +38,8 @@ vi.mock('../src/hooks', async (importOriginal) => {
       refetch: vi.fn(),
     }),
     useInventoryVisualReferences: useInventoryVisualReferencesMock,
-    useAislesList: () => ({
-      data: {
-        items: [
-          {
-            id: 'aisle-1',
-            inventory_id: 'inv-1',
-            code: 'A-01',
-            status: 'created',
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z',
-            assets_count: 3,
-            positions_count: 7,
-            pending_review_positions_count: 1,
-            latest_job: null,
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }),
-    useExecutionLog: () => ({
-      data: { events: [] },
-      isLoading: false,
-      isFetching: false,
-      error: null,
-      refetch: vi.fn(),
-    }),
+    useAislesList: useAislesListMock,
+    useExecutionLog: useExecutionLogMock,
     useCreateAisle: () => ({ mutateAsync: vi.fn() }),
     useStartAisleProcessing: () => ({ mutateAsync: vi.fn() }),
     useUploadAisleAssetsFlex: () => ({ mutateAsync: vi.fn() }),
@@ -96,9 +75,11 @@ function renderPage() {
 describe('InventoryDetail', () => {
   beforeEach(() => {
     useInventoryVisualReferencesMock.mockReset();
+    useAislesListMock.mockReset();
     useUploadInventoryVisualReferencesMock.mockReset();
     useDeleteInventoryVisualReferenceMock.mockReset();
     useReplaceInventoryVisualReferenceMock.mockReset();
+    useExecutionLogMock.mockReset();
     useUploadInventoryVisualReferencesMock.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
@@ -119,6 +100,35 @@ describe('InventoryDetail', () => {
       isError: false,
       error: null,
       reset: vi.fn(),
+    });
+    useExecutionLogMock.mockReturnValue({
+      data: { events: [] },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'created',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            assets_count: 3,
+            positions_count: 7,
+            pending_review_positions_count: 1,
+            latest_job: null,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
     });
   });
 
@@ -220,5 +230,58 @@ describe('InventoryDetail', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/^management$/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /close reference images drawer/i })).toBeInTheDocument();
+  });
+
+  it('loads the execution log on demand without polling options', async () => {
+    useInventoryVisualReferencesMock.mockImplementation(() => ({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'created',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            assets_count: 3,
+            positions_count: 7,
+            pending_review_positions_count: 1,
+            latest_job: {
+              id: 'job-1',
+              status: 'succeeded',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+              error_message: null,
+            },
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(useExecutionLogMock).toHaveBeenCalled();
+    expect(useExecutionLogMock.mock.calls[0]?.[3]).toMatchObject({ enabled: false });
+
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /view log/i }));
+
+    await waitFor(() => {
+      const lastCall = useExecutionLogMock.mock.calls.at(-1);
+      expect(lastCall?.[3]).toMatchObject({ enabled: true });
+      expect(screen.getByRole('button', { name: /^refresh$/i })).toBeInTheDocument();
+    });
+    expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).not.toHaveProperty('refetchInterval');
   });
 });

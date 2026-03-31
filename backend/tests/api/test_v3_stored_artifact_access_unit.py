@@ -314,6 +314,63 @@ def test_read_execution_log_events_durable(tmp_path: Path, monkeypatch) -> None:
     assert events[0]["message"] == "hi"
 
 
+def test_read_execution_log_events_durable_preserves_gemini_request_payload(tmp_path: Path, monkeypatch) -> None:
+    key = "jobs/j-gemini/run/execution_log.jsonl"
+    body = (
+        b'{"ts":"t","stage":"AnalysisStage","level":"info","message":"Gemini request prepared","payload":'
+        b'{"event_type":"gemini_request","prompt_text":"Exact prompt","attachment_summary":{"primary_evidence_count":1,"visual_reference_count":1,"total_count":2},'
+        b'"primary_evidence_attachments":[{"role":"primary_evidence","frame_ref":"img_001","filename":"input.jpg"}],'
+        b'"visual_reference_attachments":[{"role":"visual_reference","reference_id":"ref-1","filename":"reference.jpg","resolved":true}]}}\n'
+    )
+    store = V3ArtifactStorageAdapter(tmp_path / "art")
+    store.put_object(key, BytesIO(body), "application/x-ndjson")
+
+    job = Job(
+        id="j-gemini",
+        target_type="aisle",
+        target_id="a1",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        result_json={
+            "durable_artifacts": {
+                "execution_log": {
+                    "storage_provider": "local",
+                    "storage_bucket": None,
+                    "storage_key": key,
+                    "content_type": "application/x-ndjson",
+                    "file_size_bytes": len(body),
+                    "etag": None,
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "output_dir": str(tmp_path),
+                "artifact_storage_legacy_local_read_enabled": False,
+                **_DEFAULT_STORE_ACCESS_SETTINGS,
+            },
+        )(),
+    )
+
+    events = read_execution_log_events_for_job(job, artifact_store=store)
+
+    assert len(events) == 1
+    payload = events[0]["payload"]
+    assert payload["event_type"] == "gemini_request"
+    assert payload["prompt_text"] == "Exact prompt"
+    assert payload["attachment_summary"]["total_count"] == 2
+    assert payload["primary_evidence_attachments"][0]["frame_ref"] == "img_001"
+    assert payload["visual_reference_attachments"][0]["reference_id"] == "ref-1"
+
+
 def test_read_execution_log_durable_uses_download_not_get_object(tmp_path: Path, monkeypatch) -> None:
     """Execution log path streams via download_to_path + temp file (no get_object)."""
     key = "jobs/j2/run/execution_log.jsonl"

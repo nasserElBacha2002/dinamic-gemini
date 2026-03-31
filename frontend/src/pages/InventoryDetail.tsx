@@ -68,7 +68,6 @@ export default function InventoryDetail() {
     logDialog?.jobId,
     {
       enabled: Boolean(logDialog),
-      refetchInterval: logDialog ? 4000 : false,
     }
   );
 
