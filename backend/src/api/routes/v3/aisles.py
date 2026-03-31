@@ -12,6 +12,7 @@ from src.api.dependencies import (
     get_list_aisles_with_status_use_case,
     get_start_aisle_processing_use_case,
     get_get_aisle_processing_status_use_case,
+    get_job_stale_reconciler,
     get_cancel_aisle_job_use_case,
     get_aisle_repo,
     get_get_aisle_merge_results_use_case,
@@ -45,6 +46,7 @@ from src.application.use_cases.list_aisles_with_status import ListAislesWithStat
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
+from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsCommand,
     GetAisleMergeResultsUseCase,
@@ -202,6 +204,7 @@ def get_aisle_job_detail(
     job_id: str,
     job_repo: JobRepository = Depends(get_job_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> JobSummary:
     job = job_repo.get_by_id(job_id)
     if job is None:
@@ -211,6 +214,9 @@ def get_aisle_job_detail(
     aisle = aisle_repo.get_by_id(aisle_id)
     if aisle is None or aisle.inventory_id != inventory_id:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    job = stale_reconciler.reconcile(job)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
     return job_to_summary(job)
 
 

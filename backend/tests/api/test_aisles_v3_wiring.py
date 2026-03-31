@@ -14,6 +14,7 @@ from src.api.dependencies import (
     get_evidence_repo,
     get_inventory_repo,
     get_job_repo,
+    get_job_stale_reconciler,
     get_position_repo,
     get_product_record_repo,
     get_review_action_repo,
@@ -556,6 +557,65 @@ def test_get_job_detail_returns_operational_metadata() -> None:
         app.dependency_overrides.pop(get_inventory_repo, None)
         app.dependency_overrides.pop(get_aisle_repo, None)
         app.dependency_overrides.pop(get_job_repo, None)
+
+
+def test_get_job_detail_applies_same_stale_reconciliation_as_status() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+
+    inv_repo.save(Inventory("inv-job-stale", "Job Stale", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-job-stale", "inv-job-stale", "JS-01", AisleStatus.PROCESSING, now, now))
+    job_repo.save(
+        Job(
+            id="job-job-stale",
+            target_type="aisle",
+            target_id="aisle-job-stale",
+            job_type="process_aisle",
+            status=JobStatus.CANCEL_REQUESTED,
+            payload_json={"aisle_id": "aisle-job-stale"},
+            created_at=now,
+            updated_at=now,
+            started_at=now,
+            last_heartbeat_at=now,
+            cancel_requested_at=now,
+            current_stage="AnalysisStage",
+            current_substep="provider_call",
+        )
+    )
+
+    class StubStaleReconciler:
+        def reconcile(self, job):  # type: ignore[no-untyped-def]
+            if job is None:
+                return None
+            job.status = JobStatus.FAILED
+            job.failure_code = "STALE_JOB"
+            job.failure_message = "Job heartbeat expired before completion"
+            job.error_message = "Job heartbeat expired before completion"
+            return job
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    app.dependency_overrides[get_job_stale_reconciler] = lambda: StubStaleReconciler()
+    try:
+        c = TestClient(app)
+        job_resp = c.get("/api/v3/inventories/inv-job-stale/aisles/aisle-job-stale/jobs/job-job-stale")
+        status_resp = c.get("/api/v3/inventories/inv-job-stale/aisles/aisle-job-stale/status")
+        assert job_resp.status_code == 200
+        assert status_resp.status_code == 200
+        assert job_resp.json()["status"] == "failed"
+        assert job_resp.json()["failure_code"] == "STALE_JOB"
+        assert status_resp.json()["latest_job"]["status"] == "failed"
+        assert status_resp.json()["latest_job"]["failure_code"] == "STALE_JOB"
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_job_stale_reconciler, None)
 
 
 def test_post_process_when_latest_job_running_returns_409() -> None:

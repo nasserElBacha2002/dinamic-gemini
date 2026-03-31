@@ -24,9 +24,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from src.jobs.models import JobInput
-from src.pipeline.errors import PipelineCancellationRequestedError
 
 JobExecutionObserver = Callable[[str, Optional[str], str, Optional[Dict[str, Any]]], None]
+JobCancellationCheckpoint = Callable[[str, Optional[str], str], None]
 
 if TYPE_CHECKING:
     from src.pipeline.execution_log import ExecutionLogWriter
@@ -55,6 +55,7 @@ class RunContext:
     metadata: Dict[str, Any] = field(default_factory=dict)
     execution_log: Optional["ExecutionLogWriter"] = None
     execution_observer: Optional[JobExecutionObserver] = None
+    cancellation_checkpoint: Optional[JobCancellationCheckpoint] = None
     # Phase 3/4/5: typed, provider-agnostic analysis context prepared upstream.
     # This is *input* to analysis, not a stage output; avoids relying on raw metadata dicts.
     analysis_context: Optional["AnalysisContext"] = None
@@ -93,11 +94,5 @@ class RunContext:
         substep: Optional[str] = None,
         reason: str = "Job cancellation requested",
     ) -> None:
-        self.emit_stage_event(
-            stage=stage,
-            substep=substep,
-            event="job.cancel_check",
-            details={"reason": reason},
-        )
-        if self.metadata.get("cancel_requested"):
-            raise PipelineCancellationRequestedError(reason)
+        if self.cancellation_checkpoint is not None:
+            self.cancellation_checkpoint(stage, substep, reason)

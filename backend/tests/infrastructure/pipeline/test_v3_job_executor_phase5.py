@@ -40,7 +40,9 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     worker_output_storage_keys,
 )
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
+from src.pipeline.context.run_context import RunContext
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
@@ -1072,11 +1074,39 @@ def test_execute_cooperatively_cancels_when_cancel_requested_detected(tmp_path: 
     assert updated_job.status == JobStatus.CANCELED
     assert updated_job.failure_code == "CANCELED"
     assert updated_job.finished_at == now
+    updated_aisle = aisle_repo.get_by_id(aisle_id)
+    assert updated_aisle is not None
+    assert updated_aisle.status == AisleStatus.FAILED
+    assert updated_aisle.error_code == "CANCELED"
     run_log_path = tmp_path / job_id / RUN_ID / "execution_log.jsonl"
     log_text = run_log_path.read_text(encoding="utf-8")
-    assert "job.cancel_requested" in log_text
-    assert "job.cancel_detected" in log_text
-    assert "job.canceled" in log_text
+    assert log_text.count("job.cancel_requested") == 1
+    assert log_text.count("job.cancel_detected") == 1
+    assert log_text.count("job.canceled") == 1
+    assert log_text.index("job.cancel_requested") < log_text.index("job.cancel_detected") < log_text.index("job.canceled")
+
+
+def test_run_context_cancellation_uses_injected_checkpoint_not_metadata_flag() -> None:
+    observed: list[tuple[str, str | None, str]] = []
+
+    def checkpoint(stage: str, substep: str | None, reason: str) -> None:
+        observed.append((stage, substep, reason))
+
+    context = RunContext(
+        job_id="job-1",
+        run_id="run",
+        workspace_path=Path("/tmp"),
+        run_dir=Path("/tmp/run"),
+        job_input=JobInput(video_path="", mode="hybrid", input_type="video"),
+        settings=object(),
+        logger=MagicMock(),
+        metadata={"cancel_requested": True},
+        cancellation_checkpoint=checkpoint,
+    )
+
+    context.check_cancellation(stage="AnalysisStage", substep="provider_call", reason="repo-backed cancellation")
+
+    assert observed == [("AnalysisStage", "provider_call", "repo-backed cancellation")]
 
 
 def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:

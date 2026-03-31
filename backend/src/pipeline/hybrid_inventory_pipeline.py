@@ -128,6 +128,7 @@ class HybridInventoryPipeline:
             metadata={},
             analysis_context=analysis_context,
             execution_observer=execution_observer,
+            cancellation_checkpoint=_.get("cancellation_checkpoint"),
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)

@@ -202,7 +202,7 @@ class V3JobExecutor:
             return True
         if job.status == JobStatus.CANCEL_REQUESTED:
             logger.info("v3 job %s cancel requested before start; marking canceled", job_id)
-            self._cancel_job(job_id, "Job canceled before execution")
+            self._cancel_job(job, "Job canceled before execution", now=self._clock.now())
             return True
         if job.status != JobStatus.STARTING:
             logger.warning("v3 job %s invalid status for execution (status=%s), skip", job_id, job.status.value)
@@ -337,6 +337,8 @@ class V3JobExecutor:
                 stage=stage,
                 substep=substep,
             )
+
+        def cancellation_checkpoint(stage: str, substep: Optional[str], reason: str) -> None:
             self._raise_if_cancellation_requested(
                 job_id,
                 exec_log=exec_log,
@@ -344,18 +346,15 @@ class V3JobExecutor:
                 aisle_id=aisle_id,
                 stage=stage,
                 substep=substep,
+                reason=reason,
                 cancel_event_emitted=cancel_event_emitted,
             )
 
         try:
-            self._raise_if_cancellation_requested(
-                job_id,
-                exec_log=exec_log,
-                inventory_id=aisle.inventory_id,
-                aisle_id=aisle_id,
-                stage="Pipeline",
-                substep="pre_pipeline",
-                cancel_event_emitted=cancel_event_emitted,
+            cancellation_checkpoint(
+                "Pipeline",
+                "pre_pipeline",
+                "Job canceled before pipeline execution",
             )
             logger.info(
                 "v3 executor start: job_id=%s job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s",
@@ -379,6 +378,7 @@ class V3JobExecutor:
                 job_input=job_input,
                 analysis_context=analysis_context,
                 execution_observer=execution_observer,
+                cancellation_checkpoint=cancellation_checkpoint,
             )
             logger.info(
                 "v3 executor finished: job_id=%s exit_code=%s inventory_id=%s aisle_id=%s",
@@ -397,14 +397,10 @@ class V3JobExecutor:
                 return True
 
             # Cooperative cancellation checkpoint after pipeline execution and before persist.
-            self._raise_if_cancellation_requested(
-                job_id,
-                exec_log=exec_log,
-                inventory_id=aisle.inventory_id,
-                aisle_id=aisle_id,
-                stage="Pipeline",
-                substep="post_pipeline",
-                cancel_event_emitted=cancel_event_emitted,
+            cancellation_checkpoint(
+                "Pipeline",
+                "post_pipeline",
+                "Job canceled after pipeline execution",
             )
 
             report_path = run_dir / "hybrid_report.json"
@@ -429,14 +425,10 @@ class V3JobExecutor:
             # reset is out of band for this executor (claim path expects terminal FAILED to stay terminal).
             exec_log.info("Persist", "Persist started", payload={"aisle_id": aisle_id})
             try:
-                self._raise_if_cancellation_requested(
-                    job_id,
-                    exec_log=exec_log,
-                    inventory_id=aisle.inventory_id,
-                    aisle_id=aisle_id,
-                    stage="Persist",
-                    substep="pre_persist",
-                    cancel_event_emitted=cancel_event_emitted,
+                cancellation_checkpoint(
+                    "Persist",
+                    "pre_persist",
+                    "Job canceled before persistence",
                 )
                 self._persist_use_case.execute(
                     PersistAisleResultCommand(
@@ -469,14 +461,10 @@ class V3JobExecutor:
                 self._fail_job_and_aisle(job_id, aisle, msg)
                 return True
             try:
-                self._raise_if_cancellation_requested(
-                    job_id,
-                    exec_log=exec_log,
-                    inventory_id=aisle.inventory_id,
-                    aisle_id=aisle_id,
-                    stage="Artifacts",
-                    substep="pre_upload",
-                    cancel_event_emitted=cancel_event_emitted,
+                cancellation_checkpoint(
+                    "Artifacts",
+                    "pre_upload",
+                    "Job canceled before artifact upload",
                 )
                 durable_meta = publish_worker_durable_artifacts(
                     self._artifact_store,
@@ -534,7 +522,13 @@ class V3JobExecutor:
             )
         except PipelineCancellationRequestedError as e:
             logger.info("v3 job %s cancellation detected cooperatively: %s", job_id, e)
-            self._cancel_job_and_aisle(job_id, aisle, str(e), exec_log=exec_log)
+            self._cancel_job_and_aisle(
+                job_id,
+                aisle,
+                str(e),
+                exec_log=exec_log,
+                cancel_event_emitted=cancel_event_emitted,
+            )
             return True
         except Exception as e:
             logger.exception("v3 job %s failed: %s", job_id, e)
@@ -738,20 +732,17 @@ class V3JobExecutor:
             job.error_message = error_message[:2048] if len(error_message) > 2048 else error_message
             self._job_repo.save(job)
 
-    def _cancel_job(self, job_id: str, reason: str) -> None:
-        job = self._job_repo.get_by_id(job_id)
-        if job:
-            now = self._clock.now()
-            job.status = JobStatus.CANCELED
-            job.updated_at = now
-            job.finished_at = now
-            job.last_heartbeat_at = now
-            job.current_stage = job.current_stage or "Pipeline"
-            job.current_substep = "canceled"
-            job.failure_code = "CANCELED"
-            job.failure_message = reason[:2048] if len(reason) > 2048 else reason
-            job.error_message = reason[:2048] if len(reason) > 2048 else reason
-            self._job_repo.save(job)
+    def _cancel_job(self, job: Job, reason: str, *, now) -> None:
+        job.status = JobStatus.CANCELED
+        job.updated_at = now
+        job.finished_at = now
+        job.last_heartbeat_at = now
+        job.current_stage = job.current_stage or "Pipeline"
+        job.current_substep = "canceled"
+        job.failure_code = "CANCELED"
+        job.failure_message = reason[:2048] if len(reason) > 2048 else reason
+        job.error_message = reason[:2048] if len(reason) > 2048 else reason
+        self._job_repo.save(job)
 
     def _heartbeat(self, job_id: str) -> Optional[Job]:
         job = self._job_repo.get_by_id(job_id)
@@ -794,21 +785,36 @@ class V3JobExecutor:
         self._reconcile_inventory_for_aisle(aisle)
 
     def _cancel_job_and_aisle(
-        self, job_id: str, aisle: Aisle, reason: str, *, exec_log: ExecutionLogWriter | None = None
+        self,
+        job_id: str,
+        aisle: Aisle,
+        reason: str,
+        *,
+        exec_log: ExecutionLogWriter | None = None,
+        cancel_event_emitted: Optional[Dict[str, bool]] = None,
     ) -> None:
         now = self._clock.now()
+        current_job = self._job_repo.get_by_id(job_id)
         if exec_log is not None:
-            exec_log.structured_event(
-                job_id=job_id,
-                inventory_id=aisle.inventory_id,
-                aisle_id=aisle.id,
-                attempt=(self._job_repo.get_by_id(job_id).attempt_count if self._job_repo.get_by_id(job_id) else 1),
-                stage="Pipeline",
-                substep="canceled",
-                event="job.canceled",
-                details={"reason": reason[:500]},
-            )
-        self._cancel_job(job_id, reason)
+            should_emit_canceled = cancel_event_emitted is None or not cancel_event_emitted.get("cancelled", False)
+            if should_emit_canceled:
+                exec_log.structured_event(
+                    job_id=job_id,
+                    inventory_id=aisle.inventory_id,
+                    aisle_id=aisle.id,
+                    attempt=current_job.attempt_count if current_job is not None else 1,
+                    stage="Pipeline",
+                    substep="canceled",
+                    event="job.canceled",
+                    details={"reason": reason[:500]},
+                )
+                if cancel_event_emitted is not None:
+                    cancel_event_emitted["cancelled"] = True
+        if current_job is not None:
+            self._cancel_job(current_job, reason, now=now)
+        # The aisle lifecycle has no dedicated "canceled" state. We intentionally map
+        # operator-driven cancellation to FAILED with error_code CANCELED so the aisle
+        # remains visibly incomplete without introducing a parallel domain status.
         aisle.mark_failed(
             now,
             error_code="CANCELED",
@@ -827,6 +833,7 @@ class V3JobExecutor:
         aisle_id: str,
         stage: str,
         substep: Optional[str],
+        reason: str,
         cancel_event_emitted: Dict[str, bool],
     ) -> None:
         current_job = self._job_repo.get_by_id(job_id)
@@ -853,7 +860,10 @@ class V3JobExecutor:
                 stage=stage,
                 substep=substep,
                 event="job.cancel_detected",
-                details={"cancel_requested_at": current_job.cancel_requested_at},
+                details={
+                    "cancel_requested_at": current_job.cancel_requested_at,
+                    "reason": reason,
+                },
             )
             cancel_event_emitted["detected"] = True
-        raise PipelineCancellationRequestedError("Job canceled by operator request")
+        raise PipelineCancellationRequestedError(reason)
