@@ -9,6 +9,7 @@ import {
   Divider,
   Drawer,
   IconButton,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
@@ -53,13 +54,17 @@ export default function ReferenceImagesDrawer({
 }: ReferenceImagesDrawerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewRevokeRef = useRef<(() => void) | null>(null);
+  const previewRequestIdRef = useRef(0);
+  const mountedRef = useRef(true);
   const [previewTarget, setPreviewTarget] = useState<InventoryVisualReference | null>(null);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (previewRevokeRef.current) {
         previewRevokeRef.current();
         previewRevokeRef.current = null;
@@ -74,6 +79,7 @@ export default function ReferenceImagesDrawer({
   }, [open]);
 
   const clearPreview = () => {
+    previewRequestIdRef.current += 1;
     if (previewRevokeRef.current) {
       previewRevokeRef.current();
       previewRevokeRef.current = null;
@@ -92,22 +98,36 @@ export default function ReferenceImagesDrawer({
     const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = '';
     if (files.length === 0) return;
-    await onUpload(files);
+    try {
+      await onUpload(files);
+    } catch {
+      // Upload errors are surfaced by the parent mutation state via `uploadError`.
+    }
   };
 
   const handlePreview = async (item: InventoryVisualReference) => {
     clearPreview();
+    const requestId = previewRequestIdRef.current;
     setPreviewTarget(item);
     setPreviewLoading(true);
     try {
       const result = await fetchInventoryVisualReferenceFile(inventoryId, item.id);
+      if (!mountedRef.current || previewRequestIdRef.current !== requestId || !open) {
+        result.revoke();
+        return;
+      }
       previewRevokeRef.current = result.revoke;
       setPreviewSrc(result.imageSrc);
     } catch (error) {
+      if (!mountedRef.current || previewRequestIdRef.current !== requestId || !open) {
+        return;
+      }
       const apiError = error instanceof ApiError ? error : new ApiError(String(error));
       setPreviewError(getApiErrorMessage(apiError, 'Reference image preview could not be loaded'));
     } finally {
-      setPreviewLoading(false);
+      if (mountedRef.current && previewRequestIdRef.current === requestId && open) {
+        setPreviewLoading(false);
+      }
     }
   };
 
@@ -118,7 +138,7 @@ export default function ReferenceImagesDrawer({
       onClose={onClose}
       PaperProps={{
         sx: {
-          width: { xs: '100%', sm: 'min(560px, 96vw)' },
+          width: { xs: '100%', sm: 'min(720px, 96vw)', lg: 'min(840px, 88vw)' },
           maxWidth: '100vw',
           display: 'flex',
           flexDirection: 'column',
@@ -186,7 +206,8 @@ export default function ReferenceImagesDrawer({
               >
                 <Typography variant="subtitle2">Management</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Add inventory-level reference images here. These references are used for future processing runs only.
+                  Reference images belong to this inventory and are used for future processing runs only. Updating them
+                  does not modify existing results automatically.
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Button variant="contained" size="small" onClick={handleUploadClick} disabled={isUploading}>
@@ -206,49 +227,54 @@ export default function ReferenceImagesDrawer({
                   message="Upload 1-3 images to help the analysis use expected pallet, label, or packaging references for this inventory."
                 />
               ) : (
-                <>
-                  <Typography variant="body2" color="text.secondary">
-                    Reference images are used for future processing runs only. Updating them does not modify existing
-                    results automatically.
-                  </Typography>
-                  <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
-                    {items.map((item, index) => (
-                      <Box key={item.id}>
-                        {index > 0 ? <Divider /> : null}
+                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+                  {items.map((item, index) => (
+                    <Box key={item.id}>
+                      {index > 0 ? <Divider /> : null}
+                      <Box
+                        sx={{
+                          px: 2.5,
+                          py: 2,
+                          display: 'grid',
+                          gap: 1.25,
+                        }}
+                      >
                         <Box
                           sx={{
-                            px: 2,
-                            py: 1.5,
-                            display: 'grid',
-                            gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) repeat(3, minmax(96px, auto))' },
-                            gap: 1,
-                            alignItems: 'center',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            justifyContent: 'space-between',
+                            gap: 2,
+                            minWidth: 0,
+                            flexWrap: { xs: 'wrap', sm: 'nowrap' },
                           }}
                         >
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography variant="subtitle2" sx={{ wordBreak: 'break-word' }}>
-                              {item.filename}
-                            </Typography>
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Tooltip title={item.filename} placement="top-start">
+                              <Typography
+                                variant="subtitle2"
+                                noWrap
+                                sx={{ maxWidth: '100%', textOverflow: 'ellipsis', overflow: 'hidden' }}
+                              >
+                                {item.filename}
+                              </Typography>
+                            </Tooltip>
                           </Box>
-                          <Typography variant="body2" color="text.secondary">
-                            {item.mime_type}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {formatFileSize(item.file_size)}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Uploaded {formatDate(item.created_at)}
-                          </Typography>
-                          <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+                          <Box sx={{ flexShrink: 0 }}>
                             <Button variant="outlined" size="small" onClick={() => void handlePreview(item)}>
-                              View
+                              Preview
                             </Button>
                           </Box>
                         </Box>
+
+                        <Typography variant="body2" color="text.secondary">
+                          {item.mime_type} {'\u2022'} {formatFileSize(item.file_size)} {'\u2022'} Uploaded{' '}
+                          {formatDate(item.created_at)}
+                        </Typography>
                       </Box>
-                    ))}
-                  </Box>
-                </>
+                    </Box>
+                  ))}
+                </Box>
               )}
             </Box>
           ) : null}

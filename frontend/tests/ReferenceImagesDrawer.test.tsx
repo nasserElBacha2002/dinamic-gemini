@@ -1,21 +1,30 @@
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ReferenceImagesDrawer from '../src/components/ReferenceImagesDrawer';
+
+const { fetchInventoryVisualReferenceFileMock } = vi.hoisted(() => ({
+  fetchInventoryVisualReferenceFileMock: vi.fn(),
+}));
 
 vi.mock('../src/api/client', async () => {
   const actual = await vi.importActual<typeof import('../src/api/client')>('../src/api/client');
   return {
     ...actual,
-    fetchInventoryVisualReferenceFile: vi.fn().mockResolvedValue({
-      imageSrc: 'blob:test-preview',
-      revoke: vi.fn(),
-    }),
+    fetchInventoryVisualReferenceFile: fetchInventoryVisualReferenceFileMock,
   };
 });
 
 describe('ReferenceImagesDrawer', () => {
+  beforeEach(() => {
+    fetchInventoryVisualReferenceFileMock.mockReset();
+    fetchInventoryVisualReferenceFileMock.mockResolvedValue({
+      imageSrc: 'blob:test-preview',
+      revoke: vi.fn(),
+    });
+  });
+
   it('renders empty state and real upload entry point', () => {
     render(
       <ReferenceImagesDrawer
@@ -64,9 +73,42 @@ describe('ReferenceImagesDrawer', () => {
 
     expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
     expect(
-      screen.getByText(/reference images are used for future processing runs only\./i),
+      screen.getByText(/reference images belong to this inventory and are used for future processing runs only\./i),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^view$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^preview$/i })).toBeInTheDocument();
+  });
+
+  it('keeps long filenames readable via truncation-friendly title metadata', () => {
+    const longFilename =
+      'very-long-reference-image-name-for-inventory-front-pallet-label-example-2026-03-31-version-final.png';
+
+    render(
+      <ReferenceImagesDrawer
+        inventoryId="inv-1"
+        open
+        onClose={vi.fn()}
+        items={[
+          {
+            id: 'ref-long',
+            inventory_id: 'inv-1',
+            filename: longFilename,
+            mime_type: 'image/png',
+            file_size: 740 * 1024,
+            created_at: '2026-03-31T11:12:00Z',
+          },
+        ]}
+        isLoading={false}
+        errorMessage={null}
+        onRetry={vi.fn()}
+        onUpload={vi.fn().mockResolvedValue(undefined)}
+        isUploading={false}
+        uploadError={null}
+      />,
+    );
+
+    expect(screen.getByText(longFilename)).toBeInTheDocument();
+    expect(screen.getByText(/image\/png/i)).toBeInTheDocument();
+    expect(screen.getByText(/uploaded/i)).toBeInTheDocument();
   });
 
   it('passes selected files to the upload handler', () => {
@@ -93,5 +135,58 @@ describe('ReferenceImagesDrawer', () => {
 
     expect(onUpload).toHaveBeenCalledTimes(1);
     expect(onUpload).toHaveBeenCalledWith([file]);
+  });
+
+  it('renders upload error from the parent mutation state', () => {
+    render(
+      <ReferenceImagesDrawer
+        inventoryId="inv-1"
+        open
+        onClose={vi.fn()}
+        items={[]}
+        isLoading={false}
+        errorMessage={null}
+        onRetry={vi.fn()}
+        onUpload={vi.fn().mockResolvedValue(undefined)}
+        isUploading={false}
+        uploadError="Upload failed for ref.jpg"
+      />,
+    );
+
+    expect(screen.getByText('Upload failed for ref.jpg')).toBeInTheDocument();
+  });
+
+  it('renders preview error when preview loading fails', async () => {
+    fetchInventoryVisualReferenceFileMock.mockRejectedValue(new Error('preview failed'));
+
+    render(
+      <ReferenceImagesDrawer
+        inventoryId="inv-1"
+        open
+        onClose={vi.fn()}
+        items={[
+          {
+            id: 'ref-1',
+            inventory_id: 'inv-1',
+            filename: 'front-pallet.jpg',
+            mime_type: 'image/jpeg',
+            file_size: 1024,
+            created_at: '2024-01-02T00:00:00Z',
+          },
+        ]}
+        isLoading={false}
+        errorMessage={null}
+        onRetry={vi.fn()}
+        onUpload={vi.fn().mockResolvedValue(undefined)}
+        isUploading={false}
+        uploadError={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^preview$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/preview failed/i)).toBeInTheDocument();
+    });
   });
 });

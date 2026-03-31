@@ -191,7 +191,7 @@ describe('InventoryDetail', () => {
     expect(screen.getByRole('heading', { name: 'Reference images' })).toBeInTheDocument();
     expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
     expect(
-      screen.getByText(/reference images are used for future processing runs only\./i),
+      screen.getByText(/reference images belong to this inventory and are used for future processing runs only\./i),
     ).toBeInTheDocument();
     expect(screen.getByText(/^management$/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /close reference images drawer/i })).toBeInTheDocument();
