@@ -14,6 +14,7 @@ from src.api.dependencies import (
     get_get_aisle_processing_status_use_case,
     get_job_stale_reconciler,
     get_cancel_aisle_job_use_case,
+    get_retry_aisle_job_use_case,
     get_aisle_repo,
     get_get_aisle_merge_results_use_case,
     get_job_repo,
@@ -46,6 +47,7 @@ from src.application.use_cases.list_aisles_with_status import ListAislesWithStat
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
+from src.application.use_cases.retry_aisle_job import RetryAisleJobCommand, RetryAisleJobUseCase
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsCommand,
@@ -191,6 +193,32 @@ def cancel_aisle_job(
         raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle/inventory")
     except ValueError as e:
         # Terminal or invalid state for cancellation.
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/retry",
+    response_model=JobSummary,
+    status_code=202,
+)
+def retry_aisle_job(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    use_case: RetryAisleJobUseCase = Depends(get_retry_aisle_job_use_case),
+) -> JobSummary:
+    try:
+        job = use_case.execute(
+            RetryAisleJobCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                job_id=job_id,
+            )
+        )
+        return job_to_summary(job)
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle/inventory")
+    except (ActiveJobExistsError, ValueError) as e:
         raise HTTPException(status_code=409, detail=str(e))
 
 

@@ -83,6 +83,7 @@ def _row_to_job(row: Any) -> Job:
         current_substep=getattr(row, "current_substep", None),
         current_step_started_at=_ensure_utc(getattr(row, "current_step_started_at", None)),
         attempt_count=int(getattr(row, "attempt_count", 1) or 1),
+        retry_of_job_id=getattr(row, "retry_of_job_id", None),
         failure_code=getattr(row, "failure_code", None),
         failure_message=getattr(row, "failure_message", None),
         execution_id=getattr(row, "execution_id", None),
@@ -110,7 +111,7 @@ class SqlJobRepository(JobRepository):
                     payload_json = ?, result_json = ?, error_message = ?, updated_at = ?,
                     started_at = ?, finished_at = ?, last_heartbeat_at = ?, cancel_requested_at = ?,
                     current_stage = ?, current_substep = ?, current_step_started_at = ?,
-                    attempt_count = ?, failure_code = ?, failure_message = ?, execution_id = ?
+                    attempt_count = ?, retry_of_job_id = ?, failure_code = ?, failure_message = ?, execution_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -130,6 +131,7 @@ class SqlJobRepository(JobRepository):
                     job.current_substep,
                     _ensure_utc(job.current_step_started_at),
                     int(job.attempt_count or 1),
+                    job.retry_of_job_id,
                     job.failure_code,
                     job.failure_message,
                     job.execution_id,
@@ -143,8 +145,8 @@ class SqlJobRepository(JobRepository):
                         payload_json, result_json, error_message, created_at, updated_at,
                         started_at, finished_at, last_heartbeat_at, cancel_requested_at,
                         current_stage, current_substep, current_step_started_at,
-                        attempt_count, failure_code, failure_message, execution_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        attempt_count, retry_of_job_id, failure_code, failure_message, execution_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,
@@ -165,6 +167,7 @@ class SqlJobRepository(JobRepository):
                         job.current_substep,
                         _ensure_utc(job.current_step_started_at),
                         int(job.attempt_count or 1),
+                        job.retry_of_job_id,
                         job.failure_code,
                         job.failure_message,
                         job.execution_id,
@@ -179,7 +182,7 @@ class SqlJobRepository(JobRepository):
                        payload_json, result_json, error_message, created_at, updated_at,
                        started_at, finished_at, last_heartbeat_at, cancel_requested_at,
                        current_stage, current_substep, current_step_started_at,
-                       attempt_count, failure_code, failure_message, execution_id
+                       attempt_count, retry_of_job_id, failure_code, failure_message, execution_id
                 FROM inventory_jobs WHERE id = ?
                 """,
                 (job_id,),
@@ -197,7 +200,7 @@ class SqlJobRepository(JobRepository):
                        payload_json, result_json, error_message, created_at, updated_at,
                        started_at, finished_at, last_heartbeat_at, cancel_requested_at,
                        current_stage, current_substep, current_step_started_at,
-                       attempt_count, failure_code, failure_message, execution_id
+                       attempt_count, retry_of_job_id, failure_code, failure_message, execution_id
                 FROM inventory_jobs
                 WHERE target_type = ? AND target_id = ?
                 ORDER BY updated_at DESC, created_at DESC
@@ -217,7 +220,7 @@ class SqlJobRepository(JobRepository):
                        payload_json, result_json, error_message, created_at, updated_at,
                        started_at, finished_at, last_heartbeat_at, cancel_requested_at,
                        current_stage, current_substep, current_step_started_at,
-                       attempt_count, failure_code, failure_message, execution_id
+                   attempt_count, retry_of_job_id, failure_code, failure_message, execution_id
                 FROM inventory_jobs
                 ORDER BY updated_at DESC, created_at DESC
                 """
@@ -237,7 +240,7 @@ class SqlJobRepository(JobRepository):
                    payload_json, result_json, error_message, created_at, updated_at,
                    started_at, finished_at, last_heartbeat_at, cancel_requested_at,
                    current_stage, current_substep, current_step_started_at,
-                   attempt_count, failure_code, failure_message, execution_id
+                   attempt_count, retry_of_job_id, failure_code, failure_message, execution_id
             FROM (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY target_id ORDER BY updated_at DESC, created_at DESC

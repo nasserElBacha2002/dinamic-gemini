@@ -30,6 +30,7 @@ class JobSummary(BaseModel):
     current_substep: Optional[str] = None
     current_step_started_at: Optional[datetime] = None
     attempt_count: int = 1
+    retry_of_job_id: Optional[str] = None
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None
     execution_id: Optional[str] = None

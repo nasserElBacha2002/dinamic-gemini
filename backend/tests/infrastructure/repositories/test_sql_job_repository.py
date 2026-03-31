@@ -53,6 +53,7 @@ def _make_job() -> Job:
         current_substep="spawn_requested",
         current_step_started_at=now,
         attempt_count=1,
+        retry_of_job_id="job-0",
         failure_code=None,
         failure_message=None,
         execution_id="exec-1",
@@ -68,7 +69,7 @@ def test_save_insert_placeholder_count_matches_parameters_for_starting_job() -> 
     assert len(client.cursor_instance.executions) == 2
     insert_sql, insert_params = client.cursor_instance.executions[1]
     assert "INSERT INTO inventory_jobs" in insert_sql
-    assert insert_sql.count("?") == len(insert_params) == 21
+    assert insert_sql.count("?") == len(insert_params) == 22
 
 
 def test_save_update_placeholder_count_matches_parameters() -> None:
@@ -80,4 +81,4 @@ def test_save_update_placeholder_count_matches_parameters() -> None:
     assert len(client.cursor_instance.executions) == 1
     update_sql, update_params = client.cursor_instance.executions[0]
     assert "UPDATE inventory_jobs" in update_sql
-    assert update_sql.count("?") == len(update_params) == 20
+    assert update_sql.count("?") == len(update_params) == 21

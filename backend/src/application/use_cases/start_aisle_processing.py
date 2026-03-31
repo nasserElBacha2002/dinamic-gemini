@@ -8,16 +8,12 @@ aisle does not belong to the given inventory, or an active job already exists fo
 from __future__ import annotations
 
 from dataclasses import dataclass
-import uuid
 
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.ports.repositories import AisleRepository, JobRepository
-from src.application.ports.services import WorkerLaunchService
-from src.application.ports.clock import Clock
 from src.application.ports.contracts import ProcessAislePayload
 from src.application.errors import AisleNotFoundError, ActiveJobExistsError
-from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job, JobStatus
 
 
@@ -32,16 +28,12 @@ class StartAisleProcessingUseCase:
         self,
         aisle_repo: AisleRepository,
         job_repo: JobRepository,
-        worker_launch_service: WorkerLaunchService,
-        clock: Clock,
-        status_reconciler: InventoryStatusReconciler,
+        launch_service: AisleJobLaunchService,
         stale_reconciler: JobStaleReconciler,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._job_repo = job_repo
-        self._worker_launch_service = worker_launch_service
-        self._clock = clock
-        self._status_reconciler = status_reconciler
+        self._launch_service = launch_service
         self._stale_reconciler = stale_reconciler
 
     def execute(self, command: StartAisleProcessingCommand) -> str:
@@ -66,59 +58,12 @@ class StartAisleProcessingUseCase:
                 f"Aisle {command.aisle_id} already has an active job (status={latest.status.value})"
             )
 
-        now = self._clock.now()
         payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
-        # Concurrency safety: persist the job first, then enqueue its id.
-        job_id = str(uuid.uuid4())
-        job = Job(
-            id=job_id,
-            target_type="aisle",
-            target_id=command.aisle_id,
-            job_type="process_aisle",
-            status=JobStatus.QUEUED,
-            payload_json=dict(payload),
-            created_at=now,
-            updated_at=now,
+        job = self._launch_service.create_and_launch_attempt(
+            aisle=aisle,
+            payload=payload,
             attempt_count=1,
+            retry_of_job_id=None,
+            log_prefix="job.start_requested",
         )
-        job.status = JobStatus.STARTING
-        job.started_at = now
-        job.current_stage = "worker_launch"
-        job.current_substep = "spawn_requested"
-        job.current_step_started_at = now
-        self._job_repo.save(job)
-
-        aisle.mark_queued(now)
-        self._aisle_repo.save(aisle)
-        self._status_reconciler.reconcile(command.inventory_id)
-
-        # On-demand worker launch: persist first, then spawn a single-job worker process.
-        # If launch fails we must not leave an active queued/starting job behind.
-        try:
-            execution_id = self._worker_launch_service.launch(job_id)
-            job.execution_id = execution_id
-            job.current_substep = "spawn_succeeded"
-            job.current_step_started_at = now
-            job.updated_at = now
-            self._job_repo.save(job)
-        except Exception as e:
-            launch_error = f"Worker launch failed: {e}"
-
-            job.status = JobStatus.FAILED
-            job.error_message = launch_error
-            job.failure_code = "WORKER_LAUNCH_FAILED"
-            job.failure_message = launch_error
-            job.finished_at = now
-            job.updated_at = now
-            job.current_substep = "spawn_failed"
-            self._job_repo.save(job)
-
-            aisle.mark_failed(
-                now,
-                error_message=launch_error,
-            )
-            self._aisle_repo.save(aisle)
-            self._status_reconciler.reconcile(command.inventory_id)
-            raise
-
-        return job_id
+        return job.id

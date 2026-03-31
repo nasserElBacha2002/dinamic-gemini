@@ -8,6 +8,7 @@ from typing import Dict, Optional, Sequence
 import pytest
 
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import (
     JobStaleReconciler,
@@ -118,6 +119,23 @@ def make_stale_reconciler(job_repo: JobRepository, clock: FixedClock, stale_afte
     )
 
 
+def make_launch_service(
+    *,
+    aisle_repo: AisleRepository,
+    job_repo: JobRepository,
+    worker_launch_service: WorkerLaunchService,
+    clock: FixedClock,
+    reconciler: InventoryStatusReconciler,
+) -> AisleJobLaunchService:
+    return AisleJobLaunchService(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        worker_launch_service=worker_launch_service,
+        clock=clock,
+        status_reconciler=reconciler,
+    )
+
+
 def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
@@ -132,9 +150,13 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     use_case = StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        worker_launch_service=queue,
-        clock=clock,
-        status_reconciler=reconciler,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=queue,
+            clock=clock,
+            reconciler=reconciler,
+        ),
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
     job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
@@ -184,9 +206,13 @@ def test_start_aisle_processing_persists_job_before_enqueue() -> None:
     use_case = StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        worker_launch_service=queue,
-        clock=clock,
-        status_reconciler=reconciler,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=queue,
+            clock=clock,
+            reconciler=reconciler,
+        ),
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
 
@@ -217,9 +243,13 @@ def test_start_aisle_processing_marks_failed_when_enqueue_fails() -> None:
     use_case = StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        worker_launch_service=queue,
-        clock=clock,
-        status_reconciler=reconciler,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=queue,
+            clock=clock,
+            reconciler=reconciler,
+        ),
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
 
@@ -266,9 +296,13 @@ def test_start_aisle_processing_persists_starting_before_worker_launch() -> None
     use_case = StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        worker_launch_service=InspectingLaunchService(),
-        clock=clock,
-        status_reconciler=reconciler,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=InspectingLaunchService(),
+            clock=clock,
+            reconciler=reconciler,
+        ),
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
 
@@ -305,9 +339,13 @@ def test_start_aisle_processing_reconciles_stale_active_job_before_new_launch() 
     use_case = StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        worker_launch_service=queue,
-        clock=clock,
-        status_reconciler=reconciler,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=queue,
+            clock=clock,
+            reconciler=reconciler,
+        ),
         stale_reconciler=make_stale_reconciler(job_repo, clock, stale_after_seconds=60),
     )
 
@@ -332,9 +370,13 @@ def test_start_aisle_processing_raises_when_aisle_not_found() -> None:
     use_case = StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        worker_launch_service=queue,
-        clock=FixedClock(now),
-        status_reconciler=reconciler,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=queue,
+            clock=FixedClock(now),
+            reconciler=reconciler,
+        ),
         stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
     )
 
@@ -355,9 +397,13 @@ def test_start_aisle_processing_raises_when_aisle_belongs_to_other_inventory() -
     use_case = StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        worker_launch_service=queue,
-        clock=FixedClock(now),
-        status_reconciler=reconciler,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=queue,
+            clock=FixedClock(now),
+            reconciler=reconciler,
+        ),
         stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
     )
 
@@ -390,9 +436,13 @@ def test_start_aisle_processing_raises_when_active_job_exists() -> None:
     use_case = StartAisleProcessingUseCase(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        worker_launch_service=queue,
-        clock=FixedClock(now),
-        status_reconciler=reconciler,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=queue,
+            clock=FixedClock(now),
+            reconciler=reconciler,
+        ),
         stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
     )
 

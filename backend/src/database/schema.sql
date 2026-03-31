@@ -197,6 +197,7 @@ BEGIN
             current_substep NVARCHAR(128) NULL,
             current_step_started_at DATETIME2 NULL,
             attempt_count INT NOT NULL DEFAULT 1,
+            retry_of_job_id VARCHAR(36) NULL,
             failure_code VARCHAR(64) NULL,
             failure_message NVARCHAR(2048) NULL,
             execution_id VARCHAR(64) NULL
@@ -221,6 +222,8 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_
     ALTER TABLE inventory_jobs ADD current_step_started_at DATETIME2 NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'attempt_count')
     ALTER TABLE inventory_jobs ADD attempt_count INT NOT NULL DEFAULT 1;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'retry_of_job_id')
+    ALTER TABLE inventory_jobs ADD retry_of_job_id VARCHAR(36) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'failure_code')
     ALTER TABLE inventory_jobs ADD failure_code VARCHAR(64) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'failure_message')
