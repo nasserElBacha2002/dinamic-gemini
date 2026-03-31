@@ -217,3 +217,56 @@ def test_gemini_provider_capable_with_refs_and_existing_file(tmp_path: Path) -> 
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT] == 1
     assert "total_entities_detected" in result.parsed_json
     assert "entities" in result.parsed_json
+
+
+def test_gemini_provider_logs_exact_prompt_and_attachments(tmp_path: Path) -> None:
+    import cv2
+
+    ref_full = tmp_path / "reference-image.jpg"
+    ref_full.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(ref_full), np.zeros((24, 24, 3), dtype=np.uint8))
+
+    context = _run_context(
+        metadata={
+            "analysis_context": {
+                "primary_evidence": [],
+                "visual_references": [
+                    {
+                        "reference_id": "ref-1",
+                        "source_path": "inventories/inv-1/visual_references/reference-image.jpg",
+                        "mime_type": "image/jpeg",
+                        "resolved_path": str(ref_full),
+                    },
+                ],
+                "instructions": ["Use refs as context."],
+            },
+        },
+    )
+    context.execution_log = MagicMock()
+
+    provider = GeminiAnalysisProvider()
+    provider.analyze(
+        context=context,
+        frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/input/photo-01.jpg")],
+        frame_refs=["img_001"],
+        metadata={"frame_count": 1},
+    )
+
+    info_calls = context.execution_log.info.call_args_list
+    prepared_call = next((call for call in info_calls if call.args[1] == "Gemini request prepared"), None)
+    assert prepared_call is not None
+    payload = prepared_call.kwargs["payload"]
+    assert payload["event_type"] == "gemini_request"
+    assert payload["provider"] == "gemini"
+    assert "Analyze the frames from a warehouse aisle video" in payload["prompt_text"]
+    assert payload["attachment_summary"]["primary_evidence_count"] == 1
+    assert payload["attachment_summary"]["visual_reference_count"] == 1
+    assert payload["primary_evidence_attachments"][0]["frame_ref"] == "img_001"
+    assert payload["primary_evidence_attachments"][0]["filename"] == "photo-01.jpg"
+    assert "path" not in payload["primary_evidence_attachments"][0]
+    assert payload["visual_reference_attachments"][0]["reference_id"] == "ref-1"
+    assert payload["visual_reference_attachments"][0]["filename"] == "reference-image.jpg"
+    assert payload["visual_reference_attachments"][0]["resolved"] is True
+    assert "source_path" not in payload["visual_reference_attachments"][0]
+    assert "resolved_path" not in payload["visual_reference_attachments"][0]

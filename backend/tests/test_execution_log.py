@@ -49,6 +49,14 @@ def test_append_with_bad_payload_writes_fallback():
         assert events[1]["message"] == "fail"
 
 
+def test_sanitize_payload_preserves_full_prompt_text() -> None:
+    prompt = "Prompt line\n" + ("x" * 4000)
+    payload = {"event_type": "gemini_request", "prompt_text": prompt}
+    out = _sanitize_payload(payload)
+    assert out is not None
+    assert out["prompt_text"] == prompt
+
+
 def test_read_execution_log_empty_dir():
     """Missing file returns empty list."""
     with tempfile.TemporaryDirectory() as d:
