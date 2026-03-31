@@ -30,4 +30,4 @@ class Position:
     created_at: datetime
     updated_at: datetime
     detected_summary_json: Optional[Dict[str, Any]] = None
-    corrected_summary_json: Optional[Dict[str, Any]] = None
+    corrected_summary_json: Optional[Dict[str, Any]] = None  # legacy persisted blob; Sprint 4 audit tracks removal readiness

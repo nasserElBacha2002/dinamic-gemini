@@ -93,7 +93,8 @@ class UpdateProductSkuUseCase:
         position.status = PositionStatus.CORRECTED
         position.needs_review = False
         position.updated_at = now
-        # Phase 6: keep visible position.sku coherent on reread (API derives it from detected_summary_json.internal_code).
+        # Transitional compatibility: keep legacy snapshot identity coherent on reread while
+        # public consumers migrate to canonical product fields.
         if position.detected_summary_json is None:
             position.detected_summary_json = {"internal_code": sku}
         else:

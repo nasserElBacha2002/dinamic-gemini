@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
 from src.application.dto.analytics_dto import AnalyticsFilters
+from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.utils.review_queue_derived import (
     position_has_primary_evidence,
     summary_sku_and_detected_quantity,
@@ -18,6 +19,7 @@ from src.application.utils.review_queue_derived import (
 )
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
+from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
 
@@ -61,7 +63,11 @@ def active_position(pos: Position) -> bool:
     return pos.status != PositionStatus.DELETED
 
 
-def is_invalid_traceability(pos: Position) -> bool:
+def is_invalid_traceability(pos: Position, primary_product: Optional[ProductRecord] = None) -> bool:
+    view = build_position_canonical_view(pos, primary_product)
+    status = (view.traceability.traceability_status or "").strip().lower()
+    if status:
+        return status == "invalid"
     return traceability_normalized(pos) == "invalid"
 
 
@@ -165,13 +171,17 @@ def compute_processing_success_rate(
     return succeeded / denom
 
 
-def issue_bucket_for_position(pos: Position) -> str:
+def issue_bucket_for_position(pos: Position, primary_product: Optional[ProductRecord] = None) -> str:
     """Single primary bucket label for quality patterns (mutually exclusive priority)."""
-    if is_invalid_traceability(pos):
+    if is_invalid_traceability(pos, primary_product):
         return "invalid_traceability"
     if not position_has_primary_evidence(pos):
         return "missing_evidence"
-    _, qty = summary_sku_and_detected_quantity(pos)
+    view = build_position_canonical_view(pos, primary_product)
+    qty = int(view.quantity.final_display_quantity)
+    if primary_product is None and qty == 0:
+        _, summary_qty = summary_sku_and_detected_quantity(pos)
+        qty = summary_qty
     if qty == 0:
         return "quantity_zero"
     if is_low_confidence(pos):

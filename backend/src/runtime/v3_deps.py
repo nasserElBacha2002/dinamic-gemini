@@ -433,6 +433,7 @@ def get_analytics_repo():
                 get_inventory_repo(),
                 get_aisle_repo(),
                 get_position_repo(),
+                get_product_record_repo(),
                 get_review_action_repo(),
                 get_job_repo(),
             )
@@ -441,6 +442,7 @@ def get_analytics_repo():
             get_inventory_repo(),
             get_aisle_repo(),
             get_position_repo(),
+            get_product_record_repo(),
             get_review_action_repo(),
             get_job_repo(),
         )

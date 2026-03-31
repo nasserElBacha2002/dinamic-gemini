@@ -6,8 +6,10 @@ import pytest
 
 from src.api.routes.v3.shared import (
     position_to_summary as _position_to_summary,
-    _summary_sku_and_quantity_from_position,
+    technical_snapshot_from_view,
 )
+from src.application.mappers.position_canonical_view import build_position_canonical_view
+from src.application.mappers.position_canonical_view import summary_sku_and_quantity_from_position
 from src.api.schemas.position_schemas import PositionSummaryResponse
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
@@ -31,7 +33,7 @@ def test_summary_sku_and_quantity_from_detected_summary() -> None:
             "product_label_quantity": 5,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "SKU-001"
     assert qty == 5
 
@@ -53,7 +55,7 @@ def test_summary_sku_and_quantity_from_product_label_quantity() -> None:
             "product_label_quantity": 3,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "X-99"
     assert qty == 3
 
@@ -72,7 +74,7 @@ def test_summary_sku_and_quantity_empty_json_returns_none() -> None:
         updated_at=now,
         detected_summary_json=None,
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku is None
     assert qty == 0
 
@@ -166,7 +168,7 @@ def test_summary_quantity_parses_numeric_string() -> None:
             "final_quantity": "12",
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "Y"
     assert qty == 12
 
@@ -185,7 +187,7 @@ def test_summary_quantity_rejects_negative_and_invalid() -> None:
         updated_at=now,
         detected_summary_json={"internal_code": "Z", "final_quantity": -1},
     )
-    _, qty_neg = _summary_sku_and_quantity_from_position(p_neg)
+    _, qty_neg = summary_sku_and_quantity_from_position(p_neg)
     assert qty_neg == 0
 
     p_invalid = Position(
@@ -199,7 +201,7 @@ def test_summary_quantity_rejects_negative_and_invalid() -> None:
         updated_at=now,
         detected_summary_json={"internal_code": "W", "final_quantity": "not-a-number"},
     )
-    _, qty_invalid = _summary_sku_and_quantity_from_position(p_invalid)
+    _, qty_invalid = summary_sku_and_quantity_from_position(p_invalid)
     assert qty_invalid == 0
 
 
@@ -223,7 +225,7 @@ def test_summary_sku_fallback_to_review_display_label_when_internal_code_null() 
             "product_label_quantity": 2,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "P-001"
     assert qty == 2
 
@@ -248,7 +250,7 @@ def test_summary_sku_fallback_to_position_barcode_when_internal_code_and_rdl_nul
             "product_label_quantity": None,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "PALLET-42"
     assert qty == 0  # no quantity in summary → always show 0
 
@@ -274,7 +276,7 @@ def test_summary_sku_null_when_all_display_fields_missing() -> None:
             "count_status": "NEEDS_REVIEW",
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku is None
     assert qty == 0  # no quantity in summary → always show 0
 
@@ -298,7 +300,7 @@ def test_summary_sku_prefers_internal_code_over_fallbacks() -> None:
             "final_quantity": 1,
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "SKU-REAL"
     assert qty == 1
 
@@ -324,7 +326,7 @@ def test_summary_sku_fallback_to_pallet_id_when_other_display_fields_null() -> N
             "count_status": "NEEDS_REVIEW",
         },
     )
-    sku, qty = _summary_sku_and_quantity_from_position(p)
+    sku, qty = summary_sku_and_quantity_from_position(p)
     assert sku == "1295612"
     assert qty == 0  # no quantity in summary → always show 0
 
@@ -355,6 +357,60 @@ def test_position_to_summary_non_dict_detected_summary_json_no_raise() -> None:
         assert resp.has_evidence is False
         assert resp.source_image_original_filename is None
         assert resp.source_image_id is None
+
+
+def test_position_to_summary_omits_legacy_snapshot_when_include_technical_false() -> None:
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-s3-list",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"entity_uid": "job_s3_E1", "internal_code": "SKU-S3", "final_quantity": 2},
+    )
+    resp = _position_to_summary(p, include_technical_snapshot=False)
+    assert resp.detected_summary_json is None
+
+
+def test_technical_snapshot_from_view_extracts_debug_fields() -> None:
+    now = datetime.now(timezone.utc)
+    p = Position(
+        id="pos-s3-detail",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "entity_uid": "job_s3_E2",
+            "internal_code": "SKU-S3",
+            "review_display_label": "Tech label",
+            "position_barcode": "BC-S3",
+            "raw_qty": "4x",
+            "qty_parse_status": "invalid",
+            "qty_origin_field": "product_label_quantity",
+            "aggregated_from_ids": ["p1", "p2"],
+            "_audit": {"explicit_quantity_missing": True},
+        },
+    )
+    view = build_position_canonical_view(p)
+    snapshot = technical_snapshot_from_view(view)
+    assert snapshot is not None
+    assert snapshot.entity_uid == "job_s3_E2"
+    assert snapshot.internal_code == "SKU-S3"
+    assert snapshot.review_display_label == "Tech label"
+    assert snapshot.position_barcode == "BC-S3"
+    assert snapshot.raw_qty == "4x"
+    assert snapshot.qty_parse_status == "invalid"
+    assert snapshot.qty_origin_field == "product_label_quantity"
+    assert snapshot.aggregated_from_ids == ["p1", "p2"]
+    assert snapshot.audit == {"explicit_quantity_missing": True}
 
 
 def test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty() -> None:

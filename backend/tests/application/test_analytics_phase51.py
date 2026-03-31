@@ -15,8 +15,10 @@ from src.application.services.analytics_aggregation_core import (
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.positions.entities import Position, PositionStatus
+from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
@@ -34,6 +36,7 @@ def memory_analytics_setup():
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
     pos_repo = MemoryPositionRepository()
+    product_repo = MemoryProductRecordRepository()
     rev_repo = MemoryReviewActionRepository()
 
     inv = Inventory(
@@ -79,6 +82,30 @@ def memory_analytics_setup():
     )
     pos_repo.save(p1)
     pos_repo.save(p2)
+    product_repo.save(
+        ProductRecord(
+            id="prod-1",
+            position_id=p1.id,
+            sku="SKU-1",
+            description="",
+            detected_quantity=1,
+            confidence=0.9,
+            created_at=_utc(0),
+            updated_at=_utc(0),
+        )
+    )
+    product_repo.save(
+        ProductRecord(
+            id="prod-2",
+            position_id=p2.id,
+            sku="SKU-2",
+            description="",
+            detected_quantity=1,
+            confidence=0.9,
+            created_at=_utc(0),
+            updated_at=_utc(0),
+        )
+    )
 
     ra_confirm = ReviewAction(
         id="ra-1",
@@ -100,7 +127,7 @@ def memory_analytics_setup():
     rev_repo.save(ra_corr)
 
     job_repo = MemoryJobRepository()
-    analytics = MemoryAnalyticsRepository(inv_repo, aisle_repo, pos_repo, rev_repo, job_repo)
+    analytics = MemoryAnalyticsRepository(inv_repo, aisle_repo, pos_repo, product_repo, rev_repo, job_repo)
     return analytics, inv, aisle
 
 
@@ -137,6 +164,62 @@ def test_issue_bucket_invalid_traceability():
     assert issue_bucket_for_position(p) == "invalid_traceability"
 
 
+def test_issue_bucket_quantity_zero_prefers_primary_product_quantity() -> None:
+    p = Position(
+        id="x",
+        aisle_id="a",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id="e",
+        created_at=_utc(),
+        updated_at=_utc(),
+        detected_summary_json={"final_quantity": 7, "traceability_status": "valid"},
+    )
+    primary = ProductRecord(
+        id="prod-x",
+        position_id="x",
+        sku="SKU-X",
+        description="",
+        detected_quantity=3,
+        corrected_quantity=0,
+        confidence=0.9,
+        created_at=_utc(),
+        updated_at=_utc(),
+    )
+    assert issue_bucket_for_position(p, primary) == "quantity_zero"
+
+
+def test_issue_bucket_quantity_zero_keeps_aggregated_snapshot_rule() -> None:
+    p = Position(
+        id="agg",
+        aisle_id="a",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id="e",
+        created_at=_utc(),
+        updated_at=_utc(),
+        detected_summary_json={
+            "internal_code": "SKU-AGG",
+            "final_quantity": 0,
+            "aggregated_from_ids": ["a", "b"],
+            "traceability_status": "valid",
+        },
+    )
+    primary = ProductRecord(
+        id="prod-agg",
+        position_id="agg",
+        sku="SKU-AGG",
+        description="",
+        detected_quantity=5,
+        confidence=0.9,
+        created_at=_utc(),
+        updated_at=_utc(),
+    )
+    assert issue_bucket_for_position(p, primary) == "quantity_zero"
+
+
 def test_memory_summary_rates(memory_analytics_setup):
     analytics, *_ = memory_analytics_setup
     f = AnalyticsFilters(date_from=_utc(-60), date_to=_utc(120), inventory_id=None, aisle_id=None)
@@ -161,6 +244,7 @@ def test_memory_empty_data():
         MemoryInventoryRepository(),
         MemoryAisleRepository(),
         MemoryPositionRepository(),
+        MemoryProductRecordRepository(),
         MemoryReviewActionRepository(),
         MemoryJobRepository(),
     )

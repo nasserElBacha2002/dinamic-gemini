@@ -23,14 +23,22 @@ from collections import defaultdict
 from typing import DefaultDict, List
 
 from src.application.errors import InventoryNotFoundError
-from src.application.mappers.inventory_export_rows import export_position_sort_key, position_to_export_row_dict
+from src.application.mappers.inventory_export_rows import (
+    export_position_sort_key,
+    position_to_operational_export_row_dict,
+    position_to_technical_export_row_dict,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
     PositionRepository,
     ProductRecordRepository,
 )
-from src.application.services.csv_inventory_exporter import CsvInventoryExporter
+from src.application.services.csv_inventory_exporter import (
+    CsvInventoryExporter,
+    INVENTORY_RESULTS_CSV_FIELDS,
+    INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS,
+)
 from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.position_sku_consolidation import consolidate_positions_by_sku
 from src.application.utils.natural_sort import natural_sort_key_parts
@@ -50,7 +58,7 @@ class ExportInventoryResultsUseCase:
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
 
-    def execute_csv(self, inventory_id: str) -> str:
+    def execute_csv(self, inventory_id: str, *, technical: bool = False) -> str:
         inv = self._inventory_repo.get_by_id(inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
@@ -62,7 +70,8 @@ class ExportInventoryResultsUseCase:
         )
         aisle_ids = [a.id for a in sorted_aisles]
         if not aisle_ids:
-            return CsvInventoryExporter.to_csv([])
+            fieldnames = INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS if technical else INVENTORY_RESULTS_CSV_FIELDS
+            return CsvInventoryExporter.to_csv([], fieldnames=fieldnames)
         all_positions = list(self._position_repo.list_by_aisles(aisle_ids))
         by_aisle: DefaultDict[str, List[Position]] = defaultdict(list)
         for p in all_positions:
@@ -76,6 +85,10 @@ class ExportInventoryResultsUseCase:
             for p in consolidated_sorted:
                 products = self._product_record_repo.list_by_position(p.id)
                 primary = select_display_primary_product(products)
-                rows.append(position_to_export_row_dict(inv, aisle, seq, p, primary))
+                if technical:
+                    rows.append(position_to_technical_export_row_dict(inv, aisle, seq, p))
+                else:
+                    rows.append(position_to_operational_export_row_dict(inv, aisle, seq, p, primary))
 
-        return CsvInventoryExporter.to_csv(rows)
+        fieldnames = INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS if technical else INVENTORY_RESULTS_CSV_FIELDS
+        return CsvInventoryExporter.to_csv(rows, fieldnames=fieldnames)

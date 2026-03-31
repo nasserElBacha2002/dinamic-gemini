@@ -50,7 +50,10 @@ def list_review_queue_positions(
     ),
     has_evidence: Optional[bool] = Query(None),
     qty_zero: Optional[bool] = Query(None),
-    sku_contains: Optional[str] = Query(None, description="Case-insensitive substring on SKU (summary JSON)."),
+    sku_contains: Optional[str] = Query(
+        None,
+        description="Case-insensitive substring on canonical display SKU (snapshot fallback only when needed).",
+    ),
     position_status: Optional[str] = Query(
         None,
         description="detected | reviewed | corrected | deleted | confirmed (reviewed or corrected).",
@@ -63,7 +66,8 @@ def list_review_queue_positions(
     """Review queue: positions with ``needs_review``, narrowable by status and quality filters (paginated).
 
     Sprint 4.2: KPI summary, advanced filters, ``sort_by=priority`` (explainable tiers).
-    ``sku_contains`` matches summary-derived SKU (substring, not full-text search).
+    ``sku_contains`` matches canonical display SKU (substring, not full-text search), with
+    snapshot fallback only for legacy/aggregated cases where no clearer canonical source exists.
     """
     q = ReviewQueueQuery(
         inventory_id=_strip_opt(inventory_id),
@@ -96,6 +100,7 @@ def list_review_queue_positions(
                     row.position,
                     corrected_quantity=corrected_quantity,
                     primary_product=primary,
+                    include_technical_snapshot=False,
                 ),
             )
         )

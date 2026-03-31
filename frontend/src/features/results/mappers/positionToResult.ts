@@ -19,7 +19,6 @@ import type {
   ReviewStatus,
   TraceabilityStatus,
 } from '../types';
-import { getSummaryString } from './detectedSummary';
 
 /** Backend traceability is lowercase; visible model uses uppercase.
  * Unknown/missing → UNVALIDATED (document-only fallback: backend sends valid|missing|invalid|unvalidated). */
@@ -71,30 +70,41 @@ export function mapPositionStatusToReviewStatus(
 export function mapPositionSummaryToResultSummary(
   p: PositionSummary
 ): ResultSummary {
+  /** Sprint 2: nested blocks first, then deprecated flat aliases, then historical inference. */
   const hasEvidence =
-    typeof p.has_evidence === 'boolean'
-      ? p.has_evidence
-      : Boolean(
-          p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
-        );
+    typeof p.traceability?.has_evidence === 'boolean'
+      ? p.traceability.has_evidence
+      : typeof p.has_evidence === 'boolean'
+        ? p.has_evidence
+        : Boolean(
+            p.primary_evidence_id != null && String(p.primary_evidence_id).trim() !== ''
+          );
+  const sku = p.product?.sku ?? p.sku ?? null;
+  const detectedQty = p.quantity?.detected ?? p.detected_quantity ?? null;
+  const correctedQty = p.quantity?.corrected ?? p.corrected_quantity ?? null;
   const resolvedQty =
-    p.corrected_quantity != null
-      ? p.corrected_quantity
-      : p.qty ?? null;
+    p.quantity?.final ??
+    (p.corrected_quantity != null ? p.corrected_quantity : p.qty ?? null);
+  const qtySource = p.quantity?.source ?? p.qtySource ?? 'detected';
+  const qtyResolved = p.quantity?.resolved ?? p.qtyResolved ?? null;
+  const qtyInferenceReason =
+    p.quantity?.inference_reason ?? p.qtyInferenceReason ?? null;
+  const traceabilityStatus = mapTraceabilityToVisible(
+    p.traceability?.status ?? p.traceability_status
+  );
 
-  // qtySource fallback: Keep for historical payloads only; backend now always sends qtySource.
   return {
     id: p.id,
-    sku: p.sku ?? null,
-    detectedQty: p.detected_quantity ?? null,
-    correctedQty: p.corrected_quantity ?? null,
+    sku,
+    detectedQty,
+    correctedQty,
     resolvedQty,
-    qtySource: p.qtySource ?? 'detected',
-    qtyResolved: p.qtyResolved ?? null,
-    qtyInferenceReason: p.qtyInferenceReason ?? null,
+    qtySource,
+    qtyResolved,
+    qtyInferenceReason,
     confidence: p.confidence ?? null,
     reviewStatus: mapPositionStatusToReviewStatus(p.status, p.needs_review),
-    traceabilityStatus: mapTraceabilityToVisible(p.traceability_status),
+    traceabilityStatus,
     needsReview: p.needs_review,
     updatedAt: p.updated_at,
     hasEvidence,
@@ -139,45 +149,73 @@ export function mapPositionDetailToResultDetail(
   const evidences = data.evidences ?? [];
   const review_actions = data.review_actions ?? [];
 
-  const summaryJson = position.detected_summary_json ?? null;
-  /** Canonical: typed fields win. Keep: fallback to detected_summary_json only when typed absent (historical). */
+  const technicalSnapshot = data.technical_snapshot ?? null;
+  /** Canonical: Sprint 2 ``traceability`` block, then typed fields.
+   * Sprint 3 removes the frontend dependency on `detected_summary_json`; detail technical metadata
+   * now flows through `technical_snapshot` only. */
   const typedSourceImageId =
-    position.source_image_id != null && String(position.source_image_id).trim() !== ''
+    (position.traceability?.source_image_id != null &&
+      String(position.traceability.source_image_id).trim() !== ''
+      ? position.traceability.source_image_id.trim()
+      : null) ??
+    (position.source_image_id != null && String(position.source_image_id).trim() !== ''
       ? position.source_image_id.trim()
-      : null;
+      : null);
   const typedSourceFileName =
-    position.source_image_original_filename != null &&
+    (position.traceability?.source_image_original_filename != null &&
+    String(position.traceability.source_image_original_filename).trim() !== ''
+      ? position.traceability.source_image_original_filename.trim()
+      : null) ??
+    (position.source_image_original_filename != null &&
     String(position.source_image_original_filename).trim() !== ''
       ? position.source_image_original_filename.trim()
+      : null);
+  const sourceImageId = typedSourceImageId;
+  const sourceFileName = typedSourceFileName;
+  const entityId =
+    technicalSnapshot != null &&
+    typeof technicalSnapshot === 'object' &&
+    'entity_uid' in technicalSnapshot &&
+    typeof technicalSnapshot.entity_uid === 'string' &&
+    technicalSnapshot.entity_uid.trim() !== ''
+      ? technicalSnapshot.entity_uid.trim()
       : null;
-  const sourceImageId = typedSourceImageId ?? getSummaryString(summaryJson, 'source_image_id');
-  const sourceFileName = typedSourceFileName ?? getSummaryString(summaryJson, 'source_image_original_filename');
 
-  const entityId = getSummaryString(summaryJson, 'entity_uid');
-
+  const sku = position.product?.sku ?? position.sku ?? null;
+  const detectedQty =
+    position.quantity?.detected ?? position.detected_quantity ?? null;
+  const correctedQty =
+    position.quantity?.corrected ?? position.corrected_quantity ?? null;
   const resolvedQty =
-    position.corrected_quantity != null
+    position.quantity?.final ??
+    (position.corrected_quantity != null
       ? position.corrected_quantity
-      : position.qty ?? null;
+      : position.qty ?? null);
   const systemQty = position.qty ?? null;
+  const qtySource = position.quantity?.source ?? position.qtySource ?? 'detected';
+  const qtyResolved = position.quantity?.resolved ?? position.qtyResolved ?? null;
+  const qtyInferenceReason =
+    position.quantity?.inference_reason ?? position.qtyInferenceReason ?? null;
+  const traceabilityStatus = mapTraceabilityToVisible(
+    position.traceability?.status ?? position.traceability_status
+  );
 
   return {
     id: position.id,
-    sku: position.sku ?? null,
-    detectedQty: position.detected_quantity ?? null,
-    correctedQty: position.corrected_quantity ?? null,
+    sku,
+    detectedQty,
+    correctedQty,
     resolvedQty,
     systemQty,
-    // qtySource fallback: Keep for historical payloads only; backend sends qtySource in active v3.
-    qtySource: position.qtySource ?? 'detected',
-    qtyResolved: position.qtyResolved ?? null,
-    qtyInferenceReason: position.qtyInferenceReason ?? null,
+    qtySource,
+    qtyResolved,
+    qtyInferenceReason,
     confidence: position.confidence ?? null,
     reviewStatus: mapPositionStatusToReviewStatus(
       position.status,
       position.needs_review
     ),
-    traceabilityStatus: mapTraceabilityToVisible(position.traceability_status),
+    traceabilityStatus,
     needsReview: position.needs_review,
     updatedAt: position.updated_at,
     sourceImageId:
@@ -192,7 +230,8 @@ export function mapPositionDetailToResultDetail(
     reviewHistory: review_actions.map(mapReviewActionToHistoryItem),
     technicalMetadata: {
       entityId: entityId ?? undefined,
-      primaryEvidenceId: position.primary_evidence_id ?? undefined,
+      primaryEvidenceId:
+        position.traceability?.primary_evidence_id ?? position.primary_evidence_id ?? undefined,
       rawStatus: position.status ?? undefined,
     },
   };

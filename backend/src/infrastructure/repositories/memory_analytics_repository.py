@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import timezone
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
 from src.application.dto.analytics_dto import (
@@ -26,8 +26,10 @@ from src.application.ports.repositories import (
     InventoryRepository,
     JobRepository,
     PositionRepository,
+    ProductRecordRepository,
     ReviewActionRepository,
 )
+from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.analytics_aggregation_core import (
     aggregate_settling_metrics,
     compute_average_review_time_seconds,
@@ -45,6 +47,7 @@ from src.application.services.analytics_aggregation_core import (
 )
 from src.domain.jobs.entities import JobStatus
 from src.domain.positions.entities import Position, PositionStatus
+from src.domain.products.entities import ProductRecord
 
 
 class MemoryAnalyticsRepository(AnalyticsRepository):
@@ -53,14 +56,26 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         inventory_repo: InventoryRepository,
         aisle_repo: AisleRepository,
         position_repo: PositionRepository,
+        product_record_repo: ProductRecordRepository,
         review_action_repo: ReviewActionRepository,
         job_repo: JobRepository,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._position_repo = position_repo
+        self._product_record_repo = product_record_repo
         self._review_action_repo = review_action_repo
         self._job_repo = job_repo
+
+    def _primary_by_position(
+        self,
+        positions: Dict[str, Position],
+    ) -> Dict[str, Optional[ProductRecord]]:
+        """Resolve display-primary product once per position set."""
+        return {
+            pid: select_display_primary_product(self._product_record_repo.list_by_position(pid))
+            for pid in positions
+        }
 
     def _collect(
         self, filters: AnalyticsFilters
@@ -103,12 +118,17 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         notes: List[str] = []
         positions, aisle_to_inv, pos_to_aisle, actions = self._collect(filters)
         active = {pid: p for pid, p in positions.items() if active_position(p)}
+        primary_by_position = self._primary_by_position(active)
         settling, confirms, corrections = aggregate_settling_metrics(
             actions,
             filters.date_from,
             filters.date_to,
         )
-        invalid_n = sum(1 for p in active.values() if is_invalid_traceability(p))
+        invalid_n = sum(
+            1
+            for pid, p in active.items()
+            if is_invalid_traceability(p, primary_by_position.get(pid))
+        )
         pos_den = len(active)
         auto_rate = (confirms / settling) if settling else None
         corr_rate = (corrections / settling) if settling else None
@@ -233,6 +253,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             )
             positions, _, _, actions = self._collect(inv_filter)
             active_list = [p for p in positions.values() if active_position(p)]
+            primary_by_position = self._primary_by_position(positions)
             aisles = self._aisle_repo.list_by_inventory(inv.id)
             if filters.aisle_id:
                 aisles = [a for a in aisles if a.id == filters.aisle_id]
@@ -246,7 +267,11 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 if p.status in (PositionStatus.REVIEWED, PositionStatus.CORRECTED)
                 or (p.status == PositionStatus.DETECTED and not p.needs_review)
             )
-            invalid_n = sum(1 for p in active_list if is_invalid_traceability(p))
+            invalid_n = sum(
+                1
+                for p in active_list
+                if is_invalid_traceability(p, primary_by_position.get(p.id))
+            )
             conf_vals = [p.confidence for p in active_list]
             avg_conf = sum(conf_vals) / len(conf_vals) if conf_vals else None
 
@@ -288,6 +313,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
     def get_aisle_issues(self, filters: AnalyticsFilters) -> List[AisleIssueRowDTO]:
         rows: List[AisleIssueRowDTO] = []
         positions, _, pos_to_aisle, _ = self._collect(filters)
+        primary_by_position = self._primary_by_position(positions)
         by_aisle: Dict[str, List[Position]] = {}
         meta: Dict[str, tuple] = {}
         for inv in self._inventory_repo.list_all():
@@ -308,11 +334,15 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             code, inventory_id, inventory_name = meta[aisle_id]
             needs_r = sum(1 for p in plist if p.needs_review)
             corrected_c = sum(1 for p in plist if p.status == PositionStatus.CORRECTED)
-            invalid_tr = sum(1 for p in plist if is_invalid_traceability(p))
+            invalid_tr = sum(
+                1
+                for p in plist
+                if is_invalid_traceability(p, primary_by_position.get(p.id))
+            )
             low_conf = sum(1 for p in plist if is_low_confidence(p))
             bucket_counts: Dict[str, int] = {}
             for p in plist:
-                b = issue_bucket_for_position(p)
+                b = issue_bucket_for_position(p, primary_by_position.get(p.id))
                 bucket_counts[b] = bucket_counts.get(b, 0) + 1
             common = most_common_issue_for_counts(bucket_counts)
             rows.append(
@@ -333,25 +363,26 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
 
     def get_quality_patterns(self, filters: AnalyticsFilters) -> List[QualityPatternRowDTO]:
         positions, _, _, _ = self._collect(filters)
+        primary_by_position = self._primary_by_position(positions)
         counts: Dict[str, int] = {}
         for p in positions.values():
             if not active_position(p):
                 continue
-            b = issue_bucket_for_position(p)
+            b = issue_bucket_for_position(p, primary_by_position.get(p.id))
             counts[b] = counts.get(b, 0) + 1
         total = sum(counts.values()) or 0
         display = {
             "invalid_traceability": "Invalid traceability",
             "missing_evidence": "Missing evidence",
-            "quantity_zero": "Zero quantity in summary",
+            "quantity_zero": "Zero canonical quantity",
             "low_confidence": "Low confidence",
             "pending_review": "Pending review",
             "ok": "No primary issue",
         }
         notes_map = {
-            "invalid_traceability": "traceability_status=invalid in detected summary",
+            "invalid_traceability": "Canonical traceability status resolved as invalid",
             "missing_evidence": "No primary evidence id",
-            "quantity_zero": "final_quantity or product_label_quantity is 0 in summary JSON",
+            "quantity_zero": "Canonical final quantity resolved as 0 (product record when available; aggregated rows may fall back to snapshot)",
             "low_confidence": f"confidence < {LOW_CONFIDENCE_THRESHOLD} (operational threshold)",
             "pending_review": "needs_review flag set",
             "ok": "Did not match higher-priority buckets",

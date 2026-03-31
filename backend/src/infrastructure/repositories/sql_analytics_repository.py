@@ -71,17 +71,42 @@ def _traceability_invalid_expr(alias: str = "p") -> str:
     )
 
 
+def _aggregated_row_expr(alias: str = "p") -> str:
+    return f"JSON_VALUE({alias}.detected_summary_json, N'$.aggregated_from_ids[0]') IS NOT NULL"
+
+
+def _canonical_quantity_expr(alias: str = "p", primary_alias: str = "pr_primary") -> str:
+    aggregated = _aggregated_row_expr(alias)
+    return f"""
+    CASE
+      WHEN {aggregated} THEN
+        COALESCE(
+          TRY_CONVERT(int, JSON_VALUE({alias}.detected_summary_json, N'$.final_quantity')),
+          TRY_CONVERT(int, JSON_VALUE({alias}.detected_summary_json, N'$.product_label_quantity')),
+          0
+        )
+      WHEN {primary_alias}.id IS NOT NULL THEN
+        COALESCE({primary_alias}.corrected_quantity, {primary_alias}.detected_quantity, 0)
+      ELSE
+        COALESCE(
+          TRY_CONVERT(int, JSON_VALUE({alias}.detected_summary_json, N'$.final_quantity')),
+          TRY_CONVERT(int, JSON_VALUE({alias}.detected_summary_json, N'$.product_label_quantity')),
+          0
+        )
+    END
+    """
+
+
 def _issue_bucket_expr(alias: str = "p") -> str:
     tr = _traceability_invalid_expr(alias)
     thr = float(LOW_CONFIDENCE_THRESHOLD)
+    qty_expr = _canonical_quantity_expr(alias, "pr_primary")
     return f"""
     CASE
       WHEN {tr} THEN N'invalid_traceability'
       WHEN {alias}.primary_evidence_id IS NULL
         OR LTRIM(RTRIM(CAST({alias}.primary_evidence_id AS NVARCHAR(64)))) = N'' THEN N'missing_evidence'
-      WHEN TRY_CONVERT(int, JSON_VALUE({alias}.detected_summary_json, N'$.final_quantity')) = 0
-        OR TRY_CONVERT(int, JSON_VALUE({alias}.detected_summary_json, N'$.product_label_quantity')) = 0
-        THEN N'quantity_zero'
+      WHEN ({qty_expr}) = 0 THEN N'quantity_zero'
       WHEN {alias}.confidence < CAST({thr} AS float) THEN N'low_confidence'
       WHEN {alias}.needs_review = 1 THEN N'pending_review'
       ELSE N'ok'
@@ -494,6 +519,12 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               SUM(CASE WHEN ({bucket}) = N'low_confidence' THEN 1 ELSE 0 END) AS iss_lowc,
               SUM(CASE WHEN ({bucket}) = N'pending_review' THEN 1 ELSE 0 END) AS iss_pending
             FROM positions p
+            OUTER APPLY (
+              SELECT TOP 1 pr.id, pr.detected_quantity, pr.corrected_quantity
+              FROM product_records pr
+              WHERE pr.position_id = p.id
+              ORDER BY pr.created_at ASC, pr.id ASC
+            ) pr_primary
             INNER JOIN aisles a ON a.id = p.aisle_id
             INNER JOIN inventories i ON i.id = a.inventory_id
             WHERE {where_scope}
@@ -549,6 +580,12 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             FROM (
                 SELECT {bucket_sql} AS bucket
                 FROM positions p
+                OUTER APPLY (
+                  SELECT TOP 1 pr.id, pr.detected_quantity, pr.corrected_quantity
+                  FROM product_records pr
+                  WHERE pr.position_id = p.id
+                  ORDER BY pr.created_at ASC, pr.id ASC
+                ) pr_primary
                 INNER JOIN aisles a ON a.id = p.aisle_id
                 INNER JOIN inventories i ON i.id = a.inventory_id
                 WHERE {where_scope}
@@ -565,9 +602,9 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         }
         thr_note = f"confidence < {LOW_CONFIDENCE_THRESHOLD} (LOW_CONFIDENCE_THRESHOLD)"
         notes = {
-            "invalid_traceability": "traceability_status=invalid in detected summary",
+            "invalid_traceability": "traceability_status=invalid in canonical traceability source",
             "missing_evidence": "No primary evidence id",
-            "quantity_zero": "final_quantity or product_label_quantity is 0 in summary JSON",
+            "quantity_zero": "Canonical final quantity resolved as 0 (product record when available; aggregated rows may fall back to snapshot)",
             "low_confidence": thr_note,
             "pending_review": "needs_review flag set",
             "ok": "Did not match higher-priority buckets",

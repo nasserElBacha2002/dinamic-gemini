@@ -118,6 +118,49 @@ describe('mapPositionSummaryToResultSummary', () => {
     expect(r.reviewStatus).toBe('CONFIRMED');
   });
 
+  it('Sprint 2: prefers nested product/quantity/traceability blocks over divergent legacy flat fields', () => {
+    const p: PositionSummary = {
+      id: 'pos-s2-blocks',
+      aisle_id: 'aisle-1',
+      status: 'detected',
+      confidence: 0.9,
+      needs_review: false,
+      primary_evidence_id: 'ev-legacy',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-02T00:00:00Z',
+      sku: 'FLAT-SKU',
+      detected_quantity: 1,
+      corrected_quantity: null,
+      qty: 1,
+      qtySource: 'detected',
+      qtyResolved: null,
+      has_evidence: false,
+      product: {
+        sku: 'BLOCK-SKU',
+        identity_source: 'primary_product',
+      },
+      quantity: {
+        detected: 9,
+        final: 9,
+        source: 'merge_inferred',
+        resolved: true,
+      },
+      traceability: {
+        status: 'missing',
+        has_evidence: true,
+        primary_evidence_id: 'ev-block',
+      },
+    };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.sku).toBe('BLOCK-SKU');
+    expect(r.detectedQty).toBe(9);
+    expect(r.qtySource).toBe('merge_inferred');
+    expect(r.qtyResolved).toBe(true);
+    expect(r.resolvedQty).toBe(9);
+    expect(r.traceabilityStatus).toBe('MISSING');
+    expect(r.hasEvidence).toBe(true);
+  });
+
   it('preserves qtySource = consolidated (Phase 5 Block 1) and keeps visible qty rule', () => {
     const p: PositionSummary = {
       id: 'pos-consolidated',
@@ -254,14 +297,13 @@ describe('mapPositionDetailToResultDetail', () => {
         qty: 1,
         qtySource: 'inferred',
         qtyResolved: true,
-        detected_summary_json: {
-          entity_uid: 'job_E1',
-          source_image_id: 'img-1',
-          source_image_original_filename: 'photo.jpg',
-        },
         source_image_id: 'img-1',
+        source_image_original_filename: 'photo.jpg',
         traceability_status: 'valid',
         has_evidence: true,
+      },
+      technical_snapshot: {
+        entity_uid: 'job_E1',
       },
       evidences: [
         {
@@ -320,14 +362,13 @@ describe('mapPositionDetailToResultDetail', () => {
         qty: 5,
         qtySource: 'detected',
         qtyResolved: true,
-        detected_summary_json: {
-          source_image_id: 'legacy-from-json',
-          source_image_original_filename: 'legacy.jpg',
-        },
         source_image_id: 'canonical-id',
         source_image_original_filename: 'canonical.jpg',
         traceability_status: 'valid',
         has_evidence: true,
+      },
+      technical_snapshot: {
+        entity_uid: 'job_override',
       },
       evidences: [],
       review_actions: [],
@@ -335,9 +376,10 @@ describe('mapPositionDetailToResultDetail', () => {
     const r = mapPositionDetailToResultDetail(data);
     expect(r.sourceImageId).toBe('canonical-id');
     expect(r.sourceFileName).toBe('canonical.jpg');
+    expect(r.technicalMetadata?.entityId).toBe('job_override');
   });
 
-  it('Case 2 — falls back to detected_summary_json when typed fields absent (v3.2.5 Block 3)', () => {
+  it('Case 2 — typed source image fields are required when technical snapshot is separate', () => {
     const data: PositionDetailResponse = {
       position: {
         id: 'pos-fallback',
@@ -354,10 +396,6 @@ describe('mapPositionDetailToResultDetail', () => {
         qty: 2,
         qtySource: 'detected',
         qtyResolved: null,
-        detected_summary_json: {
-          source_image_id: 'from-json-id',
-          source_image_original_filename: 'from_json.jpg',
-        },
         source_image_id: null,
         source_image_original_filename: null,
         traceability_status: null,
@@ -367,8 +405,40 @@ describe('mapPositionDetailToResultDetail', () => {
       review_actions: [],
     };
     const r = mapPositionDetailToResultDetail(data);
-    expect(r.sourceImageId).toBe('from-json-id');
-    expect(r.sourceFileName).toBe('from_json.jpg');
+    expect(r.sourceImageId).toBeNull();
+    expect(r.sourceFileName).toBeNull();
+  });
+
+  it('Case 2b — technical_snapshot is preferred for technical metadata when present', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-technical-snapshot',
+        aisle_id: 'aisle-1',
+        status: 'detected',
+        confidence: 0.8,
+        needs_review: false,
+        primary_evidence_id: null,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        sku: 'SKU-B',
+        detected_quantity: 2,
+        corrected_quantity: null,
+        qty: 2,
+        qtySource: 'detected',
+        qtyResolved: null,
+        source_image_id: null,
+        source_image_original_filename: null,
+        traceability_status: null,
+        has_evidence: false,
+      },
+      technical_snapshot: {
+        entity_uid: 'job_new',
+      },
+      evidences: [],
+      review_actions: [],
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.technicalMetadata?.entityId).toBe('job_new');
   });
 
   it('Case 3 — neither typed nor summary: source fields null, no crash (v3.2.5 Block 3)', () => {
@@ -388,7 +458,6 @@ describe('mapPositionDetailToResultDetail', () => {
         qty: 0,
         qtySource: 'detected',
         qtyResolved: false,
-        detected_summary_json: null,
         source_image_id: null,
         source_image_original_filename: null,
         traceability_status: null,

@@ -363,11 +363,13 @@ def get_list_review_queue_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
 ) -> ListReviewQueueUseCase:
     return ListReviewQueueUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         position_repo=position_repo,
+        product_record_repo=product_record_repo,
     )
 
 
