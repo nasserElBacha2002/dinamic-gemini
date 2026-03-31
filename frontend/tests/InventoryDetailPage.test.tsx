@@ -1,10 +1,15 @@
+import '@testing-library/jest-dom/vitest';
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import InventoryDetail from '../src/pages/InventoryDetail';
 import { AppSnackbarProvider } from '../src/components/ui';
+
+const { useInventoryVisualReferencesMock } = vi.hoisted(() => ({
+  useInventoryVisualReferencesMock: vi.fn(),
+}));
 
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
@@ -17,24 +22,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
       error: null,
       refetch: vi.fn(),
     }),
-    useInventoryVisualReferences: () => ({
-      data: {
-        items: [
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }),
+    useInventoryVisualReferences: useInventoryVisualReferencesMock,
     useAislesList: () => ({
       data: {
         items: [
@@ -94,7 +82,62 @@ function renderPage() {
 }
 
 describe('InventoryDetail', () => {
+  beforeEach(() => {
+    useInventoryVisualReferencesMock.mockReset();
+  });
+
+  it('keeps reference images lazy until the drawer opens', () => {
+    useInventoryVisualReferencesMock.mockImplementation((_inventoryId, options) => ({
+      data: {
+        items: [
+          {
+            id: 'ref-1',
+            inventory_id: 'inv-1',
+            filename: 'front-pallet.jpg',
+            mime_type: 'image/jpeg',
+            file_size: 1024,
+            created_at: '2024-01-02T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      enabled: options?.enabled,
+    }));
+
+    renderPage();
+
+    expect(useInventoryVisualReferencesMock).toHaveBeenCalled();
+    expect(useInventoryVisualReferencesMock.mock.calls[0]?.[1]).toMatchObject({ enabled: false });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reference images' }));
+
+    const lastCall = useInventoryVisualReferencesMock.mock.calls.at(-1);
+    expect(lastCall?.[1]).toMatchObject({ enabled: true });
+  });
+
   it('keeps the page focused on header and aisles, with a header action for reference images', () => {
+    useInventoryVisualReferencesMock.mockImplementation(() => ({
+      data: {
+        items: [
+          {
+            id: 'ref-1',
+            inventory_id: 'inv-1',
+            filename: 'front-pallet.jpg',
+            mime_type: 'image/jpeg',
+            file_size: 1024,
+            created_at: '2024-01-02T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Inventory One' })).toBeInTheDocument();
@@ -109,6 +152,25 @@ describe('InventoryDetail', () => {
   });
 
   it('opens the reference images drawer and renders inventory reference data there', () => {
+    useInventoryVisualReferencesMock.mockImplementation(() => ({
+      data: {
+        items: [
+          {
+            id: 'ref-1',
+            inventory_id: 'inv-1',
+            filename: 'front-pallet.jpg',
+            mime_type: 'image/jpeg',
+            file_size: 1024,
+            created_at: '2024-01-02T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+
     renderPage();
 
     expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();

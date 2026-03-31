@@ -131,8 +131,8 @@ export default function ReferenceImagesDrawer({
               >
                 <Typography variant="subtitle2">Management actions</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Upload, replace, preview, and delete actions will live in this panel as the next phase wires the
-                  existing backend capabilities into the Inventory Detail UX.
+                  Upload, preview, replace, and delete actions will live in this panel once the next phase wires the
+                  existing backend capabilities into this drawer flow.
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Button variant="outlined" size="small" disabled>
