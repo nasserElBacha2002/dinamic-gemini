@@ -17,6 +17,8 @@ from src.application.dto.analytics_dto import (
     AnalyticsTrendsDTO,
     AisleIssueRowDTO,
     InventoryPerformanceRowDTO,
+    ManualInterventionBreakdownDTO,
+    ManualInterventionCategoryDTO,
     QualityPatternRowDTO,
     TrendPointDTO,
 )
@@ -31,9 +33,12 @@ from src.application.ports.repositories import (
 )
 from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.analytics_aggregation_core import (
-    aggregate_settling_metrics,
+    build_inventory_metric_rates,
+    build_summary_metrics,
     compute_average_review_time_seconds,
+    compute_manual_intervention_breakdown,
     compute_processing_success_rate,
+    compute_review_outcome_counts,
     correction_action,
     day_span_inclusive,
     issue_bucket_for_position,
@@ -43,7 +48,10 @@ from src.application.services.analytics_aggregation_core import (
     active_position,
     is_invalid_traceability,
     is_low_confidence,
+    processed_position,
     review_action_in_period,
+    InventoryMetricInputs,
+    SummaryMetricInputs,
 )
 from src.domain.jobs.entities import JobStatus
 from src.domain.positions.entities import Position, PositionStatus
@@ -119,20 +127,14 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         positions, aisle_to_inv, pos_to_aisle, actions = self._collect(filters)
         active = {pid: p for pid, p in positions.items() if active_position(p)}
         primary_by_position = self._primary_by_position(active)
-        settling, confirms, corrections = aggregate_settling_metrics(
-            actions,
-            filters.date_from,
-            filters.date_to,
-        )
+        review_outcomes = compute_review_outcome_counts(actions, filters.date_from, filters.date_to)
         invalid_n = sum(
             1
             for pid, p in active.items()
             if is_invalid_traceability(p, primary_by_position.get(pid))
         )
-        pos_den = len(active)
-        auto_rate = (confirms / settling) if settling else None
-        corr_rate = (corrections / settling) if settling else None
-        inv_rate = (invalid_n / pos_den) if pos_den else None
+        total_positions = len(active)
+        processed_positions = sum(1 for p in active.values() if processed_position(p))
 
         allowed_aisles = set(aisle_to_inv.keys())
         if filters.aisle_id:
@@ -144,23 +146,34 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
 
         avg_sec = compute_average_review_time_seconds(positions, actions, filters.date_from, filters.date_to)
         span = day_span_inclusive(filters.date_from, filters.date_to)
-        rpd = (settling / span) if settling else None
+        rpd = (
+            review_outcomes.settling_actions_count / span
+            if review_outcomes.settling_actions_count
+            else None
+        )
         if filters.date_from is None or filters.date_to is None:
             notes.append(
                 "Date range open-ended: settling_actions_per_day uses a 1-day divisor; "
                 "set date_from and date_to for meaningful per-day rates."
             )
-        return AnalyticsSummaryDTO(
-            auto_acceptance_rate=auto_rate,
-            manual_correction_rate=corr_rate,
-            invalid_traceability_rate=inv_rate,
-            processing_success_rate=proc,
-            average_review_time_seconds=avg_sec,
-            settling_actions_per_day=rpd,
-            notes=notes,
-            period_day_count=span,
-            settling_actions_count=settling,
-            positions_in_scope=pos_den,
+        notes.append(
+            "Current-state metrics use entity scope; date filters apply only to review-action and job-based metrics."
+        )
+        return build_summary_metrics(
+            SummaryMetricInputs(
+                total_positions_in_scope=total_positions,
+                processed_positions_count=processed_positions,
+                reviewed_positions_count=review_outcomes.reviewed_positions_count,
+                auto_accepted_positions_count=review_outcomes.auto_accepted_positions_count,
+                manually_corrected_positions_count=review_outcomes.manually_corrected_positions_count,
+                invalid_traceability_positions_count=invalid_n,
+                processing_success_rate=proc,
+                average_review_time_seconds=avg_sec,
+                settling_actions_per_day=rpd,
+                settling_actions_count=review_outcomes.settling_actions_count,
+                period_day_count=span,
+                notes=notes,
+            )
         )
 
     def get_trends(self, filters: AnalyticsFilters) -> AnalyticsTrendsDTO:
@@ -189,13 +202,22 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         correction_series: List[TrendPointDTO] = []
         for d in sorted(by_day_rev.keys()):
             day_actions = by_day_rev[d]
-            s = len(day_actions)
-            c = sum(1 for a in day_actions if correction_action(a))
+            outcomes = compute_review_outcome_counts(day_actions, None, None)
+            s = outcomes.settling_actions_count
             reviewed_series.append(
                 TrendPointDTO(period=d, reviewed_results=s, correction_rate=None, processing_success_rate=None)
             )
             correction_series.append(
-                TrendPointDTO(period=d, reviewed_results=s, correction_rate=(c / s) if s else None, processing_success_rate=None)
+                TrendPointDTO(
+                    period=d,
+                    reviewed_results=s,
+                    correction_rate=(
+                        outcomes.manually_corrected_positions_count / outcomes.reviewed_positions_count
+                        if outcomes.reviewed_positions_count
+                        else None
+                    ),
+                    processing_success_rate=None,
+                )
             )
 
         proc_series: List[TrendPointDTO] = []
@@ -261,12 +283,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             total_pos = len(active_list)
             if total_aisles == 0 and total_pos == 0:
                 continue
-            processed_n = sum(
-                1
-                for p in active_list
-                if p.status in (PositionStatus.REVIEWED, PositionStatus.CORRECTED)
-                or (p.status == PositionStatus.DETECTED and not p.needs_review)
-            )
+            processed_n = sum(1 for p in active_list if processed_position(p))
             invalid_n = sum(
                 1
                 for p in active_list
@@ -275,21 +292,28 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             conf_vals = [p.confidence for p in active_list]
             avg_conf = sum(conf_vals) / len(conf_vals) if conf_vals else None
 
-            settling, _, corrections = aggregate_settling_metrics(actions, filters.date_from, filters.date_to)
-            reviewed_positions = {
-                ra.position_id
-                for ra in actions
-                if review_action_in_period(ra, filters.date_from, filters.date_to) and settling_action(ra)
-                and ra.position_id in positions
-            }
-            review_rate = (len(reviewed_positions) / total_pos) if total_pos else None
-            correction_rate = (corrections / settling) if settling else None
-            inv_tr_rate = (invalid_n / total_pos) if total_pos else None
+            review_outcomes = compute_review_outcome_counts(actions, filters.date_from, filters.date_to)
 
             aisle_ids = {a.id for a in aisles}
             jobs_list = list(self._job_repo.list_all_jobs())
             proc = compute_processing_success_rate(
                 jobs_list, filters.date_from, filters.date_to, aisle_ids
+            )
+            avg_review_sec = compute_average_review_time_seconds(
+                positions, actions, filters.date_from, filters.date_to
+            )
+            metric_rates = build_inventory_metric_rates(
+                InventoryMetricInputs(
+                    total_positions_in_scope=total_pos,
+                    processed_positions_count=processed_n,
+                    reviewed_positions_count=review_outcomes.reviewed_positions_count,
+                    auto_accepted_positions_count=review_outcomes.auto_accepted_positions_count,
+                    manually_corrected_positions_count=review_outcomes.manually_corrected_positions_count,
+                    invalid_traceability_positions_count=invalid_n,
+                    avg_confidence=avg_conf,
+                    processing_success_rate=proc,
+                    average_review_time_seconds=avg_review_sec,
+                )
             )
 
             created = inv.created_at if inv.created_at.tzinfo else inv.created_at.replace(tzinfo=timezone.utc)
@@ -299,13 +323,19 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     inventory_name=inv.name,
                     inventory_created_at=created,
                     total_aisles=total_aisles,
+                    aisles_count=total_aisles,
                     total_positions=total_pos,
+                    positions_count=total_pos,
                     processed_positions=processed_n,
-                    review_rate=review_rate,
-                    correction_rate=correction_rate,
-                    invalid_traceability_rate=inv_tr_rate,
-                    avg_confidence=avg_conf,
-                    processing_success_rate=proc,
+                    processed_count=processed_n,
+                    review_rate=metric_rates["review_rate"],
+                    correction_rate=metric_rates["correction_rate"],
+                    auto_acceptance_rate=metric_rates["auto_acceptance_rate"],
+                    manual_correction_rate=metric_rates["manual_correction_rate"],
+                    invalid_traceability_rate=metric_rates["invalid_traceability_rate"],
+                    avg_confidence=metric_rates["avg_confidence"],
+                    processing_success_rate=metric_rates["processing_success_rate"],
+                    average_review_time_minutes=metric_rates["average_review_time_minutes"],
                 )
             )
         return sorted(out, key=lambda r: r.inventory_name.lower())
@@ -399,3 +429,59 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 )
             )
         return out
+
+    def get_manual_intervention_breakdown(
+        self, filters: AnalyticsFilters
+    ) -> ManualInterventionBreakdownDTO:
+        positions, _, _, actions = self._collect(filters)
+        active_ids = {pid for pid, pos in positions.items() if active_position(pos)}
+        scoped_actions = [a for a in actions if a.position_id in active_ids]
+        breakdown = compute_manual_intervention_breakdown(
+            scoped_actions, filters.date_from, filters.date_to
+        )
+        denominator = breakdown.intervention_positions_count
+
+        def pct(count: int) -> Optional[float]:
+            return (count / denominator) if denominator else None
+
+        return ManualInterventionBreakdownDTO(
+            reviewed_positions_count=breakdown.reviewed_positions_count,
+            intervention_positions_count=breakdown.intervention_positions_count,
+            items=[
+                ManualInterventionCategoryDTO(
+                    category="confirmed",
+                    count=breakdown.confirmed_count,
+                    percentage=pct(breakdown.confirmed_count),
+                ),
+                ManualInterventionCategoryDTO(
+                    category="qty_corrected",
+                    count=breakdown.qty_corrected_count,
+                    percentage=pct(breakdown.qty_corrected_count),
+                ),
+                ManualInterventionCategoryDTO(
+                    category="sku_corrected",
+                    count=breakdown.sku_corrected_count,
+                    percentage=pct(breakdown.sku_corrected_count),
+                ),
+                ManualInterventionCategoryDTO(
+                    category="invalid",
+                    count=None,
+                    percentage=None,
+                    available=False,
+                    notes="Current persisted review model does not distinguish invalid from delete_position.",
+                ),
+                ManualInterventionCategoryDTO(
+                    category="unknown",
+                    count=None,
+                    percentage=None,
+                    available=False,
+                    notes="Final unknown review resolution is not persisted yet.",
+                ),
+                ManualInterventionCategoryDTO(
+                    category="deleted",
+                    count=breakdown.deleted_count,
+                    percentage=pct(breakdown.deleted_count),
+                ),
+            ],
+            notes=list(breakdown.notes),
+        )

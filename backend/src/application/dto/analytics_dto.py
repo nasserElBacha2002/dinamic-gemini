@@ -37,11 +37,15 @@ class AnalyticsSummaryDTO:
     invalid_traceability_rate: Optional[float]
     processing_success_rate: Optional[float]
     average_review_time_seconds: Optional[float]
+    average_review_time_minutes: Optional[float]
     settling_actions_per_day: Optional[float]
     notes: List[str] = field(default_factory=list)
     period_day_count: int = 0
     settling_actions_count: int = 0
     positions_in_scope: int = 0
+    total_positions_in_scope: int = 0
+    processed_positions_count: int = 0
+    reviewed_positions_count: int = 0
 
 
 @dataclass
@@ -58,13 +62,36 @@ class InventoryPerformanceRowDTO:
     inventory_name: str
     inventory_created_at: datetime
     total_aisles: int
+    aisles_count: int
     total_positions: int
+    positions_count: int
     processed_positions: int
+    processed_count: int
     review_rate: Optional[float]
     correction_rate: Optional[float]
+    auto_acceptance_rate: Optional[float]
+    manual_correction_rate: Optional[float]
     invalid_traceability_rate: Optional[float]
     avg_confidence: Optional[float]
     processing_success_rate: Optional[float]
+    average_review_time_minutes: Optional[float]
+
+
+@dataclass
+class ManualInterventionCategoryDTO:
+    category: str
+    count: Optional[int]
+    percentage: Optional[float]
+    available: bool = True
+    notes: Optional[str] = None
+
+
+@dataclass
+class ManualInterventionBreakdownDTO:
+    reviewed_positions_count: int
+    intervention_positions_count: int
+    items: List[ManualInterventionCategoryDTO] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
 
 
 @dataclass

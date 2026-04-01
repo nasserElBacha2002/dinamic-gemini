@@ -757,3 +757,12 @@ export async function getAnalyticsQualityPatterns(q?: AnalyticsQueryParams): Pro
   const response = await protectedFetch(`${API_BASE}/api/v3/analytics/quality${buildAnalyticsQueryString(q)}`);
   return handleResponse<QualityPatternListResponse>(response);
 }
+
+export async function getAnalyticsManualInterventions(
+  q?: AnalyticsQueryParams
+): Promise<ManualInterventionBreakdownResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/analytics/manual-interventions${buildAnalyticsQueryString(q)}`
+  );
+  return handleResponse<ManualInterventionBreakdownResponse>(response);
+}

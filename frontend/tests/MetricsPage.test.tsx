@@ -34,11 +34,15 @@ const dashboardLoaded = {
     invalid_traceability_rate: 0.1,
     processing_success_rate: 0.9,
     average_review_time_seconds: 120,
+    average_review_time_minutes: 2,
     settling_actions_per_day: 4,
-    notes: [],
+    notes: ['Current-state metrics use entity scope.'],
     period_day_count: 7,
     settling_actions_count: 10,
     positions_in_scope: 20,
+    total_positions_in_scope: 20,
+    processed_positions_count: 16,
+    reviewed_positions_count: 8,
   },
   trends: {
     reviewed_results_over_time: [
@@ -54,13 +58,19 @@ const dashboardLoaded = {
         inventory_name: 'North DC',
         inventory_created_at: '2026-01-01T00:00:00Z',
         total_aisles: 2,
+        aisles_count: 2,
         total_positions: 10,
+        positions_count: 10,
         processed_positions: 8,
+        processed_count: 8,
         review_rate: 0.4,
         correction_rate: 0.1,
+        auto_acceptance_rate: 0.6,
+        manual_correction_rate: 0.1,
         invalid_traceability_rate: 0.05,
         avg_confidence: 0.82,
         processing_success_rate: 0.95,
+        average_review_time_minutes: 9.5,
       },
     ],
   },
@@ -82,6 +92,19 @@ const dashboardLoaded = {
   },
   quality: {
     items: [{ issue_type: 'Low confidence', count: 2, percentage: 0.4, notes: 'test note' }],
+  },
+  manualInterventions: {
+    reviewed_positions_count: 8,
+    intervention_positions_count: 5,
+    items: [
+      { category: 'confirmed', count: 2, percentage: 0.4, available: true, notes: null },
+      { category: 'qty_corrected', count: 1, percentage: 0.2, available: true, notes: null },
+      { category: 'sku_corrected', count: 1, percentage: 0.2, available: true, notes: null },
+      { category: 'invalid', count: null, percentage: null, available: false, notes: 'not available' },
+      { category: 'unknown', count: null, percentage: null, available: false, notes: 'not persisted' },
+      { category: 'deleted', count: 1, percentage: 0.2, available: true, notes: null },
+    ],
+    notes: ['unknown category unavailable'],
   },
   isLoading: false,
   isError: false,
@@ -105,21 +128,24 @@ describe('MetricsPage', () => {
     mockUseAnalyticsDashboard.mockReturnValue(dashboardLoaded);
   });
 
-  it('renders heading, settling-actions KPI, and quality copy aligned with backend buckets', () => {
+  it('renders the new operational hierarchy and removes low-value legacy blocks', () => {
     renderMetrics();
     expect(screen.getByRole('heading', { name: /metrics/i })).toBeInTheDocument();
     expect(screen.getByText('Auto-acceptance rate')).toBeInTheDocument();
-    expect(screen.getByText('Settling actions / day')).toBeInTheDocument();
-    expect(screen.getByText('4.0')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Each position counted once in its highest-priority issue/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText('Manual intervention breakdown')).toBeInTheDocument();
+    expect(screen.getByText('Resolution flow')).toBeInTheDocument();
     expect(screen.getByText('Inventory performance')).toBeInTheDocument();
+    expect(screen.getByText('Aisles requiring attention')).toBeInTheDocument();
+    expect(screen.queryByText('Settling actions / day')).not.toBeInTheDocument();
+    expect(screen.queryByText('Review activity')).not.toBeInTheDocument();
+    expect(screen.queryByText('Processing outcomes')).not.toBeInTheDocument();
   });
 
-  it('renders KPI percentages from summary', () => {
+  it('renders KPI values from truthful backend fields and omits unknown KPI when unsupported', () => {
     renderMetrics();
     expect(screen.getByText('50.0%')).toBeInTheDocument(); // auto_acceptance_rate
+    expect(screen.getByText('2.0 min')).toBeInTheDocument();
+    expect(screen.queryByText('Unknown rate')).not.toBeInTheDocument();
   });
 
   it('shows skeleton KPI band while loading without summary', () => {
@@ -130,7 +156,7 @@ describe('MetricsPage', () => {
     });
     const { container } = renderMetrics();
     expect(container.querySelectorAll('.MuiSkeleton-root').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Settling actions / day')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unknown rate')).not.toBeInTheDocument();
   });
 
   it('shows error alert when a query fails', () => {
@@ -158,6 +184,12 @@ describe('MetricsPage', () => {
     });
     renderMetrics();
     expect(screen.getByText('No positions match this filter and date range.')).toBeInTheDocument();
+  });
+
+  it('shows unavailable intervention categories without fabricating backend support', () => {
+    renderMetrics();
+    expect(screen.getByText('Unknown unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Invalid unavailable')).toBeInTheDocument();
   });
 
   it('does not expose a redundant Actions column on inventory or aisle analytics tables', () => {

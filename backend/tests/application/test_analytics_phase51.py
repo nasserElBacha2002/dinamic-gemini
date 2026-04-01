@@ -8,9 +8,13 @@ import pytest
 
 from src.application.dto.analytics_dto import AnalyticsFilters
 from src.application.services.analytics_aggregation_core import (
-    aggregate_settling_metrics,
+    build_summary_metrics,
+    compute_manual_intervention_breakdown,
+    compute_review_outcome_counts,
     day_span_inclusive,
     issue_bucket_for_position,
+    processed_position,
+    SummaryMetricInputs,
 )
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.aisle.entities import Aisle, AisleStatus
@@ -137,10 +141,11 @@ def test_aggregate_settling_metrics_counts():
         ReviewAction("b", "p", ReviewActionType.UPDATE_QUANTITY, {}, {}, _utc(1)),
         ReviewAction("c", "p", ReviewActionType.DELETE_POSITION, {}, {}, _utc(2)),
     ]
-    s, c, corr = aggregate_settling_metrics(ra, None, None)
-    assert s == 2
-    assert c == 1
-    assert corr == 1
+    counts = compute_review_outcome_counts(ra, None, None)
+    assert counts.settling_actions_count == 2
+    assert counts.reviewed_positions_count == 1
+    assert counts.auto_accepted_positions_count == 0
+    assert counts.manually_corrected_positions_count == 1
 
 
 def test_day_span():
@@ -229,6 +234,10 @@ def test_memory_summary_rates(memory_analytics_setup):
     assert s.manual_correction_rate == pytest.approx(0.5)
     assert s.invalid_traceability_rate == pytest.approx(0.5)
     assert s.positions_in_scope == 2
+    assert s.total_positions_in_scope == 2
+    assert s.processed_positions_count == 0
+    assert s.reviewed_positions_count == 2
+    assert s.average_review_time_minutes == pytest.approx((10.5 * 60) / 60)
 
 
 def test_memory_quality_patterns(memory_analytics_setup):
@@ -252,3 +261,63 @@ def test_memory_empty_data():
     assert s.positions_in_scope == 0
     assert s.settling_actions_count == 0
     assert s.auto_acceptance_rate is None
+
+
+def test_processed_position_matches_phase2_operational_rule() -> None:
+    detected_done = Position(
+        id="p-done",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=_utc(),
+        updated_at=_utc(),
+        detected_summary_json={},
+    )
+    assert processed_position(detected_done) is True
+
+
+def test_summary_builder_preserves_legacy_and_adds_new_scope_fields() -> None:
+    dto = build_summary_metrics(
+        SummaryMetricInputs(
+            total_positions_in_scope=10,
+            processed_positions_count=8,
+            reviewed_positions_count=5,
+            auto_accepted_positions_count=3,
+            manually_corrected_positions_count=2,
+            invalid_traceability_positions_count=1,
+            processing_success_rate=0.75,
+            average_review_time_seconds=600.0,
+            settling_actions_per_day=4.0,
+            settling_actions_count=7,
+            period_day_count=2,
+            notes=["scoped"],
+        )
+    )
+    assert dto.positions_in_scope == 10
+    assert dto.total_positions_in_scope == 10
+    assert dto.processed_positions_count == 8
+    assert dto.reviewed_positions_count == 5
+    assert dto.average_review_time_seconds == 600.0
+    assert dto.average_review_time_minutes == 10.0
+    assert dto.auto_acceptance_rate == pytest.approx(0.6)
+    assert dto.manual_correction_rate == pytest.approx(0.4)
+
+
+def test_manual_intervention_breakdown_marks_unknown_and_invalid_unavailable() -> None:
+    actions = [
+        ReviewAction("a", "p1", ReviewActionType.CONFIRM, {}, {}, _utc(0)),
+        ReviewAction("b", "p2", ReviewActionType.UPDATE_QUANTITY, {}, {}, _utc(1)),
+        ReviewAction("c", "p3", ReviewActionType.UPDATE_SKU, {}, {}, _utc(2)),
+        ReviewAction("d", "p4", ReviewActionType.DELETE_POSITION, {}, {}, _utc(3)),
+    ]
+    breakdown = compute_manual_intervention_breakdown(actions, None, None)
+    assert breakdown.reviewed_positions_count == 3
+    assert breakdown.intervention_positions_count == 4
+    assert breakdown.confirmed_count == 1
+    assert breakdown.qty_corrected_count == 1
+    assert breakdown.sku_corrected_count == 1
+    assert breakdown.deleted_count == 1
+    assert breakdown.unknown_available is False
+    assert breakdown.invalid_available is False

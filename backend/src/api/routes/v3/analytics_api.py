@@ -14,6 +14,8 @@ from src.auth.dependencies import get_current_admin
 
 from src.api.dependencies import get_aisle_repo, get_analytics_query_service
 from src.api.schemas.analytics_schemas import (
+    ManualInterventionBreakdownResponse,
+    ManualInterventionCategoryResponse,
     AnalyticsSummaryResponse,
     AnalyticsTrendsResponse,
     AisleIssueListResponse,
@@ -87,11 +89,15 @@ def analytics_summary(
         invalid_traceability_rate=d.invalid_traceability_rate,
         processing_success_rate=d.processing_success_rate,
         average_review_time_seconds=d.average_review_time_seconds,
+        average_review_time_minutes=d.average_review_time_minutes,
         settling_actions_per_day=d.settling_actions_per_day,
         notes=list(d.notes),
         period_day_count=d.period_day_count,
         settling_actions_count=d.settling_actions_count,
         positions_in_scope=d.positions_in_scope,
+        total_positions_in_scope=d.total_positions_in_scope,
+        processed_positions_count=d.processed_positions_count,
+        reviewed_positions_count=d.reviewed_positions_count,
     )
 
 
@@ -145,13 +151,19 @@ def analytics_inventories(
                 inventory_name=r.inventory_name,
                 inventory_created_at=r.inventory_created_at,
                 total_aisles=r.total_aisles,
+                aisles_count=r.aisles_count,
                 total_positions=r.total_positions,
+                positions_count=r.positions_count,
                 processed_positions=r.processed_positions,
+                processed_count=r.processed_count,
                 review_rate=r.review_rate,
                 correction_rate=r.correction_rate,
+                auto_acceptance_rate=r.auto_acceptance_rate,
+                manual_correction_rate=r.manual_correction_rate,
                 invalid_traceability_rate=r.invalid_traceability_rate,
                 avg_confidence=r.avg_confidence,
                 processing_success_rate=r.processing_success_rate,
+                average_review_time_minutes=r.average_review_time_minutes,
             )
             for r in rows
         ]
@@ -211,4 +223,39 @@ def analytics_quality(
             )
             for r in rows
         ]
+    )
+
+
+@router.get("/manual-interventions", response_model=ManualInterventionBreakdownResponse)
+def analytics_manual_interventions(
+    svc: AnalyticsQueryService = Depends(get_analytics_query_service),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    inventory_id: Optional[str] = Query(None),
+    aisle_id: Optional[str] = Query(None),
+) -> ManualInterventionBreakdownResponse:
+    """Return current persisted manual intervention categories for the analytics scope.
+
+    Date filters apply to review action timestamps. Categories that cannot be derived reliably from
+    current persistence, such as terminal unknown resolution, are returned as unavailable rather
+    than inferred heuristically.
+    """
+    f = _filters(date_from, date_to, inventory_id, aisle_id)
+    _validate_analytics_scope(f, aisle_repo)
+    data = svc.manual_intervention_breakdown(f)
+    return ManualInterventionBreakdownResponse(
+        reviewed_positions_count=data.reviewed_positions_count,
+        intervention_positions_count=data.intervention_positions_count,
+        items=[
+            ManualInterventionCategoryResponse(
+                category=item.category,
+                count=item.count,
+                percentage=item.percentage,
+                available=item.available,
+                notes=item.notes,
+            )
+            for item in data.items
+        ],
+        notes=list(data.notes),
     )

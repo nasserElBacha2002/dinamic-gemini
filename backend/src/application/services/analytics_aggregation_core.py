@@ -6,6 +6,7 @@ LOW_CONFIDENCE_THRESHOLD matches review_queue_derived / frontend reviewThreshold
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -21,6 +22,56 @@ from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
+
+
+@dataclass(frozen=True)
+class ReviewOutcomeCounts:
+    reviewed_positions_count: int
+    auto_accepted_positions_count: int
+    manually_corrected_positions_count: int
+    settling_actions_count: int
+
+
+@dataclass(frozen=True)
+class SummaryMetricInputs:
+    total_positions_in_scope: int
+    processed_positions_count: int
+    reviewed_positions_count: int
+    auto_accepted_positions_count: int
+    manually_corrected_positions_count: int
+    invalid_traceability_positions_count: int
+    processing_success_rate: Optional[float]
+    average_review_time_seconds: Optional[float]
+    settling_actions_per_day: Optional[float]
+    settling_actions_count: int
+    period_day_count: int
+    notes: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class InventoryMetricInputs:
+    total_positions_in_scope: int
+    processed_positions_count: int
+    reviewed_positions_count: int
+    auto_accepted_positions_count: int
+    manually_corrected_positions_count: int
+    invalid_traceability_positions_count: int
+    avg_confidence: Optional[float]
+    processing_success_rate: Optional[float]
+    average_review_time_seconds: Optional[float]
+
+
+@dataclass(frozen=True)
+class ManualInterventionBreakdown:
+    reviewed_positions_count: int
+    intervention_positions_count: int
+    confirmed_count: int
+    qty_corrected_count: int
+    sku_corrected_count: int
+    deleted_count: int
+    unknown_available: bool
+    invalid_available: bool
+    notes: List[str] = field(default_factory=list)
 
 
 def day_span_inclusive(date_from: Optional[datetime], date_to: Optional[datetime]) -> int:
@@ -114,6 +165,172 @@ def aggregate_settling_metrics(
             if correction_action(ra):
                 corrections += 1
     return settling, confirms, corrections
+
+
+def processed_position(pos: Position) -> bool:
+    return pos.status in (PositionStatus.REVIEWED, PositionStatus.CORRECTED) or (
+        pos.status == PositionStatus.DETECTED and not pos.needs_review
+    )
+
+
+def compute_review_outcome_counts(
+    actions: Sequence[ReviewAction],
+    date_from: Optional[datetime],
+    date_to: Optional[datetime],
+) -> ReviewOutcomeCounts:
+    """Unique reviewed-position counts plus backward-compatible settling action count.
+
+    Review outcome semantics for Phase 2:
+    - reviewed_positions_count: unique positions with at least one settling action in period
+    - auto_accepted_positions_count: reviewed positions with confirm actions only
+    - manually_corrected_positions_count: reviewed positions with any quantity/SKU correction
+
+    This intentionally keeps ``manual_correction_rate`` narrow (quantity + SKU only).
+    """
+    by_position: Dict[str, List[ReviewAction]] = {}
+    settling_actions_count = 0
+    for ra in sorted(actions, key=lambda x: (x.created_at, x.id)):
+        if not review_action_in_period(ra, date_from, date_to):
+            continue
+        if not settling_action(ra):
+            continue
+        settling_actions_count += 1
+        by_position.setdefault(ra.position_id, []).append(ra)
+
+    reviewed_positions_count = len(by_position)
+    auto_accepted_positions_count = 0
+    manually_corrected_positions_count = 0
+    for position_actions in by_position.values():
+        has_correction = any(correction_action(ra) for ra in position_actions)
+        if has_correction:
+            manually_corrected_positions_count += 1
+        elif any(ra.action_type == ReviewActionType.CONFIRM for ra in position_actions):
+            auto_accepted_positions_count += 1
+
+    return ReviewOutcomeCounts(
+        reviewed_positions_count=reviewed_positions_count,
+        auto_accepted_positions_count=auto_accepted_positions_count,
+        manually_corrected_positions_count=manually_corrected_positions_count,
+        settling_actions_count=settling_actions_count,
+    )
+
+
+def ratio_or_none(numerator: int, denominator: int) -> Optional[float]:
+    if denominator <= 0:
+        return None
+    return numerator / denominator
+
+
+def minutes_from_seconds(seconds: Optional[float]) -> Optional[float]:
+    if seconds is None:
+        return None
+    return seconds / 60.0
+
+
+def build_summary_metrics(inputs: SummaryMetricInputs):
+    from src.application.dto.analytics_dto import AnalyticsSummaryDTO
+
+    return AnalyticsSummaryDTO(
+        auto_acceptance_rate=ratio_or_none(
+            inputs.auto_accepted_positions_count, inputs.reviewed_positions_count
+        ),
+        manual_correction_rate=ratio_or_none(
+            inputs.manually_corrected_positions_count, inputs.reviewed_positions_count
+        ),
+        invalid_traceability_rate=ratio_or_none(
+            inputs.invalid_traceability_positions_count, inputs.total_positions_in_scope
+        ),
+        processing_success_rate=inputs.processing_success_rate,
+        average_review_time_seconds=inputs.average_review_time_seconds,
+        average_review_time_minutes=minutes_from_seconds(inputs.average_review_time_seconds),
+        settling_actions_per_day=inputs.settling_actions_per_day,
+        notes=list(inputs.notes),
+        period_day_count=inputs.period_day_count,
+        settling_actions_count=inputs.settling_actions_count,
+        positions_in_scope=inputs.total_positions_in_scope,
+        total_positions_in_scope=inputs.total_positions_in_scope,
+        processed_positions_count=inputs.processed_positions_count,
+        reviewed_positions_count=inputs.reviewed_positions_count,
+    )
+
+
+def build_inventory_metric_rates(inputs: InventoryMetricInputs) -> dict:
+    return {
+        "review_rate": ratio_or_none(inputs.reviewed_positions_count, inputs.total_positions_in_scope),
+        "correction_rate": ratio_or_none(
+            inputs.manually_corrected_positions_count, inputs.reviewed_positions_count
+        ),
+        "auto_acceptance_rate": ratio_or_none(
+            inputs.auto_accepted_positions_count, inputs.reviewed_positions_count
+        ),
+        "manual_correction_rate": ratio_or_none(
+            inputs.manually_corrected_positions_count, inputs.reviewed_positions_count
+        ),
+        "invalid_traceability_rate": ratio_or_none(
+            inputs.invalid_traceability_positions_count, inputs.total_positions_in_scope
+        ),
+        "avg_confidence": inputs.avg_confidence,
+        "processing_success_rate": inputs.processing_success_rate,
+        "average_review_time_minutes": minutes_from_seconds(inputs.average_review_time_seconds),
+    }
+
+
+def compute_manual_intervention_breakdown(
+    actions: Sequence[ReviewAction],
+    date_from: Optional[datetime],
+    date_to: Optional[datetime],
+) -> ManualInterventionBreakdown:
+    """Mutually exclusive current persisted intervention categories by latest action in period.
+
+    Today the persisted review model supports confirm, update_quantity, update_sku, and delete.
+    It does not support a terminal unknown outcome, and it does not model invalid separately from
+    delete_position. Those categories remain unavailable until persistence evolves.
+    """
+    latest_by_position: Dict[str, ReviewAction] = {}
+    reviewed_positions: set[str] = set()
+    intervention_positions: set[str] = set()
+    for ra in sorted(actions, key=lambda x: (x.created_at, x.id)):
+        if not review_action_in_period(ra, date_from, date_to):
+            continue
+        if ra.action_type in (
+            ReviewActionType.CONFIRM,
+            ReviewActionType.UPDATE_QUANTITY,
+            ReviewActionType.UPDATE_SKU,
+            ReviewActionType.DELETE_POSITION,
+        ):
+            intervention_positions.add(ra.position_id)
+            latest_by_position[ra.position_id] = ra
+        if settling_action(ra):
+            reviewed_positions.add(ra.position_id)
+
+    confirmed_count = 0
+    qty_corrected_count = 0
+    sku_corrected_count = 0
+    deleted_count = 0
+    for ra in latest_by_position.values():
+        if ra.action_type == ReviewActionType.CONFIRM:
+            confirmed_count += 1
+        elif ra.action_type == ReviewActionType.UPDATE_QUANTITY:
+            qty_corrected_count += 1
+        elif ra.action_type == ReviewActionType.UPDATE_SKU:
+            sku_corrected_count += 1
+        elif ra.action_type == ReviewActionType.DELETE_POSITION:
+            deleted_count += 1
+
+    return ManualInterventionBreakdown(
+        reviewed_positions_count=len(reviewed_positions),
+        intervention_positions_count=len(intervention_positions),
+        confirmed_count=confirmed_count,
+        qty_corrected_count=qty_corrected_count,
+        sku_corrected_count=sku_corrected_count,
+        deleted_count=deleted_count,
+        unknown_available=False,
+        invalid_available=False,
+        notes=[
+            "unknown category unavailable: final unknown review resolution is not persisted yet",
+            "invalid category unavailable: current persisted review model does not distinguish invalid from delete_position",
+        ],
+    )
 
 
 def compute_average_review_time_seconds(

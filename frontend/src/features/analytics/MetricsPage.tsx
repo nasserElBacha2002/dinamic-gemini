@@ -1,18 +1,22 @@
 /**
- * Phase 5.1 — dedicated Metrics / Analytics experience (quality, review burden, processing).
+ * Operational analytics dashboard focused on efficiency, manual effort, and quality hotspots.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
+  Alert,
+  Chip,
   Box,
   Button,
+  Divider,
   FormControl,
   Grid,
   InputLabel,
   MenuItem,
   Select,
   Skeleton,
+  Stack,
   TextField,
   Typography,
 } from '@mui/material';
@@ -31,8 +35,13 @@ import { formatDate } from '../../utils/formatDate';
 import { getApiErrorMessage } from '../../utils/apiErrors';
 import { ApiError } from '../../api/types';
 import { useAnalyticsDashboard } from './hooks';
-import type { AnalyticsQueryParams, InventoryPerformanceRow, AisleIssueRow, QualityPatternRow } from './types';
-import TrendBars from './components/TrendBars';
+import type {
+  AnalyticsQueryParams,
+  InventoryPerformanceRow,
+  AisleIssueRow,
+  QualityPatternRow,
+  ManualInterventionCategory,
+} from './types';
 
 function defaultDateRange(): { from: string; to: string } {
   const to = new Date();
@@ -50,6 +59,99 @@ function formatAvgReviewSec(sec: number | null | undefined): string {
   if (sec == null || Number.isNaN(sec)) return '—';
   if (sec < 60) return `${Math.round(sec)}s`;
   return `${(sec / 60).toFixed(1)} min`;
+}
+
+function formatAvgReviewMinutes(minutes: number | null | undefined, seconds: number | null | undefined): string {
+  if (minutes != null && !Number.isNaN(minutes)) return `${minutes.toFixed(1)} min`;
+  return formatAvgReviewSec(seconds);
+}
+
+function numberOrZero(value: number | null | undefined): number {
+  return value ?? 0;
+}
+
+function paginateRows<T>(rows: readonly T[], page: number, pageSize: number): readonly T[] {
+  const start = (page - 1) * pageSize;
+  return rows.slice(start, start + pageSize);
+}
+
+function compareValues(a: number | string | null | undefined, b: number | string | null | undefined): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function sortInventoryRows(
+  rows: readonly InventoryPerformanceRow[],
+  sortBy: string,
+  sortDir: 'asc' | 'desc'
+): InventoryPerformanceRow[] {
+  const direction = sortDir === 'asc' ? 1 : -1;
+  const getValue = (row: InventoryPerformanceRow): number | string | null | undefined => {
+    switch (sortBy) {
+      case 'created':
+        return row.inventory_created_at;
+      case 'aisles':
+        return row.aisles_count ?? row.total_aisles;
+      case 'positions':
+        return row.positions_count ?? row.total_positions;
+      case 'processed':
+        return row.processed_count ?? row.processed_positions;
+      case 'auto_accept':
+        return row.auto_acceptance_rate ?? null;
+      case 'manual_correction':
+        return row.manual_correction_rate ?? row.correction_rate;
+      case 'invalid_tr':
+        return row.invalid_traceability_rate;
+      case 'avg_conf':
+        return row.avg_confidence;
+      case 'avg_review':
+        return row.average_review_time_minutes ?? null;
+      case 'proc':
+        return row.processing_success_rate;
+      case 'name':
+      default:
+        return row.inventory_name;
+    }
+  };
+  return [...rows].sort((left, right) => {
+    const result = compareValues(getValue(left), getValue(right));
+    if (result !== 0) return result * direction;
+    return left.inventory_name.localeCompare(right.inventory_name) * direction;
+  });
+}
+
+function qualityPriority(label: string): number {
+  const normalized = label.trim().toLowerCase();
+  if (normalized === 'unknown') return 0;
+  if (normalized === 'pending review') return 1;
+  if (normalized === 'invalid traceability') return 2;
+  if (normalized === 'missing evidence') return 3;
+  if (normalized.includes('zero')) return 4;
+  if (normalized === 'low confidence') return 5;
+  if (normalized === 'no primary issue') return 6;
+  return 50;
+}
+
+function interventionLabel(category: string): string {
+  switch (category) {
+    case 'confirmed':
+      return 'Confirmed';
+    case 'qty_corrected':
+      return 'Qty corrected';
+    case 'sku_corrected':
+      return 'SKU corrected';
+    case 'invalid':
+      return 'Invalid';
+    case 'unknown':
+      return 'Unknown';
+    case 'deleted':
+      return 'Deleted';
+    default:
+      return category;
+  }
 }
 
 export default function MetricsPage() {
@@ -75,7 +177,30 @@ export default function MetricsPage() {
   const aislesQuery = useAislesList(inventoryId || undefined, { enabled: Boolean(inventoryId) });
   const aisles = aislesQuery.data?.items ?? [];
 
-  const { summary, trends, inventoryPerformance, aisleIssues, quality, isLoading, isError, errors, refetchAll } =
+  useEffect(() => {
+    if (aisleId && !aisles.some((aisle) => aisle.id === aisleId)) {
+      setAisleId('');
+    }
+  }, [aisleId, aisles]);
+
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [inventoryPageSize, setInventoryPageSize] = useState(10);
+  const [inventorySortBy, setInventorySortBy] = useState('auto_accept');
+  const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
+  const [aislePage, setAislePage] = useState(1);
+  const [aislePageSize, setAislePageSize] = useState(10);
+
+  const {
+    summary,
+    inventoryPerformance,
+    aisleIssues,
+    quality,
+    manualInterventions,
+    isLoading,
+    isError,
+    errors,
+    refetchAll,
+  } =
     useAnalyticsDashboard(params);
 
   const errMsg =
@@ -84,6 +209,46 @@ export default function MetricsPage() {
         ? getApiErrorMessage(errors[0], 'Failed to load metrics')
         : String(errors[0])
       : null;
+
+  const inventoryRowsSorted = useMemo(
+    () => sortInventoryRows(inventoryPerformance?.items ?? [], inventorySortBy, inventorySortDir),
+    [inventoryPerformance?.items, inventorySortBy, inventorySortDir]
+  );
+  const inventoryRowsPaged = useMemo(
+    () => paginateRows(inventoryRowsSorted, inventoryPage, inventoryPageSize),
+    [inventoryRowsSorted, inventoryPage, inventoryPageSize]
+  );
+  const aisleRowsSorted = useMemo(
+    () =>
+      [...(aisleIssues?.items ?? [])].sort(
+        (left, right) =>
+          numberOrZero(right.needs_review_count) - numberOrZero(left.needs_review_count) ||
+          numberOrZero(right.total_results) - numberOrZero(left.total_results)
+      ),
+    [aisleIssues?.items]
+  );
+  const aisleRowsPaged = useMemo(
+    () => paginateRows(aisleRowsSorted, aislePage, aislePageSize),
+    [aisleRowsSorted, aislePage, aislePageSize]
+  );
+  const qualityRowsOrdered = useMemo(
+    () =>
+      [...(quality?.items ?? [])].sort(
+        (left, right) =>
+          qualityPriority(left.issue_type) - qualityPriority(right.issue_type) ||
+          numberOrZero(right.count) - numberOrZero(left.count)
+      ),
+    [quality?.items]
+  );
+  const supportedInterventions = useMemo(
+    () => (manualInterventions?.items ?? []).filter((item) => item.available && (item.count ?? 0) > 0),
+    [manualInterventions?.items]
+  );
+  const unsupportedInterventions = useMemo(
+    () => (manualInterventions?.items ?? []).filter((item) => !item.available),
+    [manualInterventions?.items]
+  );
+  const hasUnknownRate = summary?.unknown_rate != null;
 
   const invColumns = useMemo<DataTableColumn<InventoryPerformanceRow>[]>(
     () => [
@@ -108,35 +273,67 @@ export default function MetricsPage() {
         id: 'created',
         label: 'Created',
         cell: (r) => formatDate(r.inventory_created_at),
+        sortable: true,
       },
-      { id: 'aisles', label: 'Aisles', align: 'right', cell: (r) => r.total_aisles },
-      { id: 'positions', label: 'Positions', align: 'right', cell: (r) => r.total_positions },
-      { id: 'processed', label: 'Processed', align: 'right', cell: (r) => r.processed_positions },
-      { id: 'review_rate', label: 'Review rate', align: 'right', cell: (r) => formatPct(r.review_rate) },
-      { id: 'correction_rate', label: 'Correction rate', align: 'right', cell: (r) => formatPct(r.correction_rate) },
+      { id: 'aisles', label: 'Aisles', align: 'right', sortable: true, cell: (r) => r.aisles_count ?? r.total_aisles },
+      { id: 'positions', label: 'Positions', align: 'right', sortable: true, cell: (r) => r.positions_count ?? r.total_positions },
+      { id: 'processed', label: 'Processed', align: 'right', sortable: true, cell: (r) => r.processed_count ?? r.processed_positions },
+      {
+        id: 'auto_accept',
+        label: 'Auto-accept rate',
+        align: 'right',
+        sortable: true,
+        cell: (r) => formatPct(r.auto_acceptance_rate),
+      },
+      {
+        id: 'manual_correction',
+        label: 'Manual correction rate',
+        align: 'right',
+        sortable: true,
+        cell: (r) => formatPct(r.manual_correction_rate ?? r.correction_rate),
+      },
+      ...(hasUnknownRate
+        ? [
+            {
+              id: 'unknown',
+              label: 'Unknown rate',
+              align: 'right' as const,
+              cell: (r: InventoryPerformanceRow) => formatPct(r.unknown_rate),
+            },
+          ]
+        : []),
       {
         id: 'invalid_tr',
         label: 'Invalid traceability',
         align: 'right',
+        sortable: true,
         cell: (r) => formatPct(r.invalid_traceability_rate),
       },
       {
         id: 'avg_conf',
         label: 'Avg confidence',
         align: 'right',
+        sortable: true,
         cell: (r) => (r.avg_confidence != null ? `${(r.avg_confidence * 100).toFixed(0)}%` : '—'),
+      },
+      {
+        id: 'avg_review',
+        label: 'Avg review time',
+        align: 'right',
+        sortable: true,
+        cell: (r) => formatAvgReviewMinutes(r.average_review_time_minutes, null),
       },
       {
         id: 'proc',
         label: 'Job success rate',
         align: 'right',
+        sortable: true,
         cell: (r) => formatPct(r.processing_success_rate),
       },
     ],
-    []
+    [hasUnknownRate]
   );
 
-  /** `total_results` counts positions in scope per aisle (SQL COUNT on positions); label "Positions" matches domain. */
   const aisleColumns = useMemo<DataTableColumn<AisleIssueRow>[]>(
     () => [
       {
@@ -166,10 +363,8 @@ export default function MetricsPage() {
       },
       { id: 'total', label: 'Positions', align: 'right', cell: (r) => r.total_results },
       { id: 'pending', label: 'Pending review', align: 'right', cell: (r) => r.needs_review_count },
-      { id: 'corrected', label: 'Corrected', align: 'right', cell: (r) => r.corrected_count },
       { id: 'inv_tr', label: 'Invalid traceability', align: 'right', cell: (r) => r.invalid_traceability_count },
-      { id: 'low_c', label: 'Low confidence', align: 'right', cell: (r) => r.low_confidence_count },
-      { id: 'issue', label: 'Top issue', cell: (r) => r.most_common_issue ?? '—' },
+      { id: 'manual_c', label: 'Manual corrections', align: 'right', cell: (r) => r.corrected_count },
     ],
     []
   );
@@ -178,35 +373,55 @@ export default function MetricsPage() {
     {
       label: 'Auto-acceptance rate',
       value: formatPct(summary?.auto_acceptance_rate),
-      description: 'Share of results confirmed without manual correction',
+      description: summary?.reviewed_positions_count
+        ? `${Math.round((summary.auto_acceptance_rate ?? 0) * summary.reviewed_positions_count)} of ${summary.reviewed_positions_count} reviewed positions`
+        : 'Reviewed positions resolved without manual correction',
     },
     {
       label: 'Manual correction rate',
       value: formatPct(summary?.manual_correction_rate),
-      description: 'SKU or quantity corrections before settling',
+      description: summary?.reviewed_positions_count
+        ? `${Math.round((summary.manual_correction_rate ?? 0) * summary.reviewed_positions_count)} of ${summary.reviewed_positions_count} reviewed positions`
+        : 'SKU or quantity corrections among reviewed positions',
+    },
+    ...(hasUnknownRate
+      ? [
+          {
+            label: 'Unknown rate',
+            value: formatPct(summary?.unknown_rate),
+            description:
+              summary?.unknown_count != null && summary?.reviewed_positions_count
+                ? `${summary.unknown_count} of ${summary.reviewed_positions_count} reviewed positions`
+                : 'Final unknown resolutions in scope',
+          },
+        ]
+      : []),
+    {
+      label: 'Processing success rate',
+      value: formatPct(summary?.processing_success_rate),
+      description: 'Succeeded aisle jobs among terminal jobs in the selected period',
+    },
+    {
+      label: 'Average review time',
+      value: formatAvgReviewMinutes(summary?.average_review_time_minutes, summary?.average_review_time_seconds),
+      description: 'From result creation to the first settling review action',
     },
     {
       label: 'Invalid traceability rate',
       value: formatPct(summary?.invalid_traceability_rate),
-      description: 'Positions with invalid traceability in scope',
-    },
-    {
-      label: 'Processing success rate',
-      value: formatPct(summary?.processing_success_rate),
-      description: 'Succeeded aisle jobs ÷ (succeeded + failed), scoped to the selected period',
-    },
-    {
-      label: 'Average review time',
-      value: formatAvgReviewSec(summary?.average_review_time_seconds),
-      description: 'Time from result creation to first settling action',
-    },
-    {
-      label: 'Settling actions / day',
-      value:
-        summary?.settling_actions_per_day != null ? summary.settling_actions_per_day.toFixed(1) : '—',
-      description: `Settling review actions in period ÷ day span (${summary?.period_day_count ?? 1}); not unique positions`,
+      description: summary?.total_positions_in_scope
+        ? `${Math.round((summary.invalid_traceability_rate ?? 0) * summary.total_positions_in_scope)} of ${summary.total_positions_in_scope} positions in scope`
+        : 'Positions with invalid traceability in scope',
     },
   ];
+
+  const scopeSummary = summary
+    ? {
+        inventories: inventoryId ? 1 : inventories.length,
+        aisles: aisleId ? 1 : inventoryId ? aisles.length : undefined,
+        positions: summary.total_positions_in_scope ?? summary.positions_in_scope,
+      }
+    : null;
 
   return (
     <Box sx={{ pb: 4 }}>
@@ -221,7 +436,14 @@ export default function MetricsPage() {
           setDateTo(d.to);
           setInventoryId('');
           setAisleId('');
+          setInventoryPage(1);
+          setAislePage(1);
         }}
+        endActions={
+          <Button size="small" variant="outlined" onClick={() => refetchAll()} disabled={isLoading}>
+            Refresh
+          </Button>
+        }
       >
         <TextField
           size="small"
@@ -276,14 +498,21 @@ export default function MetricsPage() {
             ))}
           </Select>
         </FormControl>
-        <Button size="small" variant="outlined" onClick={() => refetchAll()} disabled={isLoading}>
-          Refresh
-        </Button>
       </FilterToolbar>
+
+      {scopeSummary ? (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Inventories in scope: {scopeSummary.inventories}
+          {' · '}
+          Aisles in scope: {scopeSummary.aisles ?? 'all'}
+          {' · '}
+          Positions in scope: {scopeSummary.positions}
+        </Typography>
+      ) : null}
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         {isLoading && !summary
-          ? Array.from({ length: 6 }).map((_, i) => (
+          ? Array.from({ length: hasUnknownRate ? 6 : 5 }).map((_, i) => (
               <Grid item xs={12} sm={6} md={4} key={`sk-${i}`}>
                 <Skeleton variant="rounded" height={100} />
               </Grid>
@@ -296,37 +525,153 @@ export default function MetricsPage() {
       </Grid>
 
       {summary?.notes?.length ? (
-        <Typography variant="body2" color="text.secondary" display="block" sx={{ mb: 2, maxWidth: 900 }}>
+        <Alert severity="info" sx={{ mb: 2 }}>
           {summary.notes.join(' ')}
-        </Typography>
+        </Alert>
       ) : null}
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={6}>
-          <SectionCard title="Review activity" subtitle="Settling actions per day in the selected period">
-            <TrendBars
-              title=""
-              points={trends?.reviewed_results_over_time ?? []}
-              emptyMessage="No review activity in this date range."
-            />
+          <SectionCard
+            title="Manual intervention breakdown"
+            subtitle="Operator outcomes derived from the persisted review action model."
+          >
+            {isLoading && !manualInterventions ? (
+              <Skeleton variant="rounded" height={220} />
+            ) : supportedInterventions.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No persisted manual interventions match this scope.
+              </Typography>
+            ) : (
+              <Stack spacing={1.5}>
+                {supportedInterventions.map((item: ManualInterventionCategory) => (
+                  <Box key={item.category}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 0.5 }}>
+                      <Typography variant="body2" fontWeight={500}>
+                        {interventionLabel(item.category)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {item.count ?? 0}
+                        {item.percentage != null ? ` (${(item.percentage * 100).toFixed(0)}%)` : ''}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ height: 8, bgcolor: 'action.hover', borderRadius: 999, overflow: 'hidden' }}>
+                      <Box
+                        sx={{
+                          height: '100%',
+                          width: `${Math.min(100, (item.percentage ?? 0) * 100)}%`,
+                          bgcolor: 'primary.main',
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                ))}
+                {unsupportedInterventions.length ? (
+                  <>
+                    <Divider />
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      {unsupportedInterventions.map((item) => (
+                        <Chip
+                          key={item.category}
+                          label={`${interventionLabel(item.category)} unavailable`}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))}
+                    </Stack>
+                  </>
+                ) : null}
+              </Stack>
+            )}
           </SectionCard>
         </Grid>
         <Grid item xs={12} md={6}>
-          <SectionCard title="Processing outcomes" subtitle="Terminal jobs per day (height = job count)">
-            <TrendBars
-              title=""
-              points={trends?.processing_success_over_time ?? []}
-              emptyMessage="No completed or failed jobs in this date range."
-            />
+          <SectionCard
+            title="Resolution flow"
+            subtitle="Compact operational readout of scope, throughput, and manual touch."
+          >
+            {isLoading && !summary ? (
+              <Skeleton variant="rounded" height={220} />
+            ) : (
+              <Grid container spacing={1.5}>
+                {[
+                  {
+                    label: 'Total positions',
+                    value: String(summary?.total_positions_in_scope ?? summary?.positions_in_scope ?? 0),
+                  },
+                  {
+                    label: 'Processed',
+                    value: String(summary?.processed_positions_count ?? 0),
+                  },
+                  {
+                    label: 'Reviewed',
+                    value: String(summary?.reviewed_positions_count ?? 0),
+                  },
+                  {
+                    label: 'Manual interventions',
+                    value: String(manualInterventions?.intervention_positions_count ?? 0),
+                  },
+                ].map((item) => (
+                  <Grid item xs={6} key={item.label}>
+                    <Box
+                      sx={{
+                        border: 1,
+                        borderColor: 'divider',
+                        borderRadius: 1.5,
+                        p: 1.5,
+                        height: '100%',
+                        bgcolor: 'background.default',
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                        {item.label}
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                        {item.value}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                ))}
+              </Grid>
+            )}
           </SectionCard>
         </Grid>
       </Grid>
+
+      <SectionCard
+        title="Inventory performance"
+        subtitle="Primary comparison table for efficiency, review burden, and quality by inventory."
+      >
+        <DataTable<InventoryPerformanceRow>
+          rows={inventoryRowsPaged}
+          rowKey={(r) => r.inventory_id}
+          columns={invColumns}
+          loading={isLoading}
+          sort={{
+            sortBy: inventorySortBy,
+            sortDir: inventorySortDir,
+            onSortChange: (sortBy, sortDir) => {
+              setInventorySortBy(sortBy);
+              setInventorySortDir(sortDir);
+              setInventoryPage(1);
+            },
+          }}
+          pagination={{
+            page: inventoryPage,
+            pageSize: inventoryPageSize,
+            totalItems: inventoryRowsSorted.length,
+            onPageChange: setInventoryPage,
+            onPageSizeChange: setInventoryPageSize,
+          }}
+          emptyState={{ message: 'No inventory performance data for this filter.' }}
+        />
+      </SectionCard>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={6}>
           <SectionCard
             title="Quality patterns"
-            subtitle="Each position counted once in its highest-priority issue (invalid traceability → missing evidence → zero quantity → low confidence → pending review → OK)."
+            subtitle="Each position counts once in its highest-priority operational quality bucket."
           >
             {isLoading && !quality ? (
               <Skeleton variant="rounded" height={160} />
@@ -336,7 +681,7 @@ export default function MetricsPage() {
               </Typography>
             ) : (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                {quality.items.map((row: QualityPatternRow) => (
+                {qualityRowsOrdered.map((row: QualityPatternRow) => (
                   <Box key={row.issue_type}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                       <Typography variant="body2">{row.issue_type}</Typography>
@@ -366,28 +711,28 @@ export default function MetricsPage() {
           </SectionCard>
         </Grid>
         <Grid item xs={12} md={6}>
-          <SectionCard title="Aisles with review pressure" subtitle="Sorted by pending review count">
+          <SectionCard
+            title="Aisles requiring attention"
+            subtitle="Secondary compact table for pending review and traceability hotspots."
+          >
             <DataTable<AisleIssueRow>
-              rows={aisleIssues?.items ?? []}
+              rows={aisleRowsPaged}
               rowKey={(r) => `${r.inventory_id}-${r.aisle_id}`}
               columns={aisleColumns}
               loading={isLoading}
               size="small"
+              pagination={{
+                page: aislePage,
+                pageSize: aislePageSize,
+                totalItems: aisleRowsSorted.length,
+                onPageChange: setAislePage,
+                onPageSizeChange: setAislePageSize,
+              }}
               emptyState={{ message: 'No aisle-level metrics for this filter.' }}
             />
           </SectionCard>
         </Grid>
       </Grid>
-
-      <SectionCard title="Inventory performance" subtitle="Coverage, review intensity, and processing outcomes by inventory">
-        <DataTable<InventoryPerformanceRow>
-          rows={inventoryPerformance?.items ?? []}
-          rowKey={(r) => r.inventory_id}
-          columns={invColumns}
-          loading={isLoading}
-          emptyState={{ message: 'No inventory performance data for this filter.' }}
-        />
-      </SectionCard>
     </Box>
   );
 }

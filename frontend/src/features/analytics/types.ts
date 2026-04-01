@@ -12,6 +12,8 @@ export type {
   AisleIssueListResponse,
   QualityPatternRow,
   QualityPatternListResponse,
+  ManualInterventionCategory,
+  ManualInterventionBreakdownResponse,
 } from '../../api/types/analytics';
 
 export type { AnalyticsQueryParams } from '../../api/client';
