@@ -26,7 +26,7 @@ def test_run_merge_endpoint_returns_counts() -> None:
                 raw_count=3,
                 normalized_count=1,
                 final_count=1,
-                product_records_updated=0,
+                product_records_updated=1,
             )
 
     app.dependency_overrides[get_current_admin] = _fake_admin
@@ -36,12 +36,12 @@ def test_run_merge_endpoint_returns_counts() -> None:
         resp = client.post("/api/v3/inventories/inv1/aisles/a1/merge")
         assert resp.status_code == 202
         data = resp.json()
-        assert data["operation_mode"] == "artifact_only"
-        assert data["authoritative_quantity_updated"] is False
+        assert data["operation_mode"] == "manual_authoritative"
+        assert data["authoritative_quantity_updated"] is True
         assert data["raw_count"] == 3
         assert data["normalized_count"] == 1
         assert data["final_count"] == 1
-        assert data["product_records_updated"] == 0
+        assert data["product_records_updated"] == 1
     finally:
         app.dependency_overrides.clear()
 

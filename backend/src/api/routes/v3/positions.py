@@ -120,7 +120,13 @@ def get_position_detail(
     position_id: str,
     use_case: GetPositionDetailUseCase = Depends(get_get_position_detail_use_case),
 ) -> PositionDetailResponse:
-    """Get position detail with evidences and review history (Épica 6)."""
+    """Get detail for the operator-facing current review entity of a position.
+
+    The returned ``position`` block follows the same consolidated representative semantics as the
+    aisle results list. When ``position_id`` belongs to an aggregated group, detail resolves the
+    representative row that operators see in the list; ``technical_snapshot`` remains secondary
+    debug/history metadata for that resolved entity.
+    """
     try:
         result = use_case.execute(inventory_id, aisle_id, position_id)
         # GetPositionDetailUseCase returns products from list_by_position (order not guaranteed by port);

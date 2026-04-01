@@ -345,7 +345,7 @@ export async function getAisleStatus(
   return handleResponse<AisleStatusResponse>(response);
 }
 
-/** Run merge/consolidation post-process for an aisle (non-authoritative quantity artifact). */
+/** Run manual authoritative merge for an aisle and update visible results quantities. */
 export async function runAisleMerge(
   inventoryId: string,
   aisleId: string

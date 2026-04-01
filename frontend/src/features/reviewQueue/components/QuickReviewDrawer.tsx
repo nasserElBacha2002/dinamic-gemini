@@ -105,6 +105,12 @@ export default function QuickReviewDrawer({
     { enabled }
   );
 
+  useEffect(() => {
+    if (result?.id && result.id !== activePositionId) {
+      setActivePositionId(result.id);
+    }
+  }, [result?.id, activePositionId]);
+
   const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId);
   const actionLoading = reviewMutation.isPending;
 

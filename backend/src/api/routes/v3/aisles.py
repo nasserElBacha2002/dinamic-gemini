@@ -326,11 +326,11 @@ def run_aisle_merge(
     aisle_id: str,
     use_case: RunAisleMergeUseCase = Depends(get_run_aisle_merge_use_case),
 ) -> RunMergeResponse:
-    """Run merge/consolidation artifact recompute (non-authoritative, post-process).
+    """Run merge/consolidation as an explicit manual post-process.
 
-    Compatibility note:
-    - `product_records_updated` is returned for backward compatibility.
-    - In `artifact_only` mode, it is expected to remain 0.
+    The restored v3 UX expects this action to update the visible aisle results after the
+    operator triggers it manually. The merge remains opt-in and never runs automatically
+    during aisle processing.
     """
     try:
         result = use_case.execute(
@@ -340,8 +340,8 @@ def run_aisle_merge(
             )
         )
         return RunMergeResponse(
-            operation_mode="artifact_only",
-            authoritative_quantity_updated=False,
+            operation_mode="manual_authoritative",
+            authoritative_quantity_updated=result.product_records_updated > 0,
             raw_count=result.raw_count,
             normalized_count=result.normalized_count,
             final_count=result.final_count,
