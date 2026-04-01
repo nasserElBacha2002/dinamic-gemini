@@ -7,6 +7,7 @@ Fails if inventory/aisle/position do not exist or do not match.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -26,6 +27,8 @@ from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class PositionDetailResult:
@@ -36,6 +39,14 @@ class PositionDetailResult:
 
 
 class GetPositionDetailUseCase:
+    """Return the operator-facing current review entity for a requested position id.
+
+    Detail follows the same consolidated representative semantics as the aisle positions list.
+    When the requested ``position_id`` belongs to an aggregated/consolidated SKU group, this use
+    case returns the representative anchor row for that visible operator-facing entity rather than
+    the raw member row itself.
+    """
+
     def __init__(
         self,
         inventory_repo: InventoryRepository,
@@ -64,6 +75,11 @@ class GetPositionDetailUseCase:
         return requested_position_id in aggregated
 
     def _resolve_operator_facing_position(self, position: Position) -> Position:
+        # TODO: Extract a shared consolidated read-model builder so list and detail use one
+        # canonical reconstruction path instead of duplicating representative resolution logic.
+        # This reconstruction path relies on the same raw-cap used by the list read model. If the
+        # aisle cap is too small to include all members of a consolidated group, we may fall back
+        # to the requested raw position and lose operator-facing parity for that request.
         raw_positions = list(
             self._position_repo.list_by_aisle_query(
                 position.aisle_id,
@@ -73,7 +89,25 @@ class GetPositionDetailUseCase:
         consolidated = consolidate_positions_by_sku(raw_positions)
         for candidate in consolidated:
             if candidate.id == position.id or self._is_group_member(candidate, position.id):
+                logger.debug(
+                    "position_detail representative resolved requested_position_id=%s resolved_position_id=%s aisle_id=%s raw_positions=%s consolidated_positions=%s fallback_to_raw=%s",
+                    position.id,
+                    candidate.id,
+                    position.aisle_id,
+                    len(raw_positions),
+                    len(consolidated),
+                    False,
+                )
                 return candidate
+        logger.warning(
+            "position_detail representative fallback requested_position_id=%s aisle_id=%s raw_positions=%s consolidated_positions=%s raw_cap=%s fallback_to_raw=%s",
+            position.id,
+            position.aisle_id,
+            len(raw_positions),
+            len(consolidated),
+            self._raw_cap,
+            True,
+        )
         return position
 
     def execute(

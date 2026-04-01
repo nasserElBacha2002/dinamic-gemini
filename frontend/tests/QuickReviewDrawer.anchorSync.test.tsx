@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import QuickReviewDrawer from '../src/features/reviewQueue/components/QuickReviewDrawer';
 import type { QuickReviewContext } from '../src/features/reviewQueue/quickReviewContext';
@@ -98,9 +98,16 @@ describe('QuickReviewDrawer representative anchor sync', () => {
     renderDrawer();
 
     await screen.findByRole('heading', { level: 1, name: 'SKU-CANON' });
+    await waitFor(() => {
+      expect(submitReviewArgsMock).toHaveBeenLastCalledWith('inv-1', 'aisle-1', 'pos-representative');
+    });
     fireEvent.click(screen.getByRole('button', { name: /Confirm result/i }));
 
     expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'confirm' });
     expect(submitReviewArgsMock).toHaveBeenLastCalledWith('inv-1', 'aisle-1', 'pos-representative');
+    expect(submitReviewArgsMock.mock.calls).toEqual([
+      ['inv-1', 'aisle-1', ''],
+      ['inv-1', 'aisle-1', 'pos-representative'],
+    ]);
   });
 });

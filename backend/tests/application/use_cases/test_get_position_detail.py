@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
@@ -134,3 +135,77 @@ def test_get_position_detail_uses_consolidated_representative_for_group_member()
     assert [product.id for product in result.products] == ["prod-1"]
     assert [evidence.id for evidence in result.evidences] == ["ev-1"]
     assert [review.id for review in result.review_actions] == ["ra-1"]
+
+
+def test_get_position_detail_falls_back_to_raw_position_when_representative_cannot_be_rebuilt(
+    caplog,
+) -> None:
+    now = datetime.now(timezone.utc)
+    inventory_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    position_repo = MemoryPositionRepository()
+    product_repo = MemoryProductRecordRepository()
+    evidence_repo = MemoryEvidenceRepository()
+    review_repo = MemoryReviewActionRepository()
+
+    inventory_repo.save(Inventory("inv-1", "Inventory", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-1", "inv-1", "A-01", AisleStatus.CREATED, now, now))
+
+    representative = Position(
+        id="pos-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.CORRECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "SKU-NEW", "final_quantity": 1},
+    )
+    member = Position(
+        id="pos-2",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.85,
+        needs_review=False,
+        primary_evidence_id="ev-2",
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={"internal_code": "SKU-NEW", "final_quantity": 3},
+    )
+    position_repo.save(representative)
+    position_repo.save(member)
+    product_repo.save(
+        ProductRecord(
+            id="prod-2",
+            position_id="pos-2",
+            sku="SKU-OLD",
+            description="Old member",
+            detected_quantity=1,
+            confidence=0.85,
+            created_at=now,
+            updated_at=now,
+            corrected_quantity=None,
+            qty_source="inferred",
+            qty_inference_reason=None,
+            raw_qty=1,
+            qty_parse_status="valid_positive",
+        )
+    )
+
+    use_case = GetPositionDetailUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_repo,
+        evidence_repo=evidence_repo,
+        review_repo=review_repo,
+        positions_aisle_raw_cap=1,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = use_case.execute("inv-1", "aisle-1", "pos-2")
+
+    assert result.position.id == "pos-2"
+    assert [product.id for product in result.products] == ["prod-2"]
+    assert "position_detail representative fallback" in caplog.text
