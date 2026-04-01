@@ -156,6 +156,41 @@ function interventionLabel(category: string): string {
   }
 }
 
+function interventionPriority(category: string): number {
+  switch (category) {
+    case 'unknown':
+      return 0;
+    case 'qty_corrected':
+      return 1;
+    case 'sku_corrected':
+      return 2;
+    case 'confirmed':
+      return 3;
+    case 'deleted':
+      return 4;
+    case 'invalid':
+      return 5;
+    default:
+      return 50;
+  }
+}
+
+function interventionColor(category: string): string {
+  switch (category) {
+    case 'unknown':
+      return 'warning.main';
+    case 'qty_corrected':
+    case 'sku_corrected':
+      return 'secondary.main';
+    case 'confirmed':
+      return 'success.main';
+    case 'deleted':
+      return 'text.secondary';
+    default:
+      return 'primary.main';
+  }
+}
+
 export default function MetricsPage() {
   const initial = useMemo(() => defaultDateRange(), []);
   const [dateFrom, setDateFrom] = useState(initial.from);
@@ -227,6 +262,14 @@ export default function MetricsPage() {
     () =>
       [...(aisleIssues?.items ?? [])].sort(
         (left, right) =>
+          (numberOrZero(right.needs_review_count) +
+            numberOrZero(right.unknown_count) +
+            numberOrZero(right.manual_corrections_count ?? right.corrected_count) +
+            numberOrZero(right.invalid_traceability_count)) -
+            (numberOrZero(left.needs_review_count) +
+              numberOrZero(left.unknown_count) +
+              numberOrZero(left.manual_corrections_count ?? left.corrected_count) +
+              numberOrZero(left.invalid_traceability_count)) ||
           numberOrZero(right.needs_review_count) - numberOrZero(left.needs_review_count) ||
           numberOrZero(right.total_results) - numberOrZero(left.total_results)
       ),
@@ -256,7 +299,71 @@ export default function MetricsPage() {
     () => (manualInterventions?.items ?? []).filter((item: ManualInterventionCategory) => !item.available),
     [manualInterventions?.items]
   );
+  const orderedSupportedInterventions = useMemo(
+    () =>
+      [...supportedInterventions].sort(
+        (left, right) =>
+          interventionPriority(left.category) - interventionPriority(right.category) ||
+          numberOrZero(right.count) - numberOrZero(left.count)
+      ),
+    [supportedInterventions]
+  );
+  const manualCorrectionCount = useMemo(
+    () =>
+      numberOrZero(
+        manualInterventions?.items?.find((item: ManualInterventionCategory) => item.category === 'qty_corrected')?.count
+      ) +
+      numberOrZero(
+        manualInterventions?.items?.find((item: ManualInterventionCategory) => item.category === 'sku_corrected')?.count
+      ),
+    [manualInterventions?.items]
+  );
+  const pendingReviewCount = useMemo(
+    () => (aisleIssues?.items ?? []).reduce((sum, row) => sum + numberOrZero(row.needs_review_count), 0),
+    [aisleIssues?.items]
+  );
   const hasUnknownRate = summary?.unknown_rate != null;
+  const unknownPositionsCount = summary?.unknown_count ?? 0;
+  const totalPositionsCount = summary?.total_positions_in_scope ?? summary?.positions_in_scope ?? 0;
+  const processedPositionsCount = summary?.processed_positions_count ?? 0;
+  const reviewedPositionsCount = summary?.reviewed_positions_count ?? 0;
+  const interventionPositionsCount = manualInterventions?.intervention_positions_count ?? 0;
+  const resolutionFlowStages = [
+    {
+      label: 'Positions in scope',
+      value: totalPositionsCount,
+      helper: 'Total current scope after inventory and aisle filters',
+    },
+    {
+      label: 'Pending review',
+      value: pendingReviewCount,
+      helper: 'Positions still requiring operator attention',
+    },
+    {
+      label: 'Processed',
+      value: processedPositionsCount,
+      helper: 'Operationally processed positions in scope',
+    },
+    {
+      label: 'Reviewed',
+      value: reviewedPositionsCount,
+      helper: 'Positions with a terminal review action',
+    },
+    {
+      label: 'Manual touch',
+      value: interventionPositionsCount,
+      helper: 'Positions touched by an operator action',
+    },
+    ...(hasUnknownRate
+      ? [
+          {
+            label: 'Unknown',
+            value: unknownPositionsCount,
+            helper: 'Explicit terminal unknown resolutions only',
+          },
+        ]
+      : []),
+  ];
 
   const invColumns = useMemo<DataTableColumn<InventoryPerformanceRow>[]>(
     () => [
@@ -559,7 +666,7 @@ export default function MetricsPage() {
         <Grid item xs={12} md={6}>
           <SectionCard
             title="Manual intervention breakdown"
-            subtitle="Operator outcomes derived from the persisted review action model."
+            subtitle="Persisted operator outcomes, with counts and percentages against reviewed positions."
           >
             {isLoading && !manualInterventions ? (
               <Skeleton variant="rounded" height={220} />
@@ -569,15 +676,35 @@ export default function MetricsPage() {
               </Typography>
             ) : (
               <Stack spacing={1.5}>
-                {supportedInterventions.map((item: ManualInterventionCategory) => (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 2,
+                    flexWrap: 'wrap',
+                    p: 1.5,
+                    border: 1,
+                    borderColor: 'divider',
+                    borderRadius: 1.5,
+                    bgcolor: 'background.default',
+                  }}
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    Reviewed positions
+                  </Typography>
+                  <Typography variant="body2" fontWeight={600}>
+                    {manualInterventions?.reviewed_positions_count ?? 0}
+                  </Typography>
+                </Box>
+                {orderedSupportedInterventions.map((item: ManualInterventionCategory) => (
                   <Box key={item.category}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 0.5 }}>
-                      <Typography variant="body2" fontWeight={500}>
+                      <Typography variant="body2" fontWeight={600}>
                         {interventionLabel(item.category)}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
                         {item.count ?? 0}
-                        {item.percentage != null ? ` (${(item.percentage * 100).toFixed(0)}%)` : ''}
+                        {item.percentage != null ? ` · ${(item.percentage * 100).toFixed(1)}%` : ''}
                       </Typography>
                     </Box>
                     <Box sx={{ height: 8, bgcolor: 'action.hover', borderRadius: 999, overflow: 'hidden' }}>
@@ -585,15 +712,23 @@ export default function MetricsPage() {
                         sx={{
                           height: '100%',
                           width: `${Math.min(100, (item.percentage ?? 0) * 100)}%`,
-                          bgcolor: 'primary.main',
+                          bgcolor: interventionColor(item.category),
                         }}
                       />
                     </Box>
+                    {item.notes ? (
+                      <Typography variant="caption" color="text.secondary">
+                        {item.notes}
+                      </Typography>
+                    ) : null}
                   </Box>
                 ))}
                 {unsupportedInterventions.length ? (
                   <>
                     <Divider />
+                    <Typography variant="caption" color="text.secondary">
+                      Awaiting explicit backend/domain support:
+                    </Typography>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                       {unsupportedInterventions.map((item: ManualInterventionCategory) => (
                         <Chip
@@ -613,51 +748,72 @@ export default function MetricsPage() {
         <Grid item xs={12} md={6}>
           <SectionCard
             title="Resolution flow"
-            subtitle="Compact operational readout of scope, throughput, and manual touch."
+            subtitle="Truthful scope progression using current processed, reviewed, and operator-action counts."
           >
             {isLoading && !summary ? (
               <Skeleton variant="rounded" height={220} />
             ) : (
-              <Grid container spacing={1.5}>
-                {[
-                  {
-                    label: 'Total positions',
-                    value: String(summary?.total_positions_in_scope ?? summary?.positions_in_scope ?? 0),
-                  },
-                  {
-                    label: 'Processed',
-                    value: String(summary?.processed_positions_count ?? 0),
-                  },
-                  {
-                    label: 'Reviewed',
-                    value: String(summary?.reviewed_positions_count ?? 0),
-                  },
-                  {
-                    label: 'Manual interventions',
-                    value: String(manualInterventions?.intervention_positions_count ?? 0),
-                  },
-                ].map((item) => (
-                  <Grid item xs={6} key={item.label}>
+              <Stack spacing={1.25}>
+                <Grid container spacing={1.5}>
+                  {resolutionFlowStages.map((item) => (
+                    <Grid item xs={6} md={hasUnknownRate ? 4 : 3} key={item.label}>
+                      <Box
+                        sx={{
+                          border: 1,
+                          borderColor: 'divider',
+                          borderRadius: 1.5,
+                          p: 1.5,
+                          height: '100%',
+                          bgcolor: 'background.default',
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                          {item.label}
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                          {item.value}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {item.helper}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  ))}
+                </Grid>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${resolutionFlowStages.length}, minmax(0, 1fr))`,
+                    gap: 1,
+                  }}
+                >
+                  {resolutionFlowStages.map((item, index) => (
                     <Box
+                      key={`${item.label}-bar`}
                       sx={{
-                        border: 1,
-                        borderColor: 'divider',
-                        borderRadius: 1.5,
-                        p: 1.5,
-                        height: '100%',
-                        bgcolor: 'background.default',
+                        minWidth: 0,
                       }}
                     >
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                        {item.label}
+                      <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                        {index < resolutionFlowStages.length - 1 ? 'Step' : 'Outcome'}
                       </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                        {item.value}
-                      </Typography>
+                      <Box sx={{ height: 10, bgcolor: 'action.hover', borderRadius: 999, overflow: 'hidden' }}>
+                        <Box
+                          sx={{
+                            height: '100%',
+                            width: `${totalPositionsCount > 0 ? Math.min(100, (item.value / totalPositionsCount) * 100) : 0}%`,
+                            bgcolor: index === resolutionFlowStages.length - 1 && hasUnknownRate ? 'warning.main' : 'primary.main',
+                          }}
+                        />
+                      </Box>
                     </Box>
-                  </Grid>
-                ))}
-              </Grid>
+                  ))}
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                  Manual corrections in scope: {manualCorrectionCount}
+                  {hasUnknownRate ? ` · Unknown outcomes: ${unknownPositionsCount}` : ''}
+                </Typography>
+              </Stack>
             )}
           </SectionCard>
         </Grid>
@@ -696,7 +852,7 @@ export default function MetricsPage() {
         <Grid item xs={12} md={6}>
           <SectionCard
             title="Quality patterns"
-            subtitle="Each position counts once in its highest-priority operational quality bucket."
+            subtitle="Mutually exclusive issue buckets ordered by operational attention priority."
           >
             {isLoading && !quality ? (
               <Skeleton variant="rounded" height={160} />
@@ -707,12 +863,23 @@ export default function MetricsPage() {
             ) : (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 {qualityRowsOrdered.map((row: QualityPatternRow) => (
-                  <Box key={row.issue_type}>
+                  <Box
+                    key={row.issue_type}
+                    sx={{
+                      p: 1.25,
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 1.5,
+                      bgcolor: qualityPriority(row.issue_type) <= 2 ? 'background.default' : 'transparent',
+                    }}
+                  >
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="body2">{row.issue_type}</Typography>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" fontWeight={qualityPriority(row.issue_type) <= 2 ? 600 : 500}>
+                        {row.issue_type}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
                         {row.count}
-                        {row.percentage != null ? ` (${(row.percentage * 100).toFixed(0)}%)` : ''}
+                        {row.percentage != null ? ` · ${(row.percentage * 100).toFixed(1)}%` : ''}
                       </Typography>
                     </Box>
                     <Box sx={{ height: 6, bgcolor: 'action.hover', borderRadius: 1, overflow: 'hidden' }}>
@@ -738,7 +905,7 @@ export default function MetricsPage() {
         <Grid item xs={12} md={6}>
           <SectionCard
             title="Aisles requiring attention"
-            subtitle="Secondary compact table for pending review, unknown outcomes, and correction hotspots."
+            subtitle="Compact secondary table for aisles with the highest current review and quality pressure."
           >
             <DataTable<AisleIssueRow>
               rows={aisleRowsPaged}

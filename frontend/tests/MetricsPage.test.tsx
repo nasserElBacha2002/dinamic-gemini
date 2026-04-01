@@ -219,4 +219,67 @@ describe('MetricsPage', () => {
     expect(within(listbox).getByText('North DC')).toBeInTheDocument();
     expect(within(listbox).getByText('South DC')).toBeInTheDocument();
   });
+
+  it('renders the finished operational visuals, compact aisle columns, and ordered quality patterns when truthful data exists', () => {
+    mockUseAnalyticsDashboard.mockReturnValue({
+      ...dashboardLoaded,
+      summary: {
+        ...dashboardLoaded.summary,
+        unknown_rate: 0.125,
+        unknown_count: 1,
+      },
+      aisleIssues: {
+        items: [
+          {
+            aisle_id: 'a-1',
+            aisle_code: 'A-01',
+            inventory_id: 'inv-1',
+            inventory_name: 'North DC',
+            total_results: 5,
+            needs_review_count: 2,
+            corrected_count: 1,
+            unknown_count: 1,
+            manual_corrections_count: 2,
+            invalid_traceability_count: 1,
+            low_confidence_count: 1,
+            most_common_issue: 'Unknown',
+          },
+        ],
+      },
+      quality: {
+        items: [
+          { issue_type: 'Low confidence', count: 2, percentage: 0.2, notes: 'Below threshold' },
+          { issue_type: 'Unknown', count: 1, percentage: 0.1, notes: 'Final unknown resolution' },
+          { issue_type: 'Pending review', count: 3, percentage: 0.3, notes: 'Needs review flag set' },
+        ],
+      },
+      manualInterventions: {
+        reviewed_positions_count: 8,
+        intervention_positions_count: 5,
+        items: [
+          { category: 'confirmed', count: 2, percentage: 0.25, available: true, notes: null },
+          { category: 'qty_corrected', count: 2, percentage: 0.25, available: true, notes: null },
+          { category: 'sku_corrected', count: 1, percentage: 0.125, available: true, notes: null },
+          { category: 'invalid', count: null, percentage: null, available: false, notes: 'not available' },
+          { category: 'unknown', count: 1, percentage: 0.125, available: true, notes: 'Explicit terminal unknown outcome' },
+          { category: 'deleted', count: 1, percentage: 0.125, available: true, notes: null },
+        ],
+        notes: [],
+      },
+    });
+
+    renderMetrics();
+
+    expect(screen.getByText('Reviewed positions')).toBeInTheDocument();
+    expect(screen.getByText('Awaiting explicit backend/domain support:')).toBeInTheDocument();
+    expect(screen.getByText('Positions in scope')).toBeInTheDocument();
+    expect(screen.getAllByText('Pending review').length).toBeGreaterThan(0);
+    expect(screen.getByText('Manual touch')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Unknown' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Manual corrections' })).toBeInTheDocument();
+
+    const unknownPattern = screen.getAllByText('Unknown')[0];
+    const pendingPattern = screen.getAllByText('Pending review')[0];
+    expect(unknownPattern.compareDocumentPosition(pendingPattern) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
