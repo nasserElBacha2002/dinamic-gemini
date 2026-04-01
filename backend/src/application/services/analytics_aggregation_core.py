@@ -19,7 +19,7 @@ from src.application.utils.review_queue_derived import (
     traceability_normalized,
 )
 from src.domain.jobs.entities import Job, JobStatus
-from src.domain.positions.entities import Position, PositionStatus
+from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
@@ -29,6 +29,7 @@ class ReviewOutcomeCounts:
     reviewed_positions_count: int
     auto_accepted_positions_count: int
     manually_corrected_positions_count: int
+    unknown_positions_count: int
     settling_actions_count: int
 
 
@@ -39,6 +40,7 @@ class SummaryMetricInputs:
     reviewed_positions_count: int
     auto_accepted_positions_count: int
     manually_corrected_positions_count: int
+    unknown_positions_count: int
     invalid_traceability_positions_count: int
     processing_success_rate: Optional[float]
     average_review_time_seconds: Optional[float]
@@ -55,6 +57,7 @@ class InventoryMetricInputs:
     reviewed_positions_count: int
     auto_accepted_positions_count: int
     manually_corrected_positions_count: int
+    unknown_positions_count: int
     invalid_traceability_positions_count: int
     avg_confidence: Optional[float]
     processing_success_rate: Optional[float]
@@ -68,6 +71,7 @@ class ManualInterventionBreakdown:
     confirmed_count: int
     qty_corrected_count: int
     sku_corrected_count: int
+    unknown_count: int
     deleted_count: int
     unknown_available: bool
     invalid_available: bool
@@ -131,11 +135,16 @@ def settling_action(ra: ReviewAction) -> bool:
         ReviewActionType.CONFIRM,
         ReviewActionType.UPDATE_QUANTITY,
         ReviewActionType.UPDATE_SKU,
+        ReviewActionType.MARK_UNKNOWN,
     )
 
 
 def correction_action(ra: ReviewAction) -> bool:
     return ra.action_type in (ReviewActionType.UPDATE_QUANTITY, ReviewActionType.UPDATE_SKU)
+
+
+def unknown_action(ra: ReviewAction) -> bool:
+    return ra.action_type == ReviewActionType.MARK_UNKNOWN
 
 
 def review_action_in_period(
@@ -187,7 +196,7 @@ def compute_review_outcome_counts(
 
     This intentionally keeps ``manual_correction_rate`` narrow (quantity + SKU only).
     """
-    by_position: Dict[str, List[ReviewAction]] = {}
+    latest_by_position: Dict[str, ReviewAction] = {}
     settling_actions_count = 0
     for ra in sorted(actions, key=lambda x: (x.created_at, x.id)):
         if not review_action_in_period(ra, date_from, date_to):
@@ -195,22 +204,25 @@ def compute_review_outcome_counts(
         if not settling_action(ra):
             continue
         settling_actions_count += 1
-        by_position.setdefault(ra.position_id, []).append(ra)
+        latest_by_position[ra.position_id] = ra
 
-    reviewed_positions_count = len(by_position)
+    reviewed_positions_count = len(latest_by_position)
     auto_accepted_positions_count = 0
     manually_corrected_positions_count = 0
-    for position_actions in by_position.values():
-        has_correction = any(correction_action(ra) for ra in position_actions)
-        if has_correction:
+    unknown_positions_count = 0
+    for ra in latest_by_position.values():
+        if correction_action(ra):
             manually_corrected_positions_count += 1
-        elif any(ra.action_type == ReviewActionType.CONFIRM for ra in position_actions):
+        elif unknown_action(ra):
+            unknown_positions_count += 1
+        elif ra.action_type == ReviewActionType.CONFIRM:
             auto_accepted_positions_count += 1
 
     return ReviewOutcomeCounts(
         reviewed_positions_count=reviewed_positions_count,
         auto_accepted_positions_count=auto_accepted_positions_count,
         manually_corrected_positions_count=manually_corrected_positions_count,
+        unknown_positions_count=unknown_positions_count,
         settling_actions_count=settling_actions_count,
     )
 
@@ -237,6 +249,10 @@ def build_summary_metrics(inputs: SummaryMetricInputs):
         manual_correction_rate=ratio_or_none(
             inputs.manually_corrected_positions_count, inputs.reviewed_positions_count
         ),
+        unknown_rate=ratio_or_none(
+            inputs.unknown_positions_count, inputs.reviewed_positions_count
+        ),
+        unknown_count=inputs.unknown_positions_count,
         invalid_traceability_rate=ratio_or_none(
             inputs.invalid_traceability_positions_count, inputs.total_positions_in_scope
         ),
@@ -266,6 +282,9 @@ def build_inventory_metric_rates(inputs: InventoryMetricInputs) -> dict:
         "manual_correction_rate": ratio_or_none(
             inputs.manually_corrected_positions_count, inputs.reviewed_positions_count
         ),
+        "unknown_rate": ratio_or_none(
+            inputs.unknown_positions_count, inputs.reviewed_positions_count
+        ),
         "invalid_traceability_rate": ratio_or_none(
             inputs.invalid_traceability_positions_count, inputs.total_positions_in_scope
         ),
@@ -282,9 +301,8 @@ def compute_manual_intervention_breakdown(
 ) -> ManualInterventionBreakdown:
     """Mutually exclusive current persisted intervention categories by latest action in period.
 
-    Today the persisted review model supports confirm, update_quantity, update_sku, and delete.
-    It does not support a terminal unknown outcome, and it does not model invalid separately from
-    delete_position. Those categories remain unavailable until persistence evolves.
+    Unknown becomes available once persisted as a terminal review resolution. Invalid remains
+    unavailable until modeled separately from delete_position.
     """
     latest_by_position: Dict[str, ReviewAction] = {}
     reviewed_positions: set[str] = set()
@@ -296,6 +314,7 @@ def compute_manual_intervention_breakdown(
             ReviewActionType.CONFIRM,
             ReviewActionType.UPDATE_QUANTITY,
             ReviewActionType.UPDATE_SKU,
+            ReviewActionType.MARK_UNKNOWN,
             ReviewActionType.DELETE_POSITION,
         ):
             intervention_positions.add(ra.position_id)
@@ -306,6 +325,7 @@ def compute_manual_intervention_breakdown(
     confirmed_count = 0
     qty_corrected_count = 0
     sku_corrected_count = 0
+    unknown_count = 0
     deleted_count = 0
     for ra in latest_by_position.values():
         if ra.action_type == ReviewActionType.CONFIRM:
@@ -314,6 +334,8 @@ def compute_manual_intervention_breakdown(
             qty_corrected_count += 1
         elif ra.action_type == ReviewActionType.UPDATE_SKU:
             sku_corrected_count += 1
+        elif ra.action_type == ReviewActionType.MARK_UNKNOWN:
+            unknown_count += 1
         elif ra.action_type == ReviewActionType.DELETE_POSITION:
             deleted_count += 1
 
@@ -323,11 +345,11 @@ def compute_manual_intervention_breakdown(
         confirmed_count=confirmed_count,
         qty_corrected_count=qty_corrected_count,
         sku_corrected_count=sku_corrected_count,
+        unknown_count=unknown_count,
         deleted_count=deleted_count,
-        unknown_available=False,
+        unknown_available=True,
         invalid_available=False,
         notes=[
-            "unknown category unavailable: final unknown review resolution is not persisted yet",
             "invalid category unavailable: current persisted review model does not distinguish invalid from delete_position",
         ],
     )
@@ -390,6 +412,8 @@ def compute_processing_success_rate(
 
 def issue_bucket_for_position(pos: Position, primary_product: Optional[ProductRecord] = None) -> str:
     """Single primary bucket label for quality patterns (mutually exclusive priority)."""
+    if pos.review_resolution == PositionReviewResolution.UNKNOWN:
+        return "unknown"
     if is_invalid_traceability(pos, primary_product):
         return "invalid_traceability"
     if not position_has_primary_evidence(pos):
@@ -411,6 +435,7 @@ def issue_bucket_for_position(pos: Position, primary_product: Optional[ProductRe
 def most_common_issue_for_counts(counts: Dict[str, int]) -> Optional[str]:
     labels = {
         "invalid_traceability": "Invalid traceability",
+        "unknown": "Unknown",
         "missing_evidence": "Missing evidence",
         "quantity_zero": "Zero quantity",
         "low_confidence": "Low confidence",

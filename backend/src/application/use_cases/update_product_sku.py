@@ -23,7 +23,7 @@ from src.application.use_cases.review_validation import (
     resolve_single_product_for_position,
     ensure_position_not_deleted,
 )
-from src.domain.positions.entities import PositionStatus
+from src.domain.positions.entities import PositionReviewResolution, PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
 
@@ -84,6 +84,11 @@ class UpdateProductSkuUseCase:
         now = self._clock.now()
         before_sku = product.sku
         before_description = product.description
+        before_resolution = (
+            position.review_resolution.value
+            if position.review_resolution is not None
+            else None
+        )
         product.sku = sku
         if description is not None:
             product.description = description.strip() or None
@@ -91,6 +96,7 @@ class UpdateProductSkuUseCase:
         self._product_record_repo.save(product)
 
         position.status = PositionStatus.CORRECTED
+        position.review_resolution = PositionReviewResolution.SKU_CORRECTED
         position.needs_review = False
         position.updated_at = now
         # Transitional compatibility: keep legacy snapshot identity coherent on reread while
@@ -107,11 +113,17 @@ class UpdateProductSkuUseCase:
             id=str(uuid.uuid4()),
             position_id=position_id,
             action_type=ReviewActionType.UPDATE_SKU,
-            before_json={"product_id": pid, "sku": before_sku, "description": before_description},
+            before_json={
+                "product_id": pid,
+                "sku": before_sku,
+                "description": before_description,
+                "review_resolution": before_resolution,
+            },
             after_json={
                 "product_id": pid,
                 "sku": product.sku,
                 "description": product.description,
+                "review_resolution": PositionReviewResolution.SKU_CORRECTED.value,
             },
             created_at=now,
         )

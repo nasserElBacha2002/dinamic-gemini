@@ -263,6 +263,7 @@ class PositionCanonicalTraceability:
 @dataclass(frozen=True)
 class PositionCanonicalReview:
     status: str
+    review_resolution: Optional[str]
     needs_review: bool
     primary_evidence_id: Optional[str]
     has_evidence: bool
@@ -306,6 +307,11 @@ def build_position_canonical_view(
     )
     review = PositionCanonicalReview(
         status=p.status.value,
+        review_resolution=(
+            p.review_resolution.value
+            if p.review_resolution is not None
+            else None
+        ),
         needs_review=p.needs_review,
         primary_evidence_id=p.primary_evidence_id,
         has_evidence=has_evidence,

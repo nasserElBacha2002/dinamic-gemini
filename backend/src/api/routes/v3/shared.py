@@ -39,6 +39,7 @@ from src.application.errors import (
 )
 from src.application.use_cases.get_aisle_processing_status import AisleProcessingStatusResult
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
@@ -287,6 +288,18 @@ def handle_update_sku(
         raise review_exception_to_http(e)
 
 
+def handle_mark_unknown(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    mark_unknown_uc: MarkPositionUnknownUseCase,
+) -> None:
+    try:
+        mark_unknown_uc.execute(inventory_id, aisle_id, position_id)
+    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ValueError, PositionDeletedError) as e:
+        raise review_exception_to_http(e)
+
+
 def handle_delete_position(
     inventory_id: str,
     aisle_id: str,
@@ -458,6 +471,7 @@ def _position_summary_response_from_view(
         id=p.id,
         aisle_id=p.aisle_id,
         status=view.review.status,
+        review_resolution=view.review.review_resolution,
         confidence=p.confidence,
         needs_review=view.review.needs_review,
         primary_evidence_id=view.review.primary_evidence_id,

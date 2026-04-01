@@ -46,6 +46,10 @@ def _build_scope_sql(prefix: str = "p") -> Tuple[str, List[Any]]:
     return f"{prefix}.status <> 'deleted'", []
 
 
+def _unknown_resolution_expr(alias: str = "p") -> str:
+    return f"{alias}.review_resolution = N'unknown'"
+
+
 def _append_inventory_aisle_filters(
     conditions: List[str],
     params: List[Any],
@@ -108,10 +112,12 @@ def _canonical_quantity_expr(alias: str = "p", primary_alias: str = "pr_primary"
 
 def _issue_bucket_expr(alias: str = "p") -> str:
     tr = _traceability_invalid_expr(alias)
+    unk = _unknown_resolution_expr(alias)
     thr = float(LOW_CONFIDENCE_THRESHOLD)
     qty_expr = _canonical_quantity_expr(alias, "pr_primary")
     return f"""
     CASE
+      WHEN {unk} THEN N'unknown'
       WHEN {tr} THEN N'invalid_traceability'
       WHEN {alias}.primary_evidence_id IS NULL
         OR LTRIM(RTRIM(CAST({alias}.primary_evidence_id AS NVARCHAR(64)))) = N'' THEN N'missing_evidence'
@@ -151,6 +157,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             SELECT
               COUNT(*) AS total_positions,
               SUM({processed_expr}) AS processed_positions,
+              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS unknown_n,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_n
             FROM positions p
             INNER JOIN aisles a ON a.id = p.aisle_id
@@ -160,21 +167,32 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         sql_reviews = f"""
             SELECT
               COUNT(*) AS reviewed_positions,
-              SUM(CASE WHEN t.has_correction = 1 THEN 1 ELSE 0 END) AS manually_corrected_positions,
-              SUM(CASE WHEN t.has_correction = 0 AND t.has_confirm = 1 THEN 1 ELSE 0 END) AS auto_accepted_positions,
+              SUM(CASE WHEN t.latest_action_type IN (N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS manually_corrected_positions,
+              SUM(CASE WHEN t.latest_action_type = N'confirm' THEN 1 ELSE 0 END) AS auto_accepted_positions,
+              SUM(CASE WHEN t.latest_action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknown_positions,
               SUM(t.settling_actions) AS settling_actions
             FROM (
               SELECT
                 ra.position_id AS position_id,
-                MAX(CASE WHEN ra.action_type IN (N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS has_correction,
-                MAX(CASE WHEN ra.action_type = N'confirm' THEN 1 ELSE 0 END) AS has_confirm,
+                MAX(CASE WHEN ra.rn = 1 THEN ra.action_type END) AS latest_action_type,
                 SUM(CASE WHEN ra.action_type IN (N'confirm', N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS settling_actions
-              FROM review_actions ra
-              INNER JOIN positions p ON p.id = ra.position_id
-              INNER JOIN aisles a ON a.id = p.aisle_id
-              INNER JOIN inventories i ON i.id = a.inventory_id
-              WHERE {where_ra}
-                AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku')
+              FROM (
+                SELECT
+                  ra.position_id,
+                  ra.action_type,
+                  ra.created_at,
+                  ra.id,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY ra.position_id
+                    ORDER BY ra.created_at DESC, ra.id DESC
+                  ) AS rn
+                FROM review_actions ra
+                INNER JOIN positions p ON p.id = ra.position_id
+                INNER JOIN aisles a ON a.id = p.aisle_id
+                INNER JOIN inventories i ON i.id = a.inventory_id
+                WHERE {where_ra}
+                  AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown')
+              ) ra
               GROUP BY ra.position_id
             ) t
         """
@@ -204,9 +222,11 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         positions_in_scope = 0
         processed_positions_count = 0
         invalid_n = 0
+        unknown_n = 0
         reviewed_positions_count = 0
         auto_accepted_positions_count = 0
         manually_corrected_positions_count = 0
+        unknown_positions_count = 0
         settling_actions_count = 0
         avg_sec: Optional[float] = None
         with self._client.cursor() as cur:
@@ -214,6 +234,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             row = cur.fetchone()
             positions_in_scope = int(getattr(row, "total_positions", 0) or 0)
             processed_positions_count = int(getattr(row, "processed_positions", 0) or 0)
+            unknown_n = int(getattr(row, "unknown_n", 0) or 0)
             invalid_n = int(getattr(row, "invalid_n", 0) or 0)
 
             cur.execute(sql_reviews, rev_params)
@@ -223,6 +244,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             manually_corrected_positions_count = int(
                 getattr(row, "manually_corrected_positions", 0) or 0
             )
+            unknown_positions_count = int(getattr(row, "unknown_positions", 0) or 0)
             settling_actions_count = int(getattr(row, "settling_actions", 0) or 0)
 
             cur.execute(sql_avg_lag, lag_params)
@@ -251,6 +273,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 reviewed_positions_count=reviewed_positions_count,
                 auto_accepted_positions_count=auto_accepted_positions_count,
                 manually_corrected_positions_count=manually_corrected_positions_count,
+                unknown_positions_count=unknown_positions_count,
                 invalid_traceability_positions_count=invalid_n,
                 processing_success_rate=proc_success,
                 average_review_time_seconds=avg_sec,
@@ -310,6 +333,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             SELECT
               CONVERT(date, ra.created_at) AS d,
               SUM(CASE WHEN ra.action_type IN (N'confirm', N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS settling,
+              SUM(CASE WHEN ra.action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknowns,
               SUM(CASE WHEN ra.action_type IN (N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS corrections
             FROM review_actions ra
             INNER JOIN positions p ON p.id = ra.position_id
@@ -428,6 +452,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               COUNT(*) AS total_positions,
               SUM({processed_expr}) AS processed_positions,
               AVG(CAST(p.confidence AS float)) AS avg_confidence,
+              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS unknown_n,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_n
             FROM positions p
             INNER JOIN aisles a ON a.id = p.aisle_id
@@ -461,6 +486,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         reviewed_positions_count=review_counts[0],
                         auto_accepted_positions_count=review_counts[1],
                         manually_corrected_positions_count=review_counts[2],
+                        unknown_positions_count=review_counts[3],
                         invalid_traceability_positions_count=invalid_n,
                         avg_confidence=float(avg_c) if avg_c is not None else None,
                         processing_success_rate=proc,
@@ -483,6 +509,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         correction_rate=metric_rates["correction_rate"],
                         auto_acceptance_rate=metric_rates["auto_acceptance_rate"],
                         manual_correction_rate=metric_rates["manual_correction_rate"],
+                        unknown_rate=metric_rates["unknown_rate"],
                         invalid_traceability_rate=metric_rates["invalid_traceability_rate"],
                         avg_confidence=metric_rates["avg_confidence"],
                         processing_success_rate=metric_rates["processing_success_rate"],
@@ -493,7 +520,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
 
     def _inventory_review_outcomes(
         self, inventory_id: str, filters: AnalyticsFilters
-    ) -> Tuple[int, int, int]:
+    ) -> Tuple[int, int, int, int]:
         cond = [
             "p.status <> 'deleted'",
             "i.id = ?",
@@ -504,19 +531,28 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         sql = f"""
             SELECT
               COUNT(*) AS reviewed_positions,
-              SUM(CASE WHEN t.has_correction = 0 AND t.has_confirm = 1 THEN 1 ELSE 0 END) AS auto_accepted_positions,
-              SUM(CASE WHEN t.has_correction = 1 THEN 1 ELSE 0 END) AS manually_corrected_positions
+              SUM(CASE WHEN t.latest_action_type = N'confirm' THEN 1 ELSE 0 END) AS auto_accepted_positions,
+              SUM(CASE WHEN t.latest_action_type IN (N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS manually_corrected_positions,
+              SUM(CASE WHEN t.latest_action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknown_positions
             FROM (
               SELECT
                 ra.position_id AS position_id,
-                MAX(CASE WHEN ra.action_type IN (N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS has_correction,
-                MAX(CASE WHEN ra.action_type = N'confirm' THEN 1 ELSE 0 END) AS has_confirm
-              FROM review_actions ra
-              INNER JOIN positions p ON p.id = ra.position_id
-              INNER JOIN aisles a ON a.id = p.aisle_id
-              INNER JOIN inventories i ON i.id = a.inventory_id
-              WHERE {where_ra}
-                AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku')
+                MAX(CASE WHEN ra.rn = 1 THEN ra.action_type END) AS latest_action_type
+              FROM (
+                SELECT
+                  ra.position_id,
+                  ra.action_type,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY ra.position_id
+                    ORDER BY ra.created_at DESC, ra.id DESC
+                  ) AS rn
+                FROM review_actions ra
+                INNER JOIN positions p ON p.id = ra.position_id
+                INNER JOIN aisles a ON a.id = p.aisle_id
+                INNER JOIN inventories i ON i.id = a.inventory_id
+                WHERE {where_ra}
+                  AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown')
+              ) ra
               GROUP BY ra.position_id
             ) t
         """
@@ -526,7 +562,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         reviewed_pos = int(getattr(row, "reviewed_positions", 0) or 0)
         auto_accepted = int(getattr(row, "auto_accepted_positions", 0) or 0)
         manually_corrected = int(getattr(row, "manually_corrected_positions", 0) or 0)
-        return reviewed_pos, auto_accepted, manually_corrected
+        unknown_positions = int(getattr(row, "unknown_positions", 0) or 0)
+        return reviewed_pos, auto_accepted, manually_corrected, unknown_positions
 
     def _inventory_average_review_time_seconds(
         self, inventory_id: str, filters: AnalyticsFilters
@@ -543,7 +580,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             INNER JOIN (
               SELECT position_id, MIN(created_at) AS first_ra
               FROM review_actions
-              WHERE action_type IN (N'confirm', N'update_quantity', N'update_sku')
+              WHERE action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown')
               GROUP BY position_id
             ) r ON r.position_id = p.id
             WHERE {where_sql}
@@ -575,8 +612,11 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               COUNT(*) AS total_results,
               SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END) AS needs_review_count,
               SUM(CASE WHEN p.status = N'corrected' THEN 1 ELSE 0 END) AS corrected_count,
+              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS unknown_count,
+              SUM(CASE WHEN p.review_resolution IN (N'qty_corrected', N'sku_corrected') THEN 1 ELSE 0 END) AS manual_corrections_count,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_traceability_count,
               SUM(CASE WHEN p.confidence < CAST({low_thr} AS float) THEN 1 ELSE 0 END) AS low_confidence_count,
+              SUM(CASE WHEN ({bucket}) = N'unknown' THEN 1 ELSE 0 END) AS iss_unknown,
               SUM(CASE WHEN ({bucket}) = N'invalid_traceability' THEN 1 ELSE 0 END) AS iss_invalid,
               SUM(CASE WHEN ({bucket}) = N'missing_evidence' THEN 1 ELSE 0 END) AS iss_missing,
               SUM(CASE WHEN ({bucket}) = N'quantity_zero' THEN 1 ELSE 0 END) AS iss_qty0,
@@ -596,6 +636,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             ORDER BY (SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END)) DESC, total_results DESC
         """
         labels = [
+            ("iss_unknown", "Unknown"),
             ("iss_invalid", "Invalid traceability"),
             ("iss_missing", "Missing evidence"),
             ("iss_qty0", "Zero quantity"),
@@ -625,6 +666,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         total_results=int(getattr(row, "total_results", 0) or 0),
                         needs_review_count=int(getattr(row, "needs_review_count", 0) or 0),
                         corrected_count=int(getattr(row, "corrected_count", 0) or 0),
+                        unknown_count=int(getattr(row, "unknown_count", 0) or 0),
+                        manual_corrections_count=int(getattr(row, "manual_corrections_count", 0) or 0),
                         invalid_traceability_count=int(getattr(row, "invalid_traceability_count", 0) or 0),
                         low_confidence_count=int(getattr(row, "low_confidence_count", 0) or 0),
                         most_common_issue=best_label,
@@ -657,6 +700,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             GROUP BY bucket
         """
         display = {
+            "unknown": "Unknown",
             "invalid_traceability": "Invalid traceability",
             "missing_evidence": "Missing evidence",
             "quantity_zero": "Zero quantity in summary",
@@ -666,6 +710,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         }
         thr_note = f"confidence < {LOW_CONFIDENCE_THRESHOLD} (LOW_CONFIDENCE_THRESHOLD)"
         notes = {
+            "unknown": "Final operator-facing review resolution persisted as unknown",
             "invalid_traceability": "traceability_status=invalid in canonical traceability source",
             "missing_evidence": "No primary evidence id",
             "quantity_zero": "Canonical final quantity resolved as 0 (product record when available; aggregated rows may fall back to snapshot)",
@@ -719,15 +764,16 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               INNER JOIN aisles a ON a.id = p.aisle_id
               INNER JOIN inventories i ON i.id = a.inventory_id
               WHERE {where_sql}
-                AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'delete_position')
+                AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown', N'delete_position')
             )
             SELECT
               SUM(CASE WHEN rn = 1 THEN 1 ELSE 0 END) AS intervention_positions_count,
               SUM(CASE WHEN rn = 1 AND action_type = N'confirm' THEN 1 ELSE 0 END) AS confirmed_count,
               SUM(CASE WHEN rn = 1 AND action_type = N'update_quantity' THEN 1 ELSE 0 END) AS qty_corrected_count,
               SUM(CASE WHEN rn = 1 AND action_type = N'update_sku' THEN 1 ELSE 0 END) AS sku_corrected_count,
+              SUM(CASE WHEN rn = 1 AND action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknown_count,
               SUM(CASE WHEN rn = 1 AND action_type = N'delete_position' THEN 1 ELSE 0 END) AS deleted_count,
-              COUNT(DISTINCT CASE WHEN action_type IN (N'confirm', N'update_quantity', N'update_sku') THEN position_id END) AS reviewed_positions_count
+              COUNT(DISTINCT CASE WHEN action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown') THEN position_id END) AS reviewed_positions_count
             FROM scoped_actions
         """
         with self._client.cursor() as cur:
@@ -742,6 +788,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         confirmed_count = int(getattr(row, "confirmed_count", 0) or 0)
         qty_corrected_count = int(getattr(row, "qty_corrected_count", 0) or 0)
         sku_corrected_count = int(getattr(row, "sku_corrected_count", 0) or 0)
+        unknown_count = int(getattr(row, "unknown_count", 0) or 0)
         deleted_count = int(getattr(row, "deleted_count", 0) or 0)
 
         return ManualInterventionBreakdownDTO(
@@ -772,10 +819,9 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 ),
                 ManualInterventionCategoryDTO(
                     category="unknown",
-                    count=None,
-                    percentage=None,
-                    available=False,
-                    notes="Final unknown review resolution is not persisted yet.",
+                    count=unknown_count,
+                    percentage=pct(unknown_count),
+                    available=True,
                 ),
                 ManualInterventionCategoryDTO(
                     category="deleted",
@@ -784,7 +830,6 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 ),
             ],
             notes=[
-                "unknown category unavailable: final unknown review resolution is not persisted yet",
                 "invalid category unavailable: current persisted review model does not distinguish invalid from delete_position",
             ],
         )

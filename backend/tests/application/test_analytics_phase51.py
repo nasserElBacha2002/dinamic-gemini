@@ -18,7 +18,7 @@ from src.application.services.analytics_aggregation_core import (
 )
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.domain.positions.entities import Position, PositionStatus
+from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
@@ -146,6 +146,7 @@ def test_aggregate_settling_metrics_counts():
     assert counts.reviewed_positions_count == 1
     assert counts.auto_accepted_positions_count == 0
     assert counts.manually_corrected_positions_count == 1
+    assert counts.unknown_positions_count == 0
 
 
 def test_day_span():
@@ -232,6 +233,8 @@ def test_memory_summary_rates(memory_analytics_setup):
     assert s.settling_actions_count == 2
     assert s.auto_acceptance_rate == pytest.approx(0.5)
     assert s.manual_correction_rate == pytest.approx(0.5)
+    assert s.unknown_rate == pytest.approx(0.0)
+    assert s.unknown_count == 0
     assert s.invalid_traceability_rate == pytest.approx(0.5)
     assert s.positions_in_scope == 2
     assert s.total_positions_in_scope == 2
@@ -286,6 +289,7 @@ def test_summary_builder_preserves_legacy_and_adds_new_scope_fields() -> None:
             reviewed_positions_count=5,
             auto_accepted_positions_count=3,
             manually_corrected_positions_count=2,
+            unknown_positions_count=1,
             invalid_traceability_positions_count=1,
             processing_success_rate=0.75,
             average_review_time_seconds=600.0,
@@ -303,21 +307,55 @@ def test_summary_builder_preserves_legacy_and_adds_new_scope_fields() -> None:
     assert dto.average_review_time_minutes == 10.0
     assert dto.auto_acceptance_rate == pytest.approx(0.6)
     assert dto.manual_correction_rate == pytest.approx(0.4)
+    assert dto.unknown_rate == pytest.approx(0.2)
+    assert dto.unknown_count == 1
 
 
-def test_manual_intervention_breakdown_marks_unknown_and_invalid_unavailable() -> None:
+def test_manual_intervention_breakdown_exposes_unknown_and_keeps_invalid_blocked() -> None:
     actions = [
         ReviewAction("a", "p1", ReviewActionType.CONFIRM, {}, {}, _utc(0)),
         ReviewAction("b", "p2", ReviewActionType.UPDATE_QUANTITY, {}, {}, _utc(1)),
         ReviewAction("c", "p3", ReviewActionType.UPDATE_SKU, {}, {}, _utc(2)),
-        ReviewAction("d", "p4", ReviewActionType.DELETE_POSITION, {}, {}, _utc(3)),
+        ReviewAction("d", "p4", ReviewActionType.MARK_UNKNOWN, {}, {}, _utc(3)),
+        ReviewAction("e", "p5", ReviewActionType.DELETE_POSITION, {}, {}, _utc(4)),
     ]
     breakdown = compute_manual_intervention_breakdown(actions, None, None)
-    assert breakdown.reviewed_positions_count == 3
-    assert breakdown.intervention_positions_count == 4
+    assert breakdown.reviewed_positions_count == 4
+    assert breakdown.intervention_positions_count == 5
     assert breakdown.confirmed_count == 1
     assert breakdown.qty_corrected_count == 1
     assert breakdown.sku_corrected_count == 1
+    assert breakdown.unknown_count == 1
     assert breakdown.deleted_count == 1
-    assert breakdown.unknown_available is False
+    assert breakdown.unknown_available is True
     assert breakdown.invalid_available is False
+
+
+def test_review_outcome_counts_use_terminal_unknown_resolution() -> None:
+    actions = [
+        ReviewAction("a", "p1", ReviewActionType.CONFIRM, {}, {}, _utc(0)),
+        ReviewAction("b", "p2", ReviewActionType.UPDATE_QUANTITY, {}, {}, _utc(1)),
+        ReviewAction("c", "p3", ReviewActionType.MARK_UNKNOWN, {}, {}, _utc(2)),
+    ]
+    counts = compute_review_outcome_counts(actions, None, None)
+    assert counts.reviewed_positions_count == 3
+    assert counts.auto_accepted_positions_count == 1
+    assert counts.manually_corrected_positions_count == 1
+    assert counts.unknown_positions_count == 1
+    assert counts.settling_actions_count == 3
+
+
+def test_issue_bucket_prioritizes_persisted_unknown_resolution() -> None:
+    p = Position(
+        id="unknown-pos",
+        aisle_id="a",
+        status=PositionStatus.REVIEWED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="e",
+        created_at=_utc(),
+        updated_at=_utc(),
+        review_resolution=PositionReviewResolution.UNKNOWN,
+        detected_summary_json={"traceability_status": "invalid"},
+    )
+    assert issue_bucket_for_position(p) == "unknown"

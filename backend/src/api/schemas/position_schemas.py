@@ -140,6 +140,13 @@ class PositionSummaryResponse(BaseModel):
     id: str
     aisle_id: str
     status: str
+    review_resolution: Optional[str] = Field(
+        None,
+        description=(
+            "Final operator-facing review outcome when a terminal decision exists. "
+            "This is distinct from `status` and from quantity provenance such as `qtySource=\"unknown\"`."
+        ),
+    )
     confidence: float
     needs_review: bool
     primary_evidence_id: Optional[str] = Field(
@@ -266,7 +273,13 @@ class PositionDetailResponse(BaseModel):
     review_actions: List[ReviewActionResponse] = Field(default_factory=list)
 
 
-ReviewActionTypeLiteral = Literal["confirm", "update_quantity", "update_sku", "delete_position"]
+ReviewActionTypeLiteral = Literal[
+    "confirm",
+    "update_quantity",
+    "update_sku",
+    "mark_unknown",
+    "delete_position",
+]
 
 
 class ReviewActionRequest(BaseModel):

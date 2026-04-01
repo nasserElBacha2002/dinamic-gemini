@@ -34,6 +34,8 @@ class AnalyticsFilters:
 class AnalyticsSummaryDTO:
     auto_acceptance_rate: Optional[float]
     manual_correction_rate: Optional[float]
+    unknown_rate: Optional[float]
+    unknown_count: int
     invalid_traceability_rate: Optional[float]
     processing_success_rate: Optional[float]
     average_review_time_seconds: Optional[float]
@@ -71,6 +73,7 @@ class InventoryPerformanceRowDTO:
     correction_rate: Optional[float]
     auto_acceptance_rate: Optional[float]
     manual_correction_rate: Optional[float]
+    unknown_rate: Optional[float]
     invalid_traceability_rate: Optional[float]
     avg_confidence: Optional[float]
     processing_success_rate: Optional[float]
@@ -103,6 +106,8 @@ class AisleIssueRowDTO:
     total_results: int
     needs_review_count: int
     corrected_count: int
+    unknown_count: int
+    manual_corrections_count: int
     invalid_traceability_count: int
     low_confidence_count: int
     most_common_issue: Optional[str]

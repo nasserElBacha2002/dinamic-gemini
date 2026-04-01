@@ -26,6 +26,8 @@ class _StubAnalyticsService:
         return AnalyticsSummaryDTO(
             auto_acceptance_rate=0.6,
             manual_correction_rate=0.4,
+            unknown_rate=0.2,
+            unknown_count=1,
             invalid_traceability_rate=0.2,
             processing_success_rate=0.9,
             average_review_time_seconds=600.0,
@@ -60,6 +62,7 @@ class _StubAnalyticsService:
                 correction_rate=0.4,
                 auto_acceptance_rate=0.6,
                 manual_correction_rate=0.4,
+                unknown_rate=0.2,
                 invalid_traceability_rate=0.2,
                 avg_confidence=0.9,
                 processing_success_rate=0.95,
@@ -90,10 +93,9 @@ class _StubAnalyticsService:
                 ),
                 ManualInterventionCategoryDTO(
                     category="unknown",
-                    count=None,
-                    percentage=None,
-                    available=False,
-                    notes="not persisted",
+                    count=1,
+                    percentage=1 / 6,
+                    available=True,
                 ),
                 ManualInterventionCategoryDTO(category="deleted", count=2, percentage=2 / 6),
             ],
@@ -117,6 +119,8 @@ def test_analytics_summary_response_keeps_legacy_fields_and_adds_phase2_fields()
     assert body["total_positions_in_scope"] == 10
     assert body["processed_positions_count"] == 8
     assert body["reviewed_positions_count"] == 5
+    assert body["unknown_rate"] == 0.2
+    assert body["unknown_count"] == 1
     assert body["average_review_time_seconds"] == 600.0
     assert body["average_review_time_minutes"] == 10.0
 
@@ -141,11 +145,12 @@ def test_analytics_inventory_performance_response_adds_phase2_fields_without_rem
     assert row["processed_count"] == 8
     assert row["correction_rate"] == 0.4
     assert row["manual_correction_rate"] == 0.4
+    assert row["unknown_rate"] == 0.2
     assert row["auto_acceptance_rate"] == 0.6
     assert row["average_review_time_minutes"] == 12.0
 
 
-def test_manual_intervention_breakdown_exposes_unavailable_categories_explicitly():
+def test_manual_intervention_breakdown_exposes_unknown_and_keeps_invalid_explicit():
     app.dependency_overrides[get_current_admin] = _fake_admin
     app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService()
     app.dependency_overrides[get_aisle_repo] = lambda: MemoryAisleRepository()
@@ -163,5 +168,6 @@ def test_manual_intervention_breakdown_exposes_unavailable_categories_explicitly
     assert categories["qty_corrected"]["count"] == 1
     assert categories["sku_corrected"]["count"] == 1
     assert categories["deleted"]["count"] == 2
-    assert categories["unknown"]["available"] is False
+    assert categories["unknown"]["available"] is True
+    assert categories["unknown"]["count"] == 1
     assert categories["invalid"]["available"] is False

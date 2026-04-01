@@ -54,7 +54,7 @@ from src.application.services.analytics_aggregation_core import (
     SummaryMetricInputs,
 )
 from src.domain.jobs.entities import JobStatus
-from src.domain.positions.entities import Position, PositionStatus
+from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 from src.domain.products.entities import ProductRecord
 
 
@@ -166,6 +166,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 reviewed_positions_count=review_outcomes.reviewed_positions_count,
                 auto_accepted_positions_count=review_outcomes.auto_accepted_positions_count,
                 manually_corrected_positions_count=review_outcomes.manually_corrected_positions_count,
+                unknown_positions_count=review_outcomes.unknown_positions_count,
                 invalid_traceability_positions_count=invalid_n,
                 processing_success_rate=proc,
                 average_review_time_seconds=avg_sec,
@@ -309,6 +310,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     reviewed_positions_count=review_outcomes.reviewed_positions_count,
                     auto_accepted_positions_count=review_outcomes.auto_accepted_positions_count,
                     manually_corrected_positions_count=review_outcomes.manually_corrected_positions_count,
+                    unknown_positions_count=review_outcomes.unknown_positions_count,
                     invalid_traceability_positions_count=invalid_n,
                     avg_confidence=avg_conf,
                     processing_success_rate=proc,
@@ -332,6 +334,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     correction_rate=metric_rates["correction_rate"],
                     auto_acceptance_rate=metric_rates["auto_acceptance_rate"],
                     manual_correction_rate=metric_rates["manual_correction_rate"],
+                    unknown_rate=metric_rates["unknown_rate"],
                     invalid_traceability_rate=metric_rates["invalid_traceability_rate"],
                     avg_confidence=metric_rates["avg_confidence"],
                     processing_success_rate=metric_rates["processing_success_rate"],
@@ -364,6 +367,17 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             code, inventory_id, inventory_name = meta[aisle_id]
             needs_r = sum(1 for p in plist if p.needs_review)
             corrected_c = sum(1 for p in plist if p.status == PositionStatus.CORRECTED)
+            unknown_c = sum(
+                1 for p in plist if p.review_resolution == PositionReviewResolution.UNKNOWN
+            )
+            manual_corrections_c = sum(
+                1
+                for p in plist
+                if p.review_resolution in (
+                    PositionReviewResolution.QTY_CORRECTED,
+                    PositionReviewResolution.SKU_CORRECTED,
+                )
+            )
             invalid_tr = sum(
                 1
                 for p in plist
@@ -384,6 +398,8 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     total_results=len(plist),
                     needs_review_count=needs_r,
                     corrected_count=corrected_c,
+                    unknown_count=unknown_c,
+                    manual_corrections_count=manual_corrections_c,
                     invalid_traceability_count=invalid_tr,
                     low_confidence_count=low_conf,
                     most_common_issue=common,
@@ -402,6 +418,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             counts[b] = counts.get(b, 0) + 1
         total = sum(counts.values()) or 0
         display = {
+            "unknown": "Unknown",
             "invalid_traceability": "Invalid traceability",
             "missing_evidence": "Missing evidence",
             "quantity_zero": "Zero canonical quantity",
@@ -410,6 +427,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             "ok": "No primary issue",
         }
         notes_map = {
+            "unknown": "Final operator-facing review resolution persisted as unknown",
             "invalid_traceability": "Canonical traceability status resolved as invalid",
             "missing_evidence": "No primary evidence id",
             "quantity_zero": "Canonical final quantity resolved as 0 (product record when available; aggregated rows may fall back to snapshot)",
@@ -472,10 +490,9 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 ),
                 ManualInterventionCategoryDTO(
                     category="unknown",
-                    count=None,
-                    percentage=None,
-                    available=False,
-                    notes="Final unknown review resolution is not persisted yet.",
+                    count=breakdown.unknown_count,
+                    percentage=pct(breakdown.unknown_count),
+                    available=True,
                 ),
                 ManualInterventionCategoryDTO(
                     category="deleted",

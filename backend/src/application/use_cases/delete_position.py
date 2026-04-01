@@ -18,7 +18,7 @@ from src.application.ports.repositories import (
 from src.application.errors import PositionDeletedError
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.use_cases.review_validation import resolve_position
-from src.domain.positions.entities import PositionStatus
+from src.domain.positions.entities import PositionReviewResolution, PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
 
@@ -59,7 +59,13 @@ class DeletePositionUseCase:
             )
         now = self._clock.now()
         before_status = position.status.value
+        before_resolution = (
+            position.review_resolution.value
+            if position.review_resolution is not None
+            else None
+        )
         position.status = PositionStatus.DELETED
+        position.review_resolution = PositionReviewResolution.DELETED
         position.needs_review = False
         position.updated_at = now
         self._position_repo.save(position)
@@ -68,8 +74,14 @@ class DeletePositionUseCase:
             id=str(uuid.uuid4()),
             position_id=position_id,
             action_type=ReviewActionType.DELETE_POSITION,
-            before_json={"status": before_status},
-            after_json={"status": PositionStatus.DELETED.value},
+            before_json={
+                "status": before_status,
+                "review_resolution": before_resolution,
+            },
+            after_json={
+                "status": PositionStatus.DELETED.value,
+                "review_resolution": PositionReviewResolution.DELETED.value,
+            },
             created_at=now,
         )
         self._review_repo.save(review)

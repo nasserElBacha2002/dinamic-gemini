@@ -276,6 +276,7 @@ BEGIN
         id VARCHAR(36) NOT NULL PRIMARY KEY,
         aisle_id VARCHAR(36) NOT NULL,
         status VARCHAR(32) NOT NULL,
+        review_resolution VARCHAR(32) NULL,
         confidence FLOAT NOT NULL,
         needs_review BIT NOT NULL,
         primary_evidence_id VARCHAR(36) NULL,
@@ -287,6 +288,9 @@ BEGIN
     );
     CREATE INDEX IX_positions_aisle_id ON positions(aisle_id);
 END;
+GO
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('positions') AND name = 'review_resolution')
+    ALTER TABLE positions ADD review_resolution VARCHAR(32) NULL;
 GO
 
 -- v3.0 — Product records (Épica 6, Documento técnico §7.5)

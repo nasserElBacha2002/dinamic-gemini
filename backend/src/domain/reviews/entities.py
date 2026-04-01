@@ -1,7 +1,7 @@
 """
 ReviewAction domain entity — v3.0 (Documento técnico §7.7).
 
-Manual review action on a position: confirm, update_quantity, update_sku, delete_position.
+Manual review action on a position: confirm, update_quantity, update_sku, mark_unknown, delete_position.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ class ReviewActionType(str, Enum):
     CONFIRM = "confirm"
     UPDATE_QUANTITY = "update_quantity"
     UPDATE_SKU = "update_sku"
+    MARK_UNKNOWN = "mark_unknown"
     DELETE_POSITION = "delete_position"
 
 

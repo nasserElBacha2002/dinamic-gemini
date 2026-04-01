@@ -86,6 +86,8 @@ def analytics_summary(
     return AnalyticsSummaryResponse(
         auto_acceptance_rate=d.auto_acceptance_rate,
         manual_correction_rate=d.manual_correction_rate,
+        unknown_rate=d.unknown_rate,
+        unknown_count=d.unknown_count,
         invalid_traceability_rate=d.invalid_traceability_rate,
         processing_success_rate=d.processing_success_rate,
         average_review_time_seconds=d.average_review_time_seconds,
@@ -160,6 +162,7 @@ def analytics_inventories(
                 correction_rate=r.correction_rate,
                 auto_acceptance_rate=r.auto_acceptance_rate,
                 manual_correction_rate=r.manual_correction_rate,
+                unknown_rate=r.unknown_rate,
                 invalid_traceability_rate=r.invalid_traceability_rate,
                 avg_confidence=r.avg_confidence,
                 processing_success_rate=r.processing_success_rate,
@@ -192,6 +195,8 @@ def analytics_aisles(
                 total_results=r.total_results,
                 needs_review_count=r.needs_review_count,
                 corrected_count=r.corrected_count,
+                unknown_count=r.unknown_count,
+                manual_corrections_count=r.manual_corrections_count,
                 invalid_traceability_count=r.invalid_traceability_count,
                 low_confidence_count=r.low_confidence_count,
                 most_common_issue=r.most_common_issue,
@@ -237,9 +242,9 @@ def analytics_manual_interventions(
 ) -> ManualInterventionBreakdownResponse:
     """Return current persisted manual intervention categories for the analytics scope.
 
-    Date filters apply to review action timestamps. Categories that cannot be derived reliably from
-    current persistence, such as terminal unknown resolution, are returned as unavailable rather
-    than inferred heuristically.
+    Date filters apply to review action timestamps. Unknown is exposed only when backed by the
+    persisted terminal review resolution model; invalid remains unavailable until persisted
+    separately from delete_position.
     """
     f = _filters(date_from, date_to, inventory_id, aisle_id)
     _validate_analytics_scope(f, aisle_repo)
