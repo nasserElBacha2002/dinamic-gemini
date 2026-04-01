@@ -1,9 +1,12 @@
 /**
- * Epic 4 / Sprint 4.3 — Review actions: confirm (primary path), corrections, destructive (separated).
+ * Epic 4 / Sprint 4.3 — Review actions: confirm (primary), corrections (progressive), destructive (danger zone).
+ * Revised in Phase 3 for a focused decision-oriented workflow.
  */
 
-import { useState, useEffect } from 'react';
-import { Paper, Typography, Box, Button, Stack, TextField, Divider } from '@mui/material';
+import { useState, useEffect, useRef } from 'react';
+import { Box, Button, Stack, TextField, IconButton, Typography } from '@mui/material';
+import EditIcon from '@mui/icons-material/EditOutlined';
+import CloseIcon from '@mui/icons-material/Close';
 import type { ResultDetail } from '../../types';
 
 export interface ResultReviewActionsProps {
@@ -23,216 +26,294 @@ export default function ResultReviewActions({
   onUpdateSku,
   onDeleteClick,
 }: ResultReviewActionsProps) {
+  const [activeEditor, setActiveEditor] = useState<'qty' | 'sku' | null>(null);
+  const qtyButtonRef = useRef<HTMLButtonElement>(null);
+  const skuButtonRef = useRef<HTMLButtonElement>(null);
+  const lastActiveEditor = useRef<'qty' | 'sku' | null>(null);
+
+  // Focus management: when editor closes, return focus to the trigger
+  useEffect(() => {
+    if (activeEditor !== null) {
+      lastActiveEditor.current = activeEditor;
+    } else {
+      if (lastActiveEditor.current === 'qty') {
+        qtyButtonRef.current?.focus();
+      } else if (lastActiveEditor.current === 'sku') {
+        skuButtonRef.current?.focus();
+      }
+      lastActiveEditor.current = null;
+    }
+  }, [activeEditor]);
+
   const isDeleted = result.reviewStatus === 'INVALID';
 
-  if (isDeleted) {
-    return null;
-  }
+  // Collapse editor on success (if actionLoading flips back to false and we have a result change)
+  // But we rely on the parent updating the 'result' prop which triggers a re-render.
+  useEffect(() => {
+    if (!actionLoading) {
+      setActiveEditor(null);
+    }
+  }, [result.correctedQty, result.sku]);
+
+  if (isDeleted) return null;
 
   return (
-    <Paper
-      sx={{
-        p: 2,
-        mb: 2,
-        border: 1,
-        borderColor: 'divider',
-      }}
-      elevation={0}
-    >
-      <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
-        Review actions
-      </Typography>
+    <Box sx={{ mt: 1 }}>
+      {/* Primary Action — Only visible if not editing */}
+      {!activeEditor && (
+        <Box sx={{ mb: 4.5 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            size="large"
+            fullWidth
+            onClick={onConfirm}
+            disabled={actionLoading}
+            sx={{ 
+              py: 2, 
+              fontWeight: 800, 
+              borderRadius: 2.5, 
+              fontSize: '1rem',
+              boxShadow: '0 4px 12px rgba(var(--mui-palette-primary-mainChannel), 0.2)',
+            }}
+          >
+            {actionLoading ? 'Confirming…' : 'Confirm result'}
+          </Button>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'center', opacity: 0.7, fontWeight: 500 }}>
+            Accept current data as correct
+          </Typography>
+        </Box>
+      )}
 
-      <Box>
-        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
-          Confirm
+      {/* Progressive Corrections */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1.2 }}>
+          Correction tools
         </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          size="large"
-          fullWidth
-          onClick={onConfirm}
-          disabled={actionLoading}
-          sx={{ mt: 0.75, py: 1 }}
+
+        <Stack spacing={0.5}>
+           {activeEditor === 'qty' ? (
+             <QuantityEditor 
+               initialValue={result.correctedQty ?? result.detectedQty ?? 0}
+               onSave={onUpdateQuantity}
+               onCancel={() => setActiveEditor(null)}
+               loading={actionLoading}
+             />
+           ) : (
+             <Button 
+               ref={qtyButtonRef}
+               variant="text" 
+               fullWidth 
+               onClick={() => setActiveEditor('qty')}
+               disabled={actionLoading || activeEditor === 'sku'}
+               startIcon={<EditIcon sx={{ fontSize: 18 }} />}
+               sx={{ 
+                 py: 1, 
+                 borderRadius: 1.5, 
+                 textTransform: 'none', 
+                 justifyContent: 'flex-start', 
+                 px: 2,
+                 color: 'text.secondary',
+                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
+               }}
+             >
+               Correct quantity
+             </Button>
+           )}
+
+           {activeEditor === 'sku' ? (
+             <SkuEditor 
+               initialValue={result.sku ?? ''}
+               onSave={onUpdateSku}
+               onCancel={() => setActiveEditor(null)}
+               loading={actionLoading}
+             />
+           ) : (
+             <Button 
+               ref={skuButtonRef}
+               variant="text" 
+               fullWidth 
+               onClick={() => setActiveEditor('sku')}
+               disabled={actionLoading || activeEditor === 'qty'}
+               startIcon={<EditIcon sx={{ fontSize: 18 }} />}
+               sx={{ 
+                 py: 1, 
+                 borderRadius: 1.5, 
+                 textTransform: 'none', 
+                 justifyContent: 'flex-start', 
+                 px: 2,
+                 color: 'text.secondary',
+                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
+               }}
+             >
+               Correct SKU
+             </Button>
+           )}
+        </Stack>
+      </Box>
+
+      {/* Danger Zone */}
+      <Box sx={{ mt: 8, pt: 3, borderTop: 1, borderColor: 'divider' }}>
+        <Box 
+           sx={{ 
+             p: 2, 
+             borderRadius: 2, 
+             bgcolor: 'rgba(211, 47, 47, 0.02)', 
+             border: '1px dashed', 
+             borderColor: 'divider', // Quieter border
+             opacity: 0.9
+           }}
         >
-          {actionLoading ? 'Sending…' : 'Confirm result'}
-        </Button>
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
-          Accept as correct. Marks the result as reviewed without changing quantity or SKU.
-        </Typography>
+          <Typography variant="caption" sx={{ fontWeight: 700, mb: 0.5, display: 'block', color: 'error.main', textTransform: 'uppercase', letterSpacing: 1 }}>
+            Danger zone
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.4 }}>
+            Only use this if the result is a false detection or contains data that shouldn't be reviewed. 
+          </Typography>
+          <Button
+            variant="outlined"
+            color="error"
+            size="small"
+            fullWidth
+            onClick={onDeleteClick}
+            disabled={actionLoading}
+            sx={{ textTransform: 'none', fontWeight: 600, py: 0.75, borderRadius: 1.5 }}
+          >
+            Mark result invalid
+          </Button>
+        </Box>
       </Box>
-
-      <Divider sx={{ my: 1.75 }} />
-
-      <Box>
-        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
-          Corrections
-        </Typography>
-        <ResultFieldsForm
-          result={result}
-          actionLoading={actionLoading}
-          onUpdateQuantity={onUpdateQuantity}
-          onUpdateSku={onUpdateSku}
-        />
-      </Box>
-
-      <Divider sx={{ my: 1.75 }} />
-
-      <Box
-        sx={{
-          p: 1.5,
-          borderRadius: 1,
-          bgcolor: 'action.hover',
-          border: 1,
-          borderColor: 'error.light',
-        }}
-      >
-        <Typography variant="overline" color="error" sx={{ letterSpacing: 0.5 }}>
-          Invalidate result
-        </Typography>
-        <Button
-          variant="outlined"
-          color="error"
-          fullWidth
-          onClick={onDeleteClick}
-          disabled={actionLoading}
-          sx={{ mt: 1 }}
-        >
-          Mark result invalid
-        </Button>
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
-          Sets review status to invalid and removes this row from active review work. The record stays visible
-          for audit. Requires confirmation.
-        </Typography>
-      </Box>
-    </Paper>
+    </Box>
   );
 }
 
+// Internal Editor Components
+
 const SKU_MAX_LEN = 128;
 
-function qtyLiveValidationMessage(qtyStr: string): string {
-  const trimmed = qtyStr.trim();
-  if (trimmed === '') return 'Enter a whole number 0 or greater.';
-  if (trimmed.includes('.') || trimmed.includes('e') || trimmed.includes('E')) {
-    return 'Use a whole number (no decimals).';
-  }
-  const n = Number.parseInt(trimmed, 10);
-  if (Number.isNaN(n) || n < 0) return 'Enter a whole number 0 or greater.';
-  return '';
-}
-
-function skuLiveValidationMessage(sku: string): string {
-  const t = sku.trim();
-  if (t === '') return 'Enter a SKU to update.';
-  if (t.length > SKU_MAX_LEN) return `At most ${SKU_MAX_LEN} characters.`;
-  return '';
-}
-
-function ResultFieldsForm({
-  result,
-  actionLoading,
-  onUpdateQuantity,
-  onUpdateSku,
-}: {
-  result: ResultDetail;
-  actionLoading: boolean;
-  onUpdateQuantity: (quantity: number) => void;
-  onUpdateSku: (sku: string) => void;
+function QuantityEditor({ 
+  initialValue, 
+  onSave, 
+  onCancel, 
+  loading 
+}: { 
+  initialValue: number; 
+  onSave: (val: number) => void; 
+  onCancel: () => void; 
+  loading: boolean;
 }) {
-  const initialQty = result.correctedQty ?? result.detectedQty ?? 0;
-  const [qtyStr, setQtyStr] = useState(String(initialQty));
-  const [sku, setSku] = useState(result.sku ?? '');
-  const [qtyError, setQtyError] = useState('');
-  const [skuError, setSkuError] = useState('');
+  const [val, setVal] = useState(String(initialValue));
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const n = result.correctedQty ?? result.detectedQty ?? 0;
-    setQtyStr(String(n));
-    setQtyError('');
-  }, [result.correctedQty, result.detectedQty]);
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
 
-  useEffect(() => {
-    setSku(result.sku ?? '');
-    setSkuError('');
-  }, [result.sku]);
-
-  const qtyLive = qtyLiveValidationMessage(qtyStr);
-  const skuLive = skuLiveValidationMessage(sku);
-
-  const submitQuantity = () => {
-    const msg = qtyLiveValidationMessage(qtyStr);
-    if (msg) {
-      setQtyError(msg);
-      return;
-    }
-    setQtyError('');
-    onUpdateQuantity(Number.parseInt(qtyStr.trim(), 10));
-  };
-
-  const submitSku = () => {
-    const msg = skuLiveValidationMessage(sku);
-    if (msg) {
-      setSkuError(msg);
-      return;
-    }
-    setSkuError('');
-    onUpdateSku(sku.trim());
-  };
+  const isValid = !isNaN(parseInt(val)) && parseInt(val) >= 0;
 
   return (
-    <Stack spacing={1} sx={{ mt: 0.75 }}>
-      <Stack direction="row" spacing={1} alignItems="flex-start" flexWrap="wrap" useFlexGap>
+    <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, fontWeight: 700 }}>
+        New quantity
+      </Typography>
+      <Stack direction="row" spacing={1} alignItems="flex-start">
         <TextField
+          inputRef={inputRef}
           size="small"
+          fullWidth
+          value={val}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && isValid && !loading) {
+              onSave(parseInt(val));
+            } else if (e.key === 'Escape' && !loading) {
+              onCancel();
+            }
+          }}
+          error={!isValid && val !== ''}
+          placeholder="0"
           type="text"
           inputMode="numeric"
-          label="Corrected quantity"
-          value={qtyStr}
-          onChange={(e) => {
-            setQtyStr(e.target.value);
-            if (qtyError) setQtyError('');
-          }}
-          inputProps={{ inputMode: 'numeric' }}
-          error={Boolean(qtyError || qtyLive)}
-          helperText={qtyError || qtyLive || ' '}
-          sx={{ width: 160 }}
+          disabled={loading}
+          autoComplete="off"
         />
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={submitQuantity}
-          disabled={actionLoading || Boolean(qtyLive)}
-          sx={{ flexShrink: 0, mt: 0.5 }}
+        <Button 
+          variant="contained" 
+          size="small" 
+          onClick={() => onSave(parseInt(val))}
+          disabled={loading || !isValid}
+          sx={{ minWidth: 64, height: 40 }}
         >
-          Update quantity
+          {loading ? '...' : 'Save'}
         </Button>
+        <IconButton size="small" onClick={onCancel} disabled={loading} sx={{ height: 40, width: 40 }}>
+          <CloseIcon fontSize="small" />
+        </IconButton>
       </Stack>
-      <Stack direction="row" spacing={1} alignItems="flex-start" flexWrap="wrap" useFlexGap>
+    </Box>
+  );
+}
+
+function SkuEditor({ 
+  initialValue, 
+  onSave, 
+  onCancel, 
+  loading 
+}: { 
+  initialValue: string; 
+  onSave: (val: string) => void; 
+  onCancel: () => void; 
+  loading: boolean;
+}) {
+  const [val, setVal] = useState(initialValue);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const isValid = val.trim().length > 0 && val.length <= SKU_MAX_LEN;
+
+  return (
+    <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, fontWeight: 700 }}>
+        Corrected SKU
+      </Typography>
+      <Stack direction="row" spacing={1} alignItems="flex-start">
         <TextField
+          inputRef={inputRef}
           size="small"
-          label="SKU"
-          value={sku}
-          onChange={(e) => {
-            setSku(e.target.value);
-            if (skuError) setSkuError('');
+          fullWidth
+          value={val}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && isValid && !loading) {
+              onSave(val.trim());
+            } else if (e.key === 'Escape' && !loading) {
+              onCancel();
+            }
           }}
-          error={Boolean(skuError || skuLive)}
-          helperText={skuError || skuLive || ' '}
+          error={!isValid && val.length > 0}
+          placeholder="Update SKU..."
+          disabled={loading}
           inputProps={{ maxLength: SKU_MAX_LEN }}
-          sx={{ width: 200 }}
+          autoComplete="off"
         />
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={submitSku}
-          disabled={actionLoading || Boolean(skuLive)}
-          sx={{ flexShrink: 0, mt: 0.5 }}
+        <Button 
+          variant="contained" 
+          size="small" 
+          onClick={() => onSave(val.trim())}
+          disabled={loading || !isValid}
+          sx={{ minWidth: 64, height: 40 }}
         >
-          Update SKU
+          {loading ? '...' : 'Save'}
         </Button>
+        <IconButton size="small" onClick={onCancel} disabled={loading} sx={{ height: 40, width: 40 }}>
+          <CloseIcon fontSize="small" />
+        </IconButton>
       </Stack>
-    </Stack>
+    </Box>
   );
 }

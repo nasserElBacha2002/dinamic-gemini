@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography } from '@mui/material';
+import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography, Stack } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { ApiError } from '../../../api/types';
 import type { ReviewActionRequest } from '../../../api/types';
@@ -37,12 +37,25 @@ function DrawerCollapsibleSection({
       <Button
         size="small"
         onClick={() => setExpanded((e) => !e)}
-        sx={{ textTransform: 'none', color: 'text.secondary', mb: expanded ? 1 : 0, p: 0, minWidth: 0 }}
+        sx={{ 
+          textTransform: 'uppercase', 
+          color: 'text.primary', 
+          fontWeight: 800,
+          fontSize: '0.65rem',
+          letterSpacing: 1.2,
+          mb: expanded ? 1.5 : 0, 
+          p: 0, 
+          minWidth: 0,
+          opacity: expanded ? 0.9 : 0.6,
+          '&:hover': { opacity: 1, bgcolor: 'transparent' }
+        }}
         aria-expanded={expanded}
       >
         {expanded ? 'Hide' : 'Show'} {title}
       </Button>
-      <Collapse in={expanded}>{children}</Collapse>
+      <Collapse in={expanded} timeout="auto" unmountOnExit>
+         <Box sx={{ pb: 2 }}>{children}</Box>
+      </Collapse>
     </Box>
   );
 }
@@ -163,6 +176,7 @@ export default function QuickReviewDrawer({
       await reviewMutation.mutateAsync({ action_type: 'delete_position' });
       showSnackbar('Result marked invalid', 'success');
       setInvalidConfirmOpen(false);
+      onClose(); // Automatically close after invalidation
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       setInvalidConfirmError(getApiErrorMessage(err, 'Could not invalidate result'));
@@ -214,29 +228,36 @@ export default function QuickReviewDrawer({
                 flexShrink: 0,
                 position: 'sticky',
                 top: 0,
-                zIndex: 3,
+                zIndex: 4,
                 bgcolor: 'background.paper',
                 borderBottom: 1,
                 borderColor: 'divider',
                 px: 2.5,
-                py: 1.5,
+                py: 2,
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: 1,
               }}
             >
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
-                  Review
+                <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5, fontWeight: 700 }}>
+                  Review Mode
                 </Typography>
-                <Typography component="h1" variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2, mt: 0.25 }}>
+                <Typography component="h1" variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2, mt: 0.25 }}>
                   {isLoading && !result ? 'Loading…' : detailTitle}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" display="block">
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, fontWeight: 500 }}>
                   {context.inventoryName} · {context.aisleCode}
                 </Typography>
               </Box>
-              <IconButton aria-label="Close drawer" onClick={onClose} size="small" edge="end">
+              <IconButton 
+                aria-label="Close drawer" 
+                onClick={onClose} 
+                size="small" 
+                edge="end" 
+                sx={{ mt: -0.5 }}
+                disabled={actionLoading}
+              >
                 <CloseIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -264,14 +285,12 @@ export default function QuickReviewDrawer({
               ) : null}
 
               {result ? (
-                <>
+                <Stack spacing={3}>
                   <ResultEvidenceViewer result={result} inventoryId={inventoryId} aisleId={aisleId} />
 
-                  <Box sx={{ mt: 2 }}>
-                    <ResultSummaryCard result={result} embedInDrawer />
-                  </Box>
+                  <ResultSummaryCard result={result} />
 
-                  <Box sx={{ mt: 2 }}>
+                  <Box sx={{ pt: 2 }}>
                     <ResultReviewActions
                       result={result}
                       actionLoading={actionLoading}
@@ -282,20 +301,26 @@ export default function QuickReviewDrawer({
                     />
                   </Box>
 
-                  {navContext && navContext.total > 1 ? (
-                    <Box sx={{ mt: 2 }}>
-                      <ResultDetailNavigation context={navContext} onNavigate={handleNavigateToResult} />
+                  {navContext && navContext.total > 1 && (
+                    <Box sx={{ pt: 1 }}>
+                      <ResultDetailNavigation 
+                        context={navContext} 
+                        onNavigate={handleNavigateToResult} 
+                        disabled={actionLoading}
+                      />
                     </Box>
-                  ) : null}
+                  )}
 
-                  <DrawerCollapsibleSection title="review history">
-                    <ResultReviewHistory items={result.reviewHistory} showHeading={false} />
-                  </DrawerCollapsibleSection>
+                  <Box sx={{ pt: 4 }}>
+                    <DrawerCollapsibleSection title="review history">
+                      <ResultReviewHistory items={result.reviewHistory} showHeading={false} />
+                    </DrawerCollapsibleSection>
 
-                  <Box sx={{ mt: 0.5 }}>
-                    <ResultTechnicalMetadata result={result} />
+                    <DrawerCollapsibleSection title="technical details">
+                      <ResultTechnicalMetadata result={result} />
+                    </DrawerCollapsibleSection>
                   </Box>
-                </>
+                </Stack>
               ) : null}
             </Box>
           </Box>

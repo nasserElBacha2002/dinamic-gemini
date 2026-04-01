@@ -1,10 +1,9 @@
 /**
- * Epic 4 — Summary card for Result Detail (SKU, quantity, status, traceability, confidence).
- * Phase 6: Current final state and count-origin visibility per POSITION_RESULT_CONTRACT.
- * Visible quantity = corrected_quantity ?? qty; show system quantity when override exists.
+ * Epic 4 — Summary section for Result Detail (quantity, origin, status, traceability, confidence).
+ * Revised in Phase 3 & Polished in Phase 4: Cohesive "Current State" visual block.
  */
 
-import { Paper, Typography, Box } from '@mui/material';
+import { Typography, Box } from '@mui/material';
 import type { ResultDetail } from '../../types';
 import { StatusChip, TraceabilityChip } from '../../../../components/ui';
 import { getCountOriginLabel } from '../../utils/countOriginLabel';
@@ -14,13 +13,6 @@ import { formatDate } from '../../../../utils/formatDate';
 
 export interface ResultSummaryCardProps {
   result: ResultDetail;
-  /** Tighter layout for the canonical review drawer (single operational column). */
-  embedInDrawer?: boolean;
-}
-
-function displayStr(value: string | null | undefined): string {
-  if (value != null && String(value).trim() !== '') return String(value).trim();
-  return '—';
 }
 
 /** Coerce to finite number or null; avoids NaN and mixed string/number. */
@@ -30,9 +22,7 @@ function toNumeric(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export default function ResultSummaryCard({ result, embedInDrawer }: ResultSummaryCardProps) {
-  const sku = displayStr(result.sku);
-
+export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
   const correctedQtyNum = toNumeric(result.correctedQty);
   const resolvedQtyNum = toNumeric(result.resolvedQty);
   const systemQtyNum = toNumeric(result.systemQty);
@@ -46,63 +36,71 @@ export default function ResultSummaryCard({ result, embedInDrawer }: ResultSumma
       : '—';
 
   return (
-    <Paper sx={{ p: embedInDrawer ? 1.5 : 2, mb: embedInDrawer ? 1.5 : 2 }} elevation={embedInDrawer ? 0 : undefined}>
-      {!embedInDrawer ? (
-        <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
-          Result summary
-        </Typography>
-      ) : (
-        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5, display: 'block', mb: 1 }}>
-          Summary
-        </Typography>
-      )}
-      <Typography variant="caption" color="text.secondary" display="block">
-        SKU
-      </Typography>
-      <Typography variant={embedInDrawer ? 'subtitle1' : 'h6'} sx={{ fontWeight: 600 }}>
-        {sku}
-      </Typography>
-
-      <Box sx={{ display: 'flex', gap: 2, mt: 1.5, flexWrap: 'wrap' }}>
+    <Box 
+      sx={{ 
+        p: 2, 
+        borderRadius: 2, 
+        bgcolor: 'background.default', 
+        border: '1px solid', 
+        borderColor: 'divider',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2.5
+      }}
+    >
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
         <Box>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
             Current quantity
           </Typography>
-          <Typography variant="body1">
+          <Typography variant="h5" fontWeight={800} sx={{ lineHeight: 1, letterSpacing: -0.5 }}>
             {visibleQtyNum != null ? String(visibleQtyNum) : '—'}
           </Typography>
+          {hasManualOverride && (
+             <Typography variant="caption" color="primary.main" sx={{ fontWeight: 700, mt: 0.5, display: 'block', fontSize: '0.7rem' }}>
+               Manual override
+             </Typography>
+          )}
         </Box>
+        
         {hasManualOverride && systemQtyNum != null && (
           <Box>
-            <Typography variant="caption" color="text.secondary">
-              System quantity
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
+              System original
             </Typography>
-            <Typography variant="body1">{String(systemQtyNum)}</Typography>
+            <Typography variant="body1" fontWeight={600}>{String(systemQtyNum)}</Typography>
           </Box>
         )}
+
+        <Box sx={{ gridColumn: hasManualOverride ? undefined : 'span 1' }}>
+           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
+            Count origin
+          </Typography>
+          <Typography variant="body2" fontWeight={600} color="text.primary">
+            {getCountOriginLabel(result)}
+          </Typography>
+        </Box>
+
+        <Box>
+           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
+            Last update
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+            {formatDate(result.updatedAt)}
+          </Typography>
+        </Box>
       </Box>
 
-      {hasManualOverride && (
-        <Typography variant="caption" color="primary.main" display="block" sx={{ mt: 0.5 }}>
-          Manual override applied
-        </Typography>
-      )}
-
-      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-        Count origin: {getCountOriginLabel(result)}
-      </Typography>
-
-      <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
         <StatusChip
           label={getReviewStatusLabel(result.reviewStatus)}
           color={getReviewStatusColor(result.reviewStatus)}
           size="small"
-          variant="outlined"
+          variant="filled"
         />
         <TraceabilityChip
           status={visibleTraceabilityToApiStatus(result.traceabilityStatus)}
           size="small"
-          variant="outlined"
         />
         <StatusChip
           label={`${confidenceStr} confidence`}
@@ -110,10 +108,6 @@ export default function ResultSummaryCard({ result, embedInDrawer }: ResultSumma
           size="small"
         />
       </Box>
-
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-        Updated: {formatDate(result.updatedAt)}
-      </Typography>
-    </Paper>
+    </Box>
   );
 }

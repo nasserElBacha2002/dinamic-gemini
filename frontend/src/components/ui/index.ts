@@ -16,6 +16,12 @@ export { default as EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 export { default as ErrorAlert } from './ErrorAlert';
 export type { ErrorAlertProps } from './ErrorAlert';
+export { default as ImageViewer } from './ImageViewer';
+export type { ImageViewerProps } from './ImageViewer';
+export { default as ImageAssetCard } from './ImageAssetCard';
+export type { ImageAssetCardProps } from './ImageAssetCard';
+export { default as ImagePreviewDialog } from './ImagePreviewDialog';
+export type { ImagePreviewDialogProps } from './ImagePreviewDialog';
 
 export { default as StatCard } from './StatCard';
 export type { StatCardProps } from './StatCard';

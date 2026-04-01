@@ -8,11 +8,13 @@ import type { ResultNavigationContext } from '../../utils/navigationContext';
 export interface ResultDetailNavigationProps {
   context: ResultNavigationContext;
   onNavigate: (resultId: string) => void;
+  disabled?: boolean;
 }
 
 export default function ResultDetailNavigation({
   context,
   onNavigate,
+  disabled,
 }: ResultDetailNavigationProps) {
   const { currentIndex, previousId, nextId, total } = context;
   const oneBased = currentIndex + 1;
@@ -33,8 +35,8 @@ export default function ResultDetailNavigation({
       <Button
         size="small"
         variant="outlined"
-        disabled={!previousId}
-        onClick={() => previousId && onNavigate(previousId)}
+        disabled={disabled || !previousId}
+        onClick={() => previousId && !disabled && onNavigate(previousId)}
         aria-label="Previous result"
       >
         ← Previous
@@ -42,8 +44,8 @@ export default function ResultDetailNavigation({
       <Button
         size="small"
         variant="outlined"
-        disabled={!nextId}
-        onClick={() => nextId && onNavigate(nextId)}
+        disabled={disabled || !nextId}
+        onClick={() => nextId && !disabled && onNavigate(nextId)}
         aria-label="Next result"
       >
         Next →
