@@ -11,7 +11,7 @@ import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
 import { FilterToolbar, SectionCard, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
-import { useInventoryDetail, useAislesList } from '../hooks';
+import { useInventoryDetail, useAislesList, useRunAisleMerge } from '../hooks';
 import {
   useResultSummaries,
   computeResultsKpi,
@@ -45,6 +45,7 @@ export default function AislePositionsPage() {
   const [quickContext, setQuickContext] = useState<QuickReviewContext | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const consumedAisleRedirectKey = useRef<string | null>(null);
+  const mergeMutation = useRunAisleMerge(inventoryId ?? '');
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
@@ -151,6 +152,24 @@ export default function AislePositionsPage() {
         ? getApiErrorMessage(error, 'Failed to load results')
         : String(error)
       : null;
+  const canRunMerge = Boolean(inventoryId && aisleId && !isLoading && results.length > 0);
+
+  const handleRunMerge = useCallback(async () => {
+    if (!inventoryId || !aisleId) return;
+    try {
+      const result = await mergeMutation.mutateAsync(aisleId);
+      await Promise.all([refetch(), aislesQuery.refetch()]);
+      showSnackbar(
+        result.product_records_updated > 0
+          ? 'Repeated labels merged'
+          : 'Merge completed with no visible quantity changes',
+        'success'
+      );
+    } catch (e) {
+      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      showSnackbar(getApiErrorMessage(err, 'Merge failed'), 'error');
+    }
+  }, [aisleId, aislesQuery, inventoryId, mergeMutation, refetch, showSnackbar]);
 
   if (!inventoryId || !aisleId) {
     return (
@@ -179,6 +198,16 @@ export default function AislePositionsPage() {
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? 'Loading…' : '—')}
         actions={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
+            {canRunMerge ? (
+              <Button
+                size="small"
+                variant="contained"
+                onClick={() => void handleRunMerge()}
+                disabled={mergeMutation.isPending}
+              >
+                {mergeMutation.isPending ? 'Merging…' : 'Merge repeated labels'}
+              </Button>
+            ) : null}
             <Button
               size="small"
               variant="outlined"

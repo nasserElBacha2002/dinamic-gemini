@@ -3,14 +3,28 @@
  */
 
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import AislePositionsPage from '../src/pages/AislePositionsPage';
 import { AppSnackbarProvider } from '../src/components/ui';
 import type { ResultSummary } from '../src/features/results/types';
 import type { PositionSummary } from '../src/api/types';
+
+const { useRunAisleMergeMock } = vi.hoisted(() => ({
+  useRunAisleMergeMock: vi.fn(),
+}));
+const { resultSummariesState } = vi.hoisted(() => ({
+  resultSummariesState: {
+    results: [] as ResultSummary[],
+    positions: [] as PositionSummary[],
+    isLoading: false,
+    isError: false,
+    error: null as unknown,
+    refetch: vi.fn(),
+  },
+}));
 
 const mockPositions: PositionSummary[] = [
   {
@@ -51,12 +65,7 @@ vi.mock('../src/features/results', async (importOriginal) => {
   return {
     ...actual,
     useResultSummaries: () => ({
-      results: mockResults,
-      positions: mockPositions,
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
+      ...resultSummariesState,
     }),
   };
 });
@@ -76,7 +85,9 @@ vi.mock('../src/hooks', async (importOriginal) => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     }),
+    useRunAisleMerge: useRunAisleMergeMock,
   };
 });
 
@@ -99,30 +110,86 @@ function renderPage() {
 }
 
 describe('AislePositionsPage (Aisle Results)', () => {
+  beforeEach(() => {
+    resultSummariesState.results = mockResults;
+    resultSummariesState.positions = mockPositions;
+    resultSummariesState.isLoading = false;
+    resultSummariesState.isError = false;
+    resultSummariesState.error = null;
+    resultSummariesState.refetch = vi.fn();
+    useRunAisleMergeMock.mockReset();
+    useRunAisleMergeMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({
+        operation_mode: 'manual_authoritative',
+        authoritative_quantity_updated: true,
+        raw_count: 3,
+        normalized_count: 1,
+        final_count: 1,
+        product_records_updated: 1,
+      }),
+      isPending: false,
+    });
+  });
+
   it('shows aisle title, inventory context, and workload KPIs', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: 'A-01' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'A-01' })).toBeTruthy();
     expect(screen.getAllByText('Test Inventory').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Total results')).toBeInTheDocument();
-    expect(screen.getByText('Needs review')).toBeInTheDocument();
-    expect(screen.getByText('Invalid traceability')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /missing evidence/i })).toBeInTheDocument();
+    expect(screen.getByText('Counted total')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /needs review/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /invalid traceability/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /missing evidence/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /merge repeated labels/i })).toBeTruthy();
   });
 
   it('shows operational columns including Priority and Review status', () => {
     renderPage();
-    expect(screen.getByRole('columnheader', { name: /priority/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /SKU/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /quantity/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /review status/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /traceability/i })).toBeInTheDocument();
-    expect(screen.getByText('SKU-001')).toBeInTheDocument();
-    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /priority/i })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /SKU/i })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /quantity/i })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /review status/i })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /traceability/i })).toBeTruthy();
+    expect(screen.getByText('SKU-001')).toBeTruthy();
+    expect(screen.getAllByText('5').length).toBeGreaterThan(0);
   });
 
   it('opens review via SKU control without an Actions column', () => {
     renderPage();
-    expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Review SKU-001/i })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /Review SKU-001/i })).toBeTruthy();
+  });
+
+  it('runs manual merge from the header and refreshes the visible results queries', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({
+      operation_mode: 'manual_authoritative',
+      authoritative_quantity_updated: true,
+      raw_count: 3,
+      normalized_count: 1,
+      final_count: 1,
+      product_records_updated: 1,
+    });
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    resultSummariesState.refetch = refetch;
+    useRunAisleMergeMock.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /merge repeated labels/i }));
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith('aisle-1');
+      expect(refetch).toHaveBeenCalled();
+    });
+  });
+
+  it('hides merge action when there are no results to consolidate', () => {
+    resultSummariesState.results = [];
+    resultSummariesState.positions = [];
+
+    renderPage();
+
+    expect(screen.queryByRole('button', { name: /merge repeated labels/i })).toBeNull();
   });
 });

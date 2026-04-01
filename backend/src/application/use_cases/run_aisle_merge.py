@@ -18,7 +18,7 @@ class RunAisleMergeCommand:
 
 
 class RunAisleMergeUseCase:
-    """Execute merge/consolidation as an explicit post-process operation."""
+    """Execute merge/consolidation as an explicit manual post-process operation."""
 
     def __init__(
         self,
@@ -39,12 +39,12 @@ class RunAisleMergeUseCase:
             raise AisleNotFoundError(
                 f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
             )
-        # Merge is intentionally non-authoritative by default.
+        # Manual merge must update the visible results surface after operator action.
         return self._recompute.execute(
             RecomputeConsolidatedCountsCommand(
                 inventory_id=command.inventory_id,
                 aisle_id=command.aisle_id,
-                apply_to_product_records=False,
+                apply_to_product_records=True,
             )
         )
 
