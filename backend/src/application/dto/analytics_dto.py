@@ -3,10 +3,11 @@ Analytics DTOs — Phase 5.1 (v336).
 
 Internal dataclasses for analytics service/repository. API layer maps these to Pydantic responses.
 
-Metric definitions (abbreviated; see service docstrings for formulas):
-- Settling review actions: confirm, update_quantity, update_sku (excludes delete_position).
-- auto_acceptance_rate: confirm / settling actions in period.
-- manual_correction_rate: (update_quantity + update_sku) / settling actions in period.
+Metric definitions (abbreviated; see service helpers / docs for formulas):
+- reviewed terminal actions: confirm, update_quantity, update_sku, mark_unknown (excludes delete_position).
+- auto_acceptance_rate: confirmed terminal outcomes / reviewed positions.
+- manual_correction_rate: (qty_corrected + sku_corrected) / reviewed positions.
+- unknown_rate: unknown terminal outcomes / reviewed positions.
 - invalid_traceability_rate: positions with detected_summary traceability_status='invalid' / non-deleted positions in scope.
 - processing_success_rate: aisle jobs with status succeeded / (succeeded + failed), updated in period.
 - average_review_time_seconds: mean(first settling action time - position.created_at) for positions with such action in period.

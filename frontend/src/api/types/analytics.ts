@@ -65,6 +65,8 @@ export interface AisleIssueRow {
   total_results: number;
   needs_review_count: number;
   corrected_count: number;
+  unknown_count?: number;
+  manual_corrections_count?: number;
   invalid_traceability_count: number;
   low_confidence_count: number;
   most_common_issue: string | null;

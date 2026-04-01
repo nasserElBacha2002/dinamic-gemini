@@ -103,6 +103,8 @@ function sortInventoryRows(
         return row.auto_acceptance_rate ?? null;
       case 'manual_correction':
         return row.manual_correction_rate ?? row.correction_rate;
+      case 'unknown':
+        return row.unknown_rate ?? null;
       case 'invalid_tr':
         return row.invalid_traceability_rate;
       case 'avg_conf':
@@ -171,11 +173,14 @@ export default function MetricsPage() {
     [dateFrom, dateTo, inventoryId, aisleId]
   );
 
-  const { data: invList } = useInventoriesList({ page: 1, page_size: 500, sort_by: 'name', sort_dir: 'asc' });
+  const inventoriesQuery = useInventoriesList({ page: 1, page_size: 200, sort_by: 'name', sort_dir: 'asc' });
+  const invList = inventoriesQuery.data;
   const inventories = invList?.items ?? [];
 
   const aislesQuery = useAislesList(inventoryId || undefined, { enabled: Boolean(inventoryId) });
   const aisles = aislesQuery.data?.items ?? [];
+  const selectedInventory = inventories.find((inv) => inv.id === inventoryId) ?? null;
+  const selectedAisle = aisles.find((aisle) => aisle.id === aisleId) ?? null;
 
   useEffect(() => {
     if (aisleId && !aisles.some((aisle) => aisle.id === aisleId)) {
@@ -241,11 +246,14 @@ export default function MetricsPage() {
     [quality?.items]
   );
   const supportedInterventions = useMemo(
-    () => (manualInterventions?.items ?? []).filter((item) => item.available && (item.count ?? 0) > 0),
+    () =>
+      (manualInterventions?.items ?? []).filter(
+        (item: ManualInterventionCategory) => item.available && (item.count ?? 0) > 0
+      ),
     [manualInterventions?.items]
   );
   const unsupportedInterventions = useMemo(
-    () => (manualInterventions?.items ?? []).filter((item) => !item.available),
+    () => (manualInterventions?.items ?? []).filter((item: ManualInterventionCategory) => !item.available),
     [manualInterventions?.items]
   );
   const hasUnknownRate = summary?.unknown_rate != null;
@@ -298,6 +306,7 @@ export default function MetricsPage() {
               id: 'unknown',
               label: 'Unknown rate',
               align: 'right' as const,
+              sortable: true,
               cell: (r: InventoryPerformanceRow) => formatPct(r.unknown_rate),
             },
           ]
@@ -363,8 +372,14 @@ export default function MetricsPage() {
       },
       { id: 'total', label: 'Positions', align: 'right', cell: (r) => r.total_results },
       { id: 'pending', label: 'Pending review', align: 'right', cell: (r) => r.needs_review_count },
+      { id: 'unknown', label: 'Unknown', align: 'right', cell: (r) => r.unknown_count ?? 0 },
       { id: 'inv_tr', label: 'Invalid traceability', align: 'right', cell: (r) => r.invalid_traceability_count },
-      { id: 'manual_c', label: 'Manual corrections', align: 'right', cell: (r) => r.corrected_count },
+      {
+        id: 'manual_c',
+        label: 'Manual corrections',
+        align: 'right',
+        cell: (r) => r.manual_corrections_count ?? r.corrected_count,
+      },
     ],
     []
   );
@@ -417,8 +432,12 @@ export default function MetricsPage() {
 
   const scopeSummary = summary
     ? {
-        inventories: inventoryId ? 1 : inventories.length,
-        aisles: aisleId ? 1 : inventoryId ? aisles.length : undefined,
+        inventoryLabel: selectedInventory ? selectedInventory.name : 'All inventories in scope',
+        aisleLabel: selectedAisle
+          ? selectedAisle.code
+          : inventoryId
+            ? 'All aisles in the selected inventory'
+            : 'All aisles in scope',
         positions: summary.total_positions_in_scope ?? summary.positions_in_scope,
       }
     : null;
@@ -474,7 +493,7 @@ export default function MetricsPage() {
               setAisleId('');
             }}
           >
-            <MenuItem value="">All inventories</MenuItem>
+            <MenuItem value="">All inventories in scope</MenuItem>
             {inventories.map((inv) => (
               <MenuItem key={inv.id} value={inv.id}>
                 {inv.name}
@@ -500,11 +519,17 @@ export default function MetricsPage() {
         </FormControl>
       </FilterToolbar>
 
+      {inventoriesQuery.isError ? (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Failed to load inventory filter options. Global scope is still available.
+        </Alert>
+      ) : null}
+
       {scopeSummary ? (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Inventories in scope: {scopeSummary.inventories}
+          Inventory scope: {scopeSummary.inventoryLabel}
           {' · '}
-          Aisles in scope: {scopeSummary.aisles ?? 'all'}
+          Aisle scope: {scopeSummary.aisleLabel}
           {' · '}
           Positions in scope: {scopeSummary.positions}
         </Typography>
@@ -570,7 +595,7 @@ export default function MetricsPage() {
                   <>
                     <Divider />
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      {unsupportedInterventions.map((item) => (
+                      {unsupportedInterventions.map((item: ManualInterventionCategory) => (
                         <Chip
                           key={item.category}
                           label={`${interventionLabel(item.category)} unavailable`}
@@ -713,7 +738,7 @@ export default function MetricsPage() {
         <Grid item xs={12} md={6}>
           <SectionCard
             title="Aisles requiring attention"
-            subtitle="Secondary compact table for pending review and traceability hotspots."
+            subtitle="Secondary compact table for pending review, unknown outcomes, and correction hotspots."
           >
             <DataTable<AisleIssueRow>
               rows={aisleRowsPaged}

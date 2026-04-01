@@ -1,18 +1,16 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import MetricsPage from '../src/features/analytics/MetricsPage';
 import { ApiError } from '../src/api/types';
 
 const mockUseAnalyticsDashboard = vi.fn();
+const mockUseInventoriesList = vi.fn();
 
 vi.mock('../src/hooks/useInventories', () => ({
-  useInventoriesList: () => ({
-    data: { items: [], page: 1, page_size: 25, total_items: 0, total_pages: 0 },
-    isLoading: false,
-  }),
+  useInventoriesList: (...args: unknown[]) => mockUseInventoriesList(...args),
 }));
 
 vi.mock('../src/hooks/useAisles', () => ({
@@ -125,6 +123,20 @@ function renderMetrics() {
 
 describe('MetricsPage', () => {
   beforeEach(() => {
+    mockUseInventoriesList.mockReturnValue({
+      data: {
+        items: [
+          { id: 'inv-1', name: 'North DC', status: 'active', aisles_count: 2, pending_review_count: 1, last_activity_at: null },
+          { id: 'inv-2', name: 'South DC', status: 'active', aisles_count: 3, pending_review_count: 0, last_activity_at: null },
+        ],
+        page: 1,
+        page_size: 25,
+        total_items: 2,
+        total_pages: 1,
+      },
+      isLoading: false,
+      isError: false,
+    });
     mockUseAnalyticsDashboard.mockReturnValue(dashboardLoaded);
   });
 
@@ -195,5 +207,16 @@ describe('MetricsPage', () => {
   it('does not expose a redundant Actions column on inventory or aisle analytics tables', () => {
     renderMetrics();
     expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).not.toBeInTheDocument();
+  });
+
+  it('renders the global inventory option plus fetched inventory options', () => {
+    renderMetrics();
+    const select = screen.getByLabelText('Inventory');
+    fireEvent.mouseDown(select);
+
+    const listbox = screen.getByRole('listbox');
+    expect(within(listbox).getByText('All inventories in scope')).toBeInTheDocument();
+    expect(within(listbox).getByText('North DC')).toBeInTheDocument();
+    expect(within(listbox).getByText('South DC')).toBeInTheDocument();
   });
 });
