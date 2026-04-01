@@ -164,6 +164,62 @@ def test_export_positions_within_aisle_natural_sort_by_position_code() -> None:
     assert [r["position_id"] for r in rows] == ["p-early", "p-late"]
 
 
+def test_export_csv_sorting_is_type_safe_for_mixed_position_codes() -> None:
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle("a1", "inv-1", "B1", AisleStatus.COMPLETED, NOW, NOW)
+    positions = [
+        Position(
+            id="p-10",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "SKU-10", "final_quantity": 1, "pallet_id": "10"},
+        ),
+        Position(
+            id="p-a1",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "SKU-A1", "final_quantity": 1, "pallet_id": "A1"},
+        ),
+        Position(
+            id="p-2",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "SKU-2", "final_quantity": 1, "position_barcode": "2"},
+        ),
+        Position(
+            id="p-b2",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "SKU-B2", "final_quantity": 1, "entity_uid": "B2"},
+        ),
+    ]
+    uc = _uc(inv=inv, aisles=[aisle], positions=positions)
+
+    _, rows = _parse_csv(uc.execute_csv("inv-1"))
+
+    assert [r["position_id"] for r in rows] == ["p-2", "p-10", "p-a1", "p-b2"]
+
+
 def test_export_final_quantity_prefers_corrected() -> None:
     inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
     aisle = Aisle("a1", "inv-1", "B1", AisleStatus.COMPLETED, NOW, NOW)

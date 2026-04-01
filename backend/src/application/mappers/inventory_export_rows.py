@@ -7,15 +7,17 @@ public contract (`product` / `quantity` / `traceability`) without depending on H
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.application.mappers.position_canonical_view import build_position_canonical_view
-from src.application.utils.natural_sort import natural_sort_key_parts
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
+
+_DIGIT_CHUNKS = re.compile(r"(\d+)")
 
 
 def _summary_dict(p: Position) -> Dict[str, Any]:
@@ -32,14 +34,55 @@ def export_position_code(p: Position) -> str:
     return p.id
 
 
+def _safe_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate and re.fullmatch(r"[+-]?\d+", candidate):
+            return int(candidate)
+    return None
+
+
+def _safe_str(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _natural_text_sort_key(text: str) -> Tuple[Tuple[int, int, str], ...]:
+    normalized = _safe_str(text).lower()
+    if not normalized:
+        return ()
+    parts: List[Tuple[int, int, str]] = []
+    for chunk in _DIGIT_CHUNKS.split(normalized):
+        if not chunk:
+            continue
+        if chunk.isdigit():
+            parts.append((0, int(chunk), ""))
+        else:
+            parts.append((1, 0, chunk))
+    return tuple(parts)
+
+
+def _field_sort_key(value: Any) -> Tuple[int, int, int, Tuple[Tuple[int, int, str], ...]]:
+    text = _safe_str(value)
+    if not text:
+        return (1, 1, 0, ())
+    numeric = _safe_int(value)
+    if numeric is not None:
+        return (0, 0, numeric, ())
+    return (0, 1, 0, _natural_text_sort_key(text))
+
+
 def export_position_sort_key(p: Position) -> tuple:
-    """Deterministic ordering within an aisle after consolidation."""
+    """Deterministic, type-safe ordering within an aisle after consolidation."""
     j = _summary_dict(p)
-    internal = j.get("internal_code")
-    internal_s = internal.strip() if isinstance(internal, str) else ""
     return (
-        natural_sort_key_parts(export_position_code(p)),
-        natural_sort_key_parts(internal_s),
+        *_field_sort_key(export_position_code(p)),
+        *_field_sort_key(j.get("internal_code")),
         p.created_at,
         p.id,
     )
