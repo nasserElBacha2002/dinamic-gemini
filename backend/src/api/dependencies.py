@@ -455,6 +455,8 @@ def get_get_position_detail_use_case(
     evidence_repo: EvidenceRepository = Depends(get_evidence_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
 ) -> GetPositionDetailUseCase:
+    from src.config import load_settings
+
     return GetPositionDetailUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
@@ -462,6 +464,7 @@ def get_get_position_detail_use_case(
         product_record_repo=product_record_repo,
         evidence_repo=evidence_repo,
         review_repo=review_repo,
+        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
     )
 
 

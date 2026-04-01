@@ -217,6 +217,35 @@ def test_get_position_detail_recomputed_shows_consolidated_quantity() -> None:
         app.dependency_overrides.clear()
 
 
+def test_get_position_detail_group_member_resolves_to_representative_current_state() -> None:
+    repos = _seed_repos_duplicate_aisle()
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
+    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
+    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
+    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
+    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
+    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
+    try:
+        client = TestClient(app)
+        list_resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions")
+        assert list_resp.status_code == 200
+        list_row = list_resp.json()["positions"][0]
+
+        resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions/pos-e2e-2")
+        assert resp.status_code == 200
+        pos = resp.json()["position"]
+
+        assert pos["id"] == list_row["id"]
+        assert pos["sku"] == list_row["sku"]
+        assert pos["qty"] == list_row["qty"]
+        assert pos["qtySource"] == list_row["qtySource"]
+        assert pos["quantity"]["final"] == list_row["quantity"]["final"]
+        assert pos["product"]["sku"] == list_row["product"]["sku"]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def _seed_repos_normal_aisle() -> dict:
     """Seed: 1 raw → 1 normalized → 1 final. No duplicates. API must show qty=1."""
     now = datetime.now(timezone.utc)
