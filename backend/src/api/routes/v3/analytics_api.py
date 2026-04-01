@@ -82,8 +82,10 @@ def analytics_summary(
 ) -> AnalyticsSummaryResponse:
     """Return additive operational KPIs for the analytics dashboard.
 
-    ``unknown_*`` fields are populated only from the explicit persisted terminal operator outcome.
-    Historical rows with ``review_resolution = NULL`` are left out of unknown counts in this phase.
+    ``operator_marked_unknown_*`` fields are populated only from the explicit persisted terminal
+    operator outcome. ``unidentified_product_*`` fields are driven by the display-primary product
+    row having ``sku='UNKNOWN'``. Historical rows with ``review_resolution = NULL`` are left out of
+    operator-marked unknown counts in this phase.
     ``invalid`` remains separate and is still derived only from traceability/state metrics, not from
     a dedicated terminal review outcome.
     """
@@ -93,6 +95,10 @@ def analytics_summary(
     return AnalyticsSummaryResponse(
         auto_acceptance_rate=d.auto_acceptance_rate,
         manual_correction_rate=d.manual_correction_rate,
+        operator_marked_unknown_rate=d.operator_marked_unknown_rate,
+        operator_marked_unknown_count=d.operator_marked_unknown_count,
+        unidentified_product_rate=d.unidentified_product_rate,
+        unidentified_product_count=d.unidentified_product_count,
         unknown_rate=d.unknown_rate,
         unknown_count=d.unknown_count,
         invalid_traceability_rate=d.invalid_traceability_rate,
@@ -169,6 +175,8 @@ def analytics_inventories(
                 correction_rate=r.correction_rate,
                 auto_acceptance_rate=r.auto_acceptance_rate,
                 manual_correction_rate=r.manual_correction_rate,
+                operator_marked_unknown_rate=r.operator_marked_unknown_rate,
+                unidentified_product_rate=r.unidentified_product_rate,
                 unknown_rate=r.unknown_rate,
                 invalid_traceability_rate=r.invalid_traceability_rate,
                 avg_confidence=r.avg_confidence,
@@ -202,6 +210,8 @@ def analytics_aisles(
                 total_results=r.total_results,
                 needs_review_count=r.needs_review_count,
                 corrected_count=r.corrected_count,
+                operator_marked_unknown_count=r.operator_marked_unknown_count,
+                unidentified_product_count=r.unidentified_product_count,
                 unknown_count=r.unknown_count,
                 manual_corrections_count=r.manual_corrections_count,
                 invalid_traceability_count=r.invalid_traceability_count,
@@ -249,10 +259,10 @@ def analytics_manual_interventions(
 ) -> ManualInterventionBreakdownResponse:
     """Return current persisted manual intervention categories for the analytics scope.
 
-    Date filters apply to review action timestamps. Unknown is exposed only when backed by the
-    explicit persisted terminal review model. Invalid remains unavailable until persisted
-    separately from delete_position. Historical rows with ``review_resolution = NULL`` are not
-    heuristically backfilled into unknown.
+    Date filters apply to review action timestamps. Operator-marked unknown is exposed only when
+    backed by the explicit persisted terminal review model. Invalid remains unavailable until
+    persisted separately from delete_position. Historical rows with ``review_resolution = NULL``
+    are not heuristically backfilled into operator-marked unknown.
     """
     f = _filters(date_from, date_to, inventory_id, aisle_id)
     _validate_analytics_scope(f, aisle_repo)

@@ -3,6 +3,10 @@
 export interface AnalyticsSummaryResponse {
   auto_acceptance_rate: number | null;
   manual_correction_rate: number | null;
+  operator_marked_unknown_rate?: number | null;
+  operator_marked_unknown_count?: number | null;
+  unidentified_product_rate?: number | null;
+  unidentified_product_count?: number | null;
   invalid_traceability_rate: number | null;
   processing_success_rate: number | null;
   average_review_time_seconds: number | null;
@@ -46,6 +50,8 @@ export interface InventoryPerformanceRow {
   correction_rate: number | null;
   auto_acceptance_rate?: number | null;
   manual_correction_rate?: number | null;
+  operator_marked_unknown_rate?: number | null;
+  unidentified_product_rate?: number | null;
   invalid_traceability_rate: number | null;
   avg_confidence: number | null;
   processing_success_rate: number | null;
@@ -65,6 +71,8 @@ export interface AisleIssueRow {
   total_results: number;
   needs_review_count: number;
   corrected_count: number;
+  operator_marked_unknown_count?: number;
+  unidentified_product_count?: number;
   unknown_count?: number;
   manual_corrections_count?: number;
   invalid_traceability_count: number;

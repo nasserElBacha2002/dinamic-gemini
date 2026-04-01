@@ -25,6 +25,7 @@ class PositionReviewResolution(str, Enum):
     This is distinct from:
     - ``status``: operational lifecycle bucket for the position row
     - quantity provenance such as ``qty_source="unknown"``
+    - product-identification issues such as a display-primary product row with ``sku="UNKNOWN"``
     - pending review (represented by ``None`` while no terminal operator decision exists)
     """
 

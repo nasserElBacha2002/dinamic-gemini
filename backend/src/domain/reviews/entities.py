@@ -1,7 +1,8 @@
 """
 ReviewAction domain entity — v3.0 (Documento técnico §7.7).
 
-Manual review action on a position: confirm, update_quantity, update_sku, mark_unknown, delete_position.
+Manual review action on a position: confirm, update_quantity, update_sku,
+mark_unknown (operator-marked unknown), delete_position.
 """
 
 from __future__ import annotations

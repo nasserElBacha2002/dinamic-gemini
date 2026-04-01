@@ -52,6 +52,10 @@ def _unknown_resolution_expr(alias: str = "p") -> str:
     return f"{alias}.review_resolution = N'unknown'"
 
 
+def _unidentified_product_expr(primary_alias: str = "pr_primary") -> str:
+    return f"UPPER(LTRIM(RTRIM(ISNULL({primary_alias}.sku, N'')))) = N'UNKNOWN'"
+
+
 def _append_inventory_aisle_filters(
     conditions: List[str],
     params: List[Any],
@@ -114,12 +118,12 @@ def _canonical_quantity_expr(alias: str = "p", primary_alias: str = "pr_primary"
 
 def _issue_bucket_expr(alias: str = "p") -> str:
     tr = _traceability_invalid_expr(alias)
-    unk = _unknown_resolution_expr(alias)
+    unidentified = _unidentified_product_expr("pr_primary")
     thr = float(LOW_CONFIDENCE_THRESHOLD)
     qty_expr = _canonical_quantity_expr(alias, "pr_primary")
     return f"""
     CASE
-      WHEN {unk} THEN N'unknown'
+      WHEN {unidentified} THEN N'unidentified_product'
       WHEN {tr} THEN N'invalid_traceability'
       WHEN {alias}.primary_evidence_id IS NULL
         OR LTRIM(RTRIM(CAST({alias}.primary_evidence_id AS NVARCHAR(64)))) = N'' THEN N'missing_evidence'
@@ -159,9 +163,16 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             SELECT
               COUNT(*) AS total_positions,
               SUM({processed_expr}) AS processed_positions,
-              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS unknown_n,
+              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS operator_marked_unknown_n,
+              SUM(CASE WHEN {_unidentified_product_expr('pr_primary')} THEN 1 ELSE 0 END) AS unidentified_product_n,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_n
             FROM positions p
+            OUTER APPLY (
+              SELECT TOP 1 pr.id, pr.sku
+              FROM product_records pr
+              WHERE pr.position_id = p.id
+              ORDER BY pr.created_at ASC, pr.id ASC
+            ) pr_primary
             INNER JOIN aisles a ON a.id = p.aisle_id
             INNER JOIN inventories i ON i.id = a.inventory_id
             WHERE {where_pos}
@@ -224,7 +235,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         positions_in_scope = 0
         processed_positions_count = 0
         invalid_n = 0
-        unknown_n = 0
+        operator_marked_unknown_n = 0
+        unidentified_product_n = 0
         reviewed_positions_count = 0
         auto_accepted_positions_count = 0
         manually_corrected_positions_count = 0
@@ -236,7 +248,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             row = cur.fetchone()
             positions_in_scope = int(getattr(row, "total_positions", 0) or 0)
             processed_positions_count = int(getattr(row, "processed_positions", 0) or 0)
-            unknown_n = int(getattr(row, "unknown_n", 0) or 0)
+            operator_marked_unknown_n = int(getattr(row, "operator_marked_unknown_n", 0) or 0)
+            unidentified_product_n = int(getattr(row, "unidentified_product_n", 0) or 0)
             invalid_n = int(getattr(row, "invalid_n", 0) or 0)
 
             cur.execute(sql_reviews, rev_params)
@@ -275,7 +288,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 reviewed_positions_count=reviewed_positions_count,
                 auto_accepted_positions_count=auto_accepted_positions_count,
                 manually_corrected_positions_count=manually_corrected_positions_count,
-                unknown_positions_count=unknown_positions_count,
+                operator_marked_unknown_positions_count=unknown_positions_count,
+                unidentified_product_positions_count=unidentified_product_n,
                 invalid_traceability_positions_count=invalid_n,
                 processing_success_rate=proc_success,
                 average_review_time_seconds=avg_sec,
@@ -454,9 +468,16 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               COUNT(*) AS total_positions,
               SUM({processed_expr}) AS processed_positions,
               AVG(CAST(p.confidence AS float)) AS avg_confidence,
-              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS unknown_n,
+              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS operator_marked_unknown_n,
+              SUM(CASE WHEN {_unidentified_product_expr('pr_primary')} THEN 1 ELSE 0 END) AS unidentified_product_n,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_n
             FROM positions p
+            OUTER APPLY (
+              SELECT TOP 1 pr.id, pr.sku
+              FROM product_records pr
+              WHERE pr.position_id = p.id
+              ORDER BY pr.created_at ASC, pr.id ASC
+            ) pr_primary
             INNER JOIN aisles a ON a.id = p.aisle_id
             INNER JOIN inventories i ON i.id = a.inventory_id
             WHERE {where_scope}
@@ -488,7 +509,10 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         reviewed_positions_count=review_counts[0],
                         auto_accepted_positions_count=review_counts[1],
                         manually_corrected_positions_count=review_counts[2],
-                        unknown_positions_count=review_counts[3],
+                        operator_marked_unknown_positions_count=review_counts[3],
+                        unidentified_product_positions_count=int(
+                            getattr(row, "unidentified_product_n", 0) or 0
+                        ),
                         invalid_traceability_positions_count=invalid_n,
                         avg_confidence=float(avg_c) if avg_c is not None else None,
                         processing_success_rate=proc,
@@ -511,6 +535,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         correction_rate=metric_rates["correction_rate"],
                         auto_acceptance_rate=metric_rates["auto_acceptance_rate"],
                         manual_correction_rate=metric_rates["manual_correction_rate"],
+                        operator_marked_unknown_rate=metric_rates["operator_marked_unknown_rate"],
+                        unidentified_product_rate=metric_rates["unidentified_product_rate"],
                         unknown_rate=metric_rates["unknown_rate"],
                         invalid_traceability_rate=metric_rates["invalid_traceability_rate"],
                         avg_confidence=metric_rates["avg_confidence"],
@@ -614,11 +640,12 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               COUNT(*) AS total_results,
               SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END) AS needs_review_count,
               SUM(CASE WHEN p.status = N'corrected' THEN 1 ELSE 0 END) AS corrected_count,
-              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS unknown_count,
+              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS operator_marked_unknown_count,
+              SUM(CASE WHEN {_unidentified_product_expr('pr_primary')} THEN 1 ELSE 0 END) AS unidentified_product_count,
               SUM(CASE WHEN p.review_resolution IN (N'qty_corrected', N'sku_corrected') THEN 1 ELSE 0 END) AS manual_corrections_count,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_traceability_count,
               SUM(CASE WHEN p.confidence < CAST({low_thr} AS float) THEN 1 ELSE 0 END) AS low_confidence_count,
-              SUM(CASE WHEN ({bucket}) = N'unknown' THEN 1 ELSE 0 END) AS iss_unknown,
+              SUM(CASE WHEN ({bucket}) = N'unidentified_product' THEN 1 ELSE 0 END) AS iss_unidentified_product,
               SUM(CASE WHEN ({bucket}) = N'invalid_traceability' THEN 1 ELSE 0 END) AS iss_invalid,
               SUM(CASE WHEN ({bucket}) = N'missing_evidence' THEN 1 ELSE 0 END) AS iss_missing,
               SUM(CASE WHEN ({bucket}) = N'quantity_zero' THEN 1 ELSE 0 END) AS iss_qty0,
@@ -626,7 +653,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               SUM(CASE WHEN ({bucket}) = N'pending_review' THEN 1 ELSE 0 END) AS iss_pending
             FROM positions p
             OUTER APPLY (
-              SELECT TOP 1 pr.id, pr.detected_quantity, pr.corrected_quantity
+              SELECT TOP 1 pr.id, pr.sku, pr.detected_quantity, pr.corrected_quantity
               FROM product_records pr
               WHERE pr.position_id = p.id
               ORDER BY pr.created_at ASC, pr.id ASC
@@ -638,7 +665,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             ORDER BY (SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END)) DESC, total_results DESC
         """
         labels = [
-            ("iss_unknown", "Unknown"),
+            ("iss_unidentified_product", "Unidentified product"),
             ("iss_invalid", "Invalid traceability"),
             ("iss_missing", "Missing evidence"),
             ("iss_qty0", "Zero quantity"),
@@ -668,7 +695,15 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         total_results=int(getattr(row, "total_results", 0) or 0),
                         needs_review_count=int(getattr(row, "needs_review_count", 0) or 0),
                         corrected_count=int(getattr(row, "corrected_count", 0) or 0),
-                        unknown_count=int(getattr(row, "unknown_count", 0) or 0),
+                        operator_marked_unknown_count=int(
+                            getattr(row, "operator_marked_unknown_count", 0) or 0
+                        ),
+                        unidentified_product_count=int(
+                            getattr(row, "unidentified_product_count", 0) or 0
+                        ),
+                        unknown_count=int(
+                            getattr(row, "operator_marked_unknown_count", 0) or 0
+                        ),
                         manual_corrections_count=int(getattr(row, "manual_corrections_count", 0) or 0),
                         invalid_traceability_count=int(getattr(row, "invalid_traceability_count", 0) or 0),
                         low_confidence_count=int(getattr(row, "low_confidence_count", 0) or 0),
@@ -690,7 +725,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 SELECT {bucket_sql} AS bucket
                 FROM positions p
                 OUTER APPLY (
-                  SELECT TOP 1 pr.id, pr.detected_quantity, pr.corrected_quantity
+                  SELECT TOP 1 pr.id, pr.sku, pr.detected_quantity, pr.corrected_quantity
                   FROM product_records pr
                   WHERE pr.position_id = p.id
                   ORDER BY pr.created_at ASC, pr.id ASC
@@ -702,7 +737,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             GROUP BY bucket
         """
         display = {
-            "unknown": "Unknown",
+            "unidentified_product": "Unidentified product",
             "invalid_traceability": "Invalid traceability",
             "missing_evidence": "Missing evidence",
             "quantity_zero": "Zero quantity in summary",
@@ -712,7 +747,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         }
         thr_note = f"confidence < {LOW_CONFIDENCE_THRESHOLD} (LOW_CONFIDENCE_THRESHOLD)"
         notes = {
-            "unknown": "Final operator-facing review resolution persisted as unknown",
+            "unidentified_product": "Display-primary product SKU is persisted as UNKNOWN",
             "invalid_traceability": "traceability_status=invalid in canonical traceability source",
             "missing_evidence": "No primary evidence id",
             "quantity_zero": "Canonical final quantity resolved as 0 (product record when available; aggregated rows may fall back to snapshot)",
@@ -790,7 +825,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         confirmed_count = int(getattr(row, "confirmed_count", 0) or 0)
         qty_corrected_count = int(getattr(row, "qty_corrected_count", 0) or 0)
         sku_corrected_count = int(getattr(row, "sku_corrected_count", 0) or 0)
-        unknown_count = int(getattr(row, "unknown_count", 0) or 0)
+        operator_marked_unknown_count = int(getattr(row, "unknown_count", 0) or 0)
         deleted_count = int(getattr(row, "deleted_count", 0) or 0)
 
         return ManualInterventionBreakdownDTO(
@@ -820,9 +855,9 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                     notes="Current persisted review model does not distinguish invalid from delete_position.",
                 ),
                 ManualInterventionCategoryDTO(
-                    category="unknown",
-                    count=unknown_count,
-                    percentage=pct(unknown_count),
+                    category="operator_marked_unknown",
+                    count=operator_marked_unknown_count,
+                    percentage=pct(operator_marked_unknown_count),
                     available=True,
                 ),
                 ManualInterventionCategoryDTO(

@@ -103,8 +103,8 @@ function sortInventoryRows(
         return row.auto_acceptance_rate ?? null;
       case 'manual_correction':
         return row.manual_correction_rate ?? row.correction_rate;
-      case 'unknown':
-        return row.unknown_rate ?? null;
+      case 'unidentified_product':
+        return row.unidentified_product_rate ?? null;
       case 'invalid_tr':
         return row.invalid_traceability_rate;
       case 'avg_conf':
@@ -127,7 +127,7 @@ function sortInventoryRows(
 
 function qualityPriority(label: string): number {
   const normalized = label.trim().toLowerCase();
-  if (normalized === 'unknown') return 0;
+  if (normalized === 'unidentified product') return 0;
   if (normalized === 'pending review') return 1;
   if (normalized === 'invalid traceability') return 2;
   if (normalized === 'missing evidence') return 3;
@@ -147,8 +147,8 @@ function interventionLabel(category: string): string {
       return 'SKU corrected';
     case 'invalid':
       return 'Invalid';
-    case 'unknown':
-      return 'Unknown';
+    case 'operator_marked_unknown':
+      return 'Operator-marked unknown';
     case 'deleted':
       return 'Deleted';
     default:
@@ -158,7 +158,7 @@ function interventionLabel(category: string): string {
 
 function interventionPriority(category: string): number {
   switch (category) {
-    case 'unknown':
+    case 'operator_marked_unknown':
       return 0;
     case 'qty_corrected':
       return 1;
@@ -177,7 +177,7 @@ function interventionPriority(category: string): number {
 
 function interventionColor(category: string): string {
   switch (category) {
-    case 'unknown':
+    case 'operator_marked_unknown':
       return 'warning.main';
     case 'qty_corrected':
     case 'sku_corrected':
@@ -263,11 +263,11 @@ export default function MetricsPage() {
       [...(aisleIssues?.items ?? [])].sort(
         (left, right) =>
           (numberOrZero(right.needs_review_count) +
-            numberOrZero(right.unknown_count) +
+            numberOrZero(right.unidentified_product_count ?? right.unknown_count) +
             numberOrZero(right.manual_corrections_count ?? right.corrected_count) +
             numberOrZero(right.invalid_traceability_count)) -
             (numberOrZero(left.needs_review_count) +
-              numberOrZero(left.unknown_count) +
+              numberOrZero(left.unidentified_product_count ?? left.unknown_count) +
               numberOrZero(left.manual_corrections_count ?? left.corrected_count) +
               numberOrZero(left.invalid_traceability_count)) ||
           numberOrZero(right.needs_review_count) - numberOrZero(left.needs_review_count) ||
@@ -322,8 +322,8 @@ export default function MetricsPage() {
     () => (aisleIssues?.items ?? []).reduce((sum, row) => sum + numberOrZero(row.needs_review_count), 0),
     [aisleIssues?.items]
   );
-  const hasUnknownRate = summary?.unknown_rate != null;
-  const unknownPositionsCount = summary?.unknown_count ?? 0;
+  const hasUnidentifiedProductRate = summary?.unidentified_product_rate != null;
+  const operatorMarkedUnknownCount = summary?.operator_marked_unknown_count ?? summary?.unknown_count ?? 0;
   const totalPositionsCount = summary?.total_positions_in_scope ?? summary?.positions_in_scope ?? 0;
   const processedPositionsCount = summary?.processed_positions_count ?? 0;
   const reviewedPositionsCount = summary?.reviewed_positions_count ?? 0;
@@ -354,12 +354,12 @@ export default function MetricsPage() {
       value: interventionPositionsCount,
       helper: 'Positions touched by an operator action',
     },
-    ...(hasUnknownRate
+    ...((summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null
       ? [
           {
-            label: 'Unknown',
-            value: unknownPositionsCount,
-            helper: 'Explicit terminal unknown resolutions only',
+            label: 'Operator-marked unknown',
+            value: operatorMarkedUnknownCount,
+            helper: 'Explicit terminal unknown outcomes from the review flow',
           },
         ]
       : []),
@@ -407,14 +407,14 @@ export default function MetricsPage() {
         sortable: true,
         cell: (r) => formatPct(r.manual_correction_rate ?? r.correction_rate),
       },
-      ...(hasUnknownRate
+      ...(hasUnidentifiedProductRate
         ? [
             {
-              id: 'unknown',
-              label: 'Unknown rate',
+              id: 'unidentified_product',
+              label: 'Unidentified product rate',
               align: 'right' as const,
               sortable: true,
-              cell: (r: InventoryPerformanceRow) => formatPct(r.unknown_rate),
+              cell: (r: InventoryPerformanceRow) => formatPct(r.unidentified_product_rate),
             },
           ]
         : []),
@@ -447,7 +447,7 @@ export default function MetricsPage() {
         cell: (r) => formatPct(r.processing_success_rate),
       },
     ],
-    [hasUnknownRate]
+    [hasUnidentifiedProductRate]
   );
 
   const aisleColumns = useMemo<DataTableColumn<AisleIssueRow>[]>(
@@ -479,7 +479,12 @@ export default function MetricsPage() {
       },
       { id: 'total', label: 'Positions', align: 'right', cell: (r) => r.total_results },
       { id: 'pending', label: 'Pending review', align: 'right', cell: (r) => r.needs_review_count },
-      { id: 'unknown', label: 'Unknown', align: 'right', cell: (r) => r.unknown_count ?? 0 },
+      {
+        id: 'unidentified_product',
+        label: 'Unidentified product',
+        align: 'right',
+        cell: (r) => r.unidentified_product_count ?? 0,
+      },
       { id: 'inv_tr', label: 'Invalid traceability', align: 'right', cell: (r) => r.invalid_traceability_count },
       {
         id: 'manual_c',
@@ -506,15 +511,15 @@ export default function MetricsPage() {
         ? `${Math.round((summary.manual_correction_rate ?? 0) * summary.reviewed_positions_count)} of ${summary.reviewed_positions_count} reviewed positions`
         : 'SKU or quantity corrections among reviewed positions',
     },
-    ...(hasUnknownRate
+    ...(hasUnidentifiedProductRate
       ? [
           {
-            label: 'Unknown rate',
-            value: formatPct(summary?.unknown_rate),
+            label: 'Unidentified product rate',
+            value: formatPct(summary?.unidentified_product_rate),
             description:
-              summary?.unknown_count != null && summary?.reviewed_positions_count
-                ? `${summary.unknown_count} of ${summary.reviewed_positions_count} reviewed positions`
-                : 'Final unknown resolutions in scope',
+              summary?.unidentified_product_count != null && summary?.total_positions_in_scope
+                ? `${summary.unidentified_product_count} of ${summary.total_positions_in_scope} positions in scope`
+                : 'Positions whose display-primary product remains UNKNOWN',
           },
         ]
       : []),
@@ -644,7 +649,7 @@ export default function MetricsPage() {
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         {isLoading && !summary
-          ? Array.from({ length: hasUnknownRate ? 6 : 5 }).map((_, i) => (
+          ? Array.from({ length: hasUnidentifiedProductRate ? 6 : 5 }).map((_, i) => (
               <Grid item xs={12} sm={6} md={4} key={`sk-${i}`}>
                 <Skeleton variant="rounded" height={100} />
               </Grid>
@@ -666,7 +671,7 @@ export default function MetricsPage() {
         <Grid item xs={12} md={6}>
           <SectionCard
             title="Manual intervention breakdown"
-            subtitle="Persisted operator outcomes, with counts and percentages against reviewed positions."
+            subtitle="Persisted operator outcomes, including operator-marked unknown, with counts and percentages against reviewed positions."
           >
             {isLoading && !manualInterventions ? (
               <Skeleton variant="rounded" height={220} />
@@ -756,7 +761,7 @@ export default function MetricsPage() {
               <Stack spacing={1.25}>
                 <Grid container spacing={1.5}>
                   {resolutionFlowStages.map((item) => (
-                    <Grid item xs={6} md={hasUnknownRate ? 4 : 3} key={item.label}>
+                    <Grid item xs={6} md={(summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null ? 4 : 3} key={item.label}>
                       <Box
                         sx={{
                           border: 1,
@@ -802,7 +807,11 @@ export default function MetricsPage() {
                           sx={{
                             height: '100%',
                             width: `${totalPositionsCount > 0 ? Math.min(100, (item.value / totalPositionsCount) * 100) : 0}%`,
-                            bgcolor: index === resolutionFlowStages.length - 1 && hasUnknownRate ? 'warning.main' : 'primary.main',
+                            bgcolor:
+                              index === resolutionFlowStages.length - 1 &&
+                              (summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null
+                                ? 'warning.main'
+                                : 'primary.main',
                           }}
                         />
                       </Box>
@@ -811,7 +820,9 @@ export default function MetricsPage() {
                 </Box>
                 <Typography variant="caption" color="text.secondary">
                   Manual corrections in scope: {manualCorrectionCount}
-                  {hasUnknownRate ? ` · Unknown outcomes: ${unknownPositionsCount}` : ''}
+                  {(summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null
+                    ? ` · Operator-marked unknown outcomes: ${operatorMarkedUnknownCount}`
+                    : ''}
                 </Typography>
               </Stack>
             )}

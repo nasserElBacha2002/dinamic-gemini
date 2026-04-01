@@ -11,6 +11,10 @@ from pydantic import BaseModel, Field
 class AnalyticsSummaryResponse(BaseModel):
     auto_acceptance_rate: Optional[float] = None
     manual_correction_rate: Optional[float] = None
+    operator_marked_unknown_rate: Optional[float] = None
+    operator_marked_unknown_count: int = 0
+    unidentified_product_rate: Optional[float] = None
+    unidentified_product_count: int = 0
     unknown_rate: Optional[float] = None
     unknown_count: int = 0
     invalid_traceability_rate: Optional[float] = None
@@ -54,6 +58,8 @@ class InventoryPerformanceRowResponse(BaseModel):
     correction_rate: Optional[float] = None
     auto_acceptance_rate: Optional[float] = None
     manual_correction_rate: Optional[float] = None
+    operator_marked_unknown_rate: Optional[float] = None
+    unidentified_product_rate: Optional[float] = None
     unknown_rate: Optional[float] = None
     invalid_traceability_rate: Optional[float] = None
     avg_confidence: Optional[float] = None
@@ -73,6 +79,8 @@ class AisleIssueRowResponse(BaseModel):
     total_results: int
     needs_review_count: int
     corrected_count: int
+    operator_marked_unknown_count: int
+    unidentified_product_count: int
     unknown_count: int
     manual_corrections_count: int
     invalid_traceability_count: int

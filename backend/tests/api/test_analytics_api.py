@@ -26,6 +26,10 @@ class _StubAnalyticsService:
         return AnalyticsSummaryDTO(
             auto_acceptance_rate=0.6,
             manual_correction_rate=0.4,
+            operator_marked_unknown_rate=0.2,
+            operator_marked_unknown_count=1,
+            unidentified_product_rate=0.3,
+            unidentified_product_count=3,
             unknown_rate=0.2,
             unknown_count=1,
             invalid_traceability_rate=0.2,
@@ -62,6 +66,8 @@ class _StubAnalyticsService:
                 correction_rate=0.4,
                 auto_acceptance_rate=0.6,
                 manual_correction_rate=0.4,
+                operator_marked_unknown_rate=0.2,
+                unidentified_product_rate=0.3,
                 unknown_rate=0.2,
                 invalid_traceability_rate=0.2,
                 avg_confidence=0.9,
@@ -92,7 +98,7 @@ class _StubAnalyticsService:
                     notes="not available",
                 ),
                 ManualInterventionCategoryDTO(
-                    category="unknown",
+                    category="operator_marked_unknown",
                     count=1,
                     percentage=1 / 6,
                     available=True,
@@ -119,6 +125,10 @@ def test_analytics_summary_response_keeps_legacy_fields_and_adds_phase2_fields()
     assert body["total_positions_in_scope"] == 10
     assert body["processed_positions_count"] == 8
     assert body["reviewed_positions_count"] == 5
+    assert body["operator_marked_unknown_rate"] == 0.2
+    assert body["operator_marked_unknown_count"] == 1
+    assert body["unidentified_product_rate"] == 0.3
+    assert body["unidentified_product_count"] == 3
     assert body["unknown_rate"] == 0.2
     assert body["unknown_count"] == 1
     assert body["average_review_time_seconds"] == 600.0
@@ -145,6 +155,8 @@ def test_analytics_inventory_performance_response_adds_phase2_fields_without_rem
     assert row["processed_count"] == 8
     assert row["correction_rate"] == 0.4
     assert row["manual_correction_rate"] == 0.4
+    assert row["operator_marked_unknown_rate"] == 0.2
+    assert row["unidentified_product_rate"] == 0.3
     assert row["unknown_rate"] == 0.2
     assert row["auto_acceptance_rate"] == 0.6
     assert row["average_review_time_minutes"] == 12.0
@@ -168,6 +180,6 @@ def test_manual_intervention_breakdown_exposes_unknown_and_keeps_invalid_explici
     assert categories["qty_corrected"]["count"] == 1
     assert categories["sku_corrected"]["count"] == 1
     assert categories["deleted"]["count"] == 2
-    assert categories["unknown"]["available"] is True
-    assert categories["unknown"]["count"] == 1
+    assert categories["operator_marked_unknown"]["available"] is True
+    assert categories["operator_marked_unknown"]["count"] == 1
     assert categories["invalid"]["available"] is False

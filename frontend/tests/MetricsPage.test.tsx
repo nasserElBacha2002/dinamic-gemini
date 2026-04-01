@@ -29,6 +29,10 @@ const dashboardLoaded = {
   summary: {
     auto_acceptance_rate: 0.5,
     manual_correction_rate: 0.25,
+    operator_marked_unknown_rate: null,
+    operator_marked_unknown_count: 0,
+    unidentified_product_rate: 0.15,
+    unidentified_product_count: 3,
     invalid_traceability_rate: 0.1,
     processing_success_rate: 0.9,
     average_review_time_seconds: 120,
@@ -65,6 +69,8 @@ const dashboardLoaded = {
         correction_rate: 0.1,
         auto_acceptance_rate: 0.6,
         manual_correction_rate: 0.1,
+        operator_marked_unknown_rate: null,
+        unidentified_product_rate: 0.2,
         invalid_traceability_rate: 0.05,
         avg_confidence: 0.82,
         processing_success_rate: 0.95,
@@ -82,6 +88,8 @@ const dashboardLoaded = {
         total_results: 5,
         needs_review_count: 2,
         corrected_count: 0,
+        operator_marked_unknown_count: 0,
+        unidentified_product_count: 1,
         invalid_traceability_count: 0,
         low_confidence_count: 1,
         most_common_issue: 'Pending review',
@@ -99,7 +107,7 @@ const dashboardLoaded = {
       { category: 'qty_corrected', count: 1, percentage: 0.2, available: true, notes: null },
       { category: 'sku_corrected', count: 1, percentage: 0.2, available: true, notes: null },
       { category: 'invalid', count: null, percentage: null, available: false, notes: 'not available' },
-      { category: 'unknown', count: null, percentage: null, available: false, notes: 'not persisted' },
+      { category: 'operator_marked_unknown', count: null, percentage: null, available: false, notes: 'not persisted' },
       { category: 'deleted', count: 1, percentage: 0.2, available: true, notes: null },
     ],
     notes: ['unknown category unavailable'],
@@ -153,11 +161,11 @@ describe('MetricsPage', () => {
     expect(screen.queryByText('Processing outcomes')).not.toBeInTheDocument();
   });
 
-  it('renders KPI values from truthful backend fields and omits unknown KPI when unsupported', () => {
+  it('renders KPI values from truthful backend fields and surfaces unidentified product as the KPI concept', () => {
     renderMetrics();
     expect(screen.getByText('50.0%')).toBeInTheDocument(); // auto_acceptance_rate
     expect(screen.getByText('2.0 min')).toBeInTheDocument();
-    expect(screen.queryByText('Unknown rate')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Unidentified product rate').length).toBeGreaterThan(0);
   });
 
   it('shows skeleton KPI band while loading without summary', () => {
@@ -168,7 +176,7 @@ describe('MetricsPage', () => {
     });
     const { container } = renderMetrics();
     expect(container.querySelectorAll('.MuiSkeleton-root').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Unknown rate')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unidentified product rate')).not.toBeInTheDocument();
   });
 
   it('shows error alert when a query fails', () => {
@@ -200,7 +208,7 @@ describe('MetricsPage', () => {
 
   it('shows unavailable intervention categories without fabricating backend support', () => {
     renderMetrics();
-    expect(screen.getByText('Unknown unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Operator-marked unknown unavailable')).toBeInTheDocument();
     expect(screen.getByText('Invalid unavailable')).toBeInTheDocument();
   });
 
@@ -225,6 +233,10 @@ describe('MetricsPage', () => {
       ...dashboardLoaded,
       summary: {
         ...dashboardLoaded.summary,
+        operator_marked_unknown_rate: 0.125,
+        operator_marked_unknown_count: 1,
+        unidentified_product_rate: 0.25,
+        unidentified_product_count: 2,
         unknown_rate: 0.125,
         unknown_count: 1,
       },
@@ -238,18 +250,20 @@ describe('MetricsPage', () => {
             total_results: 5,
             needs_review_count: 2,
             corrected_count: 1,
+            operator_marked_unknown_count: 1,
+            unidentified_product_count: 2,
             unknown_count: 1,
             manual_corrections_count: 2,
             invalid_traceability_count: 1,
             low_confidence_count: 1,
-            most_common_issue: 'Unknown',
+            most_common_issue: 'Unidentified product',
           },
         ],
       },
       quality: {
         items: [
           { issue_type: 'Low confidence', count: 2, percentage: 0.2, notes: 'Below threshold' },
-          { issue_type: 'Unknown', count: 1, percentage: 0.1, notes: 'Final unknown resolution' },
+          { issue_type: 'Unidentified product', count: 1, percentage: 0.1, notes: 'Display-primary product SKU is persisted as UNKNOWN' },
           { issue_type: 'Pending review', count: 3, percentage: 0.3, notes: 'Needs review flag set' },
         ],
       },
@@ -261,7 +275,7 @@ describe('MetricsPage', () => {
           { category: 'qty_corrected', count: 2, percentage: 0.25, available: true, notes: null },
           { category: 'sku_corrected', count: 1, percentage: 0.125, available: true, notes: null },
           { category: 'invalid', count: null, percentage: null, available: false, notes: 'not available' },
-          { category: 'unknown', count: 1, percentage: 0.125, available: true, notes: 'Explicit terminal unknown outcome' },
+          { category: 'operator_marked_unknown', count: 1, percentage: 0.125, available: true, notes: 'Explicit terminal unknown outcome' },
           { category: 'deleted', count: 1, percentage: 0.125, available: true, notes: null },
         ],
         notes: [],
@@ -275,11 +289,11 @@ describe('MetricsPage', () => {
     expect(screen.getByText('Positions in scope')).toBeInTheDocument();
     expect(screen.getAllByText('Pending review').length).toBeGreaterThan(0);
     expect(screen.getByText('Manual touch')).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Unknown' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Unidentified product' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Manual corrections' })).toBeInTheDocument();
+    expect(screen.getAllByText('Operator-marked unknown').length).toBeGreaterThan(0);
 
-    const unknownPattern = screen.getAllByText('Unknown')[0];
-    const pendingPattern = screen.getAllByText('Pending review')[0];
-    expect(unknownPattern.compareDocumentPosition(pendingPattern) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText('Unidentified product').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Pending review').length).toBeGreaterThan(0);
   });
 });

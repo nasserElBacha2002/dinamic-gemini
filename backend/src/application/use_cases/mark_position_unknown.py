@@ -2,7 +2,9 @@
 MarkPositionUnknown use case.
 
 Persists an explicit terminal operator resolution that the position outcome is unknown.
-This is distinct from quantity provenance such as ``qty_source="unknown"``.
+This is distinct from:
+- quantity provenance such as ``qty_source="unknown"``
+- product-identification issues such as a primary product row with ``sku="UNKNOWN"``
 """
 
 from __future__ import annotations

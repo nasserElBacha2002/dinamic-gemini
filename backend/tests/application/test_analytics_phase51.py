@@ -146,7 +146,7 @@ def test_aggregate_settling_metrics_counts():
     assert counts.reviewed_positions_count == 1
     assert counts.auto_accepted_positions_count == 0
     assert counts.manually_corrected_positions_count == 1
-    assert counts.unknown_positions_count == 0
+    assert counts.operator_marked_unknown_positions_count == 0
 
 
 def test_day_span():
@@ -233,6 +233,10 @@ def test_memory_summary_rates(memory_analytics_setup):
     assert s.settling_actions_count == 2
     assert s.auto_acceptance_rate == pytest.approx(0.5)
     assert s.manual_correction_rate == pytest.approx(0.5)
+    assert s.operator_marked_unknown_rate == pytest.approx(0.0)
+    assert s.operator_marked_unknown_count == 0
+    assert s.unidentified_product_rate == pytest.approx(0.0)
+    assert s.unidentified_product_count == 0
     assert s.unknown_rate == pytest.approx(0.0)
     assert s.unknown_count == 0
     assert s.invalid_traceability_rate == pytest.approx(0.5)
@@ -289,7 +293,8 @@ def test_summary_builder_preserves_legacy_and_adds_new_scope_fields() -> None:
             reviewed_positions_count=5,
             auto_accepted_positions_count=3,
             manually_corrected_positions_count=2,
-            unknown_positions_count=1,
+            operator_marked_unknown_positions_count=1,
+            unidentified_product_positions_count=2,
             invalid_traceability_positions_count=1,
             processing_success_rate=0.75,
             average_review_time_seconds=600.0,
@@ -307,6 +312,10 @@ def test_summary_builder_preserves_legacy_and_adds_new_scope_fields() -> None:
     assert dto.average_review_time_minutes == 10.0
     assert dto.auto_acceptance_rate == pytest.approx(0.6)
     assert dto.manual_correction_rate == pytest.approx(0.4)
+    assert dto.operator_marked_unknown_rate == pytest.approx(0.2)
+    assert dto.operator_marked_unknown_count == 1
+    assert dto.unidentified_product_rate == pytest.approx(0.2)
+    assert dto.unidentified_product_count == 2
     assert dto.unknown_rate == pytest.approx(0.2)
     assert dto.unknown_count == 1
 
@@ -325,7 +334,7 @@ def test_manual_intervention_breakdown_exposes_unknown_and_keeps_invalid_blocked
     assert breakdown.confirmed_count == 1
     assert breakdown.qty_corrected_count == 1
     assert breakdown.sku_corrected_count == 1
-    assert breakdown.unknown_count == 1
+    assert breakdown.operator_marked_unknown_count == 1
     assert breakdown.deleted_count == 1
     assert breakdown.unknown_available is True
     assert breakdown.invalid_available is False
@@ -341,11 +350,11 @@ def test_review_outcome_counts_use_terminal_unknown_resolution() -> None:
     assert counts.reviewed_positions_count == 3
     assert counts.auto_accepted_positions_count == 1
     assert counts.manually_corrected_positions_count == 1
-    assert counts.unknown_positions_count == 1
+    assert counts.operator_marked_unknown_positions_count == 1
     assert counts.settling_actions_count == 3
 
 
-def test_issue_bucket_prioritizes_persisted_unknown_resolution() -> None:
+def test_issue_bucket_prioritizes_unidentified_product() -> None:
     p = Position(
         id="unknown-pos",
         aisle_id="a",
@@ -358,4 +367,14 @@ def test_issue_bucket_prioritizes_persisted_unknown_resolution() -> None:
         review_resolution=PositionReviewResolution.UNKNOWN,
         detected_summary_json={"traceability_status": "invalid"},
     )
-    assert issue_bucket_for_position(p) == "unknown"
+    primary = ProductRecord(
+        id="prod-unknown",
+        position_id="unknown-pos",
+        sku="UNKNOWN",
+        description="",
+        detected_quantity=1,
+        confidence=0.9,
+        created_at=_utc(),
+        updated_at=_utc(),
+    )
+    assert issue_bucket_for_position(p, primary) == "unidentified_product"

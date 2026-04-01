@@ -48,6 +48,7 @@ from src.application.services.analytics_aggregation_core import (
     active_position,
     is_invalid_traceability,
     is_low_confidence,
+    unidentified_product,
     processed_position,
     review_action_in_period,
     InventoryMetricInputs,
@@ -166,7 +167,10 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 reviewed_positions_count=review_outcomes.reviewed_positions_count,
                 auto_accepted_positions_count=review_outcomes.auto_accepted_positions_count,
                 manually_corrected_positions_count=review_outcomes.manually_corrected_positions_count,
-                unknown_positions_count=review_outcomes.unknown_positions_count,
+                operator_marked_unknown_positions_count=review_outcomes.operator_marked_unknown_positions_count,
+                unidentified_product_positions_count=sum(
+                    1 for pid in active if unidentified_product(primary_by_position.get(pid))
+                ),
                 invalid_traceability_positions_count=invalid_n,
                 processing_success_rate=proc,
                 average_review_time_seconds=avg_sec,
@@ -310,7 +314,10 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     reviewed_positions_count=review_outcomes.reviewed_positions_count,
                     auto_accepted_positions_count=review_outcomes.auto_accepted_positions_count,
                     manually_corrected_positions_count=review_outcomes.manually_corrected_positions_count,
-                    unknown_positions_count=review_outcomes.unknown_positions_count,
+                    operator_marked_unknown_positions_count=review_outcomes.operator_marked_unknown_positions_count,
+                    unidentified_product_positions_count=sum(
+                        1 for p in active_list if unidentified_product(primary_by_position.get(p.id))
+                    ),
                     invalid_traceability_positions_count=invalid_n,
                     avg_confidence=avg_conf,
                     processing_success_rate=proc,
@@ -334,6 +341,8 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     correction_rate=metric_rates["correction_rate"],
                     auto_acceptance_rate=metric_rates["auto_acceptance_rate"],
                     manual_correction_rate=metric_rates["manual_correction_rate"],
+                    operator_marked_unknown_rate=metric_rates["operator_marked_unknown_rate"],
+                    unidentified_product_rate=metric_rates["unidentified_product_rate"],
                     unknown_rate=metric_rates["unknown_rate"],
                     invalid_traceability_rate=metric_rates["invalid_traceability_rate"],
                     avg_confidence=metric_rates["avg_confidence"],
@@ -367,8 +376,11 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             code, inventory_id, inventory_name = meta[aisle_id]
             needs_r = sum(1 for p in plist if p.needs_review)
             corrected_c = sum(1 for p in plist if p.status == PositionStatus.CORRECTED)
-            unknown_c = sum(
+            operator_marked_unknown_c = sum(
                 1 for p in plist if p.review_resolution == PositionReviewResolution.UNKNOWN
+            )
+            unidentified_product_c = sum(
+                1 for p in plist if unidentified_product(primary_by_position.get(p.id))
             )
             manual_corrections_c = sum(
                 1
@@ -398,7 +410,9 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     total_results=len(plist),
                     needs_review_count=needs_r,
                     corrected_count=corrected_c,
-                    unknown_count=unknown_c,
+                    operator_marked_unknown_count=operator_marked_unknown_c,
+                    unidentified_product_count=unidentified_product_c,
+                    unknown_count=operator_marked_unknown_c,
                     manual_corrections_count=manual_corrections_c,
                     invalid_traceability_count=invalid_tr,
                     low_confidence_count=low_conf,
@@ -418,7 +432,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             counts[b] = counts.get(b, 0) + 1
         total = sum(counts.values()) or 0
         display = {
-            "unknown": "Unknown",
+            "unidentified_product": "Unidentified product",
             "invalid_traceability": "Invalid traceability",
             "missing_evidence": "Missing evidence",
             "quantity_zero": "Zero canonical quantity",
@@ -427,7 +441,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             "ok": "No primary issue",
         }
         notes_map = {
-            "unknown": "Final operator-facing review resolution persisted as unknown",
+            "unidentified_product": "Display-primary product SKU is persisted as UNKNOWN",
             "invalid_traceability": "Canonical traceability status resolved as invalid",
             "missing_evidence": "No primary evidence id",
             "quantity_zero": "Canonical final quantity resolved as 0 (product record when available; aggregated rows may fall back to snapshot)",
@@ -489,9 +503,9 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     notes="Current persisted review model does not distinguish invalid from delete_position.",
                 ),
                 ManualInterventionCategoryDTO(
-                    category="unknown",
-                    count=breakdown.unknown_count,
-                    percentage=pct(breakdown.unknown_count),
+                    category="operator_marked_unknown",
+                    count=breakdown.operator_marked_unknown_count,
+                    percentage=pct(breakdown.operator_marked_unknown_count),
                     available=True,
                 ),
                 ManualInterventionCategoryDTO(

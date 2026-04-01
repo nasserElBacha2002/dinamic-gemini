@@ -3,11 +3,12 @@ Analytics DTOs — Phase 5.1 (v336).
 
 Internal dataclasses for analytics service/repository. API layer maps these to Pydantic responses.
 
-Metric definitions (abbreviated; see service helpers / docs for formulas):
+ Metric definitions (abbreviated; see service helpers / docs for formulas):
 - reviewed terminal actions: confirm, update_quantity, update_sku, mark_unknown (excludes delete_position).
 - auto_acceptance_rate: confirmed terminal outcomes / reviewed positions.
 - manual_correction_rate: (qty_corrected + sku_corrected) / reviewed positions.
-- unknown_rate: unknown terminal outcomes / reviewed positions.
+- operator_marked_unknown_rate: operator-marked unknown terminal outcomes / reviewed positions.
+- unidentified_product_rate: positions whose display-primary product SKU is ``UNKNOWN`` / total positions in scope.
 - invalid_traceability_rate: positions with detected_summary traceability_status='invalid' / non-deleted positions in scope.
 - processing_success_rate: aisle jobs with status succeeded / (succeeded + failed), updated in period.
 - average_review_time_seconds: mean(first settling action time - position.created_at) for positions with such action in period.
@@ -33,17 +34,22 @@ class AnalyticsFilters:
 
 @dataclass
 class AnalyticsSummaryDTO:
-    auto_acceptance_rate: Optional[float]
-    manual_correction_rate: Optional[float]
-    # Transitional note: historical rows may still have ``review_resolution=None``.
-    # Unknown metrics count only explicit persisted terminal unknown resolutions.
-    unknown_rate: Optional[float]
-    unknown_count: int
-    invalid_traceability_rate: Optional[float]
-    processing_success_rate: Optional[float]
-    average_review_time_seconds: Optional[float]
-    average_review_time_minutes: Optional[float]
-    settling_actions_per_day: Optional[float]
+    auto_acceptance_rate: Optional[float] = None
+    manual_correction_rate: Optional[float] = None
+    # Explicit review-flow unknown outcome: persisted terminal operator action only.
+    operator_marked_unknown_rate: Optional[float] = None
+    operator_marked_unknown_count: int = 0
+    # Product-identification issue: display-primary product row has ``sku='UNKNOWN'``.
+    unidentified_product_rate: Optional[float] = None
+    unidentified_product_count: int = 0
+    # Deprecated compatibility alias for the former overloaded ``unknown`` name.
+    unknown_rate: Optional[float] = None
+    unknown_count: int = 0
+    invalid_traceability_rate: Optional[float] = None
+    processing_success_rate: Optional[float] = None
+    average_review_time_seconds: Optional[float] = None
+    average_review_time_minutes: Optional[float] = None
+    settling_actions_per_day: Optional[float] = None
     notes: List[str] = field(default_factory=list)
     period_day_count: int = 0
     settling_actions_count: int = 0
@@ -66,23 +72,24 @@ class InventoryPerformanceRowDTO:
     inventory_id: str
     inventory_name: str
     inventory_created_at: datetime
-    total_aisles: int
-    aisles_count: int
-    total_positions: int
-    positions_count: int
-    processed_positions: int
-    processed_count: int
-    review_rate: Optional[float]
-    correction_rate: Optional[float]
-    auto_acceptance_rate: Optional[float]
-    manual_correction_rate: Optional[float]
-    # Additive Phase 4 field. Null historical ``review_resolution`` values are excluded from
-    # unknown counts rather than heuristically backfilled.
-    unknown_rate: Optional[float]
-    invalid_traceability_rate: Optional[float]
-    avg_confidence: Optional[float]
-    processing_success_rate: Optional[float]
-    average_review_time_minutes: Optional[float]
+    total_aisles: int = 0
+    aisles_count: int = 0
+    total_positions: int = 0
+    positions_count: int = 0
+    processed_positions: int = 0
+    processed_count: int = 0
+    review_rate: Optional[float] = None
+    correction_rate: Optional[float] = None
+    auto_acceptance_rate: Optional[float] = None
+    manual_correction_rate: Optional[float] = None
+    operator_marked_unknown_rate: Optional[float] = None
+    unidentified_product_rate: Optional[float] = None
+    # Deprecated compatibility alias for the former overloaded ``unknown`` name.
+    unknown_rate: Optional[float] = None
+    invalid_traceability_rate: Optional[float] = None
+    avg_confidence: Optional[float] = None
+    processing_success_rate: Optional[float] = None
+    average_review_time_minutes: Optional[float] = None
 
 
 @dataclass
@@ -108,16 +115,20 @@ class AisleIssueRowDTO:
     aisle_code: str
     inventory_id: str
     inventory_name: str
-    total_results: int
-    needs_review_count: int
-    corrected_count: int
-    # Additive operational field for explicit persisted unknown terminal outcomes only.
-    unknown_count: int
+    total_results: int = 0
+    needs_review_count: int = 0
+    corrected_count: int = 0
+    # Explicit persisted operator-marked unknown terminal outcomes only.
+    operator_marked_unknown_count: int = 0
+    # Product-identification issue: display-primary product row has ``sku='UNKNOWN'``.
+    unidentified_product_count: int = 0
+    # Deprecated compatibility alias for the former overloaded ``unknown`` name.
+    unknown_count: int = 0
     # Narrow manual correction count: qty + SKU corrections only; excludes unknown/delete/invalid.
-    manual_corrections_count: int
-    invalid_traceability_count: int
-    low_confidence_count: int
-    most_common_issue: Optional[str]
+    manual_corrections_count: int = 0
+    invalid_traceability_count: int = 0
+    low_confidence_count: int = 0
+    most_common_issue: Optional[str] = None
 
 
 @dataclass
