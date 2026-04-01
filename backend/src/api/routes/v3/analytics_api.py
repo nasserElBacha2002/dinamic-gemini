@@ -80,6 +80,13 @@ def analytics_summary(
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> AnalyticsSummaryResponse:
+    """Return additive operational KPIs for the analytics dashboard.
+
+    ``unknown_*`` fields are populated only from the explicit persisted terminal operator outcome.
+    Historical rows with ``review_resolution = NULL`` are left out of unknown counts in this phase.
+    ``invalid`` remains separate and is still derived only from traceability/state metrics, not from
+    a dedicated terminal review outcome.
+    """
     f = _filters(date_from, date_to, inventory_id, aisle_id)
     _validate_analytics_scope(f, aisle_repo)
     d = svc.summary(f)
@@ -243,8 +250,9 @@ def analytics_manual_interventions(
     """Return current persisted manual intervention categories for the analytics scope.
 
     Date filters apply to review action timestamps. Unknown is exposed only when backed by the
-    persisted terminal review resolution model; invalid remains unavailable until persisted
-    separately from delete_position.
+    explicit persisted terminal review model. Invalid remains unavailable until persisted
+    separately from delete_position. Historical rows with ``review_resolution = NULL`` are not
+    heuristically backfilled into unknown.
     """
     f = _filters(date_from, date_to, inventory_id, aisle_id)
     _validate_analytics_scope(f, aisle_repo)

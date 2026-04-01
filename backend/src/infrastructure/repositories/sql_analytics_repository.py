@@ -47,6 +47,8 @@ def _build_scope_sql(prefix: str = "p") -> Tuple[str, List[Any]]:
 
 
 def _unknown_resolution_expr(alias: str = "p") -> str:
+    # Historical rows can remain NULL until touched by the Phase 4 review flow.
+    # Unknown analytics count only explicit persisted unknown terminal resolutions.
     return f"{alias}.review_resolution = N'unknown'"
 
 
@@ -175,7 +177,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               SELECT
                 ra.position_id AS position_id,
                 MAX(CASE WHEN ra.rn = 1 THEN ra.action_type END) AS latest_action_type,
-                SUM(CASE WHEN ra.action_type IN (N'confirm', N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS settling_actions
+                SUM(CASE WHEN ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown') THEN 1 ELSE 0 END) AS settling_actions
               FROM (
                 SELECT
                   ra.position_id,
@@ -212,7 +214,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             INNER JOIN (
               SELECT position_id, MIN(created_at) AS first_ra
               FROM review_actions
-              WHERE action_type IN (N'confirm', N'update_quantity', N'update_sku')
+              WHERE action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown')
               GROUP BY position_id
             ) r ON r.position_id = p.id
             WHERE {lag_where}
@@ -332,7 +334,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         sql_daily_reviews = f"""
             SELECT
               CONVERT(date, ra.created_at) AS d,
-              SUM(CASE WHEN ra.action_type IN (N'confirm', N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS settling,
+              SUM(CASE WHEN ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown') THEN 1 ELSE 0 END) AS settling,
               SUM(CASE WHEN ra.action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknowns,
               SUM(CASE WHEN ra.action_type IN (N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS corrections
             FROM review_actions ra

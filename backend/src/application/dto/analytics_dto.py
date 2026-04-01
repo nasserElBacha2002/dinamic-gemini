@@ -34,6 +34,8 @@ class AnalyticsFilters:
 class AnalyticsSummaryDTO:
     auto_acceptance_rate: Optional[float]
     manual_correction_rate: Optional[float]
+    # Transitional note: historical rows may still have ``review_resolution=None``.
+    # Unknown metrics count only explicit persisted terminal unknown resolutions.
     unknown_rate: Optional[float]
     unknown_count: int
     invalid_traceability_rate: Optional[float]
@@ -73,6 +75,8 @@ class InventoryPerformanceRowDTO:
     correction_rate: Optional[float]
     auto_acceptance_rate: Optional[float]
     manual_correction_rate: Optional[float]
+    # Additive Phase 4 field. Null historical ``review_resolution`` values are excluded from
+    # unknown counts rather than heuristically backfilled.
     unknown_rate: Optional[float]
     invalid_traceability_rate: Optional[float]
     avg_confidence: Optional[float]
@@ -106,7 +110,9 @@ class AisleIssueRowDTO:
     total_results: int
     needs_review_count: int
     corrected_count: int
+    # Additive operational field for explicit persisted unknown terminal outcomes only.
     unknown_count: int
+    # Narrow manual correction count: qty + SKU corrections only; excludes unknown/delete/invalid.
     manual_corrections_count: int
     invalid_traceability_count: int
     low_confidence_count: int

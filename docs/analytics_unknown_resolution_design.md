@@ -35,6 +35,8 @@ Phase 4 persists terminal review outcome in two places:
   - `unknown`
   - `deleted`
 - `NULL` means no terminal operator decision has been persisted yet
+- for historical rows created before the Phase 4 migration, `NULL` is the expected transitional state
+- this phase does not perform any heuristic or inferred backfill of historical `NULL` rows
 
 2. `review_actions.action_type`
 - extended with `mark_unknown`
@@ -125,6 +127,27 @@ Where:
   - `mark_unknown`
 
 `delete_position` remains excluded from that denominator.
+
+## Historical transition behavior
+
+During rollout, older positions can still have `review_resolution = NULL`.
+
+Interpretation:
+- `NULL` means no persisted terminal operator resolution is available on the row
+- it does not imply unknown
+- it does not imply pending review by itself; `needs_review` still carries that operational meaning
+
+Phase 4 analytics behavior for historical rows:
+- `unknown` is counted only when `review_resolution = unknown`
+- `NULL` rows are excluded from unknown counts and unknown rates
+- no heuristic backfill is performed from:
+  - `qty_source="unknown"`
+  - missing evidence
+  - traceability
+  - absent review actions
+
+This keeps the migration truthful and auditable while legacy rows transition naturally as operators
+touch positions through the current review flow.
 
 ## Auditability notes
 
