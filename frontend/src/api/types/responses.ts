@@ -273,6 +273,7 @@ export interface PositionSummary {
   primary_evidence_id?: string | null;
   created_at: string;
   updated_at: string;
+  position_code: string;
   /** @deprecated Legacy raw technical snapshot. Active frontend flows should use `technical_snapshot` instead and not rely on this field. */
   detected_summary_json?: Record<string, unknown> | null;
   /** Sprint 2 — prefer nested blocks when present; flat fields below remain for backward compatibility. */

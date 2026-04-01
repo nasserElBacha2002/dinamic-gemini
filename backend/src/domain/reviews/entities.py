@@ -17,6 +17,7 @@ class ReviewActionType(str, Enum):
     CONFIRM = "confirm"
     UPDATE_QUANTITY = "update_quantity"
     UPDATE_SKU = "update_sku"
+    UPDATE_POSITION_CODE = "update_position_code"
     MARK_UNKNOWN = "mark_unknown"
     DELETE_POSITION = "delete_position"
 

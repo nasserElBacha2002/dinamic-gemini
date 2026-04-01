@@ -105,6 +105,11 @@ export default function ResultsTable({
         },
       },
       {
+        id: 'position_code',
+        label: 'Position code',
+        cell: (r) => (r.positionCode != null && r.positionCode.trim() !== '' ? r.positionCode : '—'),
+      },
+      {
         id: 'qty',
         label: 'Quantity',
         align: 'right',

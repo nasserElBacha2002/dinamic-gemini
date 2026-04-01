@@ -133,7 +133,8 @@ export default function AislePositionsPage() {
     if (!q) return filteredByKind;
     return filteredByKind.filter((r) => {
       const sku = (r.sku ?? '').trim().toLowerCase();
-      return sku.includes(q);
+      const posCode = (r.positionCode ?? '').trim().toLowerCase();
+      return sku.includes(q) || posCode.includes(q);
     });
   }, [filteredByKind, skuSearch]);
 
@@ -362,8 +363,8 @@ export default function AislePositionsPage() {
           >
             <TextField
               size="small"
-              label="Search SKU"
-              placeholder="Filter by SKU"
+              label="Search"
+              placeholder="Filter by SKU or position"
               value={skuSearch}
               onChange={(e) => {
                 setSkuSearch(e.target.value);
@@ -414,8 +415,8 @@ export default function AislePositionsPage() {
           >
             <TextField
               size="small"
-              label="Search SKU"
-              placeholder="Filter by SKU"
+              label="Search"
+              placeholder="Filter by SKU or position"
               value={skuSearch}
               onChange={(e) => {
                 setSkuSearch(e.target.value);

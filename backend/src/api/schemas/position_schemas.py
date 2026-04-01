@@ -189,6 +189,7 @@ class PositionSummaryResponse(BaseModel):
         deprecated=True,
         description="Deprecated: use `traceability.source_image_original_filename`.",
     )
+    position_code: str = Field(..., description="Effective position code (Audit Sprint 4.5).")
 
 
 class PositionListResponse(PageMeta):
@@ -277,6 +278,7 @@ ReviewActionTypeLiteral = Literal[
     "confirm",
     "update_quantity",
     "update_sku",
+    "update_position_code",
     "mark_unknown",
     "delete_position",
 ]
@@ -290,3 +292,4 @@ class ReviewActionRequest(BaseModel):
     corrected_quantity: Optional[int] = None
     sku: Optional[str] = None
     description: Optional[str] = None
+    position_code: Optional[str] = None

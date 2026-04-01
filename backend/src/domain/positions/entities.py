@@ -32,6 +32,7 @@ class PositionReviewResolution(str, Enum):
     CONFIRMED = "confirmed"
     QTY_CORRECTED = "qty_corrected"
     SKU_CORRECTED = "sku_corrected"
+    POSITION_CODE_CORRECTED = "position_code_corrected"
     UNKNOWN = "unknown"
     DELETED = "deleted"
 
@@ -49,3 +50,4 @@ class Position:
     review_resolution: Optional[PositionReviewResolution] = None
     detected_summary_json: Optional[Dict[str, Any]] = None
     corrected_summary_json: Optional[Dict[str, Any]] = None  # legacy persisted blob; Sprint 4 audit tracks removal readiness
+    corrected_position_code: Optional[str] = None

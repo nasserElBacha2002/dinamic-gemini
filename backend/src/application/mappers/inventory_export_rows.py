@@ -11,7 +11,10 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.application.mappers.position_canonical_view import build_position_canonical_view
+from src.application.mappers.position_canonical_view import (
+    build_position_canonical_view,
+    resolve_effective_position_code,
+)
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
@@ -26,12 +29,8 @@ def _summary_dict(p: Position) -> Dict[str, Any]:
 
 
 def export_position_code(p: Position) -> str:
-    j = _summary_dict(p)
-    for k in ("pallet_id", "position_barcode", "entity_uid"):
-        v = j.get(k)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return p.id
+    """Consistency: reuse canonical derivation chain (Audit Sprint 4.5)."""
+    return resolve_effective_position_code(p)
 
 
 def _safe_int(value: Any) -> Optional[int]:

@@ -67,6 +67,7 @@ from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
+from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.application.use_cases.persist_aisle_result import PersistAisleResultUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
@@ -521,6 +522,24 @@ def get_update_product_sku_use_case(
         aisle_repo=aisle_repo,
         position_repo=position_repo,
         product_record_repo=product_record_repo,
+        review_repo=review_repo,
+        clock=clock,
+        aisle_review_sync=aisle_review_sync,
+    )
+
+
+def get_update_position_code_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    review_repo: ReviewActionRepository = Depends(get_review_action_repo),
+    clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
+) -> UpdatePositionCodeUseCase:
+    return UpdatePositionCodeUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
         review_repo=review_repo,
         clock=clock,
         aisle_review_sync=aisle_review_sync,

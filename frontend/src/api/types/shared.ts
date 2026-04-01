@@ -60,6 +60,8 @@ export const REVIEW_ACTION_TYPES = [
   'confirm',
   'update_quantity',
   'update_sku',
+  'update_position_code',
+  'mark_unknown',
   'delete_position',
 ] as const;
 export type ReviewActionType = (typeof REVIEW_ACTION_TYPES)[number];

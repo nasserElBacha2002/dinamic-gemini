@@ -166,6 +166,16 @@ export default function QuickReviewDrawer({
     [executeReviewAction]
   );
 
+  const handleUpdatePositionCode = useCallback(
+    (position_code: string) => {
+      void executeReviewAction(
+        { action_type: 'update_position_code', position_code },
+        { successMessage: 'Position code updated' }
+      );
+    },
+    [executeReviewAction]
+  );
+
   const handleDeleteClick = useCallback(() => {
     setInvalidConfirmError(null);
     setInvalidConfirmOpen(true);
@@ -303,6 +313,7 @@ export default function QuickReviewDrawer({
                       onConfirm={handleConfirm}
                       onUpdateQuantity={handleUpdateQuantity}
                       onUpdateSku={handleUpdateSku}
+                      onUpdatePositionCode={handleUpdatePositionCode}
                       onDeleteClick={handleDeleteClick}
                     />
                   </Box>
