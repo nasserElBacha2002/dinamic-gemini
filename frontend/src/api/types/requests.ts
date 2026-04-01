@@ -19,4 +19,5 @@ export interface ReviewActionRequest {
   corrected_quantity?: number | null;
   sku?: string | null;
   description?: string | null;
+  position_code?: string | null;
 }

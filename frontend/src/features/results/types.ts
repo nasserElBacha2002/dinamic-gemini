@@ -25,6 +25,7 @@ export type ReviewStatus =
 export interface ResultSummary {
   id: string;
   sku: string | null;
+  positionCode: string | null;
   detectedQty: number | null;
   /** v3.2.2: corrected_quantity from backend (may be null). */
   correctedQty: number | null;
@@ -76,6 +77,7 @@ export interface ReviewHistoryItem {
 export interface ResultDetail {
   id: string;
   sku: string | null;
+  positionCode: string | null;
   detectedQty: number | null;
   correctedQty: number | null;
   /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */

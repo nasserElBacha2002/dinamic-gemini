@@ -96,6 +96,7 @@ export function mapPositionSummaryToResultSummary(
   return {
     id: p.id,
     sku,
+    positionCode: p.position_code ?? null,
     detectedQty,
     correctedQty,
     resolvedQty,
@@ -203,6 +204,7 @@ export function mapPositionDetailToResultDetail(
   return {
     id: position.id,
     sku,
+    positionCode: position.position_code ?? null,
     detectedQty,
     correctedQty,
     resolvedQty,

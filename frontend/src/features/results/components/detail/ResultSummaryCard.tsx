@@ -63,6 +63,15 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
           )}
         </Box>
         
+        <Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
+            Position code
+          </Typography>
+          <Typography variant="body1" fontWeight={700}>
+            {result.positionCode != null && result.positionCode.trim() !== '' ? result.positionCode : '—'}
+          </Typography>
+        </Box>
+
         {hasManualOverride && systemQtyNum != null && (
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>

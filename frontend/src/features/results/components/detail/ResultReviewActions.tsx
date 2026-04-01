@@ -15,6 +15,7 @@ export interface ResultReviewActionsProps {
   onConfirm: () => void;
   onUpdateQuantity: (quantity: number) => void;
   onUpdateSku: (sku: string) => void;
+  onUpdatePositionCode: (positionCode: string) => void;
   onDeleteClick: () => void;
 }
 
@@ -24,12 +25,14 @@ export default function ResultReviewActions({
   onConfirm,
   onUpdateQuantity,
   onUpdateSku,
+  onUpdatePositionCode,
   onDeleteClick,
 }: ResultReviewActionsProps) {
-  const [activeEditor, setActiveEditor] = useState<'qty' | 'sku' | null>(null);
+  const [activeEditor, setActiveEditor] = useState<'qty' | 'sku' | 'pos' | null>(null);
   const qtyButtonRef = useRef<HTMLButtonElement>(null);
   const skuButtonRef = useRef<HTMLButtonElement>(null);
-  const lastActiveEditor = useRef<'qty' | 'sku' | null>(null);
+  const posButtonRef = useRef<HTMLButtonElement>(null);
+  const lastActiveEditor = useRef<'qty' | 'sku' | 'pos' | null>(null);
 
   // Focus management: when editor closes, return focus to the trigger
   useEffect(() => {
@@ -40,6 +43,8 @@ export default function ResultReviewActions({
         qtyButtonRef.current?.focus();
       } else if (lastActiveEditor.current === 'sku') {
         skuButtonRef.current?.focus();
+      } else if (lastActiveEditor.current === 'pos') {
+        posButtonRef.current?.focus();
       }
       lastActiveEditor.current = null;
     }
@@ -53,7 +58,7 @@ export default function ResultReviewActions({
     if (!actionLoading) {
       setActiveEditor(null);
     }
-  }, [result.correctedQty, result.sku]);
+  }, [result.correctedQty, result.sku, result.positionCode]);
 
   if (isDeleted) return null;
 
@@ -105,7 +110,7 @@ export default function ResultReviewActions({
                variant="text" 
                fullWidth 
                onClick={() => setActiveEditor('qty')}
-               disabled={actionLoading || activeEditor === 'sku'}
+               disabled={actionLoading || activeEditor !== null}
                startIcon={<EditIcon sx={{ fontSize: 18 }} />}
                sx={{ 
                  py: 1, 
@@ -134,7 +139,7 @@ export default function ResultReviewActions({
                variant="text" 
                fullWidth 
                onClick={() => setActiveEditor('sku')}
-               disabled={actionLoading || activeEditor === 'qty'}
+               disabled={actionLoading || activeEditor !== null}
                startIcon={<EditIcon sx={{ fontSize: 18 }} />}
                sx={{ 
                  py: 1, 
@@ -147,6 +152,35 @@ export default function ResultReviewActions({
                }}
              >
                Correct SKU
+             </Button>
+           )}
+
+           {activeEditor === 'pos' ? (
+             <PositionCodeEditor 
+               initialValue={result.positionCode ?? ''}
+               onSave={onUpdatePositionCode}
+               onCancel={() => setActiveEditor(null)}
+               loading={actionLoading}
+             />
+           ) : (
+             <Button 
+               ref={posButtonRef}
+               variant="text" 
+               fullWidth 
+               onClick={() => setActiveEditor('pos')}
+               disabled={actionLoading || activeEditor !== null}
+               startIcon={<EditIcon sx={{ fontSize: 18 }} />}
+               sx={{ 
+                 py: 1, 
+                 borderRadius: 1.5, 
+                 textTransform: 'none', 
+                 justifyContent: 'flex-start', 
+                 px: 2,
+                 color: 'text.secondary',
+                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
+               }}
+             >
+               Correct Position Code
              </Button>
            )}
         </Stack>
@@ -190,6 +224,7 @@ export default function ResultReviewActions({
 // Internal Editor Components
 
 const SKU_MAX_LEN = 128;
+const POS_CODE_MAX_LEN = 64;
 
 function QuantityEditor({ 
   initialValue, 
@@ -299,6 +334,69 @@ function SkuEditor({
           placeholder="Update SKU..."
           disabled={loading}
           inputProps={{ maxLength: SKU_MAX_LEN }}
+          autoComplete="off"
+        />
+        <Button 
+          variant="contained" 
+          size="small" 
+          onClick={() => onSave(val.trim())}
+          disabled={loading || !isValid}
+          sx={{ minWidth: 64, height: 40 }}
+        >
+          {loading ? '...' : 'Save'}
+        </Button>
+        <IconButton size="small" onClick={onCancel} disabled={loading} sx={{ height: 40, width: 40 }}>
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Stack>
+    </Box>
+  );
+}
+
+function PositionCodeEditor({ 
+  initialValue, 
+  onSave, 
+  onCancel, 
+  loading 
+}: { 
+  initialValue: string; 
+  onSave: (val: string) => void; 
+  onCancel: () => void; 
+  loading: boolean;
+}) {
+  const [val, setVal] = useState(initialValue);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const isValid = val.trim().length > 0 && val.length <= POS_CODE_MAX_LEN;
+
+  return (
+    <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, fontWeight: 700 }}>
+        Corrected Position Code
+      </Typography>
+      <Stack direction="row" spacing={1} alignItems="flex-start">
+        <TextField
+          inputRef={inputRef}
+          size="small"
+          fullWidth
+          value={val}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && isValid && !loading) {
+              onSave(val.trim());
+            } else if (e.key === 'Escape' && !loading) {
+              onCancel();
+            }
+          }}
+          error={!isValid && val.length > 0}
+          placeholder="Update Position Code..."
+          disabled={loading}
+          inputProps={{ maxLength: POS_CODE_MAX_LEN }}
           autoComplete="off"
         />
         <Button 

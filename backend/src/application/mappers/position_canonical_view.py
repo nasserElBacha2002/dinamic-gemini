@@ -269,6 +269,28 @@ class PositionCanonicalReview:
     has_evidence: bool
 
 
+def resolve_effective_position_code(p: Position) -> str:
+    """Authority for calculating the effective position_code (Sprint 4.5 refined).
+
+    Priority:
+    1. Corrected position code from domain entity.
+    2. pallet_id from detected_summary_json.
+    3. position_barcode from detected_summary_json.
+    4. entity_uid from detected_summary_json.
+    5. Fallback: position identity (p.id).
+    """
+    if p.corrected_position_code is not None and str(p.corrected_position_code).strip() != "":
+        return str(p.corrected_position_code).strip()
+
+    j = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
+    for k in ("pallet_id", "position_barcode", "entity_uid"):
+        v = j.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+
+    return p.id
+
+
 @dataclass(frozen=True)
 class PositionCanonicalView:
     """Intermediate canonical layer before ``PositionSummaryResponse``.
@@ -281,6 +303,7 @@ class PositionCanonicalView:
     quantity: PositionCanonicalQuantity
     traceability: PositionCanonicalTraceability
     review: PositionCanonicalReview
+    position_code: str
     technical_snapshot: Optional[Dict[str, Any]]
 
 
@@ -305,6 +328,7 @@ def build_position_canonical_view(
         traceability_status=trace[1],
         source_image_original_filename=trace[2],
     )
+    pos_code = resolve_effective_position_code(p)
     review = PositionCanonicalReview(
         status=p.status.value,
         review_resolution=(
@@ -348,6 +372,7 @@ def build_position_canonical_view(
             quantity=quantity,
             traceability=traceability,
             review=review,
+            position_code=pos_code,
             technical_snapshot=snap,
         )
 
@@ -385,6 +410,7 @@ def build_position_canonical_view(
             quantity=quantity,
             traceability=traceability,
             review=review,
+            position_code=pos_code,
             technical_snapshot=snap,
         )
 
@@ -411,5 +437,6 @@ def build_position_canonical_view(
         quantity=quantity,
         traceability=traceability,
         review=review,
+        position_code=pos_code,
         technical_snapshot=snap,
     )

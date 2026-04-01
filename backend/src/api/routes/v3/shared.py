@@ -42,6 +42,7 @@ from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
+from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.api.schemas.position_schemas import ReviewActionRequest
 from src.domain.aisle.entities import Aisle
@@ -288,6 +289,27 @@ def handle_update_sku(
         raise review_exception_to_http(e)
 
 
+def handle_update_position_code(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    body: ReviewActionRequest,
+    update_pos_code_uc: UpdatePositionCodeUseCase,
+) -> None:
+    pos_code = (body.position_code or "").strip()
+    if not pos_code:
+        raise HTTPException(status_code=422, detail="position_code is required for update_position_code")
+    try:
+        update_pos_code_uc.execute(
+            inventory_id,
+            aisle_id,
+            position_id,
+            pos_code,
+        )
+    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ValueError, PositionDeletedError) as e:
+        raise review_exception_to_http(e)
+
+
 def handle_mark_unknown(
     inventory_id: str,
     aisle_id: str,
@@ -492,6 +514,7 @@ def _position_summary_response_from_view(
         traceability_status=view.traceability.traceability_status,
         has_evidence=view.review.has_evidence,
         source_image_original_filename=view.traceability.source_image_original_filename,
+        position_code=view.position_code,
     )
 
 
