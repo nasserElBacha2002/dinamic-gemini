@@ -27,6 +27,24 @@ export default function ResultReviewActions({
   onDeleteClick,
 }: ResultReviewActionsProps) {
   const [activeEditor, setActiveEditor] = useState<'qty' | 'sku' | null>(null);
+  const qtyButtonRef = useRef<HTMLButtonElement>(null);
+  const skuButtonRef = useRef<HTMLButtonElement>(null);
+  const lastActiveEditor = useRef<'qty' | 'sku' | null>(null);
+
+  // Focus management: when editor closes, return focus to the trigger
+  useEffect(() => {
+    if (activeEditor !== null) {
+      lastActiveEditor.current = activeEditor;
+    } else {
+      if (lastActiveEditor.current === 'qty') {
+        qtyButtonRef.current?.focus();
+      } else if (lastActiveEditor.current === 'sku') {
+        skuButtonRef.current?.focus();
+      }
+      lastActiveEditor.current = null;
+    }
+  }, [activeEditor]);
+
   const isDeleted = result.reviewStatus === 'INVALID';
 
   // Collapse editor on success (if actionLoading flips back to false and we have a result change)
@@ -83,6 +101,7 @@ export default function ResultReviewActions({
              />
            ) : (
              <Button 
+               ref={qtyButtonRef}
                variant="text" 
                fullWidth 
                onClick={() => setActiveEditor('qty')}
@@ -111,6 +130,7 @@ export default function ResultReviewActions({
              />
            ) : (
              <Button 
+               ref={skuButtonRef}
                variant="text" 
                fullWidth 
                onClick={() => setActiveEditor('sku')}
@@ -204,6 +224,13 @@ function QuantityEditor({
           fullWidth
           value={val}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && isValid && !loading) {
+              onSave(parseInt(val));
+            } else if (e.key === 'Escape' && !loading) {
+              onCancel();
+            }
+          }}
           error={!isValid && val !== ''}
           placeholder="0"
           type="text"
@@ -261,6 +288,13 @@ function SkuEditor({
           fullWidth
           value={val}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && isValid && !loading) {
+              onSave(val.trim());
+            } else if (e.key === 'Escape' && !loading) {
+              onCancel();
+            }
+          }}
           error={!isValid && val.length > 0}
           placeholder="Update SKU..."
           disabled={loading}

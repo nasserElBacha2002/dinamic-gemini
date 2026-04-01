@@ -39,21 +39,23 @@ function DrawerCollapsibleSection({
         onClick={() => setExpanded((e) => !e)}
         sx={{ 
           textTransform: 'uppercase', 
-          color: 'text.secondary', 
-          fontWeight: 700,
+          color: 'text.primary', 
+          fontWeight: 800,
           fontSize: '0.65rem',
           letterSpacing: 1.2,
-          mb: expanded ? 1 : 0, 
+          mb: expanded ? 1.5 : 0, 
           p: 0, 
           minWidth: 0,
-          opacity: 0.6,
+          opacity: expanded ? 0.9 : 0.6,
           '&:hover': { opacity: 1, bgcolor: 'transparent' }
         }}
         aria-expanded={expanded}
       >
         {expanded ? 'Hide' : 'Show'} {title}
       </Button>
-      <Collapse in={expanded}>{children}</Collapse>
+      <Collapse in={expanded} timeout="auto" unmountOnExit>
+         <Box sx={{ pb: 2 }}>{children}</Box>
+      </Collapse>
     </Box>
   );
 }
@@ -174,6 +176,7 @@ export default function QuickReviewDrawer({
       await reviewMutation.mutateAsync({ action_type: 'delete_position' });
       showSnackbar('Result marked invalid', 'success');
       setInvalidConfirmOpen(false);
+      onClose(); // Automatically close after invalidation
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       setInvalidConfirmError(getApiErrorMessage(err, 'Could not invalidate result'));
@@ -247,7 +250,14 @@ export default function QuickReviewDrawer({
                   {context.inventoryName} · {context.aisleCode}
                 </Typography>
               </Box>
-              <IconButton aria-label="Close drawer" onClick={onClose} size="small" edge="end" sx={{ mt: -0.5 }}>
+              <IconButton 
+                aria-label="Close drawer" 
+                onClick={onClose} 
+                size="small" 
+                edge="end" 
+                sx={{ mt: -0.5 }}
+                disabled={actionLoading}
+              >
                 <CloseIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -293,7 +303,11 @@ export default function QuickReviewDrawer({
 
                   {navContext && navContext.total > 1 && (
                     <Box sx={{ pt: 1 }}>
-                      <ResultDetailNavigation context={navContext} onNavigate={handleNavigateToResult} />
+                      <ResultDetailNavigation 
+                        context={navContext} 
+                        onNavigate={handleNavigateToResult} 
+                        disabled={actionLoading}
+                      />
                     </Box>
                   )}
 

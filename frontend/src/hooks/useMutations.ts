@@ -153,6 +153,9 @@ export function useSubmitReviewAction(inventoryId: string, aisleId: string, posi
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
       });
+      // Also invalidate summary/KPI levels to ensure parent page counts are accurate.
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
       queryClient.invalidateQueries({ queryKey: ['reviewQueue'] });
     },
   });

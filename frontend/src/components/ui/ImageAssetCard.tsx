@@ -60,9 +60,9 @@ export default function ImageAssetCard({
               <Typography
                 variant="subtitle2"
                 noWrap
-                sx={{ 
-                  fontWeight: 600, 
-                  textOverflow: 'ellipsis', 
+                sx={{
+                  fontWeight: 600,
+                  textOverflow: 'ellipsis',
                   overflow: 'hidden',
                   lineHeight: 1.2
                 }}
@@ -71,10 +71,10 @@ export default function ImageAssetCard({
               </Typography>
             </Tooltip>
             {subtitle && (
-              <Typography 
-                variant="caption" 
-                color="text.secondary" 
-                noWrap 
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                noWrap
                 sx={{ display: 'block', mt: 0.5 }}
               >
                 {subtitle}
@@ -82,7 +82,7 @@ export default function ImageAssetCard({
             )}
           </Box>
         </Box>
-        
+
         {actions && (
           <Box sx={{ flexShrink: 0, display: 'flex', gap: 1, alignItems: 'center' }}>
             {actions}
