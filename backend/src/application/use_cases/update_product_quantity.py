@@ -23,7 +23,7 @@ from src.application.use_cases.review_validation import (
     resolve_single_product_for_position,
     ensure_position_not_deleted,
 )
-from src.domain.positions.entities import PositionStatus
+from src.domain.positions.entities import PositionReviewResolution, PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
 
@@ -81,11 +81,17 @@ class UpdateProductQuantityUseCase:
 
         now = self._clock.now()
         before_quantity = product.corrected_quantity
+        before_resolution = (
+            position.review_resolution.value
+            if position.review_resolution is not None
+            else None
+        )
         product.corrected_quantity = corrected_quantity
         product.updated_at = now
         self._product_record_repo.save(product)
 
         position.status = PositionStatus.CORRECTED
+        position.review_resolution = PositionReviewResolution.QTY_CORRECTED
         position.needs_review = False
         position.updated_at = now
         self._position_repo.save(position)
@@ -94,8 +100,16 @@ class UpdateProductQuantityUseCase:
             id=str(uuid.uuid4()),
             position_id=position_id,
             action_type=ReviewActionType.UPDATE_QUANTITY,
-            before_json={"product_id": pid, "corrected_quantity": before_quantity},
-            after_json={"product_id": pid, "corrected_quantity": corrected_quantity},
+            before_json={
+                "product_id": pid,
+                "corrected_quantity": before_quantity,
+                "review_resolution": before_resolution,
+            },
+            after_json={
+                "product_id": pid,
+                "corrected_quantity": corrected_quantity,
+                "review_resolution": PositionReviewResolution.QTY_CORRECTED.value,
+            },
             created_at=now,
         )
         self._review_repo.save(review)

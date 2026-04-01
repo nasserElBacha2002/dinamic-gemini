@@ -11,6 +11,7 @@ from src.application.dto.analytics_dto import (
     AnalyticsTrendsDTO,
     AisleIssueRowDTO,
     InventoryPerformanceRowDTO,
+    ManualInterventionBreakdownDTO,
     QualityPatternRowDTO,
 )
 
@@ -34,4 +35,8 @@ class AnalyticsRepository(ABC):
 
     @abstractmethod
     def get_quality_patterns(self, filters: AnalyticsFilters) -> List[QualityPatternRowDTO]:
+        ...
+
+    @abstractmethod
+    def get_manual_intervention_breakdown(self, filters: AnalyticsFilters) -> ManualInterventionBreakdownDTO:
         ...

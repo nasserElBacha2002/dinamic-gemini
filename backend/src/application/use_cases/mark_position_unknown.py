@@ -1,7 +1,10 @@
 """
-ConfirmPosition use case — v3.0 Épica 8 (HU-8.1).
+MarkPositionUnknown use case.
 
-Confirms a detected position without changes; sets status to reviewed and records a ReviewAction.
+Persists an explicit terminal operator resolution that the position outcome is unknown.
+This is distinct from:
+- quantity provenance such as ``qty_source="unknown"``
+- product-identification issues such as a primary product row with ``sku="UNKNOWN"``
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from src.domain.positions.entities import PositionReviewResolution, PositionStat
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
 
-class ConfirmPositionUseCase:
+class MarkPositionUnknownUseCase:
     def __init__(
         self,
         inventory_repo: InventoryRepository,
@@ -60,8 +63,9 @@ class ConfirmPositionUseCase:
             if position.review_resolution is not None
             else None
         )
+
         position.status = PositionStatus.REVIEWED
-        position.review_resolution = PositionReviewResolution.CONFIRMED
+        position.review_resolution = PositionReviewResolution.UNKNOWN
         position.needs_review = False
         position.updated_at = now
         self._position_repo.save(position)
@@ -69,14 +73,14 @@ class ConfirmPositionUseCase:
         review = ReviewAction(
             id=str(uuid.uuid4()),
             position_id=position_id,
-            action_type=ReviewActionType.CONFIRM,
+            action_type=ReviewActionType.MARK_UNKNOWN,
             before_json={
                 "status": before_status,
                 "review_resolution": before_resolution,
             },
             after_json={
                 "status": PositionStatus.REVIEWED.value,
-                "review_resolution": PositionReviewResolution.CONFIRMED.value,
+                "review_resolution": PositionReviewResolution.UNKNOWN.value,
             },
             created_at=now,
         )

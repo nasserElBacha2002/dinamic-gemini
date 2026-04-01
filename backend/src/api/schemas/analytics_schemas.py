@@ -11,14 +11,24 @@ from pydantic import BaseModel, Field
 class AnalyticsSummaryResponse(BaseModel):
     auto_acceptance_rate: Optional[float] = None
     manual_correction_rate: Optional[float] = None
+    operator_marked_unknown_rate: Optional[float] = None
+    operator_marked_unknown_count: int = 0
+    unidentified_product_rate: Optional[float] = None
+    unidentified_product_count: int = 0
+    unknown_rate: Optional[float] = None
+    unknown_count: int = 0
     invalid_traceability_rate: Optional[float] = None
     processing_success_rate: Optional[float] = None
     average_review_time_seconds: Optional[float] = None
+    average_review_time_minutes: Optional[float] = None
     settling_actions_per_day: Optional[float] = None
     notes: List[str] = Field(default_factory=list)
     period_day_count: int = 0
     settling_actions_count: int = 0
     positions_in_scope: int = 0
+    total_positions_in_scope: int = 0
+    processed_positions_count: int = 0
+    reviewed_positions_count: int = 0
 
 
 class TrendPointResponse(BaseModel):
@@ -39,13 +49,22 @@ class InventoryPerformanceRowResponse(BaseModel):
     inventory_name: str
     inventory_created_at: datetime
     total_aisles: int
+    aisles_count: int
     total_positions: int
+    positions_count: int
     processed_positions: int
+    processed_count: int
     review_rate: Optional[float] = None
     correction_rate: Optional[float] = None
+    auto_acceptance_rate: Optional[float] = None
+    manual_correction_rate: Optional[float] = None
+    operator_marked_unknown_rate: Optional[float] = None
+    unidentified_product_rate: Optional[float] = None
+    unknown_rate: Optional[float] = None
     invalid_traceability_rate: Optional[float] = None
     avg_confidence: Optional[float] = None
     processing_success_rate: Optional[float] = None
+    average_review_time_minutes: Optional[float] = None
 
 
 class InventoryPerformanceListResponse(BaseModel):
@@ -60,6 +79,10 @@ class AisleIssueRowResponse(BaseModel):
     total_results: int
     needs_review_count: int
     corrected_count: int
+    operator_marked_unknown_count: int
+    unidentified_product_count: int
+    unknown_count: int
+    manual_corrections_count: int
     invalid_traceability_count: int
     low_confidence_count: int
     most_common_issue: Optional[str] = None
@@ -78,3 +101,18 @@ class QualityPatternRowResponse(BaseModel):
 
 class QualityPatternListResponse(BaseModel):
     items: List[QualityPatternRowResponse] = Field(default_factory=list)
+
+
+class ManualInterventionCategoryResponse(BaseModel):
+    category: str
+    count: Optional[int] = None
+    percentage: Optional[float] = None
+    available: bool = True
+    notes: Optional[str] = None
+
+
+class ManualInterventionBreakdownResponse(BaseModel):
+    reviewed_positions_count: int = 0
+    intervention_positions_count: int = 0
+    items: List[ManualInterventionCategoryResponse] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)

@@ -10,6 +10,7 @@ from src.application.dto.analytics_dto import (
     AnalyticsTrendsDTO,
     AisleIssueRowDTO,
     InventoryPerformanceRowDTO,
+    ManualInterventionBreakdownDTO,
     QualityPatternRowDTO,
 )
 from src.application.ports.analytics_repository import AnalyticsRepository
@@ -33,3 +34,8 @@ class AnalyticsQueryService:
 
     def quality_patterns(self, filters: AnalyticsFilters) -> List[QualityPatternRowDTO]:
         return self._repo.get_quality_patterns(filters)
+
+    def manual_intervention_breakdown(
+        self, filters: AnalyticsFilters
+    ) -> ManualInterventionBreakdownDTO:
+        return self._repo.get_manual_intervention_breakdown(filters)

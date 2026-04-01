@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { queryKeys } from '../../api/queryKeys';
 import {
+  getAnalyticsManualInterventions,
   getAnalyticsSummary,
   getAnalyticsTrends,
   getAnalyticsInventoryPerformance,
@@ -52,10 +53,15 @@ export function useAnalyticsDashboard(params: AnalyticsQueryParams, enabled = tr
         queryFn: () => getAnalyticsQualityPatterns(params),
         enabled,
       },
+      {
+        queryKey: queryKeys.analytics.manualInterventions(kp),
+        queryFn: () => getAnalyticsManualInterventions(params),
+        enabled,
+      },
     ],
   });
 
-  const [summaryQ, trendsQ, invQ, aisleQ, qualityQ] = results;
+  const [summaryQ, trendsQ, invQ, aisleQ, qualityQ, manualInterventionsQ] = results;
 
   const isLoading = results.some((r) => r.isLoading);
   const isError = results.some((r) => r.isError);
@@ -71,10 +77,11 @@ export function useAnalyticsDashboard(params: AnalyticsQueryParams, enabled = tr
     inventoryPerformance: invQ.data,
     aisleIssues: aisleQ.data,
     quality: qualityQ.data,
+    manualInterventions: manualInterventionsQ.data,
     isLoading,
     isError,
     errors,
     refetchAll,
-    queries: { summaryQ, trendsQ, invQ, aisleQ, qualityQ },
+    queries: { summaryQ, trendsQ, invQ, aisleQ, qualityQ, manualInterventionsQ },
   };
 }

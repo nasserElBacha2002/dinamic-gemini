@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional, Sequence
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import PositionRepository
 from src.database.sqlserver import SqlServerClient
-from src.domain.positions.entities import Position, PositionStatus
+from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,24 @@ def _status_from_row(row: Any, position_id: str = "?") -> PositionStatus:
         return PositionStatus.DETECTED
 
 
+def _review_resolution_from_row(
+    row: Any,
+    position_id: str = "?",
+) -> Optional[PositionReviewResolution]:
+    raw = getattr(row, "review_resolution", None)
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return PositionReviewResolution(str(raw).strip())
+    except ValueError:
+        logger.warning(
+            "Invalid position review_resolution %r for position_id=%s",
+            raw,
+            position_id,
+        )
+        return None
+
+
 def _row_to_position(row: Any) -> Position:
     pid = getattr(row, "id", "")
     created = _ensure_utc(getattr(row, "created_at", None))
@@ -54,6 +72,7 @@ def _row_to_position(row: Any) -> Position:
         id=pid,
         aisle_id=row.aisle_id or "",
         status=_status_from_row(row, pid),
+        review_resolution=_review_resolution_from_row(row, pid),
         confidence=float(getattr(row, "confidence", 0)),
         needs_review=bool(getattr(row, "needs_review", False)),
         primary_evidence_id=getattr(row, "primary_evidence_id", None),
@@ -79,13 +98,14 @@ class SqlPositionRepository(PositionRepository):
             cur.execute(
                 """
                 UPDATE positions
-                SET aisle_id = ?, status = ?, confidence = ?, needs_review = ?,
+                SET aisle_id = ?, status = ?, review_resolution = ?, confidence = ?, needs_review = ?,
                     primary_evidence_id = ?, updated_at = ?, detected_summary_json = ?, corrected_summary_json = ?
                 WHERE id = ?
                 """,
                 (
                     position.aisle_id,
                     position.status.value,
+                    position.review_resolution.value if position.review_resolution is not None else None,
                     position.confidence,
                     position.needs_review,
                     position.primary_evidence_id,
@@ -98,13 +118,14 @@ class SqlPositionRepository(PositionRepository):
             if cur.rowcount == 0:
                 cur.execute(
                     """
-                    INSERT INTO positions (id, aisle_id, status, confidence, needs_review, primary_evidence_id, created_at, updated_at, detected_summary_json, corrected_summary_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO positions (id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id, created_at, updated_at, detected_summary_json, corrected_summary_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         position.id,
                         position.aisle_id,
                         position.status.value,
+                        position.review_resolution.value if position.review_resolution is not None else None,
                         position.confidence,
                         position.needs_review,
                         position.primary_evidence_id,
@@ -119,7 +140,7 @@ class SqlPositionRepository(PositionRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, aisle_id, status, confidence, needs_review, primary_evidence_id,
+                SELECT id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id,
                        created_at, updated_at, detected_summary_json, corrected_summary_json
                 FROM positions WHERE id = ?
                 """,
@@ -173,7 +194,7 @@ class SqlPositionRepository(PositionRepository):
         if join_product_records:
             sql = f"""
                 SELECT DISTINCT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
-                       p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json
+                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json
                 FROM positions p
                 INNER JOIN product_records pr ON pr.position_id = p.id
                 WHERE {where}
@@ -183,7 +204,7 @@ class SqlPositionRepository(PositionRepository):
         else:
             sql = f"""
                 SELECT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
-                       p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json
+                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json
                 FROM positions p
                 WHERE {where}
                 {order_clause}
@@ -218,7 +239,7 @@ class SqlPositionRepository(PositionRepository):
             cur.execute(
                 f"""
                 SELECT id, aisle_id, status, confidence, needs_review, primary_evidence_id,
-                       created_at, updated_at, detected_summary_json, corrected_summary_json
+                       review_resolution, created_at, updated_at, detected_summary_json, corrected_summary_json
                 FROM positions
                 WHERE aisle_id IN ({placeholders})
                 ORDER BY created_at ASC, id ASC
