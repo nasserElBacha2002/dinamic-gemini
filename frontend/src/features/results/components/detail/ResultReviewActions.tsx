@@ -43,7 +43,7 @@ export default function ResultReviewActions({
     <Box sx={{ mt: 1 }}>
       {/* Primary Action — Only visible if not editing */}
       {!activeEditor && (
-        <Box sx={{ mb: 4 }}>
+        <Box sx={{ mb: 4.5 }}>
           <Button
             variant="contained"
             color="primary"
@@ -51,12 +51,18 @@ export default function ResultReviewActions({
             fullWidth
             onClick={onConfirm}
             disabled={actionLoading}
-            sx={{ py: 1.75, fontWeight: 700, borderRadius: 2, fontSize: '1rem' }}
+            sx={{ 
+              py: 2, 
+              fontWeight: 800, 
+              borderRadius: 2.5, 
+              fontSize: '1rem',
+              boxShadow: '0 4px 12px rgba(var(--mui-palette-primary-mainChannel), 0.2)',
+            }}
           >
             {actionLoading ? 'Confirming…' : 'Confirm result'}
           </Button>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center', opacity: 0.8 }}>
-            Accept current data as correct.
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'center', opacity: 0.7, fontWeight: 500 }}>
+            Accept current data as correct
           </Typography>
         </Box>
       )}
@@ -67,7 +73,7 @@ export default function ResultReviewActions({
           Correction tools
         </Typography>
 
-        <Stack spacing={2}>
+        <Stack spacing={0.5}>
            {activeEditor === 'qty' ? (
              <QuantityEditor 
                initialValue={result.correctedQty ?? result.detectedQty ?? 0}
@@ -77,12 +83,20 @@ export default function ResultReviewActions({
              />
            ) : (
              <Button 
-               variant="outlined" 
+               variant="text" 
                fullWidth 
                onClick={() => setActiveEditor('qty')}
                disabled={actionLoading || activeEditor === 'sku'}
-               startIcon={<EditIcon />}
-               sx={{ py: 1, borderRadius: 1.5, textTransform: 'none', justifyContent: 'flex-start', px: 2 }}
+               startIcon={<EditIcon sx={{ fontSize: 18 }} />}
+               sx={{ 
+                 py: 1, 
+                 borderRadius: 1.5, 
+                 textTransform: 'none', 
+                 justifyContent: 'flex-start', 
+                 px: 2,
+                 color: 'text.secondary',
+                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
+               }}
              >
                Correct quantity
              </Button>
@@ -97,12 +111,20 @@ export default function ResultReviewActions({
              />
            ) : (
              <Button 
-               variant="outlined" 
+               variant="text" 
                fullWidth 
                onClick={() => setActiveEditor('sku')}
                disabled={actionLoading || activeEditor === 'qty'}
-               startIcon={<EditIcon />}
-               sx={{ py: 1, borderRadius: 1.5, textTransform: 'none', justifyContent: 'flex-start', px: 2 }}
+               startIcon={<EditIcon sx={{ fontSize: 18 }} />}
+               sx={{ 
+                 py: 1, 
+                 borderRadius: 1.5, 
+                 textTransform: 'none', 
+                 justifyContent: 'flex-start', 
+                 px: 2,
+                 color: 'text.secondary',
+                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
+               }}
              >
                Correct SKU
              </Button>
@@ -111,20 +133,21 @@ export default function ResultReviewActions({
       </Box>
 
       {/* Danger Zone */}
-      <Box sx={{ mt: 6, pt: 3, borderTop: 1, borderColor: 'divider' }}>
+      <Box sx={{ mt: 8, pt: 3, borderTop: 1, borderColor: 'divider' }}>
         <Box 
            sx={{ 
-             p: 2.5, 
+             p: 2, 
              borderRadius: 2, 
-             bgcolor: 'rgba(211, 47, 47, 0.04)', 
+             bgcolor: 'rgba(211, 47, 47, 0.02)', 
              border: '1px dashed', 
-             borderColor: 'error.light' 
+             borderColor: 'divider', // Quieter border
+             opacity: 0.9
            }}
         >
-          <Typography variant="subtitle2" color="error" sx={{ fontWeight: 700, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, mb: 0.5, display: 'block', color: 'error.main', textTransform: 'uppercase', letterSpacing: 1 }}>
             Danger zone
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.4 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.4 }}>
             Only use this if the result is a false detection or contains data that shouldn't be reviewed. 
           </Typography>
           <Button
@@ -134,7 +157,7 @@ export default function ResultReviewActions({
             fullWidth
             onClick={onDeleteClick}
             disabled={actionLoading}
-            sx={{ textTransform: 'none', fontWeight: 600 }}
+            sx={{ textTransform: 'none', fontWeight: 600, py: 0.75, borderRadius: 1.5 }}
           >
             Mark result invalid
           </Button>

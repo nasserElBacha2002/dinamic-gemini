@@ -1,6 +1,6 @@
 /**
  * Epic 4 — Summary section for Result Detail (quantity, origin, status, traceability, confidence).
- * Revised in Phase 3: Simplified for better hierarchy in the review drawer.
+ * Revised in Phase 3 & Polished in Phase 4: Cohesive "Current State" visual block.
  */
 
 import { Typography, Box } from '@mui/material';
@@ -36,17 +36,28 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
       : '—';
 
   return (
-    <Box sx={{ px: 0.5 }}>
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2.5, mb: 2 }}>
+    <Box 
+      sx={{ 
+        p: 2, 
+        borderRadius: 2, 
+        bgcolor: 'background.default', 
+        border: '1px solid', 
+        borderColor: 'divider',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2.5
+      }}
+    >
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
         <Box>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25, fontWeight: 500, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
             Current quantity
           </Typography>
-          <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+          <Typography variant="h5" fontWeight={800} sx={{ lineHeight: 1, letterSpacing: -0.5 }}>
             {visibleQtyNum != null ? String(visibleQtyNum) : '—'}
           </Typography>
           {hasManualOverride && (
-             <Typography variant="caption" color="primary.main" sx={{ fontWeight: 600, mt: 0.5, display: 'block' }}>
+             <Typography variant="caption" color="primary.main" sx={{ fontWeight: 700, mt: 0.5, display: 'block', fontSize: '0.7rem' }}>
                Manual override
              </Typography>
           )}
@@ -54,33 +65,33 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
         
         {hasManualOverride && systemQtyNum != null && (
           <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25, fontWeight: 500, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
               System original
             </Typography>
-            <Typography variant="body1" fontWeight={500}>{String(systemQtyNum)}</Typography>
+            <Typography variant="body1" fontWeight={600}>{String(systemQtyNum)}</Typography>
           </Box>
         )}
 
         <Box sx={{ gridColumn: hasManualOverride ? undefined : 'span 1' }}>
-           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25, fontWeight: 500, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
             Count origin
           </Typography>
-          <Typography variant="body2" fontWeight={500}>
+          <Typography variant="body2" fontWeight={600} color="text.primary">
             {getCountOriginLabel(result)}
           </Typography>
         </Box>
 
         <Box>
-           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25, fontWeight: 500, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
             Last update
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
             {formatDate(result.updatedAt)}
           </Typography>
         </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', pt: 1.5, borderTop: 1, borderColor: 'divider' }}>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
         <StatusChip
           label={getReviewStatusLabel(result.reviewStatus)}
           color={getReviewStatusColor(result.reviewStatus)}

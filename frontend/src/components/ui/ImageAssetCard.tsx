@@ -22,8 +22,8 @@ export default function ImageAssetCard({
   return (
     <Box
       sx={{
-        px: { xs: 2, sm: 2.5 },
-        py: 1.75,
+        px: 2,
+        py: 1.5,
         display: 'grid',
         gap: 1.25,
       }}

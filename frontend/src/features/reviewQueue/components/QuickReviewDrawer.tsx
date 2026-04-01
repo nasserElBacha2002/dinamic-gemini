@@ -37,7 +37,18 @@ function DrawerCollapsibleSection({
       <Button
         size="small"
         onClick={() => setExpanded((e) => !e)}
-        sx={{ textTransform: 'none', color: 'text.secondary', mb: expanded ? 1 : 0, p: 0, minWidth: 0 }}
+        sx={{ 
+          textTransform: 'uppercase', 
+          color: 'text.secondary', 
+          fontWeight: 700,
+          fontSize: '0.65rem',
+          letterSpacing: 1.2,
+          mb: expanded ? 1 : 0, 
+          p: 0, 
+          minWidth: 0,
+          opacity: 0.6,
+          '&:hover': { opacity: 1, bgcolor: 'transparent' }
+        }}
         aria-expanded={expanded}
       >
         {expanded ? 'Hide' : 'Show'} {title}
@@ -264,25 +275,29 @@ export default function QuickReviewDrawer({
               ) : null}
 
               {result ? (
-                <Stack spacing={4}>
+                <Stack spacing={3}>
                   <ResultEvidenceViewer result={result} inventoryId={inventoryId} aisleId={aisleId} />
 
                   <ResultSummaryCard result={result} />
 
-                  <ResultReviewActions
-                    result={result}
-                    actionLoading={actionLoading}
-                    onConfirm={handleConfirm}
-                    onUpdateQuantity={handleUpdateQuantity}
-                    onUpdateSku={handleUpdateSku}
-                    onDeleteClick={handleDeleteClick}
-                  />
+                  <Box sx={{ pt: 2 }}>
+                    <ResultReviewActions
+                      result={result}
+                      actionLoading={actionLoading}
+                      onConfirm={handleConfirm}
+                      onUpdateQuantity={handleUpdateQuantity}
+                      onUpdateSku={handleUpdateSku}
+                      onDeleteClick={handleDeleteClick}
+                    />
+                  </Box>
 
                   {navContext && navContext.total > 1 && (
-                    <ResultDetailNavigation context={navContext} onNavigate={handleNavigateToResult} />
+                    <Box sx={{ pt: 1 }}>
+                      <ResultDetailNavigation context={navContext} onNavigate={handleNavigateToResult} />
+                    </Box>
                   )}
 
-                  <Box>
+                  <Box sx={{ pt: 4 }}>
                     <DrawerCollapsibleSection title="review history">
                       <ResultReviewHistory items={result.reviewHistory} showHeading={false} />
                     </DrawerCollapsibleSection>
