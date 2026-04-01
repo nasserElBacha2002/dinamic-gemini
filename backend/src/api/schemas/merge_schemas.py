@@ -6,14 +6,15 @@ from pydantic import BaseModel, Field
 class RunMergeResponse(BaseModel):
     operation_mode: str = Field(
         description=(
-            "Merge execution mode. Current mode is artifact_only, meaning merge computes artifacts "
-            "without overwriting authoritative ProductRecord quantities."
+            "Merge execution mode for the manual aisle merge flow. The active restored mode is "
+            "manual_authoritative, meaning the operator-triggered merge updates authoritative "
+            "ProductRecord quantities and the visible aisle results."
         )
     )
     authoritative_quantity_updated: bool = Field(
         description=(
-            "False in artifact_only mode. True would indicate authoritative ProductRecord "
-            "quantities were updated (not used in current flow)."
+            "True when the manual merge updated authoritative ProductRecord quantities for the "
+            "visible aisle results surface."
         )
     )
     raw_count: int
@@ -21,8 +22,8 @@ class RunMergeResponse(BaseModel):
     final_count: int
     product_records_updated: int = Field(
         description=(
-            "Compatibility field for legacy consumers. In artifact_only mode this is expected "
-            "to remain 0 because authoritative ProductRecord quantities are not updated."
+            "Number of ProductRecord rows updated by the manual authoritative merge. Preserved as "
+            "a compatibility field for existing consumers."
         )
     )
 

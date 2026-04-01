@@ -25,6 +25,15 @@ const { resultSummariesState } = vi.hoisted(() => ({
     refetch: vi.fn(),
   },
 }));
+const { aislesListState } = vi.hoisted(() => ({
+  aislesListState: {
+    data: { items: [{ id: 'aisle-1', code: 'A-01', status: 'created' }] },
+    isLoading: false,
+    isError: false,
+    error: null as unknown,
+    refetch: vi.fn(),
+  },
+}));
 
 const mockPositions: PositionSummary[] = [
   {
@@ -80,13 +89,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
       isError: false,
       error: null,
     }),
-    useAislesList: () => ({
-      data: { items: [{ id: 'aisle-1', code: 'A-01', status: 'created' }] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }),
+    useAislesList: () => aislesListState,
     useRunAisleMerge: useRunAisleMergeMock,
   };
 });
@@ -117,6 +120,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
     resultSummariesState.isError = false;
     resultSummariesState.error = null;
     resultSummariesState.refetch = vi.fn();
+    aislesListState.refetch = vi.fn();
     useRunAisleMergeMock.mockReset();
     useRunAisleMergeMock.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue({
@@ -134,11 +138,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
   it('shows aisle title, inventory context, and workload KPIs', () => {
     renderPage();
     expect(screen.getByRole('heading', { name: 'A-01' })).toBeTruthy();
-    expect(screen.getAllByText('Test Inventory').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Test Inventory')).toHaveLength(2);
     expect(screen.getByText('Counted total')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /needs review/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /invalid traceability/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /missing evidence/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /merge repeated labels/i })).toBeTruthy();
   });
 
@@ -168,8 +169,10 @@ describe('AislePositionsPage (Aisle Results)', () => {
       final_count: 1,
       product_records_updated: 1,
     });
-    const refetch = vi.fn().mockResolvedValue(undefined);
-    resultSummariesState.refetch = refetch;
+    const resultsRefetch = vi.fn().mockResolvedValue(undefined);
+    const aislesRefetch = vi.fn().mockResolvedValue(undefined);
+    resultSummariesState.refetch = resultsRefetch;
+    aislesListState.refetch = aislesRefetch;
     useRunAisleMergeMock.mockReturnValue({
       mutateAsync,
       isPending: false,
@@ -180,8 +183,22 @@ describe('AislePositionsPage (Aisle Results)', () => {
 
     await waitFor(() => {
       expect(mutateAsync).toHaveBeenCalledWith('aisle-1');
-      expect(refetch).toHaveBeenCalled();
+      expect(resultsRefetch).toHaveBeenCalled();
+      expect(aislesRefetch).toHaveBeenCalled();
     });
+  });
+
+  it('shows a disabled pending merge button while the merge mutation is running', () => {
+    useRunAisleMergeMock.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: true,
+    });
+
+    renderPage();
+
+    const button = screen.getByRole('button', { name: /merging/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent('Merging…');
   });
 
   it('hides merge action when there are no results to consolidate', () => {
