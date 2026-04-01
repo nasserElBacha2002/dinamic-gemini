@@ -141,11 +141,15 @@ vi.mock('../src/hooks', async (importOriginal) => {
 });
 
 function renderPage() {
+  return renderPageAt('/inventories/inv-1/aisles/aisle-1/positions');
+}
+
+function renderPageAt(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <AppSnackbarProvider>
-        <MemoryRouter initialEntries={['/inventories/inv-1/aisles/aisle-1/positions']}>
+        <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route
               path="/inventories/:inventoryId/aisles/:aisleId/positions"
@@ -211,22 +215,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
   it('runs manual merge from the header and refreshes the visible results queries', async () => {
     resultSummariesState.results = repeatedSkuResults;
     resultSummariesState.positions = repeatedSkuPositions;
-    mergeResultsState.data = {
-      results: [
-        {
-          id: 'fc-1',
-          position_id: 'pos-1',
-          sku: 'SKU-001',
-          product_name: 'Product 1',
-          merged_quantity: 6,
-          normalized_label_ids: ['n1', 'n2'],
-          review_required: false,
-          explanation_summary: 'Merged repeated labels',
-          metadata: {},
-          created_at: '2024-01-01T00:00:00Z',
-        },
-      ],
-    };
+    mergeResultsState.data = { results: [] };
     const mutateAsync = vi.fn().mockResolvedValue({
       operation_mode: 'manual_authoritative',
       authoritative_quantity_updated: true,
@@ -237,8 +226,28 @@ describe('AislePositionsPage (Aisle Results)', () => {
     });
     const resultsRefetch = vi.fn().mockResolvedValue(undefined);
     const aislesRefetch = vi.fn().mockResolvedValue(undefined);
+    const mergeResultsRefetch = vi.fn().mockImplementation(async () => {
+      mergeResultsState.data = {
+        results: [
+          {
+            id: 'fc-1',
+            position_id: 'pos-1',
+            sku: 'SKU-001',
+            product_name: 'Product 1',
+            merged_quantity: 6,
+            normalized_label_ids: ['n1', 'n2'],
+            review_required: false,
+            explanation_summary: 'Merged repeated labels',
+            metadata: {},
+            created_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      return { data: mergeResultsState.data };
+    });
     resultSummariesState.refetch = resultsRefetch;
     aislesListState.refetch = aislesRefetch;
+    mergeResultsState.refetch = mergeResultsRefetch;
     useRunAisleMergeMock.mockReturnValue({
       mutateAsync,
       isPending: false,
@@ -251,6 +260,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       expect(mutateAsync).toHaveBeenCalledWith('aisle-1');
       expect(resultsRefetch).toHaveBeenCalled();
       expect(aislesRefetch).toHaveBeenCalled();
+      expect(mergeResultsRefetch).toHaveBeenCalled();
     });
 
     expect(screen.getByText(/visible results updated after merge/i)).toBeTruthy();
@@ -300,6 +310,59 @@ describe('AislePositionsPage (Aisle Results)', () => {
     renderPage();
 
     expect(screen.getByText(/latest merge consolidated 1 repeated sku group/i)).toBeTruthy();
+  });
+
+  it('resets local merge feedback when the aisle route changes', async () => {
+    resultSummariesState.results = repeatedSkuResults;
+    resultSummariesState.positions = repeatedSkuPositions;
+    mergeResultsState.data = { results: [] };
+    mergeResultsState.refetch = vi.fn().mockImplementation(async () => {
+      mergeResultsState.data = {
+        results: [
+          {
+            id: 'fc-1',
+            position_id: 'pos-1',
+            sku: 'SKU-001',
+            product_name: 'Product 1',
+            merged_quantity: 6,
+            normalized_label_ids: ['n1', 'n2'],
+            review_required: false,
+            explanation_summary: 'Merged repeated labels',
+            metadata: {},
+            created_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      return { data: mergeResultsState.data };
+    });
+
+    const mutateAsync = vi.fn().mockResolvedValue({
+      operation_mode: 'manual_authoritative',
+      authoritative_quantity_updated: true,
+      raw_count: 3,
+      normalized_count: 1,
+      final_count: 1,
+      product_records_updated: 1,
+    });
+    useRunAisleMergeMock.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    });
+
+    const view = renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /merge repeated labels/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/visible results updated after merge/i)).toBeTruthy();
+    });
+
+    mergeResultsState.data = { results: [] };
+    resultSummariesState.results = mockResults;
+    resultSummariesState.positions = mockPositions;
+    view.unmount();
+    renderPageAt('/inventories/inv-2/aisles/aisle-2/positions');
+
+    expect(screen.queryByText(/visible results updated after merge/i)).toBeNull();
   });
 
   it('hides merge action when there are no results to consolidate', () => {

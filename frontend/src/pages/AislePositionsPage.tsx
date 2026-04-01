@@ -43,6 +43,8 @@ type MergeResultsSummary = {
   skuExamples: string[];
 };
 
+// UI-only heuristic: repeated visible SKUs are a conservative signal that manual merge
+// may be useful. This is intentionally lighter than the backend merge domain logic.
 function summarizeLikelyMergeCandidates(
   positions: Array<{ sku?: string | null }>
 ): MergeCandidateSummary {
@@ -95,6 +97,7 @@ export default function AislePositionsPage() {
   const [quickContext, setQuickContext] = useState<QuickReviewContext | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
+  const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
 
@@ -141,6 +144,11 @@ export default function AislePositionsPage() {
     const pages = Math.max(1, Math.ceil(sortedForTable.length / pageSize));
     if (page > pages) setPage(pages);
   }, [sortedForTable.length, pageSize, page]);
+
+  useEffect(() => {
+    setLastMergeResponse(null);
+    setLastMergeSummary(null);
+  }, [inventoryId, aisleId]);
 
   const tableRows = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -219,8 +227,8 @@ export default function AislePositionsPage() {
   const mergeFeedback = useMemo(() => {
     if (lastMergeResponse != null) {
       if (lastMergeResponse.product_records_updated > 0) {
-        const summaryText = mergeResultsSummary
-          ? ` Latest merge consolidated ${mergeResultsSummary.groupCount} repeated SKU ${mergeResultsSummary.groupCount === 1 ? 'group' : 'groups'}${mergeResultsSummary.skuExamples.length > 0 ? ` (${mergeResultsSummary.skuExamples.join(', ')})` : ''}.`
+        const summaryText = lastMergeSummary
+          ? ` Latest merge consolidated ${lastMergeSummary.groupCount} repeated SKU ${lastMergeSummary.groupCount === 1 ? 'group' : 'groups'}${lastMergeSummary.skuExamples.length > 0 ? ` (${lastMergeSummary.skuExamples.join(', ')})` : ''}.`
           : '';
         return {
           severity: 'success' as const,
@@ -239,14 +247,21 @@ export default function AislePositionsPage() {
       };
     }
     return null;
-  }, [lastMergeResponse, mergeResultsSummary]);
+  }, [lastMergeResponse, lastMergeSummary, mergeResultsSummary]);
 
   const handleRunMerge = useCallback(async () => {
     if (!inventoryId || !aisleId) return;
     try {
+      setLastMergeResponse(null);
+      setLastMergeSummary(null);
       const result = await mergeMutation.mutateAsync(aisleId);
+      const [, , refreshedMergeResults] = await Promise.all([
+        refetch(),
+        aislesQuery.refetch(),
+        mergeResultsQuery.refetch(),
+      ]);
       setLastMergeResponse(result);
-      await Promise.all([refetch(), aislesQuery.refetch()]);
+      setLastMergeSummary(summarizeMergeResults(refreshedMergeResults.data?.results));
       showSnackbar(
         result.product_records_updated > 0
           ? 'Repeated labels merged'
@@ -257,7 +272,7 @@ export default function AislePositionsPage() {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       showSnackbar(getApiErrorMessage(err, 'Merge failed'), 'error');
     }
-  }, [aisleId, aislesQuery, inventoryId, mergeMutation, refetch, showSnackbar]);
+  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, showSnackbar]);
 
   if (!inventoryId || !aisleId) {
     return (
@@ -287,7 +302,7 @@ export default function AislePositionsPage() {
         actions={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
             {mergeButtonVisible ? (
-              <Tooltip title={mergeMutation.isPending ? '' : mergeDisabledReason}>
+              <Tooltip title={mergeDisabledReason} disableHoverListener={!mergeDisabledReason}>
                 <span>
                   <Button
                     size="small"
