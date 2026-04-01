@@ -4,14 +4,15 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Alert, Box, Button, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, TextField, Tooltip, Typography } from '@mui/material';
 import { exportInventoryResultsCsv } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
+import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
 import { FilterToolbar, SectionCard, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
-import { useInventoryDetail, useAislesList, useRunAisleMerge } from '../hooks';
+import { useInventoryDetail, useAislesList, useAisleMergeResults, useRunAisleMerge } from '../hooks';
 import {
   useResultSummaries,
   computeResultsKpi,
@@ -31,6 +32,55 @@ import {
   ResultsErrorState,
 } from '../features/results/components';
 
+type MergeCandidateSummary = {
+  groupCount: number;
+  skuExamples: string[];
+};
+
+type MergeResultsSummary = {
+  groupCount: number;
+  skuCount: number;
+  skuExamples: string[];
+};
+
+function summarizeLikelyMergeCandidates(
+  positions: Array<{ sku?: string | null }>
+): MergeCandidateSummary {
+  const counts = new Map<string, { label: string; count: number }>();
+  for (const position of positions) {
+    const rawSku = position.sku?.trim();
+    if (!rawSku) continue;
+    const key = rawSku.toLowerCase();
+    const current = counts.get(key);
+    if (current) {
+      current.count += 1;
+    } else {
+      counts.set(key, { label: rawSku, count: 1 });
+    }
+  }
+  const repeated = Array.from(counts.values())
+    .filter((entry) => entry.count > 1)
+    .map((entry) => entry.label);
+  return {
+    groupCount: repeated.length,
+    skuExamples: repeated.slice(0, 3),
+  };
+}
+
+function summarizeMergeResults(results: MergeResultItemResponse[] | undefined): MergeResultsSummary | null {
+  const consolidated = (results ?? []).filter((item) => item.normalized_label_ids.length > 1);
+  if (consolidated.length === 0) return null;
+  const skuLabels = consolidated
+    .map((item) => item.sku?.trim())
+    .filter((sku): sku is string => Boolean(sku));
+  const uniqueSkuLabels = Array.from(new Set(skuLabels));
+  return {
+    groupCount: consolidated.length,
+    skuCount: uniqueSkuLabels.length,
+    skuExamples: uniqueSkuLabels.slice(0, 3),
+  };
+}
+
 export default function AislePositionsPage() {
   const { inventoryId, aisleId } = useParams<{ inventoryId: string; aisleId: string }>();
   const navigate = useNavigate();
@@ -44,6 +94,7 @@ export default function AislePositionsPage() {
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
   const [quickContext, setQuickContext] = useState<QuickReviewContext | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
 
@@ -62,6 +113,9 @@ export default function AislePositionsPage() {
     aisleId
   );
   const positions = positionsFromQuery ?? [];
+  const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId, {
+    enabled: Boolean(inventoryId && aisleId && results.length > 0),
+  });
 
   const kpi = useMemo(() => computeResultsKpi(results), [results]);
   const missingEvidenceCount = useMemo(
@@ -152,12 +206,46 @@ export default function AislePositionsPage() {
         ? getApiErrorMessage(error, 'Failed to load results')
         : String(error)
       : null;
-  const canRunMerge = Boolean(inventoryId && aisleId && !isLoading && results.length > 0);
+  const hasResults = !isLoading && results.length > 0;
+  const mergeCandidates = useMemo(() => summarizeLikelyMergeCandidates(positions), [positions]);
+  const mergeResultsSummary = useMemo(
+    () => summarizeMergeResults(mergeResultsQuery.data?.results),
+    [mergeResultsQuery.data?.results]
+  );
+  const mergeButtonVisible = Boolean(inventoryId && aisleId && hasResults);
+  const mergeButtonDisabled = mergeMutation.isPending || mergeCandidates.groupCount === 0;
+  const mergeDisabledReason =
+    mergeCandidates.groupCount === 0 ? 'No repeated SKUs detected in current results' : '';
+  const mergeFeedback = useMemo(() => {
+    if (lastMergeResponse != null) {
+      if (lastMergeResponse.product_records_updated > 0) {
+        const summaryText = mergeResultsSummary
+          ? ` Latest merge consolidated ${mergeResultsSummary.groupCount} repeated SKU ${mergeResultsSummary.groupCount === 1 ? 'group' : 'groups'}${mergeResultsSummary.skuExamples.length > 0 ? ` (${mergeResultsSummary.skuExamples.join(', ')})` : ''}.`
+          : '';
+        return {
+          severity: 'success' as const,
+          text: `Visible results updated after merge.${summaryText}`,
+        };
+      }
+      return {
+        severity: 'info' as const,
+        text: 'Merge completed with no visible quantity changes.',
+      };
+    }
+    if (mergeResultsSummary != null) {
+      return {
+        severity: 'info' as const,
+        text: `Latest merge consolidated ${mergeResultsSummary.groupCount} repeated SKU ${mergeResultsSummary.groupCount === 1 ? 'group' : 'groups'}${mergeResultsSummary.skuExamples.length > 0 ? ` (${mergeResultsSummary.skuExamples.join(', ')})` : ''}.`,
+      };
+    }
+    return null;
+  }, [lastMergeResponse, mergeResultsSummary]);
 
   const handleRunMerge = useCallback(async () => {
     if (!inventoryId || !aisleId) return;
     try {
       const result = await mergeMutation.mutateAsync(aisleId);
+      setLastMergeResponse(result);
       await Promise.all([refetch(), aislesQuery.refetch()]);
       showSnackbar(
         result.product_records_updated > 0
@@ -198,15 +286,19 @@ export default function AislePositionsPage() {
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? 'Loading…' : '—')}
         actions={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
-            {canRunMerge ? (
-              <Button
-                size="small"
-                variant="contained"
-                onClick={() => void handleRunMerge()}
-                disabled={mergeMutation.isPending}
-              >
-                {mergeMutation.isPending ? 'Merging…' : 'Merge repeated labels'}
-              </Button>
+            {mergeButtonVisible ? (
+              <Tooltip title={mergeMutation.isPending ? '' : mergeDisabledReason}>
+                <span>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    onClick={() => void handleRunMerge()}
+                    disabled={mergeButtonDisabled}
+                  >
+                    {mergeMutation.isPending ? 'Merging…' : 'Merge repeated labels'}
+                  </Button>
+                </span>
+              </Tooltip>
             ) : null}
             <Button
               size="small"
@@ -294,6 +386,12 @@ export default function AislePositionsPage() {
               {kpi.aisleTotalCounted}
             </Typography>
           </Box>
+
+          {mergeFeedback ? (
+            <Alert severity={mergeFeedback.severity} sx={{ mb: 2 }}>
+              {mergeFeedback.text}
+            </Alert>
+          ) : null}
 
           <FilterToolbar
             onReset={handleResetFilters}

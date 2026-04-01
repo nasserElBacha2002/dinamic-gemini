@@ -34,6 +34,15 @@ const { aislesListState } = vi.hoisted(() => ({
     refetch: vi.fn(),
   },
 }));
+const { mergeResultsState } = vi.hoisted(() => ({
+  mergeResultsState: {
+    data: { results: [] as Array<Record<string, unknown>> },
+    isLoading: false,
+    isError: false,
+    error: null as unknown,
+    refetch: vi.fn(),
+  },
+}));
 
 const mockPositions: PositionSummary[] = [
   {
@@ -69,6 +78,42 @@ const mockResults: ResultSummary[] = [
   },
 ];
 
+const repeatedSkuPositions: PositionSummary[] = [
+  ...mockPositions,
+  {
+    id: 'pos-2',
+    aisle_id: 'aisle-1',
+    status: 'detected',
+    confidence: 0.88,
+    needs_review: false,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+    sku: 'SKU-001',
+    detected_quantity: 1,
+    corrected_quantity: null,
+    qty: 1,
+    qtySource: 'detected',
+    has_evidence: true,
+  },
+];
+
+const repeatedSkuResults: ResultSummary[] = [
+  ...mockResults,
+  {
+    id: 'pos-2',
+    sku: 'SKU-001',
+    detectedQty: 1,
+    correctedQty: null,
+    resolvedQty: null,
+    confidence: 0.88,
+    reviewStatus: 'DETECTED',
+    traceabilityStatus: 'UNVALIDATED',
+    needsReview: false,
+    updatedAt: '2024-01-01T00:00:00Z',
+    hasEvidence: true,
+  },
+];
+
 vi.mock('../src/features/results', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/features/results')>();
   return {
@@ -90,6 +135,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
       error: null,
     }),
     useAislesList: () => aislesListState,
+    useAisleMergeResults: () => mergeResultsState,
     useRunAisleMerge: useRunAisleMergeMock,
   };
 });
@@ -121,6 +167,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
     resultSummariesState.error = null;
     resultSummariesState.refetch = vi.fn();
     aislesListState.refetch = vi.fn();
+    mergeResultsState.data = { results: [] };
+    mergeResultsState.refetch = vi.fn();
     useRunAisleMergeMock.mockReset();
     useRunAisleMergeMock.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue({
@@ -161,6 +209,24 @@ describe('AislePositionsPage (Aisle Results)', () => {
   });
 
   it('runs manual merge from the header and refreshes the visible results queries', async () => {
+    resultSummariesState.results = repeatedSkuResults;
+    resultSummariesState.positions = repeatedSkuPositions;
+    mergeResultsState.data = {
+      results: [
+        {
+          id: 'fc-1',
+          position_id: 'pos-1',
+          sku: 'SKU-001',
+          product_name: 'Product 1',
+          merged_quantity: 6,
+          normalized_label_ids: ['n1', 'n2'],
+          review_required: false,
+          explanation_summary: 'Merged repeated labels',
+          metadata: {},
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    };
     const mutateAsync = vi.fn().mockResolvedValue({
       operation_mode: 'manual_authoritative',
       authoritative_quantity_updated: true,
@@ -186,9 +252,14 @@ describe('AislePositionsPage (Aisle Results)', () => {
       expect(resultsRefetch).toHaveBeenCalled();
       expect(aislesRefetch).toHaveBeenCalled();
     });
+
+    expect(screen.getByText(/visible results updated after merge/i)).toBeTruthy();
+    expect(screen.getByText(/latest merge consolidated 1 repeated sku group/i)).toBeTruthy();
   });
 
   it('shows a disabled pending merge button while the merge mutation is running', () => {
+    resultSummariesState.results = repeatedSkuResults;
+    resultSummariesState.positions = repeatedSkuPositions;
     useRunAisleMergeMock.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: true,
@@ -197,8 +268,38 @@ describe('AislePositionsPage (Aisle Results)', () => {
     renderPage();
 
     const button = screen.getByRole('button', { name: /merging/i });
-    expect(button).toBeDisabled();
-    expect(button).toHaveTextContent('Merging…');
+    expect(button.getAttribute('disabled')).not.toBeNull();
+    expect(button.textContent).toContain('Merging…');
+  });
+
+  it('keeps the merge button visible but disabled when there are no repeated sku candidates', () => {
+    renderPage();
+
+    const button = screen.getByRole('button', { name: /merge repeated labels/i });
+    expect(button.getAttribute('disabled')).not.toBeNull();
+  });
+
+  it('shows a lightweight latest merge summary when merge-results contain consolidated groups', () => {
+    mergeResultsState.data = {
+      results: [
+        {
+          id: 'fc-1',
+          position_id: 'pos-1',
+          sku: 'SKU-001',
+          product_name: 'Product 1',
+          merged_quantity: 6,
+          normalized_label_ids: ['n1', 'n2'],
+          review_required: false,
+          explanation_summary: 'Merged repeated labels',
+          metadata: {},
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    };
+
+    renderPage();
+
+    expect(screen.getByText(/latest merge consolidated 1 repeated sku group/i)).toBeTruthy();
   });
 
   it('hides merge action when there are no results to consolidate', () => {
