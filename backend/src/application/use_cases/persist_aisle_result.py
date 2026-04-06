@@ -103,6 +103,7 @@ class PersistAisleResultUseCase:
                         # Hotfix v3.2.5: merge/consolidation is non-authoritative in main flow.
                         # Keep explicit quantity resolved by pipeline mapping; do not overwrite ProductRecord.
                         apply_to_product_records=False,
+                        job_scope=command.job_id,
                     )
                 )
                 logger.debug(

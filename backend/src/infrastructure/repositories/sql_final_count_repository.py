@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
-from src.application.ports.repositories import FinalCountRepository
+from src.application.ports.repositories import FinalCountRepository, LabelJobScope
 from src.database.sqlserver import SqlServerClient
 from src.domain.labels.entities import FinalCountRecord
 
@@ -19,6 +19,14 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt.tzinfo is not None:
         return dt
     return dt.replace(tzinfo=timezone.utc)
+
+
+def _sql_job_predicate(job_id: LabelJobScope) -> tuple[str, list]:
+    if job_id == "all":
+        return "", []
+    if job_id is None:
+        return " AND job_id IS NULL", []
+    return " AND job_id = ?", [job_id]
 
 
 def _row_to_final_count(row) -> FinalCountRecord:
@@ -48,6 +56,7 @@ def _row_to_final_count(row) -> FinalCountRecord:
         explanation_summary=getattr(row, "explanation_summary", None),
         metadata=metadata,
         created_at=created,
+        job_id=getattr(row, "job_id", None),
     )
 
 
@@ -82,7 +91,8 @@ class SqlFinalCountRepository(FinalCountRepository):
                             review_required = ?,
                             explanation_summary = ?,
                             metadata_json = ?,
-                            created_at = ?
+                            created_at = ?,
+                            job_id = ?
                     WHEN NOT MATCHED THEN
                         INSERT (
                             id,
@@ -96,9 +106,10 @@ class SqlFinalCountRepository(FinalCountRepository):
                             review_required,
                             explanation_summary,
                             metadata_json,
-                            created_at
+                            created_at,
+                            job_id
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         rec.id,
@@ -113,6 +124,7 @@ class SqlFinalCountRepository(FinalCountRepository):
                         rec.explanation_summary,
                         metadata_json,
                         created,
+                        rec.job_id,
                         rec.id,
                         rec.inventory_id,
                         rec.aisle_id,
@@ -125,13 +137,21 @@ class SqlFinalCountRepository(FinalCountRepository):
                         rec.explanation_summary,
                         metadata_json,
                         created,
+                        rec.job_id,
                     ),
                 )
 
-    def list_for_scope(self, inventory_id: str, aisle_id: str) -> Sequence[FinalCountRecord]:
+    def list_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> Sequence[FinalCountRecord]:
+        extra_sql, extra_params = _sql_job_predicate(job_id)
         with self._client.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT
                     id,
                     inventory_id,
@@ -144,12 +164,13 @@ class SqlFinalCountRepository(FinalCountRepository):
                     review_required,
                     explanation_summary,
                     metadata_json,
-                    created_at
+                    created_at,
+                    job_id
                 FROM final_count_records
-                WHERE inventory_id = ? AND aisle_id = ?
+                WHERE inventory_id = ? AND aisle_id = ?{extra_sql}
                 ORDER BY created_at ASC, id ASC
                 """,
-                (inventory_id, aisle_id),
+                (inventory_id, aisle_id, *extra_params),
             )
             rows = cur.fetchall()
         return [_row_to_final_count(row) for row in rows]
@@ -170,7 +191,8 @@ class SqlFinalCountRepository(FinalCountRepository):
                     review_required,
                     explanation_summary,
                     metadata_json,
-                    created_at
+                    created_at,
+                    job_id
                 FROM final_count_records
                 WHERE position_id = ?
                 ORDER BY created_at ASC, id ASC
@@ -180,10 +202,17 @@ class SqlFinalCountRepository(FinalCountRepository):
             rows = cur.fetchall()
         return [_row_to_final_count(row) for row in rows]
 
-    def replace_for_scope(self, inventory_id: str, aisle_id: str) -> None:
+    def replace_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> None:
+        extra_sql, extra_params = _sql_job_predicate(job_id)
         with self._client.cursor() as cur:
             cur.execute(
-                "DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ?",
-                (inventory_id, aisle_id),
+                f"DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",
+                (inventory_id, aisle_id, *extra_params),
             )
 

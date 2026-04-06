@@ -261,6 +261,7 @@ def map_hybrid_report_to_domain(
             updated_at=now,
             detected_summary_json={**_detected_summary(entity, audit), **qty_meta},
             corrected_summary_json=None,
+            job_id=job_id,
         )
         positions.append(position)
 
@@ -321,6 +322,7 @@ def map_hybrid_report_to_domain(
                 confidence=confidence,
                 metadata={"entity_uid": entity_uid, "evidence_path": evidence_path_rel},
                 created_at=now,
+                job_id=job_id,
             )
         )
 

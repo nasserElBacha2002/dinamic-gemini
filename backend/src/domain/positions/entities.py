@@ -51,3 +51,5 @@ class Position:
     detected_summary_json: Optional[Dict[str, Any]] = None
     corrected_summary_json: Optional[Dict[str, Any]] = None  # legacy persisted blob; Sprint 4 audit tracks removal readiness
     corrected_position_code: Optional[str] = None
+    #: FK to ``inventory_jobs`` when persisted from a pipeline run; ``None`` = legacy pre-multi-run row.
+    job_id: Optional[str] = None

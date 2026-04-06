@@ -45,6 +45,7 @@ class RunAisleMergeUseCase:
                 inventory_id=command.inventory_id,
                 aisle_id=command.aisle_id,
                 apply_to_product_records=True,
+                job_scope="all",
             )
         )
 

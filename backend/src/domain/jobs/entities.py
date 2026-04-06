@@ -52,3 +52,8 @@ class Job:
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None
     execution_id: Optional[str] = None
+    #: Indexed run identity (multi-provider Phase 1). Tuning: ``engine_params_json``.
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_key: Optional[str] = None
+    engine_params_json: Optional[Dict[str, Any]] = None

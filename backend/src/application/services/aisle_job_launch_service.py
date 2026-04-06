@@ -48,6 +48,10 @@ class AisleJobLaunchService:
             current_step_started_at=now,
             attempt_count=int(attempt_count or 1),
             retry_of_job_id=retry_of_job_id,
+            provider_name="gemini",
+            model_name=None,
+            prompt_key="default",
+            engine_params_json=None,
         )
         self.job_repo.save(job)
 

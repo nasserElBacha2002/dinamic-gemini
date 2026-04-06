@@ -7,7 +7,7 @@ Use cases depend on these abstractions; infrastructure provides SQL (or other) i
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Literal, Optional, Sequence, Union
 
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.rollup_contracts import AisleAssetRollup
@@ -21,6 +21,16 @@ from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLab
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
+
+
+class _JobIdFilterUnset:
+    """Pass as ``job_id`` to ``list_by_aisle`` to omit a ``job_id`` predicate (all rows for aisle)."""
+
+
+JOB_ID_FILTER_UNSET = _JobIdFilterUnset()
+
+LabelJobScope = Union[str, Literal["all"], None]
+"""``job_id`` filter for label/count repositories: ``\"all\"`` = no filter; ``None`` = ``IS NULL``; else equality."""
 
 
 class InventoryRepository(ABC):
@@ -98,10 +108,13 @@ class PositionRepository(ABC):
         page_size: int = 25,
         sort_by: str = "created_at",
         sort_dir: str = "asc",
+        job_id: Union[str, None, _JobIdFilterUnset] = JOB_ID_FILTER_UNSET,
     ) -> Sequence[Position]:
         """List positions for an aisle with optional filters and pagination (§9.7).
         sku_filter: when set, only positions that have at least one product_record with
-        sku containing this string (substring match) are returned. In-memory impl may ignore it."""
+        sku containing this string (substring match) are returned. In-memory impl may ignore it.
+        job_id: ``JOB_ID_FILTER_UNSET`` (default) = no job filter; ``None`` = legacy ``job_id IS NULL``;
+        ``str`` = that inventory job's positions."""
         ...
 
     @abstractmethod
@@ -192,8 +205,14 @@ class RawLabelRepository(ABC):
         ...
 
     @abstractmethod
-    def list_for_scope(self, inventory_id: str, aisle_id: str) -> Sequence[RawLabel]:
-        """All raw labels for the given inventory and aisle."""
+    def list_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> Sequence[RawLabel]:
+        """Raw labels for scope. ``job_id=\"all\"`` = no filter; ``None`` = legacy null; else one job."""
         ...
 
 
@@ -205,12 +224,24 @@ class NormalizedLabelRepository(ABC):
         ...
 
     @abstractmethod
-    def list_for_scope(self, inventory_id: str, aisle_id: str) -> Sequence[NormalizedLabel]:
+    def list_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> Sequence[NormalizedLabel]:
         ...
 
     @abstractmethod
-    def replace_for_scope(self, inventory_id: str, aisle_id: str) -> None:
-        """Remove existing normalized labels for scope; caller then saves new ones. Idempotent recompute."""
+    def replace_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> None:
+        """Remove normalized labels for scope slice; caller then saves new ones. Idempotent recompute."""
         ...
 
 
@@ -222,7 +253,13 @@ class FinalCountRepository(ABC):
         ...
 
     @abstractmethod
-    def list_for_scope(self, inventory_id: str, aisle_id: str) -> Sequence[FinalCountRecord]:
+    def list_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> Sequence[FinalCountRecord]:
         ...
 
     @abstractmethod
@@ -230,8 +267,14 @@ class FinalCountRepository(ABC):
         """Final count records for one position (e.g. to apply to ProductRecord)."""
 
     @abstractmethod
-    def replace_for_scope(self, inventory_id: str, aisle_id: str) -> None:
-        """Remove existing final count for scope; caller then saves new ones."""
+    def replace_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> None:
+        """Remove final count rows for scope slice; caller then saves new ones."""
         ...
 
 
