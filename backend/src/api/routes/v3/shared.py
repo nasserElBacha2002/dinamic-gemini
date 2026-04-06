@@ -388,6 +388,9 @@ def aisle_to_response(
             failure_code=latest_job.failure_code,
             failure_message=latest_job.failure_message,
             execution_id=latest_job.execution_id,
+            provider_name=latest_job.provider_name,
+            model_name=latest_job.model_name,
+            prompt_key=latest_job.prompt_key,
         )
     return AisleResponse(
         id=a.id,
@@ -398,6 +401,7 @@ def aisle_to_response(
         updated_at=a.updated_at,
         error_code=a.error_code,
         error_message=a.error_message,
+        operational_job_id=a.operational_job_id,
         latest_job=latest,
         assets_count=assets_count,
         positions_count=positions_count,
@@ -410,9 +414,12 @@ def status_response_from_result(result: AisleProcessingStatusResult) -> AisleSta
     job_summary = None
     if result.latest_job is not None:
         job_summary = job_to_summary(result.latest_job)
+    recent = [job_to_summary(j) for j in result.recent_jobs]
     return AisleStatusResponse(
         aisle=aisle_to_response(result.aisle, result.latest_job),
         latest_job=job_summary,
+        operational_job_id=result.aisle.operational_job_id,
+        recent_jobs=recent,
     )
 
 
@@ -436,6 +443,9 @@ def job_to_summary(j: Job) -> JobSummary:
         failure_code=j.failure_code,
         failure_message=j.failure_message,
         execution_id=j.execution_id,
+        provider_name=j.provider_name,
+        model_name=j.model_name,
+        prompt_key=j.prompt_key,
     )
 
 

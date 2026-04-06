@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.api.schemas.aisle_schemas import AisleResponse
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
@@ -34,12 +34,23 @@ class JobSummary(BaseModel):
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None
     execution_id: Optional[str] = None
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_key: Optional[str] = None
 
 
 class AisleStatusResponse(BaseModel):
     """Response for GET .../aisles/{aisle_id}/status."""
     aisle: AisleResponse
     latest_job: Optional[JobSummary] = None
+    operational_job_id: Optional[str] = None
+    recent_jobs: List[JobSummary] = Field(default_factory=list)
+
+
+class AisleJobsListResponse(BaseModel):
+    """Response for GET .../aisles/{aisle_id}/jobs (Phase 2 run browser)."""
+    operational_job_id: Optional[str] = None
+    jobs: List[JobSummary] = Field(default_factory=list)
 
 
 class ExecutionLogEvent(BaseModel):

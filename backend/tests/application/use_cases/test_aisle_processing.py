@@ -101,6 +101,18 @@ class StubJobRepo(JobRepository):
                 out[tid] = latest
         return out
 
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        candidates = [
+            j
+            for j in self._store.values()
+            if j.target_type == target_type and j.target_id == target_id
+        ]
+        candidates.sort(key=lambda j: (j.updated_at, j.created_at), reverse=True)
+        n = max(1, int(limit))
+        return candidates[:n]
+
 
 class StubWorkerLaunchService(WorkerLaunchService):
     def __init__(self) -> None:
@@ -481,6 +493,8 @@ def test_get_aisle_processing_status_returns_aisle_and_latest_job() -> None:
     assert result.latest_job is not None
     assert result.latest_job.id == "j1"
     assert result.latest_job.status == JobStatus.QUEUED
+    assert len(result.recent_jobs) == 1
+    assert result.recent_jobs[0].id == "j1"
 
 
 def test_get_aisle_processing_status_returns_none_job_when_no_job() -> None:
@@ -500,6 +514,7 @@ def test_get_aisle_processing_status_returns_none_job_when_no_job() -> None:
 
     assert result.aisle.id == "a1"
     assert result.latest_job is None
+    assert result.recent_jobs == ()
 
 
 def test_get_aisle_processing_status_reconciles_stale_job() -> None:

@@ -190,6 +190,12 @@ class JobRepository(ABC):
         """Return the latest job per target_id for the given target_type. Keys are target_id; only one job per target (the latest by updated_at, then created_at). Missing targets are omitted from the dict."""
         ...
 
+    @abstractmethod
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        """Jobs for one target, newest first (``updated_at DESC``, ``created_at DESC``)."""
+
     def list_all_jobs(self) -> Sequence[Job]:
         """Bulk read for analytics. Default empty; SQL/memory implementations scan ``inventory_jobs``."""
         return []

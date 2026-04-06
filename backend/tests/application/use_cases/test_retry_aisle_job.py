@@ -86,6 +86,18 @@ class StubJobRepo(JobRepository):
             if (latest := self.get_latest_by_target(target_type, target_id)) is not None
         }
 
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        candidates = [
+            job
+            for job in self._store.values()
+            if job.target_type == target_type and job.target_id == target_id
+        ]
+        candidates.sort(key=lambda job: (job.updated_at, job.created_at), reverse=True)
+        n = max(1, int(limit))
+        return candidates[:n]
+
 
 class StubWorkerLaunchService(WorkerLaunchService):
     def __init__(self) -> None:

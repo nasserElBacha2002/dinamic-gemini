@@ -44,6 +44,9 @@ class _NoopJobRepo(JobRepository):
     def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]):
         return {}
 
+    def list_jobs_for_target(self, target_type: str, target_id: str, *, limit: int = 50):
+        return []
+
 
 class _NoopAisleRepo(AisleRepository):
     def save(self, aisle):  # type: ignore[no-untyped-def]

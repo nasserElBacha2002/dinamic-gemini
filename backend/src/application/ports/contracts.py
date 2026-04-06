@@ -7,9 +7,9 @@ metrics, queue payloads, and position list query. Reduces reliance on Dict[str, 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from typing_extensions import TypedDict
 
 from src.application.ports.rollup_contracts import AisleAssetRollup
@@ -116,6 +116,13 @@ class AisleTableQuery:
     page_size: int = 25
 
 
+class _PositionListJobIdUnset:
+    """Sentinel: omit job_id predicate (all slices). Phase 2 list/detail pass a resolved slice."""
+
+
+POSITION_LIST_JOB_ID_UNSET = _PositionListJobIdUnset()
+
+
 @dataclass
 class PositionListQuery:
     """Repository-level filters for raw positions before consolidation (§9.7).
@@ -132,6 +139,8 @@ class PositionListQuery:
     sort_by: str = "created_at"
     """SQL/order: created_at | updated_at | confidence | id"""
     sort_dir: str = "asc"
+    job_id: Union[str, None, _PositionListJobIdUnset] = field(default_factory=lambda: POSITION_LIST_JOB_ID_UNSET)
+    """Unset = no job filter; ``None`` = legacy null job_id rows; ``str`` = one inventory job."""
 
 
 @dataclass(frozen=True)

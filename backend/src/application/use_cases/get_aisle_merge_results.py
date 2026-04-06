@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Optional, Sequence
 
 from src.application.errors import AisleNotFoundError, InventoryNotFoundError
 from src.application.ports.repositories import (
@@ -9,6 +9,7 @@ from src.application.ports.repositories import (
     FinalCountRepository,
     InventoryRepository,
 )
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.labels.entities import FinalCountRecord
 
 
@@ -16,22 +17,32 @@ from src.domain.labels.entities import FinalCountRecord
 class GetAisleMergeResultsCommand:
     inventory_id: str
     aisle_id: str
+    job_id: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class GetAisleMergeResultsResult:
+    records: Sequence[FinalCountRecord]
+    resolved_job_id: Optional[str]
+    result_context_source: str
 
 
 class GetAisleMergeResultsUseCase:
-    """Returns final_count rows for an aisle (Phase 1: unfiltered = all job slices; run-specific UI is Phase 2)."""
+    """Final_count rows for one resolved result context (Phase 2 — no aisle-wide ``all`` slice)."""
 
     def __init__(
         self,
         inventory_repo: InventoryRepository,
         aisle_repo: AisleRepository,
         final_count_repo: FinalCountRepository,
+        result_context_resolver: ResultContextResolver,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._final_count_repo = final_count_repo
+        self._resolver = result_context_resolver
 
-    def execute(self, command: GetAisleMergeResultsCommand) -> Sequence[FinalCountRecord]:
+    def execute(self, command: GetAisleMergeResultsCommand) -> GetAisleMergeResultsResult:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
@@ -40,7 +51,12 @@ class GetAisleMergeResultsUseCase:
             raise AisleNotFoundError(
                 f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
             )
-        return self._final_count_repo.list_for_scope(
-            command.inventory_id, command.aisle_id, job_id="all"
+        ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=command.job_id)
+        records = self._final_count_repo.list_for_scope(
+            command.inventory_id, command.aisle_id, job_id=ctx.job_id_for_slice
         )
-
+        return GetAisleMergeResultsResult(
+            records=records,
+            resolved_job_id=ctx.job_id_for_slice,
+            result_context_source=ctx.source,
+        )

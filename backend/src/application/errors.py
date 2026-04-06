@@ -58,3 +58,15 @@ class ProductNotFoundError(Exception):
 
 class MergeJobScopeAmbiguousError(Exception):
     """Raised when manual merge cannot infer a single job scope (multi-run aisle without job_id)."""
+
+
+class JobNotFoundError(Exception):
+    """Raised when an inventory job id does not exist."""
+
+
+class JobDoesNotBelongToAisleError(Exception):
+    """Raised when a job exists but is not scoped to the given aisle."""
+
+
+class PositionResultContextMismatchError(Exception):
+    """Raised when a position row does not belong to the resolved result context (e.g. wrong job_id query)."""

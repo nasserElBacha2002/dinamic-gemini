@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional, Sequence, Union
 
-from src.application.ports.contracts import PositionListQuery
+from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
 from src.domain.positions.entities import Position
 
@@ -67,6 +67,9 @@ class MemoryPositionRepository(PositionRepository):
         self, aisle_id: str, query: Optional[PositionListQuery] = None
     ) -> Sequence[Position]:
         q = query or PositionListQuery()
+        repo_job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET
+        if q.job_id is not POSITION_LIST_JOB_ID_UNSET:
+            repo_job_id = q.job_id
         return self.list_by_aisle(
             aisle_id,
             status=q.status,
@@ -75,6 +78,9 @@ class MemoryPositionRepository(PositionRepository):
             sku_filter=q.sku_filter,
             page=q.page,
             page_size=q.page_size,
+            sort_by=q.sort_by,
+            sort_dir=q.sort_dir,
+            job_id=repo_job_id,
         )
 
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:

@@ -67,6 +67,11 @@ class InMemoryJobRepo(JobRepository):
     def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> Dict[str, Job]:
         return {}
 
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        return []
+
 
 class CountingJobRepo(InMemoryJobRepo):
     def __init__(self) -> None:

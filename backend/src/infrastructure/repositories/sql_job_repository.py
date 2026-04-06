@@ -240,6 +240,23 @@ class SqlJobRepository(JobRepository):
             return None
         return _row_to_job(row)
 
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        n = max(1, min(int(limit), 500))
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT TOP ({n}) {_JOB_SELECT_FIELDS}
+                FROM inventory_jobs
+                WHERE target_type = ? AND target_id = ?
+                ORDER BY updated_at DESC, created_at DESC
+                """,
+                (target_type, target_id),
+            )
+            rows = cur.fetchall()
+        return [_row_to_job(row) for row in rows]
+
     def list_all_jobs(self) -> Sequence[Job]:
         with self._client.cursor() as cur:
             cur.execute(f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC")

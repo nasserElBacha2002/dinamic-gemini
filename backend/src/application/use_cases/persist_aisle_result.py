@@ -113,6 +113,10 @@ class PersistAisleResultUseCase:
                     result.final_count,
                     result.product_records_updated,
                 )
+            # Phase 2: successful persist promotes this job as the aisle operational pointer for default reads.
+            # Benchmark/non-operational jobs: future flag should skip this update.
+            aisle.operational_job_id = command.job_id
+            self._aisle_repo.save(aisle)
         except Exception as e:
             logger.exception("PersistAisleResult failed for aisle %s job %s: %s", command.aisle_id, command.job_id, e)
             raise

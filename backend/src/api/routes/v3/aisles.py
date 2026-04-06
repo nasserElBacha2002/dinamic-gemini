@@ -17,6 +17,7 @@ from src.api.dependencies import (
     get_retry_aisle_job_use_case,
     get_aisle_repo,
     get_get_aisle_merge_results_use_case,
+    get_list_aisle_jobs_use_case,
     get_job_repo,
     get_run_aisle_merge_use_case,
 )
@@ -34,6 +35,7 @@ from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest
 from src.api.schemas.listing_schemas import PaginatedAisleListResponse, compute_total_pages
 from src.application.ports.contracts import AisleTableQuery
 from src.api.schemas.processing_schemas import (
+    AisleJobsListResponse,
     AisleStatusResponse,
     ExecutionLogEvent,
     ExecutionLogResponse,
@@ -47,6 +49,8 @@ from src.application.errors import (
     DuplicateAisleCodeError,
     InventoryNotFoundError,
     MergeJobScopeAmbiguousError,
+    JobDoesNotBelongToAisleError,
+    JobNotFoundError,
 )
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
@@ -59,6 +63,7 @@ from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsCommand,
     GetAisleMergeResultsUseCase,
 )
+from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, ListAisleJobsUseCase
 from src.application.use_cases.run_aisle_merge import (
     RunAisleMergeCommand,
     RunAisleMergeUseCase,
@@ -164,6 +169,34 @@ def get_aisle_status(
     try:
         result = use_case.execute(inventory_id, aisle_id)
         return status_response_from_result(result)
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs",
+    response_model=AisleJobsListResponse,
+)
+def list_aisle_jobs(
+    inventory_id: str,
+    aisle_id: str,
+    limit: int = Query(50, ge=1, le=500, description="Max jobs to return (newest first)."),
+    use_case: ListAisleJobsUseCase = Depends(get_list_aisle_jobs_use_case),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+) -> AisleJobsListResponse:
+    """List process_aisle jobs for an aisle (newest first) for run browsing / future UI selector."""
+    try:
+        jobs = use_case.execute(
+            ListAisleJobsCommand(inventory_id=inventory_id, aisle_id=aisle_id, limit=limit)
+        )
+        aisle = aisle_repo.get_by_id(aisle_id)
+        op = aisle.operational_job_id if aisle and aisle.inventory_id == inventory_id else None
+        return AisleJobsListResponse(
+            operational_job_id=op,
+            jobs=[job_to_summary(j) for j in jobs],
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
 
@@ -376,13 +409,18 @@ def run_aisle_merge(
 def get_aisle_merge_results(
     inventory_id: str,
     aisle_id: str,
+    job_id: Optional[str] = Query(
+        None,
+        description="Optional inventory job id; omitted uses operational job or legacy slice (Phase 2).",
+    ),
     use_case: GetAisleMergeResultsUseCase = Depends(get_get_aisle_merge_results_use_case),
 ) -> MergeResultsResponse:
     try:
-        records = use_case.execute(
+        merge_result = use_case.execute(
             GetAisleMergeResultsCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
+                job_id=job_id.strip() if job_id and str(job_id).strip() else None,
             )
         )
         return MergeResultsResponse(
@@ -399,10 +437,16 @@ def get_aisle_merge_results(
                     metadata=dict(r.metadata or {}),
                     created_at=r.created_at.isoformat(),
                 )
-                for r in records
-            ]
+                for r in merge_result.records
+            ],
+            result_job_id=merge_result.resolved_job_id,
+            result_context_source=merge_result.result_context_source,
         )
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e

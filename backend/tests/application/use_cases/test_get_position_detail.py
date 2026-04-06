@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -115,6 +117,7 @@ def test_get_position_detail_uses_consolidated_representative_for_group_member()
         )
     )
 
+    job_repo = MemoryJobRepository()
     use_case = GetPositionDetailUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
@@ -122,12 +125,15 @@ def test_get_position_detail_uses_consolidated_representative_for_group_member()
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         review_repo=review_repo,
+        job_repo=job_repo,
+        result_context_resolver=ResultContextResolver(job_repo),
         positions_aisle_raw_cap=2000,
     )
 
     result = use_case.execute("inv-1", "aisle-1", "pos-2")
 
     assert result.position.id == "pos-1"
+    assert result.run_context.result_context_source == "legacy"
     assert isinstance(result.position.detected_summary_json, dict)
     assert result.position.detected_summary_json["internal_code"] == "SKU-NEW"
     assert result.position.detected_summary_json["final_quantity"] == 4
@@ -193,6 +199,7 @@ def test_get_position_detail_falls_back_to_raw_position_when_representative_cann
         )
     )
 
+    job_repo = MemoryJobRepository()
     use_case = GetPositionDetailUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
@@ -200,6 +207,8 @@ def test_get_position_detail_falls_back_to_raw_position_when_representative_cann
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         review_repo=review_repo,
+        job_repo=job_repo,
+        result_context_resolver=ResultContextResolver(job_repo),
         positions_aisle_raw_cap=1,
     )
 

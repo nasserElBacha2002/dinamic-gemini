@@ -192,6 +192,21 @@ class PositionSummaryResponse(BaseModel):
     position_code: str = Field(..., description="Effective position code (Audit Sprint 4.5).")
 
 
+class PositionRunContextResponse(BaseModel):
+    """Phase 2: which result slice the payload belongs to (align with list/merge)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: Optional[str] = Field(None, description="Position row job id; null = legacy.")
+    result_context_source: str
+    resolved_job_id: Optional[str] = Field(
+        None, description="Slice used for this response (null = legacy null-job rows)."
+    )
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_key: Optional[str] = None
+
+
 class PositionListResponse(PageMeta):
     """Response for GET .../aisles/{aisle_id}/positions (Aisle Results).
 
@@ -215,6 +230,13 @@ class PositionListResponse(PageMeta):
             "True when the raw fetch reached the configured cap; total_items/total_pages are then "
             "only meaningful within that fetch window, not for the full aisle."
         ),
+    )
+    result_job_id: Optional[str] = Field(
+        None, description="Resolved job slice for this list; null = legacy null-job positions."
+    )
+    result_context_source: str = Field(
+        ...,
+        description="explicit | operational | legacy",
     )
 
 
@@ -272,6 +294,10 @@ class PositionDetailResponse(BaseModel):
     )
     evidences: List[EvidenceResponse]
     review_actions: List[ReviewActionResponse] = Field(default_factory=list)
+    run_context: PositionRunContextResponse = Field(
+        ...,
+        description="Phase 2: run identity for this row so clients do not mix multi-run datasets.",
+    )
 
 
 ReviewActionTypeLiteral = Literal[

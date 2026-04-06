@@ -83,6 +83,14 @@ class StubJobRepo(JobRepository):
             return {}
         return {tid: self._latest[tid] for tid in target_ids if tid in self._latest}
 
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        if target_type != "aisle":
+            return []
+        j = self._latest.get(target_id)
+        return [j] if j is not None else []
+
 
 class StubPositionRepo(PositionRepository):
     def __init__(self, positions: list[Position] | None = None) -> None:

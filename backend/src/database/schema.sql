@@ -244,6 +244,17 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_inventory_jobs_provide
     CREATE INDEX IX_inventory_jobs_provider_model_prompt ON inventory_jobs(provider_name, model_name, prompt_key);
 GO
 
+-- Phase 2 — aisles.operational_job_id (mirror migrations/versions/0011_aisle_operational_job.sql).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'operational_job_id')
+BEGIN
+    ALTER TABLE aisles ADD operational_job_id VARCHAR(36) NULL;
+    ALTER TABLE aisles ADD CONSTRAINT FK_aisles_operational_job FOREIGN KEY (operational_job_id) REFERENCES inventory_jobs(id);
+END;
+GO
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_operational_job_id' AND object_id = OBJECT_ID('aisles'))
+    CREATE INDEX IX_aisles_operational_job_id ON aisles(operational_job_id);
+GO
+
 -- v3.0 — Source assets (Épica 4, Documento técnico §7.3)
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'source_assets')
 BEGIN

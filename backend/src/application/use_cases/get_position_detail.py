@@ -3,6 +3,9 @@ GetPositionDetail use case — v3.0 Épica 6.
 
 Returns a position with its product records and evidences.
 Fails if inventory/aisle/position do not exist or do not match.
+
+Phase 2: resolves result context (explicit job / operational / legacy) and scopes consolidation fetch;
+includes run metadata for dataset-safe clients.
 """
 
 from __future__ import annotations
@@ -11,16 +14,19 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
+from src.application.errors import AisleNotFoundError, PositionResultContextMismatchError
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
     InventoryRepository,
+    JobRepository,
     PositionRepository,
     ProductRecordRepository,
     ReviewActionRepository,
 )
 from src.application.services.position_sku_consolidation import consolidate_positions_by_sku
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.review_validation import resolve_position
 from src.domain.evidence.entities import Evidence
 from src.domain.positions.entities import Position
@@ -30,12 +36,25 @@ from src.domain.reviews.entities import ReviewAction
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class PositionDetailRunContext:
+    job_id: Optional[str]
+    """Storage job on the position row (``None`` = legacy)."""
+    result_context_source: str
+    resolved_job_id: Optional[str]
+    """Slice used for this response (same semantics as list/merge)."""
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_key: Optional[str] = None
+
+
 @dataclass
 class PositionDetailResult:
     position: Position
     products: Sequence[ProductRecord]
     evidences: Sequence[Evidence]
     review_actions: Sequence[ReviewAction]
+    run_context: PositionDetailRunContext
 
 
 class GetPositionDetailUseCase:
@@ -55,6 +74,8 @@ class GetPositionDetailUseCase:
         product_record_repo: ProductRecordRepository,
         evidence_repo: EvidenceRepository,
         review_repo: ReviewActionRepository,
+        job_repo: JobRepository,
+        result_context_resolver: ResultContextResolver,
         *,
         positions_aisle_raw_cap: int,
     ) -> None:
@@ -64,6 +85,8 @@ class GetPositionDetailUseCase:
         self._product_record_repo = product_record_repo
         self._evidence_repo = evidence_repo
         self._review_repo = review_repo
+        self._job_repo = job_repo
+        self._resolver = result_context_resolver
         self._raw_cap = max(1, int(positions_aisle_raw_cap))
 
     @staticmethod
@@ -74,39 +97,36 @@ class GetPositionDetailUseCase:
             return False
         return requested_position_id in aggregated
 
-    def _resolve_operator_facing_position(self, position: Position) -> Position:
-        # TODO: Extract a shared consolidated read-model builder so list and detail use one
-        # canonical reconstruction path instead of duplicating representative resolution logic.
-        # This reconstruction path relies on the same raw-cap used by the list read model. If the
-        # aisle cap is too small to include all members of a consolidated group, we may fall back
-        # to the requested raw position and lose operator-facing parity for that request.
+    def _resolve_operator_facing_position(
+        self, position: Position, job_id_for_slice: Optional[str]
+    ) -> Position:
         raw_positions = list(
             self._position_repo.list_by_aisle_query(
                 position.aisle_id,
-                PositionListQuery(page=1, page_size=self._raw_cap, sort_by="created_at", sort_dir="asc"),
+                PositionListQuery(
+                    page=1,
+                    page_size=self._raw_cap,
+                    sort_by="created_at",
+                    sort_dir="asc",
+                    job_id=job_id_for_slice,
+                ),
             )
         )
         consolidated = consolidate_positions_by_sku(raw_positions)
         for candidate in consolidated:
             if candidate.id == position.id or self._is_group_member(candidate, position.id):
                 logger.debug(
-                    "position_detail representative resolved requested_position_id=%s resolved_position_id=%s aisle_id=%s raw_positions=%s consolidated_positions=%s fallback_to_raw=%s",
+                    "position_detail representative resolved requested_position_id=%s resolved_position_id=%s aisle_id=%s",
                     position.id,
                     candidate.id,
                     position.aisle_id,
-                    len(raw_positions),
-                    len(consolidated),
-                    False,
                 )
                 return candidate
         logger.warning(
-            "position_detail representative fallback requested_position_id=%s aisle_id=%s raw_positions=%s consolidated_positions=%s raw_cap=%s fallback_to_raw=%s",
+            "position_detail representative fallback requested_position_id=%s aisle_id=%s raw_cap=%s",
             position.id,
             position.aisle_id,
-            len(raw_positions),
-            len(consolidated),
             self._raw_cap,
-            True,
         )
         return position
 
@@ -115,6 +135,8 @@ class GetPositionDetailUseCase:
         inventory_id: str,
         aisle_id: str,
         position_id: str,
+        *,
+        explicit_job_id: Optional[str] = None,
     ) -> PositionDetailResult:
         position = resolve_position(
             self._inventory_repo,
@@ -124,13 +146,37 @@ class GetPositionDetailUseCase:
             aisle_id,
             position_id,
         )
-        operator_position = self._resolve_operator_facing_position(position)
+        aisle = self._aisle_repo.get_by_id(aisle_id)
+        if aisle is None:
+            raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
+        ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=explicit_job_id)
+        if ctx.job_id_for_slice != position.job_id:
+            raise PositionResultContextMismatchError(
+                f"Position {position_id} is not in the resolved result context for this aisle"
+            )
+
+        operator_position = self._resolve_operator_facing_position(position, ctx.job_id_for_slice)
         products = self._product_record_repo.list_by_position(operator_position.id)
         evidences = self._evidence_repo.list_by_entity("position", operator_position.id)
         review_actions = self._review_repo.list_by_position(operator_position.id)
+
+        job = (
+            self._job_repo.get_by_id(operator_position.job_id)
+            if operator_position.job_id
+            else None
+        )
+        run_context = PositionDetailRunContext(
+            job_id=operator_position.job_id,
+            result_context_source=ctx.source,
+            resolved_job_id=ctx.job_id_for_slice,
+            provider_name=job.provider_name if job else None,
+            model_name=job.model_name if job else None,
+            prompt_key=job.prompt_key if job else None,
+        )
         return PositionDetailResult(
             position=operator_position,
             products=products,
             evidences=evidences,
             review_actions=review_actions,
+            run_context=run_context,
         )

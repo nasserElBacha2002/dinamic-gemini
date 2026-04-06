@@ -16,8 +16,16 @@ from src.api.schemas.position_schemas import (
     EvidenceResponse,
     PositionDetailResponse,
     PositionListResponse,
+    PositionRunContextResponse,
 )
-from src.application.errors import AisleNotFoundError, InventoryNotFoundError, PositionNotFoundError
+from src.application.errors import (
+    AisleNotFoundError,
+    InventoryNotFoundError,
+    JobDoesNotBelongToAisleError,
+    JobNotFoundError,
+    PositionNotFoundError,
+    PositionResultContextMismatchError,
+)
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.services.display_primary_product import select_display_primary_product
 from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
@@ -56,6 +64,10 @@ def list_aisle_positions(
         description="Post-consolidation sort: created_at | updated_at | confidence | sku | quantity",
     ),
     sort_dir: str = Query("asc", description="asc | desc"),
+    job_id: Optional[str] = Query(
+        None,
+        description="Optional inventory job id; omitted uses operational job or legacy null-job slice (Phase 2).",
+    ),
     include_technical: bool = Query(
         False,
         description="When true, include legacy `detected_summary_json` in list rows for transitional/debug clients.",
@@ -79,6 +91,7 @@ def list_aisle_positions(
             page_size=page_size,
             sort_by=sort_by,
             sort_dir=sort_dir,
+            job_id=job_id.strip() if job_id and str(job_id).strip() else None,
         )
         result = use_case.execute(cmd)
         summaries = []
@@ -103,11 +116,17 @@ def list_aisle_positions(
             total_items=result.total_items,
             total_pages=compute_total_pages(result.total_items, result.page_size),
             raw_fetch_truncated=result.raw_fetch_truncated,
+            result_job_id=result.resolved_job_id,
+            result_context_source=result.result_context_source,
         )
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.get(
@@ -118,6 +137,10 @@ def get_position_detail(
     inventory_id: str,
     aisle_id: str,
     position_id: str,
+    job_id: Optional[str] = Query(
+        None,
+        description="Optional; must match resolved result context for this position (Phase 2).",
+    ),
     use_case: GetPositionDetailUseCase = Depends(get_get_position_detail_use_case),
 ) -> PositionDetailResponse:
     """Get detail for the operator-facing current review entity of a position.
@@ -128,7 +151,12 @@ def get_position_detail(
     debug/history metadata for that resolved entity.
     """
     try:
-        result = use_case.execute(inventory_id, aisle_id, position_id)
+        result = use_case.execute(
+            inventory_id,
+            aisle_id,
+            position_id,
+            explicit_job_id=job_id.strip() if job_id and str(job_id).strip() else None,
+        )
         # GetPositionDetailUseCase returns products from list_by_position (order not guaranteed by port);
         # SQL repo orders by created_at ASC, id ASC; memory repo is unordered — use shared display-primary rule.
         primary_product = select_display_primary_product(result.products)
@@ -140,6 +168,7 @@ def get_position_detail(
             primary_product,
             corrected_quantity=corrected_quantity,
         )
+        rc = result.run_context
         return PositionDetailResponse(
             position=position_to_summary(
                 result.position,
@@ -150,6 +179,14 @@ def get_position_detail(
             technical_snapshot=technical_snapshot_from_view(view),
             evidences=[evidence_to_response(e) for e in result.evidences],
             review_actions=[review_to_response(ra) for ra in result.review_actions],
+            run_context=PositionRunContextResponse(
+                job_id=rc.job_id,
+                result_context_source=rc.result_context_source,
+                resolved_job_id=rc.resolved_job_id,
+                provider_name=rc.provider_name,
+                model_name=rc.model_name,
+                prompt_key=rc.prompt_key,
+            ),
         )
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
@@ -157,5 +194,11 @@ def get_position_detail(
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
     except PositionNotFoundError:
         raise HTTPException(status_code=404, detail="Position not found or does not belong to this aisle")
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except PositionResultContextMismatchError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 

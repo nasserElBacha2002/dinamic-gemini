@@ -4,13 +4,13 @@ ListAislePositions use case — v3.0 Épica 6.
 Returns SKU-level consolidated positions for an aisle with filters, **post-consolidation**
 sorting and pagination, and honest metadata when the raw fetch cap is hit (Sprint 1.4).
 
-Phase 1: fetches all positions for the aisle (all job slices); per-run filtering is Phase 2.
+Phase 2: raw rows are limited to one result context (explicit ``job_id`` → operational job → legacy null slice).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Optional, Tuple
 
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import AisleRepository, InventoryRepository, PositionRepository
@@ -20,6 +20,7 @@ from src.application.services.position_sku_consolidation import (
     consolidate_positions_by_sku,
     position_quantity_from_summary,
 )
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.positions.entities import Position
 
 
@@ -36,6 +37,8 @@ class ListAislePositionsCommand:
     sort_by: str = "created_at"
     """Post-consolidation: created_at | updated_at | confidence | sku | quantity"""
     sort_dir: str = "asc"
+    #: Optional override; omitted uses Result Context Resolver (operational / legacy).
+    job_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,10 @@ class ListAislePositionsResult:
     page: int
     page_size: int
     raw_fetch_truncated: bool
+    resolved_job_id: Optional[str]
+    """Effective slice: ``None`` = legacy null-job rows."""
+    result_context_source: str
+    """explicit | operational | legacy"""
 
 
 def _sort_key_tuple(p: Position, sort_by: str) -> Tuple:
@@ -67,12 +74,14 @@ class ListAislePositionsUseCase:
         inventory_repo: InventoryRepository,
         aisle_repo: AisleRepository,
         position_repo: PositionRepository,
+        result_context_resolver: ResultContextResolver,
         *,
         positions_aisle_raw_cap: int,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._position_repo = position_repo
+        self._resolver = result_context_resolver
         self._raw_cap = max(1, int(positions_aisle_raw_cap))
 
     def execute(self, command: ListAislePositionsCommand) -> ListAislePositionsResult:
@@ -87,6 +96,7 @@ class ListAislePositionsUseCase:
                 f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
             )
 
+        ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=command.job_id)
         raw_q = PositionListQuery(
             status=command.status,
             needs_review=command.needs_review,
@@ -96,6 +106,7 @@ class ListAislePositionsUseCase:
             page_size=self._raw_cap,
             sort_by="created_at",
             sort_dir="asc",
+            job_id=ctx.job_id_for_slice,
         )
         raw_positions = list(self._position_repo.list_by_aisle_query(command.aisle_id, raw_q))
         raw_truncated = len(raw_positions) >= self._raw_cap
@@ -120,4 +131,6 @@ class ListAislePositionsUseCase:
             page=page,
             page_size=page_size,
             raw_fetch_truncated=raw_truncated,
+            resolved_job_id=ctx.job_id_for_slice,
+            result_context_source=ctx.source,
         )
