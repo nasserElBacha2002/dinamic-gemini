@@ -175,6 +175,8 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     assert queue.launched == [job_id]
     saved_job = job_repo.get_by_id(job_id)
     assert saved_job is not None
+    assert saved_job.provider_name == "gemini"
+    assert saved_job.prompt_key == "default"
     assert saved_job.target_type == "aisle"
     assert saved_job.target_id == "a1"
     assert saved_job.job_type == "process_aisle"
@@ -188,6 +190,42 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     assert updated_aisle.status == AisleStatus.QUEUED
     assert inv_repo.get_by_id("inv1") is not None
     assert inv_repo.get_by_id("inv1").status == InventoryStatus.PROCESSING
+
+
+def test_start_aisle_processing_persists_explicit_provider_and_prompt() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    job_repo = StubJobRepo()
+    queue = StubWorkerLaunchService()
+    clock = FixedClock(now)
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+    use_case = StartAisleProcessingUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=queue,
+            clock=clock,
+            reconciler=reconciler,
+        ),
+        stale_reconciler=make_stale_reconciler(job_repo, clock),
+    )
+    job_id = use_case.execute(
+        StartAisleProcessingCommand(
+            inventory_id="inv1",
+            aisle_id="a1",
+            pipeline_provider_key="fake",
+            prompt_key="global_v21",
+        )
+    )
+    saved = job_repo.get_by_id(job_id)
+    assert saved is not None
+    assert saved.provider_name == "fake"
+    assert saved.prompt_key == "global_v21"
 
 
 def test_start_aisle_processing_persists_job_before_enqueue() -> None:

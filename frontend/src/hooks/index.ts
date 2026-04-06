@@ -2,6 +2,7 @@ export { useInventoriesList, useInventoryDetail, useInventoryVisualReferences } 
 export {
   useInventoryMetrics,
   useAislesList,
+  useProcessingProviderOptions,
   useExecutionLog,
   useAisleJobDetail,
   useAisleJobsList,

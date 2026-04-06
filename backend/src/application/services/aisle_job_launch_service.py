@@ -37,6 +37,8 @@ class AisleJobLaunchService:
         attempt_count: int,
         retry_of_job_id: str | None = None,
         log_prefix: str = "job.start_requested",
+        provider_name: str,
+        prompt_key: str,
     ) -> Job:
         now = self.clock.now()
         job = Job(
@@ -54,10 +56,9 @@ class AisleJobLaunchService:
             current_step_started_at=now,
             attempt_count=int(attempt_count or 1),
             retry_of_job_id=retry_of_job_id,
-            # Transitional defaults (current single stack); not user-selectable multi-provider yet.
-            provider_name="gemini",
+            provider_name=(provider_name or "").strip().lower(),
             model_name=None,
-            prompt_key="default",
+            prompt_key=prompt_key or "default",
             engine_params_json=None,
         )
         self.job_repo.save(job)
@@ -66,13 +67,15 @@ class AisleJobLaunchService:
         self.aisle_repo.save(aisle)
         self.status_reconciler.reconcile(aisle.inventory_id)
         logger.info(
-            "%s job_id=%s aisle_id=%s inventory_id=%s attempt_count=%s retry_of_job_id=%s",
+            "%s job_id=%s aisle_id=%s inventory_id=%s attempt_count=%s retry_of_job_id=%s provider_name=%s prompt_key=%s",
             log_prefix,
             job.id,
             aisle.id,
             aisle.inventory_id,
             job.attempt_count,
             retry_of_job_id,
+            job.provider_name,
+            job.prompt_key,
         )
 
         try:

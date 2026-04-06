@@ -74,3 +74,11 @@ class PositionResultContextMismatchError(Exception):
     Typical cause: default read slice (operational or legacy) does not match ``position.job_id``;
     client must pass an explicit ``job_id`` matching that row or fix the operational pointer.
     """
+
+
+class UnknownProcessingProviderError(Exception):
+    """Raised when the client requests a pipeline provider key that is not registered."""
+
+
+class ProcessingProviderNotConfiguredError(Exception):
+    """Raised when the client explicitly selects a provider that is missing required credentials."""

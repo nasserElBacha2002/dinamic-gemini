@@ -33,7 +33,7 @@ describe('useStartAisleProcessing', () => {
       wrapper: wrapper(qc),
     });
 
-    await result.current.mutateAsync('aisle-9');
+    await result.current.mutateAsync({ aisleId: 'aisle-9' });
 
     await waitFor(() => {
       expect(invalidateSpy).toHaveBeenCalled();
@@ -48,5 +48,16 @@ describe('useStartAisleProcessing', () => {
         { queryKey: queryKeys.inventories.positions('inv-1', 'aisle-9') },
       ])
     );
+  });
+
+  it('passes provider_name to the API when provided', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useStartAisleProcessing('inv-1'), {
+      wrapper: wrapper(qc),
+    });
+
+    await result.current.mutateAsync({ aisleId: 'aisle-9', providerName: 'fake' });
+
+    expect(client.startAisleProcessing).toHaveBeenCalledWith('inv-1', 'aisle-9', { providerName: 'fake' });
   });
 });

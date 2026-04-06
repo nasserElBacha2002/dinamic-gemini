@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from src.api.dependencies import (
     get_artifact_storage,
     get_create_aisle_use_case,
@@ -40,6 +40,7 @@ from src.api.schemas.processing_schemas import (
     ExecutionLogEvent,
     ExecutionLogResponse,
     JobSummary,
+    ProcessAisleRequest,
     ProcessAisleResponse,
 )
 from src.application.ports.repositories import AisleRepository, JobRepository
@@ -51,7 +52,11 @@ from src.application.errors import (
     MergeJobScopeAmbiguousError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
+    ProcessingProviderNotConfiguredError,
+    UnknownProcessingProviderError,
 )
+from src.application.services.processing_provider_resolution import resolve_start_processing_provider
+from src.config import load_settings
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
@@ -149,11 +154,26 @@ def list_aisles(
 def start_aisle_processing(
     inventory_id: str,
     aisle_id: str,
+    payload: ProcessAisleRequest | None = Body(None),
     use_case: StartAisleProcessingUseCase = Depends(get_start_aisle_processing_use_case),
 ) -> ProcessAisleResponse:
     try:
-        job_id = use_case.execute(StartAisleProcessingCommand(inventory_id=inventory_id, aisle_id=aisle_id))
+        body = payload or ProcessAisleRequest()
+        settings = load_settings()
+        pipeline_key, prompt_key = resolve_start_processing_provider(body.provider_name, settings)
+        job_id = use_case.execute(
+            StartAisleProcessingCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                pipeline_provider_key=pipeline_key,
+                prompt_key=prompt_key,
+            )
+        )
         return ProcessAisleResponse(job_id=job_id)
+    except UnknownProcessingProviderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except ProcessingProviderNotConfiguredError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
     except ActiveJobExistsError as e:

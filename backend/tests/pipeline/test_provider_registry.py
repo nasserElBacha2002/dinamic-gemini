@@ -11,7 +11,9 @@ from src.pipeline.providers.registry import (
     TransitionalLlmProviderBridgeExecutor,
     UnknownPipelineProviderError,
     normalize_pipeline_provider_key,
+    registered_pipeline_provider_keys,
     resolve_llm_executor,
+    resolve_llm_executor_for_context,
 )
 
 
@@ -59,3 +61,16 @@ def test_resolve_fake_returns_transitional_bridge() -> None:
 def test_resolve_unknown_raises() -> None:
     with pytest.raises(UnknownPipelineProviderError):
         resolve_llm_executor("unknown_vendor_xyz", MagicMock())
+
+
+def test_registered_pipeline_provider_keys_is_stable_set() -> None:
+    assert registered_pipeline_provider_keys() == frozenset({"gemini", "fake", "openai"})
+
+
+def test_resolve_llm_executor_for_context_uses_job_provider_name() -> None:
+    settings = MagicMock()
+    settings.llm_provider = "gemini"
+    settings.fake_llm_fixture_path = None
+    ex, key = resolve_llm_executor_for_context("fake", settings)
+    assert key == "fake"
+    assert isinstance(ex, TransitionalLlmProviderBridgeExecutor)

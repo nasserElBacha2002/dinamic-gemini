@@ -28,6 +28,7 @@ import type {
   AisleJobsListResponse,
   PaginatedInventoryListResponse,
   PaginatedAisleListResponse,
+  ProcessingProviderOptionsResponse,
   ReviewQueueListResponse,
   AnalyticsSummaryResponse,
   AnalyticsTrendsResponse,
@@ -325,13 +326,28 @@ export async function createAisle(
   return handleResponse<Aisle>(response);
 }
 
+export async function getProcessingProviderOptions(): Promise<ProcessingProviderOptionsResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/processing-provider-options`);
+  return handleResponse<ProcessingProviderOptionsResponse>(response);
+}
+
 export async function startAisleProcessing(
   inventoryId: string,
-  aisleId: string
+  aisleId: string,
+  options?: { providerName?: string | null }
 ): Promise<ProcessAisleResponse> {
+  const body: Record<string, string> = {};
+  const raw = options?.providerName;
+  if (raw != null && String(raw).trim() !== '') {
+    body.provider_name = String(raw).trim().toLowerCase();
+  }
   const response = await protectedFetch(
     `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/process`,
-    { method: 'POST' }
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
   );
   return handleResponse<ProcessAisleResponse>(response);
 }

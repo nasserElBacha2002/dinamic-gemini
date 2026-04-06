@@ -37,6 +37,7 @@ from src.api.schemas.inventory_schemas import (
     InventoryVisualReferenceResponse,
     UploadInventoryVisualReferencesResponse,
 )
+from src.api.schemas.processing_schemas import ProcessingProviderOptionItem, ProcessingProviderOptionsResponse
 from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
 from src.application.ports.contracts import InventoryTableQuery
 from src.application.errors import (
@@ -60,6 +61,12 @@ from src.application.use_cases.upload_inventory_visual_references import (
     ListInventoryVisualReferencesUseCase,
     UploadInventoryVisualReferencesUseCase,
     UploadedVisualReferenceFile,
+)
+from src.config import load_settings
+from src.pipeline.providers.registry import (
+    TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS,
+    normalize_pipeline_provider_key,
+    registered_pipeline_provider_keys,
 )
 
 from .shared import inventory_list_item_to_response, inventory_to_response
@@ -144,6 +151,32 @@ def list_inventories(
         total_items=total,
         total_pages=compute_total_pages(total, ps),
     )
+
+
+@router.get("/processing-provider-options", response_model=ProcessingProviderOptionsResponse)
+def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
+    """Selectable pipeline providers for POST aisle process (Phase 5). Static path before ``/{inventory_id}``."""
+    settings = load_settings()
+    default_key = normalize_pipeline_provider_key(None, settings)
+    items: List[ProcessingProviderOptionItem] = []
+    for key in sorted(registered_pipeline_provider_keys()):
+        mode = "transitional_bridge" if key in TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS else "native"
+        if key == "gemini":
+            label = "Gemini"
+            desc = "Native Gemini SDK path (GEMINI_API_KEY required when explicitly selected)."
+        elif key == "fake":
+            label = "Fake (fixtures, no network)"
+            desc = "Transitional bridge to FakeProvider — for dev/CI and controlled validation."
+        elif key == "openai":
+            label = "OpenAI"
+            desc = "Transitional bridge; OPENAI_API_KEY required when explicitly selected; vision path still stubbed."
+        else:
+            label = key
+            desc = None
+        items.append(
+            ProcessingProviderOptionItem(key=key, label=label, execution_mode=mode, description=desc)
+        )
+    return ProcessingProviderOptionsResponse(default_provider_key=default_key, providers=items)
 
 
 @router.get("/{inventory_id}/export")

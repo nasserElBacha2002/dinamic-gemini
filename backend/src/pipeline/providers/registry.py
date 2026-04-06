@@ -64,6 +64,11 @@ TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS: Final[frozenset[str]] = frozenset({"fake"
 _KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "fake", "openai"})
 
 
+def registered_pipeline_provider_keys() -> frozenset[str]:
+    """Keys accepted for explicit processing provider selection (API / UI)."""
+    return _KNOWN_KEYS
+
+
 def normalize_pipeline_provider_key(
     provider_name: Optional[str],
     settings: Any,

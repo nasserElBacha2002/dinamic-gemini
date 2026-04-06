@@ -9,6 +9,35 @@ from src.api.schemas.aisle_schemas import AisleResponse
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 
 
+class ProcessAisleRequest(BaseModel):
+    """Optional body for POST .../aisles/{aisle_id}/process (Phase 5)."""
+
+    provider_name: Optional[str] = Field(
+        None,
+        description=(
+            "Pipeline provider key (gemini, fake, openai). Omit or null to use the server default "
+            "(settings.llm_provider) without proactive credential validation."
+        ),
+    )
+
+
+class ProcessingProviderOptionItem(BaseModel):
+    key: str
+    label: str
+    execution_mode: str = Field(
+        ...,
+        description="native | transitional_bridge — informational for UI; both are real execution paths.",
+    )
+    description: Optional[str] = None
+
+
+class ProcessingProviderOptionsResponse(BaseModel):
+    """GET /api/v3/inventories/processing-provider-options — keys the client may send as provider_name."""
+
+    default_provider_key: str
+    providers: List[ProcessingProviderOptionItem] = Field(default_factory=list)
+
+
 class ProcessAisleResponse(BaseModel):
     """Response for POST .../aisles/{aisle_id}/process."""
     job_id: str

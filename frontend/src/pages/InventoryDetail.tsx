@@ -1,6 +1,20 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Button, Dialog, DialogContent, DialogTitle, Divider, Stack, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  Typography,
+} from '@mui/material';
 import type { Aisle } from '../api/types';
 import { ApiError } from '../api/types';
 import { getApiErrorMessage } from '../utils/apiErrors';
@@ -28,6 +42,7 @@ import {
   useInventoryDetail,
   useInventoryVisualReferences,
   useAislesList,
+  useProcessingProviderOptions,
   useExecutionLog,
   useAisleJobDetail,
   useCreateAisle,
@@ -121,6 +136,8 @@ function metadataRowsForJob(job: NonNullable<Aisle['latest_job']> | null | undef
     { label: 'Current step', value: job.current_substep || '—' },
     { label: 'Step started', value: formatOptionalDate(job.current_step_started_at) },
     { label: 'Execution ID', value: job.execution_id || '—' },
+    { label: 'Provider', value: job.provider_name || '—' },
+    { label: 'Prompt key', value: job.prompt_key || '—' },
     { label: 'Attempt', value: job.attempt_count ? `Attempt ${job.attempt_count}` : '—' },
     { label: 'Retry of job', value: job.retry_of_job_id || '—' },
     { label: 'Failure code', value: job.failure_code || '—' },
@@ -138,6 +155,8 @@ export default function InventoryDetail() {
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [jobDialog, setJobDialog] = useState<{ aisleId: string; jobId: string; aisleCode: string } | null>(null);
+  const [processDialog, setProcessDialog] = useState<{ aisleId: string; aisleCode: string } | null>(null);
+  const [processProviderKey, setProcessProviderKey] = useState('');
   const [referenceImagesOpen, setReferenceImagesOpen] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -166,6 +185,9 @@ export default function InventoryDetail() {
   });
   const aislesQuery = useAislesList(inventoryId, { enabled: Boolean(inventoryId && inventoryQuery.data) });
   const aisles = aislesQuery.data?.items ?? [];
+  const processingProviderOptsQuery = useProcessingProviderOptions({
+    enabled: Boolean(processDialog && inventoryId),
+  });
 
   const createAisleMutation = useCreateAisle(inventoryId ?? '');
   const processMutation = useStartAisleProcessing(inventoryId ?? '');
@@ -208,13 +230,28 @@ export default function InventoryDetail() {
     replaceReferenceImageMutation.reset();
   };
 
-  const handleStartProcess = async (aisleId: string) => {
+  const openProcessDialogForAisle = useCallback((aisleId: string, aisleCode: string) => {
+    setProcessError(null);
+    setProcessProviderKey('');
+    setProcessDialog({ aisleId, aisleCode });
+  }, []);
+
+  const closeProcessDialog = useCallback(() => {
+    setProcessDialog(null);
+  }, []);
+
+  const confirmProcessDialog = useCallback(async () => {
+    if (!processDialog) return;
     setProcessError(null);
     setUploadError(null);
-    setProcessingAisleId(aisleId);
+    setProcessingAisleId(processDialog.aisleId);
     try {
-      await processMutation.mutateAsync(aisleId);
+      await processMutation.mutateAsync({
+        aisleId: processDialog.aisleId,
+        providerName: processProviderKey.trim() === '' ? null : processProviderKey.trim().toLowerCase(),
+      });
       showSnackbar('Processing started', 'success');
+      setProcessDialog(null);
       void aislesQuery.refetch();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
@@ -222,7 +259,7 @@ export default function InventoryDetail() {
     } finally {
       setProcessingAisleId(null);
     }
-  };
+  }, [aislesQuery, processDialog, processMutation, processProviderKey, showSnackbar]);
 
   const isAisleProcessingDisabled = (aisle: Aisle): boolean => {
     const status = (aisle.status || '').toLowerCase();
@@ -347,6 +384,11 @@ export default function InventoryDetail() {
           ),
       },
       {
+        id: 'run_provider',
+        label: 'Run provider',
+        cell: (a) => (a.latest_job?.provider_name ? String(a.latest_job.provider_name) : '—'),
+      },
+      {
         id: 'reference_usage',
         label: 'Reference usage',
         cell: (a) => {
@@ -400,7 +442,7 @@ export default function InventoryDetail() {
                 {
                   id: 'process',
                   label: processingAisleId === a.id ? 'Starting…' : 'Process aisle',
-                  onClick: () => void handleStartProcess(a.id),
+                  onClick: () => openProcessDialogForAisle(a.id, a.code),
                   disabled: isAisleProcessingDisabled(a),
                 },
                 ...(a.latest_job
@@ -423,7 +465,7 @@ export default function InventoryDetail() {
         },
       },
     ];
-  }, [handleStartProcess, inventoryId, navigate, processingAisleId, uploadingAisleId]);
+  }, [inventoryId, navigate, openProcessDialogForAisle, processingAisleId, uploadingAisleId]);
 
   if (inventoryLoading && !inventory) {
     return (
@@ -563,6 +605,58 @@ export default function InventoryDetail() {
           </Box>
         </>
       )}
+
+      <Dialog open={Boolean(processDialog)} onClose={closeProcessDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Start processing{processDialog ? ` — Aisle ${processDialog.aisleCode}` : ''}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Typography variant="body2" color="text.secondary">
+              Choose the pipeline provider for this run. &quot;Default (server)&quot; uses the configured default (
+              {processingProviderOptsQuery.data?.default_provider_key ?? '…'}
+              ) without extra credential checks at request time.
+            </Typography>
+            <FormControl fullWidth size="small" disabled={processingProviderOptsQuery.isLoading}>
+              <InputLabel id="process-provider-label">Provider</InputLabel>
+              <Select
+                labelId="process-provider-label"
+                label="Provider"
+                value={processProviderKey}
+                onChange={(e) => setProcessProviderKey(String(e.target.value))}
+              >
+                <MenuItem value="">
+                  <em>Default (server)</em>
+                </MenuItem>
+                {(processingProviderOptsQuery.data?.providers ?? []).map((p) => (
+                  <MenuItem key={p.key} value={p.key}>
+                    {p.label}
+                    {p.execution_mode === 'transitional_bridge' ? ' (transitional)' : ''}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {processingProviderOptsQuery.isError ? (
+              <Typography variant="caption" color="error">
+                {getApiErrorMessage(processingProviderOptsQuery.error, 'Could not load provider list')}
+              </Typography>
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeProcessDialog}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => void confirmProcessDialog()}
+            disabled={
+              processingAisleId === processDialog?.aisleId ||
+              (processingProviderOptsQuery.isLoading && processProviderKey.trim() !== '')
+            }
+          >
+            {processingAisleId === processDialog?.aisleId ? 'Starting…' : 'Start'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <CreateAisleDialog
         open={createAisleOpen}

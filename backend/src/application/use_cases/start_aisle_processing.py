@@ -21,6 +21,8 @@ from src.domain.jobs.entities import Job, JobStatus
 class StartAisleProcessingCommand:
     inventory_id: str
     aisle_id: str
+    pipeline_provider_key: str = "gemini"
+    prompt_key: str = "default"
 
 
 class StartAisleProcessingUseCase:
@@ -65,5 +67,7 @@ class StartAisleProcessingUseCase:
             attempt_count=1,
             retry_of_job_id=None,
             log_prefix="job.start_requested",
+            provider_name=command.pipeline_provider_key,
+            prompt_key=command.prompt_key,
         )
         return job.id

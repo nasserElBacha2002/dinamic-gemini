@@ -34,6 +34,10 @@ const { useCancelAisleJobMock } = vi.hoisted(() => ({
 const { useRetryAisleJobMock } = vi.hoisted(() => ({
   useRetryAisleJobMock: vi.fn(),
 }));
+const { processAisleMutateAsyncMock, useProcessingProviderOptionsMock } = vi.hoisted(() => ({
+  processAisleMutateAsyncMock: vi.fn().mockResolvedValue({ job_id: 'job-new' }),
+  useProcessingProviderOptionsMock: vi.fn(),
+}));
 
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
@@ -51,7 +55,8 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useExecutionLog: useExecutionLogMock,
     useAisleJobDetail: useAisleJobDetailMock,
     useCreateAisle: () => ({ mutateAsync: vi.fn() }),
-    useStartAisleProcessing: () => ({ mutateAsync: vi.fn() }),
+    useProcessingProviderOptions: useProcessingProviderOptionsMock,
+    useStartAisleProcessing: () => ({ mutateAsync: processAisleMutateAsyncMock }),
     useCancelAisleJob: useCancelAisleJobMock,
     useRetryAisleJob: useRetryAisleJobMock,
     useUploadAisleAssetsFlex: () => ({ mutateAsync: vi.fn() }),
@@ -87,6 +92,13 @@ function renderPage() {
 describe('InventoryDetail', () => {
   beforeEach(() => {
     useInventoryVisualReferencesMock.mockReset();
+    useInventoryVisualReferencesMock.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     useAislesListMock.mockReset();
     useUploadInventoryVisualReferencesMock.mockReset();
     useDeleteInventoryVisualReferenceMock.mockReset();
@@ -95,6 +107,21 @@ describe('InventoryDetail', () => {
     useAisleJobDetailMock.mockReset();
     useCancelAisleJobMock.mockReset();
     useRetryAisleJobMock.mockReset();
+    processAisleMutateAsyncMock.mockReset();
+    processAisleMutateAsyncMock.mockResolvedValue({ job_id: 'job-new' });
+    useProcessingProviderOptionsMock.mockReset();
+    useProcessingProviderOptionsMock.mockReturnValue({
+      data: {
+        default_provider_key: 'gemini',
+        providers: [
+          { key: 'gemini', label: 'Gemini', execution_mode: 'native' },
+          { key: 'fake', label: 'Fake (fixtures)', execution_mode: 'transitional_bridge' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
     useUploadInventoryVisualReferencesMock.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
@@ -852,5 +879,28 @@ describe('InventoryDetail', () => {
     renderPage();
 
     expect(screen.getByText('Summary unavailable')).toBeInTheDocument();
+  });
+
+  it('process aisle opens provider dialog and passes provider to start mutation', async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
+
+    expect(await screen.findByText(/start processing/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^provider$/i)).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByLabelText(/^provider$/i));
+    const fakeOption = await screen.findByRole('option', { name: /fake/i });
+    fireEvent.click(fakeOption);
+
+    fireEvent.click(screen.getByRole('button', { name: /^start$/i }));
+
+    await waitFor(() => {
+      expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
+        aisleId: 'aisle-1',
+        providerName: 'fake',
+      });
+    });
   });
 });

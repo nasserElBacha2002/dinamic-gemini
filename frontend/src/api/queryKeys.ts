@@ -10,6 +10,8 @@ export const queryKeys = {
     all: ['v3', 'inventories'] as const,
     list: () => [...queryKeys.inventories.all, 'list'] as const,
     detail: (inventoryId: string) => [...queryKeys.inventories.all, 'detail', inventoryId] as const,
+    /** Selectable pipeline providers for POST aisle process (Phase 5). */
+    processingProviderOptions: () => [...queryKeys.inventories.all, 'processing-provider-options'] as const,
     visualReferences: (inventoryId: string) =>
       [...queryKeys.inventories.all, 'visual-references', inventoryId] as const,
     metrics: (inventoryId: string) => [...queryKeys.inventories.all, 'metrics', inventoryId] as const,
