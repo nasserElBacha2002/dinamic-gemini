@@ -3,16 +3,22 @@
  */
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, TextField, Tooltip, Typography } from '@mui/material';
-import { exportInventoryResultsCsv } from '../api/client';
+import { exportInventoryResultsCsv, type AislePositionsListQuery } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
 import { FilterToolbar, SectionCard, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
-import { useInventoryDetail, useAislesList, useAisleMergeResults, useRunAisleMerge } from '../hooks';
+import {
+  useInventoryDetail,
+  useAislesList,
+  useAisleMergeResults,
+  useRunAisleMerge,
+  useAisleJobsList,
+} from '../hooks';
 import {
   useResultSummaries,
   computeResultsKpi,
@@ -30,7 +36,11 @@ import {
   ResultsFilteredEmptyState,
   ResultsLoadingState,
   ResultsErrorState,
+  AisleRunSelector,
 } from '../features/results/components';
+
+/** Client-side filtered table; matches useResultSummaries default. */
+const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = { page: 1, page_size: 500 };
 
 type MergeCandidateSummary = {
   groupCount: number;
@@ -87,6 +97,7 @@ export default function AislePositionsPage() {
   const { inventoryId, aisleId } = useParams<{ inventoryId: string; aisleId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { showSnackbar } = useAppSnackbar();
   const [filter, setFilter] = useState<ResultsFilterKind>(() =>
     getInitialFilterFromReturnState(location.state)
@@ -99,11 +110,25 @@ export default function AislePositionsPage() {
   const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
   const consumedAisleRedirectKey = useRef<string | null>(null);
+  const routeIdentityRef = useRef<string>('');
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
+
+  const jobIdParam = searchParams.get('jobId')?.trim() || null;
+
+  const positionsListQuery = useMemo<AislePositionsListQuery>(
+    () => ({
+      ...AISLE_RESULTS_LIST_QUERY,
+      ...(jobIdParam ? { job_id: jobIdParam } : {}),
+    }),
+    [jobIdParam]
+  );
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
     enabled: Boolean(inventoryId && inventoryQuery.data),
+  });
+  const aisleJobsQuery = useAisleJobsList(inventoryId, aisleId, {
+    enabled: Boolean(inventoryId && aisleId && inventoryQuery.data),
   });
   const inventory = inventoryQuery.data ?? null;
   const aisle = useMemo(
@@ -119,12 +144,50 @@ export default function AislePositionsPage() {
     error,
     refetch,
     resultJobId,
-  } = useResultSummaries(inventoryId, aisleId);
+    resultContextSource,
+  } = useResultSummaries(inventoryId, aisleId, { listQuery: positionsListQuery });
   const positions = positionsFromQuery ?? [];
   const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId, {
     enabled: Boolean(inventoryId && aisleId && results.length > 0),
     jobId: resultJobId,
   });
+
+  const handleRunSelectionChange = useCallback(
+    (next: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          if (next && next.trim() !== '') {
+            p.set('jobId', next.trim());
+          } else {
+            p.delete('jobId');
+          }
+          return p;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  /** Authoritative job for merge, detail, and merge-results; from list response, not URL alone. */
+  const visibleJobId = resultJobId ?? null;
+
+  useEffect(() => {
+    const key = `${inventoryId ?? ''}-${aisleId ?? ''}`;
+    if (!inventoryId || !aisleId) return;
+    if (routeIdentityRef.current !== '' && routeIdentityRef.current !== key) {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.delete('jobId');
+          return p;
+        },
+        { replace: true }
+      );
+    }
+    routeIdentityRef.current = key;
+  }, [inventoryId, aisleId, setSearchParams]);
 
   const kpi = useMemo(() => computeResultsKpi(results), [results]);
   const missingEvidenceCount = useMemo(
@@ -155,7 +218,7 @@ export default function AislePositionsPage() {
   useEffect(() => {
     setLastMergeResponse(null);
     setLastMergeSummary(null);
-  }, [inventoryId, aisleId]);
+  }, [inventoryId, aisleId, jobIdParam]);
 
   const tableRows = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -188,9 +251,10 @@ export default function AislePositionsPage() {
         resultIds: sortedForTable.map((r) => r.id),
         returnTo: 'aisle_results',
         filter,
+        jobId: visibleJobId ?? undefined,
       });
     },
-    [positionById, inventoryId, inventory, aisle?.code, aisleId, sortedForTable, filter]
+    [positionById, inventoryId, inventory, aisle?.code, aisleId, sortedForTable, filter, visibleJobId]
   );
 
   useEffect(() => {
@@ -209,6 +273,7 @@ export default function AislePositionsPage() {
       resultIds: p.resultIds,
       returnTo: 'aisle_results',
       filter: p.filter ?? filter,
+      jobId: p.jobId,
     });
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.state, location.pathname, inventory, inventoryId, aisleId, aisle, filter, navigate]);
@@ -263,7 +328,7 @@ export default function AislePositionsPage() {
       setLastMergeSummary(null);
       const result = await mergeMutation.mutateAsync({
         aisleId,
-        jobId: resultJobId ?? undefined,
+        jobId: visibleJobId ?? undefined,
       });
       const [, , refreshedMergeResults] = await Promise.all([
         refetch(),
@@ -282,7 +347,7 @@ export default function AislePositionsPage() {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       showSnackbar(getApiErrorMessage(err, 'Merge failed'), 'error');
     }
-  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, resultJobId, showSnackbar]);
+  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, showSnackbar, visibleJobId]);
 
   if (!inventoryId || !aisleId) {
     return (
@@ -302,6 +367,17 @@ export default function AislePositionsPage() {
       : []),
     { label: 'Aisle results' },
   ];
+
+  const jobs = aisleJobsQuery.data?.jobs ?? [];
+  const unknownUrlJob =
+    Boolean(jobIdParam) &&
+    aisleJobsQuery.isFetched &&
+    !aisleJobsQuery.isFetching &&
+    jobs.length > 0 &&
+    !jobs.some((j) => j.id === jobIdParam);
+
+  const positionsLoadNotFound =
+    isError && error instanceof ApiError && error.status === 404 && Boolean(jobIdParam);
 
   return (
     <>
@@ -350,6 +426,55 @@ export default function AislePositionsPage() {
           </Box>
         }
       />
+
+      {aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource) ? (
+        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+          {aisleJobsQuery.isLoading || jobs.length > 0 ? (
+            <AisleRunSelector
+              operationalJobId={aisleJobsQuery.data?.operational_job_id ?? null}
+              jobs={jobs}
+              selectedJobId={jobIdParam}
+              onChange={handleRunSelectionChange}
+              loading={aisleJobsQuery.isLoading}
+            />
+          ) : null}
+          {resultContextSource ? (
+            <Typography variant="caption" color="text.secondary">
+              Resolved: {resultContextSource}
+              {visibleJobId ? ` · job ${visibleJobId.slice(0, 10)}…` : ''}
+            </Typography>
+          ) : null}
+        </Box>
+      ) : null}
+
+      {unknownUrlJob ? (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => handleRunSelectionChange(null)}>
+              Clear run filter
+            </Button>
+          }
+        >
+          This job is not in the recent runs list for this aisle. Loading may fail; clear the filter or pick another
+          run.
+        </Alert>
+      ) : null}
+
+      {positionsLoadNotFound ? (
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => handleRunSelectionChange(null)}>
+              Clear run filter
+            </Button>
+          }
+        >
+          No data for this run (invalid or removed). Clear the run filter to use the default resolved slice.
+        </Alert>
+      ) : null}
 
       {errorMessage ? <ResultsErrorState message={errorMessage} onRetry={() => refetch()} /> : null}
 

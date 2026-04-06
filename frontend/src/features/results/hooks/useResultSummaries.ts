@@ -57,7 +57,7 @@ export function useResultDetail(
   inventoryId: string | undefined,
   aisleId: string | undefined,
   positionId: string | undefined,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; jobId?: string | null }
 ) {
   const query = usePositionDetail(
     inventoryId,

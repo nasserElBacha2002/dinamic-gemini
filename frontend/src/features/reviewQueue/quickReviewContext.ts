@@ -15,6 +15,8 @@ export interface QuickReviewContext {
   resultIds: string[];
   returnTo: ResultDetailReturnTo;
   filter?: ResultsFilterKind;
+  /** Resolved inventory job for position detail / evidence; must match visible aisle results slice. */
+  jobId?: string | null;
 }
 
 export function reviewQueueItemToContext(row: ReviewQueueItem, resultIds: string[]): QuickReviewContext {
@@ -45,4 +47,6 @@ export type OpenReviewDrawerPayload =
       positionId: string;
       resultIds: string[];
       filter?: ResultsFilterKind;
+      /** Preserved when deep-linking into review with `?jobId=` on the positions route. */
+      jobId?: string | null;
     };

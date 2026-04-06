@@ -154,7 +154,15 @@ export function useSubmitReviewAction(inventoryId: string, aisleId: string, posi
       submitReviewAction(inventoryId, aisleId, positionId, body),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
+        queryKey: [
+          ...queryKeys.inventories.all,
+          'aisles',
+          inventoryId,
+          'positions',
+          aisleId,
+          'detail',
+          positionId,
+        ],
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),

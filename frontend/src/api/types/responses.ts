@@ -163,6 +163,15 @@ export interface JobSummary {
   failure_code?: string | null;
   failure_message?: string | null;
   execution_id?: string | null;
+  provider_name?: string | null;
+  model_name?: string | null;
+  prompt_key?: string | null;
+}
+
+/** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */
+export interface AisleJobsListResponse {
+  operational_job_id?: string | null;
+  jobs: JobSummary[];
 }
 
 /** Single execution log event (v3.1.1). */

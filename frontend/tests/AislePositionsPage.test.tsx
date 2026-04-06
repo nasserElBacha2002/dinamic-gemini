@@ -45,6 +45,17 @@ const { mergeResultsState } = vi.hoisted(() => ({
     refetch: vi.fn(),
   },
 }));
+const { aisleJobsListState } = vi.hoisted(() => ({
+  aisleJobsListState: {
+    data: { jobs: [] as Array<{ id: string; status: string; created_at: string; updated_at: string }>, operational_job_id: null as string | null },
+    isLoading: false,
+    isError: false,
+    isFetched: true,
+    isFetching: false,
+    error: null as unknown,
+    refetch: vi.fn(),
+  },
+}));
 
 const mockPositions: PositionSummary[] = [
   {
@@ -140,6 +151,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
     }),
     useAislesList: () => aislesListState,
     useAisleMergeResults: () => mergeResultsState,
+    useAisleJobsList: () => aisleJobsListState,
     useRunAisleMerge: useRunAisleMergeMock,
   };
 });
@@ -179,6 +191,10 @@ describe('AislePositionsPage (Aisle Results)', () => {
     aislesListState.refetch = vi.fn();
     mergeResultsState.data = { results: [] };
     mergeResultsState.refetch = vi.fn();
+    aisleJobsListState.data = { jobs: [], operational_job_id: null };
+    aisleJobsListState.isLoading = false;
+    aisleJobsListState.isFetched = true;
+    aisleJobsListState.isFetching = false;
     useRunAisleMergeMock.mockReset();
     useRunAisleMergeMock.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue({
@@ -410,5 +426,55 @@ describe('AislePositionsPage (Aisle Results)', () => {
     renderPage();
 
     expect(screen.queryByRole('button', { name: /merge repeated labels/i })).toBeNull();
+  });
+
+  it('shows run selector when jobs exist for the aisle', () => {
+    aisleJobsListState.data = {
+      operational_job_id: 'job-op',
+      jobs: [
+        {
+          id: 'job-a',
+          status: 'succeeded',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    };
+    renderPage();
+    expect(screen.getByLabelText(/browse run/i)).toBeTruthy();
+  });
+
+  it('shows resolved context line when backend returns result_context_source', () => {
+    resultSummariesState.resultContextSource = 'operational';
+    resultSummariesState.resultJobId = 'job-x';
+    aisleJobsListState.data = {
+      operational_job_id: 'job-x',
+      jobs: [
+        {
+          id: 'job-x',
+          status: 'succeeded',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    };
+    renderPage();
+    expect(screen.getByText(/resolved: operational/i)).toBeTruthy();
+  });
+
+  it('warns when jobId in URL is not in the jobs list', () => {
+    aisleJobsListState.data = {
+      operational_job_id: null,
+      jobs: [
+        {
+          id: 'job-a',
+          status: 'succeeded',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    };
+    renderPageAt('/inventories/inv-1/aisles/aisle-1/positions?jobId=unknown-job');
+    expect(screen.getByText(/not in the recent runs list/i)).toBeTruthy();
   });
 });

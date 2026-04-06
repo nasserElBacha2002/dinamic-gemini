@@ -25,6 +25,7 @@ import type {
   InventoryMetrics,
   ExecutionLogResponse,
   JobSummary,
+  AisleJobsListResponse,
   PaginatedInventoryListResponse,
   PaginatedAisleListResponse,
   ReviewQueueListResponse,
@@ -33,6 +34,7 @@ import type {
   InventoryPerformanceListResponse,
   AisleIssueListResponse,
   QualityPatternListResponse,
+  ManualInterventionBreakdownResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -566,6 +568,8 @@ export interface AislePositionsListQuery {
   page_size?: number;
   sort_by?: string;
   sort_dir?: string;
+  /** When set, list only this inventory job's positions (same as GET query `job_id`). */
+  job_id?: string | null;
 }
 
 function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined): string {
@@ -595,8 +599,27 @@ function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined):
   if (q.sort_dir != null && String(q.sort_dir).trim() !== '') {
     params.set('sort_dir', String(q.sort_dir).trim());
   }
+  if (q.job_id != null && String(q.job_id).trim() !== '') {
+    params.set('job_id', String(q.job_id).trim());
+  }
   const s = params.toString();
   return s ? `?${s}` : '';
+}
+
+/** List process_aisle jobs for an aisle (newest first) — run browser / selector. */
+export async function listAisleJobs(
+  inventoryId: string,
+  aisleId: string,
+  options?: { limit?: number }
+): Promise<AisleJobsListResponse> {
+  const params = new URLSearchParams();
+  if (options?.limit != null && options.limit >= 1) {
+    params.set('limit', String(options.limit));
+  }
+  const qs = params.toString();
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs${qs ? `?${qs}` : ''}`;
+  const response = await protectedFetch(path);
+  return handleResponse<AisleJobsListResponse>(response);
 }
 
 /** List positions (results) for an aisle — Épica 6 / Aisle Results table. */
@@ -678,11 +701,16 @@ export async function getReviewQueuePositions(
 export async function getPositionDetail(
   inventoryId: string,
   aisleId: string,
-  positionId: string
+  positionId: string,
+  options?: { jobId?: string | null }
 ): Promise<PositionDetailResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}`
-  );
+  const params = new URLSearchParams();
+  if (options?.jobId != null && String(options.jobId).trim() !== '') {
+    params.set('job_id', String(options.jobId).trim());
+  }
+  const qs = params.toString();
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs ? `?${qs}` : ''}`;
+  const response = await protectedFetch(path);
   return handleResponse<PositionDetailResponse>(response);
 }
 

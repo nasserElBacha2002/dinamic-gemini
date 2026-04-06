@@ -28,11 +28,15 @@ export function usePositionDetail(
   inventoryId: string | undefined,
   aisleId: string | undefined,
   positionId: string | undefined,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; jobId?: string | null }
 ) {
+  const jobId = options?.jobId;
   return useQuery({
-    queryKey: queryKeys.inventories.positionDetail(inventoryId ?? '', aisleId ?? '', positionId ?? ''),
-    queryFn: () => getPositionDetail(inventoryId!, aisleId!, positionId!),
+    queryKey: [
+      ...queryKeys.inventories.positionDetail(inventoryId ?? '', aisleId ?? '', positionId ?? ''),
+      jobId ?? null,
+    ] as const,
+    queryFn: () => getPositionDetail(inventoryId!, aisleId!, positionId!, { jobId }),
     enabled: Boolean(inventoryId && aisleId && positionId) && (options?.enabled !== false),
   });
 }

@@ -102,7 +102,7 @@ export default function QuickReviewDrawer({
     inventoryId,
     aisleId,
     activePositionId,
-    { enabled }
+    { enabled, jobId: context?.jobId }
   );
 
   useEffect(() => {

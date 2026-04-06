@@ -22,9 +22,12 @@ export const queryKeys = {
     executionLog: (inventoryId: string, aisleId: string, jobId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'jobs', jobId, 'execution-log'] as const,
     jobDetail: (inventoryId: string, aisleId: string, jobId: string) =>
-      [...queryKeys.inventories.all, 'aisles', inventoryId, 'jobs', jobId, 'detail'] as const,
+      [...queryKeys.inventories.all, 'aisles', inventoryId, aisleId, 'jobs', jobId, 'detail'] as const,
     mergeResults: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId] as const,
+    /** GET .../aisles/{aisle}/jobs (run list for selector). */
+    aisleJobs: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle-jobs', aisleId] as const,
   },
 
   analytics: {

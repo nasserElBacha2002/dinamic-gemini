@@ -3,7 +3,14 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { getAisles, getInventoryMetrics, getExecutionLog, getAisleJobDetail, type AislesListQuery } from '../api/client';
+import {
+  getAisles,
+  getInventoryMetrics,
+  getExecutionLog,
+  getAisleJobDetail,
+  listAisleJobs,
+  type AislesListQuery,
+} from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 
 export function useInventoryMetrics(inventoryId: string | undefined, options?: { enabled?: boolean }) {
@@ -56,6 +63,21 @@ export function useAisleJobDetail(
     queryKey: queryKeys.inventories.jobDetail(inventoryId ?? '', aisleId ?? '', jobId ?? ''),
     queryFn: () => getAisleJobDetail(inventoryId!, aisleId!, jobId!),
     enabled: Boolean(inventoryId && aisleId && jobId) && (options?.enabled !== false),
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Jobs for an aisle, newest first — run selector on Aisle Results (Phase 3). */
+export function useAisleJobsList(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  options?: { enabled?: boolean; limit?: number }
+) {
+  const limit = options?.limit ?? 50;
+  return useQuery({
+    queryKey: [...queryKeys.inventories.aisleJobs(inventoryId ?? '', aisleId ?? ''), limit] as const,
+    queryFn: () => listAisleJobs(inventoryId!, aisleId!, { limit }),
+    enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
     refetchOnWindowFocus: false,
   });
 }
