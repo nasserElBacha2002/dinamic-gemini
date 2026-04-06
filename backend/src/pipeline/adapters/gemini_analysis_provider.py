@@ -102,13 +102,18 @@ class GeminiAnalysisProvider:
                 job_id=job_id,
             )
 
+        req_meta: Dict[str, Any] = {**metadata, "run_dir": str(context.run_dir)}
+        jm = getattr(context, "job_model_name", None)
+        if jm and str(jm).strip() and (resolved_key or "").strip().lower() == "gemini":
+            req_meta["gemini_model_name"] = str(jm).strip()
+
         request = LLMRequest(
             job_id=job_id,
             frames=frame_paths,
             frame_refs=frame_refs,
             prompt=prompt_text,
             schema_version="v2.1",
-            metadata={**metadata, "run_dir": str(context.run_dir)},
+            metadata=req_meta,
             frames_nd=frames_nd,
             context_instruction=context_instruction,
             context_images=context_images,

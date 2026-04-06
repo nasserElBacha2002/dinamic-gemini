@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -137,6 +137,7 @@ function metadataRowsForJob(job: NonNullable<Aisle['latest_job']> | null | undef
     { label: 'Step started', value: formatOptionalDate(job.current_step_started_at) },
     { label: 'Execution ID', value: job.execution_id || '—' },
     { label: 'Provider', value: job.provider_name || '—' },
+    { label: 'Model', value: job.model_name || '—' },
     { label: 'Prompt key', value: job.prompt_key || '—' },
     { label: 'Attempt', value: job.attempt_count ? `Attempt ${job.attempt_count}` : '—' },
     { label: 'Retry of job', value: job.retry_of_job_id || '—' },
@@ -157,6 +158,8 @@ export default function InventoryDetail() {
   const [jobDialog, setJobDialog] = useState<{ aisleId: string; jobId: string; aisleCode: string } | null>(null);
   const [processDialog, setProcessDialog] = useState<{ aisleId: string; aisleCode: string } | null>(null);
   const [processProviderKey, setProcessProviderKey] = useState('');
+  const [processModelKey, setProcessModelKey] = useState('');
+  const [processPromptKey, setProcessPromptKey] = useState('');
   const [referenceImagesOpen, setReferenceImagesOpen] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -188,6 +191,18 @@ export default function InventoryDetail() {
   const processingProviderOptsQuery = useProcessingProviderOptions({
     enabled: Boolean(processDialog && inventoryId),
   });
+
+  const effectiveProcessProvider =
+    processProviderKey.trim() || processingProviderOptsQuery.data?.default_provider_key || '';
+  const providerConfigForProcess = useMemo(
+    () =>
+      (processingProviderOptsQuery.data?.providers ?? []).find((p) => p.key === effectiveProcessProvider),
+    [processingProviderOptsQuery.data?.providers, effectiveProcessProvider]
+  );
+
+  useEffect(() => {
+    setProcessModelKey('');
+  }, [processProviderKey]);
 
   const createAisleMutation = useCreateAisle(inventoryId ?? '');
   const processMutation = useStartAisleProcessing(inventoryId ?? '');
@@ -233,6 +248,8 @@ export default function InventoryDetail() {
   const openProcessDialogForAisle = useCallback((aisleId: string, aisleCode: string) => {
     setProcessError(null);
     setProcessProviderKey('');
+    setProcessModelKey('');
+    setProcessPromptKey('');
     setProcessDialog({ aisleId, aisleCode });
   }, []);
 
@@ -249,6 +266,8 @@ export default function InventoryDetail() {
       await processMutation.mutateAsync({
         aisleId: processDialog.aisleId,
         providerName: processProviderKey.trim() === '' ? null : processProviderKey.trim().toLowerCase(),
+        modelName: processModelKey.trim() === '' ? null : processModelKey.trim(),
+        promptKey: processPromptKey.trim() === '' ? null : processPromptKey.trim(),
       });
       showSnackbar('Processing started', 'success');
       setProcessDialog(null);
@@ -259,7 +278,7 @@ export default function InventoryDetail() {
     } finally {
       setProcessingAisleId(null);
     }
-  }, [aislesQuery, processDialog, processMutation, processProviderKey, showSnackbar]);
+  }, [aislesQuery, processDialog, processModelKey, processMutation, processPromptKey, processProviderKey, showSnackbar]);
 
   const isAisleProcessingDisabled = (aisle: Aisle): boolean => {
     const status = (aisle.status || '').toLowerCase();
@@ -387,6 +406,11 @@ export default function InventoryDetail() {
         id: 'run_provider',
         label: 'Run provider',
         cell: (a) => (a.latest_job?.provider_name ? String(a.latest_job.provider_name) : '—'),
+      },
+      {
+        id: 'run_model',
+        label: 'Run model',
+        cell: (a) => (a.latest_job?.model_name ? String(a.latest_job.model_name) : '—'),
       },
       {
         id: 'reference_usage',
@@ -613,9 +637,10 @@ export default function InventoryDetail() {
         <DialogContent dividers>
           <Stack spacing={2}>
             <Typography variant="body2" color="text.secondary">
-              Choose the pipeline provider for this run. &quot;Default (server)&quot; uses the configured default (
-              {processingProviderOptsQuery.data?.default_provider_key ?? '…'}
-              ) without extra credential checks at request time.
+              Choose provider, model, and prompt profile. &quot;Default (server)&quot; for provider uses{' '}
+              {processingProviderOptsQuery.data?.default_provider_key ?? '…'}; omitting model or prompt uses the
+              server defaults shown in options (
+              {processingProviderOptsQuery.data?.default_prompt_key ?? '…'}).
             </Typography>
             <FormControl fullWidth size="small" disabled={processingProviderOptsQuery.isLoading}>
               <InputLabel id="process-provider-label">Provider</InputLabel>
@@ -632,6 +657,48 @@ export default function InventoryDetail() {
                   <MenuItem key={p.key} value={p.key}>
                     {p.label}
                     {p.execution_mode === 'transitional_bridge' ? ' (transitional)' : ''}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl
+              fullWidth
+              size="small"
+              disabled={
+                processingProviderOptsQuery.isLoading || !providerConfigForProcess?.models?.length
+              }
+            >
+              <InputLabel id="process-model-label">Model</InputLabel>
+              <Select
+                labelId="process-model-label"
+                label="Model"
+                value={processModelKey}
+                onChange={(e) => setProcessModelKey(String(e.target.value))}
+              >
+                <MenuItem value="">
+                  <em>Default for provider</em>
+                </MenuItem>
+                {(providerConfigForProcess?.models ?? []).map((m) => (
+                  <MenuItem key={m.id} value={m.id}>
+                    {m.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth size="small" disabled={processingProviderOptsQuery.isLoading}>
+              <InputLabel id="process-prompt-label">Prompt profile</InputLabel>
+              <Select
+                labelId="process-prompt-label"
+                label="Prompt profile"
+                value={processPromptKey}
+                onChange={(e) => setProcessPromptKey(String(e.target.value))}
+              >
+                <MenuItem value="">
+                  <em>Default ({processingProviderOptsQuery.data?.default_prompt_key ?? '…'})</em>
+                </MenuItem>
+                {(processingProviderOptsQuery.data?.prompt_profiles ?? []).map((p) => (
+                  <MenuItem key={p.key} value={p.key}>
+                    {p.label}
                   </MenuItem>
                 ))}
               </Select>

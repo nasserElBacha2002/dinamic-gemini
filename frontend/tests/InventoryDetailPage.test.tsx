@@ -113,9 +113,26 @@ describe('InventoryDetail', () => {
     useProcessingProviderOptionsMock.mockReturnValue({
       data: {
         default_provider_key: 'gemini',
+        default_prompt_key: 'global_v21',
+        prompt_profiles: [
+          { key: 'global_v21', label: 'Prompt A', description: null },
+          { key: 'global_v21_b', label: 'Prompt B', description: null },
+        ],
         providers: [
-          { key: 'gemini', label: 'Gemini', execution_mode: 'native' },
-          { key: 'fake', label: 'Fake (fixtures)', execution_mode: 'transitional_bridge' },
+          {
+            key: 'gemini',
+            label: 'Gemini',
+            execution_mode: 'native',
+            models: [{ id: 'gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp' }],
+            default_model: 'gemini-2.0-flash-exp',
+          },
+          {
+            key: 'fake',
+            label: 'Fake (fixtures)',
+            execution_mode: 'transitional_bridge',
+            models: [{ id: 'fixture', label: 'fixture' }],
+            default_model: 'fixture',
+          },
         ],
       },
       isLoading: false,
@@ -881,7 +898,7 @@ describe('InventoryDetail', () => {
     expect(screen.getByText('Summary unavailable')).toBeInTheDocument();
   });
 
-  it('process aisle opens provider dialog and passes provider to start mutation', async () => {
+  it('process aisle opens provider dialog and passes provider/model/prompt to start mutation', async () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
@@ -894,12 +911,20 @@ describe('InventoryDetail', () => {
     const fakeOption = await screen.findByRole('option', { name: /fake/i });
     fireEvent.click(fakeOption);
 
+    fireEvent.mouseDown(screen.getByLabelText(/^model$/i));
+    fireEvent.click(await screen.findByRole('option', { name: /^fixture$/i }));
+
+    fireEvent.mouseDown(screen.getByLabelText(/prompt profile/i));
+    fireEvent.click(await screen.findByRole('option', { name: /prompt b/i }));
+
     fireEvent.click(screen.getByRole('button', { name: /^start$/i }));
 
     await waitFor(() => {
       expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
         aisleId: 'aisle-1',
         providerName: 'fake',
+        modelName: 'fixture',
+        promptKey: 'global_v21_b',
       });
     });
   });

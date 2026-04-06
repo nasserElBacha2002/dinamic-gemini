@@ -82,3 +82,11 @@ class UnknownProcessingProviderError(Exception):
 
 class ProcessingProviderNotConfiguredError(Exception):
     """Raised when the client explicitly selects a provider that is missing required credentials."""
+
+
+class InvalidProcessingModelError(Exception):
+    """Raised when model_name is not in the catalog for the selected provider."""
+
+
+class InvalidProcessingPromptKeyError(Exception):
+    """Raised when prompt_key is not a registered hybrid prompt profile."""

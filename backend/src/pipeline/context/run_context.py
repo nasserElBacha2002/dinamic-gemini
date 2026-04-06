@@ -61,6 +61,9 @@ class RunContext:
     analysis_context: Optional["AnalysisContext"] = None
     # Phase 4: logical LLM provider from job (e.g. inventory_jobs.provider_name); None = use settings.llm_provider.
     pipeline_provider_name: Optional[str] = None
+    # Phase 5: per-job model + prompt profile (inventory_jobs.model_name / prompt_key).
+    job_model_name: Optional[str] = None
+    job_prompt_key: Optional[str] = None
 
     def emit_stage_event(
         self,

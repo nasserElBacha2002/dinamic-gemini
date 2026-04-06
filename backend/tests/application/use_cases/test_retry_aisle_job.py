@@ -151,6 +151,7 @@ def test_retry_failed_job_creates_new_attempt_with_lineage() -> None:
         attempt_count=1,
         failure_code="PROCESSING_FAILED",
         provider_name="fake",
+        model_name="fixture",
         prompt_key="global_v21",
     )
     job_repo.save(original)
@@ -177,6 +178,7 @@ def test_retry_failed_job_creates_new_attempt_with_lineage() -> None:
     assert retried.status == JobStatus.STARTING
     assert retried.execution_id == f"exec-{retried.id}"
     assert retried.provider_name == "fake"
+    assert retried.model_name == "fixture"
     assert retried.prompt_key == "global_v21"
     assert launcher.launched == [retried.id]
     assert job_repo.get_by_id("job-failed").status == JobStatus.FAILED

@@ -148,15 +148,30 @@ export interface ProcessAisleResponse {
 }
 
 /** GET /api/v3/inventories/processing-provider-options (Phase 5). */
+export interface ProcessingModelOption {
+  id: string;
+  label: string;
+}
+
+export interface ProcessingPromptOptionItem {
+  key: string;
+  label: string;
+  description?: string | null;
+}
+
 export interface ProcessingProviderOptionItem {
   key: string;
   label: string;
   execution_mode: string;
   description?: string | null;
+  models: ProcessingModelOption[];
+  default_model?: string | null;
 }
 
 export interface ProcessingProviderOptionsResponse {
   default_provider_key: string;
+  default_prompt_key: string;
+  prompt_profiles: ProcessingPromptOptionItem[];
   providers: ProcessingProviderOptionItem[];
 }
 

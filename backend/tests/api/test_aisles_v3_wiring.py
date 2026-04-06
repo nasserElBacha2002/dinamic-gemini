@@ -161,10 +161,16 @@ def test_get_processing_provider_options_returns_registered_keys() -> None:
         assert response.status_code == 200
         data = response.json()
         assert "default_provider_key" in data
+        assert "default_prompt_key" in data
+        assert len(data.get("prompt_profiles", [])) >= 2
         keys = {p["key"] for p in data["providers"]}
         assert keys == {"fake", "gemini", "openai"}
         for p in data["providers"]:
             assert p["execution_mode"] in ("native", "transitional_bridge")
+            assert "models" in p and isinstance(p["models"], list) and len(p["models"]) >= 1
+            assert p.get("default_model")
+        gemini = next(x for x in data["providers"] if x["key"] == "gemini")
+        assert any(m["id"] == "gemini-2.0-flash-exp" for m in gemini["models"])
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
 
@@ -192,6 +198,29 @@ def test_post_process_with_explicit_fake_provider_persisted_on_status() -> None:
         lj = status.json()["latest_job"]
         assert lj is not None
         assert lj.get("provider_name") == "fake"
+        assert lj.get("model_name") == "fixture"
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+
+
+def test_post_process_invalid_model_for_provider_returns_422() -> None:
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        create_resp = client.post("/api/v3/inventories", json={"name": "For Bad Model"})
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "BM-01"},
+        )
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": "fake", "model_name": "not-a-valid-model"},
+        )
+        assert response.status_code == 422
+        assert "model" in response.json()["detail"].lower()
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
 
@@ -703,7 +732,8 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
             retry_of_job_id=None,
             log_prefix="job.start_requested",
             provider_name="gemini",
-            prompt_key="default",
+            model_name=None,
+            prompt_key="global_v21",
         ):
             job = Job(
                 id="job-retry-created",
@@ -718,6 +748,7 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
                 retry_of_job_id=retry_of_job_id,
                 execution_id="exec-job-retry-created",
                 provider_name=provider_name,
+                model_name=model_name,
                 prompt_key=prompt_key,
             )
             self.launched.append(job.id)
@@ -740,6 +771,7 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
             updated_at=now,
             attempt_count=1,
             provider_name="fake",
+            model_name="fixture",
             prompt_key="global_v21",
         )
     )
@@ -760,6 +792,7 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
         assert data["retry_of_job_id"] == "job-failed"
         assert data["execution_id"] == "exec-job-retry-created"
         assert data.get("provider_name") == "fake"
+        assert data.get("model_name") == "fixture"
         assert data.get("prompt_key") == "global_v21"
         assert launch_service.launched == [data["id"]]
     finally:

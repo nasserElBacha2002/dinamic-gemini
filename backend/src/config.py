@@ -317,6 +317,24 @@ class Settings(BaseModel):
         default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
         description="Perfil de prompt para el pipeline híbrido (ej. global_v21). Env: HYBRID_PROMPT.",
     )
+    # Comma-separated lists for POST /process model pickers (Phase 5 corrections)
+    processing_gemini_models: str = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "PROCESSING_GEMINI_MODELS",
+                "gemini-2.0-flash-exp,gemini-1.5-flash,gemini-1.5-pro",
+            )
+            or "gemini-2.0-flash-exp"
+        ),
+        description="Comma-separated Gemini model ids offered in processing-provider-options. Env: PROCESSING_GEMINI_MODELS.",
+    )
+    processing_openai_models: str = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_OPENAI_MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo")
+            or "gpt-4o"
+        ),
+        description="Comma-separated OpenAI model ids for processing UI (runtime still stubbed for openai). Env: PROCESSING_OPENAI_MODELS.",
+    )
 
     # Frame Extraction Settings
     extract_fps: float = Field(

@@ -22,7 +22,8 @@ class StartAisleProcessingCommand:
     inventory_id: str
     aisle_id: str
     pipeline_provider_key: str = "gemini"
-    prompt_key: str = "default"
+    model_name: str | None = None
+    prompt_key: str = "global_v21"
 
 
 class StartAisleProcessingUseCase:
@@ -68,6 +69,7 @@ class StartAisleProcessingUseCase:
             retry_of_job_id=None,
             log_prefix="job.start_requested",
             provider_name=command.pipeline_provider_key,
+            model_name=command.model_name,
             prompt_key=command.prompt_key,
         )
         return job.id

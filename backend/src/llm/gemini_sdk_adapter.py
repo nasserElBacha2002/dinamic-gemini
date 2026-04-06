@@ -60,9 +60,13 @@ class GeminiSdkAdapter:
             if use_request_prompt is not None
             else get_hybrid_prompt(getattr(settings, "hybrid_prompt", "global_v21"))
         )
+        meta = request.metadata or {}
+        effective_model = (meta.get("gemini_model_name") or "").strip() or getattr(
+            settings, "gemini_model_name", "gemini-2.0-flash-exp"
+        )
         client = GeminiClient(
             api_key=settings.gemini_api_key,
-            model_name=getattr(settings, "gemini_model_name", "gemini-2.0-flash-exp"),
+            model_name=str(effective_model),
             max_retries=getattr(settings, "gemini_max_retries", 3),
             retry_delay=getattr(settings, "gemini_retry_delay", 1.0),
         )
@@ -116,7 +120,7 @@ class GeminiSdkAdapter:
             ) from e
         return LLMResponse(
             provider="gemini",
-            model=getattr(settings, "gemini_model_name", None),
+            model=str(effective_model),
             latency_ms=None,
             parsed_json=data,
             raw_text=None,

@@ -16,6 +16,8 @@ function formatJobLine(j: JobSummary): string {
   const t = j.created_at?.slice(0, 16)?.replace('T', ' ');
   if (t) parts.push(t);
   if (j.provider_name) parts.push(j.provider_name);
+  if (j.model_name) parts.push(j.model_name);
+  if (j.prompt_key) parts.push(j.prompt_key);
   return parts.join(' · ');
 }
 

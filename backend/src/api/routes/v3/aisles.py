@@ -52,10 +52,12 @@ from src.application.errors import (
     MergeJobScopeAmbiguousError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
+    InvalidProcessingModelError,
+    InvalidProcessingPromptKeyError,
     ProcessingProviderNotConfiguredError,
     UnknownProcessingProviderError,
 )
-from src.application.services.processing_provider_resolution import resolve_start_processing_provider
+from src.application.services.processing_provider_resolution import resolve_start_processing_request
 from src.config import load_settings
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
@@ -160,17 +162,27 @@ def start_aisle_processing(
     try:
         body = payload or ProcessAisleRequest()
         settings = load_settings()
-        pipeline_key, prompt_key = resolve_start_processing_provider(body.provider_name, settings)
+        pipeline_key, model_name, prompt_key = resolve_start_processing_request(
+            requested_provider_name=body.provider_name,
+            requested_model_name=body.model_name,
+            requested_prompt_key=body.prompt_key,
+            settings=settings,
+        )
         job_id = use_case.execute(
             StartAisleProcessingCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
                 pipeline_provider_key=pipeline_key,
+                model_name=model_name,
                 prompt_key=prompt_key,
             )
         )
         return ProcessAisleResponse(job_id=job_id)
     except UnknownProcessingProviderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except InvalidProcessingModelError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except InvalidProcessingPromptKeyError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except ProcessingProviderNotConfiguredError as e:
         raise HTTPException(status_code=422, detail=str(e))

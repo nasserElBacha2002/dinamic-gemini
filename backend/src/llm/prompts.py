@@ -32,6 +32,25 @@ Rules:
 - Inventory visual reference images, when provided, are comparative context only. They may help interpret label style, packaging conventions, or the expected visual standard, but they are NOT primary evidence and must not be treated as direct evidence for detections.
 """
 
+# Prompt B (global_v21_b): conservative / anti-hallucination — distinct strategy vs Prompt A.
+_GLOBAL_V21_B: Final[str] = """\
+Analyze the provided warehouse aisle evidence (photos and/or extracted frames). Detect logistic entities only when each unit is **unambiguously** visible as a separate physical unit.
+
+Entity types (same taxonomy as Prompt A):
+- PALLET, EMPTY_PALLET, LOOSE_BOXES (definitions unchanged).
+
+Conservative rules (NON-NEGOTIABLE):
+- Prefer **abstention** over guessing: if label text, layer count, or bbox extent is not clearly readable, use **null** for that field. Do not invent SKUs, quantities, or bboxes.
+- Do **not** merge adjacent boxed units unless a clear seam, gap, or distinct label proves separation. When in doubt, emit **separate entities** with **lower confidence** rather than one merged entity.
+- If occlusion, motion blur, or missing angles prevents a deterministic count or identity, set an explicit overall decision of **INSUFFICIENT_EVIDENCE** in your reasoning field and keep per-field nulls rather than extrapolating.
+- **Bbox discipline**: only output position_label_bbox / product_label_bbox when the region is clearly visible; use NORMALIZED [x1,y1,x2,y2] in [0,1] or null.
+- **Quantity**: never return quantity 0 for a visible unit unless the evidence clearly supports emptiness; if uncertain, prefer null + low confidence rather than a numeric guess.
+- model_entity_id: unique string (E1, E2, …). confidence: 0 to 1 — use **≤0.5** when evidence is partial.
+- Inventory visual references are **context only**, not primary evidence (same as Prompt A).
+
+This profile prioritizes traceability and null-handling over aggressive extraction.
+"""
+
 _SYSTEM_PALLET_COUNT: Final[str] = """\
 You are an expert in computer vision for logistics inventory management.
 Your task is to analyze warehouse images, identify distinct pallets, and count boxes per product.
@@ -105,6 +124,8 @@ Output:
 PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
     # Híbrido (una llamada por video; HYBRID_PROMPT)
     "global_v21": _GLOBAL_V21,
+    # Prompt B — conservative / anti-hallucination (experimentation; selectable per job)
+    "global_v21_b": _GLOBAL_V21_B,
     # Legacy (system + user; no usados por el flujo híbrido único)
     "pallet_count_simple": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_PALLET_COUNT},
     "multi_frame_consolidated": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_MULTI_FRAME},
@@ -117,6 +138,11 @@ PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
 # Compatibilidad: nombres usados en tests y documentación
 GLOBAL_ENTITY_ANALYSIS_PROMPT_V21: Final[str] = _GLOBAL_V21
 HYBRID_PROMPTS: Dict[str, str] = {k: v for k, v in PROMPTS.items() if isinstance(v, str)}
+
+
+def registered_hybrid_prompt_keys() -> frozenset[str]:
+    """Keys accepted for per-job hybrid prompt selection (API / processing)."""
+    return frozenset(HYBRID_PROMPTS.keys())
 
 
 def get_hybrid_prompt(profile_name: str = "global_v21") -> str:

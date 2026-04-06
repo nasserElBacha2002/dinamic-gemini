@@ -43,8 +43,17 @@ export function useCreateAisle(inventoryId: string) {
 export function useStartAisleProcessing(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { aisleId: string; providerName?: string | null }) =>
-      startAisleProcessing(inventoryId, vars.aisleId, { providerName: vars.providerName }),
+    mutationFn: (vars: {
+      aisleId: string;
+      providerName?: string | null;
+      modelName?: string | null;
+      promptKey?: string | null;
+    }) =>
+      startAisleProcessing(inventoryId, vars.aisleId, {
+        providerName: vars.providerName,
+        modelName: vars.modelName,
+        promptKey: vars.promptKey,
+      }),
     onSuccess: (_, vars) => {
       const { aisleId } = vars;
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });

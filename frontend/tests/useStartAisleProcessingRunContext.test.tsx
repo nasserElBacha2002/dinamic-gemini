@@ -58,6 +58,8 @@ describe('useStartAisleProcessing', () => {
 
     await result.current.mutateAsync({ aisleId: 'aisle-9', providerName: 'fake' });
 
-    expect(client.startAisleProcessing).toHaveBeenCalledWith('inv-1', 'aisle-9', { providerName: 'fake' });
+    expect(client.startAisleProcessing).toHaveBeenCalledWith('inv-1', 'aisle-9', {
+      providerName: 'fake',
+    });
   });
 });

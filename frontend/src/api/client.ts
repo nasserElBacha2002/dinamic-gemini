@@ -334,12 +334,20 @@ export async function getProcessingProviderOptions(): Promise<ProcessingProvider
 export async function startAisleProcessing(
   inventoryId: string,
   aisleId: string,
-  options?: { providerName?: string | null }
+  options?: { providerName?: string | null; modelName?: string | null; promptKey?: string | null }
 ): Promise<ProcessAisleResponse> {
   const body: Record<string, string> = {};
-  const raw = options?.providerName;
-  if (raw != null && String(raw).trim() !== '') {
-    body.provider_name = String(raw).trim().toLowerCase();
+  const prov = options?.providerName;
+  if (prov != null && String(prov).trim() !== '') {
+    body.provider_name = String(prov).trim().toLowerCase();
+  }
+  const mod = options?.modelName;
+  if (mod != null && String(mod).trim() !== '') {
+    body.model_name = String(mod).trim();
+  }
+  const pk = options?.promptKey;
+  if (pk != null && String(pk).trim() !== '') {
+    body.prompt_key = String(pk).trim();
   }
   const response = await protectedFetch(
     `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/process`,

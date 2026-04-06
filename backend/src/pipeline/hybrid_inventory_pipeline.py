@@ -104,6 +104,9 @@ class HybridInventoryPipeline:
         analysis_context: Optional[AnalysisContext] = None,
         execution_observer=None,
         pipeline_provider_name: Optional[str] = None,
+        job_model_name: Optional[str] = None,
+        job_prompt_key: Optional[str] = None,
+        cancellation_checkpoint: Any = None,
         **_: object,
     ) -> PipelineRunResult:
         """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5)."""
@@ -129,8 +132,10 @@ class HybridInventoryPipeline:
             metadata={},
             analysis_context=analysis_context,
             execution_observer=execution_observer,
-            cancellation_checkpoint=_.get("cancellation_checkpoint"),
+            cancellation_checkpoint=cancellation_checkpoint,
             pipeline_provider_name=pipeline_provider_name,
+            job_model_name=job_model_name,
+            job_prompt_key=job_prompt_key,
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)
@@ -290,7 +295,7 @@ class HybridInventoryPipeline:
         # Phase 7: run attribution for debugging (provider and prompt_key persisted in job.result_json)
         provider = (analysis_result.provider_name or "").strip() or None
         run_metadata["provider"] = provider
-        prompt_key = getattr(settings, "hybrid_prompt", None)
+        prompt_key = getattr(context, "job_prompt_key", None) or getattr(settings, "hybrid_prompt", None)
         if prompt_key is not None and str(prompt_key).strip():
             run_metadata["prompt_key"] = str(prompt_key).strip()
         if getattr(settings, "debug_run_metadata", False):

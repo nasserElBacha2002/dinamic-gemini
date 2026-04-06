@@ -176,7 +176,7 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     saved_job = job_repo.get_by_id(job_id)
     assert saved_job is not None
     assert saved_job.provider_name == "gemini"
-    assert saved_job.prompt_key == "default"
+    assert saved_job.prompt_key == "global_v21"
     assert saved_job.target_type == "aisle"
     assert saved_job.target_id == "a1"
     assert saved_job.job_type == "process_aisle"
@@ -219,12 +219,14 @@ def test_start_aisle_processing_persists_explicit_provider_and_prompt() -> None:
             inventory_id="inv1",
             aisle_id="a1",
             pipeline_provider_key="fake",
+            model_name="fixture",
             prompt_key="global_v21",
         )
     )
     saved = job_repo.get_by_id(job_id)
     assert saved is not None
     assert saved.provider_name == "fake"
+    assert saved.model_name == "fixture"
     assert saved.prompt_key == "global_v21"
 
 

@@ -37,7 +37,18 @@ from src.api.schemas.inventory_schemas import (
     InventoryVisualReferenceResponse,
     UploadInventoryVisualReferencesResponse,
 )
-from src.api.schemas.processing_schemas import ProcessingProviderOptionItem, ProcessingProviderOptionsResponse
+from src.api.schemas.processing_schemas import (
+    ProcessingModelOption,
+    ProcessingPromptOptionItem,
+    ProcessingProviderOptionItem,
+    ProcessingProviderOptionsResponse,
+)
+from src.application.services.processing_experiment_catalog import (
+    default_model_for_provider,
+    default_prompt_key,
+    models_for_provider,
+    prompt_profile_catalog,
+)
 from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
 from src.application.ports.contracts import InventoryTableQuery
 from src.application.errors import (
@@ -155,9 +166,14 @@ def list_inventories(
 
 @router.get("/processing-provider-options", response_model=ProcessingProviderOptionsResponse)
 def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
-    """Selectable pipeline providers for POST aisle process (Phase 5). Static path before ``/{inventory_id}``."""
+    """Selectable pipeline providers, models, and prompt profiles for POST aisle process (Phase 5)."""
     settings = load_settings()
     default_key = normalize_pipeline_provider_key(None, settings)
+    default_pk = default_prompt_key(settings)
+    prompt_items = [
+        ProcessingPromptOptionItem(key=k, label=lab, description=desc)
+        for k, lab, desc in prompt_profile_catalog()
+    ]
     items: List[ProcessingProviderOptionItem] = []
     for key in sorted(registered_pipeline_provider_keys()):
         mode = "transitional_bridge" if key in TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS else "native"
@@ -173,10 +189,25 @@ def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
         else:
             label = key
             desc = None
+        pairs = models_for_provider(key, settings)
+        mopts = [ProcessingModelOption(id=m, label=lab) for m, lab in pairs]
+        dm = default_model_for_provider(key, settings)
         items.append(
-            ProcessingProviderOptionItem(key=key, label=label, execution_mode=mode, description=desc)
+            ProcessingProviderOptionItem(
+                key=key,
+                label=label,
+                execution_mode=mode,
+                description=desc,
+                models=mopts,
+                default_model=dm,
+            )
         )
-    return ProcessingProviderOptionsResponse(default_provider_key=default_key, providers=items)
+    return ProcessingProviderOptionsResponse(
+        default_provider_key=default_key,
+        default_prompt_key=default_pk,
+        prompt_profiles=prompt_items,
+        providers=items,
+    )
 
 
 @router.get("/{inventory_id}/export")

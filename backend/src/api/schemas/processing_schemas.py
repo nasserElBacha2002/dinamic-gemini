@@ -19,6 +19,25 @@ class ProcessAisleRequest(BaseModel):
             "(settings.llm_provider) without proactive credential validation."
         ),
     )
+    model_name: Optional[str] = Field(
+        None,
+        description="Model id from processing-provider-options for the selected provider; omit for provider default.",
+    )
+    prompt_key: Optional[str] = Field(
+        None,
+        description="Hybrid prompt profile key (e.g. global_v21, global_v21_b); omit for HYBRID_PROMPT default.",
+    )
+
+
+class ProcessingModelOption(BaseModel):
+    id: str
+    label: str
+
+
+class ProcessingPromptOptionItem(BaseModel):
+    key: str
+    label: str
+    description: Optional[str] = None
 
 
 class ProcessingProviderOptionItem(BaseModel):
@@ -29,12 +48,18 @@ class ProcessingProviderOptionItem(BaseModel):
         description="native | transitional_bridge — informational for UI; both are real execution paths.",
     )
     description: Optional[str] = None
+    models: List[ProcessingModelOption] = Field(default_factory=list)
+    default_model: Optional[str] = Field(
+        None, description="Default model id for this provider when model_name is omitted."
+    )
 
 
 class ProcessingProviderOptionsResponse(BaseModel):
-    """GET /api/v3/inventories/processing-provider-options — keys the client may send as provider_name."""
+    """GET /api/v3/inventories/processing-provider-options — discovery for POST process."""
 
     default_provider_key: str
+    default_prompt_key: str
+    prompt_profiles: List[ProcessingPromptOptionItem] = Field(default_factory=list)
     providers: List[ProcessingProviderOptionItem] = Field(default_factory=list)
 
 
