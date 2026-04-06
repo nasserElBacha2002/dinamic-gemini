@@ -1,6 +1,8 @@
 
 # Multi-Provider Implementation Plan (Final, Strategy + Adapter)
 
+> **Alineación 2026-04:** reglas ampliadas, DoD y matriz de tests en inglés: [`multi_provider_planning_revision.md`](./multi_provider_planning_revision.md). Este documento conserva el plan operativo en español.
+
 ## 1. Objetivo
 
 Evolucionar Dinamic Inventory v3 desde un modelo acoplado implícitamente a:
@@ -268,6 +270,24 @@ Guarda:
 Regla:
 **la identidad principal del run no puede depender de parsear `engine_params_json`**.
 
+### 2.5.1 Identidad de ejecución vs afinado vs trazabilidad
+
+| Ámbito | Qué incluye | Ejemplos |
+|--------|-------------|----------|
+| **Identidad de ejecución** | Qué variante corrió (comparable en listados y benchmarks) | `provider_name`, `model_name`, `prompt_key`, (recomendado) `prompt_version`, `job_id` |
+| **Afinado (tuning)** | Parámetros que cambian comportamiento pero no deben ser la única base de identidad | `engine_params_json`: temperatura, max tokens, retries, flags |
+| **Trazabilidad** | Reproducibilidad y auditoría en el tiempo | timestamps, estado del job, **snapshot del prompt renderizado** (opcional/recomendado), logs estructurados |
+
+**`prompt_key` y evolución de plantillas:** si solo existe `prompt_key` y el contenido de la plantilla cambia sin cambiar la clave, los runs históricos dejan de ser comparables en sentido estricto. **Decisión explícita requerida antes de implementar benchmarking amplio en producción:** adoptar al menos una de:
+
+* **`prompt_version`** (monotónica o semver) ligada al job, y/o  
+* **snapshot del prompt ya renderizado** persistido en el job (o tabla satélite),  
+* o **ambas** (máxima defensibilidad).
+
+**Estabilidad:** la identidad lógica del prompt debe permanecer estable ante ediciones posteriores de templates en código; las versiones o el snapshot capturan el texto efectivo ejecutado.
+
+**`engine_params_json`:** no es identidad primaria; **no debe ser la única fuente de verdad** para comparar runs ni para analytics operativos.
+
 ---
 
 ## 3. Cambios de dominio
@@ -286,6 +306,7 @@ Agregar:
 * `model_name`
 * `prompt_key`
 * `engine_params_json`
+* (recomendado antes de benchmarking amplio en prod) **`prompt_version`** y/o columna/blob de **snapshot del prompt renderizado** — ver §2.5.1
 
 Reglas:
 
@@ -333,6 +354,18 @@ Reglas:
 * listados aíslan por `aisle_id + job_id`
 * `position_id` globalmente único no cambia
 
+### 3.3.1 Aislamiento físico vs identidad lógica (reglas semánticas)
+
+* **`position_id`:** sigue siendo **único globalmente** (p. ej. UUID).
+* **`job_id`:** garantiza **aislamiento de filas** entre runs: dos jobs ⇒ dos conjuntos de filas, sin sobrescritura.
+* **`position_code` (u otra clave de negocio):** **puede repetirse entre jobs** del mismo pasillo si el detector emite el mismo código en otro run. Eso es **ambigüedad semántica entre runs**, no colisión de almacenamiento.
+* El aislamiento por job **no** deduplica automáticamente “el mismo lugar lógico” entre ejecuciones.
+
+**Decisión abierta explícita (no implícita):**
+
+* Valorar índice **`(aisle_id, job_id)`** para consultas de listado/filtrado.
+* **Unicidad opcional** en **`(aisle_id, job_id, position_code)`** solo si el pipeline de detección **garantiza** unicidad dentro de un run. Si **no** puede garantizarla, **no** forzar constraint UNIQUE; documentar que pueden existir múltiples filas con el mismo código dentro de un job.
+
 ---
 
 ## 3.4 product_records
@@ -361,9 +394,14 @@ Evidencia job-scoped indirectamente vía `position_id`.
 
 No requiere `job_id` directo en MVP.
 
-Regla:
+### Regla crítica (no opcional)
 
-* la resolución de crops/assets/source images debe respetar el job correcto del contexto seleccionado
+Con multi-run activo, **evidencias, crops, previews y endpoints de imagen/source asset** deben **nunca** resolver datos usando heurísticas de **“último job”** o “job más reciente” del pasillo. Aunque `evidences` siga ligada solo a `position_id` en MVP, **todo read path** debe:
+
+1. Resolver primero el **contexto de resultado** ( `job_id` explícito → `operational_job_id` → legacy `job_id IS NULL` ).
+2. Operar solo sobre el **conjunto de `position_id`** de ese contexto.
+
+Cualquier helper a nivel pasillo que asuma un único run implícito debe **refactorizarse o prohibirse**. La filtración incorrecta aquí produce **fugas benchmark↔operativo** y previews incorrectos.
 
 ---
 
@@ -383,6 +421,12 @@ Reglas:
 * solo el `operational_job_id` es editable
 * review history debe filtrarse por el contexto correcto
 * no hay transferencia automática de correcciones en MVP
+
+### MVP — por qué no hace falta `job_id` en `review_actions`
+
+Las correcciones siguen atadas a **`position_id`**. El dataset editable queda acotado porque solo las posiciones del **job operativo** admiten escritura; las posiciones benchmark son solo lectura. **No** se requiere ampliar el esquema de `review_actions` con `job_id` para el rollout MVP. La UI/API filtra el historial según el **contexto de resultado** seleccionado para no mezclar vistas entre runs.
+
+**Transferencia / mapeo de correcciones** entre runs: posible **fase futura**, **no** prerequisito del multi-provider MVP.
 
 ---
 
@@ -567,6 +611,17 @@ Un request crea un job.
 
 `run all` queda fuera de MVP como orquestación superior.
 
+### Nota futura: orquestación “run all” / batch benchmarking (no MVP)
+
+Cuando se priorice, un diseño razonable incluye:
+
+* entidad padre tipo **benchmark session** / **benchmark batch** que agrupe **N** jobs creados en una misma acción;
+* metadatos compartidos (inventario, subconjunto de pasillos, matriz provider/model/prompt);
+* UI con **agrupación** (progreso por job hijo);
+* controles de **concurrencia y coste** (límites, cancelación, colas).
+
+Esto es **extensión futura**; el MVP no la implementa.
+
 ---
 
 ## 5.3 GET /aisles/{id}/status
@@ -677,18 +732,20 @@ Esto es crítico para previews, crops y source image display.
 
 ## 5.11 Analytics
 
-### Regla principal
+### Regla principal (precisa)
 
-Operational analytics por defecto.
+**Por defecto**, los analytics operativos incluyen **solo**:
 
-Eso significa:
+1. Para cada pasillo con **`operational_job_id` no nulo**: filas cuyo **`job_id`** coincide con ese **`operational_job_id`**.
+2. Para cada pasillo **legacy** (`operational_job_id IS NULL`): filas con **`job_id IS NULL`**.
 
-* benchmark jobs excluidos por default
-* legacy aisles usan `job_id IS NULL` hasta promoción
+**Inventarios mixtos:** un inventario puede tener pasillos ya promovidos y pasillos aún legacy. La regla se aplica **por pasillo** (o equivalente en el modelo de agregación), no con un único filtro global que rompa un caso u otro.
+
+**Exclusión de benchmark:** los jobs no operativos deben quedar fuera del **default operativo** idealmente en la **capa de repositorio / composición SQL compartida**, no solo con filtros ad-hoc en un endpoint suelto (para evitar fugas en nuevos endpoints).
 
 ### Benchmark analytics
 
-Puede agregarse después, pero fuera del flujo principal.
+**Fuera del alcance MVP.** No es requisito producto del primer rollout.
 
 ---
 
@@ -886,6 +943,18 @@ Debe depender de:
 * mappers
 * services compartidos
 
+### 8.7.1 Anti‑patrón: “interface delgada” sobre Gemini
+
+**No basta** con envolver la implementación actual detrás de `LLMProvider` si la lógica compartida sigue dentro de código vendor-specific. En la fase Strategy + Adapter se debe **extraer explícitamente** a servicios/compartidos:
+
+* ensamblado y **render de prompts**
+* **enriquecimiento** de referencias visuales
+* **validación** de structured output
+* **tracing/logging** compartido (independiente de retries del SDK)
+* **normalización canónica** de la respuesta hacia el modelo interno
+
+El núcleo del pipeline debe depender **solo de contratos internos estables**, no de formas de request/response del proveedor.
+
 ---
 
 ## 9. CSV / Export
@@ -1012,6 +1081,7 @@ El usuario puede lanzar jobs con más de un provider/model/prompt.
 * aislamiento por `aisle_id + job_id`
 * fallback legacy
 * no mezcla entre jobs
+* **analytics / agregados:** default operativo excluye benchmark; inventario **mixto** legacy + operativo
 
 ## 11.2 Migration tests
 
@@ -1026,12 +1096,15 @@ El usuario puede lanzar jobs con más de un provider/model/prompt.
 * `POST /merge` requiere `job_id`
 * export operativo y por job
 * validación de `job_id` ajeno al aisle
+* **evidence / preview / crop / imagen:** correctos **por job seleccionado**; **ningún** endpoint nuevo con “latest job” implícito
 
 ## 11.4 Integration tests
 
 * doble run mismo aisle sin colisión
 * cambio de `operational_job_id`
 * benchmark no altera legacy ni operativo previo
+* **export operativo:** sin filas duplicadas tras varios benchmark runs en el mismo pasillo
+* **KPIs operativos:** no inflan al añadir jobs benchmark
 
 ## 11.5 Frontend tests
 
@@ -1044,6 +1117,7 @@ El usuario puede lanzar jobs con más de un provider/model/prompt.
 * cada strategy cumple el contrato común
 * cada adapter encapsula correctamente errores y request shaping
 * mappers normalizan responses a shape interno estable
+* **tests de contrato** que el core no importe tipos/SDK del vendor
 
 ## 11.7 Legacy compatibility tests
 
@@ -1052,13 +1126,17 @@ El usuario puede lanzar jobs con más de un provider/model/prompt.
 * review history legacy
 * analytics operativos sobre `job_id IS NULL`
 
+## 11.8 Regresión “sin latest job implícito”
+
+* revisión estática o pruebas de integración que fallen si un read path de evidencia/posición usa “último job del pasillo” sin pasar por el Result Context Resolver
+
 ---
 
 ## 12. Riesgos y decisiones abiertas
 
-### Riesgo 1
+### Riesgo 1 (crítico)
 
-Resolvers de evidence/assets siguen usando latest job y muestran previews equivocados.
+Resolvers de evidence/assets siguen usando latest job y muestran previews equivocados. **Tratamiento:** regla arquitectónica obligatoria + ítems DoD/tests en `multi_provider_planning_revision.md`.
 
 ### Riesgo 2
 
@@ -1066,23 +1144,35 @@ Merge o consolidación mezcla labels de distintos jobs si alguna capa queda aisl
 
 ### Riesgo 3
 
-Analytics se contamina si algún endpoint sigue leyendo benchmark jobs por defecto.
+Analytics se contamina si algún endpoint sigue leyendo benchmark jobs por defecto. **Tratamiento:** filtros en repositorio/query compartida, tests de no inflación KPI.
 
 ### Riesgo 4
 
-Provider abstraction incompleta deja lógica compartida atrapada en `GeminiProvider`.
+Provider abstraction incompleta deja lógica compartida atrapada en `GeminiProvider`. **Tratamiento:** §8.7.1 y extracción explícita de servicios compartidos.
 
 ### Decisión abierta 1
 
-Cuándo agregar parent-job para `run all`. No es necesario en MVP.
+**Unicidad `(aisle_id, job_id, position_code)`:** depende de garantías del detector; puede quedar **sin** UNIQUE. Debe documentarse, no asumirse.
 
 ### Decisión abierta 2
 
-Cuándo agregar compare UX avanzada. No es necesario en MVP.
+**`prompt_version` vs snapshot renderizado vs ambos:** elegir antes de benchmarking amplio en prod (ver §2.5.1).
 
 ### Decisión abierta 3
 
+Cuándo agregar parent-job para `run all`. No es necesario en MVP (nota futura en §5.2).
+
+### Decisión abierta 4
+
+Cuándo agregar compare UX avanzada. No es necesario en MVP.
+
+### Decisión abierta 5
+
 Cuándo agregar transfer semiautomático de correcciones. Fuera de MVP.
+
+### Diferido explícitamente (lista maestra)
+
+Ver **`docs/multi_provider_planning_revision.md` §8** (benchmark analytics, transfer de correcciones, `job_id` en `review_actions`, run-all, backfill agresivo, etc.).
 
 ---
 
@@ -1093,19 +1183,25 @@ Se considera completado el rollout inicial cuando:
 ### Persistencia
 
 * todo nuevo `Position`, `RawLabel`, `NormalizedLabel`, `FinalCountRecord` tiene `job_id`
-* `product_records`, `evidences`, `review_actions` quedan correctamente job-scoped vía `position_id`
+* `product_records`, `evidences`, `review_actions` quedan correctamente job-scoped vía `position_id` **y** los reads resuelven **primero** el contexto de resultado
 * legacy `job_id IS NULL` sigue legible
+* metadatos de job: columnas indexables `provider_name`, `model_name`, `prompt_key`; **`engine_params_json` no es identidad primaria**; **trazabilidad de prompt** (`prompt_version` y/o snapshot renderizado) implementada **o** riesgo aceptado por escrito (preferible implementar al menos una vía)
 
 ### API
 
 * listados y detalles se resuelven por job sin mezclar datasets
 * `GET /positions`, export y merge respetan contexto explícito / operativo / legacy
-* evidence/assets no dependen de latest job incorrecto
+* **evidence/assets/previews:** ningún path depende de “latest job” implícito del pasillo
+
+### Analytics
+
+* default operativo: **solo** job operativo por pasillo + legacy `NULL` donde aplique; **benchmark excluido** en capa de consulta compartida; inventarios mixtos correctos
+* **benchmark analytics:** fuera de MVP (no requisito)
 
 ### Frontend
 
 * la pantalla de resultados alterna entre múltiples runs del mismo aisle
-* los KPIs reflejan solo el dataset seleccionado
+* los KPIs reflejan solo el dataset seleccionado / reglas operativas por defecto
 * benchmark jobs son read-only
 * operational job es editable
 
@@ -1114,8 +1210,12 @@ Se considera completado el rollout inicial cuando:
 * existe contrato común `LLMProvider`
 * existe `ProviderRegistry`
 * cada provider usa su adapter
-* la lógica compartida no vive en una implementación vendor-specific
+* la lógica compartida **extraída** (prompts, enrichment, validación, logging, normalización) no vive en una implementación vendor-specific
 * el pipeline core no contiene hardcodes Gemini en flows genéricos
+
+### Review
+
+* **`review_actions` sin `job_id` en MVP** es diseño aceptado; permisos operativos vía job operativo + read-only benchmark
 
 ### Compatibilidad
 
@@ -1126,6 +1226,8 @@ Se considera completado el rollout inicial cuando:
 
 * pasan tests de aislamiento, fallback legacy, provider contract, export y doble-run
 * se prueba explícitamente que dos runs del mismo aisle no colisionan
+* tests de evidence/preview por job, analytics mixtos, exclusión benchmark en KPIs, export sin duplicados post-benchmark
+* lista completa: **`multi_provider_planning_revision.md` §7**
 
 ---
 
