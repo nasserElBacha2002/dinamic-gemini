@@ -5,8 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
+import src.config as config_mod
 from src.api.server import app
 from src.api.dependencies import (
     get_artifact_storage,
@@ -173,6 +175,31 @@ def test_get_processing_provider_options_returns_registered_keys() -> None:
         assert any(m["id"] == "gemini-2.0-flash-exp" for m in gemini["models"])
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
+
+
+def test_get_processing_provider_options_reflects_env_processing_model_lists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PROCESSING_*_MODELS must drive GET processing-provider-options (not only pydantic defaults)."""
+    monkeypatch.setenv("PROCESSING_GEMINI_MODELS", "gemini-alpha,gemini-beta")
+    monkeypatch.setenv("PROCESSING_OPENAI_MODELS", "gpt-alpha,gpt-beta")
+    config_mod._settings = None
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        response = client.get("/api/v3/inventories/processing-provider-options")
+        assert response.status_code == 200
+        data = response.json()
+        gemini = next(p for p in data["providers"] if p["key"] == "gemini")
+        openai_p = next(p for p in data["providers"] if p["key"] == "openai")
+        assert [m["id"] for m in gemini["models"]] == ["gemini-alpha", "gemini-beta"]
+        assert [m["id"] for m in openai_p["models"]] == ["gpt-alpha", "gpt-beta"]
+        assert gemini["default_model"] == "gemini-alpha"
+        assert openai_p["default_model"] == "gpt-alpha"
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("PROCESSING_GEMINI_MODELS", raising=False)
+        monkeypatch.delenv("PROCESSING_OPENAI_MODELS", raising=False)
+        config_mod._settings = None
 
 
 def test_post_process_with_explicit_fake_provider_persisted_on_status() -> None:

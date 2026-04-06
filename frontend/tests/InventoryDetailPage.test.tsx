@@ -898,6 +898,19 @@ describe('InventoryDetail', () => {
     expect(screen.getByText('Summary unavailable')).toBeInTheDocument();
   });
 
+  it('process dialog shows resolved default model id in the model placeholder option', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
+    expect(await screen.findByText(/start processing/i)).toBeInTheDocument();
+
+    const modelSelect = screen.getByLabelText(/^model$/i, { selector: '[role="combobox"]' });
+    fireEvent.mouseDown(modelSelect);
+    expect(
+      await screen.findByRole('option', { name: /default \(gemini-2\.0-flash-exp\)/i })
+    ).toBeInTheDocument();
+  });
+
   it('process aisle opens provider dialog and passes provider/model/prompt to start mutation', async () => {
     renderPage();
 

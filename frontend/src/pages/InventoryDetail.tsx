@@ -638,9 +638,9 @@ export default function InventoryDetail() {
           <Stack spacing={2}>
             <Typography variant="body2" color="text.secondary">
               Choose provider, model, and prompt profile. &quot;Default (server)&quot; for provider uses{' '}
-              {processingProviderOptsQuery.data?.default_provider_key ?? '…'}; omitting model or prompt uses the
-              server defaults shown in options (
-              {processingProviderOptsQuery.data?.default_prompt_key ?? '…'}).
+              {processingProviderOptsQuery.data?.default_provider_key ?? '…'}. Omitting model uses that
+              provider&apos;s default model (see the Model dropdown). Omitting prompt uses{' '}
+              {processingProviderOptsQuery.data?.default_prompt_key ?? '…'}.
             </Typography>
             <FormControl fullWidth size="small" disabled={processingProviderOptsQuery.isLoading}>
               <InputLabel id="process-provider-label">Provider</InputLabel>
@@ -676,7 +676,15 @@ export default function InventoryDetail() {
                 onChange={(e) => setProcessModelKey(String(e.target.value))}
               >
                 <MenuItem value="">
-                  <em>Default for provider</em>
+                  <em>
+                    Default (
+                    {providerConfigForProcess?.default_model ??
+                      processingProviderOptsQuery.data?.providers?.find(
+                        (p) => p.key === (processingProviderOptsQuery.data?.default_provider_key ?? '')
+                      )?.default_model ??
+                      '…'}
+                    )
+                  </em>
                 </MenuItem>
                 {(providerConfigForProcess?.models ?? []).map((m) => (
                   <MenuItem key={m.id} value={m.id}>

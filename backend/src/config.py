@@ -13,8 +13,32 @@ from typing import Optional, Tuple
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
 
-# Cargar variables de entorno desde .env si existe
-load_dotenv()
+# backend/src/config.py -> parents[1] == backend/, parents[2] == repo root
+_CONFIG_FILE = Path(__file__).resolve()
+_BACKEND_ROOT = _CONFIG_FILE.parents[1]
+_REPO_ROOT = _BACKEND_ROOT.parent
+
+
+def _load_dotenv_files(*, for_reload: bool = False) -> None:
+    """Load `.env` from repo root and `backend/` so vars match `dev.sh` / root `.env` when cwd is `backend/`.
+
+    Initial load: repo root does not override existing OS env (exported vars win). `backend/.env` can
+    override keys from repo for local developer overrides. Cwd `.env` fills remaining gaps.
+
+    Reload: file values override OS env so edits to `.env` take effect after `reload_settings()`.
+    """
+    override_repo = for_reload
+    repo_env = _REPO_ROOT / ".env"
+    if repo_env.is_file():
+        load_dotenv(repo_env, override=override_repo)
+    backend_env = _BACKEND_ROOT / ".env"
+    if backend_env.is_file():
+        load_dotenv(backend_env, override=True)
+    load_dotenv(override=for_reload)
+
+
+# Cargar variables de entorno desde .env (raíz del repo + backend + cwd)
+_load_dotenv_files(for_reload=False)
 
 
 def _parse_max_frames_to_send() -> Optional[int]:
@@ -982,8 +1006,7 @@ def reload_settings() -> Settings:
         Settings: Nueva instancia de configuración.
     """
     global _settings
-    # Recargar variables de entorno
-    load_dotenv(override=True)
+    _load_dotenv_files(for_reload=True)
     _settings = Settings()
     return _settings
 

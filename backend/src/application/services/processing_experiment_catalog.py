@@ -32,15 +32,25 @@ def models_for_provider(provider_key: str, settings: Any) -> List[_ModelPair]:
 
 
 def default_model_for_provider(provider_key: str, settings: Any) -> str | None:
-    """Default model id when the client omits model_name (per-provider settings)."""
+    """Default model id when the client omits model_name (per-provider settings).
+
+    If ``PROCESSING_*_MODELS`` lists a custom set, ``GEMINI_MODEL_NAME`` / ``OPENAI_MODEL`` may
+    not appear in that list; in that case the first offered model is the default.
+    """
     key = (provider_key or "").strip().lower()
+    pairs = models_for_provider(provider_key, settings)
+    if not pairs:
+        return None
+    allowed_ids = [m for m, _ in pairs]
     if key == "gemini":
-        return str(getattr(settings, "gemini_model_name", "") or "gemini-2.0-flash-exp").strip()
+        dm = str(getattr(settings, "gemini_model_name", "") or "gemini-2.0-flash-exp").strip()
+        return dm if dm in allowed_ids else allowed_ids[0]
     if key == "openai":
-        return str(getattr(settings, "openai_model", "") or "gpt-4o").strip()
+        dm = str(getattr(settings, "openai_model", "") or "gpt-4o").strip()
+        return dm if dm in allowed_ids else allowed_ids[0]
     if key == "fake":
         return "fixture"
-    return None
+    return allowed_ids[0]
 
 
 def normalize_requested_model(provider_key: str, requested: str | None, settings: Any) -> str | None:
