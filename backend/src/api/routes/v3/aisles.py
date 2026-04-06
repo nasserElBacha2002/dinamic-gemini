@@ -182,18 +182,15 @@ def list_aisle_jobs(
     aisle_id: str,
     limit: int = Query(50, ge=1, le=500, description="Max jobs to return (newest first)."),
     use_case: ListAisleJobsUseCase = Depends(get_list_aisle_jobs_use_case),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
 ) -> AisleJobsListResponse:
     """List process_aisle jobs for an aisle (newest first) for run browsing / future UI selector."""
     try:
-        jobs = use_case.execute(
+        result = use_case.execute(
             ListAisleJobsCommand(inventory_id=inventory_id, aisle_id=aisle_id, limit=limit)
         )
-        aisle = aisle_repo.get_by_id(aisle_id)
-        op = aisle.operational_job_id if aisle and aisle.inventory_id == inventory_id else None
         return AisleJobsListResponse(
-            operational_job_id=op,
-            jobs=[job_to_summary(j) for j in jobs],
+            operational_job_id=result.operational_job_id,
+            jobs=[job_to_summary(j) for j in result.jobs],
         )
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")

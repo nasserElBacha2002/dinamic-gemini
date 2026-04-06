@@ -327,10 +327,17 @@ def test_map_hybrid_report_stores_position_barcode_and_review_display_label_for_
     assert summary.get("position_barcode") == "PALLET-99"
     assert summary.get("review_display_label") == "Pallet PALLET-99"
     assert summary.get("internal_code") is None
+
+
+def test_persist_aisle_result_use_case_saves_positions_products_evidences() -> None:
     """PersistAisleResultUseCase saves positions, products, evidences."""
     position_repo = MagicMock()
     product_repo = MagicMock()
     evidence_repo = MagicMock()
+    aisle_repo = MagicMock()
+    mock_aisle = MagicMock()
+    mock_aisle.inventory_id = "inv-persist-test"
+    aisle_repo.get_by_id.return_value = mock_aisle
     clock = MagicMock()
     now = datetime.now(timezone.utc)
     clock.now.return_value = now
@@ -340,6 +347,7 @@ def test_map_hybrid_report_stores_position_barcode_and_review_display_label_for_
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         clock=clock,
+        aisle_repo=aisle_repo,
     )
     report = {
         "entities": [

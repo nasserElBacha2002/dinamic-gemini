@@ -64,6 +64,13 @@ class GetPositionDetailUseCase:
     When the requested ``position_id`` belongs to an aggregated/consolidated SKU group, this use
     case returns the representative anchor row for that visible operator-facing entity rather than
     the raw member row itself.
+
+    Phase 2 (strict context): After resolving the aisle result slice (explicit ``job_id`` →
+    operational job → legacy null-job rows), the position row's ``job_id`` must match that slice.
+    If it does not (e.g. viewing a position from another run while defaults point elsewhere),
+    :class:`PositionResultContextMismatchError` is raised — the API must not return data from the
+    wrong run. Clients should pass ``job_id`` matching the position's run or adjust the operational
+    pointer when product workflow allows.
     """
 
     def __init__(
@@ -100,6 +107,7 @@ class GetPositionDetailUseCase:
     def _resolve_operator_facing_position(
         self, position: Position, job_id_for_slice: Optional[str]
     ) -> Position:
+        # Same resolved slice as list API; capped raw fetch — not an unscoped full-aisle scan.
         raw_positions = list(
             self._position_repo.list_by_aisle_query(
                 position.aisle_id,
@@ -138,6 +146,12 @@ class GetPositionDetailUseCase:
         *,
         explicit_job_id: Optional[str] = None,
     ) -> PositionDetailResult:
+        """Load position detail scoped to the resolved result context.
+
+        Raises ``PositionResultContextMismatchError`` when ``position.job_id`` does not equal the
+        resolved slice's job id (including ``None`` for legacy rows). This is intentional: 409
+        conflict over wrong-run access, not a silent fallback to another dataset.
+        """
         position = resolve_position(
             self._inventory_repo,
             self._aisle_repo,
@@ -152,7 +166,8 @@ class GetPositionDetailUseCase:
         ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=explicit_job_id)
         if ctx.job_id_for_slice != position.job_id:
             raise PositionResultContextMismatchError(
-                f"Position {position_id} is not in the resolved result context for this aisle"
+                f"Position {position_id} is not in the resolved result context for this aisle "
+                f"(resolved_job_id={ctx.job_id_for_slice!r}, position.job_id={position.job_id!r})"
             )
 
         operator_position = self._resolve_operator_facing_position(position, ctx.job_id_for_slice)

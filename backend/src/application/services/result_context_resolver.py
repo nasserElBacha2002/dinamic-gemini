@@ -2,7 +2,10 @@
 Result Context Resolver — Phase 2 multi-run reads.
 
 Resolves which job slice (or legacy null-job slice) applies for aisle-scoped result APIs:
-explicit ``job_id`` → ``aisles.operational_job_id`` → legacy ``job_id IS NULL`` rows.
+explicit ``job_id`` → validated ``aisles.operational_job_id`` → legacy ``job_id IS NULL`` rows.
+
+The operational pointer is validated the same way as an explicit job: the job must
+exist and target this aisle. Stale or cross-aisle pointers fail fast (no silent legacy fallback).
 """
 
 from __future__ import annotations
@@ -31,21 +34,24 @@ class ResultContextResolver:
     def __init__(self, job_repo: JobRepository) -> None:
         self._job_repo = job_repo
 
+    def _assert_job_targets_aisle(self, *, job_id: str, aisle: Aisle) -> None:
+        job = self._job_repo.get_by_id(job_id)
+        if job is None:
+            raise JobNotFoundError(f"Job not found: {job_id}")
+        if job.target_type != "aisle" or job.target_id != aisle.id:
+            raise JobDoesNotBelongToAisleError(
+                f"Job {job_id} does not belong to aisle {aisle.id}"
+            )
+
     def resolve(self, *, aisle: Aisle, explicit_job_id: Optional[str]) -> ResolvedAisleResultContext:
         if explicit_job_id is not None and str(explicit_job_id).strip():
             jid = str(explicit_job_id).strip()
-            job = self._job_repo.get_by_id(jid)
-            if job is None:
-                raise JobNotFoundError(f"Job not found: {jid}")
-            if job.target_type != "aisle" or job.target_id != aisle.id:
-                raise JobDoesNotBelongToAisleError(
-                    f"Job {jid} does not belong to aisle {aisle.id}"
-                )
+            self._assert_job_targets_aisle(job_id=jid, aisle=aisle)
             return ResolvedAisleResultContext(job_id_for_slice=jid, source="explicit")
 
-        if aisle.operational_job_id:
-            return ResolvedAisleResultContext(
-                job_id_for_slice=aisle.operational_job_id, source="operational"
-            )
+        op = str(aisle.operational_job_id).strip() if aisle.operational_job_id else ""
+        if op:
+            self._assert_job_targets_aisle(job_id=op, aisle=aisle)
+            return ResolvedAisleResultContext(job_id_for_slice=op, source="operational")
 
         return ResolvedAisleResultContext(job_id_for_slice=None, source="legacy")

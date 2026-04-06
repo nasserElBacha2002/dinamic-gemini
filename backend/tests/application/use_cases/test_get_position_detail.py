@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 
+import pytest
+
+from src.application.errors import PositionResultContextMismatchError
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.jobs.entities import Job, JobStatus
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
@@ -218,3 +222,99 @@ def test_get_position_detail_falls_back_to_raw_position_when_representative_cann
     assert result.position.id == "pos-2"
     assert [product.id for product in result.products] == ["prod-2"]
     assert "position_detail representative fallback" in caplog.text
+
+
+def test_get_position_detail_explicit_job_matches_job_scoped_position() -> None:
+    now = datetime.now(timezone.utc)
+    inventory_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    position_repo = MemoryPositionRepository()
+    product_repo = MemoryProductRecordRepository()
+    evidence_repo = MemoryEvidenceRepository()
+    review_repo = MemoryReviewActionRepository()
+    job_repo = MemoryJobRepository()
+
+    inventory_repo.save(Inventory("inv-1", "Inventory", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-1", "inv-1", "A-01", AisleStatus.CREATED, now, now))
+    job_repo.save(
+        Job(
+            id="job-x",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    position_repo.save(
+        Position(
+            id="pos-j",
+            aisle_id="aisle-1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=True,
+            primary_evidence_id=None,
+            created_at=now,
+            updated_at=now,
+            job_id="job-x",
+        )
+    )
+
+    use_case = GetPositionDetailUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_repo,
+        evidence_repo=evidence_repo,
+        review_repo=review_repo,
+        job_repo=job_repo,
+        result_context_resolver=ResultContextResolver(job_repo),
+        positions_aisle_raw_cap=2000,
+    )
+    result = use_case.execute("inv-1", "aisle-1", "pos-j", explicit_job_id="job-x")
+    assert result.position.id == "pos-j"
+    assert result.run_context.result_context_source == "explicit"
+    assert result.run_context.resolved_job_id == "job-x"
+
+
+def test_get_position_detail_raises_when_legacy_context_excludes_job_scoped_position() -> None:
+    now = datetime.now(timezone.utc)
+    inventory_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    position_repo = MemoryPositionRepository()
+    product_repo = MemoryProductRecordRepository()
+    evidence_repo = MemoryEvidenceRepository()
+    review_repo = MemoryReviewActionRepository()
+    job_repo = MemoryJobRepository()
+
+    inventory_repo.save(Inventory("inv-1", "Inventory", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-1", "inv-1", "A-01", AisleStatus.CREATED, now, now))
+    position_repo.save(
+        Position(
+            id="pos-j",
+            aisle_id="aisle-1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=True,
+            primary_evidence_id=None,
+            created_at=now,
+            updated_at=now,
+            job_id="job-x",
+        )
+    )
+
+    use_case = GetPositionDetailUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_repo,
+        evidence_repo=evidence_repo,
+        review_repo=review_repo,
+        job_repo=job_repo,
+        result_context_resolver=ResultContextResolver(job_repo),
+        positions_aisle_raw_cap=2000,
+    )
+    with pytest.raises(PositionResultContextMismatchError):
+        use_case.execute("inv-1", "aisle-1", "pos-j")

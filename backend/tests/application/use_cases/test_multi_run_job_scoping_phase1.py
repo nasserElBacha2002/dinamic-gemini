@@ -132,6 +132,7 @@ def test_persist_two_jobs_same_aisle_isolated_positions(memory_stack):
             run_id="r1",
         )
     )
+    assert s["aisle_repo"].get_by_id(aisle_id).operational_job_id is None
     s["persist"].execute(
         PersistAisleResultCommand(
             aisle_id=aisle_id,

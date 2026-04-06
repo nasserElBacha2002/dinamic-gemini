@@ -149,6 +149,10 @@ def get_position_detail(
     aisle results list. When ``position_id`` belongs to an aggregated group, detail resolves the
     representative row that operators see in the list; ``technical_snapshot`` remains secondary
     debug/history metadata for that resolved entity.
+
+    **409 Conflict:** When the position exists but its storage ``job_id`` does not match the resolved
+    result slice (explicit query param, then ``aisles.operational_job_id``, then legacy null-job
+    rows). This avoids returning another run's data without an explicit ``job_id`` override.
     """
     try:
         result = use_case.execute(

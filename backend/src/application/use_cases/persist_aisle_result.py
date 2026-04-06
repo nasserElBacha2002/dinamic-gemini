@@ -8,6 +8,12 @@ final quantity comes from normalized/final_count layer.
 Atomicity: Saves positions, then product_records, then evidences, then raw_labels;
 then recomputes consolidated counts (normalized + final) and updates product records.
 On any save failure we re-raise so the caller can mark the job/aisle as failed.
+
+Phase 2: This use case does **not** set ``aisles.operational_job_id``. That pointer
+denotes the canonical operational run (distinct from benchmark / ad-hoc runs) and
+belongs to an explicit promotion workflow (later phase). Until then, default reads
+without ``job_id`` use operational if set, else legacy null-job rows; clients with
+only job-scoped rows should pass explicit ``job_id`` from status / jobs listing.
 """
 
 from __future__ import annotations
@@ -113,10 +119,6 @@ class PersistAisleResultUseCase:
                     result.final_count,
                     result.product_records_updated,
                 )
-            # Phase 2: successful persist promotes this job as the aisle operational pointer for default reads.
-            # Benchmark/non-operational jobs: future flag should skip this update.
-            aisle.operational_job_id = command.job_id
-            self._aisle_repo.save(aisle)
         except Exception as e:
             logger.exception("PersistAisleResult failed for aisle %s job %s: %s", command.aisle_id, command.job_id, e)
             raise

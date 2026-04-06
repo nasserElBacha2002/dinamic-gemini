@@ -108,6 +108,7 @@ class ListAislePositionsUseCase:
             sort_dir="asc",
             job_id=ctx.job_id_for_slice,
         )
+        # Bounded raw load within the resolved job slice only — not an unscoped "all rows in aisle" read.
         raw_positions = list(self._position_repo.list_by_aisle_query(command.aisle_id, raw_q))
         raw_truncated = len(raw_positions) >= self._raw_cap
 

@@ -11,6 +11,7 @@ from src.application.use_cases.get_aisle_merge_results import (
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.jobs.entities import Job, JobStatus
 from src.domain.labels.entities import FinalCountRecord
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
@@ -24,6 +25,18 @@ def test_merge_results_operational_scope() -> None:
     aisles = MemoryAisleRepository()
     final = MemoryFinalCountRepository()
     jobs = MemoryJobRepository()
+    jobs.save(
+        Job(
+            id="j1",
+            target_type="aisle",
+            target_id="a1",
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+        )
+    )
 
     inv.save(Inventory("inv-1", "X", InventoryStatus.DRAFT, now, now))
     aisles.save(

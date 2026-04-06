@@ -17,6 +17,12 @@ class ListAisleJobsCommand:
     limit: int = 50
 
 
+@dataclass(frozen=True)
+class ListAisleJobsResult:
+    jobs: Sequence[Job]
+    operational_job_id: str | None
+
+
 class ListAisleJobsUseCase:
     def __init__(
         self,
@@ -28,7 +34,7 @@ class ListAisleJobsUseCase:
         self._aisle_repo = aisle_repo
         self._job_repo = job_repo
 
-    def execute(self, command: ListAisleJobsCommand) -> Sequence[Job]:
+    def execute(self, command: ListAisleJobsCommand) -> ListAisleJobsResult:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
@@ -37,6 +43,10 @@ class ListAisleJobsUseCase:
             raise AisleNotFoundError(
                 f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
             )
-        return self._job_repo.list_jobs_for_target(
+        jobs = self._job_repo.list_jobs_for_target(
             "aisle", command.aisle_id, limit=command.limit
+        )
+        return ListAisleJobsResult(
+            jobs=jobs,
+            operational_job_id=aisle.operational_job_id,
         )

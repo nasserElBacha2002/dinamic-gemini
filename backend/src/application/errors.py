@@ -69,4 +69,8 @@ class JobDoesNotBelongToAisleError(Exception):
 
 
 class PositionResultContextMismatchError(Exception):
-    """Raised when a position row does not belong to the resolved result context (e.g. wrong job_id query)."""
+    """Raised when a position row does not belong to the resolved result context.
+
+    Typical cause: default read slice (operational or legacy) does not match ``position.job_id``;
+    client must pass an explicit ``job_id`` matching that row or fix the operational pointer.
+    """

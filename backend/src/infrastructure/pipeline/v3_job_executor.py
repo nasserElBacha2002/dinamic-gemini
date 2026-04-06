@@ -55,6 +55,10 @@ from src.pipeline.contracts.analysis_context import (
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, PipelineRunResult
+from src.pipeline.ports.analysis_provider import (
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
+)
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
     build_visual_reference_context,
@@ -78,7 +82,15 @@ def _visual_reference_failure_metadata(
     analysis_context: Optional[AnalysisContext],
     error_message: str,
 ) -> Dict[str, Any]:
-    block = build_visual_reference_context(analysis_context, provider_metadata=None)
+    # No provider run: explicit zero consumption so the block does not list context reference_ids
+    # as "resolved" for this failed job (resolution never reached the provider).
+    block = build_visual_reference_context(
+        analysis_context,
+        provider_metadata={
+            PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED: False,
+            PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT: 0,
+        },
+    )
     block["resolution_error"] = error_message[:2048] if len(error_message) > 2048 else error_message
     block["resolution_stage"] = "input_artifact_resolution"
     return block
@@ -438,6 +450,7 @@ class V3JobExecutor:
 
             # Finalization order (intentional):
             # 1) PersistAisleResult — domain rows (positions, product_records, evidences, …).
+            #    Does not set aisles.operational_job_id (canonical run is explicit promotion / later phase).
             # 2) Durable artifact upload — execution log + reports to ArtifactStore.
             # 3) _mark_success — job SUCCEEDED + result_json including durable_artifacts metadata.
             #

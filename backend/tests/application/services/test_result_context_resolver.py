@@ -64,11 +64,25 @@ def test_explicit_job_wrong_aisle_raises() -> None:
 
 
 def test_operational_fallback() -> None:
-    r = ResultContextResolver(MemoryJobRepository()).resolve(
-        aisle=_aisle(op_job="op-1"), explicit_job_id=None
-    )
+    repo = MemoryJobRepository()
+    repo.save(_job("op-1"))
+    r = ResultContextResolver(repo).resolve(aisle=_aisle(op_job="op-1"), explicit_job_id=None)
     assert r.job_id_for_slice == "op-1"
     assert r.source == "operational"
+
+
+def test_operational_job_missing_raises() -> None:
+    with pytest.raises(JobNotFoundError):
+        ResultContextResolver(MemoryJobRepository()).resolve(
+            aisle=_aisle(op_job="missing-op"), explicit_job_id=None
+        )
+
+
+def test_operational_job_wrong_aisle_raises() -> None:
+    repo = MemoryJobRepository()
+    repo.save(_job("j-op", aisle_id="other-aisle"))
+    with pytest.raises(JobDoesNotBelongToAisleError):
+        ResultContextResolver(repo).resolve(aisle=_aisle(op_job="j-op"), explicit_job_id=None)
 
 
 def test_legacy_fallback() -> None:
@@ -78,7 +92,7 @@ def test_legacy_fallback() -> None:
 
 
 def test_explicit_empty_string_treated_as_omitted() -> None:
-    r = ResultContextResolver(MemoryJobRepository()).resolve(
-        aisle=_aisle(op_job="op-1"), explicit_job_id="   "
-    )
+    repo = MemoryJobRepository()
+    repo.save(_job("op-1"))
+    r = ResultContextResolver(repo).resolve(aisle=_aisle(op_job="op-1"), explicit_job_id="   ")
     assert r.source == "operational"

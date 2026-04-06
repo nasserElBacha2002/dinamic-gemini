@@ -8,6 +8,7 @@ from src.application.services.result_context_resolver import ResultContextResolv
 from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
@@ -21,6 +22,18 @@ def test_list_positions_operational_job_excludes_other_runs() -> None:
     aisle_repo = MemoryAisleRepository()
     pos_repo = MemoryPositionRepository()
     job_repo = MemoryJobRepository()
+    job_repo.save(
+        Job(
+            id="job-op",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+        )
+    )
 
     inv_repo.save(Inventory("inv-1", "X", InventoryStatus.DRAFT, now, now))
     aisle_repo.save(
