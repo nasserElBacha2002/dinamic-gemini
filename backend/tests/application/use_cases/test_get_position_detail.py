@@ -130,7 +130,7 @@ def test_get_position_detail_uses_consolidated_representative_for_group_member()
         evidence_repo=evidence_repo,
         review_repo=review_repo,
         job_repo=job_repo,
-        result_context_resolver=ResultContextResolver(job_repo),
+        result_context_resolver=ResultContextResolver(job_repo, position_repo),
         positions_aisle_raw_cap=2000,
     )
 
@@ -212,7 +212,7 @@ def test_get_position_detail_falls_back_to_raw_position_when_representative_cann
         evidence_repo=evidence_repo,
         review_repo=review_repo,
         job_repo=job_repo,
-        result_context_resolver=ResultContextResolver(job_repo),
+        result_context_resolver=ResultContextResolver(job_repo, position_repo),
         positions_aisle_raw_cap=1,
     )
 
@@ -270,7 +270,7 @@ def test_get_position_detail_explicit_job_matches_job_scoped_position() -> None:
         evidence_repo=evidence_repo,
         review_repo=review_repo,
         job_repo=job_repo,
-        result_context_resolver=ResultContextResolver(job_repo),
+        result_context_resolver=ResultContextResolver(job_repo, position_repo),
         positions_aisle_raw_cap=2000,
     )
     result = use_case.execute("inv-1", "aisle-1", "pos-j", explicit_job_id="job-x")
@@ -313,7 +313,7 @@ def test_get_position_detail_raises_when_legacy_context_excludes_job_scoped_posi
         evidence_repo=evidence_repo,
         review_repo=review_repo,
         job_repo=job_repo,
-        result_context_resolver=ResultContextResolver(job_repo),
+        result_context_resolver=ResultContextResolver(job_repo, position_repo),
         positions_aisle_raw_cap=2000,
     )
     with pytest.raises(PositionResultContextMismatchError):

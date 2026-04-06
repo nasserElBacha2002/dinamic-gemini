@@ -4,7 +4,8 @@ ListAislePositions use case — v3.0 Épica 6.
 Returns SKU-level consolidated positions for an aisle with filters, **post-consolidation**
 sorting and pagination, and honest metadata when the raw fetch cap is hit (Sprint 1.4).
 
-Phase 2: raw rows are limited to one result context (explicit ``job_id`` → operational job → legacy null slice).
+Phase 2: raw rows are limited to one result context (explicit ``job_id`` → operational job → legacy null
+slice if non-empty → else latest succeeded ``process_aisle`` job when only job-scoped rows exist).
 """
 
 from __future__ import annotations

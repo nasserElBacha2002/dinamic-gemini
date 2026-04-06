@@ -94,7 +94,7 @@ def test_list_positions_operational_job_excludes_other_runs() -> None:
         inv_repo,
         aisle_repo,
         pos_repo,
-        ResultContextResolver(job_repo),
+        ResultContextResolver(job_repo, pos_repo),
         positions_aisle_raw_cap=500,
     )
     result = uc.execute(
@@ -148,7 +148,7 @@ def test_list_positions_legacy_null_job_only() -> None:
         inv_repo,
         aisle_repo,
         pos_repo,
-        ResultContextResolver(job_repo),
+        ResultContextResolver(job_repo, pos_repo),
         positions_aisle_raw_cap=500,
     )
     result = uc.execute(
@@ -200,15 +200,15 @@ def test_list_positions_explicit_job_id_returns_job_scoped_when_operational_unse
         inv_repo,
         aisle_repo,
         pos_repo,
-        ResultContextResolver(job_repo),
+        ResultContextResolver(job_repo, pos_repo),
         positions_aisle_raw_cap=500,
     )
     default_result = uc.execute(
         ListAislePositionsCommand(inventory_id="inv-1", aisle_id="aisle-1", page=1, page_size=50)
     )
-    assert default_result.result_context_source == "legacy"
-    assert default_result.resolved_job_id is None
-    assert list(default_result.positions) == []
+    assert default_result.result_context_source == "latest_succeeded"
+    assert default_result.resolved_job_id == "job-only"
+    assert {p.id for p in default_result.positions} == {"p-scoped"}
 
     explicit = uc.execute(
         ListAislePositionsCommand(

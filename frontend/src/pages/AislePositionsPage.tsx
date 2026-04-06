@@ -111,13 +111,19 @@ export default function AislePositionsPage() {
     [aislesQuery.data?.items, aisleId]
   );
 
-  const { results, positions: positionsFromQuery, isLoading, isError, error, refetch } = useResultSummaries(
-    inventoryId,
-    aisleId
-  );
+  const {
+    results,
+    positions: positionsFromQuery,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    resultJobId,
+  } = useResultSummaries(inventoryId, aisleId);
   const positions = positionsFromQuery ?? [];
   const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId, {
     enabled: Boolean(inventoryId && aisleId && results.length > 0),
+    jobId: resultJobId,
   });
 
   const kpi = useMemo(() => computeResultsKpi(results), [results]);
@@ -255,7 +261,10 @@ export default function AislePositionsPage() {
     try {
       setLastMergeResponse(null);
       setLastMergeSummary(null);
-      const result = await mergeMutation.mutateAsync(aisleId);
+      const result = await mergeMutation.mutateAsync({
+        aisleId,
+        jobId: resultJobId ?? undefined,
+      });
       const [, , refreshedMergeResults] = await Promise.all([
         refetch(),
         aislesQuery.refetch(),
@@ -273,7 +282,7 @@ export default function AislePositionsPage() {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       showSnackbar(getApiErrorMessage(err, 'Merge failed'), 'error');
     }
-  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, showSnackbar]);
+  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, resultJobId, showSnackbar]);
 
   if (!inventoryId || !aisleId) {
     return (

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Union
 
 import pytest
 
-from src.application.ports.contracts import AisleAssetRollup
+from src.application.ports.contracts import AisleAssetRollup, POSITION_LIST_JOB_ID_UNSET, PositionListQuery
+from src.application.ports.repositories import JOB_ID_FILTER_UNSET
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.create_aisle import InventoryNotFoundError
 from src.application.ports.repositories import (
@@ -22,6 +24,8 @@ from src.domain.assets.entities import SourceAsset
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 
 
 class StubInventoryRepo(InventoryRepository):
@@ -116,11 +120,53 @@ class StubPositionRepo(PositionRepository):
         page_size: int = 25,
         sort_by: str = "created_at",
         sort_dir: str = "asc",
+        job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET,
     ) -> Sequence[Position]:
-        return [p for p in self._positions if p.aisle_id == aisle_id]
+        positions = [p for p in self._positions if p.aisle_id == aisle_id]
+        if job_id is not JOB_ID_FILTER_UNSET:
+            if job_id is None:
+                positions = [p for p in positions if p.job_id is None]
+            else:
+                positions = [p for p in positions if p.job_id == job_id]
+        if status is not None:
+            positions = [p for p in positions if p.status.value == status]
+        if needs_review is not None:
+            positions = [p for p in positions if p.needs_review == needs_review]
+        if min_confidence is not None:
+            positions = [p for p in positions if p.confidence >= min_confidence]
+        sb = (sort_by or "created_at").strip().lower()
+        reverse = (sort_dir or "asc").strip().lower() == "desc"
 
-    def list_by_aisle_query(self, aisle_id: str, query=None) -> Sequence[Position]:
-        return self.list_by_aisle(aisle_id)
+        def _key(p: Position) -> tuple:
+            if sb == "updated_at":
+                return (p.updated_at, p.id)
+            if sb == "confidence":
+                return (p.confidence, p.id)
+            if sb == "id":
+                return (p.id,)
+            return (p.created_at, p.id)
+
+        positions = sorted(positions, key=_key, reverse=reverse)
+        start = (page - 1) * page_size
+        return positions[start : start + page_size]
+
+    def list_by_aisle_query(self, aisle_id: str, query: Optional[PositionListQuery] = None) -> Sequence[Position]:
+        q = query or PositionListQuery()
+        repo_job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET
+        if q.job_id is not POSITION_LIST_JOB_ID_UNSET:
+            repo_job_id = q.job_id
+        return self.list_by_aisle(
+            aisle_id,
+            status=q.status,
+            needs_review=q.needs_review,
+            min_confidence=q.min_confidence,
+            sku_filter=q.sku_filter,
+            page=q.page,
+            page_size=q.page_size,
+            sort_by=q.sort_by,
+            sort_dir=q.sort_dir,
+            job_id=repo_job_id,
+        )
 
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
         want = set(aisle_ids)
@@ -170,6 +216,7 @@ def test_list_aisles_with_status_returns_aisles_and_latest_jobs() -> None:
         job_repo=job_repo,
         position_repo=StubPositionRepo([]),
         source_asset_repo=StubSourceAssetRepo({}),
+        result_context_resolver=ResultContextResolver(job_repo, StubPositionRepo([])),
     )
     result, total = use_case.execute("inv-1")
 
@@ -221,6 +268,7 @@ def test_list_aisles_with_status_rollups_positions_and_pending_review() -> None:
         job_repo=job_repo,
         position_repo=pos_repo,
         source_asset_repo=src_repo,
+        result_context_resolver=ResultContextResolver(job_repo, pos_repo),
     )
     result, total = use_case.execute("inv-1")
     assert total == 1
@@ -270,11 +318,70 @@ def test_list_aisles_with_status_last_activity_at_can_win_on_latest_job_only() -
         job_repo=job_repo,
         position_repo=pos_repo,
         source_asset_repo=src_repo,
+        result_context_resolver=ResultContextResolver(job_repo, pos_repo),
     )
     result, total = use_case.execute("inv-1")
     assert total == 1
     assert len(result) == 1
     assert result[0].last_activity_at == t_job
+
+
+def test_list_aisles_positions_count_uses_latest_succeeded_slice_not_all_runs() -> None:
+    """Multi-run aisles: rollups must not sum positions across jobs (Phase 2 default slice)."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    later = datetime(2025, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
+    a1 = Aisle("a1", "inv-1", "A-01", AisleStatus.PROCESSED, now, now, operational_job_id=None)
+    j1 = Job("job-1", "aisle", "a1", "process_aisle", JobStatus.SUCCEEDED, {}, now, now)
+    j2 = Job("job-2", "aisle", "a1", "process_aisle", JobStatus.SUCCEEDED, {}, later, later)
+    job_repo = MemoryJobRepository()
+    job_repo.save(j1)
+    job_repo.save(j2)
+    pos_repo = MemoryPositionRepository()
+    for i in range(6):
+        pos_repo.save(
+            Position(
+                f"p1-{i}",
+                "a1",
+                PositionStatus.DETECTED,
+                0.9,
+                True,
+                None,
+                now,
+                now,
+                job_id="job-1",
+            )
+        )
+    for i in range(6):
+        pos_repo.save(
+            Position(
+                f"p2-{i}",
+                "a1",
+                PositionStatus.DETECTED,
+                0.9,
+                True,
+                None,
+                later,
+                later,
+                job_id="job-2",
+            )
+        )
+    inv_repo = StubInventoryRepo({"inv-1"})
+    aisle_repo = StubAisleRepo([a1])
+    use_case = ListAislesWithStatusUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=pos_repo,
+        source_asset_repo=StubSourceAssetRepo({}),
+        result_context_resolver=ResultContextResolver(job_repo, pos_repo),
+    )
+    result, total = use_case.execute("inv-1")
+    assert total == 1
+    row = result[0]
+    assert row.positions_count == 6
+    assert row.pending_review_positions_count == 6
+    assert row.latest_job is not None
+    assert row.latest_job.id == "job-2"
 
 
 def test_list_aisles_with_status_raises_when_inventory_not_found() -> None:
@@ -287,6 +394,7 @@ def test_list_aisles_with_status_raises_when_inventory_not_found() -> None:
         job_repo=job_repo,
         position_repo=StubPositionRepo([]),
         source_asset_repo=StubSourceAssetRepo({}),
+        result_context_resolver=ResultContextResolver(job_repo, StubPositionRepo([])),
     )
 
     with pytest.raises(InventoryNotFoundError):

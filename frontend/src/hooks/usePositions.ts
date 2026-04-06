@@ -40,11 +40,12 @@ export function usePositionDetail(
 export function useAisleMergeResults(
   inventoryId: string | undefined,
   aisleId: string | undefined,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; jobId?: string | null }
 ) {
+  const jobId = options?.jobId;
   return useQuery({
-    queryKey: queryKeys.inventories.mergeResults(inventoryId ?? '', aisleId ?? ''),
-    queryFn: () => getAisleMergeResults(inventoryId!, aisleId!),
+    queryKey: [...queryKeys.inventories.mergeResults(inventoryId ?? '', aisleId ?? ''), jobId ?? null] as const,
+    queryFn: () => getAisleMergeResults(inventoryId!, aisleId!, { jobId }),
     enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
   });
 }

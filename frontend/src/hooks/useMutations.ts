@@ -74,13 +74,19 @@ export function useRetryAisleJob(inventoryId: string) {
   });
 }
 
+export type RunAisleMergeVariables = { aisleId: string; jobId?: string | null };
+
 export function useRunAisleMerge(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (aisleId: string) => runAisleMerge(inventoryId, aisleId),
-    onSuccess: (_, aisleId) => {
+    mutationFn: (vars: RunAisleMergeVariables) =>
+      runAisleMerge(inventoryId, vars.aisleId, { jobId: vars.jobId }),
+    onSuccess: (_, vars) => {
+      const { aisleId, jobId } = vars;
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId) });
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.inventories.mergeResults(inventoryId, aisleId), jobId ?? null],
+      });
     },
   });
 }

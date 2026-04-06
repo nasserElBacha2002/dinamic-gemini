@@ -265,12 +265,20 @@ def get_list_aisles_by_inventory_use_case(
     )
 
 
+def get_result_context_resolver(
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> ResultContextResolver:
+    return ResultContextResolver(job_repo=job_repo, position_repo=position_repo)
+
+
 def get_list_aisles_with_status_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
     source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
 ) -> ListAislesWithStatusUseCase:
     return ListAislesWithStatusUseCase(
         inventory_repo=inventory_repo,
@@ -278,6 +286,7 @@ def get_list_aisles_with_status_use_case(
         job_repo=job_repo,
         position_repo=position_repo,
         source_asset_repo=source_asset_repo,
+        result_context_resolver=result_context_resolver,
     )
 
 
@@ -309,12 +318,6 @@ def get_start_aisle_processing_use_case(
         launch_service=launch_service,
         stale_reconciler=stale_reconciler,
     )
-
-
-def get_result_context_resolver(
-    job_repo: JobRepository = Depends(get_job_repo),
-) -> ResultContextResolver:
-    return ResultContextResolver(job_repo=job_repo)
 
 
 def get_get_aisle_processing_status_use_case(

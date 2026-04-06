@@ -324,6 +324,10 @@ export interface PositionListResponse {
   total_items: number;
   total_pages: number;
   raw_fetch_truncated: boolean;
+  /** Resolved job slice for this response (same semantics as list/detail/merge Phase 2). */
+  result_job_id?: string | null;
+  /** explicit | operational | legacy | latest_succeeded */
+  result_context_source?: string | null;
 }
 
 /** GET /api/v3/review-queue/positions (Sprint 1.4, Sprint 4.2 summary). */

@@ -19,6 +19,8 @@ const { resultSummariesState } = vi.hoisted(() => ({
   resultSummariesState: {
     results: [] as ResultSummary[],
     positions: [] as PositionSummary[],
+    resultJobId: null as string | null,
+    resultContextSource: null as string | null,
     isLoading: false,
     isError: false,
     error: null as unknown,
@@ -120,6 +122,8 @@ vi.mock('../src/features/results', async (importOriginal) => {
     ...actual,
     useResultSummaries: () => ({
       ...resultSummariesState,
+      resultJobId: resultSummariesState.resultJobId,
+      resultContextSource: resultSummariesState.resultContextSource,
     }),
   };
 });
@@ -169,6 +173,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
     resultSummariesState.isLoading = false;
     resultSummariesState.isError = false;
     resultSummariesState.error = null;
+    resultSummariesState.resultJobId = null;
+    resultSummariesState.resultContextSource = null;
     resultSummariesState.refetch = vi.fn();
     aislesListState.refetch = vi.fn();
     mergeResultsState.data = { results: [] };
@@ -257,7 +263,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
     fireEvent.click(screen.getByRole('button', { name: /merge repeated labels/i }));
 
     await waitFor(() => {
-      expect(mutateAsync).toHaveBeenCalledWith('aisle-1');
+      expect(mutateAsync).toHaveBeenCalledWith({ aisleId: 'aisle-1', jobId: undefined });
       expect(resultsRefetch).toHaveBeenCalled();
       expect(aislesRefetch).toHaveBeenCalled();
       expect(mergeResultsRefetch).toHaveBeenCalled();
@@ -265,6 +271,38 @@ describe('AislePositionsPage (Aisle Results)', () => {
 
     expect(screen.getByText(/visible results updated after merge/i)).toBeTruthy();
     expect(screen.getByText(/latest merge consolidated 1 repeated sku group/i)).toBeTruthy();
+  });
+
+  it('passes result_job_id as job_id when merging so the request matches the visible slice', async () => {
+    resultSummariesState.results = repeatedSkuResults;
+    resultSummariesState.positions = repeatedSkuPositions;
+    resultSummariesState.resultJobId = 'job-visible-1';
+    mergeResultsState.data = { results: [] };
+    const mutateAsync = vi.fn().mockResolvedValue({
+      operation_mode: 'manual_authoritative',
+      authoritative_quantity_updated: true,
+      raw_count: 3,
+      normalized_count: 1,
+      final_count: 1,
+      product_records_updated: 1,
+    });
+    resultSummariesState.refetch = vi.fn().mockResolvedValue(undefined);
+    aislesListState.refetch = vi.fn().mockResolvedValue(undefined);
+    mergeResultsState.refetch = vi.fn().mockResolvedValue({ data: mergeResultsState.data });
+    useRunAisleMergeMock.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /merge repeated labels/i }));
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith({
+        aisleId: 'aisle-1',
+        jobId: 'job-visible-1',
+      });
+    });
   });
 
   it('shows a disabled pending merge button while the merge mutation is running', () => {

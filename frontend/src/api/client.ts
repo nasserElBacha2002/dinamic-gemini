@@ -348,23 +348,32 @@ export async function getAisleStatus(
 /** Run manual authoritative merge for an aisle and update visible results quantities. */
 export async function runAisleMerge(
   inventoryId: string,
-  aisleId: string
+  aisleId: string,
+  options?: { jobId?: string | null }
 ): Promise<RunMergeResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge`,
-    { method: 'POST' }
-  );
+  const params = new URLSearchParams();
+  if (options?.jobId != null && String(options.jobId).trim() !== '') {
+    params.set('job_id', String(options.jobId).trim());
+  }
+  const qs = params.toString();
+  const url = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge${qs ? `?${qs}` : ''}`;
+  const response = await protectedFetch(url, { method: 'POST' });
   return handleResponse<RunMergeResponse>(response);
 }
 
 /** Read merge/consolidation artifacts for an aisle. */
 export async function getAisleMergeResults(
   inventoryId: string,
-  aisleId: string
+  aisleId: string,
+  options?: { jobId?: string | null }
 ): Promise<MergeResultsResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge-results`
-  );
+  const params = new URLSearchParams();
+  if (options?.jobId != null && String(options.jobId).trim() !== '') {
+    params.set('job_id', String(options.jobId).trim());
+  }
+  const qs = params.toString();
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge-results${qs ? `?${qs}` : ''}`;
+  const response = await protectedFetch(path);
   return handleResponse<MergeResultsResponse>(response);
 }
 

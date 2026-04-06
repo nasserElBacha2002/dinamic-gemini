@@ -362,7 +362,10 @@ def run_aisle_merge(
     aisle_id: str,
     job_id: Optional[str] = Query(
         None,
-        description="Inventory job id to merge when the aisle has multiple runs (Phase 1).",
+        description=(
+            "Inventory job id for the run to merge. When multiple runs exist, pass the same id "
+            "as `result_job_id` from GET …/positions for the slice you are viewing."
+        ),
     ),
     use_case: RunAisleMergeUseCase = Depends(get_run_aisle_merge_use_case),
 ) -> RunMergeResponse:
@@ -374,6 +377,9 @@ def run_aisle_merge(
 
     Recompute is scoped per run: legacy-only aisles use null job_id slice; a single job's
     labels imply that job; multiple jobs (or legacy mixed with job-scoped) require ``job_id``.
+
+    Clients should pass the same ``job_id`` as the positions list response's
+    ``result_job_id`` for the slice currently shown, so merge matches visible results.
     """
     try:
         result = use_case.execute(

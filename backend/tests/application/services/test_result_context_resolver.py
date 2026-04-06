@@ -10,7 +10,9 @@ from src.application.errors import JobDoesNotBelongToAisleError, JobNotFoundErro
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 
 
 def _aisle(op_job: str | None = None) -> Aisle:
@@ -96,3 +98,68 @@ def test_explicit_empty_string_treated_as_omitted() -> None:
     repo.save(_job("op-1"))
     r = ResultContextResolver(repo).resolve(aisle=_aisle(op_job="op-1"), explicit_job_id="   ")
     assert r.source == "operational"
+
+
+def test_latest_succeeded_when_no_legacy_rows() -> None:
+    now = datetime.now(timezone.utc)
+    jobs = MemoryJobRepository()
+    jobs.save(_job("js-1"))
+    pos = MemoryPositionRepository()
+    pos.save(
+        Position(
+            "p1",
+            "a1",
+            PositionStatus.DETECTED,
+            0.9,
+            True,
+            None,
+            now,
+            now,
+            job_id="js-1",
+        )
+    )
+    r = ResultContextResolver(jobs, pos).resolve(aisle=_aisle(), explicit_job_id=None)
+    assert r.source == "latest_succeeded"
+    assert r.job_id_for_slice == "js-1"
+
+
+def test_legacy_wins_when_legacy_row_exists_alongside_job_scoped() -> None:
+    now = datetime.now(timezone.utc)
+    jobs = MemoryJobRepository()
+    jobs.save(_job("js-1"))
+    pos = MemoryPositionRepository()
+    pos.save(
+        Position("pl", "a1", PositionStatus.DETECTED, 0.9, True, None, now, now, job_id=None)
+    )
+    pos.save(
+        Position("pj", "a1", PositionStatus.DETECTED, 0.9, True, None, now, now, job_id="js-1")
+    )
+    r = ResultContextResolver(jobs, pos).resolve(aisle=_aisle(), explicit_job_id=None)
+    assert r.source == "legacy"
+    assert r.job_id_for_slice is None
+
+
+def test_latest_succeeded_picks_first_succeeded_in_newest_first_order() -> None:
+    t0 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2025, 2, 1, 12, 0, 0, tzinfo=timezone.utc)
+    j_fail = Job(
+        "jf",
+        "aisle",
+        "a1",
+        "process_aisle",
+        JobStatus.FAILED,
+        {},
+        t1,
+        t1,
+    )
+    j_ok = Job("jo", "aisle", "a1", "process_aisle", JobStatus.SUCCEEDED, {}, t0, t0)
+    jobs = MemoryJobRepository()
+    jobs.save(j_ok)
+    jobs.save(j_fail)
+    pos = MemoryPositionRepository()
+    pos.save(
+        Position("p1", "a1", PositionStatus.DETECTED, 0.9, True, None, t1, t1, job_id="jo")
+    )
+    r = ResultContextResolver(jobs, pos).resolve(aisle=_aisle(), explicit_job_id=None)
+    assert r.source == "latest_succeeded"
+    assert r.job_id_for_slice == "jo"
