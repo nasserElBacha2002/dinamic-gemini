@@ -174,6 +174,7 @@ class BackfillLegacyAislesUseCase:
                     inventory_id=aisle.inventory_id,
                     aisle_id=aisle.id,
                     apply_to_product_records=True,
+                    job_scope="legacy_null",
                 )
             )
             return BackfillAisleResult(

@@ -19,6 +19,8 @@ class GetAisleMergeResultsCommand:
 
 
 class GetAisleMergeResultsUseCase:
+    """Returns final_count rows for an aisle (Phase 1: unfiltered = all job slices; run-specific UI is Phase 2)."""
+
     def __init__(
         self,
         inventory_repo: InventoryRepository,
@@ -38,5 +40,7 @@ class GetAisleMergeResultsUseCase:
             raise AisleNotFoundError(
                 f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
             )
-        return self._final_count_repo.list_for_scope(command.inventory_id, command.aisle_id)
+        return self._final_count_repo.list_for_scope(
+            command.inventory_id, command.aisle_id, job_id="all"
+        )
 

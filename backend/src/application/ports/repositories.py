@@ -113,8 +113,9 @@ class PositionRepository(ABC):
         """List positions for an aisle with optional filters and pagination (§9.7).
         sku_filter: when set, only positions that have at least one product_record with
         sku containing this string (substring match) are returned. In-memory impl may ignore it.
-        job_id: ``JOB_ID_FILTER_UNSET`` (default) = no job filter; ``None`` = legacy ``job_id IS NULL``;
-        ``str`` = that inventory job's positions."""
+        job_id: ``JOB_ID_FILTER_UNSET`` (default) = all positions in the aisle (every run slice);
+        ``None`` = legacy ``job_id IS NULL``; ``str`` = that inventory job only. Phase 1 callers that
+        need one run must pass a concrete ``job_id``."""
         ...
 
     @abstractmethod

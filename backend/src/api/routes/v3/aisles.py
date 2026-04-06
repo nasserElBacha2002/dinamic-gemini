@@ -41,7 +41,13 @@ from src.api.schemas.processing_schemas import (
     ProcessAisleResponse,
 )
 from src.application.ports.repositories import AisleRepository, JobRepository
-from src.application.errors import AisleNotFoundError, ActiveJobExistsError, DuplicateAisleCodeError, InventoryNotFoundError
+from src.application.errors import (
+    AisleNotFoundError,
+    ActiveJobExistsError,
+    DuplicateAisleCodeError,
+    InventoryNotFoundError,
+    MergeJobScopeAmbiguousError,
+)
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
@@ -324,6 +330,10 @@ def get_job_hybrid_report(
 def run_aisle_merge(
     inventory_id: str,
     aisle_id: str,
+    job_id: Optional[str] = Query(
+        None,
+        description="Inventory job id to merge when the aisle has multiple runs (Phase 1).",
+    ),
     use_case: RunAisleMergeUseCase = Depends(get_run_aisle_merge_use_case),
 ) -> RunMergeResponse:
     """Run merge/consolidation as an explicit manual post-process.
@@ -331,12 +341,16 @@ def run_aisle_merge(
     The restored v3 UX expects this action to update the visible aisle results after the
     operator triggers it manually. The merge remains opt-in and never runs automatically
     during aisle processing.
+
+    Recompute is scoped per run: legacy-only aisles use null job_id slice; a single job's
+    labels imply that job; multiple jobs (or legacy mixed with job-scoped) require ``job_id``.
     """
     try:
         result = use_case.execute(
             RunAisleMergeCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
+                job_id=job_id,
             )
         )
         return RunMergeResponse(
@@ -351,6 +365,8 @@ def run_aisle_merge(
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except MergeJobScopeAmbiguousError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 @router.get(

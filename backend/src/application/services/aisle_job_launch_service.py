@@ -1,3 +1,9 @@
+"""Launch process-aisle jobs for v3.
+
+Phase 1 stores placeholder provider/prompt fields on ``Job`` for indexing and future tuning;
+selection of multiple providers is out of scope until Phase 2+.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -48,6 +54,7 @@ class AisleJobLaunchService:
             current_step_started_at=now,
             attempt_count=int(attempt_count or 1),
             retry_of_job_id=retry_of_job_id,
+            # Transitional defaults (current single stack); not user-selectable multi-provider yet.
             provider_name="gemini",
             model_name=None,
             prompt_key="default",

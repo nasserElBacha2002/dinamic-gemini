@@ -1,5 +1,8 @@
 -- Phase 1 — Multi-run persistence: nullable job_id on result tables + inventory_jobs identity columns.
 -- No backfill; legacy rows keep job_id NULL.
+--
+-- Maintenance: keep DDL aligned with bootstrap additions in backend/src/database/schema.sql
+-- (search: provider_name on inventory_jobs, job_id on positions/raw_labels/normalized_labels/final_count_records).
 
 -- inventory_jobs: indexed run identity (tuning lives in engine_params_json)
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'provider_name')

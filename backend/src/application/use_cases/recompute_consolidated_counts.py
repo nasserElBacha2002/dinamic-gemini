@@ -34,6 +34,7 @@ class RecomputeConsolidatedCountsCommand:
     inventory_id: str
     aisle_id: str
     apply_to_product_records: bool = True
+    #: Prefer a concrete scope from callers; ``all`` is pre-multi-run aisle-wide (mixes runs).
     job_scope: RecomputeJobScope = "all"
 
 

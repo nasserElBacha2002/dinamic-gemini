@@ -44,6 +44,7 @@ from src.runtime.v3_deps import (
     get_metrics_calculator,
     get_position_repo,
     get_product_record_repo,
+    get_raw_label_repo,
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
     get_source_asset_repo,
@@ -585,11 +586,13 @@ def get_delete_position_use_case(
 def get_run_aisle_merge_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    raw_label_repo=Depends(get_raw_label_repo),
     recompute_uc=Depends(get_recompute_consolidated_counts_use_case),
 ) -> RunAisleMergeUseCase:
     return RunAisleMergeUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        raw_label_repo=raw_label_repo,
         recompute_use_case=recompute_uc,
     )
 

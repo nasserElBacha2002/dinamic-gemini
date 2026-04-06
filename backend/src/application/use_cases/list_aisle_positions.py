@@ -3,6 +3,8 @@ ListAislePositions use case — v3.0 Épica 6.
 
 Returns SKU-level consolidated positions for an aisle with filters, **post-consolidation**
 sorting and pagination, and honest metadata when the raw fetch cap is hit (Sprint 1.4).
+
+Phase 1: fetches all positions for the aisle (all job slices); per-run filtering is Phase 2.
 """
 
 from __future__ import annotations

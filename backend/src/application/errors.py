@@ -54,3 +54,7 @@ class PositionDeletedError(Exception):
 
 class ProductNotFoundError(Exception):
     """Raised when the product does not exist or does not belong to the given position."""
+
+
+class MergeJobScopeAmbiguousError(Exception):
+    """Raised when manual merge cannot infer a single job scope (multi-run aisle without job_id)."""

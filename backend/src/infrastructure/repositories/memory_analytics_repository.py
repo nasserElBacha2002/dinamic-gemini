@@ -101,6 +101,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 if filters.aisle_id and aisle.id != filters.aisle_id:
                     continue
                 aisle_to_inventory[aisle.id] = inv.id
+                # Analytics aggregate across all job runs for an aisle (default unset job filter).
                 for pos in self._position_repo.list_by_aisle(
                     aisle.id, page=1, page_size=100000, sort_by="id", sort_dir="asc"
                 ):
