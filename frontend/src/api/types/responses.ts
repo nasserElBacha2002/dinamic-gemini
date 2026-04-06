@@ -319,6 +319,8 @@ export interface PositionSummary {
   /** v3.2.5 Phase 2 Block 4: guaranteed boolean in active v3 contract; backend always sends it. */
   /** @deprecated Prefer `traceability.has_evidence`. */
   has_evidence: boolean;
+  /** Multi-run: storage row job id; null = legacy. Used for review drawer / detail `job_id` query. */
+  job_id?: string | null;
 }
 
 /**

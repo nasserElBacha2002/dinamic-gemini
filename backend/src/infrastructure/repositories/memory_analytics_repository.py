@@ -2,6 +2,9 @@
 In-memory analytics — aggregates from v3 repositories (no SQL).
 
 Processing success uses ``JobRepository.list_all_jobs()`` (same bulk read as SQL analytics).
+
+Multi-run scope: same as SQL analytics — position counts are **all rows in scope**, not the
+single-run slice used by Aisle Results. See ``notes`` on summary and planning docs.
 """
 
 from __future__ import annotations
@@ -160,6 +163,10 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             )
         notes.append(
             "Current-state metrics use entity scope; date filters apply only to review-action and job-based metrics."
+        )
+        notes.append(
+            "Multi-run: position totals count every persisted row in scope, not only the operational "
+            "or single-resolved slice shown on Aisle Results. Do not compare 1:1 with per-run browsing."
         )
         return build_summary_metrics(
             SummaryMetricInputs(

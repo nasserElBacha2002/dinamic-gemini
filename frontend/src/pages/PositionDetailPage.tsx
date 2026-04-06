@@ -45,6 +45,7 @@ export default function PositionDetailPage() {
             resultIds,
             inventoryName: invQ.data.name,
             aisleCode,
+            jobId: jobIdFromQuery,
           },
         },
       });

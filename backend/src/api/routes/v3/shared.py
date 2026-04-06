@@ -525,6 +525,7 @@ def _position_summary_response_from_view(
         has_evidence=view.review.has_evidence,
         source_image_original_filename=view.traceability.source_image_original_filename,
         position_code=view.position_code,
+        job_id=p.job_id,
     )
 
 

@@ -245,6 +245,7 @@ def test_memory_summary_rates(memory_analytics_setup):
     assert s.processed_positions_count == 0
     assert s.reviewed_positions_count == 2
     assert s.average_review_time_minutes == pytest.approx((10.5 * 60) / 60)
+    assert any("Multi-run" in n for n in (s.notes or []))
 
 
 def test_memory_quality_patterns(memory_analytics_setup):
@@ -268,6 +269,7 @@ def test_memory_empty_data():
     assert s.positions_in_scope == 0
     assert s.settling_actions_count == 0
     assert s.auto_acceptance_rate is None
+    assert any("Multi-run" in n for n in (s.notes or []))
 
 
 def test_processed_position_matches_phase2_operational_rule() -> None:

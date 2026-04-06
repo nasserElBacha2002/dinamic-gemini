@@ -190,6 +190,10 @@ class PositionSummaryResponse(BaseModel):
         description="Deprecated: use `traceability.source_image_original_filename`.",
     )
     position_code: str = Field(..., description="Effective position code (Audit Sprint 4.5).")
+    job_id: Optional[str] = Field(
+        None,
+        description="Storage row inventory job id for this position; null = legacy. Exposed for multi-run clients (e.g. review queue detail).",
+    )
 
 
 class PositionRunContextResponse(BaseModel):

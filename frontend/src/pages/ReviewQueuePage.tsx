@@ -204,6 +204,7 @@ export default function ReviewQueuePage() {
       positionId: p.positionId,
       resultIds: p.resultIds,
       returnTo: 'review_queue',
+      jobId: p.jobId,
     });
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.state, location.pathname, navigate]);

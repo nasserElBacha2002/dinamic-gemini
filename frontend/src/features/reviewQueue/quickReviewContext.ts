@@ -20,6 +20,7 @@ export interface QuickReviewContext {
 }
 
 export function reviewQueueItemToContext(row: ReviewQueueItem, resultIds: string[]): QuickReviewContext {
+  const jid = row.position.job_id?.trim();
   return {
     inventoryId: row.inventory_id,
     inventoryName: row.inventory_name,
@@ -28,6 +29,7 @@ export function reviewQueueItemToContext(row: ReviewQueueItem, resultIds: string
     positionId: row.position.id,
     resultIds,
     returnTo: 'review_queue',
+    jobId: jid || undefined,
   };
 }
 
@@ -41,6 +43,8 @@ export type OpenReviewDrawerPayload =
       resultIds: string[];
       inventoryName: string;
       aisleCode: string;
+      /** From `position.job_id` when present — aligns queue review with the row's storage slice. */
+      jobId?: string | null;
     }
   | {
       kind: 'aisle';

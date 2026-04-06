@@ -2,6 +2,13 @@
 SQL Server analytics aggregates — Phase 5.1.
 
 See `application/dto/analytics_dto.py` for metric definitions.
+
+Multi-run scope (pre-next-phase audit):
+    Position-based aggregates here count **all non-deleted position rows** in inventory/aisle scope.
+    They are **not** filtered to ``aisles.operational_job_id`` / legacy-null / resolver “single slice”
+    semantics used by Aisle Results. Dashboard totals can therefore exceed or diverge from a
+    **single-run** browse view. A warning note is appended to summary ``notes``; full per-aisle
+    operational exclusion is deferred (see planning docs).
 """
 
 from __future__ import annotations
@@ -280,6 +287,10 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             )
         notes.append(
             "Current-state metrics use entity scope; date filters apply only to review-action and job-based metrics."
+        )
+        notes.append(
+            "Multi-run: position totals count every persisted row in scope, not only the operational "
+            "or single-resolved slice shown on Aisle Results. Do not compare 1:1 with per-run browsing."
         )
         return build_summary_metrics(
             SummaryMetricInputs(

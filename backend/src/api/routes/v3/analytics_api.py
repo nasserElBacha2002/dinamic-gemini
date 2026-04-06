@@ -80,7 +80,12 @@ def analytics_summary(
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> AnalyticsSummaryResponse:
-    """Return additive operational KPIs for the analytics dashboard.
+    """Return additive KPIs for the analytics dashboard.
+
+    **Multi-run:** position-in-scope counts include **all** non-deleted position rows matching
+    inventory/aisle filters — not the single “resolved slice” per aisle used by Aisle Results
+    (``operational_job_id`` / legacy / explicit ``job_id``). Summary ``notes`` include a reminder;
+    aligning dashboard aggregates with per-run operational semantics is deferred.
 
     ``operator_marked_unknown_*`` fields are populated only from the explicit persisted terminal
     operator outcome. ``unidentified_product_*`` fields are driven by the display-primary product
