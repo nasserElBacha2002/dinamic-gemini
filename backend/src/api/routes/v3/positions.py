@@ -66,7 +66,11 @@ def list_aisle_positions(
     sort_dir: str = Query("asc", description="asc | desc"),
     job_id: Optional[str] = Query(
         None,
-        description="Optional inventory job id; omitted uses operational job or legacy null-job slice (Phase 2).",
+        description=(
+            "Optional inventory job id. Omitted: resolve operational_job_id on the aisle, else legacy "
+            "rows (job_id IS NULL). If the aisle only has job-scoped rows and operational_job_id is "
+            "unset, the default slice can be empty — pass the job id from status/jobs for that run."
+        ),
     ),
     include_technical: bool = Query(
         False,

@@ -54,6 +54,10 @@ class Aisle:
     def mark_processed(self, now: datetime) -> None:
         self.status = AisleStatus.PROCESSED
         self.updated_at = now
+        # Successful pipeline completion clears any stale failure markers from a prior run.
+        self.error_code = None
+        self.error_message = None
+        self.retryable = None
 
     def mark_in_review(self, now: datetime) -> None:
         self.status = AisleStatus.IN_REVIEW

@@ -157,3 +157,68 @@ def test_list_positions_legacy_null_job_only() -> None:
     assert result.result_context_source == "legacy"
     assert result.resolved_job_id is None
     assert {p.id for p in result.positions} == {"p-legacy"}
+
+
+def test_list_positions_explicit_job_id_returns_job_scoped_when_operational_unset() -> None:
+    """Default read can be empty for job-only data; explicit job_id resolves the slice (Phase 2)."""
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    pos_repo = MemoryPositionRepository()
+    job_repo = MemoryJobRepository()
+    job_repo.save(
+        Job(
+            id="job-only",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    inv_repo.save(Inventory("inv-1", "X", InventoryStatus.DRAFT, now, now))
+    aisle_repo.save(Aisle("aisle-1", "inv-1", "A", AisleStatus.PROCESSED, now, now, operational_job_id=None))
+    pos_repo.save(
+        Position(
+            "p-scoped",
+            "aisle-1",
+            PositionStatus.DETECTED,
+            0.9,
+            False,
+            None,
+            now,
+            now,
+            detected_summary_json={"internal_code": "S", "final_quantity": 1},
+            job_id="job-only",
+        )
+    )
+
+    uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        ResultContextResolver(job_repo),
+        positions_aisle_raw_cap=500,
+    )
+    default_result = uc.execute(
+        ListAislePositionsCommand(inventory_id="inv-1", aisle_id="aisle-1", page=1, page_size=50)
+    )
+    assert default_result.result_context_source == "legacy"
+    assert default_result.resolved_job_id is None
+    assert list(default_result.positions) == []
+
+    explicit = uc.execute(
+        ListAislePositionsCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            page=1,
+            page_size=50,
+            job_id="job-only",
+        )
+    )
+    assert explicit.result_context_source == "explicit"
+    assert explicit.resolved_job_id == "job-only"
+    assert {p.id for p in explicit.positions} == {"p-scoped"}

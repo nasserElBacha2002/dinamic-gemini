@@ -290,6 +290,57 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
     assert updated.result_json["provider"] is None
 
 
+def test_mark_success_clears_stale_aisle_error_fields_after_previous_failure() -> None:
+    """After _fail_job_and_aisle, a later successful run must not leave PROCESSING_FAILED on the aisle."""
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="j-retry-ok",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.FAILED,
+        created_at=now,
+        updated_at=now,
+        error_code="PROCESSING_FAILED",
+        error_message="previous pipeline error",
+        retryable=True,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+    executor._mark_success("j-retry-ok", aisle, Path("/tmp/run/hybrid_report.json"), now, run_metadata=None)
+    updated_aisle = aisle_repo.get_by_id("aisle-1")
+    assert updated_aisle is not None
+    assert updated_aisle.status == AisleStatus.PROCESSED
+    assert updated_aisle.error_code is None
+    assert updated_aisle.error_message is None
+    assert updated_aisle.retryable is None
+
+
 def test_mark_running_transitions_starting_job_to_running() -> None:
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_repo = InMemoryJobRepo()
