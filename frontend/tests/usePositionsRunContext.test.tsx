@@ -6,7 +6,11 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
-import { useAislePositions, usePositionDetail } from '../src/hooks/usePositions';
+import {
+  useAislePositions,
+  usePositionDetail,
+  positionsListQueryKeyPart,
+} from '../src/hooks/usePositions';
 import * as client from '../src/api/client';
 import type { PositionListResponse, PositionDetailResponse } from '../src/api/types';
 
@@ -32,6 +36,14 @@ function wrapper(qc: QueryClient) {
     return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
   };
 }
+
+describe('positionsListQueryKeyPart', () => {
+  it('differs when job_id differs so cache entries do not alias', () => {
+    expect(positionsListQueryKeyPart({ page: 1, page_size: 10, job_id: 'run-a' })).not.toEqual(
+      positionsListQueryKeyPart({ page: 1, page_size: 10, job_id: 'run-b' })
+    );
+  });
+});
 
 describe('usePositions run context (Phase 3)', () => {
   beforeEach(() => {

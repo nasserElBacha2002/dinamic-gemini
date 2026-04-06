@@ -1,5 +1,7 @@
 /**
  * Phase 3 — minimal run picker for multi-run aisles (backend-resolved default vs explicit job).
+ *
+ * `valueJobId` is the effective run shown in the control (from URL and/or backend-resolved slice).
  */
 
 import { FormControl, InputLabel, MenuItem, Select, type SelectChangeEvent, Stack, Typography } from '@mui/material';
@@ -20,24 +22,29 @@ function formatJobLine(j: JobSummary): string {
 export type AisleRunSelectorProps = {
   operationalJobId?: string | null;
   jobs: JobSummary[];
-  /** From URL: null/empty = backend default resolver (no explicit `job_id` query). */
-  selectedJobId: string | null;
+  /**
+   * Effective run shown as selected: explicit URL job, or backend-resolved job when no URL pin.
+   * Empty string / null → Default (API resolver) row.
+   */
+  valueJobId: string | null;
   onChange: (jobId: string | null) => void;
   disabled?: boolean;
   loading?: boolean;
+  /** True when `?jobId=` is present (explicit URL pin). */
+  urlPinned?: boolean;
 };
 
 export default function AisleRunSelector({
   operationalJobId,
   jobs,
-  selectedJobId,
+  valueJobId,
   onChange,
   disabled,
   loading,
+  urlPinned = false,
 }: AisleRunSelectorProps) {
-  const trimmed = selectedJobId?.trim() ?? '';
+  const trimmed = valueJobId?.trim() ?? '';
   const validIds = new Set(jobs.map((j) => j.id));
-  /** Avoid MUI out-of-range warnings when URL has a stale/unknown job id (parent shows an alert). */
   const value = trimmed !== '' && validIds.has(trimmed) ? trimmed : '';
 
   const handleChange = (e: SelectChangeEvent<string>) => {
@@ -61,9 +68,11 @@ export default function AisleRunSelector({
       >
         <MenuItem value="">
           <Stack spacing={0.25}>
-            <Typography variant="body2">Default (backend-resolved slice)</Typography>
+            <Typography variant="body2">Default (API resolver)</Typography>
             <Typography variant="caption" color="text.secondary">
-              Operational / legacy / latest-succeeded per API
+              {urlPinned
+                ? 'Clears ?jobId= and uses the API default resolver for this aisle'
+                : 'No ?jobId= in URL — backend picks operational / legacy / latest-succeeded'}
             </Typography>
           </Stack>
         </MenuItem>

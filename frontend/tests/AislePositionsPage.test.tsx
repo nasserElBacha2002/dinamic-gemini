@@ -462,6 +462,25 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getByText(/resolved: operational/i)).toBeTruthy();
   });
 
+  it('shows the backend-resolved run in the selector when there is no URL jobId and the job is listed', () => {
+    resultSummariesState.resultJobId = 'job-resolved';
+    resultSummariesState.resultContextSource = 'operational';
+    aisleJobsListState.data = {
+      operational_job_id: 'job-resolved',
+      jobs: [
+        {
+          id: 'job-resolved',
+          status: 'succeeded',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    };
+    renderPage();
+    const select = screen.getByLabelText(/browse run/i);
+    expect(select.textContent).toMatch(/job-resolv/i);
+  });
+
   it('warns when jobId in URL is not in the jobs list', () => {
     aisleJobsListState.data = {
       operational_job_id: null,

@@ -44,8 +44,11 @@ export function useStartAisleProcessing(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (aisleId: string) => startAisleProcessing(inventoryId, aisleId),
-    onSuccess: () => {
+    onSuccess: (_, aisleId) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
     },
   });
 }
@@ -57,6 +60,8 @@ export function useCancelAisleJob(inventoryId: string) {
       cancelAisleJob(inventoryId, aisleId, jobId),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, vars.aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
     },
   });
@@ -69,6 +74,8 @@ export function useRetryAisleJob(inventoryId: string) {
       retryAisleJob(inventoryId, aisleId, jobId),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, vars.aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
     },
   });
@@ -82,10 +89,10 @@ export function useRunAisleMerge(inventoryId: string) {
     mutationFn: (vars: RunAisleMergeVariables) =>
       runAisleMerge(inventoryId, vars.aisleId, { jobId: vars.jobId }),
     onSuccess: (_, vars) => {
-      const { aisleId, jobId } = vars;
+      const { aisleId } = vars;
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
       queryClient.invalidateQueries({
-        queryKey: [...queryKeys.inventories.mergeResults(inventoryId, aisleId), jobId ?? null],
+        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId],
       });
     },
   });
@@ -166,6 +173,9 @@ export function useSubmitReviewAction(inventoryId: string, aisleId: string, posi
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId],
       });
       // Also invalidate summary/KPI levels to ensure parent page counts are accurate.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });

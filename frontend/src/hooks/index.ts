@@ -6,7 +6,12 @@ export {
   useAisleJobDetail,
   useAisleJobsList,
 } from './useAisles';
-export { useAislePositions, usePositionDetail, useAisleMergeResults } from './usePositions';
+export {
+  useAislePositions,
+  usePositionDetail,
+  useAisleMergeResults,
+  positionsListQueryKeyPart,
+} from './usePositions';
 export { useReviewQueue } from './useReviewQueue';
 export {
   useCreateInventory,

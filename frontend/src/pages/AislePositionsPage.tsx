@@ -111,6 +111,8 @@ export default function AislePositionsPage() {
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const routeIdentityRef = useRef<string>('');
+  /** When true, user chose "Default (API resolver)" — keep list request without job_id even if result_job_id repeats. */
+  const [preferDefaultSlice, setPreferDefaultSlice] = useState(false);
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
 
   const jobIdParam = searchParams.get('jobId')?.trim() || null;
@@ -130,6 +132,7 @@ export default function AislePositionsPage() {
   const aisleJobsQuery = useAisleJobsList(inventoryId, aisleId, {
     enabled: Boolean(inventoryId && aisleId && inventoryQuery.data),
   });
+  const jobs = aisleJobsQuery.data?.jobs ?? [];
   const inventory = inventoryQuery.data ?? null;
   const aisle = useMemo(
     () => aislesQuery.data?.items?.find((a) => a.id === aisleId) ?? null,
@@ -154,6 +157,11 @@ export default function AislePositionsPage() {
 
   const handleRunSelectionChange = useCallback(
     (next: string | null) => {
+      if (next == null || next === '') {
+        setPreferDefaultSlice(true);
+      } else {
+        setPreferDefaultSlice(false);
+      }
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev);
@@ -173,10 +181,20 @@ export default function AislePositionsPage() {
   /** Authoritative job for merge, detail, and merge-results; from list response, not URL alone. */
   const visibleJobId = resultJobId ?? null;
 
+  /** Aligns dropdown with the run actually shown: URL pin wins; else backend-resolved id when it appears in the jobs list. */
+  const effectiveSelectorJobId = useMemo(() => {
+    if (preferDefaultSlice) return null;
+    const url = jobIdParam?.trim();
+    if (url && jobs.some((j) => j.id === url)) return url;
+    if (!url && resultJobId && jobs.some((j) => j.id === resultJobId)) return resultJobId;
+    return null;
+  }, [preferDefaultSlice, jobIdParam, resultJobId, jobs]);
+
   useEffect(() => {
     const key = `${inventoryId ?? ''}-${aisleId ?? ''}`;
     if (!inventoryId || !aisleId) return;
     if (routeIdentityRef.current !== '' && routeIdentityRef.current !== key) {
+      setPreferDefaultSlice(false);
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev);
@@ -368,7 +386,6 @@ export default function AislePositionsPage() {
     { label: 'Aisle results' },
   ];
 
-  const jobs = aisleJobsQuery.data?.jobs ?? [];
   const unknownUrlJob =
     Boolean(jobIdParam) &&
     aisleJobsQuery.isFetched &&
@@ -420,7 +437,15 @@ export default function AislePositionsPage() {
             >
               {exportingCsv ? 'Exporting…' : 'Export CSV'}
             </Button>
-            <Button size="small" variant="outlined" onClick={() => refetch()} disabled={isLoading}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                void refetch();
+                void aisleJobsQuery.refetch();
+              }}
+              disabled={isLoading}
+            >
               Refresh
             </Button>
           </Box>
@@ -433,15 +458,19 @@ export default function AislePositionsPage() {
             <AisleRunSelector
               operationalJobId={aisleJobsQuery.data?.operational_job_id ?? null}
               jobs={jobs}
-              selectedJobId={jobIdParam}
+              valueJobId={effectiveSelectorJobId}
               onChange={handleRunSelectionChange}
               loading={aisleJobsQuery.isLoading}
+              urlPinned={Boolean(jobIdParam)}
             />
           ) : null}
           {resultContextSource ? (
             <Typography variant="caption" color="text.secondary">
               Resolved: {resultContextSource}
               {visibleJobId ? ` · job ${visibleJobId.slice(0, 10)}…` : ''}
+              {!jobIdParam && visibleJobId && effectiveSelectorJobId === visibleJobId
+                ? ' (matches selector — no URL pin)'
+                : null}
             </Typography>
           ) : null}
         </Box>
