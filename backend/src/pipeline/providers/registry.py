@@ -35,6 +35,7 @@ from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
 from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor
+from src.pipeline.provider_keys import normalize_pipeline_provider_key
 
 
 class UnknownPipelineProviderError(LookupError):
@@ -67,22 +68,6 @@ _KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "fake", "openai"})
 def registered_pipeline_provider_keys() -> frozenset[str]:
     """Keys accepted for explicit processing provider selection (API / UI)."""
     return _KNOWN_KEYS
-
-
-def normalize_pipeline_provider_key(
-    provider_name: Optional[str],
-    settings: Any,
-) -> str:
-    """
-    Effective provider key for this run.
-
-    Prefer explicit ``provider_name`` (e.g. from inventory job). Otherwise use ``settings.llm_provider``.
-    """
-    raw = (provider_name or "").strip().lower()
-    if raw:
-        return raw
-    sp = getattr(settings, "llm_provider", "gemini") or "gemini"
-    return str(sp).strip().lower()
 
 
 def resolve_llm_executor(provider_key: str, settings: Any) -> LlmGlobalAnalysisExecutor:

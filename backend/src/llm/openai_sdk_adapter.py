@@ -139,7 +139,10 @@ class OpenAiSdkAdapter:
         prompt_text = (
             use_request_prompt
             if use_request_prompt is not None
-            else get_hybrid_prompt(getattr(settings, "hybrid_prompt", "global_v21"))
+            else get_hybrid_prompt(
+                getattr(settings, "hybrid_prompt", "global_v21"),
+                "openai",
+            )
         )
         if request.context_instruction and str(request.context_instruction).strip():
             prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text

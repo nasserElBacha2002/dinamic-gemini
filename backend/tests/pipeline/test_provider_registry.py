@@ -11,23 +11,10 @@ from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.pipeline.providers.registry import (
     TransitionalLlmProviderBridgeExecutor,
     UnknownPipelineProviderError,
-    normalize_pipeline_provider_key,
     registered_pipeline_provider_keys,
     resolve_llm_executor,
     resolve_llm_executor_for_context,
 )
-
-
-def test_normalize_prefers_explicit_provider_name_over_settings() -> None:
-    settings = MagicMock()
-    settings.llm_provider = "fake"
-    assert normalize_pipeline_provider_key("gemini", settings) == "gemini"
-
-
-def test_normalize_falls_back_to_settings_llm_provider() -> None:
-    settings = MagicMock()
-    settings.llm_provider = "fake"
-    assert normalize_pipeline_provider_key(None, settings) == "fake"
 
 
 def test_resolve_gemini_returns_sdk_adapter() -> None:

@@ -3,10 +3,11 @@ Módulo unificado de prompts para Gemini API.
 
 Todos los prompts viven en el diccionario PROMPTS. El pipeline híbrido usa
 get_hybrid_prompt() con la variable de entorno HYBRID_PROMPT (default: global_v21).
-Valores del diccionario: str (prompt único) o dict con "system"/"user" (legacy).
+Valores del diccionario: str (prompt único híbrido legacy), dict con claves
+``default`` / ``openai`` (híbrido multi-proveedor), o dict con "system"/"user" (legacy).
 """
 
-from typing import Dict, Final, List, Union
+from typing import Dict, Final, List, Optional, Union
 
 from src.jobs.image_identity import JobImage
 
@@ -49,6 +50,62 @@ Conservative rules (NON-NEGOTIABLE):
 - Inventory visual references are **context only**, not primary evidence (same as Prompt A).
 
 This profile prioritizes traceability and null-handling over aggressive extraction.
+"""
+
+# OpenAI-tuned variant for global_v21 (GPT tends to over-abstain with Gemini-oriented text).
+_GLOBAL_V21_OPENAI: Final[str] = """\
+Analyze the provided warehouse aisle images and detect all distinct logistic entities.
+
+Entity types:
+- PALLET: pallet structure, may contain boxes
+- EMPTY_PALLET: pallet with no boxes
+- LOOSE_BOXES: grouped boxes without pallet
+
+Rules:
+- One entity per physical unit. Do not merge different pallets.
+- Do not invent values, but provide your best estimate when partial evidence exists.
+- If a field is unclear, prefer a reasonable estimate with lower confidence instead of null.
+
+Important:
+- NEVER return quantity = 0 unless you are certain there are zero items.
+- If uncertain about quantity, return null and reduce confidence.
+- If an entity is visible, it must be returned.
+
+Confidence:
+- Use 0.9–1.0 when clear
+- Use 0.5–0.8 when partially visible
+- Use <0.5 only when uncertain
+
+Bounding boxes:
+- Use normalized coordinates [x1,y1,x2,y2]
+- If unsure → null
+
+Output:
+Return valid JSON only:
+{
+  "total_entities_detected": number,
+  "entities": [...]
+}
+"""
+
+# OpenAI-tuned variant for global_v21_b: same conservative taxonomy, softer abstention for GPT.
+_GLOBAL_V21_B_OPENAI: Final[str] = """\
+Analyze the provided warehouse aisle evidence (photos and/or extracted frames). Detect logistic entities using the same taxonomy as Prompt B, with guidance suited to models that over-abstain under strict null-only rules.
+
+Entity types:
+- PALLET, EMPTY_PALLET, LOOSE_BOXES (definitions unchanged from Prompt A/B).
+
+Rules:
+- One entity per physical unit. Do not merge different pallets.
+- Do not invent SKU text or barcodes you cannot read; use null for illegible label fields.
+- For counts and similar numeric fields: when evidence is partial, prefer your best estimate with lower confidence rather than null unless the value would be a pure guess.
+- If occlusion, blur, or missing angles make a count unknowable, use null for quantity, confidence ≤0.5, and you may note INSUFFICIENT_EVIDENCE in reasoning.
+- Never return quantity = 0 unless you are certain there are zero items.
+- model_entity_id: unique string (E1, E2, …). Bbox: normalized [x1,y1,x2,y2] in [0,1] or null.
+- Inventory visual references are context only, not primary evidence.
+
+Output:
+Return valid JSON matching the required entity schema (total_entities_detected + entities array).
 """
 
 _SYSTEM_PALLET_COUNT: Final[str] = """\
@@ -118,14 +175,14 @@ Output:
 
 # ----------------------------
 # Diccionario unificado de prompts
-# Valores: str = prompt único (híbrido) | dict con "system"/"user" = legacy
+# Valores: str = híbrido legacy | dict default/openai = híbrido multi-proveedor | system/user = legacy
 # ----------------------------
 
 PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
-    # Híbrido (una llamada por video; HYBRID_PROMPT)
-    "global_v21": _GLOBAL_V21,
-    # Prompt B — conservative / anti-hallucination (experimentation; selectable per job)
-    "global_v21_b": _GLOBAL_V21_B,
+    # Híbrido (una llamada por video; HYBRID_PROMPT) — ``default`` = Gemini y demás; ``openai`` = GPT
+    "global_v21": {"default": _GLOBAL_V21, "openai": _GLOBAL_V21_OPENAI},
+    # Prompt B — conservative; OpenAI variant mitigates over-abstention
+    "global_v21_b": {"default": _GLOBAL_V21_B, "openai": _GLOBAL_V21_B_OPENAI},
     # Legacy (system + user; no usados por el flujo híbrido único)
     "pallet_count_simple": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_PALLET_COUNT},
     "multi_frame_consolidated": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_MULTI_FRAME},
@@ -137,7 +194,19 @@ PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
 
 # Compatibilidad: nombres usados en tests y documentación
 GLOBAL_ENTITY_ANALYSIS_PROMPT_V21: Final[str] = _GLOBAL_V21
-HYBRID_PROMPTS: Dict[str, str] = {k: v for k, v in PROMPTS.items() if isinstance(v, str)}
+
+
+def _hybrid_default_text(entry: Union[str, Dict[str, str]]) -> Optional[str]:
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict) and isinstance(entry.get("default"), str):
+        return entry["default"]
+    return None
+
+
+HYBRID_PROMPTS: Dict[str, str] = {
+    k: dv for k, v in PROMPTS.items() if (dv := _hybrid_default_text(v)) is not None
+}
 
 
 def registered_hybrid_prompt_keys() -> frozenset[str]:
@@ -145,24 +214,51 @@ def registered_hybrid_prompt_keys() -> frozenset[str]:
     return frozenset(HYBRID_PROMPTS.keys())
 
 
-def get_hybrid_prompt(profile_name: str = "global_v21") -> str:
+def _global_v21_default_text() -> str:
+    g = PROMPTS["global_v21"]
+    assert isinstance(g, dict)
+    return str(g["default"]).rstrip()
+
+
+def _resolve_hybrid_for_provider(entry: Union[str, Dict[str, str]], provider_key: Optional[str]) -> str:
+    """Pick provider-specific hybrid text when present; otherwise ``default`` or legacy fallback."""
+    pk = (provider_key or "").strip().lower()
+    if isinstance(entry, str):
+        return entry.rstrip()
+    if isinstance(entry, dict):
+        if "system" in entry:
+            return _global_v21_default_text()
+        if isinstance(entry.get("default"), str):
+            if pk == "openai" and isinstance(entry.get("openai"), str):
+                return str(entry["openai"]).rstrip()
+            return str(entry["default"]).rstrip()
+    return _global_v21_default_text()
+
+
+def get_hybrid_prompt(
+    profile_name: str = "global_v21",
+    provider_key: Optional[str] = None,
+) -> str:
     """Return the base analysis prompt for the hybrid pipeline (no Epic D enrichment).
 
-    Profile is selected via HYBRID_PROMPT env. Only str-valued entries in PROMPTS
-    are valid for hybrid; legacy or missing profile falls back to global_v21.
+    Profile is selected via HYBRID_PROMPT env. Entries with ``default`` / ``openai``
+    resolve by ``provider_key`` (e.g. ``openai`` uses the OpenAI-tuned variant when defined).
+    Unknown profile or non-hybrid dict entries fall back to ``global_v21`` default text.
 
     Does not append product/label association. Call enrich_prompt_with_product_label_association
     at the request-building layer where Epic D behavior is intended.
 
     Args:
         profile_name: Profile name (e.g. global_v21).
+        provider_key: Pipeline provider (e.g. ``openai``, ``gemini``). None uses default variant.
 
     Returns:
         Base prompt text only.
     """
-    raw = PROMPTS.get(profile_name, PROMPTS["global_v21"])
-    base = raw if isinstance(raw, str) else PROMPTS["global_v21"]
-    return base.rstrip()
+    raw = PROMPTS.get(profile_name)
+    if raw is None:
+        return _resolve_hybrid_for_provider(PROMPTS["global_v21"], provider_key)
+    return _resolve_hybrid_for_provider(raw, provider_key)
 
 
 def enrich_prompt_with_product_label_association(base_prompt: str) -> str:
