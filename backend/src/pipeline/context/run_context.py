@@ -59,6 +59,8 @@ class RunContext:
     # Phase 3/4/5: typed, provider-agnostic analysis context prepared upstream.
     # This is *input* to analysis, not a stage output; avoids relying on raw metadata dicts.
     analysis_context: Optional["AnalysisContext"] = None
+    # Phase 4: logical LLM provider from job (e.g. inventory_jobs.provider_name); None = use settings.llm_provider.
+    pipeline_provider_name: Optional[str] = None
 
     def emit_stage_event(
         self,

@@ -29,7 +29,7 @@ class LLMRequest:
         self.schema_version = schema_version
         self.metadata = dict(metadata) if metadata else {}
         # Optional in-memory frames (list of np.ndarray) to avoid re-loading from disk.
-        # When provided, GeminiProvider uses these instead of loading from self.frames.
+        # When provided, the pipeline executor uses these instead of loading from self.frames.
         self.frames_nd: Optional[List[Any]] = list(frames_nd) if frames_nd else None
         # v3.2.4 Phase 4: optional context (e.g. visual reference instruction + images) sent before primary frames.
         self.context_instruction: Optional[str] = context_instruction

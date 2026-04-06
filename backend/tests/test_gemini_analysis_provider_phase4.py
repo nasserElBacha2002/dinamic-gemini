@@ -257,11 +257,11 @@ def test_gemini_provider_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     )
 
     info_calls = context.execution_log.info.call_args_list
-    prepared_call = next((call for call in info_calls if call.args[1] == "Gemini request prepared"), None)
+    prepared_call = next((call for call in info_calls if call.args[1] == "Analysis request prepared"), None)
     assert prepared_call is not None
     payload = prepared_call.kwargs["payload"]
-    assert payload["event_type"] == "gemini_request"
-    assert payload["provider"] == "gemini"
+    assert payload["event_type"] == "analysis_request"
+    assert payload["pipeline_provider"] == "fake"
     assert "Analyze the provided warehouse aisle evidence (photos and/or extracted frames)." in payload["prompt_text"]
     assert payload["attachment_summary"]["primary_evidence_count"] == 1
     assert payload["attachment_summary"]["visual_reference_count"] == 1
@@ -302,7 +302,7 @@ def test_gemini_provider_logs_unresolved_visual_reference_without_counting_it_as
         metadata={"frame_count": 1},
     )
 
-    prepared_call = next((call for call in context.execution_log.info.call_args_list if call.args[1] == "Gemini request prepared"), None)
+    prepared_call = next((call for call in context.execution_log.info.call_args_list if call.args[1] == "Analysis request prepared"), None)
     assert prepared_call is not None
     payload = prepared_call.kwargs["payload"]
     assert payload["attachment_summary"]["visual_reference_count"] == 0
@@ -352,10 +352,10 @@ def test_gemini_provider_persists_structured_request_event_to_execution_log_file
     )
 
     events = read_execution_log_file(run_dir / "execution_log.jsonl")
-    prepared_event = next((event for event in events if event.get("message") == "Gemini request prepared"), None)
+    prepared_event = next((event for event in events if event.get("message") == "Analysis request prepared"), None)
     assert prepared_event is not None
     payload = prepared_event["payload"]
-    assert payload["event_type"] == "gemini_request"
+    assert payload["event_type"] == "analysis_request"
     assert payload["attachment_summary"]["total_count"] == 2
     assert payload["primary_evidence_attachments"][0]["filename"] == "photo-01.jpg"
     assert payload["visual_reference_attachments"][0]["reference_id"] == "ref-1"

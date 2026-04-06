@@ -120,7 +120,7 @@ def test_parse_global_analysis_confidence_out_of_range_raises():
 
 
 def test_hybrid_mode_calls_llm_provider_once():
-    """Hybrid path uses get_llm_provider; provider.analyze_global called once."""
+    """Hybrid path uses registry-resolved executor; execute() called once."""
     pipeline = HybridInventoryPipeline()
     mock_logger = MagicMock()
     mock_settings = MagicMock()
@@ -130,14 +130,17 @@ def test_hybrid_mode_calls_llm_provider_once():
     mock_settings.gemini_max_retries = 1
     mock_settings.gemini_retry_delay = 0.1
     dummy_frames = [np.zeros((100, 100, 3), dtype=np.uint8)] * 3
-    mock_provider = MagicMock()
-    mock_provider.analyze_global.return_value = LLMResponse(
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
         provider="gemini", model="gemini-2.0-flash-exp", latency_ms=100,
         parsed_json=SAMPLE_V21_RESPONSE, raw_text=None, usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
+        patch(
+            "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+            return_value=(mock_executor, "gemini"),
+        ),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 10, 20]})
         with tempfile.TemporaryDirectory() as tmp:
@@ -152,8 +155,8 @@ def test_hybrid_mode_calls_llm_provider_once():
                 args=MagicMock(),
             )
     assert result.exit_code == 0
-    mock_provider.analyze_global.assert_called_once()
-    call_request = mock_provider.analyze_global.call_args[0][0]
+    mock_executor.execute.assert_called_once()
+    call_request = mock_executor.execute.call_args[0][0]
     assert len(call_request.frames) == 3
 
 
@@ -167,14 +170,17 @@ def test_hybrid_run_returns_success_and_writes_result():
     mock_settings.gemini_max_retries = 1
     mock_settings.gemini_retry_delay = 0.1
     dummy_frames = [np.zeros((50, 50, 3), dtype=np.uint8)] * 2
-    mock_provider = MagicMock()
-    mock_provider.analyze_global.return_value = LLMResponse(
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
         provider="gemini", model="gemini-2.0-flash-exp", latency_ms=100,
         parsed_json=SAMPLE_V21_RESPONSE, raw_text=None, usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
+        patch(
+            "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+            return_value=(mock_executor, "gemini"),
+        ),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 15]})
         with tempfile.TemporaryDirectory() as tmp:

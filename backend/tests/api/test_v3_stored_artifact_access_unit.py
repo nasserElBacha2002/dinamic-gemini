@@ -314,11 +314,11 @@ def test_read_execution_log_events_durable(tmp_path: Path, monkeypatch) -> None:
     assert events[0]["message"] == "hi"
 
 
-def test_read_execution_log_events_durable_preserves_gemini_request_payload(tmp_path: Path, monkeypatch) -> None:
+def test_read_execution_log_events_durable_preserves_analysis_request_payload(tmp_path: Path, monkeypatch) -> None:
     key = "jobs/j-gemini/run/execution_log.jsonl"
     body = (
-        b'{"ts":"t","stage":"AnalysisStage","level":"info","message":"Gemini request prepared","payload":'
-        b'{"event_type":"gemini_request","prompt_text":"Exact prompt","attachment_summary":{"primary_evidence_count":1,"visual_reference_count":1,"total_count":2},'
+        b'{"ts":"t","stage":"AnalysisStage","level":"info","message":"Analysis request prepared","payload":'
+        b'{"event_type":"analysis_request","prompt_text":"Exact prompt","attachment_summary":{"primary_evidence_count":1,"visual_reference_count":1,"total_count":2},'
         b'"primary_evidence_attachments":[{"role":"primary_evidence","frame_ref":"img_001","filename":"input.jpg"}],'
         b'"visual_reference_attachments":[{"role":"visual_reference","reference_id":"ref-1","filename":"reference.jpg","resolved":true}]}}\n'
     )
@@ -364,7 +364,7 @@ def test_read_execution_log_events_durable_preserves_gemini_request_payload(tmp_
 
     assert len(events) == 1
     payload = events[0]["payload"]
-    assert payload["event_type"] == "gemini_request"
+    assert payload["event_type"] == "analysis_request"
     assert payload["prompt_text"] == "Exact prompt"
     assert payload["attachment_summary"]["total_count"] == 2
     assert payload["primary_evidence_attachments"][0]["frame_ref"] == "img_001"

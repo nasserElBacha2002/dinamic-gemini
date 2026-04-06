@@ -114,13 +114,16 @@ def test_hybrid_pipeline_writes_hybrid_report_json_and_csv():
             },
         ],
     }
-    mock_provider = MagicMock()
-    mock_provider.analyze_global.return_value = LLMResponse(
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
         provider="gemini", model=None, latency_ms=0, parsed_json=sample_v21, raw_text=None, usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
+        patch(
+            "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+            return_value=(mock_executor, "gemini"),
+        ),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": [0, 15]})
         with tempfile.TemporaryDirectory() as tmp:

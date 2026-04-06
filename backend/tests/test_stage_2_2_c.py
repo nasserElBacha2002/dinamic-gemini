@@ -415,11 +415,14 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
     settings.debug_save_frames = False
     settings.hybrid_max_frames = None
 
-    mock_provider = MagicMock()
-    mock_provider.analyze_global.return_value = LLMResponse(
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
         provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
     )
-    with patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider):
+    with patch(
+        "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+        return_value=(mock_executor, "gemini"),
+    ):
         pipe = HybridInventoryPipeline()
         result = pipe._run_hybrid(
             "",
@@ -432,6 +435,6 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
         )
     assert result.exit_code == 0
     # Pipeline loads from bundle (normalized paths) and passes them to the provider
-    call_args = mock_provider.analyze_global.call_args
+    call_args = mock_executor.execute.call_args
     request = call_args[0][0]
     assert len(request.frames) == 2

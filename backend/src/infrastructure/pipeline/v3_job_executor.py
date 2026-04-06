@@ -401,6 +401,7 @@ class V3JobExecutor:
                 aisle_id,
             )
             pipeline = HybridInventoryPipeline()
+            pipeline_provider_name = (job.provider_name or "").strip() or None
             result = pipeline.process_video(
                 video_path,
                 mode="hybrid",
@@ -414,6 +415,7 @@ class V3JobExecutor:
                 analysis_context=analysis_context,
                 execution_observer=execution_observer,
                 cancellation_checkpoint=cancellation_checkpoint,
+                pipeline_provider_name=pipeline_provider_name,
             )
             logger.info(
                 "v3 executor finished: job_id=%s exit_code=%s inventory_id=%s aisle_id=%s",

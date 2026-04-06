@@ -21,13 +21,15 @@ from src.llm.providers.fake_provider import DEFAULT_FAKE_RESPONSE, FakeProvider
 from src.llm.types import LLMRequest, LLMResponse
 
 
-def test_pipeline_does_not_import_gemini_directly():
-    """Pipeline must use get_llm_provider; no direct GeminiClient/GeminiGlobalAnalyzer."""
+def test_pipeline_hybrid_does_not_import_gemini_sdk():
+    """Hybrid orchestrator must not bind Gemini SDK types; execution goes through registry + strategy."""
     import src.pipeline.hybrid_inventory_pipeline as m
 
     assert not hasattr(m, "GeminiClient"), "Pipeline must not import GeminiClient"
     assert not hasattr(m, "GeminiGlobalAnalyzer"), "Pipeline must not import GeminiGlobalAnalyzer"
-    assert hasattr(m, "get_llm_provider"), "Pipeline must use get_llm_provider"
+    from src.pipeline.providers import registry as reg
+
+    assert hasattr(reg, "resolve_llm_executor"), "Registry must expose LLM executor resolution"
 
 
 def test_fake_provider_returns_v21_shaped_json():

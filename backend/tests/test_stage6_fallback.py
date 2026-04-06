@@ -138,13 +138,16 @@ def test_hybrid_one_global_plus_n_fallback_and_final_quantity_updated():
             },
         ],
     }
-    mock_provider = MagicMock()
-    mock_provider.analyze_global.return_value = LLMResponse(
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
         provider="gemini", model=None, latency_ms=0, parsed_json=global_v21, raw_text=None, usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
+        patch(
+            "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+            return_value=(mock_executor, "gemini"),
+        ),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
         with tempfile.TemporaryDirectory() as tmp:
@@ -167,7 +170,7 @@ def test_hybrid_one_global_plus_n_fallback_and_final_quantity_updated():
             assert report["report_version"] == "2.1"
             assert report["mode"] == "hybrid_v2.1"
             assert len(report["entities"]) == 1
-    mock_provider.analyze_global.assert_called_once()
+    mock_executor.execute.assert_called_once()
 
 
 def test_hybrid_high_confidence_no_fallback_calls():
@@ -198,13 +201,16 @@ def test_hybrid_high_confidence_no_fallback_calls():
             },
         ],
     }
-    mock_provider = MagicMock()
-    mock_provider.analyze_global.return_value = LLMResponse(
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
         provider="gemini", model=None, latency_ms=0, parsed_json=global_v21, raw_text=None, usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
+        patch(
+            "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+            return_value=(mock_executor, "gemini"),
+        ),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
         with tempfile.TemporaryDirectory() as tmp:
@@ -224,7 +230,7 @@ def test_hybrid_high_confidence_no_fallback_calls():
             assert report["report_version"] == "2.1"
             assert len(report["entities"]) == 1
             assert report["entities"][0]["final_quantity"] == 15
-    mock_provider.analyze_global.assert_called_once()
+    mock_executor.execute.assert_called_once()
 
 
 def test_select_fallback_frames_returns_spread_for_k3():
@@ -273,13 +279,16 @@ def test_metrics_attempts_increment_and_total_calls_on_fallback_error():
             },
         ],
     }
-    mock_provider = MagicMock()
-    mock_provider.analyze_global.return_value = LLMResponse(
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
         provider="gemini", model=None, latency_ms=0, parsed_json=global_v21, raw_text=None, usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
-        patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider),
+        patch(
+            "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+            return_value=(mock_executor, "gemini"),
+        ),
     ):
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
         with tempfile.TemporaryDirectory() as tmp:

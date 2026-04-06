@@ -22,7 +22,7 @@ from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
-from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
+from src.pipeline.providers.registry import default_analysis_provider
 from src.pipeline.stages.input_preparation_stage import InputPreparationStage, PreparedInput
 from src.pipeline.stages.frame_acquisition_stage import FrameAcquisitionStage, AcquiredFrames
 from src.pipeline.stages.analysis_stage import AnalysisStage
@@ -46,12 +46,12 @@ class PipelineRunResult:
 HYBRID_MAX_FRAMES = 10000
 
 
-def _save_frames_sent_to_gemini(
+def _save_frames_sent_to_llm(
     run_dir: Path,
     frames: list,
     frame_indices: Optional[list] = None,
 ) -> None:
-    """Save the frames that were sent to Gemini as JPGs under run_dir/frames_sent/ (when DEBUG_SAVE_FRAMES=true)."""
+    """Save frames sent to the analysis provider under run_dir/frames_sent/ (when DEBUG_SAVE_FRAMES=true)."""
     if not frames:
         return
     out_dir = run_dir / "frames_sent"
@@ -68,9 +68,9 @@ class HybridInventoryPipeline:
     """Staged hybrid flow: InputPreparation → FrameAcquisition → Analysis → EntityResolution → Evidence → Reporting."""
 
     def __init__(self, analysis_provider: Optional[AnalysisProvider] = None) -> None:
-        """Optional analysis_provider; when None, uses GeminiAnalysisProvider (current behavior)."""
+        """Optional analysis_provider; when None, uses registry default (Gemini strategy, current production)."""
         self._analysis_provider: AnalysisProvider = (
-            analysis_provider if analysis_provider is not None else GeminiAnalysisProvider()
+            analysis_provider if analysis_provider is not None else default_analysis_provider()
         )
         self._input_stage = InputPreparationStage()
         self._frame_acquisition_stage = FrameAcquisitionStage()
@@ -103,6 +103,7 @@ class HybridInventoryPipeline:
         job_input: Optional[JobInput] = None,
         analysis_context: Optional[AnalysisContext] = None,
         execution_observer=None,
+        pipeline_provider_name: Optional[str] = None,
         **_: object,
     ) -> PipelineRunResult:
         """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5)."""
@@ -129,6 +130,7 @@ class HybridInventoryPipeline:
             analysis_context=analysis_context,
             execution_observer=execution_observer,
             cancellation_checkpoint=_.get("cancellation_checkpoint"),
+            pipeline_provider_name=pipeline_provider_name,
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)
@@ -196,20 +198,20 @@ class HybridInventoryPipeline:
         except (ValueError, FileNotFoundError, RuntimeError) as e:
             return _fail("FrameAcquisitionStage", e)
 
-        _report("gemini_global_call", 50)
+        _report("global_analysis_call", 50)
         try:
             context.check_cancellation(stage="AnalysisStage", reason="Job canceled before analysis")
             stage_started = time.monotonic()
-            exec_log.info("AnalysisStage", "Gemini/LLM analysis started")
+            exec_log.info("AnalysisStage", "LLM analysis started")
             context.emit_stage_event(stage="AnalysisStage", event="stage.started")
             analysis_result = self._analysis_stage.run(context, acquired)
             duration_ms = int((time.monotonic() - stage_started) * 1000)
-            exec_log.info("AnalysisStage", "Gemini/LLM analysis succeeded")
+            exec_log.info("AnalysisStage", "LLM analysis succeeded")
             context.emit_stage_event(stage="AnalysisStage", event="stage.completed", duration_ms=duration_ms)
         except PipelineCancellationRequestedError:
             raise
         except LLMProviderError as e:
-            exec_log.error("AnalysisStage", f"Gemini/LLM analysis failed: {e}", payload={"error": str(e)[:500]})
+            exec_log.error("AnalysisStage", f"LLM analysis failed: {e}", payload={"error": str(e)[:500]})
             context.emit_stage_event(
                 stage="AnalysisStage",
                 event="stage.failed",
@@ -269,7 +271,7 @@ class HybridInventoryPipeline:
         )
         _report("write_artifacts", 90)
         if getattr(settings, "debug_save_frames", False):
-            _save_frames_sent_to_gemini(context.run_dir, acquired.frames_nd, acquired.metadata.get("frame_indices"))
+            _save_frames_sent_to_llm(context.run_dir, acquired.frames_nd, acquired.metadata.get("frame_indices"))
         try:
             context.check_cancellation(stage="ReportingStage", reason="Job canceled before reporting")
             stage_started = time.monotonic()
