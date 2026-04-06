@@ -1,6 +1,8 @@
 """Provider registry and resolution (Phase 4)."""
 
 from src.pipeline.providers.registry import (
+    TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS,
+    TransitionalLlmProviderBridgeExecutor,
     UnknownPipelineProviderError,
     default_analysis_provider,
     normalize_pipeline_provider_key,
@@ -9,6 +11,8 @@ from src.pipeline.providers.registry import (
 )
 
 __all__ = [
+    "TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS",
+    "TransitionalLlmProviderBridgeExecutor",
     "UnknownPipelineProviderError",
     "default_analysis_provider",
     "normalize_pipeline_provider_key",

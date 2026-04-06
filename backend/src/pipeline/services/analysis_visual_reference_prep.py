@@ -1,7 +1,7 @@
 """
 Shared visual-reference attachment preparation for global analysis (provider-neutral).
 
-Extracted from the Gemini strategy so other pipeline providers can reuse the same attachment model.
+Extracted from the hybrid analysis strategy so any executor can reuse the same attachment model.
 """
 
 from __future__ import annotations

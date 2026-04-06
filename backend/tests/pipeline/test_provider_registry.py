@@ -8,6 +8,7 @@ import pytest
 
 from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
 from src.pipeline.providers.registry import (
+    TransitionalLlmProviderBridgeExecutor,
     UnknownPipelineProviderError,
     normalize_pipeline_provider_key,
     resolve_llm_executor,
@@ -32,10 +33,11 @@ def test_resolve_gemini_returns_sdk_adapter() -> None:
     assert isinstance(ex, GeminiSdkAdapter)
 
 
-def test_resolve_fake_returns_delegate() -> None:
+def test_resolve_fake_returns_transitional_bridge() -> None:
     settings = MagicMock()
     settings.fake_llm_fixture_path = None
     ex = resolve_llm_executor("fake", settings)
+    assert isinstance(ex, TransitionalLlmProviderBridgeExecutor)
     req = MagicMock()
     req.frames = []
     req.frames_nd = None

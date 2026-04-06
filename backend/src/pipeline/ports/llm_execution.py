@@ -1,8 +1,8 @@
 """
-Pipeline-level LLM execution port — vendor-neutral boundary for global analysis (Phase 4).
+Pipeline-level port for one global analysis call — vendor-neutral (Phase 4).
 
-Strategies (e.g. GeminiAnalysisProvider) build ``LLMRequest`` and call an executor resolved from
-``provider_name`` + settings. SDK/API details stay inside executor implementations (adapters).
+Analysis strategies build ``LLMRequest`` and invoke an executor chosen from ``provider_name`` +
+settings via ``providers.registry``. Vendor SDKs stay inside executor implementations only.
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from src.llm.types import LLMRequest, LLMResponse
 
 
 class LlmGlobalAnalysisExecutor(Protocol):
-    """Executes one global analysis call; hides vendor SDKs from pipeline strategies."""
+    """Runs one global analysis; implementations map failures to ``LLMProviderError`` where applicable."""
 
     def execute(self, request: LLMRequest, settings: Any) -> LLMResponse:
-        """Run analysis; map vendor failures to ``LLMProviderError`` inside the adapter."""
+        """Execute analysis for ``request``; ``settings`` is the run configuration snapshot."""
         ...
