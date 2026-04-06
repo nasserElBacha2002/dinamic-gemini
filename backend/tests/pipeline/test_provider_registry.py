@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
+from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.pipeline.providers.registry import (
     TransitionalLlmProviderBridgeExecutor,
     UnknownPipelineProviderError,
@@ -33,6 +34,12 @@ def test_resolve_gemini_returns_sdk_adapter() -> None:
     settings = MagicMock()
     ex = resolve_llm_executor("gemini", settings)
     assert isinstance(ex, GeminiSdkAdapter)
+
+
+def test_resolve_openai_returns_openai_sdk_adapter() -> None:
+    settings = MagicMock()
+    ex = resolve_llm_executor("openai", settings)
+    assert isinstance(ex, OpenAiSdkAdapter)
 
 
 def test_resolve_fake_returns_transitional_bridge() -> None:

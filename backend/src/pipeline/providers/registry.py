@@ -12,9 +12,9 @@ Transitional bridge (explicit)
 ``gemini`` maps to a **native** executor: ``GeminiSdkAdapter`` implements
 ``LlmGlobalAnalysisExecutor.execute`` directly (vendor SDK only inside ``src/llm/gemini_sdk_adapter.py``).
 
-``fake`` and ``openai`` still wrap the historical ``LLMProvider.analyze_global`` protocol via
-``TransitionalLlmProviderBridgeExecutor``. That keeps behavior identical with minimal code until
-Phase 5+ adds dedicated ``FakeGlobalAnalysisExecutor`` / OpenAI executors. Generic pipeline code
+``fake`` still wraps the historical ``LLMProvider.analyze_global`` protocol via
+``TransitionalLlmProviderBridgeExecutor``. ``openai`` uses ``OpenAiSdkAdapter`` (native executor).
+Generic pipeline code
 must depend only on ``LlmGlobalAnalysisExecutor``, not on ``LLMProvider``.
 
 Default analysis strategy
@@ -30,9 +30,9 @@ from typing import Any, Final, Optional
 
 from src.llm.providers.base import LLMProvider
 from src.llm.providers.fake_provider import FakeProvider
-from src.llm.providers.openai_provider import OpenAIProvider
 from src.llm.types import LLMRequest, LLMResponse
 from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
+from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor
 
@@ -45,8 +45,8 @@ class TransitionalLlmProviderBridgeExecutor:
     """
     Wraps a legacy ``LLMProvider`` as ``LlmGlobalAnalysisExecutor``.
 
-    **Transitional:** ``fake`` and ``openai`` registry keys use this until each has a native
-    executor. Do not add new providers here long-term — implement ``LlmGlobalAnalysisExecutor``
+    **Transitional:** ``fake`` uses this until a native fake executor exists. Do not add new
+    providers here long-term — implement ``LlmGlobalAnalysisExecutor``
     directly instead.
     """
 
@@ -59,7 +59,7 @@ class TransitionalLlmProviderBridgeExecutor:
 
 
 # Registry keys that use ``TransitionalLlmProviderBridgeExecutor`` (documented for Phase 4 closure).
-TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS: Final[frozenset[str]] = frozenset({"fake", "openai"})
+TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS: Final[frozenset[str]] = frozenset({"fake"})
 
 _KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "fake", "openai"})
 
@@ -98,7 +98,7 @@ def resolve_llm_executor(provider_key: str, settings: Any) -> LlmGlobalAnalysisE
     if key == "fake":
         return TransitionalLlmProviderBridgeExecutor(FakeProvider(settings))
     if key == "openai":
-        return TransitionalLlmProviderBridgeExecutor(OpenAIProvider(settings))
+        return OpenAiSdkAdapter()
     raise UnknownPipelineProviderError(
         f"Unknown pipeline provider {provider_key!r}. Known: {sorted(_KNOWN_KEYS)}"
     )

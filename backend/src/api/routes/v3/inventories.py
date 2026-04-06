@@ -185,7 +185,7 @@ def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
             desc = "Transitional bridge to FakeProvider — for dev/CI and controlled validation."
         elif key == "openai":
             label = "OpenAI"
-            desc = "Transitional bridge; OPENAI_API_KEY required when explicitly selected; vision path still stubbed."
+            desc = "Native OpenAI vision path (Chat Completions + json_object). OPENAI_API_KEY required when explicitly selected."
         else:
             label = key
             desc = None

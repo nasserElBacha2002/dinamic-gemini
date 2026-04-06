@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
+from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.llm.types import LLMRequest, LLMResponse
 from src.pipeline.providers.registry import (
     TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS,
@@ -29,17 +30,22 @@ def _minimal_request() -> LLMRequest:
     )
 
 
-def test_transitional_bridge_keys_match_fake_and_openai() -> None:
-    assert TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS == frozenset({"fake", "openai"})
+def test_transitional_bridge_keys_match_fake_only() -> None:
+    assert TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS == frozenset({"fake"})
 
 
-@pytest.mark.parametrize("key", ["fake", "openai"])
-def test_fake_and_openai_use_transitional_bridge_executor(key: str) -> None:
+def test_fake_uses_transitional_bridge_executor() -> None:
     settings = MagicMock()
     settings.fake_llm_fixture_path = None
-    settings.openai_api_key = "x" if key == "openai" else None
-    ex = resolve_llm_executor(key, settings)
+    ex = resolve_llm_executor("fake", settings)
     assert isinstance(ex, TransitionalLlmProviderBridgeExecutor)
+
+
+def test_openai_uses_native_openai_sdk_adapter() -> None:
+    settings = MagicMock()
+    ex = resolve_llm_executor("openai", settings)
+    assert isinstance(ex, OpenAiSdkAdapter)
+    assert not isinstance(ex, TransitionalLlmProviderBridgeExecutor)
 
 
 def test_gemini_executor_is_not_transitional_bridge() -> None:

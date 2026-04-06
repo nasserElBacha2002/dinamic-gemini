@@ -6,11 +6,12 @@ Tests: capability behavior, Gemini adapter with/without refs, non-capable provid
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
+from src.llm.types import LLMResponse
 from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.execution_log import ExecutionLogWriter, read_execution_log_file
@@ -359,3 +360,35 @@ def test_gemini_provider_persists_structured_request_event_to_execution_log_file
     assert payload["attachment_summary"]["total_count"] == 2
     assert payload["primary_evidence_attachments"][0]["filename"] == "photo-01.jpg"
     assert payload["visual_reference_attachments"][0]["reference_id"] == "ref-1"
+
+
+def test_openai_job_model_name_passed_in_llm_request_metadata(tmp_path: Path) -> None:
+    """Phase 5: job model id must reach OpenAI executor via request.metadata."""
+    context = _run_context(metadata={}, settings_output_dir=str(tmp_path))
+    context.pipeline_provider_name = "openai"
+    context.job_model_name = "gpt-4o-mini"
+    context.settings.openai_api_key = "sk-test"
+
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
+        provider="openai",
+        model="gpt-4o-mini",
+        latency_ms=1,
+        parsed_json={"total_entities_detected": 0, "entities": []},
+    )
+
+    with patch(
+        "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+        return_value=(mock_executor, "openai"),
+    ):
+        provider = GeminiAnalysisProvider()
+        provider.analyze(
+            context=context,
+            frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+            frame_paths=[Path("/tmp/f0.jpg")],
+            frame_refs=["f0"],
+            metadata={"frame_count": 1},
+        )
+
+    req = mock_executor.execute.call_args[0][0]
+    assert req.metadata.get("openai_model_name") == "gpt-4o-mini"

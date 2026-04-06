@@ -8,7 +8,9 @@ This supplements `multi_provider_planning_revision.md` and the implementation pl
 
 - **`gemini`** → **`GeminiSdkAdapter`** implements `execute()` directly; Gemini SDK types exist only under `src/llm/gemini_sdk_adapter.py`.
 
-- **`fake`** and **`openai`** → **`TransitionalLlmProviderBridgeExecutor`** wraps legacy **`LLMProvider.analyze_global`**. This is intentional until Phase 5+ adds dedicated executors. See **`TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS`** in `src/pipeline/providers/registry.py`.
+- **`openai`** → **`OpenAiSdkAdapter`** implements `execute()` directly (`src/llm/openai_sdk_adapter.py`).
+
+- **`fake`** → **`TransitionalLlmProviderBridgeExecutor`** wraps legacy **`LLMProvider.analyze_global`**. See **`TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS`** in `src/pipeline/providers/registry.py` (currently `{"fake"}` only).
 
 ## Default wiring
 

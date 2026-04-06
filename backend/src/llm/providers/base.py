@@ -1,8 +1,8 @@
 """Legacy LLM provider protocol (Stage 2.2.D).
 
 Still implemented by ``FakeProvider`` / ``OpenAIProvider`` / ``GeminiProvider`` for CLI and tests.
-The pipeline registry prefers ``LlmGlobalAnalysisExecutor``; ``fake`` / ``openai`` keys use
-``TransitionalLlmProviderBridgeExecutor`` to call ``analyze_global`` until native executors exist.
+The pipeline registry prefers ``LlmGlobalAnalysisExecutor``; ``fake`` uses
+``TransitionalLlmProviderBridgeExecutor``. ``openai`` is native via ``OpenAiSdkAdapter``.
 """
 
 from typing import Protocol

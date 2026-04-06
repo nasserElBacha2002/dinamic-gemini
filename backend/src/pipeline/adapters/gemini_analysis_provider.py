@@ -104,8 +104,11 @@ class GeminiAnalysisProvider:
 
         req_meta: Dict[str, Any] = {**metadata, "run_dir": str(context.run_dir)}
         jm = getattr(context, "job_model_name", None)
-        if jm and str(jm).strip() and (resolved_key or "").strip().lower() == "gemini":
+        rk = (resolved_key or "").strip().lower()
+        if jm and str(jm).strip() and rk == "gemini":
             req_meta["gemini_model_name"] = str(jm).strip()
+        if jm and str(jm).strip() and rk == "openai":
+            req_meta["openai_model_name"] = str(jm).strip()
 
         request = LLMRequest(
             job_id=job_id,

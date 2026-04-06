@@ -333,6 +333,18 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o"),
         description="OpenAI model name (used when llm_provider=openai). Env: OPENAI_MODEL.",
     )
+    openai_request_timeout_sec: float = Field(
+        default_factory=lambda: float(os.getenv("OPENAI_REQUEST_TIMEOUT_SEC", "120")),
+        ge=5.0,
+        le=600.0,
+        description="HTTP timeout (seconds) for OpenAI API calls. Env: OPENAI_REQUEST_TIMEOUT_SEC.",
+    )
+    openai_vision_max_image_side: int = Field(
+        default_factory=lambda: int(os.getenv("OPENAI_VISION_MAX_IMAGE_SIDE", "2048")),
+        ge=512,
+        le=4096,
+        description="Max longest side (px) for images sent to OpenAI vision (downscaled if larger). Env: OPENAI_VISION_MAX_IMAGE_SIDE.",
+    )
     fake_llm_fixture_path: Optional[str] = Field(
         default_factory=lambda: (os.getenv("FAKE_LLM_FIXTURE_PATH") or "").strip() or None,
         description="Path to JSON fixture for fake provider (optional). Env: FAKE_LLM_FIXTURE_PATH.",
@@ -357,7 +369,7 @@ class Settings(BaseModel):
             os.getenv("PROCESSING_OPENAI_MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo")
             or "gpt-4o"
         ),
-        description="Comma-separated OpenAI model ids for processing UI (runtime still stubbed for openai). Env: PROCESSING_OPENAI_MODELS.",
+        description="Comma-separated OpenAI model ids for processing-provider-options / POST /process. Env: PROCESSING_OPENAI_MODELS.",
     )
 
     # Frame Extraction Settings

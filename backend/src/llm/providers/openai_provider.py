@@ -1,13 +1,14 @@
-"""Stage 2.2.D — OpenAI LLM provider (stub: NOT_CONFIGURED until integrated)."""
+"""Stage 2.2.D — OpenAI LLM provider (delegates to ``OpenAiSdkAdapter`` for global analysis)."""
 
 from typing import Any
 
 from src.llm.errors import LLMProviderError
+from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.llm.types import LLMRequest, LLMResponse
 
 
 class OpenAIProvider:
-    """LLM provider for OpenAI (stub: raises NOT_CONFIGURED if no key)."""
+    """Thin wrapper for legacy ``analyze_global`` call sites; execution is native OpenAI vision."""
 
     def __init__(self, settings: Any) -> None:
         self._settings = settings
@@ -24,9 +25,4 @@ class OpenAIProvider:
                 message="OPENAI_API_KEY not set; required when llm_provider=openai",
                 details={"provider": "openai"},
             )
-        # TODO: integrate OpenAI vision API for global analysis (v2.1 schema)
-        raise LLMProviderError(
-            code="NOT_IMPLEMENTED",
-            message="OpenAI provider not yet implemented",
-            details={"provider": "openai"},
-        )
+        return OpenAiSdkAdapter().execute(request, self._settings)
