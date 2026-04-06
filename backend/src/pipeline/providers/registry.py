@@ -19,9 +19,9 @@ must depend only on ``LlmGlobalAnalysisExecutor``, not on ``LLMProvider``.
 
 Default analysis strategy
 -------------------------
-``default_analysis_provider()`` returns the historical hybrid analysis **strategy** class
-(``GeminiAnalysisProvider``) when the orchestrator is constructed without injection. That is a
-**runtime wiring default** for current production, not a claim that Gemini is the domain model.
+``default_analysis_provider()`` returns ``HybridGlobalAnalysisStrategy`` when the orchestrator is
+constructed without injection. That is **runtime wiring** for the shared hybrid global-analysis
+path; the actual LLM vendor is chosen at execute time via the registry.
 """
 
 from __future__ import annotations
@@ -117,10 +117,9 @@ def default_analysis_provider() -> AnalysisProvider:
     """
     Runtime default when ``HybridInventoryPipeline`` is built without an injected ``AnalysisProvider``.
 
-    Returns the existing hybrid global-analysis strategy (class name is historical). The strategy
-    itself resolves the **executor** from ``RunContext.pipeline_provider_name`` + settings via the
-    registry — it is not hard-wired to a single vendor at the executor layer.
+    Returns ``HybridGlobalAnalysisStrategy``, which resolves the **executor** from
+    ``RunContext.pipeline_provider_name`` + settings via the registry (Gemini, OpenAI, fake, etc.).
     """
-    from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
+    from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 
-    return GeminiAnalysisProvider()
+    return HybridGlobalAnalysisStrategy()

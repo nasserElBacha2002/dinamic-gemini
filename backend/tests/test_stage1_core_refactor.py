@@ -51,7 +51,7 @@ def test_mode_hybrid_runs_without_error():
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
         patch(
-            "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+            "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
             return_value=(mock_executor, "gemini"),
         ),
     ):
@@ -89,7 +89,7 @@ def test_mode_hybrid_logs_global_analysis():
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
         patch(
-            "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+            "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
             return_value=(mock_executor, "gemini"),
         ),
     ):

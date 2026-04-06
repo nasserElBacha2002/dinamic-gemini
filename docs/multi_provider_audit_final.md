@@ -85,7 +85,7 @@ Reviews should primarily apply to the **Operational Job**. A benchmark run is "t
 | File Path | Symbol | Behavior & Evidence | Blocker |
 | :--- | :--- | :--- | :--- |
 | `src/infrastructure/pipeline/v3_job_executor.py` | `V3JobExecutor.execute` | Orchestrates a single `HybridInventoryPipeline` pass with global settings. | No multi-config support. |
-| `src/pipeline/hybrid_inventory_pipeline.py` | `HybridInventoryPipeline` | Constructor defaults to `GeminiAnalysisProvider`. | Hardcoded provider DI. |
+| `src/pipeline/hybrid_inventory_pipeline.py` | `HybridInventoryPipeline` | Constructor defaults to `HybridGlobalAnalysisStrategy` (provider-neutral; executor from registry). | Default strategy wiring. |
 | `src/infrastructure/pipeline/v3_report_mapper.py` | `map_hybrid_report_to_domain` | Generates new UUIDs for every position without storing the originating `job_id`. | Prevents result-to-run traceability. |
 | `src/application/use_cases/persist_aisle_result.py` | `PersistAisleResultUseCase` | Blindly saves positions to `PositionRepository.save()`. | Causes data collision in `positions` table. |
 

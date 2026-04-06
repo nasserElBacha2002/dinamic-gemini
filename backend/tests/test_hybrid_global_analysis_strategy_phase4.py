@@ -1,6 +1,6 @@
 """v3.2.4 Phase 4 — Provider-side consumption of analysis context (visual references).
 
-Tests: capability behavior, Gemini adapter with/without refs, non-capable provider metadata.
+Tests: ``HybridGlobalAnalysisStrategy`` capabilities, reference loading, execution log payloads.
 """
 
 from __future__ import annotations
@@ -9,10 +9,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from src.llm.types import LLMResponse
-from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
+from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.execution_log import ExecutionLogWriter, read_execution_log_file
 from src.pipeline.ports.analysis_provider import (
@@ -44,25 +43,25 @@ def _run_context(metadata: dict | None = None, settings_output_dir: str = "/tmp/
     )
 
 
-def test_gemini_provider_capabilities_default() -> None:
-    """GeminiAnalysisProvider declares supports_visual_reference_context=True by default."""
-    provider = GeminiAnalysisProvider()
+def test_hybrid_strategy_capabilities_default() -> None:
+    """Default strategy declares supports_visual_reference_context=True."""
+    provider = HybridGlobalAnalysisStrategy()
     caps = provider.get_capabilities()
     assert isinstance(caps, ProviderCapabilities)
     assert caps.supports_visual_reference_context is True
 
 
-def test_gemini_provider_capabilities_disabled() -> None:
-    """GeminiAnalysisProvider(supports_visual_reference_context=False) declares no ref support."""
-    provider = GeminiAnalysisProvider(supports_visual_reference_context=False)
+def test_hybrid_strategy_capabilities_disabled() -> None:
+    """supports_visual_reference_context=False disables ref attachment to the LLM request."""
+    provider = HybridGlobalAnalysisStrategy(supports_visual_reference_context=False)
     caps = provider.get_capabilities()
     assert caps.supports_visual_reference_context is False
 
 
-def test_gemini_provider_no_analysis_context_returns_metadata() -> None:
+def test_hybrid_strategy_no_analysis_context_returns_metadata() -> None:
     """When job_input.metadata has no analysis_context, result has available=False, consumed=False."""
     context = _run_context(metadata={})
-    provider = GeminiAnalysisProvider()
+    provider = HybridGlobalAnalysisStrategy()
     result = provider.analyze(
         context=context,
         frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
@@ -76,7 +75,7 @@ def test_gemini_provider_no_analysis_context_returns_metadata() -> None:
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT] == 0
 
 
-def test_gemini_provider_empty_visual_references_returns_metadata() -> None:
+def test_hybrid_strategy_empty_visual_references_returns_metadata() -> None:
     """When analysis_context has empty visual_references, metadata has available=False, consumed=False."""
     context = _run_context(
         metadata={
@@ -87,7 +86,7 @@ def test_gemini_provider_empty_visual_references_returns_metadata() -> None:
             },
         },
     )
-    provider = GeminiAnalysisProvider()
+    provider = HybridGlobalAnalysisStrategy()
     result = provider.analyze(
         context=context,
         frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
@@ -100,7 +99,7 @@ def test_gemini_provider_empty_visual_references_returns_metadata() -> None:
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT] == 0
 
 
-def test_gemini_provider_instruction_only_no_refs() -> None:
+def test_hybrid_strategy_instruction_only_no_refs() -> None:
     """Context has instructions but no refs: instruction enriches prompt; metadata reports no refs consumed."""
     context = _run_context(
         metadata={
@@ -111,7 +110,7 @@ def test_gemini_provider_instruction_only_no_refs() -> None:
             },
         },
     )
-    provider = GeminiAnalysisProvider()
+    provider = HybridGlobalAnalysisStrategy()
     result = provider.analyze(
         context=context,
         frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
@@ -125,7 +124,7 @@ def test_gemini_provider_instruction_only_no_refs() -> None:
     assert "total_entities_detected" in result.parsed_json
 
 
-def test_gemini_provider_non_capable_with_refs_in_context() -> None:
+def test_hybrid_strategy_non_capable_with_refs_in_context() -> None:
     """When supports_visual_reference_context=False but context has refs: available=True, consumed=False, count=0."""
     context = _run_context(
         metadata={
@@ -138,7 +137,7 @@ def test_gemini_provider_non_capable_with_refs_in_context() -> None:
             },
         },
     )
-    provider = GeminiAnalysisProvider(supports_visual_reference_context=False)
+    provider = HybridGlobalAnalysisStrategy(supports_visual_reference_context=False)
     result = provider.analyze(
         context=context,
         frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
@@ -148,11 +147,10 @@ def test_gemini_provider_non_capable_with_refs_in_context() -> None:
     )
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE] is True
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED] is False
-    # Plan: non-capable reports visual_reference_count=0 (or omit)
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT] == 0
 
 
-def test_gemini_provider_capable_with_refs_missing_files() -> None:
+def test_hybrid_strategy_capable_with_refs_missing_files() -> None:
     """When capable and context has refs with resolved_path but file missing: available=True, consumed=False, count=0."""
     context = _run_context(
         metadata={
@@ -170,7 +168,7 @@ def test_gemini_provider_capable_with_refs_missing_files() -> None:
             },
         },
     )
-    provider = GeminiAnalysisProvider()
+    provider = HybridGlobalAnalysisStrategy()
     result = provider.analyze(
         context=context,
         frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
@@ -180,13 +178,13 @@ def test_gemini_provider_capable_with_refs_missing_files() -> None:
     )
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE] is True
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED] is False
-    # No images loaded -> consumed=False -> count=0 per metadata contract
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT] == 0
 
 
-def test_gemini_provider_capable_with_refs_and_existing_file(tmp_path: Path) -> None:
-    """When capable and ref has resolved_path to existing file, provider loads it and reports consumed=True, count=1."""
+def test_hybrid_strategy_capable_with_refs_and_existing_file(tmp_path: Path) -> None:
+    """When capable and ref has resolved_path to existing file, strategy loads it and reports consumed=True, count=1."""
     import cv2
+
     ref_full = tmp_path / "ref1.jpg"
     ref_full.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(ref_full), np.zeros((32, 32, 3), dtype=np.uint8))
@@ -207,7 +205,7 @@ def test_gemini_provider_capable_with_refs_and_existing_file(tmp_path: Path) -> 
             },
         },
     )
-    provider = GeminiAnalysisProvider()
+    provider = HybridGlobalAnalysisStrategy()
     result = provider.analyze(
         context=context,
         frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
@@ -223,7 +221,7 @@ def test_gemini_provider_capable_with_refs_and_existing_file(tmp_path: Path) -> 
     assert "entities" in result.parsed_json
 
 
-def test_gemini_provider_logs_exact_prompt_and_attachments(tmp_path: Path) -> None:
+def test_hybrid_strategy_logs_exact_prompt_and_attachments(tmp_path: Path) -> None:
     import cv2
 
     ref_full = tmp_path / "reference-image.jpg"
@@ -248,7 +246,7 @@ def test_gemini_provider_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     )
     context.execution_log = MagicMock()
 
-    provider = GeminiAnalysisProvider()
+    provider = HybridGlobalAnalysisStrategy()
     provider.analyze(
         context=context,
         frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
@@ -276,7 +274,7 @@ def test_gemini_provider_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     assert "resolved_path" not in payload["visual_reference_attachments"][0]
 
 
-def test_gemini_provider_logs_unresolved_visual_reference_without_counting_it_as_consumed() -> None:
+def test_hybrid_strategy_logs_unresolved_visual_reference_without_counting_it_as_consumed() -> None:
     context = _run_context(
         metadata={
             "analysis_context": {
@@ -294,7 +292,7 @@ def test_gemini_provider_logs_unresolved_visual_reference_without_counting_it_as
     )
     context.execution_log = MagicMock()
 
-    provider = GeminiAnalysisProvider()
+    provider = HybridGlobalAnalysisStrategy()
     result = provider.analyze(
         context=context,
         frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
@@ -315,7 +313,7 @@ def test_gemini_provider_logs_unresolved_visual_reference_without_counting_it_as
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS] == []
 
 
-def test_gemini_provider_persists_structured_request_event_to_execution_log_file(tmp_path: Path) -> None:
+def test_hybrid_strategy_persists_structured_request_event_to_execution_log_file(tmp_path: Path) -> None:
     import cv2
 
     ref_full = tmp_path / "reference-image.jpg"
@@ -343,7 +341,7 @@ def test_gemini_provider_persists_structured_request_event_to_execution_log_file
     context.run_dir = run_dir
     context.execution_log = ExecutionLogWriter(run_dir)
 
-    provider = GeminiAnalysisProvider()
+    provider = HybridGlobalAnalysisStrategy()
     provider.analyze(
         context=context,
         frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
@@ -378,10 +376,10 @@ def test_openai_job_model_name_passed_in_llm_request_metadata(tmp_path: Path) ->
     )
 
     with patch(
-        "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+        "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
         return_value=(mock_executor, "openai"),
     ):
-        provider = GeminiAnalysisProvider()
+        provider = HybridGlobalAnalysisStrategy()
         provider.analyze(
             context=context,
             frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],

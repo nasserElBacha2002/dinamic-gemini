@@ -252,7 +252,7 @@ def test_pipeline_runs_with_photos_frames(tmp_path):
         provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
     )
     with patch(
-        "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+        "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
         return_value=(mock_executor, "gemini"),
     ):
         pipe = HybridInventoryPipeline()
@@ -314,7 +314,7 @@ def test_pipeline_truncates_frames_to_hybrid_max_frames(tmp_path):
         provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
     )
     with patch(
-        "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+        "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
         return_value=(mock_executor, "gemini"),
     ):
         pipe = HybridInventoryPipeline()

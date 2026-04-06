@@ -1,8 +1,8 @@
 """
-Gemini-oriented analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4).
+Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–5).
 
-Orchestrates provider-neutral prompt/context assembly and delegates the external call to an
-``LlmGlobalAnalysisExecutor`` resolved via ``providers.registry`` (not hard-coded Gemini types).
+Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
+call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI, fake, etc.).
 """
 
 from __future__ import annotations
@@ -48,12 +48,12 @@ def _provider_metadata(
     }
 
 
-class GeminiAnalysisProvider:
+class HybridGlobalAnalysisStrategy:
     """
-    Pipeline analysis strategy: builds ``LLMRequest`` and runs the resolved executor.
+    Default pipeline analysis strategy: assembles hybrid context and runs the resolved LLM executor.
 
-    Name is historical (Gemini-first product); behavior is driven by ``provider_name`` on the
-    run context and ``settings`` (see registry).
+    Executor choice comes from ``RunContext.pipeline_provider_name`` and settings (see registry);
+    this class is not tied to a single vendor.
     """
 
     def __init__(self, supports_visual_reference_context: bool = True) -> None:

@@ -14,7 +14,7 @@ This supplements `multi_provider_planning_revision.md` and the implementation pl
 
 ## Default wiring
 
-- **`default_analysis_provider()`** returns the historical hybrid strategy class (`GeminiAnalysisProvider`) when `HybridInventoryPipeline` is constructed without injection. That is **runtime default wiring**, not a domain statement that all analysis is Gemini.
+- **`default_analysis_provider()`** returns `HybridGlobalAnalysisStrategy` when `HybridInventoryPipeline` is constructed without injection. That is **runtime default wiring** for the shared hybrid analysis path; the executor is still resolved per job/settings via the registry.
 
 ## Generic layers
 

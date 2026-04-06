@@ -420,7 +420,7 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
         provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
     )
     with patch(
-        "src.pipeline.adapters.gemini_analysis_provider.resolve_llm_executor_for_context",
+        "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
         return_value=(mock_executor, "gemini"),
     ):
         pipe = HybridInventoryPipeline()

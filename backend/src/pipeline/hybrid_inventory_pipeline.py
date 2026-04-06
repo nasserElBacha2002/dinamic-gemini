@@ -68,7 +68,7 @@ class HybridInventoryPipeline:
     """Staged hybrid flow: InputPreparation → FrameAcquisition → Analysis → EntityResolution → Evidence → Reporting."""
 
     def __init__(self, analysis_provider: Optional[AnalysisProvider] = None) -> None:
-        """Optional analysis_provider; when None, uses ``default_analysis_provider()`` (current production wiring)."""
+        """Optional analysis_provider; when None, uses ``default_analysis_provider()`` (``HybridGlobalAnalysisStrategy``)."""
         self._analysis_provider: AnalysisProvider = (
             analysis_provider if analysis_provider is not None else default_analysis_provider()
         )
