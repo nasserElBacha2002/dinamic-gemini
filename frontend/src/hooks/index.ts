@@ -4,6 +4,7 @@ export {
   useAislesList,
   useProcessingProviderOptions,
   useExecutionLog,
+  useAisleExecutionLog,
   useAisleJobDetail,
   useAisleJobsList,
   useAisleBenchmarkCompare,

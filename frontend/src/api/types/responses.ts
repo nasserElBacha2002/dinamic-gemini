@@ -293,6 +293,38 @@ export interface ExecutionLogResponse {
   events: ExecutionLogEvent[];
 }
 
+/** Per-job row on GET .../aisles/{aisle_id}/execution-log (aisle aggregate). */
+export interface ExecutionLogJobInfo {
+  job_id: string;
+  provider_name?: string | null;
+  model_name?: string | null;
+  prompt_key?: string | null;
+  prompt_version?: string | null;
+  execution_id?: string | null;
+}
+
+export interface ExecutionLogSourceInfo {
+  job_id: string;
+  status: 'ok' | 'missing' | 'error';
+  detail?: string | null;
+}
+
+/** GET .../aisles/{aisle_id}/execution-log — merged multi-job envelope. */
+export interface AisleExecutionLogResponse {
+  inventory_id: string;
+  aisle_id: string;
+  requested_job_id: string | null;
+  available_job_ids: string[];
+  available_attempts: number[];
+  available_execution_ids: string[];
+  jobs: ExecutionLogJobInfo[];
+  log_sources: ExecutionLogSourceInfo[];
+  events: ExecutionLogEvent[];
+}
+
+/** Execution log panel accepts single-job or aisle-aggregate envelopes. */
+export type ExecutionLogPanelLog = ExecutionLogResponse | AisleExecutionLogResponse;
+
 /** Source asset (photo/video) for an aisle — Épica 4. */
 export interface SourceAssetSummary {
   id: string;

@@ -23,6 +23,9 @@ const { useReplaceInventoryVisualReferenceMock } = vi.hoisted(() => ({
 const { useExecutionLogMock } = vi.hoisted(() => ({
   useExecutionLogMock: vi.fn(),
 }));
+const { useAisleExecutionLogMock } = vi.hoisted(() => ({
+  useAisleExecutionLogMock: vi.fn(),
+}));
 const { useAisleJobDetailMock } = vi.hoisted(() => ({
   useAisleJobDetailMock: vi.fn(),
 }));
@@ -54,6 +57,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useInventoryVisualReferences: useInventoryVisualReferencesMock,
     useAislesList: useAislesListMock,
     useExecutionLog: useExecutionLogMock,
+    useAisleExecutionLog: useAisleExecutionLogMock,
     useAisleJobDetail: useAisleJobDetailMock,
     useCreateAisle: () => ({ mutateAsync: vi.fn() }),
     useProcessingProviderOptions: useProcessingProviderOptionsMock,
@@ -73,6 +77,7 @@ vi.mock('../src/api/client', async (importOriginal) => {
     ...actual,
     exportInventoryResultsCsv: vi.fn(),
     downloadExecutionLogTxt: vi.fn().mockResolvedValue(undefined),
+    downloadAisleExecutionLogTxt: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -119,6 +124,7 @@ describe('InventoryDetail', () => {
     useDeleteInventoryVisualReferenceMock.mockReset();
     useReplaceInventoryVisualReferenceMock.mockReset();
     useExecutionLogMock.mockReset();
+    useAisleExecutionLogMock.mockReset();
     useAisleJobDetailMock.mockReset();
     useCancelAisleJobMock.mockReset();
     useRetryAisleJobMock.mockReset();
@@ -177,6 +183,13 @@ describe('InventoryDetail', () => {
     });
     useExecutionLogMock.mockReturnValue({
       data: emptyExecutionLog(),
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleExecutionLogMock.mockReturnValue({
+      data: undefined,
       isLoading: false,
       isFetching: false,
       error: null,

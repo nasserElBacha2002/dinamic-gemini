@@ -122,6 +122,52 @@ describe('ExecutionLogPanel', () => {
     expect(longPromptNode).toHaveStyle({ maxHeight: '240px', overflow: 'auto' });
   });
 
+  it('aisle aggregate omits Requested job and defaults to all jobs in log', async () => {
+    render(
+      <ExecutionLogPanel
+        log={{
+          inventory_id: 'i',
+          aisle_id: 'a',
+          requested_job_id: null,
+          available_job_ids: ['job-a', 'job-b'],
+          available_attempts: [],
+          available_execution_ids: [],
+          jobs: [
+            { job_id: 'job-a', provider_name: 'openai', model_name: 'gpt-x' },
+            { job_id: 'job-b', provider_name: 'gemini', model_name: 'gem-y' },
+          ],
+          log_sources: [
+            { job_id: 'job-a', status: 'ok', detail: null },
+            { job_id: 'job-b', status: 'ok', detail: null },
+          ],
+          events: [
+            {
+              ts: '2026-01-01T00:00:00Z',
+              stage: 'S',
+              level: 'info',
+              message: 'ma',
+              event_job_id: 'job-a',
+              is_requested_job_event: false,
+            },
+            {
+              ts: '2026-01-01T00:00:01Z',
+              stage: 'S',
+              level: 'info',
+              message: 'mb',
+              event_job_id: 'job-b',
+              is_requested_job_event: false,
+            },
+          ],
+        }}
+      />
+    );
+    expect(screen.queryByText('Requested job')).not.toBeInTheDocument();
+    expect(screen.getByText('ma')).toBeInTheDocument();
+    expect(screen.getByText('mb')).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByLabelText('Job'));
+    expect(await screen.findByRole('option', { name: /All jobs in log/i })).toBeInTheDocument();
+  });
+
   it('defaults to requested job and shows all lines only after All jobs in log', async () => {
     render(
       <ExecutionLogPanel

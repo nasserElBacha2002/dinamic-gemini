@@ -19,7 +19,11 @@ import {
   Select,
   Typography,
 } from '@mui/material';
-import type { ExecutionLogEvent, ExecutionLogResponse } from '../api/types';
+import type {
+  AisleExecutionLogResponse,
+  ExecutionLogEvent,
+  ExecutionLogPanelLog,
+} from '../api/types';
 
 const JOB_FILTER_REQUESTED = '__job_filter_requested__';
 const JOB_FILTER_ALL = '__job_filter_all__';
@@ -170,6 +174,23 @@ function shortJobLabel(id: string): string {
   return `${s.slice(0, 8)}…${s.slice(-4)}`;
 }
 
+function isAisleAggregateLog(log: ExecutionLogPanelLog): log is AisleExecutionLogResponse {
+  return 'jobs' in log && Array.isArray((log as AisleExecutionLogResponse).jobs);
+}
+
+function jobMenuItemLabel(jid: string, log: ExecutionLogPanelLog): string {
+  if (isAisleAggregateLog(log)) {
+    const row = log.jobs.find((j) => j.job_id === jid);
+    if (row) {
+      const head = [row.provider_name, row.model_name]
+        .filter((x) => x != null && String(x).trim() !== '')
+        .join(' · ');
+      if (head) return `${head} · ${shortJobLabel(jid)}`;
+    }
+  }
+  return shortJobLabel(jid);
+}
+
 function timelineRowKey(evt: ExecutionLogEvent, index: number): string {
   return [
     evt.ts,
@@ -184,7 +205,7 @@ function timelineRowKey(evt: ExecutionLogEvent, index: number): string {
 }
 
 interface ExecutionLogPanelProps {
-  log?: ExecutionLogResponse | null;
+  log?: ExecutionLogPanelLog | null;
   events?: ExecutionLogEvent[];
   isLoading?: boolean;
   error?: unknown;
@@ -200,6 +221,7 @@ export default function ExecutionLogPanel({
 }: ExecutionLogPanelProps) {
   const allEvents = log?.events ?? eventsProp ?? [];
   const haveEnvelope = Boolean(log);
+  const aisleMode = Boolean(log && isAisleAggregateLog(log));
 
   const hasPayloadJobIds = useMemo(
     () => allEvents.some((e) => e.event_job_id != null && String(e.event_job_id).trim() !== ''),
@@ -214,18 +236,31 @@ export default function ExecutionLogPanel({
   const [attemptKey, setAttemptKey] = useState<string>('all');
   const [executionKey, setExecutionKey] = useState<string>('all');
 
-  const logIdentity = log ? `${log.inventory_id}|${log.aisle_id}|${log.requested_job_id}` : '';
+  const logIdentity = log
+    ? `${log.inventory_id}|${log.aisle_id}|${aisleMode ? 'aisle-agg' : log.requested_job_id}`
+    : '';
   useEffect(() => {
-    setJobFilter(JOB_FILTER_REQUESTED);
+    if (log && isAisleAggregateLog(log)) {
+      setJobFilter(JOB_FILTER_ALL);
+    } else {
+      setJobFilter(JOB_FILTER_REQUESTED);
+    }
     setAttemptKey('all');
     setExecutionKey('all');
   }, [logIdentity]);
+
+  const resolvedJobFilter = useMemo(() => {
+    if (haveEnvelope && log && isAisleAggregateLog(log) && jobFilter === JOB_FILTER_REQUESTED) {
+      return JOB_FILTER_ALL;
+    }
+    return jobFilter;
+  }, [haveEnvelope, log, jobFilter]);
 
   useEffect(() => {
     if (!haveEnvelope || !log || !hasPayloadJobIds) return;
     if (jobFilter === JOB_FILTER_REQUESTED || jobFilter === JOB_FILTER_ALL) return;
     if (!log.available_job_ids.includes(jobFilter)) {
-      setJobFilter(JOB_FILTER_REQUESTED);
+      setJobFilter(isAisleAggregateLog(log) ? JOB_FILTER_ALL : JOB_FILTER_REQUESTED);
       setAttemptKey('all');
       setExecutionKey('all');
     }
@@ -235,14 +270,15 @@ export default function ExecutionLogPanel({
     if (!haveEnvelope || !log) return allEvents;
     if (!hasPayloadJobIds) return allEvents;
     if (!showJobFilter) return allEvents;
-    if (jobFilter === JOB_FILTER_REQUESTED) {
+    if (resolvedJobFilter === JOB_FILTER_REQUESTED) {
+      if (log && isAisleAggregateLog(log)) return allEvents;
       return allEvents.filter((e) => e.is_requested_job_event === true);
     }
-    if (jobFilter === JOB_FILTER_ALL) {
+    if (resolvedJobFilter === JOB_FILTER_ALL) {
       return allEvents;
     }
-    return allEvents.filter((e) => e.event_job_id === jobFilter);
-  }, [allEvents, haveEnvelope, log, hasPayloadJobIds, showJobFilter, jobFilter]);
+    return allEvents.filter((e) => e.event_job_id === resolvedJobFilter);
+  }, [allEvents, haveEnvelope, log, hasPayloadJobIds, showJobFilter, resolvedJobFilter]);
 
   const { contextualAttempts, contextualExecutionIds } = useMemo(() => {
     const att = new Set<number>();
@@ -306,6 +342,13 @@ export default function ExecutionLogPanel({
       </Typography>
     );
   }
+  const jobIdsForMenu =
+    haveEnvelope && log
+      ? aisleMode
+        ? log.available_job_ids
+        : log.available_job_ids.filter((jid) => jid !== log.requested_job_id)
+      : [];
+
   if (!allEvents.length) {
     return (
       <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>
@@ -329,17 +372,29 @@ export default function ExecutionLogPanel({
   const summaryParts: string[] = [];
   summaryParts.push(`Visible: ${filteredEvents.length} / ${allEvents.length} events`);
   if (haveEnvelope && log) {
-    summaryParts.push(`Requested job: ${shortJobLabel(log.requested_job_id)}`);
+    if (isAisleAggregateLog(log)) {
+      const nJobs = log.jobs?.length ?? 0;
+      const provs = new Set(
+        (log.jobs ?? []).map((j) => j.provider_name).filter((p): p is string => Boolean(p && String(p).trim()))
+      );
+      summaryParts.push(`Aisle log · ${nJobs} job(s) · ${provs.size} provider(s)`);
+    } else {
+      summaryParts.push(`Requested job: ${shortJobLabel(log.requested_job_id)}`);
+    }
     if (hasPayloadJobIds) {
-      if (jobFilter === JOB_FILTER_REQUESTED) summaryParts.push('Job filter: requested');
-      else if (jobFilter === JOB_FILTER_ALL) summaryParts.push('Job filter: all');
-      else summaryParts.push(`Job filter: ${shortJobLabel(jobFilter)}`);
+      if (resolvedJobFilter === JOB_FILTER_REQUESTED) summaryParts.push('Job filter: requested');
+      else if (resolvedJobFilter === JOB_FILTER_ALL) summaryParts.push('Job filter: all');
+      else summaryParts.push(`Job filter: ${jobMenuItemLabel(resolvedJobFilter, log)}`);
     }
     if (attemptKey !== 'all') summaryParts.push(`Attempt: ${attemptKey}`);
     if (executionKey !== 'all') summaryParts.push(`Execution: ${shortJobLabel(executionKey)}`);
   }
 
-  const requestedJobId = log?.requested_job_id;
+  const requestedJobId = log && !isAisleAggregateLog(log) ? log.requested_job_id : null;
+  const logSourceIssues =
+    aisleMode && log && isAisleAggregateLog(log)
+      ? log.log_sources.filter((s) => s.status !== 'ok')
+      : [];
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
@@ -349,6 +404,11 @@ export default function ExecutionLogPanel({
             <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
               Job metadata unavailable for this log (no <code>job_id</code> on events). Showing all entries; download
               still includes the full file.
+            </Alert>
+          ) : null}
+          {logSourceIssues.length ? (
+            <Alert severity="warning" variant="outlined" sx={{ py: 0.5 }}>
+              {logSourceIssues.length} job log source(s) missing or failed to load; merged view may be incomplete.
             </Alert>
           ) : null}
           <Box
@@ -366,23 +426,23 @@ export default function ExecutionLogPanel({
                   labelId="exec-log-job-filter-label"
                   label="Job"
                   value={
-                    jobFilter === JOB_FILTER_REQUESTED || jobFilter === JOB_FILTER_ALL
-                      ? jobFilter
-                      : log.available_job_ids.includes(jobFilter)
-                        ? jobFilter
-                        : JOB_FILTER_REQUESTED
+                    resolvedJobFilter === JOB_FILTER_REQUESTED || resolvedJobFilter === JOB_FILTER_ALL
+                      ? resolvedJobFilter
+                      : log.available_job_ids.includes(resolvedJobFilter)
+                        ? resolvedJobFilter
+                        : aisleMode
+                          ? JOB_FILTER_ALL
+                          : JOB_FILTER_REQUESTED
                   }
                   onChange={(e) => handleJobFilterChange(e.target.value)}
                 >
-                  <MenuItem value={JOB_FILTER_REQUESTED}>Requested job</MenuItem>
+                  {!aisleMode ? <MenuItem value={JOB_FILTER_REQUESTED}>Requested job</MenuItem> : null}
                   <MenuItem value={JOB_FILTER_ALL}>All jobs in log</MenuItem>
-                  {log.available_job_ids
-                    .filter((jid) => jid !== log.requested_job_id)
-                    .map((jid) => (
-                      <MenuItem key={jid} value={jid}>
-                        {shortJobLabel(jid)}
-                      </MenuItem>
-                    ))}
+                  {jobIdsForMenu.map((jid) => (
+                    <MenuItem key={jid} value={jid}>
+                      {jobMenuItemLabel(jid, log)}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
             ) : null}
@@ -530,6 +590,7 @@ export default function ExecutionLogPanel({
           const ej = evt.event_job_id;
           const showJobBadge = hasPayloadJobIds && Boolean(ej);
           const definitiveRequestedRow =
+            !aisleMode &&
             hasPayloadJobIds &&
             requestedJobId != null &&
             ej != null &&

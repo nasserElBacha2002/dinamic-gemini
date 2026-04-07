@@ -1,7 +1,7 @@
 """v3.0 Processing API schemas (process, status)."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -138,5 +138,38 @@ class ExecutionLogResponse(BaseModel):
     available_job_ids: List[str] = Field(default_factory=list)
     available_attempts: List[int] = Field(default_factory=list)
     available_execution_ids: List[str] = Field(default_factory=list)
+    events: List[ExecutionLogEvent] = Field(default_factory=list)
+
+
+class ExecutionLogJobInfo(BaseModel):
+    """Per-job metadata on an aisle-level aggregated execution-log response."""
+
+    job_id: str
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_key: Optional[str] = None
+    prompt_version: Optional[str] = None
+    execution_id: Optional[str] = None
+
+
+class ExecutionLogSourceInfo(BaseModel):
+    """Status of reading one job's execution log artifact for aggregation."""
+
+    job_id: str
+    status: Literal["ok", "missing", "error"]
+    detail: Optional[str] = None
+
+
+class AisleExecutionLogResponse(BaseModel):
+    """Response for GET .../aisles/{aisle_id}/execution-log (multi-job aggregate)."""
+
+    inventory_id: str
+    aisle_id: str
+    requested_job_id: Optional[str] = None
+    available_job_ids: List[str] = Field(default_factory=list)
+    available_attempts: List[int] = Field(default_factory=list)
+    available_execution_ids: List[str] = Field(default_factory=list)
+    jobs: List[ExecutionLogJobInfo] = Field(default_factory=list)
+    log_sources: List[ExecutionLogSourceInfo] = Field(default_factory=list)
     events: List[ExecutionLogEvent] = Field(default_factory=list)
 

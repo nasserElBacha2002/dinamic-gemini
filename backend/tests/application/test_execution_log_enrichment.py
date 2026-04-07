@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.application.services.execution_log_enrichment import (
+    aisle_execution_log_attachment_filename,
+    build_enriched_aisle_aggregated_execution_log,
     build_enriched_execution_log,
     execution_log_attachment_filename,
     extract_event_context,
     format_execution_log_plaintext,
+    merge_raw_execution_log_events_by_ts,
+    parse_ts_sort_key,
     sanitize_execution_log_filename_segment,
 )
 
@@ -107,6 +113,60 @@ def test_attachment_filename_uses_sanitized_segments() -> None:
     assert fn == "inventory_inv_1_aisle_aisle_2_job_job_3_execution_log.txt"
     assert "../" not in fn
     assert ".." not in fn
+
+
+def test_merge_orders_by_ts_then_job_created_then_line() -> None:
+    t0 = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2024, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+    same_ts = "2024-06-01T10:00:00+00:00"
+    job_old = (
+        "job-old",
+        t0,
+        [
+            {"ts": same_ts, "stage": "S", "level": "info", "message": "a", "payload": None},
+            {"ts": "2024-06-01T11:00:00+00:00", "stage": "S", "level": "info", "message": "c", "payload": None},
+        ],
+    )
+    job_new = (
+        "job-new",
+        t1,
+        [{"ts": same_ts, "stage": "S", "level": "info", "message": "b", "payload": None}],
+    )
+    merged, owners = merge_raw_execution_log_events_by_ts([job_new, job_old])
+    assert [e["message"] for e in merged] == ["a", "b", "c"]
+    assert owners == ["job-old", "job-new", "job-old"]
+
+
+def test_aisle_aggregate_suppresses_requested_flags_and_seeds_job_ids() -> None:
+    raw = [
+        {"ts": "t1", "stage": "S", "level": "info", "message": "x", "payload": None},
+    ]
+    out = build_enriched_aisle_aggregated_execution_log(
+        inventory_id="inv",
+        aisle_id="aisle",
+        raw_events=raw,
+        artifact_owner_job_ids=["job-a"],
+        seed_job_ids=["job-a", "job-b"],
+        jobs=[{"job_id": "job-a"}],
+        log_sources=[{"job_id": "job-a", "status": "ok", "detail": None}],
+    )
+    assert out["requested_job_id"] is None
+    assert out["events"][0]["event_job_id"] == "job-a"
+    assert out["events"][0]["is_requested_job_event"] is False
+    assert set(out["available_job_ids"]) == {"job-a", "job-b"}
+
+
+def test_aisle_attachment_filename() -> None:
+    assert (
+        aisle_execution_log_attachment_filename('inv/x', 'aisle"y')
+        == "inventory_inv_x_aisle_aisle_y_execution_log.txt"
+    )
+
+
+def test_parse_ts_sort_key_malformed_not_crashing() -> None:
+    q, _, raw = parse_ts_sort_key("not-a-date")
+    assert q == 2
+    assert raw == "not-a-date"
 
 
 def test_format_plaintext_includes_blank_separators() -> None:

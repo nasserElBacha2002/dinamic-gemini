@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from src.api.dependencies import (
@@ -45,11 +46,15 @@ from src.api.schemas.benchmark_schemas import (
     PromoteOperationalJobResponse,
 )
 from src.application.services.execution_log_enrichment import (
+    aisle_execution_log_attachment_filename,
+    build_enriched_aisle_aggregated_execution_log,
     build_enriched_execution_log,
     execution_log_attachment_filename,
     format_execution_log_plaintext,
+    merge_raw_execution_log_events_by_ts,
 )
 from src.api.schemas.processing_schemas import (
+    AisleExecutionLogResponse,
     AisleJobsListResponse,
     AisleStatusResponse,
     ExecutionLogResponse,
@@ -93,6 +98,7 @@ from src.application.use_cases.export_aisle_benchmark import (
 )
 from src.application.use_cases.export_inventory_results import ExportAisleResultsCsvUseCase
 from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, ListAisleJobsUseCase
+from src.domain.jobs.entities import Job
 from src.application.use_cases.promote_aisle_operational_job import (
     PromoteAisleOperationalJobCommand,
     PromoteAisleOperationalJobUseCase,
@@ -106,6 +112,79 @@ from .shared import aisle_to_response, job_to_summary, status_response_from_resu
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT = 500
+
+
+def _job_to_execution_log_row(job: Job) -> Dict[str, Any]:
+    return {
+        "job_id": job.id,
+        "provider_name": job.provider_name,
+        "model_name": job.model_name,
+        "prompt_key": job.prompt_key,
+        "prompt_version": job.prompt_version,
+        "execution_id": job.execution_id,
+    }
+
+
+def _aggregate_aisle_execution_log_payload(
+    inventory_id: str,
+    aisle_id: str,
+    *,
+    list_jobs_uc: ListAisleJobsUseCase,
+    artifact_storage: Any,
+) -> Dict[str, Any]:
+    try:
+        result = list_jobs_uc.execute(
+            ListAisleJobsCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                limit=_AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
+            )
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+    log_sources: List[Dict[str, Any]] = []
+    streams: List[Tuple[str, datetime, List[Dict[str, Any]]]] = []
+
+    for job in result.jobs:
+        src: Dict[str, Any] = {"job_id": job.id, "status": "ok", "detail": None}
+        try:
+            raw = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
+            streams.append((job.id, job.created_at, raw))
+        except StoredArtifactAccessError as e:
+            if int(e.status_code) == 404:
+                src["status"] = "missing"
+            else:
+                src["status"] = "error"
+            src["detail"] = str(e.detail)[:2048]
+            logger.warning(
+                "aisle_execution_log_skip job_id=%s reason=%s detail=%s",
+                job.id,
+                e.reason_code,
+                e.detail,
+            )
+        except Exception as e:
+            src["status"] = "error"
+            src["detail"] = str(e)[:2048]
+            logger.exception("aisle_execution_log_unexpected job_id=%s", job.id)
+        log_sources.append(src)
+
+    merged_events, owners = merge_raw_execution_log_events_by_ts(streams)
+    seed_ids = [j.id for j in result.jobs]
+    jobs_meta = [_job_to_execution_log_row(j) for j in result.jobs]
+    return build_enriched_aisle_aggregated_execution_log(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
+        raw_events=merged_events,
+        artifact_owner_job_ids=owners,
+        seed_job_ids=seed_ids,
+        jobs=jobs_meta,
+        log_sources=log_sources,
+    )
 
 
 @router.post("/{inventory_id}/aisles", response_model=AisleResponse, status_code=201)
@@ -257,6 +336,52 @@ def list_aisle_jobs(
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/execution-log",
+    response_model=AisleExecutionLogResponse,
+)
+def get_aisle_aggregated_execution_log(
+    inventory_id: str,
+    aisle_id: str,
+    list_jobs_uc: ListAisleJobsUseCase = Depends(get_list_aisle_jobs_use_case),
+    artifact_storage=Depends(get_artifact_storage),
+) -> AisleExecutionLogResponse:
+    """Merge execution logs from all jobs listed for this aisle (up to limit); per-job read failures are non-fatal."""
+    body = _aggregate_aisle_execution_log_payload(
+        inventory_id,
+        aisle_id,
+        list_jobs_uc=list_jobs_uc,
+        artifact_storage=artifact_storage,
+    )
+    return AisleExecutionLogResponse.model_validate(body)
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/execution-log.txt",
+    response_class=Response,
+)
+def get_aisle_aggregated_execution_log_txt(
+    inventory_id: str,
+    aisle_id: str,
+    list_jobs_uc: ListAisleJobsUseCase = Depends(get_list_aisle_jobs_use_case),
+    artifact_storage=Depends(get_artifact_storage),
+) -> Response:
+    """Plain-text merged execution log for all aisle jobs (UTF-8 download)."""
+    body = _aggregate_aisle_execution_log_payload(
+        inventory_id,
+        aisle_id,
+        list_jobs_uc=list_jobs_uc,
+        artifact_storage=artifact_storage,
+    )
+    text = format_execution_log_plaintext(body["events"])
+    filename = aisle_execution_log_attachment_filename(inventory_id, aisle_id)
+    return Response(
+        content=text.encode("utf-8"),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post(

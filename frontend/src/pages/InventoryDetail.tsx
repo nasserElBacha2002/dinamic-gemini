@@ -25,7 +25,11 @@ import { pathToAislePositions } from '../utils/resultRoutes';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
 import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
 import type { ExecutionLogEvent } from '../api/types';
-import { downloadExecutionLogTxt, exportInventoryResultsCsv } from '../api/client';
+import {
+  downloadAisleExecutionLogTxt,
+  downloadExecutionLogTxt,
+  exportInventoryResultsCsv,
+} from '../api/client';
 import {
   DataTable,
   ErrorAlert,
@@ -46,6 +50,7 @@ import {
   useAislesList,
   useProcessingProviderOptions,
   useExecutionLog,
+  useAisleExecutionLog,
   useAisleJobDetail,
   useCreateAisle,
   useStartAisleProcessing,
@@ -173,6 +178,8 @@ export default function InventoryDetail() {
   const [referenceImagesOpen, setReferenceImagesOpen] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [downloadingExecutionLog, setDownloadingExecutionLog] = useState(false);
+  const [aisleLogDialog, setAisleLogDialog] = useState<{ aisleId: string; aisleCode: string } | null>(null);
+  const [downloadingAisleExecutionLog, setDownloadingAisleExecutionLog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
 
@@ -184,6 +191,9 @@ export default function InventoryDetail() {
       enabled: Boolean(jobDialog),
     }
   );
+  const aisleExecutionLogQuery = useAisleExecutionLog(inventoryId ?? undefined, aisleLogDialog?.aisleId, {
+    enabled: Boolean(aisleLogDialog && inventoryId),
+  });
   const jobDetailQuery = useAisleJobDetail(
     inventoryId ?? undefined,
     jobDialog?.aisleId,
@@ -505,6 +515,11 @@ export default function InventoryDetail() {
                   disabled: uploadingAisleId === a.id,
                 },
                 {
+                  id: 'aisle_logs',
+                  label: 'View aisle logs',
+                  onClick: () => setAisleLogDialog({ aisleId: a.id, aisleCode: a.code }),
+                },
+                {
                   id: 'process',
                   label: processingAisleId === a.id ? 'Starting…' : 'Process aisle',
                   onClick: () => openProcessDialogForAisle(a.id, a.code),
@@ -823,6 +838,60 @@ export default function InventoryDetail() {
             : null
         }
       />
+
+      <Dialog
+        open={Boolean(aisleLogDialog)}
+        onClose={() => setAisleLogDialog(null)}
+        maxWidth="sm"
+        fullWidth
+        scroll="paper"
+      >
+        <DialogTitle>
+          Aisle execution logs {aisleLogDialog ? `— ${aisleLogDialog.aisleCode}` : ''}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => void aisleExecutionLogQuery.refetch()}
+                disabled={aisleExecutionLogQuery.isFetching}
+              >
+                {aisleExecutionLogQuery.isFetching ? 'Refreshing…' : 'Refresh'}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={!inventoryId || !aisleLogDialog || downloadingAisleExecutionLog}
+                onClick={async () => {
+                  if (!inventoryId || !aisleLogDialog) return;
+                  setDownloadingAisleExecutionLog(true);
+                  try {
+                    await downloadAisleExecutionLogTxt(inventoryId, aisleLogDialog.aisleId);
+                  } catch (e) {
+                    const err = e instanceof ApiError ? e : new ApiError(String(e));
+                    showSnackbar(getApiErrorMessage(err, 'Failed to download aisle execution log'), 'error');
+                  } finally {
+                    setDownloadingAisleExecutionLog(false);
+                  }
+                }}
+              >
+                {downloadingAisleExecutionLog ? 'Downloading…' : 'Download merged log'}
+              </Button>
+            </Box>
+            <ExecutionLogPanel
+              log={aisleExecutionLogQuery.data ?? null}
+              isLoading={aisleExecutionLogQuery.isLoading}
+              error={aisleExecutionLogQuery.error}
+              emptyMessage="No execution log entries found for any job on this aisle."
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAisleLogDialog(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={Boolean(jobDialog)}
