@@ -9,11 +9,9 @@ Atomicity: Saves positions, then product_records, then evidences, then raw_label
 then recomputes consolidated counts (normalized + final) and updates product records.
 On any save failure we re-raise so the caller can mark the job/aisle as failed.
 
-Phase 2: This use case does **not** set ``aisles.operational_job_id``. That pointer
-denotes the canonical operational run (distinct from benchmark / ad-hoc runs) and
-belongs to an explicit promotion workflow (later phase). Until then, default reads
-without ``job_id`` use operational if set, else legacy null-job rows; clients with
-only job-scoped rows should pass explicit ``job_id`` from status / jobs listing.
+Phase 2: This use case does **not** set ``aisles.operational_job_id`` (promotion workflow).
+Default reads without ``job_id`` use ``ResultContextResolver`` — **operational_job_id**
+if set, else **legacy** null-job rows only (no implicit latest-job slice).
 """
 
 from __future__ import annotations

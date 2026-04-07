@@ -66,6 +66,21 @@ def test_llm_request_response_have_no_gemini_specific_attributes() -> None:
     assert not any("gemini" in a.lower() for a in public_r)
 
 
+def test_provider_registry_has_no_top_level_vendor_adapter_imports() -> None:
+    """Adapters load inside ``resolve_llm_executor`` (indented imports), not at registry module scope."""
+    import src.pipeline.providers.registry as reg
+
+    text = Path(reg.__file__).read_text(encoding="utf-8")
+    for line in text.splitlines():
+        if not line or line[:1].isspace():
+            continue
+        s = line.strip()
+        if s.startswith("from src.llm.gemini_sdk_adapter import") or s.startswith(
+            "from src.llm.openai_sdk_adapter import"
+        ):
+            raise AssertionError(f"Registry must lazy-import vendor adapters: {line!r}")
+
+
 def test_hybrid_inventory_pipeline_module_has_no_vendor_sdk_imports() -> None:
     import src.pipeline.hybrid_inventory_pipeline as hip
 

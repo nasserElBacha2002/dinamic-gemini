@@ -528,6 +528,8 @@ def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
     assert updated.result_json["report_path"] == str(report_path)
     assert updated.result_json["provider"] == "gemini-2.0"
     assert updated.result_json["prompt_key"] == "global_v21"
+    assert updated.result_json.get("prompt_version") == "global_v21@v2.1"
+    assert updated.prompt_version == "global_v21@v2.1"
     assert updated.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT) is not None
 
 

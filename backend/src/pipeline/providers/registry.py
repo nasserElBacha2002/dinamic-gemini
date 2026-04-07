@@ -31,8 +31,6 @@ from typing import Any, Final, Optional
 from src.llm.providers.base import LLMProvider
 from src.llm.providers.fake_provider import FakeProvider
 from src.llm.types import LLMRequest, LLMResponse
-from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
-from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
@@ -79,10 +77,14 @@ def resolve_llm_executor(provider_key: str, settings: Any) -> LlmGlobalAnalysisE
     """
     key = (provider_key or "").strip().lower()
     if key == "gemini":
+        from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
+
         return GeminiSdkAdapter()
     if key == "fake":
         return TransitionalLlmProviderBridgeExecutor(FakeProvider(settings))
     if key == "openai":
+        from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
+
         return OpenAiSdkAdapter()
     raise UnknownPipelineProviderError(
         f"Unknown pipeline provider {provider_key!r}. Known: {sorted(_KNOWN_KEYS)}"

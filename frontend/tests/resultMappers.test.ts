@@ -19,6 +19,12 @@ import {
 } from '../src/features/results/mappers';
 import { getSummaryString, getSummaryNumber } from '../src/features/results/mappers/detectedSummary';
 
+const rcLegacy = (): PositionDetailResponse['run_context'] => ({
+  job_id: null,
+  result_context_source: 'legacy',
+  resolved_job_id: null,
+});
+
 describe('mapTraceabilityToVisible', () => {
   it('maps valid -> VALID', () => {
     expect(mapTraceabilityToVisible('valid')).toBe('VALID');
@@ -325,6 +331,7 @@ describe('mapPositionDetailToResultDetail', () => {
           created_at: '2024-01-03T00:00:00Z',
         },
       ],
+      run_context: rcLegacy(),
     };
     const r = mapPositionDetailToResultDetail(data);
     expect(r.id).toBe('pos-1');
@@ -372,6 +379,7 @@ describe('mapPositionDetailToResultDetail', () => {
       },
       evidences: [],
       review_actions: [],
+      run_context: rcLegacy(),
     };
     const r = mapPositionDetailToResultDetail(data);
     expect(r.sourceImageId).toBe('canonical-id');
@@ -403,6 +411,7 @@ describe('mapPositionDetailToResultDetail', () => {
       },
       evidences: [],
       review_actions: [],
+      run_context: rcLegacy(),
     };
     const r = mapPositionDetailToResultDetail(data);
     expect(r.sourceImageId).toBeNull();
@@ -436,6 +445,7 @@ describe('mapPositionDetailToResultDetail', () => {
       },
       evidences: [],
       review_actions: [],
+      run_context: rcLegacy(),
     };
     const r = mapPositionDetailToResultDetail(data);
     expect(r.technicalMetadata?.entityId).toBe('job_new');
@@ -465,6 +475,7 @@ describe('mapPositionDetailToResultDetail', () => {
       },
       evidences: [],
       review_actions: [],
+      run_context: rcLegacy(),
     };
     const r = mapPositionDetailToResultDetail(data);
     expect(r.sourceImageId).toBeNull();
@@ -488,6 +499,7 @@ describe('mapPositionDetailToResultDetail', () => {
       },
       evidences: [],
       review_actions: [],
+      run_context: rcLegacy(),
     };
     const r = mapPositionDetailToResultDetail(data);
     expect(r.evidence).toEqual([]);
@@ -516,6 +528,7 @@ describe('mapPositionDetailToResultDetail', () => {
       },
       evidences: [] as EvidenceSummary[],
       review_actions: [] as ReviewActionSummary[],
+      run_context: rcLegacy(),
     };
     const r = mapPositionDetailToResultDetail(data as PositionDetailResponse);
     expect(r.qtySource).toBe('detected');

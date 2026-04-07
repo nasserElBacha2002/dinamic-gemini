@@ -209,6 +209,9 @@ class PositionRunContextResponse(BaseModel):
     provider_name: Optional[str] = None
     model_name: Optional[str] = None
     prompt_key: Optional[str] = None
+    prompt_version: Optional[str] = Field(
+        None, description="Prompt line persisted on the job (e.g. prompt_key@v2.1)."
+    )
 
 
 class PositionListResponse(PageMeta):

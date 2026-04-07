@@ -193,6 +193,7 @@ def get_position_detail(
                 provider_name=rc.provider_name,
                 model_name=rc.model_name,
                 prompt_key=rc.prompt_key,
+                prompt_version=rc.prompt_version,
             ),
         )
     except InventoryNotFoundError:

@@ -188,6 +188,9 @@ export function useSubmitReviewAction(inventoryId: string, aisleId: string, posi
       queryClient.invalidateQueries({
         queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId],
       });
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle-jobs', aisleId],
+      });
       // Also invalidate summary/KPI levels to ensure parent page counts are accurate.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });

@@ -741,8 +741,13 @@ class V3JobExecutor:
             }
             if meta.get("prompt_key"):
                 job.result_json["prompt_key"] = meta["prompt_key"]
-            if meta.get("prompt_version"):
-                pvv = str(meta["prompt_version"]).strip()
+            pvv_raw = meta.get("prompt_version")
+            if not pvv_raw and meta.get("prompt_key"):
+                pk = str(meta["prompt_key"]).strip()
+                if pk:
+                    pvv_raw = f"{pk}@v2.1"
+            if pvv_raw:
+                pvv = str(pvv_raw).strip()
                 if pvv:
                     job.result_json["prompt_version"] = pvv
                     job.prompt_version = pvv[:256]

@@ -441,6 +441,17 @@ export interface ReviewActionSummary {
   comment?: string | null;
 }
 
+/** Phase 2 / 5: slice + provider metadata for this row (matches list/merge resolver semantics). */
+export interface PositionRunContextSummary {
+  job_id?: string | null;
+  result_context_source: string;
+  resolved_job_id?: string | null;
+  provider_name?: string | null;
+  model_name?: string | null;
+  prompt_key?: string | null;
+  prompt_version?: string | null;
+}
+
 /** Response for GET .../aisles/{aisle_id}/positions/{position_id}. v3.1.1: Result-centric; products are not returned. Backend always sends review_actions (array). */
 export interface PositionDetailResponse {
   position: PositionSummary;
@@ -448,6 +459,7 @@ export interface PositionDetailResponse {
   evidences: EvidenceSummary[];
   /** Review audit history — Épica 8. v3.2.5 Phase 8: required; backend sends list (default_factory=list). */
   review_actions: ReviewActionSummary[];
+  run_context: PositionRunContextSummary;
 }
 
 export interface RunMergeResponse {

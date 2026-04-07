@@ -17,8 +17,11 @@ export function positionsListQueryKeyPart(q: AislePositionsListQuery | undefined
   if (!q) return out;
   if (q.page != null) out.page = q.page;
   if (q.page_size != null) out.page_size = q.page_size;
+  // Always tag the result slice so “resolver default” never shares a cache bucket with an explicit run.
   if (q.job_id != null && String(q.job_id).trim() !== '') {
     out.job_id = String(q.job_id).trim();
+  } else {
+    out.job_slice = 'resolver_default';
   }
   if (q.status != null && String(q.status).trim() !== '') out.status = String(q.status).trim();
   if (q.needs_review != null) out.needs_review = q.needs_review ? 1 : 0;

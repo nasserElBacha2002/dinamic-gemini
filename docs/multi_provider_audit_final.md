@@ -15,6 +15,10 @@ The following former blockers are **addressed in code** (Phases 1–5 scope, exc
 - **HEIC / previews:** Normalized asset paths resolve via the resolver only — **no** `get_latest_by_target` fallback.
 - **Prompt traceability:** `inventory_jobs.prompt_version` (plus `result_json.prompt_version`) populated from pipeline `run_metadata` (`{prompt_key}@v2.1`).
 - **Review mutations:** POST review actions return **403** unless the position belongs to the operational slice (legacy null–null, or `position.job_id == aisles.operational_job_id`), matching the read-only UI for benchmark runs.
+- **Frontend cache:** Positions list query keys include **`job_id`** or sentinel **`job_slice: resolver_default`**; review mutations also invalidate **`aisle-jobs`** for the aisle.
+- **Position detail API:** `run_context` includes **`prompt_version`** (with `provider_name`, `model_name`, `prompt_key`) when the position row is job-scoped.
+- **Registry:** Vendor executors are **lazy-imported** in `resolve_llm_executor` (no top-level `Gemini`/`OpenAI` adapter imports in `registry.py`).
+- **Job success metadata:** If `run_metadata` has `prompt_key` but no `prompt_version`, **`_mark_success`** sets `prompt_version` to `{prompt_key}@v2.1`.
 
 Remaining **out of scope** here: Phase 6 benchmark/compare UX, advanced analytics productization, and automatic correction transfer on promotion.
 

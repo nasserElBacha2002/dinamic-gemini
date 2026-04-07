@@ -46,6 +46,7 @@ class PositionDetailRunContext:
     provider_name: Optional[str] = None
     model_name: Optional[str] = None
     prompt_key: Optional[str] = None
+    prompt_version: Optional[str] = None
 
 
 @dataclass
@@ -187,6 +188,7 @@ class GetPositionDetailUseCase:
             provider_name=job.provider_name if job else None,
             model_name=job.model_name if job else None,
             prompt_key=job.prompt_key if job else None,
+            prompt_version=job.prompt_version if job else None,
         )
         return PositionDetailResult(
             position=operator_position,

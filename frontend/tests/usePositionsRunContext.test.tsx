@@ -29,6 +29,11 @@ const minimalDetail = (): PositionDetailResponse => ({
   position: {} as PositionDetailResponse['position'],
   evidences: [],
   review_actions: [],
+  run_context: {
+    job_id: null,
+    result_context_source: 'legacy',
+    resolved_job_id: null,
+  },
 });
 
 function wrapper(qc: QueryClient) {
@@ -42,6 +47,14 @@ describe('positionsListQueryKeyPart', () => {
     expect(positionsListQueryKeyPart({ page: 1, page_size: 10, job_id: 'run-a' })).not.toEqual(
       positionsListQueryKeyPart({ page: 1, page_size: 10, job_id: 'run-b' })
     );
+  });
+
+  it('uses resolver_default slice when job_id omitted (distinct from explicit runs)', () => {
+    const explicit = positionsListQueryKeyPart({ page: 1, page_size: 10, job_id: 'run-a' });
+    const resolver = positionsListQueryKeyPart({ page: 1, page_size: 10 });
+    expect(resolver.job_slice).toBe('resolver_default');
+    expect(explicit.job_id).toBe('run-a');
+    expect(explicit.job_slice).toBeUndefined();
   });
 });
 
