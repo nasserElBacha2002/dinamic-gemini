@@ -21,6 +21,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
+from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
@@ -131,6 +132,20 @@ def memory_analytics_setup():
     rev_repo.save(ra_corr)
 
     job_repo = MemoryJobRepository()
+    job_repo.save(
+        Job(
+            id="job-1",
+            target_type="aisle",
+            target_id=aisle.id,
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=_utc(0),
+            updated_at=_utc(14),
+            started_at=_utc(2),
+            finished_at=_utc(14),
+        )
+    )
     analytics = MemoryAnalyticsRepository(inv_repo, aisle_repo, pos_repo, product_repo, rev_repo, job_repo)
     return analytics, inv, aisle
 
@@ -244,7 +259,7 @@ def test_memory_summary_rates(memory_analytics_setup):
     assert s.total_positions_in_scope == 2
     assert s.processed_positions_count == 0
     assert s.reviewed_positions_count == 2
-    assert s.average_review_time_minutes == pytest.approx((10.5 * 60) / 60)
+    assert s.average_processing_time_minutes == pytest.approx(12.0)
     assert any("Multi-run" in n for n in (s.notes or []))
 
 
@@ -299,7 +314,7 @@ def test_summary_builder_preserves_legacy_and_adds_new_scope_fields() -> None:
             unidentified_product_positions_count=2,
             invalid_traceability_positions_count=1,
             processing_success_rate=0.75,
-            average_review_time_seconds=600.0,
+            average_processing_time_seconds=600.0,
             settling_actions_per_day=4.0,
             settling_actions_count=7,
             period_day_count=2,
@@ -310,8 +325,8 @@ def test_summary_builder_preserves_legacy_and_adds_new_scope_fields() -> None:
     assert dto.total_positions_in_scope == 10
     assert dto.processed_positions_count == 8
     assert dto.reviewed_positions_count == 5
-    assert dto.average_review_time_seconds == 600.0
-    assert dto.average_review_time_minutes == 10.0
+    assert dto.average_processing_time_seconds == 600.0
+    assert dto.average_processing_time_minutes == 10.0
     assert dto.auto_acceptance_rate == pytest.approx(0.6)
     assert dto.manual_correction_rate == pytest.approx(0.4)
     assert dto.operator_marked_unknown_rate == pytest.approx(0.2)

@@ -11,7 +11,8 @@ Internal dataclasses for analytics service/repository. API layer maps these to P
 - unidentified_product_rate: positions whose display-primary product SKU is ``UNKNOWN`` / total positions in scope.
 - invalid_traceability_rate: positions with detected_summary traceability_status='invalid' / non-deleted positions in scope.
 - processing_success_rate: aisle jobs with status succeeded / (succeeded + failed), updated in period.
-- average_review_time_seconds: mean(first settling action time - position.created_at) for positions with such action in period.
+- average_processing_time_seconds: mean(finished_at - started_at) for terminal aisle jobs (succeeded, failed,
+  canceled) with both timestamps, filtered by job finished_at in period.
 - settling_actions_per_day: COUNT(settling review actions in period) / day span (min 1 day). Not unique positions.
 """
 
@@ -47,8 +48,8 @@ class AnalyticsSummaryDTO:
     unknown_count: int = 0
     invalid_traceability_rate: Optional[float] = None
     processing_success_rate: Optional[float] = None
-    average_review_time_seconds: Optional[float] = None
-    average_review_time_minutes: Optional[float] = None
+    average_processing_time_seconds: Optional[float] = None
+    average_processing_time_minutes: Optional[float] = None
     settling_actions_per_day: Optional[float] = None
     notes: List[str] = field(default_factory=list)
     period_day_count: int = 0
@@ -89,7 +90,7 @@ class InventoryPerformanceRowDTO:
     invalid_traceability_rate: Optional[float] = None
     avg_confidence: Optional[float] = None
     processing_success_rate: Optional[float] = None
-    average_review_time_minutes: Optional[float] = None
+    average_processing_time_minutes: Optional[float] = None
 
 
 @dataclass

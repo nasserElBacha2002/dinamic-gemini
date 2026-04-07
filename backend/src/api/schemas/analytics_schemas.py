@@ -19,8 +19,8 @@ class AnalyticsSummaryResponse(BaseModel):
     unknown_count: int = 0
     invalid_traceability_rate: Optional[float] = None
     processing_success_rate: Optional[float] = None
-    average_review_time_seconds: Optional[float] = None
-    average_review_time_minutes: Optional[float] = None
+    average_processing_time_seconds: Optional[float] = None
+    average_processing_time_minutes: Optional[float] = None
     settling_actions_per_day: Optional[float] = None
     notes: List[str] = Field(default_factory=list)
     period_day_count: int = 0
@@ -64,7 +64,7 @@ class InventoryPerformanceRowResponse(BaseModel):
     invalid_traceability_rate: Optional[float] = None
     avg_confidence: Optional[float] = None
     processing_success_rate: Optional[float] = None
-    average_review_time_minutes: Optional[float] = None
+    average_processing_time_minutes: Optional[float] = None
 
 
 class InventoryPerformanceListResponse(BaseModel):

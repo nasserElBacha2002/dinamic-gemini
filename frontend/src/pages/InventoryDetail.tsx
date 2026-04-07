@@ -23,6 +23,8 @@ import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../utils/aisleS
 import { formatDate } from '../utils/formatDate';
 import { pathToAislePositions } from '../utils/resultRoutes';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
+import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
+import type { ExecutionLogEvent } from '../api/types';
 import { exportInventoryResultsCsv } from '../api/client';
 import {
   DataTable,
@@ -129,11 +131,15 @@ function canRetryJob(status?: string | null): boolean {
 const PROCESS_AISLE_NEEDS_ASSETS_MESSAGE =
   'You need to upload at least one image before processing.';
 
-function metadataRowsForJob(job: NonNullable<Aisle['latest_job']> | null | undefined): Array<{ label: string; value: string }> {
+function metadataRowsForJob(
+  job: NonNullable<Aisle['latest_job']> | null | undefined,
+  executionLogEvents?: ExecutionLogEvent[] | null
+): Array<{ label: string; value: string }> {
   if (!job) return [];
+  const displayFinished = resolveDisplayFinishedAt(job, executionLogEvents);
   return [
     { label: 'Started', value: formatOptionalDate(job.started_at) },
-    { label: 'Finished', value: formatOptionalDate(job.finished_at) },
+    { label: 'Finished', value: formatOptionalDate(displayFinished) },
     { label: 'Last heartbeat', value: formatOptionalDate(job.last_heartbeat_at) },
     { label: 'Cancellation requested', value: formatOptionalDate(job.cancel_requested_at) },
     { label: 'Current stage', value: job.current_stage || '—' },
@@ -896,7 +902,7 @@ export default function InventoryDetail() {
             ) : null}
 
             <Box sx={{ display: 'grid', gap: 1 }}>
-              {metadataRowsForJob(selectedJob).map((item) => (
+              {metadataRowsForJob(selectedJob, executionLogQuery.data?.events).map((item) => (
                 <Box
                   key={item.label}
                   sx={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 180px) 1fr', gap: 1 }}

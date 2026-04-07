@@ -9,8 +9,8 @@ export interface AnalyticsSummaryResponse {
   unidentified_product_count?: number | null;
   invalid_traceability_rate: number | null;
   processing_success_rate: number | null;
-  average_review_time_seconds: number | null;
-  average_review_time_minutes?: number | null;
+  average_processing_time_seconds: number | null;
+  average_processing_time_minutes?: number | null;
   settling_actions_per_day: number | null;
   notes: string[];
   period_day_count: number;
@@ -55,7 +55,7 @@ export interface InventoryPerformanceRow {
   invalid_traceability_rate: number | null;
   avg_confidence: number | null;
   processing_success_rate: number | null;
-  average_review_time_minutes?: number | null;
+  average_processing_time_minutes?: number | null;
   unknown_rate?: number | null;
 }
 

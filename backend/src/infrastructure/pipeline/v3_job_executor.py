@@ -551,7 +551,6 @@ class V3JobExecutor:
                 job_id,
                 aisle,
                 report_path,
-                now,
                 run_metadata=result.run_metadata,
                 durable_artifacts=durable_meta,
             )
@@ -717,17 +716,18 @@ class V3JobExecutor:
         job_id: str,
         aisle: Aisle,
         report_path: Path,
-        now,
         *,
         run_metadata: Optional[dict] = None,
         durable_artifacts: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
+        # Completion wall time at true terminal persist (after durable upload), not job start.
+        completion_now = self._clock.now()
         job = self._job_repo.get_by_id(job_id)
         if job:
             job.status = JobStatus.SUCCEEDED
-            job.updated_at = now
-            job.finished_at = now
-            job.last_heartbeat_at = now
+            job.updated_at = completion_now
+            job.finished_at = completion_now
+            job.last_heartbeat_at = completion_now
             job.current_stage = "Pipeline"
             job.current_substep = "completed"
             meta = run_metadata or {}
@@ -767,7 +767,7 @@ class V3JobExecutor:
                 job_id,
                 bool(durable_artifacts),
             )
-        aisle.mark_processed(now)
+        aisle.mark_processed(completion_now)
         self._aisle_repo.save(aisle)
         self._reconcile_inventory_for_aisle(aisle)
 

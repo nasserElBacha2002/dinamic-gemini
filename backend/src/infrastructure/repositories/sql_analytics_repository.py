@@ -96,6 +96,21 @@ def _append_ra_time_filters(
         params.append(_ensure_utc(filters.date_to))
 
 
+def _append_job_finished_at_time_filters(
+    conditions: List[str],
+    params: List[Any],
+    filters: AnalyticsFilters,
+    col: str = "j.finished_at",
+) -> None:
+    """Gate terminal job duration metrics by completion time (not review actions)."""
+    if filters.date_from:
+        conditions.append(f"{col} >= ?")
+        params.append(_ensure_utc(filters.date_from))
+    if filters.date_to:
+        conditions.append(f"{col} <= ?")
+        params.append(_ensure_utc(filters.date_to))
+
+
 def _traceability_invalid_expr(alias: str = "p") -> str:
     return (
         f"LOWER(LTRIM(RTRIM(ISNULL(JSON_VALUE({alias}.detected_summary_json, "
@@ -225,24 +240,28 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         sq_params = list(params)
         inv_params = list(params)
         rev_params = list(ra_params)
-        lag_where_parts = [pos_where, _operational_result_slice_predicate()]
-        lag_params: List[Any] = []
-        _append_inventory_aisle_filters(lag_where_parts, lag_params, filters)
-        _append_ra_time_filters(lag_where_parts, lag_params, filters, "r.first_ra")
-        lag_where = " AND ".join(lag_where_parts)
-        sql_avg_lag = f"""
-            SELECT AVG(DATEDIFF_BIG(SECOND, p.created_at, r.first_ra)) AS avg_sec
-            FROM positions p
-            INNER JOIN aisles a ON a.id = p.aisle_id
-            INNER JOIN inventories i ON i.id = a.inventory_id
-            INNER JOIN (
-              SELECT position_id, MIN(created_at) AS first_ra
-              FROM review_actions
-              WHERE action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown')
-              GROUP BY position_id
-            ) r ON r.position_id = p.id
-            WHERE {lag_where}
-              AND r.first_ra >= p.created_at
+        job_proc_conditions = [
+            "j.target_type = N'aisle'",
+            "j.status IN (N'succeeded', N'failed', N'canceled')",
+            "j.started_at IS NOT NULL",
+            "j.finished_at IS NOT NULL",
+            "j.finished_at >= j.started_at",
+        ]
+        job_proc_params: List[Any] = []
+        job_join = ""
+        if filters.inventory_id or filters.aisle_id:
+            job_join = (
+                "INNER JOIN aisles a ON a.id = j.target_id "
+                "INNER JOIN inventories i ON i.id = a.inventory_id"
+            )
+            _append_inventory_aisle_filters(job_proc_conditions, job_proc_params, filters)
+        _append_job_finished_at_time_filters(job_proc_conditions, job_proc_params, filters)
+        job_proc_where = " AND ".join(job_proc_conditions)
+        sql_avg_job_processing = f"""
+            SELECT AVG(CAST(DATEDIFF_BIG(SECOND, j.started_at, j.finished_at) AS float)) AS avg_sec
+            FROM inventory_jobs j
+            {job_join}
+            WHERE {job_proc_where}
         """
 
         positions_in_scope = 0
@@ -275,7 +294,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             unknown_positions_count = int(getattr(row, "unknown_positions", 0) or 0)
             settling_actions_count = int(getattr(row, "settling_actions", 0) or 0)
 
-            cur.execute(sql_avg_lag, lag_params)
+            cur.execute(sql_avg_job_processing, job_proc_params)
             row = cur.fetchone()
             raw_avg = getattr(row, "avg_sec", None)
             if raw_avg is not None:
@@ -292,7 +311,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 "set date_from and date_to for meaningful per-day rates."
             )
         notes.append(
-            "Current-state metrics use entity scope; date filters apply only to review-action and job-based metrics."
+            "Current-state metrics use entity scope; review-action date filters apply to review KPIs; "
+            "average processing time and job success rate use job timestamps (finished_at / updated_at) in range."
         )
         return build_summary_metrics(
             SummaryMetricInputs(
@@ -305,7 +325,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 unidentified_product_positions_count=unidentified_product_n,
                 invalid_traceability_positions_count=invalid_n,
                 processing_success_rate=proc_success,
-                average_review_time_seconds=avg_sec,
+                average_processing_time_seconds=avg_sec,
                 settling_actions_per_day=rpd,
                 settling_actions_count=settling_actions_count,
                 period_day_count=span,
@@ -514,7 +534,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 )
                 invalid_n = int(getattr(row, "invalid_n", 0) or 0)
                 avg_c = getattr(row, "avg_confidence", None)
-                avg_review_sec = self._inventory_average_review_time_seconds(inv_id, filters)
+                avg_proc_sec = self._inventory_average_processing_time_seconds(inv_id, filters)
                 metric_rates = build_inventory_metric_rates(
                     InventoryMetricInputs(
                         total_positions_in_scope=total_pos,
@@ -529,7 +549,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         invalid_traceability_positions_count=invalid_n,
                         avg_confidence=float(avg_c) if avg_c is not None else None,
                         processing_success_rate=proc,
-                        average_review_time_seconds=avg_review_sec,
+                        average_processing_time_seconds=avg_proc_sec,
                     )
                 )
                 rows_out.append(
@@ -554,7 +574,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         invalid_traceability_rate=metric_rates["invalid_traceability_rate"],
                         avg_confidence=metric_rates["avg_confidence"],
                         processing_success_rate=metric_rates["processing_success_rate"],
-                        average_review_time_minutes=metric_rates["average_review_time_minutes"],
+                        average_processing_time_minutes=metric_rates["average_processing_time_minutes"],
                     )
                 )
         return rows_out
@@ -607,26 +627,29 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         unknown_positions = int(getattr(row, "unknown_positions", 0) or 0)
         return reviewed_pos, auto_accepted, manually_corrected, unknown_positions
 
-    def _inventory_average_review_time_seconds(
+    def _inventory_average_processing_time_seconds(
         self, inventory_id: str, filters: AnalyticsFilters
     ) -> Optional[float]:
-        cond = ["p.status <> 'deleted'", _operational_result_slice_predicate(), "i.id = ?"]
+        cond = [
+            "j.target_type = N'aisle'",
+            "j.status IN (N'succeeded', N'failed', N'canceled')",
+            "j.started_at IS NOT NULL",
+            "j.finished_at IS NOT NULL",
+            "j.finished_at >= j.started_at",
+            "i.id = ?",
+        ]
         params: List[Any] = [inventory_id]
-        _append_ra_time_filters(cond, params, filters, "r.first_ra")
+        if filters.aisle_id:
+            cond.append("a.id = ?")
+            params.append(filters.aisle_id.strip())
+        _append_job_finished_at_time_filters(cond, params, filters)
         where_sql = " AND ".join(cond)
         sql = f"""
-            SELECT AVG(DATEDIFF_BIG(SECOND, p.created_at, r.first_ra)) AS avg_sec
-            FROM positions p
-            INNER JOIN aisles a ON a.id = p.aisle_id
+            SELECT AVG(CAST(DATEDIFF_BIG(SECOND, j.started_at, j.finished_at) AS float)) AS avg_sec
+            FROM inventory_jobs j
+            INNER JOIN aisles a ON a.id = j.target_id
             INNER JOIN inventories i ON i.id = a.inventory_id
-            INNER JOIN (
-              SELECT position_id, MIN(created_at) AS first_ra
-              FROM review_actions
-              WHERE action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown')
-              GROUP BY position_id
-            ) r ON r.position_id = p.id
             WHERE {where_sql}
-              AND r.first_ra >= p.created_at
         """
         with self._client.cursor() as cur:
             cur.execute(sql, params)
