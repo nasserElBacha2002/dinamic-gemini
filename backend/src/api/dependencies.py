@@ -185,6 +185,13 @@ def get_list_inventory_list_items_use_case(
     )
 
 
+def get_result_context_resolver(
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> ResultContextResolver:
+    return ResultContextResolver(job_repo=job_repo, position_repo=position_repo)
+
+
 def get_get_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> GetInventoryUseCase:
@@ -196,12 +203,14 @@ def get_export_inventory_results_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
 ) -> ExportInventoryResultsUseCase:
     return ExportInventoryResultsUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         position_repo=position_repo,
         product_record_repo=product_record_repo,
+        result_context_resolver=result_context_resolver,
     )
 
 
@@ -263,13 +272,6 @@ def get_list_aisles_by_inventory_use_case(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
     )
-
-
-def get_result_context_resolver(
-    job_repo: JobRepository = Depends(get_job_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-) -> ResultContextResolver:
-    return ResultContextResolver(job_repo=job_repo, position_repo=position_repo)
 
 
 def get_list_aisles_with_status_use_case(
@@ -603,13 +605,13 @@ def get_delete_position_use_case(
 def get_run_aisle_merge_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    raw_label_repo=Depends(get_raw_label_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
     recompute_uc=Depends(get_recompute_consolidated_counts_use_case),
 ) -> RunAisleMergeUseCase:
     return RunAisleMergeUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
-        raw_label_repo=raw_label_repo,
+        job_repo=job_repo,
         recompute_use_case=recompute_uc,
     )
 

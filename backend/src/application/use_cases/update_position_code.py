@@ -17,6 +17,7 @@ from src.application.ports.repositories import (
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.use_cases.review_validation import (
+    load_aisle_and_ensure_review_mutable,
     resolve_position,
     ensure_position_not_deleted,
 )
@@ -57,6 +58,7 @@ class UpdatePositionCodeUseCase:
             position_id,
         )
         ensure_position_not_deleted(position)
+        load_aisle_and_ensure_review_mutable(self._aisle_repo, aisle_id, position)
 
         new_code = (position_code or "").strip()
         if not new_code:

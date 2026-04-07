@@ -91,6 +91,7 @@ class JobSummary(BaseModel):
     provider_name: Optional[str] = None
     model_name: Optional[str] = None
     prompt_key: Optional[str] = None
+    prompt_version: Optional[str] = None
 
 
 class AisleStatusResponse(BaseModel):

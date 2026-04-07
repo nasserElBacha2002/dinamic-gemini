@@ -100,7 +100,7 @@ def test_explicit_empty_string_treated_as_omitted() -> None:
     assert r.source == "operational"
 
 
-def test_latest_succeeded_when_no_legacy_rows() -> None:
+def test_no_implicit_latest_when_only_job_scoped_rows_and_no_operational_pointer() -> None:
     now = datetime.now(timezone.utc)
     jobs = MemoryJobRepository()
     jobs.save(_job("js-1"))
@@ -119,8 +119,8 @@ def test_latest_succeeded_when_no_legacy_rows() -> None:
         )
     )
     r = ResultContextResolver(jobs, pos).resolve(aisle=_aisle(), explicit_job_id=None)
-    assert r.source == "latest_succeeded"
-    assert r.job_id_for_slice == "js-1"
+    assert r.source == "legacy"
+    assert r.job_id_for_slice is None
 
 
 def test_legacy_wins_when_legacy_row_exists_alongside_job_scoped() -> None:
@@ -139,7 +139,7 @@ def test_legacy_wins_when_legacy_row_exists_alongside_job_scoped() -> None:
     assert r.job_id_for_slice is None
 
 
-def test_latest_succeeded_picks_first_succeeded_in_newest_first_order() -> None:
+def test_multiple_succeeded_jobs_without_operational_still_resolve_legacy_slice() -> None:
     t0 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     t1 = datetime(2025, 2, 1, 12, 0, 0, tzinfo=timezone.utc)
     j_fail = Job(
@@ -161,5 +161,5 @@ def test_latest_succeeded_picks_first_succeeded_in_newest_first_order() -> None:
         Position("p1", "a1", PositionStatus.DETECTED, 0.9, True, None, t1, t1, job_id="jo")
     )
     r = ResultContextResolver(jobs, pos).resolve(aisle=_aisle(), explicit_job_id=None)
-    assert r.source == "latest_succeeded"
-    assert r.job_id_for_slice == "jo"
+    assert r.source == "legacy"
+    assert r.job_id_for_slice is None

@@ -29,13 +29,13 @@ from src.api.schemas.position_schemas import (
     PositionTraceabilityBlock,
     ReviewActionResponse,
 )
-from src.application.ports.repositories import JobRepository
 from src.application.errors import (
     AisleNotFoundError,
     InventoryNotFoundError,
     PositionNotFoundError,
     ProductNotFoundError,
     PositionDeletedError,
+    ReviewMutationNotAllowedError,
 )
 from src.application.use_cases.get_aisle_processing_status import AisleProcessingStatusResult
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
@@ -59,6 +59,7 @@ from src.application.mappers.position_canonical_view import (
     build_position_canonical_view,
 )
 from src.application.services.position_traceability import reset_traceability_cache_for_tests
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 logger = logging.getLogger(__name__)
@@ -131,7 +132,6 @@ def _try_resolve_normalized_asset_for_job(
     """Try to resolve normalized image path for one job (no job_repo/aisle_id needed).
 
     Returns (path, None) on success, (None, reason) on failure.
-    Caller is responsible for choosing which job_id to use (e.g. from request or latest).
     """
     run_dir = output_dir / job_id / RUN_ID
     job_dir = run_dir.parent
@@ -172,48 +172,52 @@ def _try_resolve_normalized_asset_for_job(
 
 def resolve_normalized_asset_path(
     output_dir: Path,
-    job_repo: JobRepository,
-    aisle_id: str,
+    *,
+    inventory_id: str,
+    aisle: Aisle,
     asset_id: str,
-    job_id: Optional[str] = None,
+    explicit_job_id: Optional[str],
+    resolver: ResultContextResolver,
 ) -> Optional[Path]:
-    """Resolve the normalized (browser-safe) image path for an asset when the original is HEIC/HEIF.
+    """Resolve normalized (browser-safe) JPEG path for HEIC/HEIF using :class:`ResultContextResolver`.
 
-    When job_id is provided, tries that job first; on failure falls back to latest job for the aisle.
-    When job_id is not provided, uses latest job only (backward compatible).
+    Uses explicit ``job_id`` query param when provided; otherwise operational job or **legacy** slice.
+    Legacy slice (``job_id_for_slice is None``) has no per-run manifest folder — returns ``None``.
+    **No** implicit latest-job fallback.
     """
     output_dir = Path(output_dir)
-    if job_id and job_id.strip():
-        jid = job_id.strip()
-        logger.debug("HEIC preview: resolving with job_id=%s for asset_id=%s", jid, asset_id)
-        path, reason = _try_resolve_normalized_asset_for_job(output_dir, jid, asset_id)
-        if path is not None:
-            logger.debug("HEIC preview: resolved with job_id=%s", jid)
-            return path
+    if aisle.inventory_id != inventory_id:
         logger.debug(
-            "HEIC preview: resolution with job_id=%s failed (%s), falling back to latest job for aisle",
-            jid,
-            reason,
+            "HEIC preview: aisle inventory mismatch aisle_id=%s expected_inv=%s got_inv=%s",
+            aisle.id,
+            aisle.inventory_id,
+            inventory_id,
         )
-    job = job_repo.get_latest_by_target("aisle", aisle_id)
-    if job is None:
-        logger.debug("HEIC preview: no latest job for aisle_id=%s", aisle_id)
         return None
-    latest_job_id = getattr(job, "id", None)
-    if not latest_job_id:
+    ctx = resolver.resolve(aisle=aisle, explicit_job_id=explicit_job_id)
+    jid = ctx.job_id_for_slice
+    if jid is None or not str(jid).strip():
+        logger.debug(
+            "HEIC preview: no job folder for resolved slice (legacy or unset operational) asset_id=%s",
+            asset_id,
+        )
         return None
-    logger.debug("HEIC preview: resolving with latest job_id=%s for asset_id=%s", latest_job_id, asset_id)
-    path, reason = _try_resolve_normalized_asset_for_job(output_dir, latest_job_id, asset_id)
-    if path is not None:
-        logger.debug("HEIC preview: resolved with latest job_id=%s", latest_job_id)
-        return path
+    job_key = str(jid).strip()
     logger.debug(
-        "HEIC preview: resolution with latest job_id=%s failed (%s) for asset_id=%s",
-        latest_job_id,
-        reason,
+        "HEIC preview: resolving asset_id=%s with result_context=%s job_id=%s",
         asset_id,
+        ctx.source,
+        job_key,
     )
-    return None
+    path, reason = _try_resolve_normalized_asset_for_job(output_dir, job_key, asset_id)
+    if path is None:
+        logger.debug(
+            "HEIC preview: resolution failed (%s) asset_id=%s job_id=%s",
+            reason,
+            asset_id,
+            job_key,
+        )
+    return path
 
 
 def review_exception_to_http(e: Exception) -> HTTPException:
@@ -228,6 +232,8 @@ def review_exception_to_http(e: Exception) -> HTTPException:
         return HTTPException(status_code=404, detail="Product not found or does not belong to this position")
     if isinstance(e, PositionDeletedError):
         return HTTPException(status_code=409, detail=str(e))
+    if isinstance(e, ReviewMutationNotAllowedError):
+        return HTTPException(status_code=403, detail=str(e))
     if isinstance(e, ValueError):
         return HTTPException(status_code=422, detail=str(e))
     raise e
@@ -241,7 +247,14 @@ def handle_confirm(
 ) -> None:
     try:
         confirm_uc.execute(inventory_id, aisle_id, position_id)
-    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ValueError, PositionDeletedError) as e:
+    except (
+        InventoryNotFoundError,
+        AisleNotFoundError,
+        PositionNotFoundError,
+        ValueError,
+        PositionDeletedError,
+        ReviewMutationNotAllowedError,
+    ) as e:
         raise review_exception_to_http(e)
 
 
@@ -262,7 +275,15 @@ def handle_update_quantity(
             (body.product_id or "").strip(),
             body.corrected_quantity,
         )
-    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ProductNotFoundError, ValueError, PositionDeletedError) as e:
+    except (
+        InventoryNotFoundError,
+        AisleNotFoundError,
+        PositionNotFoundError,
+        ProductNotFoundError,
+        ValueError,
+        PositionDeletedError,
+        ReviewMutationNotAllowedError,
+    ) as e:
         raise review_exception_to_http(e)
 
 
@@ -285,7 +306,15 @@ def handle_update_sku(
             sku,
             body.description,
         )
-    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ProductNotFoundError, ValueError, PositionDeletedError) as e:
+    except (
+        InventoryNotFoundError,
+        AisleNotFoundError,
+        PositionNotFoundError,
+        ProductNotFoundError,
+        ValueError,
+        PositionDeletedError,
+        ReviewMutationNotAllowedError,
+    ) as e:
         raise review_exception_to_http(e)
 
 
@@ -306,7 +335,14 @@ def handle_update_position_code(
             position_id,
             pos_code,
         )
-    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ValueError, PositionDeletedError) as e:
+    except (
+        InventoryNotFoundError,
+        AisleNotFoundError,
+        PositionNotFoundError,
+        ValueError,
+        PositionDeletedError,
+        ReviewMutationNotAllowedError,
+    ) as e:
         raise review_exception_to_http(e)
 
 
@@ -318,7 +354,14 @@ def handle_mark_unknown(
 ) -> None:
     try:
         mark_unknown_uc.execute(inventory_id, aisle_id, position_id)
-    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, ValueError, PositionDeletedError) as e:
+    except (
+        InventoryNotFoundError,
+        AisleNotFoundError,
+        PositionNotFoundError,
+        ValueError,
+        PositionDeletedError,
+        ReviewMutationNotAllowedError,
+    ) as e:
         raise review_exception_to_http(e)
 
 
@@ -330,7 +373,13 @@ def handle_delete_position(
 ) -> None:
     try:
         delete_uc.execute(inventory_id, aisle_id, position_id)
-    except (InventoryNotFoundError, AisleNotFoundError, PositionNotFoundError, PositionDeletedError) as e:
+    except (
+        InventoryNotFoundError,
+        AisleNotFoundError,
+        PositionNotFoundError,
+        PositionDeletedError,
+        ReviewMutationNotAllowedError,
+    ) as e:
         raise review_exception_to_http(e)
 
 
@@ -446,6 +495,7 @@ def job_to_summary(j: Job) -> JobSummary:
         provider_name=j.provider_name,
         model_name=j.model_name,
         prompt_key=j.prompt_key,
+        prompt_version=j.prompt_version,
     )
 
 

@@ -741,6 +741,11 @@ class V3JobExecutor:
             }
             if meta.get("prompt_key"):
                 job.result_json["prompt_key"] = meta["prompt_key"]
+            if meta.get("prompt_version"):
+                pvv = str(meta["prompt_version"]).strip()
+                if pvv:
+                    job.result_json["prompt_version"] = pvv
+                    job.prompt_version = pvv[:256]
             if durable_artifacts:
                 merge_durable_into_result_json(job.result_json, durable_artifacts)
                 logger.info(

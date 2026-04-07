@@ -12,6 +12,8 @@ import type { ResultDetail } from '../../types';
 export interface ResultReviewActionsProps {
   result: ResultDetail;
   actionLoading: boolean;
+  /** Non-operational run: hide mutating controls (benchmark / historical browse). */
+  readOnly?: boolean;
   onConfirm: () => void;
   onUpdateQuantity: (quantity: number) => void;
   onUpdateSku: (sku: string) => void;
@@ -22,6 +24,7 @@ export interface ResultReviewActionsProps {
 export default function ResultReviewActions({
   result,
   actionLoading,
+  readOnly = false,
   onConfirm,
   onUpdateQuantity,
   onUpdateSku,
@@ -61,6 +64,16 @@ export default function ResultReviewActions({
   }, [result.correctedQty, result.sku, result.positionCode]);
 
   if (isDeleted) return null;
+
+  if (readOnly) {
+    return (
+      <Box sx={{ mt: 1 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          This result is from a non-operational run. Open the operational job to confirm or correct.
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ mt: 1 }}>

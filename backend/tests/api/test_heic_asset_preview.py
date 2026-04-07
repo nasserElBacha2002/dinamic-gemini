@@ -2,13 +2,13 @@
 HEIC/HEIF evidence preview — backend asset file endpoint serves normalized JPG when available.
 
 Tests:
-- HEIC asset with normalized JPG in latest job → 200 and JPG content
+- HEIC asset with normalized JPG in **resolved result-context job** → 200 and JPG content
 - HEIC asset with no normalized JPG → 404 and clear message
 - JPG asset → 200 and original file (unchanged)
 - Path traversal in stored_normalized_filename → rejected, 404 (path-safety)
 - Manifest has entry but normalized file missing on disk → 404
-- job_id query param: when position's job differs from latest, ?job_id= resolves from that job → 200
-- Fallback: when job_id fails (e.g. no manifest for that job), fallback to latest job → 200
+- job_id query param: explicit job overrides operational pointer for preview → 200
+- No “latest job” fallback when explicit or resolved job lacks normalized artifact → 404
 """
 
 from __future__ import annotations
@@ -24,13 +24,22 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_artifact_storage, get_job_repo, get_list_aisle_assets_use_case
+from src.api.dependencies import (
+    get_aisle_repo,
+    get_artifact_storage,
+    get_list_aisle_assets_use_case,
+    get_result_context_resolver,
+)
+from src.application.services.result_context_resolver import ResultContextResolver
+from src.domain.aisle.entities import Aisle, AisleStatus
+from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.api.server import app
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 
 
@@ -64,20 +73,30 @@ def _patch_local_asset_settings(output_dir: Path):
         yield
 
 
-class StubJobRepo:
-    """Returns a fixed latest job for get_latest_by_target."""
-
-    def __init__(self, latest_job: Job | None) -> None:
-        self._latest = latest_job
-
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
-        return self._latest
-
-    def get_by_id(self, job_id: str) -> Job | None:
-        return self._latest if self._latest and self._latest.id == job_id else None
-
-    def save(self, job: Job) -> None:
-        self._latest = job
+def _register_aisle_and_resolver(
+    inv_id: str,
+    aisle_id: str,
+    *,
+    operational_job_id: str | None,
+) -> None:
+    """Match GET asset routes: aisle row + ResultContextResolver (operational / legacy / explicit query)."""
+    now = datetime.now(timezone.utc)
+    ar = MemoryAisleRepository()
+    ar.save(
+        Aisle(
+            id=aisle_id,
+            inventory_id=inv_id,
+            code="T",
+            status=AisleStatus.PROCESSED,
+            created_at=now,
+            updated_at=now,
+            operational_job_id=operational_job_id,
+        )
+    )
+    app.dependency_overrides[get_aisle_repo] = lambda: ar
+    app.dependency_overrides[get_result_context_resolver] = lambda: ResultContextResolver(
+        MemoryJobRepository(), MemoryPositionRepository()
+    )
 
 
 @pytest.fixture
@@ -100,7 +119,7 @@ def _phase4_api_dependency_stubs(output_dir: Path) -> None:
 
 
 def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) -> None:
-    """When asset is HEIC and latest job has normalized JPG for that asset, endpoint returns JPG."""
+    """When asset is HEIC and operational job has normalized JPG for that asset, endpoint returns JPG."""
     inv_id, aisle_id, asset_id = "inv-heic", "aisle-heic", "asset-heic-1"
     job_id = "job-heic-xyz"
     storage_path = f"{inv_id}/{aisle_id}/{asset_id}.heic"
@@ -125,19 +144,6 @@ def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) 
     }
     (job_dir / "input_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
-    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    job = Job(
-        id=job_id,
-        target_type="aisle",
-        target_id=aisle_id,
-        job_type="process_aisle",
-        status=JobStatus.SUCCEEDED,
-        payload_json={},
-        created_at=now,
-        updated_at=now,
-        result_json=None,
-        error_message=None,
-    )
     now_upload = datetime(2025, 3, 6, 11, 0, 0, tzinfo=timezone.utc)
     asset = SourceAsset(
         id=asset_id,
@@ -149,12 +155,10 @@ def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) 
         uploaded_at=now_upload,
     )
     stub_assets = StubListAisleAssetsUseCase([asset])
-    stub_job_repo = StubJobRepo(job)
-
-    app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
-    app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
     try:
+        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_id)
+        app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
@@ -164,7 +168,9 @@ def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) 
             assert resp.content == jpeg_content
             assert resp.headers.get("content-type", "").startswith("image/jpeg")
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
 def test_heic_asset_file_returns_404_when_no_normalized_preview(output_dir: Path) -> None:
@@ -188,12 +194,10 @@ def test_heic_asset_file_returns_404_when_no_normalized_preview(output_dir: Path
         uploaded_at=now_upload,
     )
     stub_assets = StubListAisleAssetsUseCase([asset])
-    stub_job_repo = StubJobRepo(None)  # no latest job
-
-    app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
-    app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
     try:
+        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=None)
+        app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
@@ -202,7 +206,9 @@ def test_heic_asset_file_returns_404_when_no_normalized_preview(output_dir: Path
             assert resp.status_code == 404
             assert resp.json().get("detail") == "Preview is not available for this image"
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
 def test_jpg_asset_file_serves_original_unchanged(output_dir: Path) -> None:
@@ -226,12 +232,9 @@ def test_jpg_asset_file_serves_original_unchanged(output_dir: Path) -> None:
         uploaded_at=now_upload,
     )
     stub_assets = StubListAisleAssetsUseCase([asset])
-    stub_job_repo = StubJobRepo(None)
-
-    app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
-    app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
     try:
+        app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
@@ -240,7 +243,7 @@ def test_jpg_asset_file_serves_original_unchanged(output_dir: Path) -> None:
             assert resp.status_code == 200
             assert resp.content == original_content
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
 
 
 def test_asset_file_returns_404_file_not_found_when_missing_on_disk(output_dir: Path) -> None:
@@ -262,12 +265,9 @@ def test_asset_file_returns_404_file_not_found_when_missing_on_disk(output_dir: 
         uploaded_at=now_upload,
     )
     stub_assets = StubListAisleAssetsUseCase([asset])
-    stub_job_repo = StubJobRepo(None)
-
-    app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
-    app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
     try:
+        app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
@@ -276,7 +276,7 @@ def test_asset_file_returns_404_file_not_found_when_missing_on_disk(output_dir: 
             assert resp.status_code == 404
             assert "not found" in resp.json().get("detail", "").lower()
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
 
 
 def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) -> None:
@@ -304,19 +304,6 @@ def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) ->
     (job_dir / RUN_ID).mkdir(parents=True, exist_ok=True)
     (job_dir / "input_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
-    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    job = Job(
-        id=job_id,
-        target_type="aisle",
-        target_id=aisle_id,
-        job_type="process_aisle",
-        status=JobStatus.SUCCEEDED,
-        payload_json={},
-        created_at=now,
-        updated_at=now,
-        result_json=None,
-        error_message=None,
-    )
     now_upload = datetime(2025, 3, 6, 11, 0, 0, tzinfo=timezone.utc)
     asset = SourceAsset(
         id=asset_id,
@@ -328,12 +315,10 @@ def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) ->
         uploaded_at=now_upload,
     )
     stub_assets = StubListAisleAssetsUseCase([asset])
-    stub_job_repo = StubJobRepo(job)
-
-    app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
-    app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
     try:
+        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_id)
+        app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
@@ -342,7 +327,9 @@ def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) ->
             assert resp.status_code == 404
             assert "preview" in (resp.json().get("detail") or "").lower() or "not available" in (resp.json().get("detail") or "").lower()
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
 def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_dir: Path) -> None:
@@ -369,19 +356,6 @@ def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_
     }
     (job_dir / "input_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
-    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    job = Job(
-        id=job_id,
-        target_type="aisle",
-        target_id=aisle_id,
-        job_type="process_aisle",
-        status=JobStatus.SUCCEEDED,
-        payload_json={},
-        created_at=now,
-        updated_at=now,
-        result_json=None,
-        error_message=None,
-    )
     now_upload = datetime(2025, 3, 6, 11, 0, 0, tzinfo=timezone.utc)
     asset = SourceAsset(
         id=asset_id,
@@ -393,12 +367,10 @@ def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_
         uploaded_at=now_upload,
     )
     stub_assets = StubListAisleAssetsUseCase([asset])
-    stub_job_repo = StubJobRepo(job)
-
-    app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
-    app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
     try:
+        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_id)
+        app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
@@ -407,11 +379,13 @@ def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_
             assert resp.status_code == 404
             assert resp.json().get("detail") == "Preview is not available for this image"
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
 def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(output_dir: Path) -> None:
-    """When two jobs exist for same aisle, request with job_id=position_job returns JPG; without job_id uses latest and may 404."""
+    """Operational pointer may differ from the run that holds the asset; explicit job_id selects the folder."""
     inv_id, aisle_id, asset_id = "inv-multi", "aisle-multi", "asset-multi-1"
     job_a = "job-position-run"
     job_b = "job-latest-run"
@@ -442,19 +416,6 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
     manifest_b = {"input_type": "photos", "photos": []}
     (job_b_dir / "input_manifest.json").write_text(json.dumps(manifest_b), encoding="utf-8")
 
-    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    job_latest = Job(
-        id=job_b,
-        target_type="aisle",
-        target_id=aisle_id,
-        job_type="process_aisle",
-        status=JobStatus.SUCCEEDED,
-        payload_json={},
-        created_at=now,
-        updated_at=now,
-        result_json=None,
-        error_message=None,
-    )
     now_upload = datetime(2025, 3, 6, 11, 0, 0, tzinfo=timezone.utc)
     asset = SourceAsset(
         id=asset_id,
@@ -466,18 +427,16 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
         uploaded_at=now_upload,
     )
     stub_assets = StubListAisleAssetsUseCase([asset])
-    stub_job_repo = StubJobRepo(job_latest)
-
-    app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
-    app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
     try:
+        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_b)
+        app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp_no_job = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
             )
-            assert resp_no_job.status_code == 404, "without job_id, latest job has no asset -> 404"
+            assert resp_no_job.status_code == 404, "operational job_B has no normalized asset -> 404"
 
             resp_with_job = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file",
@@ -487,25 +446,26 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
             assert resp_with_job.content == jpeg_content
             assert resp_with_job.headers.get("content-type", "").startswith("image/jpeg")
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
-def test_heic_asset_file_fallback_to_latest_when_job_id_fails(output_dir: Path) -> None:
-    """When job_id is provided but that job has no normalized file, fallback to latest job and return 200 if latest has it."""
+def test_heic_asset_file_no_fallback_when_explicit_job_has_no_normalized_file(output_dir: Path) -> None:
+    """Explicit job_id resolves only that run's folder — no silent cross-run fallback."""
     inv_id, aisle_id, asset_id = "inv-fb", "aisle-fb", "asset-fb-1"
-    job_old = "job-old-no-normalized"
-    job_latest_id = "job-latest-has-normalized"
+    job_bad = "job-old-no-normalized"
+    job_other = "job-latest-has-normalized"
     storage_path = f"{inv_id}/{aisle_id}/{asset_id}.heic"
     normalized_name = "0001_photo.jpg"
-    jpeg_content = b"normalized-from-latest"
+    jpeg_content = b"normalized-from-other"
 
     base = output_dir / "v3_uploads"
     (base / inv_id / aisle_id).mkdir(parents=True, exist_ok=True)
     (base / storage_path).write_bytes(b"heic-placeholder")
 
-    # Old job: manifest has asset but no normalized file on disk (e.g. pipeline failed before writing)
-    job_old_dir = output_dir / job_old
-    run_old = job_old_dir / RUN_ID
+    job_bad_dir = output_dir / job_bad
+    run_old = job_bad_dir / RUN_ID
     run_old.mkdir(parents=True, exist_ok=True)
     (run_old / "input_photos_normalized").mkdir(parents=True, exist_ok=True)
     manifest_old = {
@@ -514,10 +474,9 @@ def test_heic_asset_file_fallback_to_latest_when_job_id_fails(output_dir: Path) 
             {"image_id": asset_id, "stored_filename": "0001_x.heic", "stored_normalized_filename": "0001_missing.jpg"},
         ],
     }
-    (job_old_dir / "input_manifest.json").write_text(json.dumps(manifest_old), encoding="utf-8")
+    (job_bad_dir / "input_manifest.json").write_text(json.dumps(manifest_old), encoding="utf-8")
 
-    # Latest job: has normalized file
-    job_lat_dir = output_dir / job_latest_id
+    job_lat_dir = output_dir / job_other
     run_lat = job_lat_dir / RUN_ID
     (run_lat / "input_photos_normalized").mkdir(parents=True, exist_ok=True)
     (run_lat / "input_photos_normalized" / normalized_name).write_bytes(jpeg_content)
@@ -529,19 +488,6 @@ def test_heic_asset_file_fallback_to_latest_when_job_id_fails(output_dir: Path) 
     }
     (job_lat_dir / "input_manifest.json").write_text(json.dumps(manifest_lat), encoding="utf-8")
 
-    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    job_latest = Job(
-        id=job_latest_id,
-        target_type="aisle",
-        target_id=aisle_id,
-        job_type="process_aisle",
-        status=JobStatus.SUCCEEDED,
-        payload_json={},
-        created_at=now,
-        updated_at=now,
-        result_json=None,
-        error_message=None,
-    )
     now_upload = datetime(2025, 3, 6, 11, 0, 0, tzinfo=timezone.utc)
     asset = SourceAsset(
         id=asset_id,
@@ -553,19 +499,18 @@ def test_heic_asset_file_fallback_to_latest_when_job_id_fails(output_dir: Path) 
         uploaded_at=now_upload,
     )
     stub_assets = StubListAisleAssetsUseCase([asset])
-    stub_job_repo = StubJobRepo(job_latest)
-
-    app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
-    app.dependency_overrides[get_job_repo] = lambda: stub_job_repo
 
     try:
+        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_other)
+        app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
             resp = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file",
-                params={"job_id": job_old},
+                params={"job_id": job_bad},
             )
-            assert resp.status_code == 200, "fallback to latest job should succeed"
-            assert resp.content == jpeg_content
+            assert resp.status_code == 404
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)

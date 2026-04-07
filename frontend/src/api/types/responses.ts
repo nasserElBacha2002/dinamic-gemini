@@ -197,6 +197,8 @@ export interface JobSummary {
   provider_name?: string | null;
   model_name?: string | null;
   prompt_key?: string | null;
+  /** Tracked prompt line (e.g. prompt_key@v2.1); empty if unknown. */
+  prompt_version?: string | null;
 }
 
 /** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */
@@ -368,7 +370,7 @@ export interface PositionListResponse {
   raw_fetch_truncated: boolean;
   /** Resolved job slice for this response (same semantics as list/detail/merge Phase 2). */
   result_job_id?: string | null;
-  /** explicit | operational | legacy | latest_succeeded */
+  /** explicit | operational | legacy */
   result_context_source?: string | null;
 }
 

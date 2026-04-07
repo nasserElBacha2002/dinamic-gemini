@@ -70,7 +70,7 @@ _JOB_SELECT_FIELDS = (
     "started_at, finished_at, last_heartbeat_at, cancel_requested_at, "
     "current_stage, current_substep, current_step_started_at, "
     "attempt_count, retry_of_job_id, failure_code, failure_message, execution_id, "
-    "provider_name, model_name, prompt_key, engine_params_json"
+    "provider_name, model_name, prompt_key, engine_params_json, prompt_version"
 )
 
 
@@ -111,6 +111,7 @@ def _row_to_job(row: Any) -> Job:
         model_name=getattr(row, "model_name", None),
         prompt_key=getattr(row, "prompt_key", None),
         engine_params_json=_parse_optional_json(getattr(row, "engine_params_json", None)),
+        prompt_version=getattr(row, "prompt_version", None),
     )
 
 
@@ -141,7 +142,8 @@ class SqlJobRepository(JobRepository):
                     started_at = ?, finished_at = ?, last_heartbeat_at = ?, cancel_requested_at = ?,
                     current_stage = ?, current_substep = ?, current_step_started_at = ?,
                     attempt_count = ?, retry_of_job_id = ?, failure_code = ?, failure_message = ?, execution_id = ?,
-                    provider_name = ?, model_name = ?, prompt_key = ?, engine_params_json = ?
+                    provider_name = ?, model_name = ?, prompt_key = ?, engine_params_json = ?,
+                    prompt_version = ?
                 WHERE id = ?
                 """,
                 (
@@ -169,6 +171,7 @@ class SqlJobRepository(JobRepository):
                     job.model_name,
                     job.prompt_key,
                     engine_str,
+                    job.prompt_version,
                     job.id,
                 ),
             )
@@ -180,8 +183,8 @@ class SqlJobRepository(JobRepository):
                         started_at, finished_at, last_heartbeat_at, cancel_requested_at,
                         current_stage, current_substep, current_step_started_at,
                         attempt_count, retry_of_job_id, failure_code, failure_message, execution_id,
-                        provider_name, model_name, prompt_key, engine_params_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        provider_name, model_name, prompt_key, engine_params_json, prompt_version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,
@@ -210,6 +213,7 @@ class SqlJobRepository(JobRepository):
                         job.model_name,
                         job.prompt_key,
                         engine_str,
+                        job.prompt_version,
                     ),
                 )
 

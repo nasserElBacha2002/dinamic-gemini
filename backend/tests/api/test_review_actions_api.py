@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -113,6 +114,32 @@ def test_post_review_position_not_found_returns_404() -> None:
         )
         assert resp.status_code == 404
         assert "not found" in resp.json().get("detail", "").lower()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_review_non_operational_job_returns_403() -> None:
+    """Benchmark / non-operational rows are view-only; mutations return 403."""
+    client = TestClient(app)
+    repos = _seed_repos()
+    aisle = repos["aisle_repo"].get_by_id("aisle-review-1")
+    assert aisle is not None
+    repos["aisle_repo"].save(replace(aisle, operational_job_id="job-op-1"))
+    pos = repos["position_repo"].get_by_id("pos-review-1")
+    assert pos is not None
+    repos["position_repo"].save(replace(pos, job_id="job-bench-1"))
+    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
+    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
+    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
+    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
+    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
+    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
+    try:
+        resp = client.post(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
+            json={"action_type": "confirm"},
+        )
+        assert resp.status_code == 403
     finally:
         app.dependency_overrides.clear()
 

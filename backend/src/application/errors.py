@@ -52,6 +52,10 @@ class PositionDeletedError(Exception):
     """Raised when a review action is attempted on a position that is already logically deleted."""
 
 
+class ReviewMutationNotAllowedError(Exception):
+    """Raised when a review mutation targets a position outside the operational result slice."""
+
+
 class ProductNotFoundError(Exception):
     """Raised when the product does not exist or does not belong to the given position."""
 

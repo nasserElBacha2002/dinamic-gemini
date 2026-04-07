@@ -4,6 +4,10 @@ Export consolidated inventory results as CSV (v3).
 Uses the same SKU consolidation as ``ListAislePositionsUseCase`` and summary mapping as
 ``position_to_summary`` (via ``inventory_export_rows``).
 
+**Multi-run scope:** For each aisle, only positions in the **operational** job slice (or **legacy**
+``job_id IS NULL`` when no operational pointer) are exported — same effective slice as the resolver,
+not all runs.
+
 **Ordering (deterministic, operator-friendly):**
 There is no explicit aisle ``display_order`` on the domain model today. Aisles are ordered by
 ``natural_sort_key_parts(aisle.code)``, then ``aisle.created_at``, then ``aisle.id``. Exported
@@ -23,6 +27,7 @@ from collections import defaultdict
 from typing import DefaultDict, List
 
 from src.application.errors import InventoryNotFoundError
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.mappers.inventory_export_rows import (
     export_position_sort_key,
     position_to_operational_export_row_dict,
@@ -52,11 +57,13 @@ class ExportInventoryResultsUseCase:
         aisle_repo: AisleRepository,
         position_repo: PositionRepository,
         product_record_repo: ProductRecordRepository,
+        result_context_resolver: ResultContextResolver,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
+        self._resolver = result_context_resolver
 
     def execute_csv(self, inventory_id: str, *, technical: bool = False) -> str:
         inv = self._inventory_repo.get_by_id(inventory_id)
@@ -79,7 +86,13 @@ class ExportInventoryResultsUseCase:
 
         rows: List[dict] = []
         for seq, aisle in enumerate(sorted_aisles, start=1):
-            raw = [p for p in by_aisle.get(aisle.id, []) if p.status != PositionStatus.DELETED]
+            ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=None)
+            slice_job = ctx.job_id_for_slice
+            candidates = [p for p in by_aisle.get(aisle.id, []) if p.status != PositionStatus.DELETED]
+            if slice_job is None:
+                raw = [p for p in candidates if p.job_id is None]
+            else:
+                raw = [p for p in candidates if p.job_id == slice_job]
             consolidated = consolidate_positions_by_sku(raw)
             consolidated_sorted = sorted(consolidated, key=export_position_sort_key)
             for p in consolidated_sorted:

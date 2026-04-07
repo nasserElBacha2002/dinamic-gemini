@@ -4,18 +4,34 @@
 
 This audit provides an implementation-ready assessment of the Dinamic Inventory (v3) architecture. It defines the technical blockers and necessary structural changes to support multi-provider, multi-model, and multi-prompt benchmarking with full traceability and operational reliability.
 
+### Implementation reconciliation (2026-04)
+
+The following former blockers are **addressed in code** (Phases 1–5 scope, excluding benchmark UX):
+
+- **Result context:** `ResultContextResolver` is strict (**explicit → operational → legacy**). There is **no** implicit “latest succeeded” default.
+- **Merge:** `POST .../merge` requires `job_id` (or the literal `legacy` for null-job rows) and validates the job targets the aisle.
+- **Export:** CSV export filters positions per aisle to the **operational** slice (or legacy null-job rows).
+- **Analytics (position-based):** SQL aggregates apply the same per-aisle `(operational_job_id ∨ legacy)` predicate as the resolver.
+- **HEIC / previews:** Normalized asset paths resolve via the resolver only — **no** `get_latest_by_target` fallback.
+- **Prompt traceability:** `inventory_jobs.prompt_version` (plus `result_json.prompt_version`) populated from pipeline `run_metadata` (`{prompt_key}@v2.1`).
+- **Review mutations:** POST review actions return **403** unless the position belongs to the operational slice (legacy null–null, or `position.job_id == aisles.operational_job_id`), matching the read-only UI for benchmark runs.
+
+Remaining **out of scope** here: Phase 6 benchmark/compare UX, advanced analytics productization, and automatic correction transfer on promotion.
+
 ---
 
 ## 1. Findings Categorization
 
 | Finding | Status | Evidence Location | Confidence |
 | :--- | :--- | :--- | :--- |
-| **Single-Aisle Persistence Lock** | Confirmed | `src/database/schema.sql`: `positions` table | 100% |
-| **API Parameter Absence** | Confirmed | `src/api/routes/v3/aisles.py`: `start_aisle_processing` | 100% |
-| **Position-to-Job Blindness** | Confirmed | `src/infrastructure/pipeline/v3_report_mapper.py` | 100% |
-| **Knowledge Transfer Loss** | Probable | `src/application/use_cases/persist_aisle_result.py` | 90% (Inferred) |
-| **Merge Engine Cross-Pollination** | Confirmed | `src/application/use_cases/run_aisle_merge.py` | 100% |
-| **Export SKU Duplication** | Confirmed | `src/application/use_cases/export_inventory_results.py` | 100% |
+| **Single-Aisle Persistence Lock** | Mitigated (job-scoped rows) | `backend/src/database/schema.sql` + mapper / repositories | 100% |
+| **API Parameter Absence** | Addressed (processing params) | `backend/src/api/routes/v3/aisles.py` + processing schemas | 100% |
+| **Position-to-Job Blindness** | Mitigated | `backend/src/infrastructure/pipeline/v3_report_mapper.py` + persist | 100% |
+| **Knowledge Transfer Loss** | Deferred (Phase 6 / promotion) | — | N/A for Phases 1–5 |
+| **Merge Engine Cross-Pollination** | Fixed | `backend/src/application/use_cases/run_aisle_merge.py` | 100% |
+| **Export SKU Duplication** | Fixed | `backend/src/application/use_cases/export_inventory_results.py` | 100% |
+
+Historical: “Confirmed” rows in older audits described pre–multi-run gaps. This table reflects **current** Phase 1–5 implementation.
 
 ---
 

@@ -297,7 +297,10 @@ class HybridInventoryPipeline:
         run_metadata["provider"] = provider
         prompt_key = getattr(context, "job_prompt_key", None) or getattr(settings, "hybrid_prompt", None)
         if prompt_key is not None and str(prompt_key).strip():
-            run_metadata["prompt_key"] = str(prompt_key).strip()
+            pk = str(prompt_key).strip()
+            run_metadata["prompt_key"] = pk
+            # Traceability: prompt profile key + hybrid report schema tag (see LLMRequest.schema_version).
+            run_metadata["prompt_version"] = f"{pk}@v2.1"
         if getattr(settings, "debug_run_metadata", False):
             try:
                 (context.run_dir / "run_metadata.json").write_text(

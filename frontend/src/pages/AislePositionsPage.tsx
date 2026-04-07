@@ -133,6 +133,7 @@ export default function AislePositionsPage() {
     enabled: Boolean(inventoryId && aisleId && inventoryQuery.data),
   });
   const jobs = aisleJobsQuery.data?.jobs ?? [];
+  const operationalJobId = aisleJobsQuery.data?.operational_job_id?.trim() || null;
   const inventory = inventoryQuery.data ?? null;
   const aisle = useMemo(
     () => aislesQuery.data?.items?.find((a) => a.id === aisleId) ?? null,
@@ -257,6 +258,10 @@ export default function AislePositionsPage() {
     return m;
   }, [positions]);
 
+  const reviewReadOnly = Boolean(
+    operationalJobId && visibleJobId && operationalJobId !== visibleJobId
+  );
+
   const handleOpenReview = useCallback(
     (resultId: string) => {
       if (!positionById.has(resultId) || !inventoryId || !aisleId || !inventory) return;
@@ -270,9 +275,20 @@ export default function AislePositionsPage() {
         returnTo: 'aisle_results',
         filter,
         jobId: visibleJobId ?? undefined,
+        reviewReadOnly,
       });
     },
-    [positionById, inventoryId, inventory, aisle?.code, aisleId, sortedForTable, filter, visibleJobId]
+    [
+      positionById,
+      inventoryId,
+      inventory,
+      aisle?.code,
+      aisleId,
+      sortedForTable,
+      filter,
+      visibleJobId,
+      reviewReadOnly,
+    ]
   );
 
   useEffect(() => {
@@ -292,9 +308,20 @@ export default function AislePositionsPage() {
       returnTo: 'aisle_results',
       filter: p.filter ?? filter,
       jobId: p.jobId,
+      reviewReadOnly,
     });
     navigate(location.pathname, { replace: true, state: {} });
-  }, [location.state, location.pathname, inventory, inventoryId, aisleId, aisle, filter, navigate]);
+  }, [
+    location.state,
+    location.pathname,
+    inventory,
+    inventoryId,
+    aisleId,
+    aisle,
+    filter,
+    navigate,
+    reviewReadOnly,
+  ]);
 
   const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
 
@@ -346,7 +373,7 @@ export default function AislePositionsPage() {
       setLastMergeSummary(null);
       const result = await mergeMutation.mutateAsync({
         aisleId,
-        jobId: visibleJobId ?? undefined,
+        jobId: visibleJobId ?? null,
       });
       const [, , refreshedMergeResults] = await Promise.all([
         refetch(),

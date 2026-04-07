@@ -17,12 +17,10 @@ class _StubRecomputeUseCase:
 
 
 def test_get_run_aisle_merge_use_case_uses_injected_recompute_dependency() -> None:
-    from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
-
     uc = get_run_aisle_merge_use_case(
         inventory_repo=MemoryInventoryRepository(),
         aisle_repo=MemoryAisleRepository(),
-        raw_label_repo=MemoryRawLabelRepository(),
+        job_repo=MemoryJobRepository(),
         recompute_uc=_StubRecomputeUseCase(),
     )
     assert getattr(uc, "_recompute").__class__.__name__ == "_StubRecomputeUseCase"

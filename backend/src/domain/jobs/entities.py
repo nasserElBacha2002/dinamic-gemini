@@ -57,3 +57,5 @@ class Job:
     model_name: Optional[str] = None
     prompt_key: Optional[str] = None
     engine_params_json: Optional[Dict[str, Any]] = None
+    #: Resolved prompt profile version / schema tag for audit (e.g. ``global_v21@v2.1``).
+    prompt_version: Optional[str] = None

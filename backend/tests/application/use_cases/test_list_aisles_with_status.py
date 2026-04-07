@@ -326,11 +326,11 @@ def test_list_aisles_with_status_last_activity_at_can_win_on_latest_job_only() -
     assert result[0].last_activity_at == t_job
 
 
-def test_list_aisles_positions_count_uses_latest_succeeded_slice_not_all_runs() -> None:
-    """Multi-run aisles: rollups must not sum positions across jobs (Phase 2 default slice)."""
+def test_list_aisles_positions_count_uses_operational_slice_not_all_runs() -> None:
+    """Multi-run aisles: rollups count only the operational job slice (resolver semantics)."""
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     later = datetime(2025, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
-    a1 = Aisle("a1", "inv-1", "A-01", AisleStatus.PROCESSED, now, now, operational_job_id=None)
+    a1 = Aisle("a1", "inv-1", "A-01", AisleStatus.PROCESSED, now, now, operational_job_id="job-2")
     j1 = Job("job-1", "aisle", "a1", "process_aisle", JobStatus.SUCCEEDED, {}, now, now)
     j2 = Job("job-2", "aisle", "a1", "process_aisle", JobStatus.SUCCEEDED, {}, later, later)
     job_repo = MemoryJobRepository()

@@ -92,7 +92,7 @@ export function useRetryAisleJob(inventoryId: string) {
   });
 }
 
-export type RunAisleMergeVariables = { aisleId: string; jobId?: string | null };
+export type RunAisleMergeVariables = { aisleId: string; jobId: string | null };
 
 export function useRunAisleMerge(inventoryId: string) {
   const queryClient = useQueryClient();

@@ -49,7 +49,6 @@ from src.application.errors import (
     ActiveJobExistsError,
     DuplicateAisleCodeError,
     InventoryNotFoundError,
-    MergeJobScopeAmbiguousError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     InvalidProcessingModelError,
@@ -392,27 +391,17 @@ def get_job_hybrid_report(
 def run_aisle_merge(
     inventory_id: str,
     aisle_id: str,
-    job_id: Optional[str] = Query(
-        None,
+    job_id: str = Query(
+        ...,
+        min_length=1,
         description=(
-            "Inventory job id for the run to merge. When multiple runs exist, pass the same id "
-            "as `result_job_id` from GET …/positions for the slice you are viewing."
+            "Inventory job id for the run to merge (same as GET …/positions `result_job_id`), "
+            "or the literal `legacy` for rows with `job_id IS NULL`."
         ),
     ),
     use_case: RunAisleMergeUseCase = Depends(get_run_aisle_merge_use_case),
 ) -> RunMergeResponse:
-    """Run merge/consolidation as an explicit manual post-process.
-
-    The restored v3 UX expects this action to update the visible aisle results after the
-    operator triggers it manually. The merge remains opt-in and never runs automatically
-    during aisle processing.
-
-    Recompute is scoped per run: legacy-only aisles use null job_id slice; a single job's
-    labels imply that job; multiple jobs (or legacy mixed with job-scoped) require ``job_id``.
-
-    Clients should pass the same ``job_id`` as the positions list response's
-    ``result_job_id`` for the slice currently shown, so merge matches visible results.
-    """
+    """Run merge/consolidation as an explicit manual post-process scoped to one job slice."""
     try:
         result = use_case.execute(
             RunAisleMergeCommand(
@@ -433,8 +422,12 @@ def run_aisle_merge(
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:
         raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except MergeJobScopeAmbiguousError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 @router.get(

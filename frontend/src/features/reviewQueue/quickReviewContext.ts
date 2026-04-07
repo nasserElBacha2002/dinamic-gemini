@@ -17,6 +17,8 @@ export interface QuickReviewContext {
   filter?: ResultsFilterKind;
   /** Resolved inventory job for position detail / evidence; must match visible aisle results slice. */
   jobId?: string | null;
+  /** When true, this run is not the aisle operational job — review actions are read-only. */
+  reviewReadOnly?: boolean;
 }
 
 export function reviewQueueItemToContext(row: ReviewQueueItem, resultIds: string[]): QuickReviewContext {

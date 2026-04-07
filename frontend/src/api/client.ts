@@ -375,14 +375,14 @@ export async function getAisleStatus(
 export async function runAisleMerge(
   inventoryId: string,
   aisleId: string,
-  options?: { jobId?: string | null }
+  options: { jobId: string | null }
 ): Promise<RunMergeResponse> {
+  const raw = options.jobId != null ? String(options.jobId).trim() : '';
+  const jobId = raw !== '' ? raw : 'legacy';
   const params = new URLSearchParams();
-  if (options?.jobId != null && String(options.jobId).trim() !== '') {
-    params.set('job_id', String(options.jobId).trim());
-  }
+  params.set('job_id', jobId);
   const qs = params.toString();
-  const url = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge${qs ? `?${qs}` : ''}`;
+  const url = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge?${qs}`;
   const response = await protectedFetch(url, { method: 'POST' });
   return handleResponse<RunMergeResponse>(response);
 }

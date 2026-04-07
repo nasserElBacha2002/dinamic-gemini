@@ -206,9 +206,9 @@ def test_list_positions_explicit_job_id_returns_job_scoped_when_operational_unse
     default_result = uc.execute(
         ListAislePositionsCommand(inventory_id="inv-1", aisle_id="aisle-1", page=1, page_size=50)
     )
-    assert default_result.result_context_source == "latest_succeeded"
-    assert default_result.resolved_job_id == "job-only"
-    assert {p.id for p in default_result.positions} == {"p-scoped"}
+    assert default_result.result_context_source == "legacy"
+    assert default_result.resolved_job_id is None
+    assert default_result.positions == ()
 
     explicit = uc.execute(
         ListAislePositionsCommand(
