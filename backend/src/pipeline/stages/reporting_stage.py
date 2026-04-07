@@ -52,12 +52,14 @@ class ReportingStage:
         # Epic 5: for photos jobs, build image_id -> original_filename so report/export expose source_image_original_filename.
         # Uses public path helpers (no dependency on private frame-source helpers).
         source_image_filename_map: Optional[Dict[str, str]] = None
+        source_image_upload_order: Optional[Dict[str, int]] = None
         job_input = getattr(context, "job_input", None)
         if job_input and getattr(job_input, "input_type", "") == "photos":
             manifest_path = resolve_manifest_path(run_dir, job_input)
             photos_dir_rel = photos_dir_relative_for_manifest(job_input)
             job_images = load_job_images_from_manifest(manifest_path, photos_dir_rel)
             source_image_filename_map = {img.image_id: img.original_filename for img in job_images}
+            source_image_upload_order = {img.image_id: img.upload_order for img in job_images}
 
         report = build_hybrid_report(
             video_path=data.video_path_for_report,
@@ -65,6 +67,7 @@ class ReportingStage:
             frames_selected=data.frames_count,
             frame_indices=data.frame_indices,
             source_image_filename_map=source_image_filename_map,
+            source_image_upload_order=source_image_upload_order,
         )
         report_path = run_dir / "hybrid_report.json"
         write_json(report_path, report)

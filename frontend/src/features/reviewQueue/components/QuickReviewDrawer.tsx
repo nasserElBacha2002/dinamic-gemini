@@ -102,14 +102,15 @@ export default function QuickReviewDrawer({
     inventoryId,
     aisleId,
     activePositionId,
-    { enabled, jobId: context?.jobId }
+    { enabled, jobId: context?.jobId, exactPosition: context?.exactPositionDetail }
   );
 
   useEffect(() => {
+    if (context?.exactPositionDetail) return;
     if (result?.id && result.id !== activePositionId) {
       setActivePositionId(result.id);
     }
-  }, [result?.id, activePositionId]);
+  }, [result?.id, activePositionId, context?.exactPositionDetail]);
 
   const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId);
   const actionLoading = reviewMutation.isPending;

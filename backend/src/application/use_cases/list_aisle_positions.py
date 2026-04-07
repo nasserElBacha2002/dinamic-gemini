@@ -1,8 +1,8 @@
 """
 ListAislePositions use case — v3.0 Épica 6.
 
-Returns SKU-level consolidated positions for an aisle with filters, **post-consolidation**
-sorting and pagination, and honest metadata when the raw fetch cap is hit (Sprint 1.4).
+Returns positions for an aisle with filters, optional SKU consolidation, **post-merge** sorting
+and pagination, and honest metadata when the raw fetch cap is hit (Sprint 1.4).
 
 Phase 2: raw rows are limited to one result context (**explicit** ``job_id`` → **operational_job_id**
 → **legacy** ``job_id IS NULL`` only). There is no implicit latest-job fallback.
@@ -11,7 +11,7 @@ Phase 2: raw rows are limited to one result context (**explicit** ``job_id`` →
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import AisleRepository, InventoryRepository, PositionRepository
@@ -36,10 +36,12 @@ class ListAislePositionsCommand:
     page: int = 1
     page_size: int = 25
     sort_by: str = "created_at"
-    """Post-consolidation: created_at | updated_at | confidence | sku | quantity"""
+    """Post-consolidation: created_at | updated_at | confidence | sku | quantity | photo_sequence"""
     sort_dir: str = "asc"
     #: Optional override; omitted uses Result Context Resolver (operational / legacy).
     job_id: Optional[str] = None
+    #: When False, skip SKU merge (photo-accurate review rows).
+    consolidate_by_sku: bool = True
 
 
 @dataclass(frozen=True)
@@ -65,8 +67,33 @@ def _sort_key_tuple(p: Position, sort_by: str) -> Tuple:
         return (canonical_internal_code_lower(p), p.id)
     if sb == "quantity":
         return (position_quantity_from_summary(p), p.id)
+    if sb == "photo_sequence":
+        return _photo_review_sort_key(p)
     # default created_at
     return (p.created_at, p.id)
+
+
+def _photo_review_sort_key(p: Position) -> Tuple[Any, ...]:
+    """Stable order: manifest photo sequence, then filename, image id, position code, id."""
+    s = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
+    raw_seq = s.get("source_image_sequence")
+    try:
+        seq_v = int(raw_seq) if raw_seq is not None else 1_000_000
+    except (TypeError, ValueError):
+        seq_v = 1_000_000
+    fn = s.get("source_image_original_filename")
+    fn_l = fn.lower() if isinstance(fn, str) else ""
+    sid = s.get("source_image_id")
+    sid_l = sid.lower() if isinstance(sid, str) else ""
+    pcode = ""
+    for k in ("position_barcode", "pallet_id", "entity_uid"):
+        v = s.get(k)
+        if isinstance(v, str) and v.strip():
+            pcode = v.strip().lower()
+            break
+    if not pcode:
+        pcode = p.id.lower()
+    return (seq_v, fn_l, sid_l, pcode, p.id)
 
 
 class ListAislePositionsUseCase:
@@ -113,7 +140,10 @@ class ListAislePositionsUseCase:
         raw_positions = list(self._position_repo.list_by_aisle_query(command.aisle_id, raw_q))
         raw_truncated = len(raw_positions) >= self._raw_cap
 
-        consolidated = consolidate_positions_by_sku(raw_positions)
+        consolidated = consolidate_positions_by_sku(
+            raw_positions,
+            enabled=command.consolidate_by_sku,
+        )
         reverse = (command.sort_dir or "asc").strip().lower() == "desc"
         consolidated_sorted = sorted(
             consolidated,

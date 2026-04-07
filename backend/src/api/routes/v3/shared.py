@@ -547,6 +547,8 @@ def _position_summary_response_from_view(
         status=view.traceability.traceability_status,
         source_image_id=view.traceability.source_image_id,
         source_image_original_filename=view.traceability.source_image_original_filename,
+        source_image_sequence=view.traceability.source_image_sequence,
+        primary_evidence_frame_index=view.traceability.primary_evidence_frame_index,
         primary_evidence_id=view.review.primary_evidence_id,
         has_evidence=view.review.has_evidence,
     )

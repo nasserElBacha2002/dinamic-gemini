@@ -58,3 +58,5 @@ class Entity:
     source_image_id: Optional[str] = None
     traceability_status: Optional[str] = None  # one of TraceabilityStatus (valid, missing, invalid, unvalidated)
     traceability_warning: Optional[str] = None  # diagnostic only: report + API; not persisted to pallet_results
+    #: Pipeline frame index in the acquired bundle used for primary evidence (photos: manifest image index).
+    evidence_primary_frame_index: Optional[int] = None

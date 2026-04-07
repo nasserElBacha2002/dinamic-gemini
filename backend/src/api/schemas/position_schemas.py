@@ -116,6 +116,14 @@ class PositionTraceabilityBlock(BaseModel):
     )
     source_image_id: Optional[str] = Field(None, description="Report source image; mirrors deprecated field.")
     source_image_original_filename: Optional[str] = None
+    source_image_sequence: Optional[int] = Field(
+        None,
+        description="1-based manifest upload order for photos jobs when present; stable photo grouping.",
+    )
+    primary_evidence_frame_index: Optional[int] = Field(
+        None,
+        description="Frame index in the acquired bundle for primary evidence (audit; photos: manifest index).",
+    )
     primary_evidence_id: Optional[str] = Field(
         None,
         description="Primary evidence crop id; mirrors deprecated top-level ``primary_evidence_id``.",

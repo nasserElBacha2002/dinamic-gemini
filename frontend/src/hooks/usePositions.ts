@@ -29,6 +29,7 @@ export function positionsListQueryKeyPart(q: AislePositionsListQuery | undefined
   if (q.sku_filter != null && String(q.sku_filter).trim() !== '') out.sku_filter = String(q.sku_filter).trim();
   if (q.sort_by != null && String(q.sort_by).trim() !== '') out.sort_by = String(q.sort_by).trim();
   if (q.sort_dir != null && String(q.sort_dir).trim() !== '') out.sort_dir = String(q.sort_dir).trim();
+  if (q.consolidate_by_sku === false) out.consolidate_by_sku = 0;
   return out;
 }
 
@@ -50,15 +51,18 @@ export function usePositionDetail(
   inventoryId: string | undefined,
   aisleId: string | undefined,
   positionId: string | undefined,
-  options?: { enabled?: boolean; jobId?: string | null }
+  options?: { enabled?: boolean; jobId?: string | null; exactPosition?: boolean }
 ) {
   const jobId = options?.jobId;
+  const exactPosition = options?.exactPosition ?? false;
   return useQuery({
     queryKey: [
       ...queryKeys.inventories.positionDetail(inventoryId ?? '', aisleId ?? '', positionId ?? ''),
       jobId ?? null,
+      exactPosition ? 1 : 0,
     ] as const,
-    queryFn: () => getPositionDetail(inventoryId!, aisleId!, positionId!, { jobId }),
+    queryFn: () =>
+      getPositionDetail(inventoryId!, aisleId!, positionId!, { jobId, exactPosition }),
     enabled: Boolean(inventoryId && aisleId && positionId) && (options?.enabled !== false),
   });
 }

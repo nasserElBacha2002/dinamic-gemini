@@ -255,6 +255,7 @@ class HybridInventoryPipeline:
                 entities=resolved.entities,
                 frames_nd=acquired.frames_nd,
                 metadata=acquired.metadata,
+                frame_refs=list(acquired.frame_refs),
             )
             self._evidence_stage.run(context, evidence_input)
             duration_ms = int((time.monotonic() - stage_started) * 1000)

@@ -23,6 +23,45 @@ EVIDENCE_LOCALIZED = "LOCALIZED"
 EVIDENCE_UNLOCALIZED = "UNLOCALIZED"
 
 
+def _resolve_entity_source_frame_indices(
+    entity: Entity,
+    *,
+    frame_refs: Optional[List[str]],
+    metadata: Dict[str, Any],
+    num_frames: int,
+) -> List[int]:
+    """Indices into ``frames`` that belong to this entity's source only.
+
+    For **photos** jobs, only frames whose ``frame_refs[i]`` matches ``entity.source_image_id`` are
+    used — never blend sharpness/crops across unrelated uploads. For **video** (or misaligned refs),
+    all frame indices are allowed (single-stream sampling; entity bboxes are relative to those frames).
+
+    When a photos entity has no resolvable match, returns ``[]`` so we do not silently attach another
+    photo's pixels (overview/crops skipped; operator still sees traceability flags in report).
+    """
+    if num_frames <= 0:
+        return []
+    source = (metadata or {}).get("source")
+    if source != "photos" or not frame_refs or len(frame_refs) != num_frames:
+        return list(range(num_frames))
+    sid = (entity.source_image_id or "").strip()
+    if not sid:
+        logger.warning(
+            "evidence_pack photos job: entity_uid=%s missing source_image_id; refusing cross-image evidence",
+            entity.entity_uid,
+        )
+        return []
+    matching = [i for i, ref in enumerate(frame_refs) if ref == sid]
+    if not matching:
+        logger.warning(
+            "evidence_pack photos job: entity_uid=%s source_image_id=%r not found in frame_refs; refusing evidence images",
+            entity.entity_uid,
+            sid,
+        )
+        return []
+    return matching
+
+
 def parse_bbox_to_pixels(
     bbox: Optional[List[float]],
     frame_w: int,
@@ -102,6 +141,7 @@ def generate_evidence_pack(
     frames: List[np.ndarray],
     metadata: Dict[str, Any],
     entities: List[Entity],
+    frame_refs: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Generate evidence pack per entity and write run/evidence/ and run/evidence_index.json.
 
@@ -127,8 +167,7 @@ def generate_evidence_pack(
     evidence_root = run_dir / "evidence"
     evidence_root.mkdir(parents=True, exist_ok=True)
 
-    frame_h, frame_w = (frames[0].shape[:2]) if frames else (0, 0)
-
+    num_frames = len(frames)
     index_entities: List[Dict[str, Any]] = []
 
     for entity in entities:
@@ -137,23 +176,47 @@ def generate_evidence_pack(
         rel_evidence_dir = f"evidence/{slug(entity.entity_uid)}"
         entity.evidence_path = rel_evidence_dir
 
+        src_indices = _resolve_entity_source_frame_indices(
+            entity,
+            frame_refs=frame_refs,
+            metadata=metadata,
+            num_frames=num_frames,
+        )
+        entity.evidence_primary_frame_index = src_indices[0] if src_indices else None
+        entity_frames = [frames[i] for i in src_indices] if src_indices else []
+        logger.debug(
+            "evidence_pack scoped entity_uid=%s source_image_id=%r scoped_frame_indices=%s",
+            entity.entity_uid,
+            (entity.source_image_id or "").strip() or None,
+            src_indices,
+        )
+
+        if entity_frames:
+            frame_h, frame_w = entity_frames[0].shape[:2]
+        else:
+            frame_h, frame_w = (0, 0)
+
         has_pos_bbox = (
             entity.position_label_bbox is not None
+            and frame_w > 0
+            and frame_h > 0
             and parse_bbox_to_pixels(entity.position_label_bbox, frame_w, frame_h) is not None
         )
         has_prod_bbox = (
             entity.product_label_bbox is not None
+            and frame_w > 0
+            and frame_h > 0
             and parse_bbox_to_pixels(entity.product_label_bbox, frame_w, frame_h) is not None
         )
-        localized = has_pos_bbox or has_prod_bbox
+        localized = bool(entity_frames) and (has_pos_bbox or has_prod_bbox)
         entity.evidence_localization = EVIDENCE_LOCALIZED if localized else EVIDENCE_UNLOCALIZED
 
         evidence: Dict[str, Any] = {"overview": []}
         image_count = 0
         path_prefix = rel_evidence_dir
 
-        # 1) Overview frames
-        overview_list = _select_overview_frames(frames, k_overview)
+        # 1) Overview frames — only from this entity's source image(s)
+        overview_list = _select_overview_frames(entity_frames, k_overview)
         for idx, (frame_idx, frame) in enumerate(overview_list):
             if image_count >= max_images:
                 break
@@ -168,7 +231,7 @@ def generate_evidence_pack(
             # 2) Position label crops
             if has_pos_bbox and entity.position_label_bbox:
                 candidates = _select_best_crop_candidates(
-                    frames, entity.position_label_bbox, k_pos
+                    entity_frames, entity.position_label_bbox, k_pos
                 )
                 for i, (_, crop) in enumerate(candidates):
                     if image_count >= max_images:
@@ -189,7 +252,7 @@ def generate_evidence_pack(
             # 3) Product label crops
             if has_prod_bbox and entity.product_label_bbox:
                 candidates = _select_best_crop_candidates(
-                    frames, entity.product_label_bbox, k_prod
+                    entity_frames, entity.product_label_bbox, k_prod
                 )
                 for i, (_, crop) in enumerate(candidates):
                     if image_count >= max_images:
@@ -228,5 +291,11 @@ def generate_evidence_pack(
     index_path = run_dir / "evidence_index.json"
     with open(index_path, "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2, ensure_ascii=False)
-    logger.info("Evidence pack written: %s (%d entities)", index_path, len(entities))
+    logger.info(
+        "Evidence pack written: %s (%d entities, source=%s, frame_refs_aligned=%s)",
+        index_path,
+        len(entities),
+        (metadata or {}).get("source"),
+        frame_refs is not None and len(frame_refs) == num_frames,
+    )
     return index

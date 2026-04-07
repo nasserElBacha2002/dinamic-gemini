@@ -55,6 +55,7 @@ def build_hybrid_report(
     frames_selected: int,
     frame_indices: Optional[List[int]] = None,
     source_image_filename_map: Optional[Dict[str, str]] = None,
+    source_image_upload_order: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     """Build the authoritative hybrid report (report_version 2.1, summary, entities).
 
@@ -66,6 +67,8 @@ def build_hybrid_report(
         source_image_filename_map: Optional map image_id -> original_filename (Epic 5; photos jobs only).
             When None (e.g. video job) or when entity has no source_image_id, the field is not set.
             When source_image_id is not in the map (e.g. incomplete manifest), value is None.
+        source_image_upload_order: Optional map image_id -> 1-based manifest upload order (photos jobs;
+            stable photo grouping for review).
 
     Returns:
         Report dict with report_version 2.1, mode hybrid_v2.1, summary, entities.
@@ -75,7 +78,8 @@ def build_hybrid_report(
 
     entity_dicts = []
     for e in entities:
-        entity_dicts.append({
+        sid = getattr(e, "source_image_id", None)
+        row: Dict[str, Any] = {
             "entity_uid": e.entity_uid,
             "entity_type": e.entity_type,
             "model_entity_id": e.model_entity_id,
@@ -96,18 +100,26 @@ def build_hybrid_report(
             "evidence_path": e.evidence_path,
             "evidence_localization": e.evidence_localization,
             # Epic 3.1.B: traceability (traceability_warning is report-only diagnostic, not persisted to pallet_results)
-            "source_image_id": getattr(e, "source_image_id", None),
+            "source_image_id": sid,
             "traceability_status": getattr(e, "traceability_status", None),
             "traceability_warning": getattr(e, "traceability_warning", None),
             # Epic 5: original filename of source image when available (photos jobs; facilitates review/audit).
             # Set only when entity has source_image_id and it exists in the map; otherwise None (video job,
             # no map, or source_image_id not in map — explicit and stable).
             "source_image_original_filename": (
-                (source_image_filename_map or {}).get(sid) if (sid := getattr(e, "source_image_id", None)) else None
+                (source_image_filename_map or {}).get(sid) if sid else None
             ),
             # Epic 3.1.D: single review/export display label (internal_code else position_barcode; centralized derivation)
             "review_display_label": derive_review_display_label(e.internal_code, e.position_barcode),
-        })
+        }
+        if source_image_upload_order and sid:
+            seq = source_image_upload_order.get(sid)
+            if seq is not None:
+                row["source_image_sequence"] = seq
+        efi = getattr(e, "evidence_primary_frame_index", None)
+        if efi is not None:
+            row["evidence_primary_frame_index"] = efi
+        entity_dicts.append(row)
 
     report: Dict[str, Any] = {
         "report_version": "2.1",

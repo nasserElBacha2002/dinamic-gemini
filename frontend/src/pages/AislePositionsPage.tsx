@@ -4,7 +4,7 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Alert, Box, Button, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import { exportAisleResultsCsv, type AislePositionsListQuery } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
@@ -42,8 +42,14 @@ import {
 import CompareRunsDialog from '../features/benchmark/CompareRunsDialog';
 import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
 
-/** Client-side filtered table; matches useResultSummaries default. */
-const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = { page: 1, page_size: 500 };
+/** List query: photo-grouped order, no SKU merge — matches operator photo-review expectations. */
+const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = {
+  page: 1,
+  page_size: 500,
+  sort_by: 'photo_sequence',
+  sort_dir: 'asc',
+  consolidate_by_sku: false,
+};
 
 type MergeCandidateSummary = {
   groupCount: number;
@@ -117,6 +123,8 @@ export default function AislePositionsPage() {
   const [compareJobB, setCompareJobB] = useState('');
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [promoteJobId, setPromoteJobId] = useState('');
+  /** `photo` keeps API order; `priority` applies client-side review ranking on top of loaded rows. */
+  const [tableSort, setTableSort] = useState<'photo' | 'priority'>('photo');
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const routeIdentityRef = useRef<string>('');
   /** When true, user chose "Default (API resolver)" — keep list request without job_id even if result_job_id repeats. */
@@ -259,7 +267,10 @@ export default function AislePositionsPage() {
     });
   }, [filteredByKind, skuSearch]);
 
-  const sortedForTable = useMemo(() => sortResultsByPriority(filteredBySku), [filteredBySku]);
+  const sortedForTable = useMemo(
+    () => (tableSort === 'priority' ? sortResultsByPriority(filteredBySku) : filteredBySku),
+    [filteredBySku, tableSort]
+  );
 
   useEffect(() => {
     if (sortedForTable.length === 0) return;
@@ -317,6 +328,7 @@ export default function AislePositionsPage() {
         filter,
         jobId: visibleJobId ?? undefined,
         reviewReadOnly,
+        exactPositionDetail: true,
       });
     },
     [
@@ -350,6 +362,7 @@ export default function AislePositionsPage() {
       filter: p.filter ?? filter,
       jobId: p.jobId,
       reviewReadOnly,
+      exactPositionDetail: p.exactPositionDetail ?? true,
     });
     navigate(location.pathname, { replace: true, state: {} });
   }, [
@@ -702,6 +715,18 @@ export default function AislePositionsPage() {
               }}
               sx={{ minWidth: 200 }}
             />
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={tableSort}
+              onChange={(_, value) => {
+                if (value != null) setTableSort(value);
+              }}
+              aria-label="Row order"
+            >
+              <ToggleButton value="photo">Photo order</ToggleButton>
+              <ToggleButton value="priority">Review priority</ToggleButton>
+            </ToggleButtonGroup>
             <ResultsQuickFilters
               value={filter}
               onChange={(v) => {
