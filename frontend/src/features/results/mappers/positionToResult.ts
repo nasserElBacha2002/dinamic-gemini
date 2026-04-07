@@ -47,15 +47,18 @@ export function mapTraceabilityToVisible(
  * Unknown status → DETECTED (document-only: backend sends detected|reviewed|corrected|deleted). */
 export function mapPositionStatusToReviewStatus(
   status: string | null | undefined,
-  needsReview: boolean
+  needsReview: boolean,
+  reviewResolution?: string | null
 ): ReviewStatus {
   const s = (status ?? '').trim().toLowerCase();
+  const res = (reviewResolution ?? '').trim().toLowerCase();
   if (needsReview && s === 'detected') return 'NEEDS_REVIEW';
   switch (s) {
     case 'detected':
       return 'DETECTED';
     case 'reviewed':
     case 'corrected':
+      if (res === 'image_mismatch') return 'IMAGE_MISMATCH';
       return 'CONFIRMED';
     case 'deleted':
       return 'INVALID';
@@ -104,7 +107,11 @@ export function mapPositionSummaryToResultSummary(
     qtyResolved,
     qtyInferenceReason,
     confidence: p.confidence ?? null,
-    reviewStatus: mapPositionStatusToReviewStatus(p.status, p.needs_review),
+    reviewStatus: mapPositionStatusToReviewStatus(
+      p.status,
+      p.needs_review,
+      p.review_resolution
+    ),
     traceabilityStatus,
     needsReview: p.needs_review,
     updatedAt: p.updated_at,
@@ -215,7 +222,8 @@ export function mapPositionDetailToResultDetail(
     confidence: position.confidence ?? null,
     reviewStatus: mapPositionStatusToReviewStatus(
       position.status,
-      position.needs_review
+      position.needs_review,
+      position.review_resolution
     ),
     traceabilityStatus,
     needsReview: position.needs_review,

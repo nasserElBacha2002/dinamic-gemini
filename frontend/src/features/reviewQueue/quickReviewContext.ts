@@ -19,6 +19,10 @@ export interface QuickReviewContext {
   jobId?: string | null;
   /** When true, this run is not the aisle operational job — review actions are read-only. */
   reviewReadOnly?: boolean;
+  /**
+   * Aisle review: fetch position detail without SKU-representative redirect so evidence matches the row.
+   */
+  exactPositionDetail?: boolean;
 }
 
 export function reviewQueueItemToContext(row: ReviewQueueItem, resultIds: string[]): QuickReviewContext {
@@ -55,4 +59,5 @@ export type OpenReviewDrawerPayload =
       filter?: ResultsFilterKind;
       /** Preserved when deep-linking into review with `?jobId=` on the positions route. */
       jobId?: string | null;
+      exactPositionDetail?: boolean;
     };

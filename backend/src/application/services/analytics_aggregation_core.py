@@ -74,6 +74,7 @@ class ManualInterventionBreakdown:
     qty_corrected_count: int
     sku_corrected_count: int
     operator_marked_unknown_count: int
+    image_mismatch_count: int
     deleted_count: int
     unknown_available: bool
     invalid_available: bool
@@ -138,6 +139,7 @@ def settling_action(ra: ReviewAction) -> bool:
         ReviewActionType.UPDATE_QUANTITY,
         ReviewActionType.UPDATE_SKU,
         ReviewActionType.MARK_UNKNOWN,
+        ReviewActionType.MARK_IMAGE_MISMATCH,
     )
 
 
@@ -337,6 +339,7 @@ def compute_manual_intervention_breakdown(
             ReviewActionType.UPDATE_QUANTITY,
             ReviewActionType.UPDATE_SKU,
             ReviewActionType.MARK_UNKNOWN,
+            ReviewActionType.MARK_IMAGE_MISMATCH,
             ReviewActionType.DELETE_POSITION,
         ):
             intervention_positions.add(ra.position_id)
@@ -348,6 +351,7 @@ def compute_manual_intervention_breakdown(
     qty_corrected_count = 0
     sku_corrected_count = 0
     operator_marked_unknown_count = 0
+    image_mismatch_count = 0
     deleted_count = 0
     for ra in latest_by_position.values():
         if ra.action_type == ReviewActionType.CONFIRM:
@@ -358,6 +362,8 @@ def compute_manual_intervention_breakdown(
             sku_corrected_count += 1
         elif ra.action_type == ReviewActionType.MARK_UNKNOWN:
             operator_marked_unknown_count += 1
+        elif ra.action_type == ReviewActionType.MARK_IMAGE_MISMATCH:
+            image_mismatch_count += 1
         elif ra.action_type == ReviewActionType.DELETE_POSITION:
             deleted_count += 1
 
@@ -368,6 +374,7 @@ def compute_manual_intervention_breakdown(
         qty_corrected_count=qty_corrected_count,
         sku_corrected_count=sku_corrected_count,
         operator_marked_unknown_count=operator_marked_unknown_count,
+        image_mismatch_count=image_mismatch_count,
         deleted_count=deleted_count,
         unknown_available=True,
         invalid_available=False,

@@ -633,6 +633,11 @@ export interface AislePositionsListQuery {
   page_size?: number;
   sort_by?: string;
   sort_dir?: string;
+  /**
+   * When false, request unmerged rows (photo-accurate review). Omitted/true uses backend default
+   * (SKU consolidation on).
+   */
+  consolidate_by_sku?: boolean | null;
   /** When set, list only this inventory job's positions (same as GET query `job_id`). */
   job_id?: string | null;
 }
@@ -666,6 +671,9 @@ function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined):
   }
   if (q.job_id != null && String(q.job_id).trim() !== '') {
     params.set('job_id', String(q.job_id).trim());
+  }
+  if (q.consolidate_by_sku === false) {
+    params.set('consolidate_by_sku', 'false');
   }
   const s = params.toString();
   return s ? `?${s}` : '';
@@ -843,11 +851,14 @@ export async function getPositionDetail(
   inventoryId: string,
   aisleId: string,
   positionId: string,
-  options?: { jobId?: string | null }
+  options?: { jobId?: string | null; exactPosition?: boolean }
 ): Promise<PositionDetailResponse> {
   const params = new URLSearchParams();
   if (options?.jobId != null && String(options.jobId).trim() !== '') {
     params.set('job_id', String(options.jobId).trim());
+  }
+  if (options?.exactPosition) {
+    params.set('exact_position', 'true');
   }
   const qs = params.toString();
   const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs ? `?${qs}` : ''}`;

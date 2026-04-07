@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from src.domain.evidence.entities import Evidence, EvidenceType
@@ -97,6 +97,18 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
     sof = entity.get("source_image_original_filename")
     if sof is not None and isinstance(sof, str) and sof.strip():
         out["source_image_original_filename"] = sof.strip()
+    seq = entity.get("source_image_sequence")
+    if seq is not None:
+        try:
+            out["source_image_sequence"] = int(seq)
+        except (TypeError, ValueError):
+            pass
+    efi = entity.get("evidence_primary_frame_index")
+    if efi is not None:
+        try:
+            out["evidence_primary_frame_index"] = int(efi)
+        except (TypeError, ValueError):
+            pass
     if audit:
         out["_audit"] = audit
     return out
@@ -304,6 +316,14 @@ def map_hybrid_report_to_domain(
         )
         product_records.append(product)
 
+        ev_frame: Optional[int] = None
+        raw_efi = entity.get("evidence_primary_frame_index")
+        if raw_efi is not None:
+            try:
+                ev_frame = int(raw_efi)
+            except (TypeError, ValueError):
+                ev_frame = None
+
         evidence = Evidence(
             id=evidence_id,
             entity_type="position",
@@ -312,7 +332,7 @@ def map_hybrid_report_to_domain(
             storage_path=storage_path,
             source_asset_id=None,
             is_primary=True,
-            frame_index=None,
+            frame_index=ev_frame,
             timestamp_ms=None,
             bbox_json=None,
             quality_score=entity.get("entity_quality_score"),

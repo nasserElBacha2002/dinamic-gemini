@@ -34,8 +34,18 @@ def canonical_internal_code_lower(pos: Position) -> str:
     return ""
 
 
-def consolidate_positions_by_sku(positions: Sequence[Position]) -> List[Position]:
-    """Merge raw positions with the same aisle + SKU into one representative row (in-place summary update)."""
+def consolidate_positions_by_sku(
+    positions: Sequence[Position],
+    *,
+    enabled: bool = True,
+) -> List[Position]:
+    """Merge raw positions with the same aisle + SKU into one representative row (in-place summary update).
+
+    When ``enabled`` is False, returns raw positions in list order (no merge) — used for photo-focused
+    aisle review so rows stay one-to-one with detections.
+    """
+    if not enabled:
+        return list(positions)
     by_key: Dict[Tuple[str, str], List[Position]] = {}
     standalone: List[Position] = []
     for p in positions:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from src.application.use_cases.list_aisle_positions import (
@@ -96,3 +97,134 @@ def test_list_aisle_positions_default_pagination_matches_explicit() -> None:
     )
     implicit = uc.execute(ListAislePositionsCommand(inventory_id="inv-1", aisle_id="aisle-1"))
     assert [p.id for p in explicit.positions] == [p.id for p in implicit.positions]
+
+
+def test_list_aisle_positions_photo_sequence_is_stable_and_contiguous_by_photo() -> None:
+    inv_repo, aisle_repo, pos_repo, now = _repos()
+    pos_repo._store.clear()  # type: ignore[attr-defined]
+
+    def make_pos(
+        pid: str,
+        seq: int,
+        barcode: str,
+        image_id: str,
+    ) -> Position:
+        return Position(
+            pid,
+            "aisle-1",
+            PositionStatus.DETECTED,
+            0.9,
+            False,
+            None,
+            now,
+            now,
+            detected_summary_json={
+                "internal_code": "SKU-X",
+                "final_quantity": 1,
+                "source_image_sequence": seq,
+                "source_image_id": image_id,
+                "source_image_original_filename": f"{image_id}.jpg",
+                "position_barcode": barcode,
+            },
+        )
+
+    # Store out of final sort order; same SKU would merge if consolidation stayed on.
+    pos_repo.save(make_pos("p-late", 2, "Z", "img-b"))
+    pos_repo.save(make_pos("p-early-b", 1, "B", "img-a"))
+    pos_repo.save(make_pos("p-early-a", 1, "A", "img-a"))
+
+    uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        ResultContextResolver(MemoryJobRepository()),
+        positions_aisle_raw_cap=500,
+    )
+    cmd = ListAislePositionsCommand(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        consolidate_by_sku=False,
+        sort_by="photo_sequence",
+        sort_dir="asc",
+        page=1,
+        page_size=50,
+    )
+    full = uc.execute(cmd)
+    assert [p.id for p in full.positions] == ["p-early-a", "p-early-b", "p-late"]
+
+    page1 = uc.execute(replace(cmd, page=1, page_size=2))
+    page2 = uc.execute(replace(cmd, page=2, page_size=2))
+    assert [p.id for p in page1.positions] == ["p-early-a", "p-early-b"]
+    assert [p.id for p in page2.positions] == ["p-late"]
+
+
+def test_list_aisle_positions_photo_sequence_overrides_consolidate_by_sku() -> None:
+    """photo_sequence sort is undefined for merged rows; use case forces no SKU merge."""
+    inv_repo, aisle_repo, pos_repo, now = _repos()
+    pos_repo._store.clear()  # type: ignore[attr-defined]
+    pos_repo.save(
+        Position(
+            "x1",
+            "aisle-1",
+            PositionStatus.DETECTED,
+            0.9,
+            False,
+            None,
+            now,
+            now,
+            detected_summary_json={
+                "internal_code": "SKU-M",
+                "final_quantity": 1,
+                "source_image_sequence": 1,
+                "source_image_id": "img-1",
+            },
+        )
+    )
+    pos_repo.save(
+        Position(
+            "x2",
+            "aisle-1",
+            PositionStatus.DETECTED,
+            0.85,
+            False,
+            None,
+            now,
+            now,
+            detected_summary_json={
+                "internal_code": "SKU-M",
+                "final_quantity": 1,
+                "source_image_sequence": 2,
+                "source_image_id": "img-2",
+            },
+        )
+    )
+    uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        ResultContextResolver(MemoryJobRepository()),
+        positions_aisle_raw_cap=500,
+    )
+    merged = uc.execute(
+        ListAislePositionsCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            page=1,
+            page_size=50,
+            sort_by="created_at",
+            consolidate_by_sku=True,
+        )
+    )
+    photo = uc.execute(
+        ListAislePositionsCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            page=1,
+            page_size=50,
+            sort_by="photo_sequence",
+            consolidate_by_sku=True,
+        )
+    )
+    assert len(merged.positions) == 1
+    assert len(photo.positions) == 2
+    assert [p.id for p in photo.positions] == ["x1", "x2"]

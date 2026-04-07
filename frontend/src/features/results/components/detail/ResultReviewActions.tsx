@@ -18,6 +18,7 @@ export interface ResultReviewActionsProps {
   onUpdateQuantity: (quantity: number) => void;
   onUpdateSku: (sku: string) => void;
   onUpdatePositionCode: (positionCode: string) => void;
+  onMarkImageMismatch: () => void;
   onDeleteClick: () => void;
 }
 
@@ -29,6 +30,7 @@ export default function ResultReviewActions({
   onUpdateQuantity,
   onUpdateSku,
   onUpdatePositionCode,
+  onMarkImageMismatch,
   onDeleteClick,
 }: ResultReviewActionsProps) {
   const [activeEditor, setActiveEditor] = useState<'qty' | 'sku' | 'pos' | null>(null);
@@ -99,6 +101,40 @@ export default function ResultReviewActions({
           </Button>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'center', opacity: 0.7, fontWeight: 500 }}>
             Accept current data as correct
+          </Typography>
+        </Box>
+      )}
+
+      {/* Traceability — distinct from unknown / invalid / SKU corrections */}
+      {result.reviewStatus !== 'IMAGE_MISMATCH' ? (
+        <Box sx={{ mb: 3 }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1.2 }}
+          >
+            Evidence / image
+          </Typography>
+          <Button
+            variant="outlined"
+            color="warning"
+            size="medium"
+            fullWidth
+            onClick={onMarkImageMismatch}
+            disabled={actionLoading}
+            sx={{ textTransform: 'none', fontWeight: 600, py: 1, borderRadius: 1.5 }}
+          >
+            Wrong image
+          </Button>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, lineHeight: 1.4 }}>
+            Flag when the detection looks right but the photo or crop does not belong to this row. SKU and quantity
+            stay unchanged.
+          </Typography>
+        </Box>
+      ) : (
+        <Box sx={{ mb: 3, p: 1.5, borderRadius: 1.5, bgcolor: 'action.hover', border: 1, borderColor: 'divider' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+            This result is flagged as wrong image / evidence linkage (traceability only).
           </Typography>
         </Box>
       )}

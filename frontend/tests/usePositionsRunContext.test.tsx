@@ -56,6 +56,12 @@ describe('positionsListQueryKeyPart', () => {
     expect(explicit.job_id).toBe('run-a');
     expect(explicit.job_slice).toBeUndefined();
   });
+
+  it('differs when consolidate_by_sku=false (photo review list)', () => {
+    expect(
+      positionsListQueryKeyPart({ page: 1, page_size: 10, consolidate_by_sku: false })
+    ).not.toEqual(positionsListQueryKeyPart({ page: 1, page_size: 10 }));
+  });
 });
 
 describe('usePositions run context (Phase 3)', () => {
@@ -124,6 +130,39 @@ describe('usePositions run context (Phase 3)', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.getPositionDetail).toHaveBeenCalledWith('inv-1', 'aisle-1', 'pos-1', {
       jobId: 'job-z',
+      exactPosition: false,
+    });
+  });
+
+  it('isolates cache when exactPosition differs', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrap = wrapper(qc);
+
+    const { result: rExact } = renderHook(
+      () =>
+        usePositionDetail('inv-1', 'aisle-1', 'pos-1', {
+          exactPosition: true,
+        }),
+      { wrapper: wrap }
+    );
+    const { result: rRep } = renderHook(
+      () =>
+        usePositionDetail('inv-1', 'aisle-1', 'pos-1', {
+          exactPosition: false,
+        }),
+      { wrapper: wrap }
+    );
+
+    await waitFor(() => expect(rExact.current.isSuccess).toBe(true));
+    await waitFor(() => expect(rRep.current.isSuccess).toBe(true));
+
+    expect(client.getPositionDetail).toHaveBeenCalledWith('inv-1', 'aisle-1', 'pos-1', {
+      jobId: undefined,
+      exactPosition: true,
+    });
+    expect(client.getPositionDetail).toHaveBeenCalledWith('inv-1', 'aisle-1', 'pos-1', {
+      jobId: undefined,
+      exactPosition: false,
     });
   });
 });

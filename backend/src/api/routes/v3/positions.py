@@ -52,18 +52,29 @@ def list_aisle_positions(
     needs_review: Optional[bool] = Query(None, description="When set, only positions with this needs_review flag."),
     min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="Minimum confidence (inclusive)."),
     sku_filter: Optional[str] = Query(None, description="Substring match against product SKU for this aisle."),
-    page: int = Query(1, ge=1, description="1-based page index after SKU consolidation."),
+    page: int = Query(1, ge=1, description="1-based page index after optional SKU consolidation."),
     page_size: int = Query(
         25,
         ge=1,
         le=500,
-        description="Page size after consolidation (max 500).",
+        description="Page size after optional SKU consolidation (max 500).",
     ),
     sort_by: str = Query(
         "created_at",
-        description="Post-consolidation sort: created_at | updated_at | confidence | sku | quantity",
+        description=(
+            "Post-consolidation sort: created_at | updated_at | confidence | sku | quantity | "
+            "photo_sequence (requires unmerged rows — SKU merge is disabled automatically for this sort)"
+        ),
     ),
     sort_dir: str = Query("asc", description="asc | desc"),
+    consolidate_by_sku: bool = Query(
+        True,
+        description=(
+            "When false, skip SKU merge so list rows stay one-to-one with detections (photo review). "
+            "Ignored (treated as false) when sort_by=photo_sequence. Default true preserves legacy "
+            "consolidated aisle results."
+        ),
+    ),
     job_id: Optional[str] = Query(
         None,
         description=(
@@ -78,7 +89,8 @@ def list_aisle_positions(
 ) -> PositionListResponse:
     """List result positions for an aisle (Aisle Results).
 
-    Filters apply to **raw** rows; ``page`` / ``page_size`` / sort apply **after** SKU consolidation.
+    Filters apply to **raw** rows; ``page`` / ``page_size`` / sort apply **after** optional SKU consolidation
+    (see ``consolidate_by_sku``).
     When ``raw_fetch_truncated`` is true in the response, ``total_items`` / ``total_pages`` are only
     reliable within the raw rows the server loaded — not for the entire aisle. See schema docstring.
     """
@@ -95,6 +107,7 @@ def list_aisle_positions(
             sort_by=sort_by,
             sort_dir=sort_dir,
             job_id=job_id.strip() if job_id and str(job_id).strip() else None,
+            consolidate_by_sku=consolidate_by_sku,
         )
         result = use_case.execute(cmd)
         summaries = []
@@ -144,14 +157,20 @@ def get_position_detail(
         None,
         description="Optional; must match resolved result context for this position (Phase 2).",
     ),
+    exact_position: bool = Query(
+        False,
+        description=(
+            "When true, return products/evidence for this ``position_id`` only — no redirect to a "
+            "SKU-consolidated representative row. Use with photo-accurate aisle review lists."
+        ),
+    ),
     use_case: GetPositionDetailUseCase = Depends(get_get_position_detail_use_case),
 ) -> PositionDetailResponse:
     """Get detail for the operator-facing current review entity of a position.
 
-    The returned ``position`` block follows the same consolidated representative semantics as the
-    aisle results list. When ``position_id`` belongs to an aggregated group, detail resolves the
-    representative row that operators see in the list; ``technical_snapshot`` remains secondary
-    debug/history metadata for that resolved entity.
+    By default the returned ``position`` block follows the same consolidated representative semantics as
+    the aisle results list: when ``position_id`` belongs to an aggregated group, detail resolves the
+    representative row. Pass ``exact_position=true`` for one-to-one row/evidence traceability.
 
     **409 Conflict:** When the position exists but its storage ``job_id`` does not match the resolved
     result slice (explicit query param, then ``aisles.operational_job_id``, then legacy null-job
@@ -163,6 +182,7 @@ def get_position_detail(
             aisle_id,
             position_id,
             explicit_job_id=job_id.strip() if job_id and str(job_id).strip() else None,
+            exact_position=exact_position,
         )
         # GetPositionDetailUseCase returns products from list_by_position (order not guaranteed by port);
         # SQL repo orders by created_at ASC, id ASC; memory repo is unordered — use shared display-primary rule.

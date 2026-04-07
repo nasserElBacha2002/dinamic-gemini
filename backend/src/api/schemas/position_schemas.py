@@ -116,6 +116,20 @@ class PositionTraceabilityBlock(BaseModel):
     )
     source_image_id: Optional[str] = Field(None, description="Report source image; mirrors deprecated field.")
     source_image_original_filename: Optional[str] = None
+    source_image_sequence: Optional[int] = Field(
+        None,
+        description=(
+            "1-based manifest upload order for photos jobs when present. "
+            "When absent, ``sort_by=photo_sequence`` still orders rows but uses filename / image id / id tie-breakers only — not true capture order."
+        ),
+    )
+    primary_evidence_frame_index: Optional[int] = Field(
+        None,
+        description=(
+            "Index into the job frame bundle for the frame used to build the primary persisted evidence "
+            "(best position crop, else product crop, else best overview). Audit/debug; same semantics as stored Evidence.frame_index when set."
+        ),
+    )
     primary_evidence_id: Optional[str] = Field(
         None,
         description="Primary evidence crop id; mirrors deprecated top-level ``primary_evidence_id``.",
@@ -313,6 +327,7 @@ ReviewActionTypeLiteral = Literal[
     "update_sku",
     "update_position_code",
     "mark_unknown",
+    "mark_image_mismatch",
     "delete_position",
 ]
 

@@ -58,3 +58,6 @@ class Entity:
     source_image_id: Optional[str] = None
     traceability_status: Optional[str] = None  # one of TraceabilityStatus (valid, missing, invalid, unvalidated)
     traceability_warning: Optional[str] = None  # diagnostic only: report + API; not persisted to pallet_results
+    #: Index into the job ``frames`` bundle for the frame that produced the **chosen** primary artifact
+    #: (localized: best label crop frame; else best overview). Not merely the first scoped frame.
+    evidence_primary_frame_index: Optional[int] = None

@@ -298,6 +298,41 @@ def test_evidence_index_structure():
             assert path.startswith("evidence/"), "index paths must be self-contained relative paths"
 
 
+def test_evidence_photos_job_scopes_pixels_to_entity_source_image():
+    """Multi-photo jobs: crops/overviews must not sample frames from another upload."""
+    import cv2
+
+    run_dir = Path(tempfile.mkdtemp())
+    low_red = np.zeros((32, 32, 3), dtype=np.uint8)
+    low_red[:] = (0, 0, 40)
+    hi_green = np.zeros((32, 32, 3), dtype=np.uint8)
+    hi_green[:] = (0, 200, 0)
+    frames = [low_red, hi_green]
+    frame_refs = ["img-a", "img-b"]
+    metadata = {"source": "photos"}
+    entity = Entity(
+        entity_uid="job_photo_scope_e1",
+        entity_type="PALLET",
+        model_entity_id="E1",
+        source_image_id="img-b",
+        position_label_bbox=[0.0, 0.0, 1.0, 1.0],
+        product_label_bbox=None,
+    )
+    generate_evidence_pack("job_ph", run_dir, frames, metadata, [entity], frame_refs=frame_refs)
+    assert entity.evidence_primary_frame_index == 1, (
+        "primary frame index must map to the scoped source frame in the job bundle, "
+        "not img-a frame 0"
+    )
+    entity_dir = run_dir / "evidence" / slug(entity.entity_uid)
+    overview_files = sorted(entity_dir.glob("overview_*.jpg"))
+    assert overview_files
+    img = cv2.imread(str(overview_files[0]))
+    assert img is not None
+    mean_g = float(img[:, :, 1].mean())
+    mean_r = float(img[:, :, 2].mean())
+    assert mean_g > mean_r + 30
+
+
 # --- Max images limit ---
 
 

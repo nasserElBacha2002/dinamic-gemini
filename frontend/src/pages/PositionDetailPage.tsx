@@ -62,6 +62,7 @@ export default function PositionDetailPage() {
           resultIds,
           filter: navState?.filter,
           jobId: jobIdFromQuery,
+          exactPositionDetail: true,
         },
       },
     });

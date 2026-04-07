@@ -44,6 +44,7 @@ describe('ResultReviewActions', () => {
           onUpdateQuantity={onUpdateQuantity}
           onUpdateSku={vi.fn()}
           onUpdatePositionCode={vi.fn()}
+          onMarkImageMismatch={vi.fn()}
           onDeleteClick={vi.fn()}
         />
       </WithTheme>
@@ -67,6 +68,7 @@ describe('ResultReviewActions', () => {
           onUpdateQuantity={vi.fn()}
           onUpdateSku={onUpdateSku}
           onUpdatePositionCode={vi.fn()}
+          onMarkImageMismatch={vi.fn()}
           onDeleteClick={vi.fn()}
         />
       </WithTheme>
@@ -86,6 +88,7 @@ describe('ResultReviewActions', () => {
           onUpdateQuantity={vi.fn()}
           onUpdateSku={vi.fn()}
           onUpdatePositionCode={vi.fn()}
+          onMarkImageMismatch={vi.fn()}
           onDeleteClick={vi.fn()}
         />
       </WithTheme>
@@ -104,6 +107,7 @@ describe('ResultReviewActions', () => {
           onUpdateQuantity={vi.fn()}
           onUpdateSku={vi.fn()}
           onUpdatePositionCode={vi.fn()}
+          onMarkImageMismatch={vi.fn()}
           onDeleteClick={vi.fn()}
         />
       </WithTheme>
@@ -112,5 +116,25 @@ describe('ResultReviewActions', () => {
       screen.getByText(/non-operational run/i)
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Confirm result/i })).toBeNull();
+  });
+
+  it('Wrong image calls onMarkImageMismatch', () => {
+    const onMarkImageMismatch = vi.fn();
+    render(
+      <WithTheme>
+        <ResultReviewActions
+          result={baseResult}
+          actionLoading={false}
+          onConfirm={vi.fn()}
+          onUpdateQuantity={vi.fn()}
+          onUpdateSku={vi.fn()}
+          onUpdatePositionCode={vi.fn()}
+          onMarkImageMismatch={onMarkImageMismatch}
+          onDeleteClick={vi.fn()}
+        />
+      </WithTheme>
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Wrong image/i }));
+    expect(onMarkImageMismatch).toHaveBeenCalledTimes(1);
   });
 });

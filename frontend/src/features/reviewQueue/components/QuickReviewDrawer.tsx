@@ -102,14 +102,15 @@ export default function QuickReviewDrawer({
     inventoryId,
     aisleId,
     activePositionId,
-    { enabled, jobId: context?.jobId }
+    { enabled, jobId: context?.jobId, exactPosition: context?.exactPositionDetail }
   );
 
   useEffect(() => {
+    if (context?.exactPositionDetail) return;
     if (result?.id && result.id !== activePositionId) {
       setActivePositionId(result.id);
     }
-  }, [result?.id, activePositionId]);
+  }, [result?.id, activePositionId, context?.exactPositionDetail]);
 
   const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId);
   const actionLoading = reviewMutation.isPending;
@@ -175,6 +176,13 @@ export default function QuickReviewDrawer({
     },
     [executeReviewAction]
   );
+
+  const handleMarkImageMismatch = useCallback(() => {
+    void executeReviewAction(
+      { action_type: 'mark_image_mismatch' },
+      { successMessage: 'Flagged wrong image (traceability)' }
+    );
+  }, [executeReviewAction]);
 
   const handleDeleteClick = useCallback(() => {
     setInvalidConfirmError(null);
@@ -315,6 +323,7 @@ export default function QuickReviewDrawer({
                       onUpdateQuantity={handleUpdateQuantity}
                       onUpdateSku={handleUpdateSku}
                       onUpdatePositionCode={handleUpdatePositionCode}
+                      onMarkImageMismatch={handleMarkImageMismatch}
                       onDeleteClick={handleDeleteClick}
                     />
                   </Box>

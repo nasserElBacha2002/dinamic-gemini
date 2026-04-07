@@ -17,6 +17,7 @@ export interface ResultEvidenceViewerProps {
 
 interface EvidenceFrame {
   key: string;
+  /** Operator-facing label; first row is not necessarily “full frame” — crops are preferred. */
   label: string;
   fileName: string | null;
 }
@@ -30,26 +31,57 @@ function jobIdFromResult(result: ResultDetail): string | null {
 
 function buildFrames(result: ResultDetail): EvidenceFrame[] {
   const seen = new Set<string>();
-  const drafts: Array<{ key: string; fileName: string | null }> = [];
+  const drafts: Array<{ key: string; fileName: string | null; label: string }> = [];
 
-  const push = (assetId: string | null | undefined, fileName: string | null) => {
+  const push = (
+    assetId: string | null | undefined,
+    fileName: string | null,
+    label: string
+  ) => {
     const id = assetId != null ? String(assetId).trim() : '';
     if (!id || seen.has(id)) return;
     seen.add(id);
     drafts.push({
       key: id,
       fileName,
+      label,
     });
   };
 
-  push(result.sourceImageId, result.sourceFileName);
-  result.evidence.forEach((ev) => {
-    push(ev.sourceImageId, ev.sourceFileName);
+  const primaryEvidenceId = result.technicalMetadata?.primaryEvidenceId?.trim() || null;
+  const sortedEvidence = [...result.evidence].sort((a, b) => {
+    if (primaryEvidenceId) {
+      if (a.id === primaryEvidenceId) return -1;
+      if (b.id === primaryEvidenceId) return 1;
+    }
+    if (a.role === 'PRIMARY' && b.role !== 'PRIMARY') return -1;
+    if (b.role === 'PRIMARY' && a.role !== 'PRIMARY') return 1;
+    return 0;
   });
 
-  return drafts.map((d, idx) => ({
-    ...d,
-    label: idx === 0 ? 'Primary' : `View ${idx + 1}`,
+  let supportingOrdinal = 0;
+  sortedEvidence.forEach((ev) => {
+    const isPrimary =
+      (primaryEvidenceId != null && ev.id === primaryEvidenceId) ||
+      (primaryEvidenceId == null && ev.role === 'PRIMARY');
+    let label: string;
+    if (isPrimary) {
+      label = 'Primary evidence';
+    } else if (sortedEvidence.length === 1) {
+      label = 'Evidence';
+    } else {
+      supportingOrdinal += 1;
+      label = `Supporting evidence ${supportingOrdinal}`;
+    }
+    push(ev.sourceImageId, ev.sourceFileName, label);
+  });
+
+  push(result.sourceImageId, result.sourceFileName, 'Full source photo');
+
+  return drafts.map((d) => ({
+    key: d.key,
+    fileName: d.fileName,
+    label: d.label,
   }));
 }
 

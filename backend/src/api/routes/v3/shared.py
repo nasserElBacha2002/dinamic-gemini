@@ -40,6 +40,7 @@ from src.application.errors import (
 from src.application.use_cases.get_aisle_processing_status import AisleProcessingStatusResult
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
+from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
 from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
@@ -365,6 +366,25 @@ def handle_mark_unknown(
         raise review_exception_to_http(e)
 
 
+def handle_mark_image_mismatch(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    uc: MarkPositionImageMismatchUseCase,
+) -> None:
+    try:
+        uc.execute(inventory_id, aisle_id, position_id)
+    except (
+        InventoryNotFoundError,
+        AisleNotFoundError,
+        PositionNotFoundError,
+        ValueError,
+        PositionDeletedError,
+        ReviewMutationNotAllowedError,
+    ) as e:
+        raise review_exception_to_http(e)
+
+
 def handle_delete_position(
     inventory_id: str,
     aisle_id: str,
@@ -547,6 +567,8 @@ def _position_summary_response_from_view(
         status=view.traceability.traceability_status,
         source_image_id=view.traceability.source_image_id,
         source_image_original_filename=view.traceability.source_image_original_filename,
+        source_image_sequence=view.traceability.source_image_sequence,
+        primary_evidence_frame_index=view.traceability.primary_evidence_frame_index,
         primary_evidence_id=view.review.primary_evidence_id,
         has_evidence=view.review.has_evidence,
     )

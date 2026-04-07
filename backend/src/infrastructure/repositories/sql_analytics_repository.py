@@ -838,7 +838,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               INNER JOIN aisles a ON a.id = p.aisle_id
               INNER JOIN inventories i ON i.id = a.inventory_id
               WHERE {where_sql}
-                AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown', N'delete_position')
+                AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown', N'mark_image_mismatch', N'delete_position')
             )
             SELECT
               SUM(CASE WHEN rn = 1 THEN 1 ELSE 0 END) AS intervention_positions_count,
@@ -846,8 +846,9 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               SUM(CASE WHEN rn = 1 AND action_type = N'update_quantity' THEN 1 ELSE 0 END) AS qty_corrected_count,
               SUM(CASE WHEN rn = 1 AND action_type = N'update_sku' THEN 1 ELSE 0 END) AS sku_corrected_count,
               SUM(CASE WHEN rn = 1 AND action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknown_count,
+              SUM(CASE WHEN rn = 1 AND action_type = N'mark_image_mismatch' THEN 1 ELSE 0 END) AS image_mismatch_count,
               SUM(CASE WHEN rn = 1 AND action_type = N'delete_position' THEN 1 ELSE 0 END) AS deleted_count,
-              COUNT(DISTINCT CASE WHEN action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown') THEN position_id END) AS reviewed_positions_count
+              COUNT(DISTINCT CASE WHEN action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown', N'mark_image_mismatch') THEN position_id END) AS reviewed_positions_count
             FROM scoped_actions
         """
         with self._client.cursor() as cur:
@@ -863,6 +864,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         qty_corrected_count = int(getattr(row, "qty_corrected_count", 0) or 0)
         sku_corrected_count = int(getattr(row, "sku_corrected_count", 0) or 0)
         operator_marked_unknown_count = int(getattr(row, "unknown_count", 0) or 0)
+        image_mismatch_count = int(getattr(row, "image_mismatch_count", 0) or 0)
         deleted_count = int(getattr(row, "deleted_count", 0) or 0)
 
         return ManualInterventionBreakdownDTO(
@@ -896,6 +898,13 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                     count=operator_marked_unknown_count,
                     percentage=pct(operator_marked_unknown_count),
                     available=True,
+                ),
+                ManualInterventionCategoryDTO(
+                    category="image_mismatch",
+                    count=image_mismatch_count,
+                    percentage=pct(image_mismatch_count),
+                    available=True,
+                    notes="Wrong image/evidence association flagged; SKU/qty unchanged",
                 ),
                 ManualInterventionCategoryDTO(
                     category="deleted",

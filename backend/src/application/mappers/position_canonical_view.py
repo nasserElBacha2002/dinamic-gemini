@@ -157,11 +157,27 @@ def resolve_qty_contract_from_position_legacy(p: Position, *, has_evidence: bool
     return (res.qty_final, api_source, (res.qty_inference_reason.value if res.qty_inference_reason else None), res.is_resolved)
 
 
-def _traceability_from_position(p: Position) -> tuple[Optional[str], Optional[str], Optional[str]]:
+def _traceability_from_position(
+    p: Position,
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[int], Optional[int]]:
     summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
     source_image_id: Optional[str] = summary_json.get("source_image_id") or None
     traceability_status: Optional[str] = summary_json.get("traceability_status") or None
     source_image_original_filename: Optional[str] = summary_json.get("source_image_original_filename") or None
+    source_image_sequence: Optional[int] = None
+    raw_seq = summary_json.get("source_image_sequence")
+    if raw_seq is not None:
+        try:
+            source_image_sequence = int(raw_seq)
+        except (TypeError, ValueError):
+            source_image_sequence = None
+    primary_evidence_frame_index: Optional[int] = None
+    raw_efi = summary_json.get("evidence_primary_frame_index")
+    if raw_efi is not None:
+        try:
+            primary_evidence_frame_index = int(raw_efi)
+        except (TypeError, ValueError):
+            primary_evidence_frame_index = None
     if summary_json.get("entity_uid") and (
         source_image_id is None or traceability_status is None or source_image_original_filename is None
     ):
@@ -173,7 +189,13 @@ def _traceability_from_position(p: Position) -> tuple[Optional[str], Optional[st
             traceability_status = ts_from_report
         if source_image_original_filename is None and sof_from_report is not None:
             source_image_original_filename = sof_from_report
-    return source_image_id, traceability_status, source_image_original_filename
+    return (
+        source_image_id,
+        traceability_status,
+        source_image_original_filename,
+        source_image_sequence,
+        primary_evidence_frame_index,
+    )
 
 
 IdentitySource = Literal["primary_product", "summary_technical", "summary_aggregated"]
@@ -261,6 +283,8 @@ class PositionCanonicalTraceability:
     source_image_id: Optional[str]
     traceability_status: Optional[str]
     source_image_original_filename: Optional[str]
+    source_image_sequence: Optional[int]
+    primary_evidence_frame_index: Optional[int]
 
 
 @dataclass(frozen=True)
@@ -330,6 +354,8 @@ def build_position_canonical_view(
         source_image_id=trace[0],
         traceability_status=trace[1],
         source_image_original_filename=trace[2],
+        source_image_sequence=trace[3],
+        primary_evidence_frame_index=trace[4],
     )
     pos_code = resolve_effective_position_code(p)
     review = PositionCanonicalReview(

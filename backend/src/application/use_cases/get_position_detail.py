@@ -61,10 +61,9 @@ class PositionDetailResult:
 class GetPositionDetailUseCase:
     """Return the operator-facing current review entity for a requested position id.
 
-    Detail follows the same consolidated representative semantics as the aisle positions list.
-    When the requested ``position_id`` belongs to an aggregated/consolidated SKU group, this use
-    case returns the representative anchor row for that visible operator-facing entity rather than
-    the raw member row itself.
+    By default, detail follows the same consolidated representative semantics as the aisle positions
+    list (SKU merge). With ``exact_position=True``, returns the requested storage row and its
+    evidence — used for photo-accurate review alongside ``consolidate_by_sku=false`` lists.
 
     Phase 2 (strict context): After resolving the aisle result slice (explicit ``job_id`` →
     operational job → legacy null-job rows), the position row's ``job_id`` must match that slice.
@@ -146,6 +145,7 @@ class GetPositionDetailUseCase:
         position_id: str,
         *,
         explicit_job_id: Optional[str] = None,
+        exact_position: bool = False,
     ) -> PositionDetailResult:
         """Load position detail scoped to the resolved result context.
 
@@ -171,7 +171,11 @@ class GetPositionDetailUseCase:
                 f"(resolved_job_id={ctx.job_id_for_slice!r}, position.job_id={position.job_id!r})"
             )
 
-        operator_position = self._resolve_operator_facing_position(position, ctx.job_id_for_slice)
+        operator_position = (
+            position
+            if exact_position
+            else self._resolve_operator_facing_position(position, ctx.job_id_for_slice)
+        )
         products = self._product_record_repo.list_by_position(operator_position.id)
         evidences = self._evidence_repo.list_by_entity("position", operator_position.id)
         review_actions = self._review_repo.list_by_position(operator_position.id)

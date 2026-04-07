@@ -6,8 +6,8 @@ Preserves current artifact layout and evidence paths; does not integrate Artifac
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -23,6 +23,8 @@ class EvidenceStageInput:
     entities: List[Entity]
     frames_nd: List[np.ndarray]
     metadata: Dict[str, Any]
+    #: Aligned with ``frames_nd`` (same length); image_id per photo or video frame ref — required for photo traceability.
+    frame_refs: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -39,11 +41,20 @@ class EvidenceStage:
         """Call generate_evidence_pack; preserve current artifact layout and paths."""
         job_id = context.job_id
         run_dir = context.run_dir
+        refs: Optional[List[str]] = data.frame_refs if data.frame_refs else None
+        if refs is not None and len(refs) != len(data.frames_nd):
+            context.logger.warning(
+                "EvidenceStage: frame_refs length %d != frames_nd %d; ignoring refs for evidence scoping",
+                len(refs),
+                len(data.frames_nd),
+            )
+            refs = None
         result = generate_evidence_pack(
             job_id=job_id,
             run_dir=run_dir,
             frames=data.frames_nd,
             metadata=data.metadata,
             entities=data.entities,
+            frame_refs=refs,
         )
         return EvidenceArtifacts(evidence_index=result)

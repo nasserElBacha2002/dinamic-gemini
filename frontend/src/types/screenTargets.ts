@@ -28,6 +28,7 @@ export const TARGET_RESULT_REVIEW_STATUSES = [
   'pending_review',
   'confirmed',
   'corrected',
+  'image_mismatch',
   'deleted',
 ] as const;
 export type TargetResultReviewStatus = (typeof TARGET_RESULT_REVIEW_STATUSES)[number];
