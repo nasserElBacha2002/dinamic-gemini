@@ -55,15 +55,16 @@ function formatPct(x: number | null | undefined): string {
   return `${(x * 100).toFixed(1)}%`;
 }
 
-function formatAvgReviewSec(sec: number | null | undefined): string {
+function formatAvgProcessingSec(sec: number | null | undefined): string {
   if (sec == null || Number.isNaN(sec)) return '—';
   if (sec < 60) return `${Math.round(sec)}s`;
   return `${(sec / 60).toFixed(1)} min`;
 }
 
-function formatAvgReviewMinutes(minutes: number | null | undefined, seconds: number | null | undefined): string {
+/** Job duration KPI: prefer minutes from API; fall back to raw seconds. */
+function formatAvgProcessingMinutes(minutes: number | null | undefined, seconds: number | null | undefined): string {
   if (minutes != null && !Number.isNaN(minutes)) return `${minutes.toFixed(1)} min`;
-  return formatAvgReviewSec(seconds);
+  return formatAvgProcessingSec(seconds);
 }
 
 function numberOrZero(value: number | null | undefined): number {
@@ -109,8 +110,8 @@ function sortInventoryRows(
         return row.invalid_traceability_rate;
       case 'avg_conf':
         return row.avg_confidence;
-      case 'avg_review':
-        return row.average_review_time_minutes ?? null;
+      case 'avg_processing':
+        return row.average_processing_time_minutes ?? null;
       case 'proc':
         return row.processing_success_rate;
       case 'name':
@@ -433,11 +434,11 @@ export default function MetricsPage() {
         cell: (r) => (r.avg_confidence != null ? `${(r.avg_confidence * 100).toFixed(0)}%` : '—'),
       },
       {
-        id: 'avg_review',
-        label: 'Avg review time',
+        id: 'avg_processing',
+        label: 'Avg processing time',
         align: 'right',
         sortable: true,
-        cell: (r) => formatAvgReviewMinutes(r.average_review_time_minutes, null),
+        cell: (r) => formatAvgProcessingMinutes(r.average_processing_time_minutes, null),
       },
       {
         id: 'proc',
@@ -529,9 +530,12 @@ export default function MetricsPage() {
       description: 'Succeeded aisle jobs among terminal jobs in the selected period',
     },
     {
-      label: 'Average review time',
-      value: formatAvgReviewMinutes(summary?.average_review_time_minutes, summary?.average_review_time_seconds),
-      description: 'From result creation to the first settling review action',
+      label: 'Average processing time',
+      value: formatAvgProcessingMinutes(
+        summary?.average_processing_time_minutes,
+        summary?.average_processing_time_seconds
+      ),
+      description: 'Mean job duration from start to terminal completion (automated pipeline only)',
     },
     {
       label: 'Invalid traceability rate',

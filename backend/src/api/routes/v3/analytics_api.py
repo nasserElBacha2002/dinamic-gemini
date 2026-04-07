@@ -121,8 +121,8 @@ def analytics_summary(
         unknown_count=d.unknown_count,
         invalid_traceability_rate=d.invalid_traceability_rate,
         processing_success_rate=d.processing_success_rate,
-        average_review_time_seconds=d.average_review_time_seconds,
-        average_review_time_minutes=d.average_review_time_minutes,
+        average_processing_time_seconds=d.average_processing_time_seconds,
+        average_processing_time_minutes=d.average_processing_time_minutes,
         settling_actions_per_day=d.settling_actions_per_day,
         notes=list(d.notes),
         period_day_count=d.period_day_count,
@@ -199,7 +199,7 @@ def analytics_inventories(
                 invalid_traceability_rate=r.invalid_traceability_rate,
                 avg_confidence=r.avg_confidence,
                 processing_success_rate=r.processing_success_rate,
-                average_review_time_minutes=r.average_review_time_minutes,
+                average_processing_time_minutes=r.average_processing_time_minutes,
             )
             for r in rows
         ]

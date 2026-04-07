@@ -11,7 +11,7 @@ export interface PlaceholderScreenScaffoldProps {
 /**
  * **Sprint 2.1 only — not a universal page layout.**
  *
- * Temporary composition scaffold for a few **top-level** placeholder routes (Dashboard, Review queue, Metrics).
+ * Temporary composition scaffold for a few **top-level** placeholder routes (Review queue, Metrics, etc.).
  * It mirrors the **target block order** from Re diseño 3.3 §9.2, §9.8, §9.11 (KPI row → filter toolbar → primary
  * content) so future sprints replace pieces in place without re-architecting the shell.
  *

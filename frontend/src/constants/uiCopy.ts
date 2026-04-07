@@ -17,16 +17,5 @@ export const TABLE_EMPTY_DEFAULT = 'No results to display.';
 
 export const inventoryListEmpty = {
   title: 'No inventories yet',
-  /** Single phrasing used on list + dashboard recent table. */
   message: 'Create an inventory to add aisles, run processing, and complete review.',
 } as const;
-
-export const dashboardPlaceholder = {
-  attention:
-    'Inventories and aisles that need attention will be highlighted here when summary insights are available.',
-  activity:
-    'Recent uploads, processing, and review activity will appear here when activity tracking is enabled.',
-  kpiFootnote: 'Values will appear when summary insights are available for this dashboard.',
-} as const;
-
-export const recentInventoriesCaption = 'Showing the 10 most recently active inventories.';

@@ -23,6 +23,8 @@ import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../utils/aisleS
 import { formatDate } from '../utils/formatDate';
 import { pathToAislePositions } from '../utils/resultRoutes';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
+import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
+import type { ExecutionLogEvent } from '../api/types';
 import { exportInventoryResultsCsv } from '../api/client';
 import {
   DataTable,
@@ -125,11 +127,19 @@ function canRetryJob(status?: string | null): boolean {
   return normalized === 'failed' || normalized === 'canceled';
 }
 
-function metadataRowsForJob(job: NonNullable<Aisle['latest_job']> | null | undefined): Array<{ label: string; value: string }> {
+/** Shown when Process aisle is disabled due to no uploaded source assets (`assets_count` on the aisle row). */
+const PROCESS_AISLE_NEEDS_ASSETS_MESSAGE =
+  'You need to upload at least one image before processing.';
+
+function metadataRowsForJob(
+  job: NonNullable<Aisle['latest_job']> | null | undefined,
+  executionLogEvents?: ExecutionLogEvent[] | null
+): Array<{ label: string; value: string }> {
   if (!job) return [];
+  const displayFinished = resolveDisplayFinishedAt(job, executionLogEvents);
   return [
     { label: 'Started', value: formatOptionalDate(job.started_at) },
-    { label: 'Finished', value: formatOptionalDate(job.finished_at) },
+    { label: 'Finished', value: formatOptionalDate(displayFinished) },
     { label: 'Last heartbeat', value: formatOptionalDate(job.last_heartbeat_at) },
     { label: 'Cancellation requested', value: formatOptionalDate(job.cancel_requested_at) },
     { label: 'Current stage', value: job.current_stage || '—' },
@@ -280,10 +290,39 @@ export default function InventoryDetail() {
     }
   }, [aislesQuery, processDialog, processModelKey, processMutation, processPromptKey, processProviderKey, showSnackbar]);
 
-  const isAisleProcessingDisabled = (aisle: Aisle): boolean => {
-    const status = (aisle.status || '').toLowerCase();
-    return status === 'queued' || status === 'processing' || processingAisleId === aisle.id;
-  };
+  const isAisleProcessingDisabled = useCallback(
+    (aisle: Aisle): boolean => {
+      const status = (aisle.status || '').toLowerCase();
+      return status === 'queued' || status === 'processing' || processingAisleId === aisle.id;
+    },
+    [processingAisleId]
+  );
+
+  /** Uses `assets_count` from the aisles list (same source as the Uploaded assets column). */
+  const getProcessAisleMenuState = useCallback(
+    (aisle: Aisle): { disabled: boolean; disabledReason?: string } => {
+      const busy = isAisleProcessingDisabled(aisle);
+      const noListYet = !aislesQuery.data;
+      const missingAssets = Boolean(aislesQuery.data) && (aisle.assets_count ?? 0) < 1;
+      const disabled = busy || noListYet || missingAssets;
+      if (busy) {
+        return { disabled };
+      }
+      if (noListYet) {
+        return {
+          disabled,
+          disabledReason: aislesQuery.isLoading
+            ? 'Loading aisle data…'
+            : 'Unable to verify uploaded assets.',
+        };
+      }
+      if (missingAssets) {
+        return { disabled, disabledReason: PROCESS_AISLE_NEEDS_ASSETS_MESSAGE };
+      }
+      return { disabled };
+    },
+    [aislesQuery.data, aislesQuery.isLoading, isAisleProcessingDisabled]
+  );
 
   const handleUploadClick = (aisleId: string) => {
     setUploadError(null);
@@ -453,6 +492,7 @@ export default function InventoryDetail() {
         align: 'right',
         width: 56,
         cell: (a) => {
+          const processState = getProcessAisleMenuState(a);
           return (
             <RowActionMenu
               ariaLabel={`Actions for aisle ${a.code}`}
@@ -467,7 +507,8 @@ export default function InventoryDetail() {
                   id: 'process',
                   label: processingAisleId === a.id ? 'Starting…' : 'Process aisle',
                   onClick: () => openProcessDialogForAisle(a.id, a.code),
-                  disabled: isAisleProcessingDisabled(a),
+                  disabled: processState.disabled,
+                  disabledReason: processState.disabledReason,
                 },
                 ...(a.latest_job
                   ? [
@@ -489,7 +530,16 @@ export default function InventoryDetail() {
         },
       },
     ];
-  }, [inventoryId, navigate, openProcessDialogForAisle, processingAisleId, uploadingAisleId]);
+  }, [
+    aislesQuery.data,
+    aislesQuery.isLoading,
+    getProcessAisleMenuState,
+    inventoryId,
+    navigate,
+    openProcessDialogForAisle,
+    processingAisleId,
+    uploadingAisleId,
+  ]);
 
   if (inventoryLoading && !inventory) {
     return (
@@ -503,7 +553,7 @@ export default function InventoryDetail() {
     return (
       <>
         <ErrorAlert message={inventoryError} onRetry={() => inventoryQuery.refetch()} />
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/inventories')}>
+        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
           Back to list
         </Button>
       </>
@@ -515,7 +565,7 @@ export default function InventoryDetail() {
       {inventory && (
         <>
           <PageHeader
-            breadcrumbs={[{ label: 'Inventories', to: '/inventories' }]}
+            breadcrumbs={[{ label: 'Inventories', to: '/' }]}
             title={inventory.name}
             subtitle={
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
@@ -852,7 +902,7 @@ export default function InventoryDetail() {
             ) : null}
 
             <Box sx={{ display: 'grid', gap: 1 }}>
-              {metadataRowsForJob(selectedJob).map((item) => (
+              {metadataRowsForJob(selectedJob, executionLogQuery.data?.events).map((item) => (
                 <Box
                   key={item.label}
                   sx={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 180px) 1fr', gap: 1 }}

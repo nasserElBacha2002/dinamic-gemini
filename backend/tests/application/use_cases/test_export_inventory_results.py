@@ -15,11 +15,15 @@ from src.application.services.csv_inventory_exporter import (
     UTF8_BOM,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
+from src.application.use_cases.export_inventory_results import (
+    ExportAisleResultsCsvUseCase,
+    ExportInventoryResultsUseCase,
+)
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
+from src.domain.jobs.entities import Job, JobStatus
 from src.domain.products.entities import ProductRecord
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
@@ -37,11 +41,13 @@ def _uc(
     aisles: list[Aisle] | None = None,
     positions: list[Position] | None = None,
     products: list[ProductRecord] | None = None,
+    jobs: list[Job] | None = None,
 ) -> ExportInventoryResultsUseCase:
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
     pos_repo = MemoryPositionRepository()
     prod_repo = MemoryProductRecordRepository()
+    job_repo = MemoryJobRepository()
     if inv:
         inv_repo.save(inv)
     for a in aisles or []:
@@ -50,12 +56,14 @@ def _uc(
         pos_repo.save(p)
     for pr in products or []:
         prod_repo.save(pr)
+    for j in jobs or []:
+        job_repo.save(j)
     return ExportInventoryResultsUseCase(
         inv_repo,
         aisle_repo,
         pos_repo,
         prod_repo,
-        ResultContextResolver(MemoryJobRepository(), pos_repo),
+        ResultContextResolver(job_repo, pos_repo),
     )
 
 
@@ -517,7 +525,99 @@ def test_export_only_includes_operational_job_slice_when_pointer_set() -> None:
             job_id="j-bench",
         ),
     ]
-    uc = _uc(inv=inv, aisles=[aisle], positions=positions)
+    job_op = Job(
+        id="j-op",
+        target_type="aisle",
+        target_id="a1",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    uc = _uc(inv=inv, aisles=[aisle], positions=positions, jobs=[job_op])
     _, rows = _parse_csv(uc.execute_csv("inv-1"))
     assert len(rows) == 1
     assert rows[0]["position_id"] == "p-op"
+
+
+def test_export_aisle_csv_explicit_job_matches_non_operational_slice() -> None:
+    """Single-aisle export with job_id must match that run's positions only (no duplicate runs)."""
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle(
+        "a1",
+        "inv-1",
+        "B1",
+        AisleStatus.COMPLETED,
+        NOW,
+        NOW,
+        operational_job_id="j-op",
+    )
+    positions = [
+        Position(
+            id="p-op",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "IN", "final_quantity": 1, "pallet_id": "A"},
+            job_id="j-op",
+        ),
+        Position(
+            id="p-other",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW_LATE,
+            updated_at=NOW_LATE,
+            detected_summary_json={"internal_code": "OUT", "final_quantity": 2, "pallet_id": "B"},
+            job_id="j-bench",
+        ),
+    ]
+    job_op = Job(
+        id="j-op",
+        target_type="aisle",
+        target_id="a1",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    job_bench = Job(
+        id="j-bench",
+        target_type="aisle",
+        target_id="a1",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
+        created_at=NOW_LATE,
+        updated_at=NOW_LATE,
+    )
+    inv_r = MemoryInventoryRepository()
+    aisle_r = MemoryAisleRepository()
+    pos_r = MemoryPositionRepository()
+    prod_r = MemoryProductRecordRepository()
+    job_r = MemoryJobRepository()
+    inv_r.save(inv)
+    aisle_r.save(aisle)
+    for p in positions:
+        pos_r.save(p)
+    for j in (job_op, job_bench):
+        job_r.save(j)
+    uc2 = ExportAisleResultsCsvUseCase(
+        inv_r,
+        aisle_r,
+        pos_r,
+        prod_r,
+        ResultContextResolver(job_r, pos_r),
+    )
+    _, rows = _parse_csv(uc2.execute_csv("inv-1", "a1", job_id="j-bench"))
+    assert len(rows) == 1
+    assert rows[0]["position_id"] == "p-other"
+    assert rows[0]["product_sku"] == "OUT"

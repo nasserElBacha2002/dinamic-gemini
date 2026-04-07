@@ -279,7 +279,7 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
         raw_label_repo=noop,
     )
     report_path = Path("/tmp/run/hybrid_report.json")
-    executor._mark_success("j1", aisle, report_path, now, run_metadata=None)
+    executor._mark_success("j1", aisle, report_path, run_metadata=None)
 
     updated = job_repo.get_by_id("j1")
     assert updated is not None
@@ -332,7 +332,7 @@ def test_mark_success_clears_stale_aisle_error_fields_after_previous_failure() -
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._mark_success("j-retry-ok", aisle, Path("/tmp/run/hybrid_report.json"), now, run_metadata=None)
+    executor._mark_success("j-retry-ok", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
     updated_aisle = aisle_repo.get_by_id("aisle-1")
     assert updated_aisle is not None
     assert updated_aisle.status == AisleStatus.PROCESSED
@@ -520,7 +520,7 @@ def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
         "prompt_key": "global_v21",
     }
     report_path = Path("/tmp/run/hybrid_report.json")
-    executor._mark_success("j-attribution", aisle, report_path, now, run_metadata=run_metadata)
+    executor._mark_success("j-attribution", aisle, report_path, run_metadata=run_metadata)
 
     updated = job_repo.get_by_id("j-attribution")
     assert updated is not None
@@ -586,7 +586,7 @@ def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
         "prompt_key": "global_v21",
     }
     report_path = Path("/tmp/run/hybrid_report.json")
-    executor._mark_success("j2", aisle, report_path, now, run_metadata=run_metadata)
+    executor._mark_success("j2", aisle, report_path, run_metadata=run_metadata)
 
     updated = job_repo.get_by_id("j2")
     assert updated is not None
@@ -891,7 +891,7 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         inventory_visual_reference_repo=reference_repo,
         raw_label_repo=NoopRepo(),
     )
-    executor._mark_success("job-a", aisle, Path("/tmp/run-a/hybrid_report.json"), now, run_metadata=run_metadata_a)
+    executor._mark_success("job-a", aisle, Path("/tmp/run-a/hybrid_report.json"), run_metadata=run_metadata_a)
 
     delete_use_case.execute("inv-1", refs_a[0].id)
     refs_b = upload_use_case.execute(
@@ -919,7 +919,7 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         updated_at=now,
     )
     job_repo.save(job_b)
-    executor._mark_success("job-b", aisle, Path("/tmp/run-b/hybrid_report.json"), now, run_metadata=run_metadata_b)
+    executor._mark_success("job-b", aisle, Path("/tmp/run-b/hybrid_report.json"), run_metadata=run_metadata_b)
 
     stored_job_a = job_repo.get_by_id("job-a")
     stored_job_b = job_repo.get_by_id("job-b")

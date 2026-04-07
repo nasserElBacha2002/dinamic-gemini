@@ -34,8 +34,8 @@ class _StubAnalyticsService:
             unknown_count=1,
             invalid_traceability_rate=0.2,
             processing_success_rate=0.9,
-            average_review_time_seconds=600.0,
-            average_review_time_minutes=10.0,
+            average_processing_time_seconds=600.0,
+            average_processing_time_minutes=10.0,
             settling_actions_per_day=2.5,
             notes=["summary note"],
             period_day_count=2,
@@ -72,7 +72,7 @@ class _StubAnalyticsService:
                 invalid_traceability_rate=0.2,
                 avg_confidence=0.9,
                 processing_success_rate=0.95,
-                average_review_time_minutes=12.0,
+                average_processing_time_minutes=12.0,
             )
         ]
 
@@ -131,8 +131,8 @@ def test_analytics_summary_response_keeps_legacy_fields_and_adds_phase2_fields()
     assert body["unidentified_product_count"] == 3
     assert body["unknown_rate"] == 0.2
     assert body["unknown_count"] == 1
-    assert body["average_review_time_seconds"] == 600.0
-    assert body["average_review_time_minutes"] == 10.0
+    assert body["average_processing_time_seconds"] == 600.0
+    assert body["average_processing_time_minutes"] == 10.0
 
 
 def test_analytics_inventory_performance_response_adds_phase2_fields_without_removing_legacy_fields():
@@ -159,7 +159,7 @@ def test_analytics_inventory_performance_response_adds_phase2_fields_without_rem
     assert row["unidentified_product_rate"] == 0.3
     assert row["unknown_rate"] == 0.2
     assert row["auto_acceptance_rate"] == 0.6
-    assert row["average_review_time_minutes"] == 12.0
+    assert row["average_processing_time_minutes"] == 12.0
 
 
 def test_manual_intervention_breakdown_exposes_unknown_and_keeps_invalid_explicit():

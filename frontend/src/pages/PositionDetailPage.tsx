@@ -81,7 +81,7 @@ export default function PositionDetailPage() {
     return (
       <>
         <Alert severity="warning">Missing inventory, aisle, or position.</Alert>
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/inventories')}>
+        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
           Back to list
         </Button>
       </>

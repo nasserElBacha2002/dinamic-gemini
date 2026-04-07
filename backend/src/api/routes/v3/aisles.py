@@ -24,6 +24,7 @@ from src.api.dependencies import (
     get_promote_aisle_operational_job_use_case,
     get_export_aisle_benchmark_run_csv_use_case,
     get_export_aisle_benchmark_compare_csv_use_case,
+    get_export_aisle_results_csv_use_case,
 )
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
@@ -86,6 +87,7 @@ from src.application.use_cases.export_aisle_benchmark import (
     ExportAisleBenchmarkRunCommand,
     ExportAisleBenchmarkRunCsvUseCase,
 )
+from src.application.use_cases.export_inventory_results import ExportAisleResultsCsvUseCase
 from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, ListAisleJobsUseCase
 from src.application.use_cases.promote_aisle_operational_job import (
     PromoteAisleOperationalJobCommand,
@@ -504,6 +506,55 @@ def get_aisle_merge_results(
         raise HTTPException(status_code=404, detail=str(e)) from e
 
 
+@router.get("/{inventory_id}/aisles/{aisle_id}/export")
+def export_aisle_results_csv(
+    inventory_id: str,
+    aisle_id: str,
+    export_format: str = Query("csv", alias="format", description="Only csv supported."),
+    technical: bool = Query(
+        False,
+        description="When true, export the technical snapshot CSV (same contract as inventory export).",
+    ),
+    job_id: Optional[str] = Query(
+        None,
+        description=(
+            "Optional inventory job id. Omitted: same resolver as GET …/positions (operational or legacy). "
+            "When set, export that run's slice for this aisle only."
+        ),
+    ),
+    use_case: ExportAisleResultsCsvUseCase = Depends(get_export_aisle_results_csv_use_case),
+) -> Response:
+    """Download this aisle's consolidated results CSV — **same columns and slice rules** as GET …/positions.
+
+    Differs from ``GET /inventories/{id}/export`` (all aisles, operational slice each): this endpoint is
+    scoped to one aisle and accepts an optional ``job_id`` to match the run visible in Aisle Results.
+    """
+    if (export_format or "").strip().lower() != "csv":
+        raise HTTPException(status_code=422, detail="Only format=csv is supported")
+    try:
+        body = use_case.execute_csv(
+            inventory_id,
+            aisle_id,
+            job_id=job_id.strip() if job_id and str(job_id).strip() else None,
+            technical=technical,
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    suffix = "technical" if technical else "results"
+    fname = f"inventory_{inventory_id}_aisle_{aisle_id}_{suffix}.csv"
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @router.get(
     "/{inventory_id}/aisles/{aisle_id}/benchmark/compare",
     response_model=AisleBenchmarkCompareResponse,
@@ -590,7 +641,7 @@ def export_aisle_benchmark(
         get_export_aisle_benchmark_compare_csv_use_case
     ),
 ) -> Response:
-    """Explicit benchmark exports (operational default export on GET .../export unchanged)."""
+    """Benchmark-only CSV (extra columns). Operational aisle export: ``GET …/aisles/{aisle_id}/export``."""
     if (export_format or "").strip().lower() != "csv":
         raise HTTPException(status_code=422, detail="Only format=csv is supported")
     has_run = bool(run_job_id and str(run_job_id).strip())

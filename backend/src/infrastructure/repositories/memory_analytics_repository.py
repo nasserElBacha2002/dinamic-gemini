@@ -38,7 +38,7 @@ from src.application.services.display_primary_product import select_display_prim
 from src.application.services.analytics_aggregation_core import (
     build_inventory_metric_rates,
     build_summary_metrics,
-    compute_average_review_time_seconds,
+    compute_average_processing_time_seconds,
     compute_manual_intervention_breakdown,
     compute_processing_success_rate,
     compute_review_outcome_counts,
@@ -149,7 +149,9 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             jobs_list, filters.date_from, filters.date_to, allowed_aisles
         )
 
-        avg_sec = compute_average_review_time_seconds(positions, actions, filters.date_from, filters.date_to)
+        avg_sec = compute_average_processing_time_seconds(
+            jobs_list, filters.date_from, filters.date_to, allowed_aisles
+        )
         span = day_span_inclusive(filters.date_from, filters.date_to)
         rpd = (
             review_outcomes.settling_actions_count / span
@@ -181,7 +183,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 ),
                 invalid_traceability_positions_count=invalid_n,
                 processing_success_rate=proc,
-                average_review_time_seconds=avg_sec,
+                average_processing_time_seconds=avg_sec,
                 settling_actions_per_day=rpd,
                 settling_actions_count=review_outcomes.settling_actions_count,
                 period_day_count=span,
@@ -312,8 +314,8 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             proc = compute_processing_success_rate(
                 jobs_list, filters.date_from, filters.date_to, aisle_ids
             )
-            avg_review_sec = compute_average_review_time_seconds(
-                positions, actions, filters.date_from, filters.date_to
+            avg_proc_sec = compute_average_processing_time_seconds(
+                jobs_list, filters.date_from, filters.date_to, aisle_ids
             )
             metric_rates = build_inventory_metric_rates(
                 InventoryMetricInputs(
@@ -329,7 +331,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     invalid_traceability_positions_count=invalid_n,
                     avg_confidence=avg_conf,
                     processing_success_rate=proc,
-                    average_review_time_seconds=avg_review_sec,
+                    average_processing_time_seconds=avg_proc_sec,
                 )
             )
 
@@ -355,7 +357,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     invalid_traceability_rate=metric_rates["invalid_traceability_rate"],
                     avg_confidence=metric_rates["avg_confidence"],
                     processing_success_rate=metric_rates["processing_success_rate"],
-                    average_review_time_minutes=metric_rates["average_review_time_minutes"],
+                    average_processing_time_minutes=metric_rates["average_processing_time_minutes"],
                 )
             )
         return sorted(out, key=lambda r: r.inventory_name.lower())

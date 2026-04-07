@@ -9,10 +9,8 @@ import InventoryDetail from './pages/InventoryDetail';
 import AislePositionsPage from './pages/AislePositionsPage';
 import AisleComparePage from './pages/AisleComparePage';
 import PositionDetailPage from './pages/PositionDetailPage';
-import DashboardPage from './pages/DashboardPage';
 import ReviewQueuePage from './pages/ReviewQueuePage';
 import MetricsPage from './pages/MetricsPage';
-import SettingsPage from './pages/SettingsPage';
 
 /** Minimal full-screen loading while auth bootstrap runs. */
 function AuthLoading() {
@@ -40,10 +38,8 @@ function App() {
   const positionsEl = useMemo(() => <AislePositionsPage />, []);
   const compareEl = useMemo(() => <AisleComparePage />, []);
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
-  const dashboardEl = useMemo(() => <DashboardPage />, []);
   const reviewQueueEl = useMemo(() => <ReviewQueuePage />, []);
   const metricsEl = useMemo(() => <MetricsPage />, []);
-  const settingsEl = useMemo(() => <SettingsPage />, []);
 
   if (!initialized) {
     return <AuthLoading />;
@@ -52,19 +48,19 @@ function App() {
     return <Navigate to="/login" replace />;
   }
   if (user && location.pathname === '/login') {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return (
     <Routes>
       <Route path="/login" element={loginEl} />
       <Route path="/" element={shellEl}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={dashboardEl} />
+        <Route index element={listEl} />
         <Route path="inventories" element={listEl} />
         <Route path="review-queue" element={reviewQueueEl} />
         <Route path="metrics" element={metricsEl} />
-        <Route path="settings" element={settingsEl} />
+        <Route path="dashboard" element={<Navigate to="/" replace />} />
+        <Route path="settings" element={<Navigate to="/" replace />} />
         <Route path="inventories/:inventoryId" element={detailEl} />
         <Route path="inventories/:inventoryId/aisles/:aisleId/positions" element={positionsEl} />
         <Route path="inventories/:inventoryId/aisles/:aisleId/compare" element={compareEl} />

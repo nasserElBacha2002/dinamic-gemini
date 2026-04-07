@@ -10,15 +10,15 @@ import { matchPath } from 'react-router-dom';
  * @see Re diseño 3.3 §4.3 (contextual page title in the topbar)
  */
 export function topBarCopy(pathname: string): { title: string; subtitle?: string } {
-  if (pathname === '/dashboard') {
-    return { title: 'Dashboard', subtitle: 'Operational overview' };
-  }
-  if (pathname === '/inventories') {
+  if (pathname === '/inventories' || pathname === '/') {
     return { title: 'Inventories', subtitle: 'Manage inventories, aisles, processing, and review' };
   }
   if (pathname.startsWith('/inventories/')) {
     if (matchPath('/inventories/:inventoryId/aisles/:aisleId/positions/:positionId', pathname)) {
       return { title: 'Result review', subtitle: 'Evidence and review actions' };
+    }
+    if (matchPath('/inventories/:inventoryId/aisles/:aisleId/compare', pathname)) {
+      return { title: 'Compare runs', subtitle: 'Benchmark — two runs side by side' };
     }
     if (matchPath('/inventories/:inventoryId/aisles/:aisleId/positions', pathname)) {
       return { title: 'Aisle results', subtitle: 'Prioritize review' };
@@ -32,9 +32,6 @@ export function topBarCopy(pathname: string): { title: string; subtitle?: string
   }
   if (pathname === '/metrics') {
     return { title: 'Metrics', subtitle: 'Quality, processing, and review performance' };
-  }
-  if (pathname === '/settings') {
-    return { title: 'Settings', subtitle: 'Preferences' };
   }
   return { title: 'Dinamic Inventory', subtitle: 'v3' };
 }

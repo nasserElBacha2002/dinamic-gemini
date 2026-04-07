@@ -44,7 +44,7 @@ class SummaryMetricInputs:
     unidentified_product_positions_count: int
     invalid_traceability_positions_count: int
     processing_success_rate: Optional[float]
-    average_review_time_seconds: Optional[float]
+    average_processing_time_seconds: Optional[float]
     settling_actions_per_day: Optional[float]
     settling_actions_count: int
     period_day_count: int
@@ -63,7 +63,7 @@ class InventoryMetricInputs:
     invalid_traceability_positions_count: int
     avg_confidence: Optional[float]
     processing_success_rate: Optional[float]
-    average_review_time_seconds: Optional[float]
+    average_processing_time_seconds: Optional[float]
 
 
 @dataclass(frozen=True)
@@ -273,8 +273,8 @@ def build_summary_metrics(inputs: SummaryMetricInputs):
             inputs.invalid_traceability_positions_count, inputs.total_positions_in_scope
         ),
         processing_success_rate=inputs.processing_success_rate,
-        average_review_time_seconds=inputs.average_review_time_seconds,
-        average_review_time_minutes=minutes_from_seconds(inputs.average_review_time_seconds),
+        average_processing_time_seconds=inputs.average_processing_time_seconds,
+        average_processing_time_minutes=minutes_from_seconds(inputs.average_processing_time_seconds),
         settling_actions_per_day=inputs.settling_actions_per_day,
         notes=list(inputs.notes),
         period_day_count=inputs.period_day_count,
@@ -312,7 +312,7 @@ def build_inventory_metric_rates(inputs: InventoryMetricInputs) -> dict:
         ),
         "avg_confidence": inputs.avg_confidence,
         "processing_success_rate": inputs.processing_success_rate,
-        "average_review_time_minutes": minutes_from_seconds(inputs.average_review_time_seconds),
+        "average_processing_time_minutes": minutes_from_seconds(inputs.average_processing_time_seconds),
     }
 
 
@@ -377,31 +377,38 @@ def compute_manual_intervention_breakdown(
     )
 
 
-def compute_average_review_time_seconds(
-    positions: Dict[str, Position],
-    actions: Sequence[ReviewAction],
+def compute_average_processing_time_seconds(
+    jobs: Sequence[Job],
     date_from: Optional[datetime],
     date_to: Optional[datetime],
+    allowed_aisle_ids: Optional[set] = None,
 ) -> Optional[float]:
-    """First settling action per position in period; average lag from position.created_at."""
-    first_ts: Dict[str, datetime] = {}
-    for ra in sorted(actions, key=lambda x: (x.created_at, x.id)):
-        if not review_action_in_period(ra, date_from, date_to) or not settling_action(ra):
+    """Mean ``finished_at - started_at`` (seconds) for terminal aisle jobs completed in period.
+
+    Uses ``finished_at`` for the date window. Includes succeeded, failed, and canceled jobs with
+    both timestamps and a non-negative duration.
+    """
+    terminal = {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELED}
+    durations: List[float] = []
+    for j in jobs:
+        if j.target_type != "aisle":
             continue
-        pid = ra.position_id
-        if pid not in first_ts:
-            first_ts[pid] = ra.created_at
-    deltas: List[float] = []
-    for pid, ts in first_ts.items():
-        pos = positions.get(pid)
-        if pos is None or not active_position(pos):
+        if allowed_aisle_ids is not None and j.target_id not in allowed_aisle_ids:
             continue
-        p_created = pos.created_at if pos.created_at.tzinfo else pos.created_at.replace(tzinfo=timezone.utc)
-        r_ts = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
-        deltas.append(max(0.0, (r_ts - p_created).total_seconds()))
-    if not deltas:
+        if j.status not in terminal:
+            continue
+        if j.started_at is None or j.finished_at is None:
+            continue
+        if not _ts_in_range(j.finished_at, date_from, date_to):
+            continue
+        s = j.started_at if j.started_at.tzinfo else j.started_at.replace(tzinfo=timezone.utc)
+        f = j.finished_at if j.finished_at.tzinfo else j.finished_at.replace(tzinfo=timezone.utc)
+        if f < s:
+            continue
+        durations.append((f - s).total_seconds())
+    if not durations:
         return None
-    return sum(deltas) / len(deltas)
+    return sum(durations) / len(durations)
 
 
 def compute_processing_success_rate(

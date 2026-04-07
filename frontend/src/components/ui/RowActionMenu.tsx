@@ -11,6 +11,8 @@ export interface RowActionMenuItem {
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  /** Shown under the label when disabled (e.g. why the action is unavailable). */
+  disabledReason?: string;
   /** Destructive row action — uses error tone (§6.3). */
   danger?: boolean;
   /** Optional leading icon. */
@@ -84,9 +86,14 @@ export default function RowActionMenu({ items, ariaLabel, size = 'small' }: RowA
             ) : null}
             <ListItemText
               primary={item.label}
+              secondary={item.disabled && item.disabledReason ? item.disabledReason : undefined}
               primaryTypographyProps={{
                 variant: 'body2',
                 color: item.danger ? 'error' : 'text.primary',
+              }}
+              secondaryTypographyProps={{
+                variant: 'caption',
+                sx: { display: 'block', whiteSpace: 'normal', lineHeight: 1.35, mt: 0.25 },
               }}
             />
           </MenuItem>
