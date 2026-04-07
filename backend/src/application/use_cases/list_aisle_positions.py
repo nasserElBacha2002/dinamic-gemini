@@ -10,6 +10,7 @@ Phase 2: raw rows are limited to one result context (**explicit** ``job_id`` →
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
@@ -23,6 +24,8 @@ from src.application.services.position_sku_consolidation import (
 )
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.positions.entities import Position
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -40,7 +43,8 @@ class ListAislePositionsCommand:
     sort_dir: str = "asc"
     #: Optional override; omitted uses Result Context Resolver (operational / legacy).
     job_id: Optional[str] = None
-    #: When False, skip SKU merge (photo-accurate review rows).
+    #: When False, skip SKU merge (photo-accurate review rows). Ignored when ``sort_by`` is
+    #: ``photo_sequence`` (merge is always off for that mode).
     consolidate_by_sku: bool = True
 
 
@@ -140,9 +144,18 @@ class ListAislePositionsUseCase:
         raw_positions = list(self._position_repo.list_by_aisle_query(command.aisle_id, raw_q))
         raw_truncated = len(raw_positions) >= self._raw_cap
 
+        sort_key = (command.sort_by or "created_at").strip().lower()
+        effective_consolidate = command.consolidate_by_sku
+        if sort_key == "photo_sequence" and effective_consolidate:
+            logger.info(
+                "list_aisle_positions: sort_by=photo_sequence is not compatible with SKU merge; "
+                "using consolidate_by_sku=false for this request"
+            )
+            effective_consolidate = False
+
         consolidated = consolidate_positions_by_sku(
             raw_positions,
-            enabled=command.consolidate_by_sku,
+            enabled=effective_consolidate,
         )
         reverse = (command.sort_dir or "asc").strip().lower() == "desc"
         consolidated_sorted = sorted(

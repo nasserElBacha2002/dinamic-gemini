@@ -182,7 +182,6 @@ def generate_evidence_pack(
             metadata=metadata,
             num_frames=num_frames,
         )
-        entity.evidence_primary_frame_index = src_indices[0] if src_indices else None
         entity_frames = [frames[i] for i in src_indices] if src_indices else []
         logger.debug(
             "evidence_pack scoped entity_uid=%s source_image_id=%r scoped_frame_indices=%s",
@@ -209,6 +208,35 @@ def generate_evidence_pack(
             and parse_bbox_to_pixels(entity.product_label_bbox, frame_w, frame_h) is not None
         )
         localized = bool(entity_frames) and (has_pos_bbox or has_prod_bbox)
+
+        overview_list = (
+            _select_overview_frames(entity_frames, k_overview) if entity_frames else []
+        )
+        primary_local_idx: Optional[int] = None
+        if localized and has_pos_bbox and entity.position_label_bbox:
+            pos_pick = _select_best_crop_candidates(
+                entity_frames, entity.position_label_bbox, k_pos
+            )
+            if pos_pick:
+                primary_local_idx = pos_pick[0][0]
+        if primary_local_idx is None and localized and has_prod_bbox and entity.product_label_bbox:
+            prod_pick = _select_best_crop_candidates(
+                entity_frames, entity.product_label_bbox, k_prod
+            )
+            if prod_pick:
+                primary_local_idx = prod_pick[0][0]
+        if primary_local_idx is None and overview_list:
+            primary_local_idx = overview_list[0][0]
+
+        if primary_local_idx is not None and src_indices and 0 <= primary_local_idx < len(
+            src_indices
+        ):
+            entity.evidence_primary_frame_index = src_indices[primary_local_idx]
+        elif src_indices:
+            entity.evidence_primary_frame_index = src_indices[0]
+        else:
+            entity.evidence_primary_frame_index = None
+
         entity.evidence_localization = EVIDENCE_LOCALIZED if localized else EVIDENCE_UNLOCALIZED
 
         evidence: Dict[str, Any] = {"overview": []}
@@ -216,7 +244,6 @@ def generate_evidence_pack(
         path_prefix = rel_evidence_dir
 
         # 1) Overview frames — only from this entity's source image(s)
-        overview_list = _select_overview_frames(entity_frames, k_overview)
         for idx, (frame_idx, frame) in enumerate(overview_list):
             if image_count >= max_images:
                 break

@@ -118,11 +118,17 @@ class PositionTraceabilityBlock(BaseModel):
     source_image_original_filename: Optional[str] = None
     source_image_sequence: Optional[int] = Field(
         None,
-        description="1-based manifest upload order for photos jobs when present; stable photo grouping.",
+        description=(
+            "1-based manifest upload order for photos jobs when present. "
+            "When absent, ``sort_by=photo_sequence`` still orders rows but uses filename / image id / id tie-breakers only — not true capture order."
+        ),
     )
     primary_evidence_frame_index: Optional[int] = Field(
         None,
-        description="Frame index in the acquired bundle for primary evidence (audit; photos: manifest index).",
+        description=(
+            "Index into the job frame bundle for the frame used to build the primary persisted evidence "
+            "(best position crop, else product crop, else best overview). Audit/debug; same semantics as stored Evidence.frame_index when set."
+        ),
     )
     primary_evidence_id: Optional[str] = Field(
         None,

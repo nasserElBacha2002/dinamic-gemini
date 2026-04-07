@@ -57,13 +57,13 @@ def list_aisle_positions(
         25,
         ge=1,
         le=500,
-        description="Page size after consolidation (max 500).",
+        description="Page size after optional SKU consolidation (max 500).",
     ),
     sort_by: str = Query(
         "created_at",
         description=(
             "Post-consolidation sort: created_at | updated_at | confidence | sku | quantity | "
-            "photo_sequence (manifest upload order, then filename, image id, position code)"
+            "photo_sequence (requires unmerged rows — SKU merge is disabled automatically for this sort)"
         ),
     ),
     sort_dir: str = Query("asc", description="asc | desc"),
@@ -71,7 +71,8 @@ def list_aisle_positions(
         True,
         description=(
             "When false, skip SKU merge so list rows stay one-to-one with detections (photo review). "
-            "Default true preserves legacy consolidated aisle results."
+            "Ignored (treated as false) when sort_by=photo_sequence. Default true preserves legacy "
+            "consolidated aisle results."
         ),
     ),
     job_id: Optional[str] = Query(

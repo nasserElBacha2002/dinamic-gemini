@@ -319,6 +319,10 @@ def test_evidence_photos_job_scopes_pixels_to_entity_source_image():
         product_label_bbox=None,
     )
     generate_evidence_pack("job_ph", run_dir, frames, metadata, [entity], frame_refs=frame_refs)
+    assert entity.evidence_primary_frame_index == 1, (
+        "primary frame index must map to the scoped source frame in the job bundle, "
+        "not img-a frame 0"
+    )
     entity_dir = run_dir / "evidence" / slug(entity.entity_uid)
     overview_files = sorted(entity_dir.glob("overview_*.jpg"))
     assert overview_files

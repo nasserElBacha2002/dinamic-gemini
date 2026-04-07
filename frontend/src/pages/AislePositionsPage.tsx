@@ -715,18 +715,28 @@ export default function AislePositionsPage() {
               }}
               sx={{ minWidth: 200 }}
             />
-            <ToggleButtonGroup
-              size="small"
-              exclusive
-              value={tableSort}
-              onChange={(_, value) => {
-                if (value != null) setTableSort(value);
-              }}
-              aria-label="Row order"
+            <Tooltip
+              title={
+                tableSort === 'photo'
+                  ? 'Backend row order: manifest photo sequence when stored; if missing, stable fallbacks (filename, image id, position). Not historical capture order for legacy rows without sequence.'
+                  : 'Re-orders the current table client-side by review priority heuristics.'
+              }
             >
-              <ToggleButton value="photo">Photo order</ToggleButton>
-              <ToggleButton value="priority">Review priority</ToggleButton>
-            </ToggleButtonGroup>
+              <span>
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={tableSort}
+                  onChange={(_, value) => {
+                    if (value != null) setTableSort(value);
+                  }}
+                  aria-label="Row order"
+                >
+                  <ToggleButton value="photo">Photo order</ToggleButton>
+                  <ToggleButton value="priority">Review priority</ToggleButton>
+                </ToggleButtonGroup>
+              </span>
+            </Tooltip>
             <ResultsQuickFilters
               value={filter}
               onChange={(v) => {
