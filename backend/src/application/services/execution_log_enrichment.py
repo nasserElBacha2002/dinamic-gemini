@@ -10,7 +10,19 @@ Does not reorder or mutate raw event fields beyond building API view dicts.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Optional, Tuple
+
+_UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def sanitize_execution_log_filename_segment(segment: str) -> str:
+    """Make a single path segment safe for Content-Disposition filenames."""
+    if not segment:
+        return "unknown"
+    cleaned = _UNSAFE_FILENAME_CHARS.sub("_", str(segment).strip())
+    cleaned = cleaned.strip("._-") or "unknown"
+    return cleaned[:200]
 
 
 def _as_nonempty_str(value: Any) -> Optional[str]:
@@ -160,7 +172,10 @@ def execution_log_attachment_filename(
     aisle_id: str,
     job_id: str,
 ) -> str:
-    return f"inventory_{inventory_id}_aisle_{aisle_id}_job_{job_id}_execution_log.txt"
+    inv = sanitize_execution_log_filename_segment(inventory_id)
+    aisle = sanitize_execution_log_filename_segment(aisle_id)
+    job = sanitize_execution_log_filename_segment(job_id)
+    return f"inventory_{inv}_aisle_{aisle}_job_{job}_execution_log.txt"
 
 
 def format_execution_log_plaintext(enriched_events: List[Dict[str, Any]]) -> str:

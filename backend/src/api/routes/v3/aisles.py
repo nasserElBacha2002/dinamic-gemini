@@ -357,13 +357,7 @@ def get_job_execution_log(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     artifact_storage=Depends(get_artifact_storage),
 ) -> ExecutionLogResponse:
-    """Return structured execution log for a job (v3.1.1).
-
-    The artifact is loaded for *this* job row (durable key or ``output_dir/<job_id>/run/``).
-    JSONL lines may still reference other ``payload.job_id`` values (e.g. spawned workers);
-    the response enriches each line with ``event_job_id`` / ``is_requested_job_event`` so the
-    UI can filter without losing the raw stream.
-    """
+    """Structured execution log for this job row; JSONL may cite other ``payload.job_id`` values (envelope + derived fields)."""
     job = job_repo.get_by_id(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")

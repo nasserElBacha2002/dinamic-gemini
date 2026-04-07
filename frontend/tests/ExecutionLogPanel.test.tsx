@@ -122,7 +122,7 @@ describe('ExecutionLogPanel', () => {
     expect(longPromptNode).toHaveStyle({ maxHeight: '240px', overflow: 'auto' });
   });
 
-  it('with enriched log, defaults to current job and hides other job messages until "all" is selected', async () => {
+  it('defaults to requested job and shows all lines only after All jobs in log', async () => {
     render(
       <ExecutionLogPanel
         log={{
@@ -158,15 +158,123 @@ describe('ExecutionLogPanel', () => {
     expect(screen.getByText('for-a')).toBeInTheDocument();
     expect(screen.queryByText('for-b')).not.toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByLabelText('Job context'));
-    const opt = await screen.findByRole('option', { name: /All job ids in log/i });
+    fireEvent.mouseDown(screen.getByLabelText('Job'));
+    const opt = await screen.findByRole('option', { name: /All jobs in log/i });
     fireEvent.click(opt);
     await waitFor(() => {
       expect(screen.getByText('for-b')).toBeInTheDocument();
     });
   });
 
-  it('shows legacy note when no event job_id is present', () => {
+  it('can isolate a specific non-requested job id from the Job select', async () => {
+    render(
+      <ExecutionLogPanel
+        log={{
+          inventory_id: 'i',
+          aisle_id: 'a',
+          requested_job_id: 'job-a',
+          available_job_ids: ['job-a', 'job-b'],
+          available_attempts: [1],
+          available_execution_ids: [],
+          events: [
+            {
+              ts: 't0',
+              stage: 'S',
+              level: 'info',
+              message: 'line-a',
+              event_job_id: 'job-a',
+              is_requested_job_event: true,
+            },
+            {
+              ts: 't1',
+              stage: 'S',
+              level: 'info',
+              message: 'line-b-only',
+              event_job_id: 'job-b',
+              is_requested_job_event: false,
+            },
+          ],
+        }}
+      />
+    );
+    expect(screen.queryByText('line-b-only')).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByLabelText('Job'));
+    fireEvent.click(await screen.findByRole('option', { name: /^job-b$/i }));
+    await waitFor(() => {
+      expect(screen.getByText('line-b-only')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('line-a')).not.toBeInTheDocument();
+  });
+
+  it('derives attempt options from the current job subset and resets invalid attempt after job changes', async () => {
+    render(
+      <ExecutionLogPanel
+        log={{
+          inventory_id: 'i',
+          aisle_id: 'a',
+          requested_job_id: 'job-a',
+          available_job_ids: ['job-a', 'job-b'],
+          available_attempts: [1, 2, 3],
+          available_execution_ids: [],
+          events: [
+            {
+              ts: 't1',
+              stage: 'S',
+              level: 'info',
+              message: 'a1',
+              event_job_id: 'job-a',
+              event_attempt: 1,
+              is_requested_job_event: true,
+            },
+            {
+              ts: 't2',
+              stage: 'S',
+              level: 'info',
+              message: 'a2',
+              event_job_id: 'job-a',
+              event_attempt: 2,
+              is_requested_job_event: true,
+            },
+            {
+              ts: 't3',
+              stage: 'S',
+              level: 'info',
+              message: 'b3',
+              event_job_id: 'job-b',
+              event_attempt: 3,
+              is_requested_job_event: false,
+            },
+          ],
+        }}
+      />
+    );
+
+    const attemptCombobox = () =>
+      screen.getByRole('combobox', { name: 'Attempt', hidden: true });
+
+    fireEvent.mouseDown(attemptCombobox());
+    expect(await screen.findByRole('option', { name: '1' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '2' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '3' })).not.toBeInTheDocument();
+    fireEvent.keyDown(attemptCombobox(), { key: 'Escape' });
+
+    fireEvent.mouseDown(attemptCombobox());
+    fireEvent.click(screen.getByRole('option', { name: '2' }));
+
+    fireEvent.mouseDown(screen.getByLabelText('Job'));
+    fireEvent.click(await screen.findByRole('option', { name: /^job-b$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('b3')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('a1')).not.toBeInTheDocument();
+    expect(screen.queryByText('a2')).not.toBeInTheDocument();
+    // Only one distinct attempt exists for job-b; Attempt filter is disabled as redundant.
+    expect(attemptCombobox()).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('legacy log does not show This job chip when no event_job_id exists', () => {
     render(
       <ExecutionLogPanel
         log={{
@@ -190,5 +298,33 @@ describe('ExecutionLogPanel', () => {
     );
     expect(screen.getByText(/Job metadata unavailable/i)).toBeInTheDocument();
     expect(screen.getByText('legacy-line')).toBeInTheDocument();
+    expect(screen.queryByText('This job')).not.toBeInTheDocument();
+  });
+
+  it('shows payload for scalar non-object values', () => {
+    render(
+      <ExecutionLogPanel
+        log={{
+          inventory_id: 'i',
+          aisle_id: 'a',
+          requested_job_id: 'j',
+          available_job_ids: ['j'],
+          available_attempts: [],
+          available_execution_ids: [],
+          events: [
+            {
+              ts: 't1',
+              stage: 'S',
+              level: 'info',
+              message: 'scalar-payload',
+              payload: 'note',
+              event_job_id: 'j',
+              is_requested_job_event: true,
+            },
+          ],
+        }}
+      />
+    );
+    expect(screen.getByText(/"note"/)).toBeInTheDocument();
   });
 });

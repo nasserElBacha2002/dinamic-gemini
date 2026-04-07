@@ -1,7 +1,5 @@
 /**
- * Execution log panel (v3.1.1) — operator-facing processing log.
- * Shows timestamp, level, stage, message; highlights errors; supports Gemini request blocks.
- * When given an enriched `log` envelope, shows job/attempt/execution filters (client-side).
+ * Execution log panel — operator-facing processing log with optional enriched filters.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -22,6 +20,9 @@ import {
   Typography,
 } from '@mui/material';
 import type { ExecutionLogEvent, ExecutionLogResponse } from '../api/types';
+
+const JOB_FILTER_REQUESTED = '__job_filter_requested__';
+const JOB_FILTER_ALL = '__job_filter_all__';
 
 /** Derive a readable error message from unknown query/API error shape. */
 export function getReadableErrorMessage(error: unknown): string {
@@ -58,6 +59,13 @@ function levelColor(level: string): 'default' | 'warning' | 'error' | 'success' 
     default:
       return 'default';
   }
+}
+
+function shouldShowPayloadLine(payload: unknown): boolean {
+  if (payload == null) return false;
+  if (typeof payload !== 'object') return true;
+  if (Array.isArray(payload)) return true;
+  return Object.keys(payload as object).length > 0;
 }
 
 function safePayloadString(payload: unknown): string {
@@ -162,15 +170,23 @@ function shortJobLabel(id: string): string {
   return `${s.slice(0, 8)}…${s.slice(-4)}`;
 }
 
-type JobScope = 'requested' | 'all';
+function timelineRowKey(evt: ExecutionLogEvent, index: number): string {
+  return [
+    evt.ts,
+    evt.stage,
+    evt.level,
+    evt.message,
+    evt.event_job_id ?? '',
+    evt.event_attempt ?? '',
+    evt.event_execution_id ?? '',
+    String(index),
+  ].join('|');
+}
 
 interface ExecutionLogPanelProps {
-  /** Enriched API response — enables filters and context chips. */
   log?: ExecutionLogResponse | null;
-  /** Legacy: raw events only when `log` is omitted (tests / transitional). */
   events?: ExecutionLogEvent[];
   isLoading?: boolean;
-  /** Query/API error; typed unknown so panel never crashes on unexpected shape. */
   error?: unknown;
   emptyMessage?: string;
 }
@@ -190,23 +206,73 @@ export default function ExecutionLogPanel({
     [allEvents]
   );
 
-  const [jobScope, setJobScope] = useState<JobScope>('requested');
+  const showJobFilter = Boolean(
+    haveEnvelope && log && hasPayloadJobIds && log.available_job_ids.length > 1
+  );
+
+  const [jobFilter, setJobFilter] = useState<string>(JOB_FILTER_REQUESTED);
   const [attemptKey, setAttemptKey] = useState<string>('all');
   const [executionKey, setExecutionKey] = useState<string>('all');
 
+  const logIdentity = log ? `${log.inventory_id}|${log.aisle_id}|${log.requested_job_id}` : '';
   useEffect(() => {
-    setJobScope('requested');
+    setJobFilter(JOB_FILTER_REQUESTED);
     setAttemptKey('all');
     setExecutionKey('all');
-  }, [log?.requested_job_id]);
+  }, [logIdentity]);
 
-  const filteredEvents = useMemo(() => {
-    let rows = allEvents;
-    if (haveEnvelope && hasPayloadJobIds) {
-      if (jobScope === 'requested') {
-        rows = rows.filter((e) => e.is_requested_job_event === true);
+  useEffect(() => {
+    if (!haveEnvelope || !log || !hasPayloadJobIds) return;
+    if (jobFilter === JOB_FILTER_REQUESTED || jobFilter === JOB_FILTER_ALL) return;
+    if (!log.available_job_ids.includes(jobFilter)) {
+      setJobFilter(JOB_FILTER_REQUESTED);
+      setAttemptKey('all');
+      setExecutionKey('all');
+    }
+  }, [haveEnvelope, log, hasPayloadJobIds, jobFilter]);
+
+  const eventsAfterJobFilter = useMemo(() => {
+    if (!haveEnvelope || !log) return allEvents;
+    if (!hasPayloadJobIds) return allEvents;
+    if (!showJobFilter) return allEvents;
+    if (jobFilter === JOB_FILTER_REQUESTED) {
+      return allEvents.filter((e) => e.is_requested_job_event === true);
+    }
+    if (jobFilter === JOB_FILTER_ALL) {
+      return allEvents;
+    }
+    return allEvents.filter((e) => e.event_job_id === jobFilter);
+  }, [allEvents, haveEnvelope, log, hasPayloadJobIds, showJobFilter, jobFilter]);
+
+  const { contextualAttempts, contextualExecutionIds } = useMemo(() => {
+    const att = new Set<number>();
+    const ex = new Set<string>();
+    for (const e of eventsAfterJobFilter) {
+      if (e.event_attempt != null) att.add(e.event_attempt);
+      if (e.event_execution_id != null && String(e.event_execution_id).trim() !== '') {
+        ex.add(String(e.event_execution_id));
       }
     }
+    return {
+      contextualAttempts: [...att].sort((a, b) => a - b),
+      contextualExecutionIds: [...ex].sort(),
+    };
+  }, [eventsAfterJobFilter]);
+
+  useEffect(() => {
+    if (attemptKey !== 'all') {
+      const n = Number(attemptKey);
+      if (!Number.isFinite(n) || !contextualAttempts.includes(n)) {
+        setAttemptKey('all');
+      }
+    }
+    if (executionKey !== 'all' && !contextualExecutionIds.includes(executionKey)) {
+      setExecutionKey('all');
+    }
+  }, [contextualAttempts, contextualExecutionIds, attemptKey, executionKey]);
+
+  const filteredEvents = useMemo(() => {
+    let rows = eventsAfterJobFilter;
     if (attemptKey !== 'all') {
       const n = Number(attemptKey);
       rows = rows.filter((e) => e.event_attempt === n);
@@ -215,10 +281,16 @@ export default function ExecutionLogPanel({
       rows = rows.filter((e) => e.event_execution_id === executionKey);
     }
     return rows;
-  }, [allEvents, haveEnvelope, hasPayloadJobIds, jobScope, attemptKey, executionKey]);
+  }, [eventsAfterJobFilter, attemptKey, executionKey]);
 
-  const attemptSelectDisabled = !log || log.available_attempts.length <= 1;
-  const showExecutionFilter = Boolean(log && log.available_execution_ids.length > 1);
+  const attemptSelectDisabled = contextualAttempts.length <= 1;
+  const showExecutionFilter = contextualExecutionIds.length > 1;
+
+  const handleJobFilterChange = (value: string) => {
+    setJobFilter(value);
+    setAttemptKey('all');
+    setExecutionKey('all');
+  };
 
   if (isLoading) {
     return (
@@ -259,15 +331,15 @@ export default function ExecutionLogPanel({
   if (haveEnvelope && log) {
     summaryParts.push(`Requested job: ${shortJobLabel(log.requested_job_id)}`);
     if (hasPayloadJobIds) {
-      summaryParts.push(jobScope === 'requested' ? 'Filter: this job' : 'Filter: all job ids in log');
+      if (jobFilter === JOB_FILTER_REQUESTED) summaryParts.push('Job filter: requested');
+      else if (jobFilter === JOB_FILTER_ALL) summaryParts.push('Job filter: all');
+      else summaryParts.push(`Job filter: ${shortJobLabel(jobFilter)}`);
     }
-    if (attemptKey !== 'all') {
-      summaryParts.push(`Attempt: ${attemptKey}`);
-    }
-    if (executionKey !== 'all') {
-      summaryParts.push(`Execution: ${shortJobLabel(executionKey)}`);
-    }
+    if (attemptKey !== 'all') summaryParts.push(`Attempt: ${attemptKey}`);
+    if (executionKey !== 'all') summaryParts.push(`Execution: ${shortJobLabel(executionKey)}`);
   }
+
+  const requestedJobId = log?.requested_job_id;
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
@@ -287,17 +359,30 @@ export default function ExecutionLogPanel({
               alignItems: 'flex-end',
             }}
           >
-            {hasPayloadJobIds ? (
-              <FormControl size="small" sx={{ minWidth: 180 }}>
-                <InputLabel id="exec-log-job-filter-label">Job context</InputLabel>
+            {showJobFilter ? (
+              <FormControl size="small" sx={{ minWidth: 200 }}>
+                <InputLabel id="exec-log-job-filter-label">Job</InputLabel>
                 <Select
                   labelId="exec-log-job-filter-label"
-                  label="Job context"
-                  value={jobScope}
-                  onChange={(e) => setJobScope(e.target.value as JobScope)}
+                  label="Job"
+                  value={
+                    jobFilter === JOB_FILTER_REQUESTED || jobFilter === JOB_FILTER_ALL
+                      ? jobFilter
+                      : log.available_job_ids.includes(jobFilter)
+                        ? jobFilter
+                        : JOB_FILTER_REQUESTED
+                  }
+                  onChange={(e) => handleJobFilterChange(e.target.value)}
                 >
-                  <MenuItem value="requested">Current job</MenuItem>
-                  <MenuItem value="all">All job ids in log</MenuItem>
+                  <MenuItem value={JOB_FILTER_REQUESTED}>Requested job</MenuItem>
+                  <MenuItem value={JOB_FILTER_ALL}>All jobs in log</MenuItem>
+                  {log.available_job_ids
+                    .filter((jid) => jid !== log.requested_job_id)
+                    .map((jid) => (
+                      <MenuItem key={jid} value={jid}>
+                        {shortJobLabel(jid)}
+                      </MenuItem>
+                    ))}
                 </Select>
               </FormControl>
             ) : null}
@@ -306,11 +391,11 @@ export default function ExecutionLogPanel({
               <Select
                 labelId="exec-log-attempt-label"
                 label="Attempt"
-                value={attemptKey}
+                value={attemptSelectDisabled ? 'all' : attemptKey}
                 onChange={(e) => setAttemptKey(e.target.value)}
               >
                 <MenuItem value="all">All attempts</MenuItem>
-                {(log.available_attempts ?? []).map((a) => (
+                {contextualAttempts.map((a) => (
                   <MenuItem key={a} value={String(a)}>
                     {a}
                   </MenuItem>
@@ -327,7 +412,7 @@ export default function ExecutionLogPanel({
                   onChange={(e) => setExecutionKey(e.target.value)}
                 >
                   <MenuItem value="all">All</MenuItem>
-                  {log.available_execution_ids.map((id) => (
+                  {contextualExecutionIds.map((id) => (
                     <MenuItem key={id} value={id}>
                       {shortJobLabel(id)}
                     </MenuItem>
@@ -343,7 +428,11 @@ export default function ExecutionLogPanel({
       ) : null}
 
       {geminiRequests.map(({ event, geminiRequest }, requestIndex) => (
-        <Paper key={`${event.ts}-${requestIndex}`} variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5 }}>
+        <Paper
+          key={`g|${event.ts}|${event.stage}|${requestIndex}|${event.message.slice(0, 64)}`}
+          variant="outlined"
+          sx={{ p: 2, display: 'grid', gap: 1.5 }}
+        >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
             <Typography variant="subtitle2">
               Gemini request{geminiRequests.length > 1 ? ` ${requestIndex + 1}` : ''}
@@ -439,18 +528,25 @@ export default function ExecutionLogPanel({
       <List dense disablePadding sx={{ maxHeight: 360, overflow: 'auto' }}>
         {timelineEvents.map((evt, i) => {
           const ej = evt.event_job_id;
-          const showJobBadge = haveEnvelope && hasPayloadJobIds && Boolean(ej);
-          const emphasisRequested = evt.is_requested_job_event === true;
+          const showJobBadge = hasPayloadJobIds && Boolean(ej);
+          const definitiveRequestedRow =
+            hasPayloadJobIds &&
+            requestedJobId != null &&
+            ej != null &&
+            String(ej) === String(requestedJobId);
+          const showThisJobChip = definitiveRequestedRow;
+          const emphasizeRow = definitiveRequestedRow;
+
           return (
             <ListItem
-              key={i}
+              key={timelineRowKey(evt, i)}
               alignItems="flex-start"
               disableGutters
               sx={{
                 py: 0.5,
                 pl: 0.5,
-                borderLeft: emphasisRequested ? 3 : 0,
-                borderColor: emphasisRequested ? 'primary.main' : 'transparent',
+                borderLeft: emphasizeRow ? 3 : 0,
+                borderColor: emphasizeRow ? 'primary.main' : 'transparent',
               }}
             >
               <ListItemText
@@ -471,7 +567,7 @@ export default function ExecutionLogPanel({
                         label={`job ${shortJobLabel(String(ej))}`}
                         size="small"
                         variant="outlined"
-                        color={emphasisRequested ? 'primary' : 'default'}
+                        color={definitiveRequestedRow ? 'primary' : 'default'}
                         sx={{ fontSize: '0.65rem' }}
                       />
                     ) : null}
@@ -486,7 +582,7 @@ export default function ExecutionLogPanel({
                         sx={{ fontSize: '0.65rem' }}
                       />
                     ) : null}
-                    {emphasisRequested ? (
+                    {showThisJobChip ? (
                       <Chip label="This job" size="small" color="primary" sx={{ fontSize: '0.6rem' }} />
                     ) : null}
                   </Box>
@@ -496,16 +592,15 @@ export default function ExecutionLogPanel({
                     <Typography variant="body2" component="span" sx={{ display: 'block', mt: 0.25 }}>
                       {evt.message}
                     </Typography>
-                    {evt.payload != null &&
-                      (typeof evt.payload !== 'object' || Object.keys(evt.payload as object).length > 0) && (
-                        <Typography
-                          variant="caption"
-                          component="span"
-                          sx={{ display: 'block', color: 'text.secondary', fontFamily: 'monospace' }}
-                        >
-                          {safePayloadString(evt.payload)}
-                        </Typography>
-                      )}
+                    {shouldShowPayloadLine(evt.payload) ? (
+                      <Typography
+                        variant="caption"
+                        component="span"
+                        sx={{ display: 'block', color: 'text.secondary', fontFamily: 'monospace' }}
+                      >
+                        {safePayloadString(evt.payload)}
+                      </Typography>
+                    ) : null}
                   </>
                 }
                 primaryTypographyProps={{ component: 'div' }}

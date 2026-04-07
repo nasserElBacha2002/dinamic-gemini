@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from src.application.services.execution_log_enrichment import (
     build_enriched_execution_log,
+    execution_log_attachment_filename,
     extract_event_context,
     format_execution_log_plaintext,
+    sanitize_execution_log_filename_segment,
 )
 
 
@@ -90,6 +92,21 @@ def test_build_enriched_legacy_no_job_ids_all_requested() -> None:
     assert out["events"][0]["is_requested_job_event"] is True
     assert out["events"][0]["event_job_id"] is None
     assert out["available_job_ids"] == ["job-x"]
+
+
+def test_sanitize_filename_segment_replaces_unsafe_chars() -> None:
+    assert sanitize_execution_log_filename_segment("inv/x") == "inv_x"
+    assert sanitize_execution_log_filename_segment("a:b*c?d") == "a_b_c_d"
+    assert sanitize_execution_log_filename_segment("") == "unknown"
+    assert ".." not in sanitize_execution_log_filename_segment("../etc/passwd")
+
+
+def test_attachment_filename_uses_sanitized_segments() -> None:
+    fn = execution_log_attachment_filename("inv/1", 'aisle"2', "job|3")
+    # Pattern is inventory_<id>_aisle_<id>_job_<id>_...; slashes/quotes/pipes become underscores.
+    assert fn == "inventory_inv_1_aisle_aisle_2_job_job_3_execution_log.txt"
+    assert "../" not in fn
+    assert ".." not in fn
 
 
 def test_format_plaintext_includes_blank_separators() -> None:
