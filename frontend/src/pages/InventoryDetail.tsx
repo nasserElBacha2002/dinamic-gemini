@@ -7,7 +7,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   FormControl,
   InputLabel,
   MenuItem,
@@ -23,13 +22,7 @@ import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../utils/aisleS
 import { formatDate } from '../utils/formatDate';
 import { pathToAislePositions } from '../utils/resultRoutes';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
-import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
-import type { ExecutionLogEvent } from '../api/types';
-import {
-  downloadAisleExecutionLogTxt,
-  downloadExecutionLogTxt,
-  exportInventoryResultsCsv,
-} from '../api/client';
+import { exportInventoryResultsCsv } from '../api/client';
 import {
   DataTable,
   ErrorAlert,
@@ -41,21 +34,16 @@ import {
   type DataTableColumn,
 } from '../components/ui';
 import { PageHeader } from '../components/shell';
+import AisleObservabilityDialog from '../components/AisleObservabilityDialog';
 import CreateAisleDialog from '../components/CreateAisleDialog';
-import ExecutionLogPanel from '../components/ExecutionLogPanel';
 import ReferenceImagesDrawer from '../components/ReferenceImagesDrawer';
 import {
   useInventoryDetail,
   useInventoryVisualReferences,
   useAislesList,
   useProcessingProviderOptions,
-  useExecutionLog,
-  useAisleExecutionLog,
-  useAisleJobDetail,
   useCreateAisle,
   useStartAisleProcessing,
-  useCancelAisleJob,
-  useRetryAisleJob,
   useUploadAisleAssetsFlex,
   useUploadInventoryVisualReferences,
   useDeleteInventoryVisualReference,
@@ -114,52 +102,9 @@ function formatReferenceUsageSummary(aisle: Aisle): { label: string; detail?: st
   };
 }
 
-function formatOptionalDate(value?: string | null): string {
-  return value ? formatDate(value) : '—';
-}
-
-function canCancelJob(status?: string | null): boolean {
-  const normalized = String(status ?? '').toLowerCase();
-  return normalized === 'starting' || normalized === 'running';
-}
-
-function isCancelRequested(status?: string | null): boolean {
-  return String(status ?? '').toLowerCase() === 'cancel_requested';
-}
-
-function canRetryJob(status?: string | null): boolean {
-  const normalized = String(status ?? '').toLowerCase();
-  return normalized === 'failed' || normalized === 'canceled';
-}
-
 /** Shown when Process aisle is disabled due to no uploaded source assets (`assets_count` on the aisle row). */
 const PROCESS_AISLE_NEEDS_ASSETS_MESSAGE =
   'You need to upload at least one image before processing.';
-
-function metadataRowsForJob(
-  job: NonNullable<Aisle['latest_job']> | null | undefined,
-  executionLogEvents?: ExecutionLogEvent[] | null
-): Array<{ label: string; value: string }> {
-  if (!job) return [];
-  const displayFinished = resolveDisplayFinishedAt(job, executionLogEvents);
-  return [
-    { label: 'Started', value: formatOptionalDate(job.started_at) },
-    { label: 'Finished', value: formatOptionalDate(displayFinished) },
-    { label: 'Last heartbeat', value: formatOptionalDate(job.last_heartbeat_at) },
-    { label: 'Cancellation requested', value: formatOptionalDate(job.cancel_requested_at) },
-    { label: 'Current stage', value: job.current_stage || '—' },
-    { label: 'Current step', value: job.current_substep || '—' },
-    { label: 'Step started', value: formatOptionalDate(job.current_step_started_at) },
-    { label: 'Execution ID', value: job.execution_id || '—' },
-    { label: 'Provider', value: job.provider_name || '—' },
-    { label: 'Model', value: job.model_name || '—' },
-    { label: 'Prompt key', value: job.prompt_key || '—' },
-    { label: 'Attempt', value: job.attempt_count ? `Attempt ${job.attempt_count}` : '—' },
-    { label: 'Retry of job', value: job.retry_of_job_id || '—' },
-    { label: 'Failure code', value: job.failure_code || '—' },
-    { label: 'Failure message', value: job.failure_message || job.error_message || '—' },
-  ];
-}
 
 export default function InventoryDetail() {
   const { inventoryId } = useParams<{ inventoryId: string }>();
@@ -170,38 +115,19 @@ export default function InventoryDetail() {
   const [processError, setProcessError] = useState<string | null>(null);
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [jobDialog, setJobDialog] = useState<{ aisleId: string; jobId: string; aisleCode: string } | null>(null);
+  const [observabilityDialog, setObservabilityDialog] = useState<{
+    aisleId: string;
+    aisleCode: string;
+    initialSelectedJobId: string | null;
+  } | null>(null);
   const [processDialog, setProcessDialog] = useState<{ aisleId: string; aisleCode: string } | null>(null);
   const [processProviderKey, setProcessProviderKey] = useState('');
   const [processModelKey, setProcessModelKey] = useState('');
   const [processPromptKey, setProcessPromptKey] = useState('');
   const [referenceImagesOpen, setReferenceImagesOpen] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
-  const [downloadingExecutionLog, setDownloadingExecutionLog] = useState(false);
-  const [aisleLogDialog, setAisleLogDialog] = useState<{ aisleId: string; aisleCode: string } | null>(null);
-  const [downloadingAisleExecutionLog, setDownloadingAisleExecutionLog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
-
-  const executionLogQuery = useExecutionLog(
-    inventoryId ?? undefined,
-    jobDialog?.aisleId,
-    jobDialog?.jobId,
-    {
-      enabled: Boolean(jobDialog),
-    }
-  );
-  const aisleExecutionLogQuery = useAisleExecutionLog(inventoryId ?? undefined, aisleLogDialog?.aisleId, {
-    enabled: Boolean(aisleLogDialog && inventoryId),
-  });
-  const jobDetailQuery = useAisleJobDetail(
-    inventoryId ?? undefined,
-    jobDialog?.aisleId,
-    jobDialog?.jobId,
-    {
-      enabled: Boolean(jobDialog),
-    }
-  );
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const visualReferencesQuery = useInventoryVisualReferences(inventoryId, {
@@ -227,15 +153,12 @@ export default function InventoryDetail() {
 
   const createAisleMutation = useCreateAisle(inventoryId ?? '');
   const processMutation = useStartAisleProcessing(inventoryId ?? '');
-  const cancelJobMutation = useCancelAisleJob(inventoryId ?? '');
-  const retryJobMutation = useRetryAisleJob(inventoryId ?? '');
   const uploadMutation = useUploadAisleAssetsFlex(inventoryId ?? '');
   const uploadReferenceImagesMutation = useUploadInventoryVisualReferences(inventoryId ?? '');
   const deleteReferenceImageMutation = useDeleteInventoryVisualReference(inventoryId ?? '');
   const replaceReferenceImageMutation = useReplaceInventoryVisualReference(inventoryId ?? '');
 
   const inventory = inventoryQuery.data ?? null;
-  const selectedJob = jobDetailQuery.data ?? null;
   const inventoryLoading = inventoryQuery.isLoading;
   const inventoryError =
     inventoryQuery.isError && inventoryQuery.error
@@ -339,41 +262,6 @@ export default function InventoryDetail() {
     setUploadError(null);
     pendingUploadAisleIdRef.current = aisleId;
     fileInputRef.current?.click();
-  };
-
-  const refreshJobOperations = async () => {
-    await Promise.all([
-      aislesQuery.refetch(),
-      jobDetailQuery.refetch(),
-      executionLogQuery.refetch(),
-    ]);
-  };
-
-  const handleCancelJob = async () => {
-    if (!jobDialog) return;
-    try {
-      await cancelJobMutation.mutateAsync({ aisleId: jobDialog.aisleId, jobId: jobDialog.jobId });
-      showSnackbar('Cancellation requested', 'success');
-      await refreshJobOperations();
-    } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
-      showSnackbar(getApiErrorMessage(err, 'Failed to cancel job'), 'error');
-    }
-  };
-
-  const handleRetryJob = async () => {
-    if (!jobDialog) return;
-    try {
-      const result = await retryJobMutation.mutateAsync({ aisleId: jobDialog.aisleId, jobId: jobDialog.jobId });
-      setJobDialog((current) =>
-        current ? { ...current, jobId: result.id } : current
-      );
-      showSnackbar(`Retry started as attempt ${result.attempt_count ?? 'new'}`, 'success');
-      await Promise.all([aislesQuery.refetch(), executionLogQuery.refetch(), jobDetailQuery.refetch()]);
-    } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
-      showSnackbar(getApiErrorMessage(err, 'Failed to retry job'), 'error');
-    }
   };
 
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -515,9 +403,14 @@ export default function InventoryDetail() {
                   disabled: uploadingAisleId === a.id,
                 },
                 {
-                  id: 'aisle_logs',
-                  label: 'View aisle logs',
-                  onClick: () => setAisleLogDialog({ aisleId: a.id, aisleCode: a.code }),
+                  id: 'execution_logs',
+                  label: 'View logs',
+                  onClick: () =>
+                    setObservabilityDialog({
+                      aisleId: a.id,
+                      aisleCode: a.code,
+                      initialSelectedJobId: a.latest_job?.id ?? null,
+                    }),
                 },
                 {
                   id: 'process',
@@ -526,20 +419,6 @@ export default function InventoryDetail() {
                   disabled: processState.disabled,
                   disabledReason: processState.disabledReason,
                 },
-                ...(a.latest_job
-                  ? [
-                      {
-                        id: 'log',
-                        label: 'View job details',
-                        onClick: () =>
-                          setJobDialog({
-                            aisleId: a.id,
-                            jobId: a.latest_job!.id,
-                            aisleCode: a.code,
-                          }),
-                      },
-                    ]
-                  : []),
               ]}
             />
           );
@@ -839,187 +718,18 @@ export default function InventoryDetail() {
         }
       />
 
-      <Dialog
-        open={Boolean(aisleLogDialog)}
-        onClose={() => setAisleLogDialog(null)}
-        maxWidth="sm"
-        fullWidth
-        scroll="paper"
-      >
-        <DialogTitle>
-          Aisle execution logs {aisleLogDialog ? `— ${aisleLogDialog.aisleCode}` : ''}
-        </DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2}>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => void aisleExecutionLogQuery.refetch()}
-                disabled={aisleExecutionLogQuery.isFetching}
-              >
-                {aisleExecutionLogQuery.isFetching ? 'Refreshing…' : 'Refresh'}
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={!inventoryId || !aisleLogDialog || downloadingAisleExecutionLog}
-                onClick={async () => {
-                  if (!inventoryId || !aisleLogDialog) return;
-                  setDownloadingAisleExecutionLog(true);
-                  try {
-                    await downloadAisleExecutionLogTxt(inventoryId, aisleLogDialog.aisleId);
-                  } catch (e) {
-                    const err = e instanceof ApiError ? e : new ApiError(String(e));
-                    showSnackbar(getApiErrorMessage(err, 'Failed to download aisle execution log'), 'error');
-                  } finally {
-                    setDownloadingAisleExecutionLog(false);
-                  }
-                }}
-              >
-                {downloadingAisleExecutionLog ? 'Downloading…' : 'Download merged log'}
-              </Button>
-            </Box>
-            <ExecutionLogPanel
-              log={aisleExecutionLogQuery.data ?? null}
-              isLoading={aisleExecutionLogQuery.isLoading}
-              error={aisleExecutionLogQuery.error}
-              emptyMessage="No execution log entries found for any job on this aisle."
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAisleLogDialog(null)}>Close</Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(jobDialog)}
-        onClose={() => setJobDialog(null)}
-        maxWidth="sm"
-        fullWidth
-        scroll="paper"
-      >
-        <DialogTitle>
-          Job details {jobDialog ? `— Aisle ${jobDialog.aisleCode}` : ''}
-        </DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                {selectedJob ? (
-                  <StatusBadge
-                    label={getJobStatusLabel(selectedJob.status)}
-                    semantic={jobStatusToBadgeSemantic(selectedJob.status)}
-                  />
-                ) : null}
-                {selectedJob?.attempt_count ? (
-                  <Typography variant="body2" color="text.secondary">
-                    Attempt {selectedJob.attempt_count}
-                  </Typography>
-                ) : null}
-                {selectedJob?.retry_of_job_id ? (
-                  <Typography variant="body2" color="text.secondary">
-                    Retry of job {selectedJob.retry_of_job_id}
-                  </Typography>
-                ) : null}
-              </Box>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => void refreshJobOperations()}
-                  disabled={jobDetailQuery.isFetching || executionLogQuery.isFetching}
-                >
-                  {jobDetailQuery.isFetching || executionLogQuery.isFetching ? 'Refreshing…' : 'Refresh'}
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  disabled={!inventoryId || !jobDialog || downloadingExecutionLog}
-                  onClick={async () => {
-                    if (!inventoryId || !jobDialog) return;
-                    setDownloadingExecutionLog(true);
-                    try {
-                      await downloadExecutionLogTxt(inventoryId, jobDialog.aisleId, jobDialog.jobId);
-                    } catch (e) {
-                      const err = e instanceof ApiError ? e : new ApiError(String(e));
-                      showSnackbar(getApiErrorMessage(err, 'Failed to download execution log'), 'error');
-                    } finally {
-                      setDownloadingExecutionLog(false);
-                    }
-                  }}
-                >
-                  {downloadingExecutionLog ? 'Downloading…' : 'Download log'}
-                </Button>
-                {isCancelRequested(selectedJob?.status) ? (
-                  <Button size="small" variant="outlined" disabled>
-                    Cancellation requested
-                  </Button>
-                ) : null}
-                {canCancelJob(selectedJob?.status) ? (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="warning"
-                    onClick={() => void handleCancelJob()}
-                    disabled={cancelJobMutation.isPending}
-                  >
-                    {cancelJobMutation.isPending ? 'Cancelling…' : 'Cancel job'}
-                  </Button>
-                ) : null}
-                {canRetryJob(selectedJob?.status) ? (
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => void handleRetryJob()}
-                    disabled={retryJobMutation.isPending}
-                  >
-                    {retryJobMutation.isPending ? 'Retrying…' : 'Retry job'}
-                  </Button>
-                ) : null}
-              </Box>
-            </Box>
-
-            {jobDetailQuery.error ? (
-              <ErrorAlert
-                message={getApiErrorMessage(jobDetailQuery.error, 'Failed to load job details')}
-                onRetry={() => {
-                  void jobDetailQuery.refetch();
-                }}
-              />
-            ) : null}
-
-            <Box sx={{ display: 'grid', gap: 1 }}>
-              {metadataRowsForJob(selectedJob, executionLogQuery.data?.events).map((item) => (
-                <Box
-                  key={item.label}
-                  sx={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 180px) 1fr', gap: 1 }}
-                >
-                  <Typography variant="body2" color="text.secondary">
-                    {item.label}
-                  </Typography>
-                  <Typography variant="body2">{item.value}</Typography>
-                </Box>
-              ))}
-            </Box>
-
-            <Divider />
-
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Execution log
-              </Typography>
-              <ExecutionLogPanel
-                log={executionLogQuery.data ?? null}
-                isLoading={executionLogQuery.isLoading}
-                error={executionLogQuery.error}
-                emptyMessage="No log entries yet. The job may not have started or the log file is not available."
-              />
-            </Box>
-          </Stack>
-        </DialogContent>
-      </Dialog>
+      {observabilityDialog && inventoryId ? (
+        <AisleObservabilityDialog
+          key={`${observabilityDialog.aisleId}-${observabilityDialog.initialSelectedJobId ?? 'none'}`}
+          open
+          inventoryId={inventoryId}
+          aisleId={observabilityDialog.aisleId}
+          aisleCode={observabilityDialog.aisleCode}
+          initialSelectedJobId={observabilityDialog.initialSelectedJobId}
+          onClose={() => setObservabilityDialog(null)}
+          onAislesInvalidate={() => aislesQuery.refetch()}
+        />
+      ) : null}
     </>
   );
 }
