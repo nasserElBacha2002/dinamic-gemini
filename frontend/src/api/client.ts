@@ -191,6 +191,45 @@ export async function exportInventoryResultsCsv(inventoryId: string): Promise<vo
   URL.revokeObjectURL(url);
 }
 
+/** Aisle Results export: same CSV contract as inventory export, scoped to one aisle and optional run (`job_id`). */
+export async function exportAisleResultsCsv(
+  inventoryId: string,
+  aisleId: string,
+  options?: { jobId?: string | null; technical?: boolean }
+): Promise<void> {
+  const params = new URLSearchParams({ format: 'csv' });
+  if (options?.technical) {
+    params.set('technical', 'true');
+  }
+  const jid = options?.jobId?.trim();
+  if (jid) {
+    params.set('job_id', jid);
+  }
+  const path = `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/export?${params}`;
+  const response = await protectedFetch(path);
+  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_results.csv`;
+  if (!response.ok) {
+    const text = await response.text();
+    let data: ApiErrorDetail;
+    try {
+      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+    } catch {
+      data = {};
+    }
+    throwApiErrorIfNotOk(response, text, data);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function createInventory(body: CreateInventoryRequest): Promise<Inventory> {
   const response = await protectedFetch(`${API_BASE}/api/v3/inventories/`, {
     method: 'POST',

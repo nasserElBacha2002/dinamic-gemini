@@ -79,6 +79,25 @@ def test_export_csv_422_invalid_format(client_v3: TestClient) -> None:
     assert resp.status_code == 422
 
 
+def test_export_aisle_csv_empty_positions(client_v3: TestClient) -> None:
+    """Aisle-scoped export uses same headers as inventory export; one aisle, no rows."""
+    create = client_v3.post("/api/v3/inventories", json={"name": "Aisle scoped"})
+    assert create.status_code == 201
+    inv_id = create.json()["id"]
+    aisle_resp = client_v3.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "A1"})
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+
+    resp = client_v3.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/export")
+    assert resp.status_code == 200
+    assert "text/csv" in (resp.headers.get("content-type") or "").lower()
+    cd = resp.headers.get("content-disposition") or ""
+    assert f"inventory_{inv_id}_aisle_{aisle_id}_results.csv" in cd
+    headers, rows = _parse_csv_body(resp.content)
+    assert headers == list(INVENTORY_RESULTS_CSV_FIELDS)
+    assert rows == []
+
+
 def test_export_csv_headers_only_inventory_with_aisle_no_positions(client_v3: TestClient) -> None:
     create = client_v3.post("/api/v3/inventories", json={"name": "Empty positions"})
     assert create.status_code == 201

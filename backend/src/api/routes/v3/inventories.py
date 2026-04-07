@@ -55,6 +55,8 @@ from src.application.errors import (
     EmptyUploadError,
     InventoryNotFoundError,
     InventoryVisualReferenceNotFoundError,
+    JobDoesNotBelongToAisleError,
+    JobNotFoundError,
     MaxInventoryVisualReferencesExceededError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
@@ -225,6 +227,10 @@ def export_inventory_results(
         raise HTTPException(status_code=422, detail="Only format=csv is supported")
     try:
         body = use_case.execute_csv(inventory_id, technical=technical)
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
     suffix = "technical" if technical else "results"

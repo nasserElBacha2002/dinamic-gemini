@@ -5,7 +5,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, TextField, Tooltip, Typography } from '@mui/material';
-import { exportInventoryResultsCsv, type AislePositionsListQuery } from '../api/client';
+import { exportAisleResultsCsv, type AislePositionsListQuery } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
@@ -525,12 +525,12 @@ export default function AislePositionsPage() {
             <Button
               size="small"
               variant="outlined"
-              disabled={!inventoryId || exportingCsv}
+              disabled={!inventoryId || !aisleId || exportingCsv}
               onClick={async () => {
-                if (!inventoryId) return;
+                if (!inventoryId || !aisleId) return;
                 setExportingCsv(true);
                 try {
-                  await exportInventoryResultsCsv(inventoryId);
+                  await exportAisleResultsCsv(inventoryId, aisleId, { jobId: jobIdParam });
                 } catch (e) {
                   const err = e instanceof ApiError ? e : new ApiError(String(e));
                   showSnackbar(getApiErrorMessage(err, 'Export failed'), 'error');
@@ -539,7 +539,7 @@ export default function AislePositionsPage() {
                 }
               }}
             >
-              {exportingCsv ? 'Exporting…' : 'Export operational CSV'}
+              {exportingCsv ? 'Exporting…' : 'Export this aisle (CSV)'}
             </Button>
             <Button
               size="small"
