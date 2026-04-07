@@ -98,3 +98,7 @@ class InvalidProcessingPromptKeyError(Exception):
 
 class JobPromotionNotAllowedError(Exception):
     """Raised when a benchmark run cannot be promoted to operational (wrong scope, state, or type)."""
+
+
+class BenchmarkCompareJobsMustDifferError(Exception):
+    """Raised when compare is requested with identical job ids (invalid benchmark pair)."""

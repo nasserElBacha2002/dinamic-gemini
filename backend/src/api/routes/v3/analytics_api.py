@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from src.application.dto.analytics_dto import AnalyticsFilters
 from src.application.errors import (
     AisleNotFoundError,
+    BenchmarkCompareJobsMustDifferError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
@@ -327,6 +328,8 @@ def analytics_benchmark_compare_aisle_runs(
             )
         )
         return AisleBenchmarkCompareResponse.model_validate(payload)
+    except BenchmarkCompareJobsMustDifferError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:

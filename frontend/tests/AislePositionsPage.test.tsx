@@ -6,7 +6,7 @@ import React from 'react';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, Route, Routes, RouterProvider } from 'react-router-dom';
 import AislePositionsPage from '../src/pages/AislePositionsPage';
 import { AppSnackbarProvider } from '../src/components/ui';
 import type { ResultSummary } from '../src/features/results/types';
@@ -14,6 +14,12 @@ import type { PositionSummary } from '../src/api/types';
 
 const { useRunAisleMergeMock } = vi.hoisted(() => ({
   useRunAisleMergeMock: vi.fn(),
+}));
+const { promoteMutateAsync } = vi.hoisted(() => ({
+  promoteMutateAsync: vi.fn().mockResolvedValue({
+    aisle_id: 'aisle-1',
+    operational_job_id: 'job-bench',
+  }),
 }));
 const { resultSummariesState } = vi.hoisted(() => ({
   resultSummariesState: {
@@ -153,6 +159,10 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useAisleMergeResults: () => mergeResultsState,
     useAisleJobsList: () => aisleJobsListState,
     useRunAisleMerge: useRunAisleMergeMock,
+    usePromoteAisleOperationalJob: () => ({
+      mutateAsync: promoteMutateAsync,
+      isPending: false,
+    }),
   };
 });
 
@@ -206,6 +216,11 @@ describe('AislePositionsPage (Aisle Results)', () => {
         product_records_updated: 1,
       }),
       isPending: false,
+    });
+    promoteMutateAsync.mockReset();
+    promoteMutateAsync.mockResolvedValue({
+      aisle_id: 'aisle-1',
+      operational_job_id: 'job-bench',
     });
   });
 
@@ -279,7 +294,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
     fireEvent.click(screen.getByRole('button', { name: /merge repeated labels/i }));
 
     await waitFor(() => {
-      expect(mutateAsync).toHaveBeenCalledWith({ aisleId: 'aisle-1', jobId: undefined });
+      expect(mutateAsync).toHaveBeenCalledWith({ aisleId: 'aisle-1', jobId: null });
       expect(resultsRefetch).toHaveBeenCalled();
       expect(aislesRefetch).toHaveBeenCalled();
       expect(mergeResultsRefetch).toHaveBeenCalled();
@@ -496,4 +511,142 @@ describe('AislePositionsPage (Aisle Results)', () => {
     renderPageAt('/inventories/inv-1/aisles/aisle-1/positions?jobId=unknown-job');
     expect(screen.getByText(/not in the recent runs list/i)).toBeTruthy();
   });
+
+  describe('Phase 6 benchmark flows', () => {
+    it('shows benchmark read-only alert and disables merge on a non-operational slice', () => {
+      resultSummariesState.results = repeatedSkuResults;
+      resultSummariesState.positions = repeatedSkuPositions;
+      resultSummariesState.resultJobId = 'job-bench';
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-op',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+          {
+            id: 'job-bench',
+            status: 'succeeded',
+            created_at: '2024-01-02T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+        ],
+      };
+      renderPage();
+      expect(screen.getByText(/Benchmark \/ non-operational slice/i)).toBeTruthy();
+      const mergeBtn = screen.getByRole('button', { name: /merge repeated labels/i });
+      expect(mergeBtn.getAttribute('disabled')).not.toBeNull();
+    });
+
+    it('opens compare dialog from aisle results when multiple runs exist', () => {
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-op',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+          {
+            id: 'job-bench',
+            status: 'succeeded',
+            created_at: '2024-01-02T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+        ],
+      };
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /compare runs/i }));
+      expect(screen.getByText(/Compare two runs/i)).toBeTruthy();
+    });
+
+    it('navigates to compare route with both job ids when confirming compare', async () => {
+      resultSummariesState.resultJobId = 'job-op';
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-op',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+          {
+            id: 'job-bench',
+            status: 'succeeded',
+            created_at: '2024-01-02T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+        ],
+      };
+      const router = createMemoryRouter(
+        [
+          {
+            path: '/inventories/:inventoryId/aisles/:aisleId/positions',
+            element: <AislePositionsPage />,
+          },
+          {
+            path: '/inventories/:inventoryId/aisles/:aisleId/compare',
+            element: <div data-testid="compare-route-marker">compare</div>,
+          },
+        ],
+        { initialEntries: ['/inventories/inv-1/aisles/aisle-1/positions'] }
+      );
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <AppSnackbarProvider>
+            <RouterProvider router={router} />
+          </AppSnackbarProvider>
+        </QueryClientProvider>
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /compare runs/i }));
+      fireEvent.click(screen.getByRole('button', { name: /open compare/i }));
+
+      await waitFor(() => {
+        expect(router.state.location.pathname).toBe('/inventories/inv-1/aisles/aisle-1/compare');
+        expect(router.state.location.search).toContain('jobAId=');
+        expect(router.state.location.search).toContain('jobBId=');
+      });
+    });
+
+    it('submits promotion and refetches results', async () => {
+      resultSummariesState.results = mockResults;
+      resultSummariesState.positions = mockPositions;
+      resultSummariesState.resultJobId = 'job-bench';
+      resultSummariesState.refetch = vi.fn().mockResolvedValue(undefined);
+      aisleJobsListState.refetch = vi.fn().mockResolvedValue(undefined);
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-op',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+          {
+            id: 'job-bench',
+            status: 'succeeded',
+            created_at: '2024-01-02T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+        ],
+      };
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /promote run to operational/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm promote/i }));
+
+      await waitFor(() => {
+        expect(promoteMutateAsync).toHaveBeenCalledWith('job-bench');
+        expect(resultSummariesState.refetch).toHaveBeenCalled();
+        expect(aisleJobsListState.refetch).toHaveBeenCalled();
+      });
+    });
+  });
 });
+

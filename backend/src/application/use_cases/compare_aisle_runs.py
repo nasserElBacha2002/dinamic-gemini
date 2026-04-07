@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from src.application.errors import (
     AisleNotFoundError,
+    BenchmarkCompareJobsMustDifferError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
@@ -62,6 +63,12 @@ class CompareAisleRunsUseCase:
             )
 
     def _fetch_raw(self, aisle_id: str, job_id: str) -> tuple[List[Any], bool]:
+        """Load up to ``positions_aisle_raw_cap`` raw rows for the job slice.
+
+        Returns ``(rows, raw_load_hit_cap)`` where ``raw_load_hit_cap`` is True when the fetched
+        count equals the cap. That only means the loader stopped at the cap — it does **not** prove
+        that additional rows exist; totals may still be incomplete when this flag is True.
+        """
         q = PositionListQuery(
             page=1,
             page_size=self._raw_cap,
@@ -70,13 +77,16 @@ class CompareAisleRunsUseCase:
             job_id=job_id,
         )
         rows = list(self._position_repo.list_by_aisle_query(aisle_id, q))
-        truncated = len(rows) >= self._raw_cap
-        return rows, truncated
+        raw_load_hit_cap = len(rows) >= self._raw_cap
+        return rows, raw_load_hit_cap
 
     def execute(self, command: CompareAisleRunsCommand) -> dict[str, Any]:
-        if command.job_a_id == command.job_b_id:
-            # Valid trivial compare; still return symmetric payload.
-            pass
+        job_a = (command.job_a_id or "").strip()
+        job_b = (command.job_b_id or "").strip()
+        if job_a == job_b:
+            raise BenchmarkCompareJobsMustDifferError(
+                "job_a_id and job_b_id must be different benchmark runs"
+            )
 
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
@@ -87,15 +97,15 @@ class CompareAisleRunsUseCase:
                 f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
             )
 
-        self._validate_job(command.job_a_id, command.aisle_id)
-        self._validate_job(command.job_b_id, command.aisle_id)
+        self._validate_job(job_a, command.aisle_id)
+        self._validate_job(job_b, command.aisle_id)
 
-        job_a = self._job_repo.get_by_id(command.job_a_id)
-        job_b = self._job_repo.get_by_id(command.job_b_id)
-        assert job_a is not None and job_b is not None
+        job_a_ent = self._job_repo.get_by_id(job_a)
+        job_b_ent = self._job_repo.get_by_id(job_b)
+        assert job_a_ent is not None and job_b_ent is not None
 
-        raw_a, trunc_a = self._fetch_raw(command.aisle_id, command.job_a_id)
-        raw_b, trunc_b = self._fetch_raw(command.aisle_id, command.job_b_id)
+        raw_a, cap_a = self._fetch_raw(command.aisle_id, job_a)
+        raw_b, cap_b = self._fetch_raw(command.aisle_id, job_b)
 
         cons_a = load_consolidated_for_job_slice(positions=raw_a)
         cons_b = load_consolidated_for_job_slice(positions=raw_b)
@@ -115,9 +125,10 @@ class CompareAisleRunsUseCase:
             "aisle_id": command.aisle_id,
             "workflow": "benchmark_compare",
             "read_only": True,
-            "raw_fetch_truncated": {"job_a": trunc_a, "job_b": trunc_b},
+            # Legacy key name; values mean "raw load reached configured cap" (may be incomplete).
+            "raw_fetch_truncated": {"job_a": cap_a, "job_b": cap_b},
             "run_a": {
-                **job_metadata_dict(job_a),
+                **job_metadata_dict(job_a_ent),
                 "metrics": {
                     "raw_rows_considered": metrics_a.raw_rows_considered,
                     "consolidated_positions": metrics_a.consolidated_positions,
@@ -127,7 +138,7 @@ class CompareAisleRunsUseCase:
                 },
             },
             "run_b": {
-                **job_metadata_dict(job_b),
+                **job_metadata_dict(job_b_ent),
                 "metrics": {
                     "raw_rows_considered": metrics_b.raw_rows_considered,
                     "consolidated_positions": metrics_b.consolidated_positions,

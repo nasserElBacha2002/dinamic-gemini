@@ -58,8 +58,16 @@ class CompareDiffRowResponse(BaseModel):
 
 
 class RawFetchTruncatedFlags(BaseModel):
-    job_a: bool
-    job_b: bool
+    """Per-run signal when the raw row fetch count reached the configured cap (not proof of extra rows)."""
+
+    job_a: bool = Field(
+        ...,
+        description="Run A: raw load hit V3 cap — compare for this side may be incomplete.",
+    )
+    job_b: bool = Field(
+        ...,
+        description="Run B: raw load hit V3 cap — compare for this side may be incomplete.",
+    )
 
 
 class AisleBenchmarkCompareResponse(BaseModel):
@@ -69,7 +77,13 @@ class AisleBenchmarkCompareResponse(BaseModel):
     aisle_id: str
     workflow: str
     read_only: bool
-    raw_fetch_truncated: RawFetchTruncatedFlags
+    raw_fetch_truncated: RawFetchTruncatedFlags = Field(
+        ...,
+        description=(
+            "When true, that run's raw fetch count reached the configured cap; totals may be incomplete. "
+            "This does not assert that more rows exist beyond the cap."
+        ),
+    )
     run_a: BenchmarkRunCompareSideResponse
     run_b: BenchmarkRunCompareSideResponse
     diff_summary: CompareDiffSummaryResponse

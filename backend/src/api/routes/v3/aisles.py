@@ -56,6 +56,7 @@ from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.errors import (
     AisleNotFoundError,
     ActiveJobExistsError,
+    BenchmarkCompareJobsMustDifferError,
     DuplicateAisleCodeError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
@@ -517,6 +518,7 @@ def compare_aisle_benchmark_runs(
     """Phase 6 — read-only compare metrics between two explicit runs (same aisle, same inventory).
 
     For **benchmark / inspection** only; does not alter operational analytics defaults.
+    ``job_a_id`` and ``job_b_id`` must name two different runs.
     """
     try:
         payload = use_case.execute(
@@ -528,6 +530,8 @@ def compare_aisle_benchmark_runs(
             )
         )
         return AisleBenchmarkCompareResponse.model_validate(payload)
+    except BenchmarkCompareJobsMustDifferError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
     except AisleNotFoundError:
@@ -626,6 +630,8 @@ def export_aisle_benchmark(
     except JobNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except BenchmarkCompareJobsMustDifferError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     return Response(
         content=csv_body.encode("utf-8"),

@@ -85,15 +85,15 @@ export default function AisleComparePage() {
       />
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        Benchmark compare is read-only. Operational review and merge actions are disabled here. Correction
-        transfer between runs is not applied automatically when promoting a run — promote only switches which
-        slice is operational.
+        Read-only benchmark compare (separate from default operational analytics). Row pairing uses a best-effort
+        key (SKU, then position code, else per-run id) — not guaranteed entity identity. Promoting a run only
+        updates the operational pointer; corrections are not copied automatically between runs.
       </Alert>
 
       {(!jobAId || !jobBId) && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          Add <code>?jobAId=…&amp;jobBId=…</code> to the URL (two runs for this aisle). You can open Compare
-          from the aisle results page.
+          Add <code>?jobAId=…&amp;jobBId=…</code> (two <strong>different</strong> runs for this aisle). Open Compare
+          from aisle results, or use the analytics benchmark compare API for the same payload.
           {jobsQuery.data?.jobs?.length ? (
             <Typography variant="body2" sx={{ mt: 1 }}>
               Recent runs: {jobsQuery.data.jobs.map((j) => j.id.slice(0, 8)).join(', ')}…
@@ -124,13 +124,14 @@ export default function AisleComparePage() {
                 }
               }}
             >
-              Export compare CSV
+              Export compare table (CSV)
             </Button>
           </Box>
 
           {(compareQuery.data.raw_fetch_truncated.job_a || compareQuery.data.raw_fetch_truncated.job_b) && (
             <Alert severity="warning">
-              Compare used a capped raw row load for one or both runs; totals may be incomplete.
+              Raw row load reached the server cap for one or both runs — compare totals <strong>may</strong> be
+              incomplete. The flag means the cap was hit, not that extra rows were proven to exist.
             </Alert>
           )}
 
@@ -187,6 +188,9 @@ export default function AisleComparePage() {
               · Qty changed: {compareQuery.data.diff_summary.quantity_changed} · SKU changed:{' '}
               {compareQuery.data.diff_summary.sku_changed} · Position code changed:{' '}
               {compareQuery.data.diff_summary.position_code_changed}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+              “Only in A/B” can include rows that moved keys between runs (heuristic matching).
             </Typography>
           </Paper>
 

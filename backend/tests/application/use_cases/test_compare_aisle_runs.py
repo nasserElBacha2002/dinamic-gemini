@@ -8,6 +8,7 @@ import pytest
 
 from src.application.errors import (
     AisleNotFoundError,
+    BenchmarkCompareJobsMustDifferError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
@@ -127,6 +128,37 @@ def test_compare_requires_same_inventory_aisle_and_jobs_exist() -> None:
                 aisle_id="a1",
                 job_a_id="other-aisle",
                 job_b_id="j2",
+            )
+        )
+
+
+def test_compare_rejects_identical_jobs() -> None:
+    inv_repo, aisle_repo, job_repo, pos_repo = _base_deps()
+    now = _now()
+    inv_repo.save(Inventory("inv1", "I", InventoryStatus.IN_REVIEW, now, now))
+    aisle_repo.save(Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now))
+    job_repo.save(
+        Job(
+            id="j1",
+            target_type="aisle",
+            target_id="a1",
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    uc = CompareAisleRunsUseCase(
+        inv_repo, aisle_repo, job_repo, pos_repo, positions_aisle_raw_cap=500
+    )
+    with pytest.raises(BenchmarkCompareJobsMustDifferError, match="different benchmark runs"):
+        uc.execute(
+            CompareAisleRunsCommand(
+                inventory_id="inv1",
+                aisle_id="a1",
+                job_a_id="j1",
+                job_b_id="j1",
             )
         )
 

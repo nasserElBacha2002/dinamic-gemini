@@ -114,6 +114,20 @@ def _clear() -> None:
         app.dependency_overrides.pop(dep, None)
 
 
+def test_benchmark_compare_rejects_same_job_ids() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.get(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare",
+            params={"job_a_id": "j1", "job_b_id": "j1"},
+        )
+        assert r.status_code == 422
+        assert "different benchmark runs" in (r.json().get("detail") or "").lower()
+    finally:
+        _clear()
+
+
 def test_benchmark_compare_and_jobs_list_operational_flag() -> None:
     _seed()
     try:

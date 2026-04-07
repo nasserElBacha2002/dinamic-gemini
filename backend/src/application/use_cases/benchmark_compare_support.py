@@ -1,4 +1,13 @@
-"""Pure helpers for Phase 6 benchmark compare (same-aisle, explicit job ids)."""
+"""Pure helpers for Phase 6 benchmark compare (same-aisle, explicit job ids).
+
+Cross-run alignment is **heuristic**, not guaranteed physical entity matching. After per-run
+SKU consolidation, each consolidated row gets a ``cross_run_match_key``: prefer normalized
+``internal_code`` (``sku:...``), else a position-code key from corrected code or detected
+``position_barcode`` / ``pallet_id`` / ``entity_uid`` (``pos:...``), else a per-run fallback
+``row:<position_id>``. When SKU or position identity shifts between runs, the same real-world
+item may show as ``only_a`` / ``only_b`` rather than ``both_changed`` because no stable shared
+key was derived.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +37,7 @@ def _position_code_key(p: Position) -> str:
 
 
 def cross_run_match_key(p: Position) -> str:
-    """Stable key to align consolidated rows across runs when possible."""
+    """Best-effort key to pair consolidated rows across runs (heuristic; see module docstring)."""
     sku = canonical_internal_code_lower(p)
     if sku:
         return f"sku:{sku}"

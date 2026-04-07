@@ -4,22 +4,7 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import {
-  Alert,
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  TextField,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Alert, Box, Button, TextField, Tooltip, Typography } from '@mui/material';
 import { exportInventoryResultsCsv, type AislePositionsListQuery } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
@@ -54,6 +39,8 @@ import {
   ResultsErrorState,
   AisleRunSelector,
 } from '../features/results/components';
+import CompareRunsDialog from '../features/benchmark/CompareRunsDialog';
+import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
 
 /** Client-side filtered table; matches useResultSummaries default. */
 const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = { page: 1, page_size: 500 };
@@ -509,17 +496,19 @@ export default function AislePositionsPage() {
               </Button>
             ) : null}
             {compareOperationalShortcut ? (
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() =>
-                  navigate(
-                    `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(visibleJobId!)}&jobBId=${encodeURIComponent(operationalJobId!)}`
-                  )
-                }
-              >
-                Compare to operational
-              </Button>
+              <Tooltip title="Opens read-only benchmark compare vs the current operational run (separate from default analytics).">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() =>
+                    navigate(
+                      `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(visibleJobId!)}&jobBId=${encodeURIComponent(operationalJobId!)}`
+                    )
+                  }
+                >
+                  Compare this run to operational
+                </Button>
+              </Tooltip>
             ) : null}
             {canPromoteCurrentRun ? (
               <Button
@@ -550,7 +539,7 @@ export default function AislePositionsPage() {
                 }
               }}
             >
-              {exportingCsv ? 'Exporting…' : 'Export CSV'}
+              {exportingCsv ? 'Exporting…' : 'Export operational CSV'}
             </Button>
             <Button
               size="small"
@@ -569,11 +558,12 @@ export default function AislePositionsPage() {
 
       {reviewReadOnly ? (
         <Alert severity="info" sx={{ mb: 2 }}>
-          You are viewing a non-operational run (read-only review). Operational slice uses job{' '}
+          Benchmark / non-operational slice: review actions are read-only. The operational job is{' '}
           <Typography component="span" variant="body2" sx={{ fontFamily: 'monospace' }}>
             {operationalJobId?.slice(0, 10)}…
-          </Typography>
-          . Promote a succeeded run to shift editability.
+          </Typography>{' '}
+          (merge and corrections apply only there). Promote a succeeded run to switch the operational pointer —
+          corrections are not copied from other runs automatically.
         </Alert>
       ) : null}
 
@@ -751,114 +741,45 @@ export default function AislePositionsPage() {
         </>
       ) : null}
 
-      <Dialog open={compareDialogOpen} onClose={() => setCompareDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Compare two runs (benchmark)</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Choose two explicit job ids for this aisle. Compare is read-only and does not change the operational
-            slice.
-          </Typography>
-          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel id="cmp-a-label">Run A</InputLabel>
-            <Select
-              labelId="cmp-a-label"
-              label="Run A"
-              value={compareJobA}
-              onChange={(e) => setCompareJobA(String(e.target.value))}
-            >
-              {jobs.map((j) => (
-                <MenuItem key={`a-${j.id}`} value={j.id}>
-                  {j.id.slice(0, 10)}… · {j.status}
-                  {j.is_operational ? ' · operational' : ''}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl fullWidth size="small">
-            <InputLabel id="cmp-b-label">Run B</InputLabel>
-            <Select
-              labelId="cmp-b-label"
-              label="Run B"
-              value={compareJobB}
-              onChange={(e) => setCompareJobB(String(e.target.value))}
-            >
-              {jobs.map((j) => (
-                <MenuItem key={`b-${j.id}`} value={j.id}>
-                  {j.id.slice(0, 10)}… · {j.status}
-                  {j.is_operational ? ' · operational' : ''}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCompareDialogOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            disabled={!compareJobA || !compareJobB || compareJobA === compareJobB}
-            onClick={() => {
-              setCompareDialogOpen(false);
-              navigate(
-                `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(compareJobA)}&jobBId=${encodeURIComponent(compareJobB)}`
-              );
-            }}
-          >
-            Open compare
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <CompareRunsDialog
+        open={compareDialogOpen}
+        onClose={() => setCompareDialogOpen(false)}
+        jobs={jobs}
+        compareJobA={compareJobA}
+        compareJobB={compareJobB}
+        onCompareJobAChange={setCompareJobA}
+        onCompareJobBChange={setCompareJobB}
+        onConfirm={() => {
+          setCompareDialogOpen(false);
+          navigate(
+            `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(compareJobA)}&jobBId=${encodeURIComponent(compareJobB)}`
+          );
+        }}
+      />
 
-      <Dialog open={promoteDialogOpen} onClose={() => setPromoteDialogOpen(false)}>
-        <DialogTitle>Promote run to operational</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            Sets the aisle operational pointer to the selected succeeded job. Other runs stay stored for
-            benchmarking; review edits apply only to the operational slice. SKU corrections are not copied from
-            other runs automatically.
-          </Typography>
-          <FormControl fullWidth size="small">
-            <InputLabel id="promote-job-label">Job</InputLabel>
-            <Select
-              labelId="promote-job-label"
-              label="Job"
-              value={promoteJobId}
-              onChange={(e) => setPromoteJobId(String(e.target.value))}
-            >
-              {jobs
-                .filter((j) => j.status === 'succeeded' && j.id !== operationalJobId)
-                .map((j) => (
-                  <MenuItem key={j.id} value={j.id}>
-                    {j.id.slice(0, 12)}… · {j.provider_name ?? '—'} · {j.prompt_key ?? '—'}
-                  </MenuItem>
-                ))}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPromoteDialogOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="warning"
-            disabled={!promoteJobId || promoteMutation.isPending}
-            onClick={() => {
-              void (async () => {
-                try {
-                  await promoteMutation.mutateAsync(promoteJobId);
-                  setPromoteDialogOpen(false);
-                  showSnackbar('Operational run updated', 'success');
-                  void refetch();
-                  void aisleJobsQuery.refetch();
-                } catch (e) {
-                  const err = e instanceof ApiError ? e : new ApiError(String(e));
-                  showSnackbar(getApiErrorMessage(err, 'Promotion failed'), 'error');
-                }
-              })();
-            }}
-          >
-            {promoteMutation.isPending ? 'Promoting…' : 'Confirm promote'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <PromoteOperationalDialog
+        open={promoteDialogOpen}
+        onClose={() => setPromoteDialogOpen(false)}
+        jobs={jobs}
+        operationalJobId={operationalJobId}
+        promoteJobId={promoteJobId}
+        onPromoteJobIdChange={setPromoteJobId}
+        isPending={promoteMutation.isPending}
+        onConfirm={() => {
+          void (async () => {
+            try {
+              await promoteMutation.mutateAsync(promoteJobId);
+              setPromoteDialogOpen(false);
+              showSnackbar('Operational pointer updated', 'success');
+              void refetch();
+              void aisleJobsQuery.refetch();
+            } catch (e) {
+              const err = e instanceof ApiError ? e : new ApiError(String(e));
+              showSnackbar(getApiErrorMessage(err, 'Promotion failed'), 'error');
+            }
+          })();
+        }}
+      />
 
       <QuickReviewDrawer
         open={Boolean(quickContext)}
