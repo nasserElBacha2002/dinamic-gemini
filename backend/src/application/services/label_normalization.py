@@ -90,6 +90,7 @@ class LabelNormalizationService:
             review_required=decision.review_required,
             metadata={"raw_count": len(labels)},
             created_at=now,
+            job_id=first.job_id,
         )
 
     def _build_single(
@@ -114,4 +115,5 @@ class LabelNormalizationService:
             review_required=decision.review_required,
             metadata={},
             created_at=now,
+            job_id=label.job_id,
         )

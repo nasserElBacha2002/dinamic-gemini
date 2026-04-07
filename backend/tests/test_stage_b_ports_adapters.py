@@ -2,7 +2,7 @@
 Stage 2.3.B — Ports & Adapters: contract and adapter tests.
 
 - Contract test: AnalysisProvider implementations return AnalysisResult with expected structure.
-- Unit test: GeminiAnalysisProvider adapter returns AnalysisResult and integrates with pipeline (parse_entities).
+- Unit test: HybridGlobalAnalysisStrategy returns AnalysisResult and integrates with pipeline (parse_entities).
 - Verification: JobStoreRepositoryAdapter.create() returns the persisted record (matches get()).
 """
 
@@ -15,7 +15,7 @@ import pytest
 from src.jobs.adapters.job_store_adapter import JobStoreRepositoryAdapter
 from src.jobs.models import JobInput, JobRecord, JobStatus
 from src.parsing.global_analysis_parser import parse_entities
-from src.pipeline.adapters.gemini_analysis_provider import GeminiAnalysisProvider
+from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.ports.analysis_provider import (
     AnalysisResult,
@@ -95,8 +95,8 @@ def test_analysis_provider_contract_returns_analysis_result() -> None:
     assert len(entities) == 1
 
 
-def test_gemini_analysis_provider_adapter_returns_analysis_result() -> None:
-    """GeminiAnalysisProvider with FakeProvider returns AnalysisResult; parsed_json usable by parse_entities."""
+def test_hybrid_global_analysis_strategy_returns_analysis_result() -> None:
+    """HybridGlobalAnalysisStrategy with fake registry executor returns AnalysisResult; parsed_json usable by parse_entities."""
     settings = MagicMock()
     settings.llm_provider = "fake"
     settings.fake_llm_fixture_path = None
@@ -110,7 +110,7 @@ def test_gemini_analysis_provider_adapter_returns_analysis_result() -> None:
         settings=settings,
         logger=MagicMock(),
     )
-    adapter = GeminiAnalysisProvider()
+    adapter = HybridGlobalAnalysisStrategy()
     result = adapter.analyze(
         context=context,
         frames_nd=[np.zeros((100, 100, 3), dtype=np.uint8)],

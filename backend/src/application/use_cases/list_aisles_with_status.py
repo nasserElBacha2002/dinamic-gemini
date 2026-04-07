@@ -2,7 +2,8 @@
 ListAislesWithStatus use case — v3.0 (Épica 4 correction).
 
 Returns aisles for an inventory with latest job per aisle in one batch.
-Sprint 1.3: per-aisle rollups. Sprint 1.4: search, status filter, sort, pagination.
+Sprint 1.3: per-aisle rollups (positions/pending_review use the same default result slice as
+``ListAislePositions`` — operational, legacy, or latest succeeded per Phase 2). Sprint 1.4: search, status filter, sort, pagination.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from src.application.ports.repositories import (
     SourceAssetRepository,
 )
 from src.application.errors import InventoryNotFoundError
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job
 from src.domain.positions.entities import Position
@@ -54,6 +56,19 @@ def _aisle_last_activity_at(
     return max(parts)
 
 
+def _positions_in_default_result_slice(
+    aisle: Aisle,
+    all_for_aisle: Sequence[Position],
+    resolver: ResultContextResolver,
+) -> List[Position]:
+    """Filter to the same job slice as list/detail/merge default reads (Phase 2 + transitional)."""
+    ctx = resolver.resolve(aisle=aisle, explicit_job_id=None)
+    jid = ctx.job_id_for_slice
+    if jid is None:
+        return [p for p in all_for_aisle if p.job_id is None]
+    return [p for p in all_for_aisle if p.job_id == jid]
+
+
 def _row_sort_key(row: AisleWithLatestJob, sort_by: str) -> tuple:
     sb = (sort_by or "code").strip().lower()
     a = row.aisle
@@ -80,12 +95,14 @@ class ListAislesWithStatusUseCase:
         job_repo: JobRepository,
         position_repo: PositionRepository,
         source_asset_repo: SourceAssetRepository,
+        result_context_resolver: ResultContextResolver,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._job_repo = job_repo
         self._position_repo = position_repo
         self._source_asset_repo = source_asset_repo
+        self._resolver = result_context_resolver
 
     def execute(
         self, inventory_id: str, query: Optional[AisleTableQuery] = None
@@ -115,7 +132,8 @@ class ListAislesWithStatusUseCase:
         rows: List[AisleWithLatestJob] = []
         for a in aisles:
             lj = latest_by_aisle.get(a.id)
-            pos_list = by_aisle_pos.get(a.id, [])
+            all_pos = by_aisle_pos.get(a.id, [])
+            pos_list = _positions_in_default_result_slice(a, all_pos, self._resolver)
             rollup = asset_rollups.get(a.id)
             assets_count = rollup.count if rollup is not None else 0
             asset_last = rollup.last_uploaded_at if rollup is not None else None

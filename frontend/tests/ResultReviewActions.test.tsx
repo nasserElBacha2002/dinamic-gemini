@@ -43,14 +43,16 @@ describe('ResultReviewActions', () => {
           onConfirm={vi.fn()}
           onUpdateQuantity={onUpdateQuantity}
           onUpdateSku={vi.fn()}
+          onUpdatePositionCode={vi.fn()}
           onDeleteClick={vi.fn()}
         />
       </WithTheme>
     );
-    const qtyInput = screen.getByLabelText(/Corrected quantity/i);
+    fireEvent.click(screen.getByRole('button', { name: /Correct quantity/i }));
+    const qtyInput = screen.getByPlaceholderText('0');
     fireEvent.change(qtyInput, { target: { value: '-1' } });
-    expect(screen.getByText(/whole number 0 or greater/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Update quantity/i })).toBeDisabled();
+    expect(qtyInput).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: /^Save$/i })).toBeDisabled();
     expect(onUpdateQuantity).not.toHaveBeenCalled();
   });
 
@@ -64,12 +66,13 @@ describe('ResultReviewActions', () => {
           onConfirm={vi.fn()}
           onUpdateQuantity={vi.fn()}
           onUpdateSku={onUpdateSku}
+          onUpdatePositionCode={vi.fn()}
           onDeleteClick={vi.fn()}
         />
       </WithTheme>
     );
-    expect(screen.getByText(/Enter a SKU to update/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Update SKU/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Correct SKU/i }));
+    expect(screen.getByRole('button', { name: /^Save$/i })).toBeDisabled();
     expect(onUpdateSku).not.toHaveBeenCalled();
   });
 
@@ -82,10 +85,32 @@ describe('ResultReviewActions', () => {
           onConfirm={vi.fn()}
           onUpdateQuantity={vi.fn()}
           onUpdateSku={vi.fn()}
+          onUpdatePositionCode={vi.fn()}
           onDeleteClick={vi.fn()}
         />
       </WithTheme>
     );
-    expect(screen.getByRole('button', { name: /Sending/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Confirming/i })).toBeDisabled();
+  });
+
+  it('readOnly shows non-operational message and hides confirm', () => {
+    render(
+      <WithTheme>
+        <ResultReviewActions
+          result={baseResult}
+          readOnly
+          actionLoading={false}
+          onConfirm={vi.fn()}
+          onUpdateQuantity={vi.fn()}
+          onUpdateSku={vi.fn()}
+          onUpdatePositionCode={vi.fn()}
+          onDeleteClick={vi.fn()}
+        />
+      </WithTheme>
+    );
+    expect(
+      screen.getByText(/non-operational run/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Confirm result/i })).toBeNull();
   });
 });

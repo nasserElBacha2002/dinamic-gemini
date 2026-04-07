@@ -4,10 +4,10 @@ In-memory implementation of PositionRepository — v3.0 Épica 6.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Union
 
-from src.application.ports.contracts import PositionListQuery
-from src.application.ports.repositories import PositionRepository
+from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
+from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
 from src.domain.positions.entities import Position
 
 
@@ -32,9 +32,15 @@ class MemoryPositionRepository(PositionRepository):
         page_size: int = 25,
         sort_by: str = "created_at",
         sort_dir: str = "asc",
+        job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET,
     ) -> Sequence[Position]:
         # sku_filter is not supported in-memory (no product_record data); all positions for aisle are returned.
         positions = [p for p in self._store.values() if p.aisle_id == aisle_id]
+        if job_id is not JOB_ID_FILTER_UNSET:
+            if job_id is None:
+                positions = [p for p in positions if p.job_id is None]
+            else:
+                positions = [p for p in positions if p.job_id == job_id]
         if status is not None:
             positions = [p for p in positions if (p.status.value == status)]
         if needs_review is not None:
@@ -61,6 +67,9 @@ class MemoryPositionRepository(PositionRepository):
         self, aisle_id: str, query: Optional[PositionListQuery] = None
     ) -> Sequence[Position]:
         q = query or PositionListQuery()
+        repo_job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET
+        if q.job_id is not POSITION_LIST_JOB_ID_UNSET:
+            repo_job_id = q.job_id
         return self.list_by_aisle(
             aisle_id,
             status=q.status,
@@ -69,6 +78,9 @@ class MemoryPositionRepository(PositionRepository):
             sku_filter=q.sku_filter,
             page=q.page,
             page_size=q.page_size,
+            sort_by=q.sort_by,
+            sort_dir=q.sort_dir,
+            job_id=repo_job_id,
         )
 
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:

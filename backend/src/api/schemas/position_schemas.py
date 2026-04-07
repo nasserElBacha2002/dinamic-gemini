@@ -190,6 +190,28 @@ class PositionSummaryResponse(BaseModel):
         description="Deprecated: use `traceability.source_image_original_filename`.",
     )
     position_code: str = Field(..., description="Effective position code (Audit Sprint 4.5).")
+    job_id: Optional[str] = Field(
+        None,
+        description="Storage row inventory job id for this position; null = legacy. Exposed for multi-run clients (e.g. review queue detail).",
+    )
+
+
+class PositionRunContextResponse(BaseModel):
+    """Phase 2: which result slice the payload belongs to (align with list/merge)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: Optional[str] = Field(None, description="Position row job id; null = legacy.")
+    result_context_source: str
+    resolved_job_id: Optional[str] = Field(
+        None, description="Slice used for this response (null = legacy null-job rows)."
+    )
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_key: Optional[str] = None
+    prompt_version: Optional[str] = Field(
+        None, description="Prompt line persisted on the job (e.g. prompt_key@v2.1)."
+    )
 
 
 class PositionListResponse(PageMeta):
@@ -215,6 +237,13 @@ class PositionListResponse(PageMeta):
             "True when the raw fetch reached the configured cap; total_items/total_pages are then "
             "only meaningful within that fetch window, not for the full aisle."
         ),
+    )
+    result_job_id: Optional[str] = Field(
+        None, description="Resolved job slice for this list; null = legacy null-job positions."
+    )
+    result_context_source: str = Field(
+        ...,
+        description="explicit | operational | legacy",
     )
 
 
@@ -272,6 +301,10 @@ class PositionDetailResponse(BaseModel):
     )
     evidences: List[EvidenceResponse]
     review_actions: List[ReviewActionResponse] = Field(default_factory=list)
+    run_context: PositionRunContextResponse = Field(
+        ...,
+        description="Phase 2: run identity for this row so clients do not mix multi-run datasets.",
+    )
 
 
 ReviewActionTypeLiteral = Literal[

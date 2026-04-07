@@ -3,13 +3,16 @@ AnalysisStage — delegate to AnalysisProvider and return structured result (v2.
 
 Performs the global analysis call only; no entity parsing.
 v3.2.4 Phase 4: passes through provider_metadata (visual reference usage) for callers to persist.
+Phase 5: normalizes ``parsed_json`` (e.g. OpenAI quantity aliases) before entity resolution.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from src.llm.normalization.entity_normalizer import normalize_llm_response
 from src.pipeline.ports.analysis_provider import AnalysisProvider, AnalysisResult
 from src.pipeline.stages.frame_acquisition_stage import AcquiredFrames
 from src.pipeline.context.run_context import RunContext
@@ -44,8 +47,24 @@ class AnalysisStage:
             data.frame_refs,
             data.metadata,
         )
+        parsed = normalize_llm_response(result.parsed_json, result.provider_name)
+        log = getattr(context, "logger", None)
+        if log is not None and log.isEnabledFor(logging.DEBUG):
+            ents = parsed.get("entities")
+            if isinstance(ents, list):
+                with_plq = sum(
+                    1
+                    for e in ents
+                    if isinstance(e, dict) and e.get("product_label_quantity") is not None
+                )
+                log.debug(
+                    "analysis_stage post_normalize: provider=%s entities=%d product_label_quantity_set=%d",
+                    result.provider_name,
+                    len(ents),
+                    with_plq,
+                )
         return AnalysisStageResult(
-            parsed_json=result.parsed_json,
+            parsed_json=parsed,
             provider_name=result.provider_name,
             provider_metadata=result.provider_metadata,
         )

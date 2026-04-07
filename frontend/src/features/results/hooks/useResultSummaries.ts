@@ -35,11 +35,17 @@ export function useResultSummaries(
     [rawPositions]
   );
 
+  const resultJobId = query.data?.result_job_id ?? null;
+  const resultContextSource = query.data?.result_context_source ?? null;
+
   return {
     ...query,
     results,
     /** Raw API rows (same order as `results`) for quick review evidence URLs and mutations. */
     positions: rawPositions ?? [],
+    /** Same resolved job id as list positions API (`result_job_id`); pass to merge when multi-run. */
+    resultJobId,
+    resultContextSource,
   };
 }
 
@@ -51,7 +57,7 @@ export function useResultDetail(
   inventoryId: string | undefined,
   aisleId: string | undefined,
   positionId: string | undefined,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; jobId?: string | null }
 ) {
   const query = usePositionDetail(
     inventoryId,

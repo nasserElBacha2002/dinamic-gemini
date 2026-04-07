@@ -55,6 +55,10 @@ from src.pipeline.contracts.analysis_context import (
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, PipelineRunResult
+from src.pipeline.ports.analysis_provider import (
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
+)
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
     build_visual_reference_context,
@@ -78,7 +82,15 @@ def _visual_reference_failure_metadata(
     analysis_context: Optional[AnalysisContext],
     error_message: str,
 ) -> Dict[str, Any]:
-    block = build_visual_reference_context(analysis_context, provider_metadata=None)
+    # No provider run: explicit zero consumption so the block does not list context reference_ids
+    # as "resolved" for this failed job (resolution never reached the provider).
+    block = build_visual_reference_context(
+        analysis_context,
+        provider_metadata={
+            PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED: False,
+            PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT: 0,
+        },
+    )
     block["resolution_error"] = error_message[:2048] if len(error_message) > 2048 else error_message
     block["resolution_stage"] = "input_artifact_resolution"
     return block
@@ -389,6 +401,9 @@ class V3JobExecutor:
                 aisle_id,
             )
             pipeline = HybridInventoryPipeline()
+            pipeline_provider_name = (job.provider_name or "").strip() or None
+            job_model = (job.model_name or "").strip() or None
+            job_prompt = (job.prompt_key or "").strip() or None
             result = pipeline.process_video(
                 video_path,
                 mode="hybrid",
@@ -402,6 +417,9 @@ class V3JobExecutor:
                 analysis_context=analysis_context,
                 execution_observer=execution_observer,
                 cancellation_checkpoint=cancellation_checkpoint,
+                pipeline_provider_name=pipeline_provider_name,
+                job_model_name=job_model,
+                job_prompt_key=job_prompt,
             )
             logger.info(
                 "v3 executor finished: job_id=%s exit_code=%s inventory_id=%s aisle_id=%s",
@@ -438,6 +456,7 @@ class V3JobExecutor:
 
             # Finalization order (intentional):
             # 1) PersistAisleResult — domain rows (positions, product_records, evidences, …).
+            #    Does not set aisles.operational_job_id (canonical run is explicit promotion / later phase).
             # 2) Durable artifact upload — execution log + reports to ArtifactStore.
             # 3) _mark_success — job SUCCEEDED + result_json including durable_artifacts metadata.
             #
@@ -722,6 +741,16 @@ class V3JobExecutor:
             }
             if meta.get("prompt_key"):
                 job.result_json["prompt_key"] = meta["prompt_key"]
+            pvv_raw = meta.get("prompt_version")
+            if not pvv_raw and meta.get("prompt_key"):
+                pk = str(meta["prompt_key"]).strip()
+                if pk:
+                    pvv_raw = f"{pk}@v2.1"
+            if pvv_raw:
+                pvv = str(pvv_raw).strip()
+                if pvv:
+                    job.result_json["prompt_version"] = pvv
+                    job.prompt_version = pvv[:256]
             if durable_artifacts:
                 merge_durable_into_result_json(job.result_json, durable_artifacts)
                 logger.info(

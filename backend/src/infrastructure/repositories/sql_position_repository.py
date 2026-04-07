@@ -7,10 +7,10 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Union
 
-from src.application.ports.contracts import PositionListQuery
-from src.application.ports.repositories import PositionRepository
+from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
+from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 
@@ -81,6 +81,7 @@ def _row_to_position(row: Any) -> Position:
         detected_summary_json=_parse_json(getattr(row, "detected_summary_json", None), f"position id={pid}"),
         corrected_summary_json=_parse_json(getattr(row, "corrected_summary_json", None), f"position id={pid}"),
         corrected_position_code=getattr(row, "corrected_position_code", None),
+        job_id=getattr(row, "job_id", None),
     )
 
 
@@ -101,7 +102,7 @@ class SqlPositionRepository(PositionRepository):
                 UPDATE positions
                 SET aisle_id = ?, status = ?, review_resolution = ?, confidence = ?, needs_review = ?,
                     primary_evidence_id = ?, updated_at = ?, detected_summary_json = ?, corrected_summary_json = ?,
-                    corrected_position_code = ?
+                    corrected_position_code = ?, job_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -115,14 +116,15 @@ class SqlPositionRepository(PositionRepository):
                     det_json,
                     corr_json,
                     position.corrected_position_code,
+                    position.job_id,
                     position.id,
                 ),
             )
             if cur.rowcount == 0:
                 cur.execute(
                     """
-                    INSERT INTO positions (id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id, created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO positions (id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id, created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code, job_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         position.id,
@@ -137,6 +139,7 @@ class SqlPositionRepository(PositionRepository):
                         det_json,
                         corr_json,
                         position.corrected_position_code,
+                        position.job_id,
                     ),
                 )
 
@@ -145,7 +148,7 @@ class SqlPositionRepository(PositionRepository):
             cur.execute(
                 """
                 SELECT id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id,
-                       created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code
+                       created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code, job_id
                 FROM positions WHERE id = ?
                 """,
                 (position_id,),
@@ -166,9 +169,16 @@ class SqlPositionRepository(PositionRepository):
         page_size: int = 25,
         sort_by: str = "created_at",
         sort_dir: str = "asc",
+        job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET,
     ) -> Sequence[Position]:
         conditions = ["p.aisle_id = ?"]
         params: list = [aisle_id]
+        if job_id is not JOB_ID_FILTER_UNSET:
+            if job_id is None:
+                conditions.append("p.job_id IS NULL")
+            else:
+                conditions.append("p.job_id = ?")
+                params.append(job_id)
         join_product_records = False
         if sku_filter is not None and str(sku_filter).strip():
             join_product_records = True
@@ -198,7 +208,7 @@ class SqlPositionRepository(PositionRepository):
         if join_product_records:
             sql = f"""
                 SELECT DISTINCT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
-                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json, p.corrected_position_code
+                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json, p.corrected_position_code, p.job_id
                 FROM positions p
                 INNER JOIN product_records pr ON pr.position_id = p.id
                 WHERE {where}
@@ -208,7 +218,7 @@ class SqlPositionRepository(PositionRepository):
         else:
             sql = f"""
                 SELECT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
-                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json, p.corrected_position_code
+                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json, p.corrected_position_code, p.job_id
                 FROM positions p
                 WHERE {where}
                 {order_clause}
@@ -223,6 +233,9 @@ class SqlPositionRepository(PositionRepository):
         self, aisle_id: str, query: Optional[PositionListQuery] = None
     ) -> Sequence[Position]:
         q = query or PositionListQuery()
+        repo_job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET
+        if q.job_id is not POSITION_LIST_JOB_ID_UNSET:
+            repo_job_id = q.job_id
         return self.list_by_aisle(
             aisle_id,
             status=q.status,
@@ -233,6 +246,7 @@ class SqlPositionRepository(PositionRepository):
             page_size=q.page_size,
             sort_by=q.sort_by,
             sort_dir=q.sort_dir,
+            job_id=repo_job_id,
         )
 
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
@@ -243,7 +257,7 @@ class SqlPositionRepository(PositionRepository):
             cur.execute(
                 f"""
                 SELECT id, aisle_id, status, confidence, needs_review, primary_evidence_id,
-                       review_resolution, created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code
+                       review_resolution, created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code, job_id
                 FROM positions
                 WHERE aisle_id IN ({placeholders})
                 ORDER BY created_at ASC, id ASC

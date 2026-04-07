@@ -2,6 +2,11 @@
 SQL Server analytics aggregates — Phase 5.1.
 
 See `application/dto/analytics_dto.py` for metric definitions.
+
+Position-based metrics use the same **per-aisle operational slice** as
+:class:`~src.application.services.result_context_resolver.ResultContextResolver`:
+``positions.job_id = aisles.operational_job_id`` when the pointer is set, else ``positions.job_id IS NULL``
+(legacy). Non-operational runs for an aisle do not affect KPIs.
 """
 
 from __future__ import annotations
@@ -44,6 +49,14 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 def _build_scope_sql(prefix: str = "p") -> Tuple[str, List[Any]]:
     """Returns (WHERE fragment without WHERE keyword, params). Base: active positions."""
     return f"{prefix}.status <> 'deleted'", []
+
+
+def _operational_result_slice_predicate(p_alias: str = "p", a_alias: str = "a") -> str:
+    """Match resolver semantics: operational job row per aisle, else legacy ``job_id IS NULL``."""
+    return (
+        f"((COALESCE({a_alias}.operational_job_id, N'') <> N'' AND {p_alias}.job_id = {a_alias}.operational_job_id) "
+        f"OR (COALESCE({a_alias}.operational_job_id, N'') = N'' AND {p_alias}.job_id IS NULL))"
+    )
 
 
 def _unknown_resolution_expr(alias: str = "p") -> str:
@@ -142,13 +155,13 @@ class SqlAnalyticsRepository(AnalyticsRepository):
     def get_summary(self, filters: AnalyticsFilters) -> AnalyticsSummaryDTO:
         notes: List[str] = []
         pos_where, pos_params = _build_scope_sql("p")
-        conditions = [pos_where]
+        conditions = [pos_where, _operational_result_slice_predicate()]
         params: List[Any] = list(pos_params)
         _append_inventory_aisle_filters(conditions, params, filters)
         # Position-state metrics: entity scope only (inventory/aisle), not position.updated_at.
         where_pos = " AND ".join(conditions)
 
-        cond_ra = ["p.status <> 'deleted'"]
+        cond_ra = ["p.status <> 'deleted'", _operational_result_slice_predicate()]
         ra_params: List[Any] = []
         _append_inventory_aisle_filters(cond_ra, ra_params, filters)
         _append_ra_time_filters(cond_ra, ra_params, filters, "ra.created_at")
@@ -212,7 +225,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         sq_params = list(params)
         inv_params = list(params)
         rev_params = list(ra_params)
-        lag_where_parts = [pos_where]
+        lag_where_parts = [pos_where, _operational_result_slice_predicate()]
         lag_params: List[Any] = []
         _append_inventory_aisle_filters(lag_where_parts, lag_params, filters)
         _append_ra_time_filters(lag_where_parts, lag_params, filters, "r.first_ra")
@@ -339,7 +352,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         if filters.date_from is None or filters.date_to is None:
             return AnalyticsTrendsDTO()
 
-        cond_ra = ["p.status <> 'deleted'"]
+        cond_ra = ["p.status <> 'deleted'", _operational_result_slice_predicate()]
         ra_params: List[Any] = []
         _append_inventory_aisle_filters(cond_ra, ra_params, filters)
         _append_ra_time_filters(cond_ra, ra_params, filters, "ra.created_at")
@@ -450,7 +463,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
 
     def get_inventory_performance(self, filters: AnalyticsFilters) -> List[InventoryPerformanceRowDTO]:
         pos_where, _ = _build_scope_sql("p")
-        conditions = [pos_where]
+        conditions = [pos_where, _operational_result_slice_predicate()]
         params: List[Any] = []
         _append_inventory_aisle_filters(conditions, params, filters)
         where_scope = " AND ".join(conditions)
@@ -551,6 +564,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
     ) -> Tuple[int, int, int, int]:
         cond = [
             "p.status <> 'deleted'",
+            _operational_result_slice_predicate(),
             "i.id = ?",
         ]
         prm: List[Any] = [inventory_id]
@@ -596,7 +610,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
     def _inventory_average_review_time_seconds(
         self, inventory_id: str, filters: AnalyticsFilters
     ) -> Optional[float]:
-        cond = ["p.status <> 'deleted'", "i.id = ?"]
+        cond = ["p.status <> 'deleted'", _operational_result_slice_predicate(), "i.id = ?"]
         params: List[Any] = [inventory_id]
         _append_ra_time_filters(cond, params, filters, "r.first_ra")
         where_sql = " AND ".join(cond)
@@ -625,7 +639,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
     def get_aisle_issues(self, filters: AnalyticsFilters) -> List[AisleIssueRowDTO]:
         bucket = _issue_bucket_expr("p")
         pos_where, _ = _build_scope_sql("p")
-        conditions = [pos_where]
+        conditions = [pos_where, _operational_result_slice_predicate()]
         params: List[Any] = []
         _append_inventory_aisle_filters(conditions, params, filters)
         where_scope = " AND ".join(conditions)
@@ -715,7 +729,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
     def get_quality_patterns(self, filters: AnalyticsFilters) -> List[QualityPatternRowDTO]:
         bucket_sql = _issue_bucket_expr("p")
         pos_where, _ = _build_scope_sql("p")
-        conditions = [pos_where]
+        conditions = [pos_where, _operational_result_slice_predicate()]
         params: List[Any] = []
         _append_inventory_aisle_filters(conditions, params, filters)
         where_scope = " AND ".join(conditions)
@@ -780,7 +794,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
     def get_manual_intervention_breakdown(
         self, filters: AnalyticsFilters
     ) -> ManualInterventionBreakdownDTO:
-        cond = ["p.status <> 'deleted'"]
+        cond = ["p.status <> 'deleted'", _operational_result_slice_predicate()]
         params: List[Any] = []
         _append_inventory_aisle_filters(cond, params, filters)
         _append_ra_time_filters(cond, params, filters, "ra.created_at")

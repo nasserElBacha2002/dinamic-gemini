@@ -32,6 +32,9 @@ class AisleJobSummary(BaseModel):
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None
     execution_id: Optional[str] = None
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_key: Optional[str] = None
 
 
 class AisleResponse(BaseModel):
@@ -50,6 +53,9 @@ class AisleResponse(BaseModel):
     updated_at: datetime
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+    operational_job_id: Optional[str] = Field(
+        None, description="Canonical run for default result reads (Phase 2); null = legacy aisle."
+    )
     latest_job: Optional[AisleJobSummary] = None
     assets_count: int = 0
     positions_count: int = 0

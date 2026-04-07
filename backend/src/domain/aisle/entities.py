@@ -33,6 +33,8 @@ class Aisle:
     status: AisleStatus
     created_at: datetime
     updated_at: datetime
+    #: Canonical inventory_jobs row for default result reads (Phase 2); NULL = legacy aisle (null job_id rows).
+    operational_job_id: Optional[str] = None
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     retryable: Optional[bool] = None
@@ -52,6 +54,10 @@ class Aisle:
     def mark_processed(self, now: datetime) -> None:
         self.status = AisleStatus.PROCESSED
         self.updated_at = now
+        # Successful pipeline completion clears any stale failure markers from a prior run.
+        self.error_code = None
+        self.error_message = None
+        self.retryable = None
 
     def mark_in_review(self, now: datetime) -> None:
         self.status = AisleStatus.IN_REVIEW

@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, CircularProgress } from '@mui/material';
 import { parseResultDetailNavigationState } from '../features/results';
 import { useInventoryDetail, useAislesList } from '../hooks';
@@ -17,7 +17,9 @@ export default function PositionDetailPage() {
   }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const navState = useMemo(() => parseResultDetailNavigationState(location.state), [location.state]);
+  const jobIdFromQuery = searchParams.get('jobId')?.trim() || null;
   const redirected = useRef(false);
 
   const invQ = useInventoryDetail(inventoryId, { enabled: Boolean(inventoryId) });
@@ -43,13 +45,15 @@ export default function PositionDetailPage() {
             resultIds,
             inventoryName: invQ.data.name,
             aisleCode,
+            jobId: jobIdFromQuery,
           },
         },
       });
       return;
     }
 
-    navigate(`/inventories/${inventoryId}/aisles/${aisleId}/positions`, {
+    const q = jobIdFromQuery ? `?jobId=${encodeURIComponent(jobIdFromQuery)}` : '';
+    navigate(`/inventories/${inventoryId}/aisles/${aisleId}/positions${q}`, {
       replace: true,
       state: {
         openReviewDrawer: {
@@ -57,10 +61,21 @@ export default function PositionDetailPage() {
           positionId,
           resultIds,
           filter: navState?.filter,
+          jobId: jobIdFromQuery,
         },
       },
     });
-  }, [inventoryId, aisleId, positionId, invQ.data?.name, aislesQ.data?.items, aislesQ.isFetched, navState, navigate]);
+  }, [
+    inventoryId,
+    aisleId,
+    positionId,
+    invQ.data?.name,
+    aislesQ.data?.items,
+    aislesQ.isFetched,
+    navState,
+    navigate,
+    jobIdFromQuery,
+  ]);
 
   if (!inventoryId || !aisleId || !positionId) {
     return (

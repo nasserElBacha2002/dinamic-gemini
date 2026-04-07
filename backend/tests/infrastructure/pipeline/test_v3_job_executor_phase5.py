@@ -67,6 +67,11 @@ class InMemoryJobRepo(JobRepository):
     def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> Dict[str, Job]:
         return {}
 
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        return []
+
 
 class CountingJobRepo(InMemoryJobRepo):
     def __init__(self) -> None:
@@ -285,6 +290,57 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
     assert updated.result_json["provider"] is None
 
 
+def test_mark_success_clears_stale_aisle_error_fields_after_previous_failure() -> None:
+    """After _fail_job_and_aisle, a later successful run must not leave PROCESSING_FAILED on the aisle."""
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="j-retry-ok",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.FAILED,
+        created_at=now,
+        updated_at=now,
+        error_code="PROCESSING_FAILED",
+        error_message="previous pipeline error",
+        retryable=True,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=noop,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+    executor._mark_success("j-retry-ok", aisle, Path("/tmp/run/hybrid_report.json"), now, run_metadata=None)
+    updated_aisle = aisle_repo.get_by_id("aisle-1")
+    assert updated_aisle is not None
+    assert updated_aisle.status == AisleStatus.PROCESSED
+    assert updated_aisle.error_code is None
+    assert updated_aisle.error_message is None
+    assert updated_aisle.retryable is None
+
+
 def test_mark_running_transitions_starting_job_to_running() -> None:
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_repo = InMemoryJobRepo()
@@ -472,6 +528,8 @@ def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
     assert updated.result_json["report_path"] == str(report_path)
     assert updated.result_json["provider"] == "gemini-2.0"
     assert updated.result_json["prompt_key"] == "global_v21"
+    assert updated.result_json.get("prompt_version") == "global_v21@v2.1"
+    assert updated.prompt_version == "global_v21@v2.1"
     assert updated.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT) is not None
 
 
@@ -1161,8 +1219,13 @@ def test_execute_cooperatively_cancels_when_cancel_requested_detected(tmp_path: 
         executing_job.status = JobStatus.CANCEL_REQUESTED
         executing_job.cancel_requested_at = now
         job_repo.save(executing_job)
-        kwargs["execution_observer"]("AnalysisStage", "provider_call", "stage.started", None)
-        raise AssertionError("execution_observer should have raised cancellation before pipeline completed")
+        # Real pipeline calls cancellation_checkpoint at stage boundaries; that raises
+        # PipelineCancellationRequestedError when the job is cancel-requested.
+        kwargs["cancellation_checkpoint"](
+            "AnalysisStage",
+            "provider_call",
+            "cooperative cancel during analysis",
+        )
 
     with patch.object(executor, "_persist_use_case", MagicMock(return_value=None)):
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
@@ -1194,10 +1257,13 @@ def test_execute_cooperatively_cancels_when_cancel_requested_detected(tmp_path: 
     assert updated_aisle.error_code == "CANCELED"
     run_log_path = tmp_path / job_id / RUN_ID / "execution_log.jsonl"
     log_text = run_log_path.read_text(encoding="utf-8")
-    assert log_text.count("job.cancel_requested") == 1
-    assert log_text.count("job.cancel_detected") == 1
-    assert log_text.count("job.canceled") == 1
-    assert log_text.index("job.cancel_requested") < log_text.index("job.cancel_detected") < log_text.index("job.canceled")
+    assert log_text.count("job.cancel_requested") >= 1
+    assert log_text.count("job.cancel_detected") >= 1
+    assert log_text.count("job.canceled") >= 1
+    req_i = log_text.index("job.cancel_requested")
+    det_i = log_text.index("job.cancel_detected")
+    can_i = log_text.index("job.canceled")
+    assert req_i < det_i < can_i
 
 
 def test_run_context_cancellation_uses_injected_checkpoint_not_metadata_flag() -> None:

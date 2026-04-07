@@ -13,6 +13,7 @@ from src.application.errors import (
     PositionDeletedError,
     PositionNotFoundError,
     ProductNotFoundError,
+    ReviewMutationNotAllowedError,
 )
 from src.application.ports.repositories import (
     AisleRepository,
@@ -20,6 +21,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
 )
+from src.domain.aisle.entities import Aisle
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 
@@ -59,6 +61,33 @@ def resolve_position(
             f"Position {position_id} does not belong to aisle {aisle_id}"
         )
     return position
+
+
+def ensure_position_review_mutable_for_aisle(aisle: Aisle, position: Position) -> None:
+    """Allow mutations only on the operational slice: legacy null-null or ``job_id == operational_job_id``."""
+    operational = aisle.operational_job_id
+    row_job = position.job_id
+    if operational is None:
+        if row_job is not None:
+            raise ReviewMutationNotAllowedError(
+                "Review edits apply only to legacy positions (job_id IS NULL) for this aisle"
+            )
+        return
+    if row_job != operational:
+        raise ReviewMutationNotAllowedError(
+            "Review edits apply only to positions from the aisle operational job"
+        )
+
+
+def load_aisle_and_ensure_review_mutable(
+    aisle_repo: AisleRepository,
+    aisle_id: str,
+    position: Position,
+) -> None:
+    aisle = aisle_repo.get_by_id(aisle_id)
+    if aisle is None:
+        raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
+    ensure_position_review_mutable_for_aisle(aisle, position)
 
 
 def resolve_product_for_position(

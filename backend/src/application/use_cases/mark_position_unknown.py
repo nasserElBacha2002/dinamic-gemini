@@ -19,7 +19,11 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
-from src.application.use_cases.review_validation import resolve_position, ensure_position_not_deleted
+from src.application.use_cases.review_validation import (
+    load_aisle_and_ensure_review_mutable,
+    resolve_position,
+    ensure_position_not_deleted,
+)
 from src.domain.positions.entities import PositionReviewResolution, PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
@@ -56,6 +60,7 @@ class MarkPositionUnknownUseCase:
             position_id,
         )
         ensure_position_not_deleted(position)
+        load_aisle_and_ensure_review_mutable(self._aisle_repo, aisle_id, position)
         now = self._clock.now()
         before_status = position.status.value
         before_resolution = (

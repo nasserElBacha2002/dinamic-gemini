@@ -14,9 +14,10 @@ from fastapi.responses import FileResponse, RedirectResponse
 from src.config import load_settings
 from src.api.dependencies import (
     get_artifact_storage,
+    get_aisle_repo,
     get_list_aisle_assets_use_case,
     get_upload_aisle_assets_use_case,
-    get_job_repo,
+    get_result_context_resolver,
 )
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
@@ -28,8 +29,9 @@ from src.api.schemas.asset_schemas import (
     SourceAssetResponse,
     UploadAisleAssetsResponse,
 )
-from src.application.ports.repositories import JobRepository
 from src.application.errors import AisleNotFoundError, EmptyUploadError, UnsupportedAssetTypeError
+from src.application.ports.repositories import AisleRepository
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
 from src.domain.assets.entities import SourceAsset
@@ -130,9 +132,16 @@ def get_aisle_asset_file(
     inventory_id: str,
     aisle_id: str,
     asset_id: str,
-    job_id: Optional[str] = Query(None, description="Optional job id to resolve HEIC normalized preview from that run"),
+    job_id: Optional[str] = Query(
+        None,
+        description=(
+            "Optional inventory job id for HEIC normalized preview; must match a run for this aisle. "
+            "Omitted uses ResultContextResolver (operational job or legacy — legacy has no normalized folder)."
+        ),
+    ),
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
-    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    resolver: ResultContextResolver = Depends(get_result_context_resolver),
     artifact_storage=Depends(get_artifact_storage),
 ) -> Union[FileResponse, RedirectResponse]:
     """Serve the reference image/file for an aisle asset. HEIC/HEIF: serves normalized JPG when available (optional job_id)."""
@@ -173,6 +182,10 @@ def get_aisle_asset_file(
 
     # HEIC/HEIF: serve normalized JPEG from local pipeline output when available (unchanged contract).
     if _asset_is_heic(asset):
+        aisle_row = aisle_repo.get_by_id(aisle_id)
+        if aisle_row is None or aisle_row.inventory_id != inventory_id:
+            failure_reason = AssetFileFailureReason.AISLE_NOT_FOUND
+            raise HTTPException(status_code=404, detail="Aisle not found")
         output_dir = Path(load_settings().output_dir)
         request_job_id = job_id.strip() if job_id and job_id.strip() else None
         logger.debug(
@@ -181,7 +194,12 @@ def get_aisle_asset_file(
             request_job_id,
         )
         normalized_path = resolve_normalized_asset_path(
-            output_dir, job_repo, aisle_id, asset_id, job_id=job_id
+            output_dir,
+            inventory_id=inventory_id,
+            aisle=aisle_row,
+            asset_id=asset_id,
+            explicit_job_id=request_job_id,
+            resolver=resolver,
         )
         if normalized_path is not None:
             preview_filename = (asset.original_filename or "preview").rsplit(".", 1)[0] + ".jpg"
@@ -224,10 +242,11 @@ def get_aisle_asset_image_display_url(
     asset_id: str,
     job_id: Optional[str] = Query(
         None,
-        description="Optional job id to align HEIC preview behavior with the /file endpoint",
+        description="Optional job id to align HEIC preview with the /file endpoint (resolver semantics).",
     ),
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
-    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    resolver: ResultContextResolver = Depends(get_result_context_resolver),
     artifact_storage=Depends(get_artifact_storage),
 ) -> SourceAssetImageDisplayUrlResponse:
     """Return how to display the asset image: presigned URL or authenticated GET on ``.../file``."""
@@ -262,10 +281,24 @@ def get_aisle_asset_image_display_url(
         return False
 
     if _asset_is_heic(asset):
+        aisle_row = aisle_repo.get_by_id(aisle_id)
+        if aisle_row is None or aisle_row.inventory_id != inventory_id:
+            logger.warning(
+                "Asset image-display-url: aisle_not_found inventory_id=%s aisle_id=%s asset_id=%s",
+                inventory_id,
+                aisle_id,
+                asset_id,
+            )
+            raise HTTPException(status_code=404, detail="Aisle not found")
         output_dir = Path(load_settings().output_dir)
         request_job_id = job_id.strip() if job_id and job_id.strip() else None
         normalized_path = resolve_normalized_asset_path(
-            output_dir, job_repo, aisle_id, asset_id, job_id=job_id
+            output_dir,
+            inventory_id=inventory_id,
+            aisle=aisle_row,
+            asset_id=asset_id,
+            explicit_job_id=request_job_id,
+            resolver=resolver,
         )
         if normalized_path is not None:
             # Same strategy as local/legacy: client must GET /file, which serves the normalized JPEG.

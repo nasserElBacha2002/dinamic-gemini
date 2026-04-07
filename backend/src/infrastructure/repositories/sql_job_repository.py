@@ -54,6 +54,26 @@ def _parse_json(raw: Optional[str]) -> Dict[str, Any]:
         return {}
 
 
+def _parse_optional_json(raw: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not raw or not str(raw).strip():
+        return None
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else {"value": v}
+    except json.JSONDecodeError:
+        return None
+
+
+_JOB_SELECT_FIELDS = (
+    "id, target_type, target_id, job_type, status, "
+    "payload_json, result_json, error_message, created_at, updated_at, "
+    "started_at, finished_at, last_heartbeat_at, cancel_requested_at, "
+    "current_stage, current_substep, current_step_started_at, "
+    "attempt_count, retry_of_job_id, failure_code, failure_message, execution_id, "
+    "provider_name, model_name, prompt_key, engine_params_json, prompt_version"
+)
+
+
 def _row_to_job(row: Any) -> Job:
     jid = getattr(row, "id", "")
     created = _ensure_utc(getattr(row, "created_at", None))
@@ -87,6 +107,11 @@ def _row_to_job(row: Any) -> Job:
         failure_code=getattr(row, "failure_code", None),
         failure_message=getattr(row, "failure_message", None),
         execution_id=getattr(row, "execution_id", None),
+        provider_name=getattr(row, "provider_name", None),
+        model_name=getattr(row, "model_name", None),
+        prompt_key=getattr(row, "prompt_key", None),
+        engine_params_json=_parse_optional_json(getattr(row, "engine_params_json", None)),
+        prompt_version=getattr(row, "prompt_version", None),
     )
 
 
@@ -103,6 +128,11 @@ class SqlJobRepository(JobRepository):
         result_str = (
             json.dumps(job.result_json, ensure_ascii=False) if job.result_json else None
         )
+        engine_str = (
+            json.dumps(job.engine_params_json, ensure_ascii=False)
+            if job.engine_params_json
+            else None
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -111,7 +141,9 @@ class SqlJobRepository(JobRepository):
                     payload_json = ?, result_json = ?, error_message = ?, updated_at = ?,
                     started_at = ?, finished_at = ?, last_heartbeat_at = ?, cancel_requested_at = ?,
                     current_stage = ?, current_substep = ?, current_step_started_at = ?,
-                    attempt_count = ?, retry_of_job_id = ?, failure_code = ?, failure_message = ?, execution_id = ?
+                    attempt_count = ?, retry_of_job_id = ?, failure_code = ?, failure_message = ?, execution_id = ?,
+                    provider_name = ?, model_name = ?, prompt_key = ?, engine_params_json = ?,
+                    prompt_version = ?
                 WHERE id = ?
                 """,
                 (
@@ -135,6 +167,11 @@ class SqlJobRepository(JobRepository):
                     job.failure_code,
                     job.failure_message,
                     job.execution_id,
+                    job.provider_name,
+                    job.model_name,
+                    job.prompt_key,
+                    engine_str,
+                    job.prompt_version,
                     job.id,
                 ),
             )
@@ -145,8 +182,9 @@ class SqlJobRepository(JobRepository):
                         payload_json, result_json, error_message, created_at, updated_at,
                         started_at, finished_at, last_heartbeat_at, cancel_requested_at,
                         current_stage, current_substep, current_step_started_at,
-                        attempt_count, retry_of_job_id, failure_code, failure_message, execution_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        attempt_count, retry_of_job_id, failure_code, failure_message, execution_id,
+                        provider_name, model_name, prompt_key, engine_params_json, prompt_version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,
@@ -171,20 +209,18 @@ class SqlJobRepository(JobRepository):
                         job.failure_code,
                         job.failure_message,
                         job.execution_id,
+                        job.provider_name,
+                        job.model_name,
+                        job.prompt_key,
+                        engine_str,
+                        job.prompt_version,
                     ),
                 )
 
     def get_by_id(self, job_id: str) -> Optional[Job]:
         with self._client.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, target_type, target_id, job_type, status,
-                       payload_json, result_json, error_message, created_at, updated_at,
-                       started_at, finished_at, last_heartbeat_at, cancel_requested_at,
-                       current_stage, current_substep, current_step_started_at,
-                       attempt_count, retry_of_job_id, failure_code, failure_message, execution_id
-                FROM inventory_jobs WHERE id = ?
-                """,
+                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE id = ?",
                 (job_id,),
             )
             row = cur.fetchone()
@@ -195,12 +231,8 @@ class SqlJobRepository(JobRepository):
     def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
         with self._client.cursor() as cur:
             cur.execute(
-                """
-                SELECT TOP 1 id, target_type, target_id, job_type, status,
-                       payload_json, result_json, error_message, created_at, updated_at,
-                       started_at, finished_at, last_heartbeat_at, cancel_requested_at,
-                       current_stage, current_substep, current_step_started_at,
-                       attempt_count, retry_of_job_id, failure_code, failure_message, execution_id
+                f"""
+                SELECT TOP 1 {_JOB_SELECT_FIELDS}
                 FROM inventory_jobs
                 WHERE target_type = ? AND target_id = ?
                 ORDER BY updated_at DESC, created_at DESC
@@ -212,19 +244,26 @@ class SqlJobRepository(JobRepository):
             return None
         return _row_to_job(row)
 
-    def list_all_jobs(self) -> Sequence[Job]:
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        n = max(1, min(int(limit), 500))
         with self._client.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, target_type, target_id, job_type, status,
-                       payload_json, result_json, error_message, created_at, updated_at,
-                       started_at, finished_at, last_heartbeat_at, cancel_requested_at,
-                       current_stage, current_substep, current_step_started_at,
-                   attempt_count, retry_of_job_id, failure_code, failure_message, execution_id
+                f"""
+                SELECT TOP ({n}) {_JOB_SELECT_FIELDS}
                 FROM inventory_jobs
+                WHERE target_type = ? AND target_id = ?
                 ORDER BY updated_at DESC, created_at DESC
-                """
+                """,
+                (target_type, target_id),
             )
+            rows = cur.fetchall()
+        return [_row_to_job(row) for row in rows]
+
+    def list_all_jobs(self) -> Sequence[Job]:
+        with self._client.cursor() as cur:
+            cur.execute(f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC")
             rows = cur.fetchall()
         return [_row_to_job(row) for row in rows]
 
@@ -236,11 +275,7 @@ class SqlJobRepository(JobRepository):
         placeholders = ",".join("?" * len(target_ids))
         params: List[Any] = [target_type, *target_ids]
         query = f"""
-            SELECT id, target_type, target_id, job_type, status,
-                   payload_json, result_json, error_message, created_at, updated_at,
-                   started_at, finished_at, last_heartbeat_at, cancel_requested_at,
-                   current_stage, current_substep, current_step_started_at,
-                   attempt_count, retry_of_job_id, failure_code, failure_message, execution_id
+            SELECT {_JOB_SELECT_FIELDS}
             FROM (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY target_id ORDER BY updated_at DESC, created_at DESC

@@ -1,9 +1,9 @@
 """
 AnalysisProvider port — global product analysis (Stage 2.3.B).
 
-Pipeline depends on this interface; implementations (Gemini, Fake, etc.) are adapters. The
-current contract is aligned with the existing v2.1/v2.3 hybrid analysis flow (single global
-entity analysis call, parsed JSON consumed by parse_entities).
+The hybrid pipeline depends on this interface only (not on vendor SDKs). Implementations are
+strategies that call a registry-resolved ``LlmGlobalAnalysisExecutor``. Contract matches the
+v2.1/v2.3 hybrid flow (single global entity analysis call, parsed JSON for entity resolution).
 v3.2.4 Phase 4: provider capabilities and provider_metadata for visual reference consumption.
 """
 

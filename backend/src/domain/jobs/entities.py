@@ -52,3 +52,10 @@ class Job:
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None
     execution_id: Optional[str] = None
+    # Phase 1 — transitional indexed metadata for future multi-provider work; not a runtime provider abstraction.
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_key: Optional[str] = None
+    engine_params_json: Optional[Dict[str, Any]] = None
+    #: Resolved prompt profile version / schema tag for audit (e.g. ``global_v21@v2.1``).
+    prompt_version: Optional[str] = None

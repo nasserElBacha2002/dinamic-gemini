@@ -15,6 +15,7 @@ import {
   deleteInventoryVisualReference,
   replaceInventoryVisualReference,
   submitReviewAction,
+  promoteAisleOperationalJob,
 } from '../api/client';
 import type { CreateInventoryRequest, CreateAisleRequest, ReviewActionRequest } from '../api/types';
 import { queryKeys } from '../api/queryKeys';
@@ -43,9 +44,23 @@ export function useCreateAisle(inventoryId: string) {
 export function useStartAisleProcessing(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (aisleId: string) => startAisleProcessing(inventoryId, aisleId),
-    onSuccess: () => {
+    mutationFn: (vars: {
+      aisleId: string;
+      providerName?: string | null;
+      modelName?: string | null;
+      promptKey?: string | null;
+    }) =>
+      startAisleProcessing(inventoryId, vars.aisleId, {
+        providerName: vars.providerName,
+        modelName: vars.modelName,
+        promptKey: vars.promptKey,
+      }),
+    onSuccess: (_, vars) => {
+      const { aisleId } = vars;
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
     },
   });
 }
@@ -57,6 +72,8 @@ export function useCancelAisleJob(inventoryId: string) {
       cancelAisleJob(inventoryId, aisleId, jobId),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, vars.aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
     },
   });
@@ -69,18 +86,26 @@ export function useRetryAisleJob(inventoryId: string) {
       retryAisleJob(inventoryId, aisleId, jobId),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, vars.aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
     },
   });
 }
 
+export type RunAisleMergeVariables = { aisleId: string; jobId: string | null };
+
 export function useRunAisleMerge(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (aisleId: string) => runAisleMerge(inventoryId, aisleId),
-    onSuccess: (_, aisleId) => {
+    mutationFn: (vars: RunAisleMergeVariables) =>
+      runAisleMerge(inventoryId, vars.aisleId, { jobId: vars.jobId }),
+    onSuccess: (_, vars) => {
+      const { aisleId } = vars;
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId) });
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId],
+      });
     },
   });
 }
@@ -141,6 +166,22 @@ export function useReplaceInventoryVisualReference(inventoryId: string) {
   });
 }
 
+/** Phase 6 — point operational_job_id at a succeeded run (benchmark → operational). */
+export function usePromoteAisleOperationalJob(inventoryId: string, aisleId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => promoteAisleOperationalJob(inventoryId, aisleId, jobId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.inventories.all, 'benchmark-compare'] });
+    },
+  });
+}
+
 export function useSubmitReviewAction(inventoryId: string, aisleId: string, positionId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -148,10 +189,24 @@ export function useSubmitReviewAction(inventoryId: string, aisleId: string, posi
       submitReviewAction(inventoryId, aisleId, positionId, body),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
+        queryKey: [
+          ...queryKeys.inventories.all,
+          'aisles',
+          inventoryId,
+          'positions',
+          aisleId,
+          'detail',
+          positionId,
+        ],
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle-jobs', aisleId],
       });
       // Also invalidate summary/KPI levels to ensure parent page counts are accurate.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });

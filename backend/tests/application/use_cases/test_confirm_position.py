@@ -12,6 +12,7 @@ from src.application.errors import (
     InventoryNotFoundError,
     PositionDeletedError,
     PositionNotFoundError,
+    ReviewMutationNotAllowedError,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
@@ -255,6 +256,77 @@ def test_confirm_position_already_deleted_raises() -> None:
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
     )
     with pytest.raises(PositionDeletedError):
+        use_case.execute("inv-1", "aisle-1", "pos-1")
+
+
+def test_confirm_position_non_operational_job_raises() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
+    aisle = Aisle(
+        "aisle-1",
+        "inv-1",
+        "A01",
+        AisleStatus.CREATED,
+        now,
+        now,
+        operational_job_id="job-op",
+    )
+    position = Position(
+        id="pos-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        job_id="job-other",
+    )
+    inv_repo = StubInventoryRepo(inv)
+    aisle_repo = StubAisleRepo(aisle)
+    position_repo = StubPositionRepo(position)
+    review_repo = StubReviewRepo()
+    use_case = ConfirmPositionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        review_repo=review_repo,
+        clock=FixedClock(now),
+        aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
+    )
+    with pytest.raises(ReviewMutationNotAllowedError):
+        use_case.execute("inv-1", "aisle-1", "pos-1")
+
+
+def test_confirm_position_legacy_aisle_rejects_scoped_row() -> None:
+    """Legacy aisle (no operational_job_id): only null job_id positions are mutable."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
+    aisle = Aisle("aisle-1", "inv-1", "A01", AisleStatus.CREATED, now, now)
+    position = Position(
+        id="pos-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        job_id="job-x",
+    )
+    inv_repo = StubInventoryRepo(inv)
+    aisle_repo = StubAisleRepo(aisle)
+    position_repo = StubPositionRepo(position)
+    review_repo = StubReviewRepo()
+    use_case = ConfirmPositionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        review_repo=review_repo,
+        clock=FixedClock(now),
+        aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
+    )
+    with pytest.raises(ReviewMutationNotAllowedError):
         use_case.execute("inv-1", "aisle-1", "pos-1")
 
 

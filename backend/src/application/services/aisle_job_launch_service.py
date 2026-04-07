@@ -1,3 +1,9 @@
+"""Launch process-aisle jobs for v3.
+
+Phase 1 stores placeholder provider/prompt fields on ``Job`` for indexing and future tuning;
+selection of multiple providers is out of scope until Phase 2+.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -31,6 +37,9 @@ class AisleJobLaunchService:
         attempt_count: int,
         retry_of_job_id: str | None = None,
         log_prefix: str = "job.start_requested",
+        provider_name: str,
+        model_name: str | None,
+        prompt_key: str,
     ) -> Job:
         now = self.clock.now()
         job = Job(
@@ -48,6 +57,14 @@ class AisleJobLaunchService:
             current_step_started_at=now,
             attempt_count=int(attempt_count or 1),
             retry_of_job_id=retry_of_job_id,
+            provider_name=(provider_name or "").strip().lower(),
+            model_name=(
+                str(model_name).strip()
+                if model_name is not None and str(model_name).strip()
+                else None
+            ),
+            prompt_key=prompt_key or "global_v21",
+            engine_params_json=None,
         )
         self.job_repo.save(job)
 
@@ -55,13 +72,16 @@ class AisleJobLaunchService:
         self.aisle_repo.save(aisle)
         self.status_reconciler.reconcile(aisle.inventory_id)
         logger.info(
-            "%s job_id=%s aisle_id=%s inventory_id=%s attempt_count=%s retry_of_job_id=%s",
+            "%s job_id=%s aisle_id=%s inventory_id=%s attempt_count=%s retry_of_job_id=%s provider_name=%s model_name=%s prompt_key=%s",
             log_prefix,
             job.id,
             aisle.id,
             aisle.inventory_id,
             job.attempt_count,
             retry_of_job_id,
+            job.provider_name,
+            job.model_name,
+            job.prompt_key,
         )
 
         try:

@@ -97,19 +97,32 @@ def build_visual_reference_context(
         )
     else:
         ctx = analysis_context
+        # Formal AnalysisContext (or None): must mirror dict branch — otherwise
+        # context_reference_ids is undefined on the non-dict path (runtime UnboundLocalError).
+        context_reference_ids = _reference_ids_from_context(ctx)
 
     meta = provider_metadata or {}
     provider_reference_ids = _reference_ids_from_provider_metadata(meta)
     reference_ids = provider_reference_ids or context_reference_ids
     provider_consumed = bool(meta.get(PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED))
-    raw_count = int(meta.get(PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT, 0))
+    raw_count_from_meta = int(meta.get(PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT, 0))
+    raw_count = raw_count_from_meta
     if not provider_consumed:
         raw_count = 0
     provider_consumed_count = max(0, min(raw_count, len(reference_ids)))
     resolved_count = len(reference_ids)
-    if provider_reference_ids or PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT in meta:
+    count_key_present = PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT in meta
+    if provider_reference_ids or (count_key_present and provider_consumed):
         resolved_count = provider_consumed_count
-        reference_ids = provider_reference_ids[:provider_consumed_count] if provider_reference_ids else reference_ids[:provider_consumed_count]
+        reference_ids = (
+            provider_reference_ids[:provider_consumed_count]
+            if provider_reference_ids
+            else reference_ids[:provider_consumed_count]
+        )
+    elif count_key_present and not provider_consumed and raw_count_from_meta == 0:
+        # Provider reported no consumption and count 0 — job output has no resolved reference slice.
+        resolved_count = provider_consumed_count
+        reference_ids = reference_ids[:provider_consumed_count]
     resolved = resolved_count > 0
 
     return {

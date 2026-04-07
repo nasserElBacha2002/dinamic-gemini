@@ -74,6 +74,18 @@ class InMemoryJobRepo(JobRepository):
                 result[tid] = j
         return result
 
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        candidates = [
+            j
+            for j in self._store.values()
+            if j.target_type == target_type and j.target_id == target_id
+        ]
+        candidates.sort(key=lambda j: (j.updated_at, j.created_at), reverse=True)
+        n = max(1, int(limit))
+        return candidates[:n]
+
 
 def test_cancel_queued_job_marks_canceled() -> None:
     """Phase 3 Block 1 Case 1: QUEUED -> CANCELED; job is persisted."""

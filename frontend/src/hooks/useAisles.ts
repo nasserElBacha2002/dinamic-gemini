@@ -3,7 +3,16 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { getAisles, getInventoryMetrics, getExecutionLog, getAisleJobDetail, type AislesListQuery } from '../api/client';
+import {
+  getAisles,
+  getInventoryMetrics,
+  getExecutionLog,
+  getAisleJobDetail,
+  getProcessingProviderOptions,
+  listAisleJobs,
+  getAisleBenchmarkCompare,
+  type AislesListQuery,
+} from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 
 export function useInventoryMetrics(inventoryId: string | undefined, options?: { enabled?: boolean }) {
@@ -22,6 +31,16 @@ export function useAislesList(inventoryId: string | undefined, options?: { enabl
     queryKey: [...queryKeys.inventories.aisles(inventoryId ?? ''), defaultAisleTableQuery] as const,
     queryFn: () => getAisles(inventoryId!, defaultAisleTableQuery),
     enabled: Boolean(inventoryId) && (options?.enabled !== false),
+  });
+}
+
+/** Pipeline provider keys for POST aisle process (Phase 5). */
+export function useProcessingProviderOptions(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.inventories.processingProviderOptions(),
+    queryFn: () => getProcessingProviderOptions(),
+    enabled: options?.enabled !== false,
+    staleTime: 60_000,
   });
 }
 
@@ -56,6 +75,39 @@ export function useAisleJobDetail(
     queryKey: queryKeys.inventories.jobDetail(inventoryId ?? '', aisleId ?? '', jobId ?? ''),
     queryFn: () => getAisleJobDetail(inventoryId!, aisleId!, jobId!),
     enabled: Boolean(inventoryId && aisleId && jobId) && (options?.enabled !== false),
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Jobs for an aisle, newest first — run selector on Aisle Results (Phase 3). */
+export function useAisleJobsList(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  options?: { enabled?: boolean; limit?: number }
+) {
+  const limit = options?.limit ?? 50;
+  return useQuery({
+    queryKey: [...queryKeys.inventories.aisleJobs(inventoryId ?? '', aisleId ?? ''), limit] as const,
+    queryFn: () => listAisleJobs(inventoryId!, aisleId!, { limit }),
+    enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Phase 6 — benchmark compare for explicit job pair (read-only analytics payload). */
+export function useAisleBenchmarkCompare(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  jobAId: string | undefined,
+  jobBId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  const a = jobAId?.trim() ?? '';
+  const b = jobBId?.trim() ?? '';
+  return useQuery({
+    queryKey: queryKeys.inventories.benchmarkCompare(inventoryId ?? '', aisleId ?? '', a, b),
+    queryFn: () => getAisleBenchmarkCompare(inventoryId!, aisleId!, a, b),
+    enabled: Boolean(inventoryId && aisleId && a && b) && (options?.enabled !== false),
     refetchOnWindowFocus: false,
   });
 }

@@ -103,6 +103,9 @@ export interface AisleJobSummary {
   failure_code?: string | null;
   failure_message?: string | null;
   execution_id?: string | null;
+  provider_name?: string | null;
+  model_name?: string | null;
+  prompt_key?: string | null;
 }
 
 export interface Aisle {
@@ -144,6 +147,34 @@ export interface ProcessAisleResponse {
   job_id: string;
 }
 
+/** GET /api/v3/inventories/processing-provider-options (Phase 5). */
+export interface ProcessingModelOption {
+  id: string;
+  label: string;
+}
+
+export interface ProcessingPromptOptionItem {
+  key: string;
+  label: string;
+  description?: string | null;
+}
+
+export interface ProcessingProviderOptionItem {
+  key: string;
+  label: string;
+  execution_mode: string;
+  description?: string | null;
+  models: ProcessingModelOption[];
+  default_model?: string | null;
+}
+
+export interface ProcessingProviderOptionsResponse {
+  default_provider_key: string;
+  default_prompt_key: string;
+  prompt_profiles: ProcessingPromptOptionItem[];
+  providers: ProcessingProviderOptionItem[];
+}
+
 export interface JobSummary {
   id: string;
   status: JobStatus | string;
@@ -163,6 +194,79 @@ export interface JobSummary {
   failure_code?: string | null;
   failure_message?: string | null;
   execution_id?: string | null;
+  provider_name?: string | null;
+  model_name?: string | null;
+  prompt_key?: string | null;
+  /** Tracked prompt line (e.g. prompt_key@v2.1); empty if unknown. */
+  prompt_version?: string | null;
+  /** True when this job is the aisle operational pointer (Phase 6 jobs list). */
+  is_operational?: boolean;
+}
+
+/** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */
+export interface AisleJobsListResponse {
+  operational_job_id?: string | null;
+  jobs: JobSummary[];
+}
+
+/** Phase 6 — GET .../benchmark/compare (read-only, explicit job pair). */
+export interface BenchmarkRunSliceMetrics {
+  raw_rows_considered: number;
+  consolidated_positions: number;
+  total_quantity: number;
+  unknown_internal_code_count: number;
+  needs_review_count: number;
+}
+
+export interface BenchmarkRunCompareSide {
+  job_id: string;
+  status: string;
+  provider_name?: string | null;
+  model_name?: string | null;
+  prompt_key?: string | null;
+  prompt_version?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  metrics: BenchmarkRunSliceMetrics;
+}
+
+export interface BenchmarkCompareDiffSummary {
+  keys_only_in_a: number;
+  keys_only_in_b: number;
+  keys_in_both: number;
+  quantity_changed: number;
+  sku_changed: number;
+  position_code_changed: number;
+}
+
+export interface BenchmarkCompareDiffRow {
+  match_key: string;
+  side: string;
+  quantity_a?: number | null;
+  quantity_b?: number | null;
+  sku_a?: string | null;
+  sku_b?: string | null;
+  position_code_a?: string | null;
+  position_code_b?: string | null;
+}
+
+export interface AisleBenchmarkCompareResponse {
+  inventory_id: string;
+  aisle_id: string;
+  workflow: string;
+  read_only: boolean;
+  raw_fetch_truncated: { job_a: boolean; job_b: boolean };
+  run_a: BenchmarkRunCompareSide;
+  run_b: BenchmarkRunCompareSide;
+  diff_summary: BenchmarkCompareDiffSummary;
+  diff_rows: BenchmarkCompareDiffRow[];
+  diff_rows_truncated: boolean;
+}
+
+export interface PromoteOperationalJobResponse {
+  aisle_id: string;
+  operational_job_id: string;
 }
 
 /** Single execution log event (v3.1.1). */
@@ -310,6 +414,8 @@ export interface PositionSummary {
   /** v3.2.5 Phase 2 Block 4: guaranteed boolean in active v3 contract; backend always sends it. */
   /** @deprecated Prefer `traceability.has_evidence`. */
   has_evidence: boolean;
+  /** Multi-run: storage row job id; null = legacy. Used for review drawer / detail `job_id` query. */
+  job_id?: string | null;
 }
 
 /**
@@ -324,6 +430,10 @@ export interface PositionListResponse {
   total_items: number;
   total_pages: number;
   raw_fetch_truncated: boolean;
+  /** Resolved job slice for this response (same semantics as list/detail/merge Phase 2). */
+  result_job_id?: string | null;
+  /** explicit | operational | legacy */
+  result_context_source?: string | null;
 }
 
 /** GET /api/v3/review-queue/positions (Sprint 1.4, Sprint 4.2 summary). */
@@ -393,6 +503,17 @@ export interface ReviewActionSummary {
   comment?: string | null;
 }
 
+/** Phase 2 / 5: slice + provider metadata for this row (matches list/merge resolver semantics). */
+export interface PositionRunContextSummary {
+  job_id?: string | null;
+  result_context_source: string;
+  resolved_job_id?: string | null;
+  provider_name?: string | null;
+  model_name?: string | null;
+  prompt_key?: string | null;
+  prompt_version?: string | null;
+}
+
 /** Response for GET .../aisles/{aisle_id}/positions/{position_id}. v3.1.1: Result-centric; products are not returned. Backend always sends review_actions (array). */
 export interface PositionDetailResponse {
   position: PositionSummary;
@@ -400,6 +521,7 @@ export interface PositionDetailResponse {
   evidences: EvidenceSummary[];
   /** Review audit history — Épica 8. v3.2.5 Phase 8: required; backend sends list (default_factory=list). */
   review_actions: ReviewActionSummary[];
+  run_context: PositionRunContextSummary;
 }
 
 export interface RunMergeResponse {

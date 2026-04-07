@@ -18,6 +18,7 @@ from src.application.ports.repositories import (
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.use_cases.review_validation import (
+    load_aisle_and_ensure_review_mutable,
     resolve_position,
     resolve_product_for_position,
     resolve_single_product_for_position,
@@ -63,6 +64,7 @@ class UpdateProductQuantityUseCase:
             position_id,
         )
         ensure_position_not_deleted(position)
+        load_aisle_and_ensure_review_mutable(self._aisle_repo, aisle_id, position)
         pid = (product_id or "").strip()
         if pid:
             product = resolve_product_for_position(

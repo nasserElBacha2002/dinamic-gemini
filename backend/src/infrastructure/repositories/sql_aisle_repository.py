@@ -56,6 +56,7 @@ def _row_to_aisle(row) -> Aisle:
         status=_status_from_row(row, aid),
         created_at=created,
         updated_at=updated,
+        operational_job_id=getattr(row, "operational_job_id", None),
         error_code=getattr(row, "error_code", None),
         error_message=getattr(row, "error_message", None),
         retryable=getattr(row, "retryable", None),
@@ -76,6 +77,7 @@ class SqlAisleRepository(AisleRepository):
                 """
                 UPDATE aisles
                 SET inventory_id = ?, code = ?, status = ?, updated_at = ?,
+                    operational_job_id = ?,
                     error_code = ?, error_message = ?, retryable = ?
                 WHERE id = ?
                 """,
@@ -84,6 +86,7 @@ class SqlAisleRepository(AisleRepository):
                     aisle.code,
                     aisle.status.value,
                     updated,
+                    aisle.operational_job_id,
                     aisle.error_code,
                     aisle.error_message,
                     aisle.retryable,
@@ -93,8 +96,8 @@ class SqlAisleRepository(AisleRepository):
             if cur.rowcount == 0:
                 cur.execute(
                     """
-                    INSERT INTO aisles (id, inventory_id, code, status, created_at, updated_at, error_code, error_message, retryable)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO aisles (id, inventory_id, code, status, created_at, updated_at, operational_job_id, error_code, error_message, retryable)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         aisle.id,
@@ -103,6 +106,7 @@ class SqlAisleRepository(AisleRepository):
                         aisle.status.value,
                         created,
                         updated,
+                        aisle.operational_job_id,
                         aisle.error_code,
                         aisle.error_message,
                         aisle.retryable,
@@ -114,7 +118,7 @@ class SqlAisleRepository(AisleRepository):
             cur.execute(
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
-                       error_code, error_message, retryable
+                       operational_job_id, error_code, error_message, retryable
                 FROM aisles WHERE id = ?
                 """,
                 (aisle_id,),
@@ -129,7 +133,7 @@ class SqlAisleRepository(AisleRepository):
             cur.execute(
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
-                       error_code, error_message, retryable
+                       operational_job_id, error_code, error_message, retryable
                 FROM aisles WHERE inventory_id = ? ORDER BY created_at DESC
                 """,
                 (inventory_id,),
@@ -142,7 +146,7 @@ class SqlAisleRepository(AisleRepository):
             cur.execute(
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
-                       error_code, error_message, retryable
+                       operational_job_id, error_code, error_message, retryable
                 FROM aisles WHERE inventory_id = ? AND code = ?
                 """,
                 (inventory_id, code.strip()),

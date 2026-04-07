@@ -10,12 +10,22 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from src.api.dependencies import get_artifact_storage, get_job_repo, get_list_aisle_assets_use_case
+from src.api.dependencies import (
+    get_artifact_storage,
+    get_aisle_repo,
+    get_list_aisle_assets_use_case,
+    get_result_context_resolver,
+)
 from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
 from src.api.server import app
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.aisle.entities import Aisle, AisleStatus
+from src.application.services.result_context_resolver import ResultContextResolver
+from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 
 
@@ -27,17 +37,6 @@ class StubListAisleAssetsUseCase:
 
     def execute(self, inventory_id: str, aisle_id: str) -> Sequence[SourceAsset]:
         return self._assets
-
-
-class StubJobRepoEmpty:
-    def get_latest_by_target(self, target_type: str, target_id: str):
-        return None
-
-    def get_by_id(self, job_id: str):
-        return None
-
-    def save(self, job) -> None:
-        pass
 
 
 class StubS3ArtifactStorage:
@@ -54,6 +53,27 @@ def admin_auth():
     )
     yield
     app.dependency_overrides.pop(get_current_admin, None)
+
+
+def _register_aisle_resolver(inv_id: str, aisle_id: str) -> None:
+    """Routes depend on aisle row + ResultContextResolver (HEIC preview path)."""
+    now = datetime.now(timezone.utc)
+    ar = MemoryAisleRepository()
+    ar.save(
+        Aisle(
+            id=aisle_id,
+            inventory_id=inv_id,
+            code="T",
+            status=AisleStatus.PROCESSED,
+            created_at=now,
+            updated_at=now,
+            operational_job_id=None,
+        )
+    )
+    app.dependency_overrides[get_aisle_repo] = lambda: ar
+    app.dependency_overrides[get_result_context_resolver] = lambda: ResultContextResolver(
+        MemoryJobRepository(), MemoryPositionRepository()
+    )
 
 
 def _patch_display_settings(monkeypatch: pytest.MonkeyPatch, output_dir: Path) -> None:
@@ -88,8 +108,8 @@ def test_image_display_url_s3_returns_presigned_strategy(admin_auth, monkeypatch
         storage_key="logical/k1.jpg",
     )
     _patch_display_settings(monkeypatch, tmp_path)
+    _register_aisle_resolver(inv_id, aisle_id)
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: StubListAisleAssetsUseCase([asset])
-    app.dependency_overrides[get_job_repo] = lambda: StubJobRepoEmpty()
     app.dependency_overrides[get_artifact_storage] = lambda: StubS3ArtifactStorage()
     try:
         r = TestClient(app).get(
@@ -102,7 +122,8 @@ def test_image_display_url_s3_returns_presigned_strategy(admin_auth, monkeypatch
         assert data["image_url"] == "https://signed.example/logical/k1.jpg?ttl=900"
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)
         app.dependency_overrides.pop(get_artifact_storage, None)
 
 
@@ -125,8 +146,8 @@ def test_image_display_url_local_returns_authenticated_fetch_strategy(admin_auth
         storage_key="keys/photo.jpg",
     )
     _patch_display_settings(monkeypatch, tmp_path)
+    _register_aisle_resolver(inv_id, aisle_id)
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: StubListAisleAssetsUseCase([asset])
-    app.dependency_overrides[get_job_repo] = lambda: StubJobRepoEmpty()
     art_root = tmp_path / "_artifact_stub"
     art_root.mkdir(parents=True, exist_ok=True)
     app.dependency_overrides[get_artifact_storage] = lambda: V3ArtifactStorageAdapter(art_root)
@@ -141,7 +162,8 @@ def test_image_display_url_local_returns_authenticated_fetch_strategy(admin_auth
         assert data["image_url"] is None
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)
         app.dependency_overrides.pop(get_artifact_storage, None)
 
 
@@ -165,8 +187,8 @@ def test_image_display_url_legacy_row_returns_authenticated_fetch_when_file_exis
         uploaded_at=now,
     )
     _patch_display_settings(monkeypatch, tmp_path)
+    _register_aisle_resolver(inv_id, aisle_id)
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: StubListAisleAssetsUseCase([asset])
-    app.dependency_overrides[get_job_repo] = lambda: StubJobRepoEmpty()
     art_root = tmp_path / "_artifact_stub2"
     art_root.mkdir(parents=True, exist_ok=True)
     app.dependency_overrides[get_artifact_storage] = lambda: V3ArtifactStorageAdapter(art_root)
@@ -181,7 +203,8 @@ def test_image_display_url_legacy_row_returns_authenticated_fetch_when_file_exis
         assert data["image_url"] is None
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)
         app.dependency_overrides.pop(get_artifact_storage, None)
 
 
@@ -203,8 +226,8 @@ def test_image_display_url_local_missing_file_returns_404(admin_auth, monkeypatc
         storage_key="nope.jpg",
     )
     _patch_display_settings(monkeypatch, tmp_path)
+    _register_aisle_resolver(inv_id, aisle_id)
     app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: StubListAisleAssetsUseCase([asset])
-    app.dependency_overrides[get_job_repo] = lambda: StubJobRepoEmpty()
     art_root = tmp_path / "_artifact_stub3"
     art_root.mkdir(parents=True, exist_ok=True)
     app.dependency_overrides[get_artifact_storage] = lambda: V3ArtifactStorageAdapter(art_root)
@@ -215,7 +238,8 @@ def test_image_display_url_local_missing_file_returns_404(admin_auth, monkeypatc
         assert r.status_code == 404
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_result_context_resolver, None)
         app.dependency_overrides.pop(get_artifact_storage, None)
 
 

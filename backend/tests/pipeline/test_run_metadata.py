@@ -9,6 +9,11 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
+from src.pipeline.contracts.analysis_context import (
+    AnalysisContext,
+    AnalysisImage,
+    VisualReferenceContext,
+)
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
     build_run_metadata,
@@ -172,3 +177,49 @@ def test_build_visual_reference_context_prefers_provider_confirmed_reference_ids
     assert block["reference_ids"] == ["ref-2"]
     assert block["provider_consumed"] is True
     assert block["provider_consumed_count"] == 1
+
+
+def _minimal_analysis_context(
+    *,
+    visual_refs: list[VisualReferenceContext],
+) -> AnalysisContext:
+    return AnalysisContext(
+        primary_evidence=[
+            AnalysisImage(id="pe-1", source_path="evidence/frame.jpg", mime_type="image/jpeg"),
+        ],
+        visual_references=visual_refs,
+        instructions=[],
+    )
+
+
+def test_build_visual_reference_context_analysis_context_instance_no_refs() -> None:
+    """Non-dict AnalysisContext must not raise; empty visual_references → same as dict path."""
+    ac = _minimal_analysis_context(visual_refs=[])
+    block = build_visual_reference_context(ac, provider_metadata=None)
+    assert block["resolved"] is False
+    assert block["reference_ids"] == []
+    assert block["resolved_count"] == 0
+
+
+def test_build_visual_reference_context_analysis_context_instance_with_refs_and_provider() -> None:
+    ac = _minimal_analysis_context(
+        visual_refs=[
+            VisualReferenceContext(
+                reference_id="ctx-r1",
+                source_path="inv/refs/r1.jpg",
+                mime_type="image/jpeg",
+            ),
+        ],
+    )
+    block = build_visual_reference_context(
+        ac,
+        provider_metadata={
+            PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED: True,
+            PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT: 1,
+            PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS: ["ctx-r1"],
+        },
+    )
+    assert block["resolved"] is True
+    assert block["reference_ids"] == ["ctx-r1"]
+    assert block["resolved_count"] == 1
+    assert block["provider_consumed"] is True

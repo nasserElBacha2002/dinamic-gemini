@@ -3,16 +3,23 @@
  */
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, TextField, Tooltip, Typography } from '@mui/material';
-import { exportInventoryResultsCsv } from '../api/client';
+import { exportInventoryResultsCsv, type AislePositionsListQuery } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
 import { FilterToolbar, SectionCard, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
-import { useInventoryDetail, useAislesList, useAisleMergeResults, useRunAisleMerge } from '../hooks';
+import {
+  useInventoryDetail,
+  useAislesList,
+  useAisleMergeResults,
+  useRunAisleMerge,
+  useAisleJobsList,
+  usePromoteAisleOperationalJob,
+} from '../hooks';
 import {
   useResultSummaries,
   computeResultsKpi,
@@ -30,7 +37,13 @@ import {
   ResultsFilteredEmptyState,
   ResultsLoadingState,
   ResultsErrorState,
+  AisleRunSelector,
 } from '../features/results/components';
+import CompareRunsDialog from '../features/benchmark/CompareRunsDialog';
+import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
+
+/** Client-side filtered table; matches useResultSummaries default. */
+const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = { page: 1, page_size: 500 };
 
 type MergeCandidateSummary = {
   groupCount: number;
@@ -87,6 +100,7 @@ export default function AislePositionsPage() {
   const { inventoryId, aisleId } = useParams<{ inventoryId: string; aisleId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { showSnackbar } = useAppSnackbar();
   const [filter, setFilter] = useState<ResultsFilterKind>(() =>
     getInitialFilterFromReturnState(location.state)
@@ -98,27 +112,134 @@ export default function AislePositionsPage() {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [compareJobA, setCompareJobA] = useState('');
+  const [compareJobB, setCompareJobB] = useState('');
+  const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
+  const [promoteJobId, setPromoteJobId] = useState('');
   const consumedAisleRedirectKey = useRef<string | null>(null);
+  const routeIdentityRef = useRef<string>('');
+  /** When true, user chose "Default (API resolver)" — keep list request without job_id even if result_job_id repeats. */
+  const [preferDefaultSlice, setPreferDefaultSlice] = useState(false);
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
+  const promoteMutation = usePromoteAisleOperationalJob(inventoryId ?? '', aisleId ?? '');
+
+  const jobIdParam = searchParams.get('jobId')?.trim() || null;
+
+  const positionsListQuery = useMemo<AislePositionsListQuery>(
+    () => ({
+      ...AISLE_RESULTS_LIST_QUERY,
+      ...(jobIdParam ? { job_id: jobIdParam } : {}),
+    }),
+    [jobIdParam]
+  );
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
     enabled: Boolean(inventoryId && inventoryQuery.data),
   });
+  const aisleJobsQuery = useAisleJobsList(inventoryId, aisleId, {
+    enabled: Boolean(inventoryId && aisleId && inventoryQuery.data),
+  });
+  const jobs = aisleJobsQuery.data?.jobs ?? [];
+  const operationalJobId = aisleJobsQuery.data?.operational_job_id?.trim() || null;
   const inventory = inventoryQuery.data ?? null;
   const aisle = useMemo(
     () => aislesQuery.data?.items?.find((a) => a.id === aisleId) ?? null,
     [aislesQuery.data?.items, aisleId]
   );
 
-  const { results, positions: positionsFromQuery, isLoading, isError, error, refetch } = useResultSummaries(
-    inventoryId,
-    aisleId
-  );
+  const {
+    results,
+    positions: positionsFromQuery,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    resultJobId,
+    resultContextSource,
+  } = useResultSummaries(inventoryId, aisleId, { listQuery: positionsListQuery });
   const positions = positionsFromQuery ?? [];
   const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId, {
     enabled: Boolean(inventoryId && aisleId && results.length > 0),
+    jobId: resultJobId,
   });
+
+  const handleRunSelectionChange = useCallback(
+    (next: string | null) => {
+      if (next == null || next === '') {
+        setPreferDefaultSlice(true);
+      } else {
+        setPreferDefaultSlice(false);
+      }
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          if (next && next.trim() !== '') {
+            p.set('jobId', next.trim());
+          } else {
+            p.delete('jobId');
+          }
+          return p;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  /** Authoritative job for merge, detail, and merge-results; from list response, not URL alone. */
+  const visibleJobId = resultJobId ?? null;
+
+  const visibleJobSummary = useMemo(
+    () => jobs.find((j) => j.id === visibleJobId) ?? null,
+    [jobs, visibleJobId]
+  );
+
+  const canPromoteCurrentRun = Boolean(
+    inventoryId &&
+      aisleId &&
+      visibleJobId &&
+      visibleJobSummary?.status === 'succeeded' &&
+      operationalJobId !== visibleJobId
+  );
+
+  const openCompareDialog = useCallback(() => {
+    const a = visibleJobId ?? jobs[0]?.id ?? '';
+    const b =
+      jobs.find((j) => j.id !== a)?.id ??
+      operationalJobId ??
+      '';
+    setCompareJobA(a);
+    setCompareJobB(b);
+    setCompareDialogOpen(true);
+  }, [visibleJobId, jobs, operationalJobId]);
+
+  /** Aligns dropdown with the run actually shown: URL pin wins; else backend-resolved id when it appears in the jobs list. */
+  const effectiveSelectorJobId = useMemo(() => {
+    if (preferDefaultSlice) return null;
+    const url = jobIdParam?.trim();
+    if (url && jobs.some((j) => j.id === url)) return url;
+    if (!url && resultJobId && jobs.some((j) => j.id === resultJobId)) return resultJobId;
+    return null;
+  }, [preferDefaultSlice, jobIdParam, resultJobId, jobs]);
+
+  useEffect(() => {
+    const key = `${inventoryId ?? ''}-${aisleId ?? ''}`;
+    if (!inventoryId || !aisleId) return;
+    if (routeIdentityRef.current !== '' && routeIdentityRef.current !== key) {
+      setPreferDefaultSlice(false);
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.delete('jobId');
+          return p;
+        },
+        { replace: true }
+      );
+    }
+    routeIdentityRef.current = key;
+  }, [inventoryId, aisleId, setSearchParams]);
 
   const kpi = useMemo(() => computeResultsKpi(results), [results]);
   const missingEvidenceCount = useMemo(
@@ -149,7 +270,7 @@ export default function AislePositionsPage() {
   useEffect(() => {
     setLastMergeResponse(null);
     setLastMergeSummary(null);
-  }, [inventoryId, aisleId]);
+  }, [inventoryId, aisleId, jobIdParam]);
 
   const tableRows = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -170,6 +291,18 @@ export default function AislePositionsPage() {
     return m;
   }, [positions]);
 
+  const reviewReadOnly = Boolean(
+    operationalJobId && visibleJobId && operationalJobId !== visibleJobId
+  );
+  const compareOperationalShortcut =
+    Boolean(
+      inventoryId &&
+        aisleId &&
+        operationalJobId &&
+        visibleJobId &&
+        operationalJobId !== visibleJobId
+    );
+
   const handleOpenReview = useCallback(
     (resultId: string) => {
       if (!positionById.has(resultId) || !inventoryId || !aisleId || !inventory) return;
@@ -182,9 +315,21 @@ export default function AislePositionsPage() {
         resultIds: sortedForTable.map((r) => r.id),
         returnTo: 'aisle_results',
         filter,
+        jobId: visibleJobId ?? undefined,
+        reviewReadOnly,
       });
     },
-    [positionById, inventoryId, inventory, aisle?.code, aisleId, sortedForTable, filter]
+    [
+      positionById,
+      inventoryId,
+      inventory,
+      aisle?.code,
+      aisleId,
+      sortedForTable,
+      filter,
+      visibleJobId,
+      reviewReadOnly,
+    ]
   );
 
   useEffect(() => {
@@ -203,9 +348,21 @@ export default function AislePositionsPage() {
       resultIds: p.resultIds,
       returnTo: 'aisle_results',
       filter: p.filter ?? filter,
+      jobId: p.jobId,
+      reviewReadOnly,
     });
     navigate(location.pathname, { replace: true, state: {} });
-  }, [location.state, location.pathname, inventory, inventoryId, aisleId, aisle, filter, navigate]);
+  }, [
+    location.state,
+    location.pathname,
+    inventory,
+    inventoryId,
+    aisleId,
+    aisle,
+    filter,
+    navigate,
+    reviewReadOnly,
+  ]);
 
   const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
 
@@ -222,9 +379,13 @@ export default function AislePositionsPage() {
     [mergeResultsQuery.data?.results]
   );
   const mergeButtonVisible = Boolean(inventoryId && aisleId && hasResults);
-  const mergeButtonDisabled = mergeMutation.isPending || mergeCandidates.groupCount === 0;
-  const mergeDisabledReason =
-    mergeCandidates.groupCount === 0 ? 'No repeated SKUs detected in current results' : '';
+  const mergeButtonDisabled =
+    mergeMutation.isPending || mergeCandidates.groupCount === 0 || reviewReadOnly;
+  const mergeDisabledReason = reviewReadOnly
+    ? 'Merge is only available on the operational job slice'
+    : mergeCandidates.groupCount === 0
+      ? 'No repeated SKUs detected in current results'
+      : '';
   const mergeFeedback = useMemo(() => {
     if (lastMergeResponse != null) {
       if (lastMergeResponse.product_records_updated > 0) {
@@ -255,7 +416,10 @@ export default function AislePositionsPage() {
     try {
       setLastMergeResponse(null);
       setLastMergeSummary(null);
-      const result = await mergeMutation.mutateAsync(aisleId);
+      const result = await mergeMutation.mutateAsync({
+        aisleId,
+        jobId: visibleJobId ?? null,
+      });
       const [, , refreshedMergeResults] = await Promise.all([
         refetch(),
         aislesQuery.refetch(),
@@ -273,7 +437,7 @@ export default function AislePositionsPage() {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       showSnackbar(getApiErrorMessage(err, 'Merge failed'), 'error');
     }
-  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, showSnackbar]);
+  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, showSnackbar, visibleJobId]);
 
   if (!inventoryId || !aisleId) {
     return (
@@ -293,6 +457,16 @@ export default function AislePositionsPage() {
       : []),
     { label: 'Aisle results' },
   ];
+
+  const unknownUrlJob =
+    Boolean(jobIdParam) &&
+    aisleJobsQuery.isFetched &&
+    !aisleJobsQuery.isFetching &&
+    jobs.length > 0 &&
+    !jobs.some((j) => j.id === jobIdParam);
+
+  const positionsLoadNotFound =
+    isError && error instanceof ApiError && error.status === 404 && Boolean(jobIdParam);
 
   return (
     <>
@@ -316,6 +490,38 @@ export default function AislePositionsPage() {
                 </span>
               </Tooltip>
             ) : null}
+            {jobs.length >= 2 ? (
+              <Button size="small" variant="outlined" onClick={openCompareDialog}>
+                Compare runs…
+              </Button>
+            ) : null}
+            {compareOperationalShortcut ? (
+              <Tooltip title="Opens read-only benchmark compare vs the current operational run (separate from default analytics).">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() =>
+                    navigate(
+                      `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(visibleJobId!)}&jobBId=${encodeURIComponent(operationalJobId!)}`
+                    )
+                  }
+                >
+                  Compare this run to operational
+                </Button>
+              </Tooltip>
+            ) : null}
+            {canPromoteCurrentRun ? (
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  setPromoteJobId(visibleJobId ?? '');
+                  setPromoteDialogOpen(true);
+                }}
+              >
+                Promote run to operational…
+              </Button>
+            ) : null}
             <Button
               size="small"
               variant="outlined"
@@ -333,14 +539,86 @@ export default function AislePositionsPage() {
                 }
               }}
             >
-              {exportingCsv ? 'Exporting…' : 'Export CSV'}
+              {exportingCsv ? 'Exporting…' : 'Export operational CSV'}
             </Button>
-            <Button size="small" variant="outlined" onClick={() => refetch()} disabled={isLoading}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                void refetch();
+                void aisleJobsQuery.refetch();
+              }}
+              disabled={isLoading}
+            >
               Refresh
             </Button>
           </Box>
         }
       />
+
+      {reviewReadOnly ? (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Benchmark / non-operational slice: review actions are read-only. The operational job is{' '}
+          <Typography component="span" variant="body2" sx={{ fontFamily: 'monospace' }}>
+            {operationalJobId?.slice(0, 10)}…
+          </Typography>{' '}
+          (merge and corrections apply only there). Promote a succeeded run to switch the operational pointer —
+          corrections are not copied from other runs automatically.
+        </Alert>
+      ) : null}
+
+      {aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource) ? (
+        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+          {aisleJobsQuery.isLoading || jobs.length > 0 ? (
+            <AisleRunSelector
+              operationalJobId={aisleJobsQuery.data?.operational_job_id ?? null}
+              jobs={jobs}
+              valueJobId={effectiveSelectorJobId}
+              onChange={handleRunSelectionChange}
+              loading={aisleJobsQuery.isLoading}
+              urlPinned={Boolean(jobIdParam)}
+            />
+          ) : null}
+          {resultContextSource ? (
+            <Typography variant="caption" color="text.secondary">
+              Resolved: {resultContextSource}
+              {visibleJobId ? ` · job ${visibleJobId.slice(0, 10)}…` : ''}
+              {!jobIdParam && visibleJobId && effectiveSelectorJobId === visibleJobId
+                ? ' (matches selector — no URL pin)'
+                : null}
+            </Typography>
+          ) : null}
+        </Box>
+      ) : null}
+
+      {unknownUrlJob ? (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => handleRunSelectionChange(null)}>
+              Clear run filter
+            </Button>
+          }
+        >
+          This job is not in the recent runs list for this aisle. Loading may fail; clear the filter or pick another
+          run.
+        </Alert>
+      ) : null}
+
+      {positionsLoadNotFound ? (
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => handleRunSelectionChange(null)}>
+              Clear run filter
+            </Button>
+          }
+        >
+          No data for this run (invalid or removed). Clear the run filter to use the default resolved slice.
+        </Alert>
+      ) : null}
 
       {errorMessage ? <ResultsErrorState message={errorMessage} onRetry={() => refetch()} /> : null}
 
@@ -462,6 +740,46 @@ export default function AislePositionsPage() {
           )}
         </>
       ) : null}
+
+      <CompareRunsDialog
+        open={compareDialogOpen}
+        onClose={() => setCompareDialogOpen(false)}
+        jobs={jobs}
+        compareJobA={compareJobA}
+        compareJobB={compareJobB}
+        onCompareJobAChange={setCompareJobA}
+        onCompareJobBChange={setCompareJobB}
+        onConfirm={() => {
+          setCompareDialogOpen(false);
+          navigate(
+            `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(compareJobA)}&jobBId=${encodeURIComponent(compareJobB)}`
+          );
+        }}
+      />
+
+      <PromoteOperationalDialog
+        open={promoteDialogOpen}
+        onClose={() => setPromoteDialogOpen(false)}
+        jobs={jobs}
+        operationalJobId={operationalJobId}
+        promoteJobId={promoteJobId}
+        onPromoteJobIdChange={setPromoteJobId}
+        isPending={promoteMutation.isPending}
+        onConfirm={() => {
+          void (async () => {
+            try {
+              await promoteMutation.mutateAsync(promoteJobId);
+              setPromoteDialogOpen(false);
+              showSnackbar('Operational pointer updated', 'success');
+              void refetch();
+              void aisleJobsQuery.refetch();
+            } catch (e) {
+              const err = e instanceof ApiError ? e : new ApiError(String(e));
+              showSnackbar(getApiErrorMessage(err, 'Promotion failed'), 'error');
+            }
+          })();
+        }}
+      />
 
       <QuickReviewDrawer
         open={Boolean(quickContext)}

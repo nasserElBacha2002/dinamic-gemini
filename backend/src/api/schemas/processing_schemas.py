@@ -3,10 +3,64 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.api.schemas.aisle_schemas import AisleResponse
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
+
+
+class ProcessAisleRequest(BaseModel):
+    """Optional body for POST .../aisles/{aisle_id}/process (Phase 5)."""
+
+    provider_name: Optional[str] = Field(
+        None,
+        description=(
+            "Pipeline provider key (gemini, fake, openai). Omit or null to use the server default "
+            "(settings.llm_provider) without proactive credential validation."
+        ),
+    )
+    model_name: Optional[str] = Field(
+        None,
+        description="Model id from processing-provider-options for the selected provider; omit for provider default.",
+    )
+    prompt_key: Optional[str] = Field(
+        None,
+        description="Hybrid prompt profile key (e.g. global_v21, global_v21_b); omit for HYBRID_PROMPT default.",
+    )
+
+
+class ProcessingModelOption(BaseModel):
+    id: str
+    label: str
+
+
+class ProcessingPromptOptionItem(BaseModel):
+    key: str
+    label: str
+    description: Optional[str] = None
+
+
+class ProcessingProviderOptionItem(BaseModel):
+    key: str
+    label: str
+    execution_mode: str = Field(
+        ...,
+        description="native | transitional_bridge — informational for UI; both are real execution paths.",
+    )
+    description: Optional[str] = None
+    models: List[ProcessingModelOption] = Field(default_factory=list)
+    default_model: Optional[str] = Field(
+        None, description="Default model id for this provider when model_name is omitted."
+    )
+
+
+class ProcessingProviderOptionsResponse(BaseModel):
+    """GET /api/v3/inventories/processing-provider-options — discovery for POST process."""
+
+    default_provider_key: str
+    default_prompt_key: str
+    prompt_profiles: List[ProcessingPromptOptionItem] = Field(default_factory=list)
+    providers: List[ProcessingProviderOptionItem] = Field(default_factory=list)
 
 
 class ProcessAisleResponse(BaseModel):
@@ -34,12 +88,26 @@ class JobSummary(BaseModel):
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None
     execution_id: Optional[str] = None
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_key: Optional[str] = None
+    prompt_version: Optional[str] = None
+    #: True when this job is the aisle ``operational_job_id`` pointer (Phase 6 run browser).
+    is_operational: bool = False
 
 
 class AisleStatusResponse(BaseModel):
     """Response for GET .../aisles/{aisle_id}/status."""
     aisle: AisleResponse
     latest_job: Optional[JobSummary] = None
+    operational_job_id: Optional[str] = None
+    recent_jobs: List[JobSummary] = Field(default_factory=list)
+
+
+class AisleJobsListResponse(BaseModel):
+    """Response for GET .../aisles/{aisle_id}/jobs (Phase 2 run browser)."""
+    operational_job_id: Optional[str] = None
+    jobs: List[JobSummary] = Field(default_factory=list)
 
 
 class ExecutionLogEvent(BaseModel):

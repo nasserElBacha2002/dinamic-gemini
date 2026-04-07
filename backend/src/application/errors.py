@@ -52,5 +52,53 @@ class PositionDeletedError(Exception):
     """Raised when a review action is attempted on a position that is already logically deleted."""
 
 
+class ReviewMutationNotAllowedError(Exception):
+    """Raised when a review mutation targets a position outside the operational result slice."""
+
+
 class ProductNotFoundError(Exception):
     """Raised when the product does not exist or does not belong to the given position."""
+
+
+class MergeJobScopeAmbiguousError(Exception):
+    """Raised when manual merge cannot infer a single job scope (multi-run aisle without job_id)."""
+
+
+class JobNotFoundError(Exception):
+    """Raised when an inventory job id does not exist."""
+
+
+class JobDoesNotBelongToAisleError(Exception):
+    """Raised when a job exists but is not scoped to the given aisle."""
+
+
+class PositionResultContextMismatchError(Exception):
+    """Raised when a position row does not belong to the resolved result context.
+
+    Typical cause: default read slice (operational or legacy) does not match ``position.job_id``;
+    client must pass an explicit ``job_id`` matching that row or fix the operational pointer.
+    """
+
+
+class UnknownProcessingProviderError(Exception):
+    """Raised when the client requests a pipeline provider key that is not registered."""
+
+
+class ProcessingProviderNotConfiguredError(Exception):
+    """Raised when the client explicitly selects a provider that is missing required credentials."""
+
+
+class InvalidProcessingModelError(Exception):
+    """Raised when model_name is not in the catalog for the selected provider."""
+
+
+class InvalidProcessingPromptKeyError(Exception):
+    """Raised when prompt_key is not a registered hybrid prompt profile."""
+
+
+class JobPromotionNotAllowedError(Exception):
+    """Raised when a benchmark run cannot be promoted to operational (wrong scope, state, or type)."""
+
+
+class BenchmarkCompareJobsMustDifferError(Exception):
+    """Raised when compare is requested with identical job ids (invalid benchmark pair)."""

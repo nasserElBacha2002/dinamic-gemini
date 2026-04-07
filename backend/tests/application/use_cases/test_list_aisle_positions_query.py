@@ -11,8 +11,10 @@ from src.application.use_cases.list_aisle_positions import (
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 
 
@@ -54,7 +56,13 @@ def _repos():
 
 def test_list_aisle_positions_filters_by_needs_review() -> None:
     inv_repo, aisle_repo, pos_repo, _ = _repos()
-    uc = ListAislePositionsUseCase(inv_repo, aisle_repo, pos_repo, positions_aisle_raw_cap=500)
+    uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        ResultContextResolver(MemoryJobRepository()),
+        positions_aisle_raw_cap=500,
+    )
     result = uc.execute(
         ListAislePositionsCommand(
             inventory_id="inv-1",
@@ -71,7 +79,13 @@ def test_list_aisle_positions_filters_by_needs_review() -> None:
 
 def test_list_aisle_positions_default_pagination_matches_explicit() -> None:
     inv_repo, aisle_repo, pos_repo, _ = _repos()
-    uc = ListAislePositionsUseCase(inv_repo, aisle_repo, pos_repo, positions_aisle_raw_cap=500)
+    uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        ResultContextResolver(MemoryJobRepository()),
+        positions_aisle_raw_cap=500,
+    )
     explicit = uc.execute(
         ListAislePositionsCommand(
             inventory_id="inv-1",

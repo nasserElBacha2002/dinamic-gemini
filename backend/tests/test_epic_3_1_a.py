@@ -302,19 +302,22 @@ def test_gemini_provider_uses_request_prompt_when_provided():
         frames_nd=[img],
     )
 
-    with patch("src.llm.providers.gemini_provider.GeminiClient") as mock_client_cls:
+    with (
+        patch("src.llm.gemini_sdk_adapter.GeminiClient") as mock_client_cls,
+        patch("src.llm.gemini_sdk_adapter.GeminiGlobalAnalyzer") as analyzer_cls,
+    ):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
-        mock_client.generate_global_analysis_structured.return_value = '{"total_entities_detected": 0, "entities": []}'
+        inst = MagicMock()
+        inst.analyze_video_frames.return_value = {"total_entities_detected": 0, "entities": []}
+        analyzer_cls.return_value = inst
 
         provider = GeminiProvider(settings)
         response = provider.analyze_global(request)
 
     assert response.provider == "gemini"
-    call_args = mock_client.generate_global_analysis_structured.call_args
-    passed_prompt = call_args[0][1]
-    assert custom_prompt in passed_prompt
-    assert passed_prompt == custom_prompt
+    kwargs = analyzer_cls.call_args.kwargs
+    assert kwargs.get("prompt_text") == custom_prompt
 
 
 def test_gemini_provider_fallback_to_hybrid_prompt_when_request_prompt_empty():
@@ -340,15 +343,20 @@ def test_gemini_provider_fallback_to_hybrid_prompt_when_request_prompt_empty():
         frames_nd=[img],
     )
 
-    with patch("src.llm.providers.gemini_provider.GeminiClient") as mock_client_cls:
+    with (
+        patch("src.llm.gemini_sdk_adapter.GeminiClient") as mock_client_cls,
+        patch("src.llm.gemini_sdk_adapter.GeminiGlobalAnalyzer") as analyzer_cls,
+    ):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
-        mock_client.generate_global_analysis_structured.return_value = '{"total_entities_detected": 0, "entities": []}'
+        inst = MagicMock()
+        inst.analyze_video_frames.return_value = {"total_entities_detected": 0, "entities": []}
+        analyzer_cls.return_value = inst
 
         provider = GeminiProvider(settings)
         provider.analyze_global(request)
 
-    call_args = mock_client.generate_global_analysis_structured.call_args
-    passed_prompt = call_args[0][1]
+    kwargs = analyzer_cls.call_args.kwargs
+    passed_prompt = kwargs.get("prompt_text") or ""
     assert "Analyze the provided warehouse aisle evidence" in passed_prompt
     assert passed_prompt == get_hybrid_prompt("global_v21")

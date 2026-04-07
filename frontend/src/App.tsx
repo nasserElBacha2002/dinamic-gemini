@@ -7,6 +7,7 @@ import AppShell from './layout/AppShell';
 import InventoriesList from './pages/InventoriesList';
 import InventoryDetail from './pages/InventoryDetail';
 import AislePositionsPage from './pages/AislePositionsPage';
+import AisleComparePage from './pages/AisleComparePage';
 import PositionDetailPage from './pages/PositionDetailPage';
 import DashboardPage from './pages/DashboardPage';
 import ReviewQueuePage from './pages/ReviewQueuePage';
@@ -37,6 +38,7 @@ function App() {
   const listEl = useMemo(() => <InventoriesList />, []);
   const detailEl = useMemo(() => <InventoryDetail />, []);
   const positionsEl = useMemo(() => <AislePositionsPage />, []);
+  const compareEl = useMemo(() => <AisleComparePage />, []);
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
   const dashboardEl = useMemo(() => <DashboardPage />, []);
   const reviewQueueEl = useMemo(() => <ReviewQueuePage />, []);
@@ -65,6 +67,7 @@ function App() {
         <Route path="settings" element={settingsEl} />
         <Route path="inventories/:inventoryId" element={detailEl} />
         <Route path="inventories/:inventoryId/aisles/:aisleId/positions" element={positionsEl} />
+        <Route path="inventories/:inventoryId/aisles/:aisleId/compare" element={compareEl} />
         <Route path="inventories/:inventoryId/aisles/:aisleId/positions/:positionId" element={positionDetailEl} />
       </Route>
     </Routes>

@@ -33,6 +33,8 @@ class RawLabel:
     confidence: Optional[float]
     metadata: Dict[str, Any]
     created_at: datetime
+    #: Same as ``positions.job_id`` for this observation; ``None`` = legacy row.
+    job_id: Optional[str] = None
 
 
 @dataclass
@@ -53,6 +55,7 @@ class NormalizedLabel:
     review_required: bool
     metadata: Dict[str, Any]
     created_at: datetime
+    job_id: Optional[str] = None
 
 
 @dataclass
@@ -71,3 +74,4 @@ class FinalCountRecord:
     explanation_summary: Optional[str]
     metadata: Dict[str, Any]
     created_at: datetime
+    job_id: Optional[str] = None

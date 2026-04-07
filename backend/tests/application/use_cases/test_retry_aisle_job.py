@@ -86,6 +86,18 @@ class StubJobRepo(JobRepository):
             if (latest := self.get_latest_by_target(target_type, target_id)) is not None
         }
 
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
+        candidates = [
+            job
+            for job in self._store.values()
+            if job.target_type == target_type and job.target_id == target_id
+        ]
+        candidates.sort(key=lambda job: (job.updated_at, job.created_at), reverse=True)
+        n = max(1, int(limit))
+        return candidates[:n]
+
 
 class StubWorkerLaunchService(WorkerLaunchService):
     def __init__(self) -> None:
@@ -138,6 +150,9 @@ def test_retry_failed_job_creates_new_attempt_with_lineage() -> None:
         updated_at=now,
         attempt_count=1,
         failure_code="PROCESSING_FAILED",
+        provider_name="fake",
+        model_name="fixture",
+        prompt_key="global_v21",
     )
     job_repo.save(original)
     launcher = StubWorkerLaunchService()
@@ -162,6 +177,9 @@ def test_retry_failed_job_creates_new_attempt_with_lineage() -> None:
     assert retried.attempt_count == 2
     assert retried.status == JobStatus.STARTING
     assert retried.execution_id == f"exec-{retried.id}"
+    assert retried.provider_name == "fake"
+    assert retried.model_name == "fixture"
+    assert retried.prompt_key == "global_v21"
     assert launcher.launched == [retried.id]
     assert job_repo.get_by_id("job-failed").status == JobStatus.FAILED
 

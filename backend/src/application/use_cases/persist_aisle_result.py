@@ -8,6 +8,10 @@ final quantity comes from normalized/final_count layer.
 Atomicity: Saves positions, then product_records, then evidences, then raw_labels;
 then recomputes consolidated counts (normalized + final) and updates product records.
 On any save failure we re-raise so the caller can mark the job/aisle as failed.
+
+Phase 2: This use case does **not** set ``aisles.operational_job_id`` (promotion workflow).
+Default reads without ``job_id`` use ``ResultContextResolver`` — **operational_job_id**
+if set, else **legacy** null-job rows only (no implicit latest-job slice).
 """
 
 from __future__ import annotations
@@ -103,6 +107,7 @@ class PersistAisleResultUseCase:
                         # Hotfix v3.2.5: merge/consolidation is non-authoritative in main flow.
                         # Keep explicit quantity resolved by pipeline mapping; do not overwrite ProductRecord.
                         apply_to_product_records=False,
+                        job_scope=command.job_id,
                     )
                 )
                 logger.debug(

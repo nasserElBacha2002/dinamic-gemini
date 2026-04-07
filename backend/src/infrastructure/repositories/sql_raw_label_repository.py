@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
-from src.application.ports.repositories import RawLabelRepository
+from src.application.ports.repositories import LabelJobScope, RawLabelRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.labels.entities import RawLabel
 
@@ -44,6 +44,14 @@ def _safe_load_json(raw: object) -> dict:
     return {"value": raw}
 
 
+def _sql_job_predicate(job_id: LabelJobScope) -> tuple[str, list]:
+    if job_id == "all":
+        return "", []
+    if job_id is None:
+        return " AND job_id IS NULL", []
+    return " AND job_id = ?", [job_id]
+
+
 def _row_to_raw_label(row) -> RawLabel:
     created = _ensure_utc(getattr(row, "created_at", None))
     if created is None:
@@ -65,6 +73,7 @@ def _row_to_raw_label(row) -> RawLabel:
         confidence=float(getattr(row, "confidence", 0)) if getattr(row, "confidence", None) is not None else None,
         metadata=_safe_load_json(getattr(row, "metadata_json", None)),
         created_at=created,
+        job_id=getattr(row, "job_id", None),
     )
 
 
@@ -101,15 +110,16 @@ class SqlRawLabelRepository(RawLabelRepository):
                             detected_text = ?,
                             confidence = ?,
                             metadata_json = ?,
-                            created_at = ?
+                            created_at = ?,
+                            job_id = ?
                     WHEN NOT MATCHED THEN
                         INSERT (
                             id, inventory_id, aisle_id, position_id, evidence_id, group_key,
                             provider, source_type, source_reference,
                             sku_raw, sku_candidate, product_name_raw, detected_text, confidence,
-                            metadata_json, created_at
+                            metadata_json, created_at, job_id
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         lb.id,
@@ -128,6 +138,7 @@ class SqlRawLabelRepository(RawLabelRepository):
                         lb.confidence,
                         _safe_dump_json(lb.metadata),
                         created,
+                        lb.job_id,
                         lb.id,
                         lb.inventory_id,
                         lb.aisle_id,
@@ -144,22 +155,30 @@ class SqlRawLabelRepository(RawLabelRepository):
                         lb.confidence,
                         _safe_dump_json(lb.metadata),
                         created,
+                        lb.job_id,
                     ),
                 )
 
-    def list_for_scope(self, inventory_id: str, aisle_id: str) -> Sequence[RawLabel]:
+    def list_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> Sequence[RawLabel]:
+        extra_sql, extra_params = _sql_job_predicate(job_id)
         with self._client.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT
                     id, inventory_id, aisle_id, position_id, evidence_id, group_key, provider, source_type,
                     source_reference, sku_raw, sku_candidate, product_name_raw, detected_text, confidence,
-                    metadata_json, created_at
+                    metadata_json, created_at, job_id
                 FROM raw_labels
-                WHERE inventory_id = ? AND aisle_id = ?
+                WHERE inventory_id = ? AND aisle_id = ?{extra_sql}
                 ORDER BY created_at ASC, id ASC
                 """,
-                (inventory_id, aisle_id),
+                (inventory_id, aisle_id, *extra_params),
             )
             rows = cur.fetchall()
         return [_row_to_raw_label(r) for r in rows]

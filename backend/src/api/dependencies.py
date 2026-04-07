@@ -44,6 +44,7 @@ from src.runtime.v3_deps import (
     get_metrics_calculator,
     get_position_repo,
     get_product_record_repo,
+    get_raw_label_repo,
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
     get_source_asset_repo,
@@ -82,8 +83,16 @@ from src.application.use_cases.manage_inventory_visual_references import (
     ReplaceInventoryVisualReferenceUseCase,
 )
 from src.application.use_cases.cancel_aisle_job import CancelAisleJobUseCase
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
+)
+from src.application.use_cases.list_aisle_jobs import ListAisleJobsUseCase
+from src.application.use_cases.compare_aisle_runs import CompareAisleRunsUseCase
+from src.application.use_cases.promote_aisle_operational_job import PromoteAisleOperationalJobUseCase
+from src.application.use_cases.export_aisle_benchmark import (
+    ExportAisleBenchmarkCompareCsvUseCase,
+    ExportAisleBenchmarkRunCsvUseCase,
 )
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
@@ -182,6 +191,13 @@ def get_list_inventory_list_items_use_case(
     )
 
 
+def get_result_context_resolver(
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> ResultContextResolver:
+    return ResultContextResolver(job_repo=job_repo, position_repo=position_repo)
+
+
 def get_get_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> GetInventoryUseCase:
@@ -193,12 +209,14 @@ def get_export_inventory_results_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
 ) -> ExportInventoryResultsUseCase:
     return ExportInventoryResultsUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         position_repo=position_repo,
         product_record_repo=product_record_repo,
+        result_context_resolver=result_context_resolver,
     )
 
 
@@ -268,6 +286,7 @@ def get_list_aisles_with_status_use_case(
     job_repo: JobRepository = Depends(get_job_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
     source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
 ) -> ListAislesWithStatusUseCase:
     return ListAislesWithStatusUseCase(
         inventory_repo=inventory_repo,
@@ -275,6 +294,7 @@ def get_list_aisles_with_status_use_case(
         job_repo=job_repo,
         position_repo=position_repo,
         source_asset_repo=source_asset_repo,
+        result_context_resolver=result_context_resolver,
     )
 
 
@@ -424,6 +444,7 @@ def get_list_aisle_positions_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
 ) -> ListAislePositionsUseCase:
     from src.config import load_settings
 
@@ -431,6 +452,7 @@ def get_list_aisle_positions_use_case(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         position_repo=position_repo,
+        result_context_resolver=result_context_resolver,
         positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
     )
 
@@ -456,6 +478,8 @@ def get_get_position_detail_use_case(
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     evidence_repo: EvidenceRepository = Depends(get_evidence_repo),
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
 ) -> GetPositionDetailUseCase:
     from src.config import load_settings
 
@@ -466,6 +490,8 @@ def get_get_position_detail_use_case(
         product_record_repo=product_record_repo,
         evidence_repo=evidence_repo,
         review_repo=review_repo,
+        job_repo=job_repo,
+        result_context_resolver=result_context_resolver,
         positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
     )
 
@@ -585,11 +611,13 @@ def get_delete_position_use_case(
 def get_run_aisle_merge_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
     recompute_uc=Depends(get_recompute_consolidated_counts_use_case),
 ) -> RunAisleMergeUseCase:
     return RunAisleMergeUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        job_repo=job_repo,
         recompute_use_case=recompute_uc,
     )
 
@@ -598,12 +626,80 @@ def get_get_aisle_merge_results_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     final_count_repo=Depends(get_final_count_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
 ) -> GetAisleMergeResultsUseCase:
     return GetAisleMergeResultsUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         final_count_repo=final_count_repo,
+        result_context_resolver=result_context_resolver,
     )
+
+
+def get_list_aisle_jobs_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+) -> ListAisleJobsUseCase:
+    return ListAisleJobsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+    )
+
+
+def get_compare_aisle_runs_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> CompareAisleRunsUseCase:
+    from src.config import load_settings
+
+    return CompareAisleRunsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=position_repo,
+        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+    )
+
+
+def get_promote_aisle_operational_job_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+) -> PromoteAisleOperationalJobUseCase:
+    return PromoteAisleOperationalJobUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+    )
+
+
+def get_export_aisle_benchmark_run_csv_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+) -> ExportAisleBenchmarkRunCsvUseCase:
+    from src.config import load_settings
+
+    return ExportAisleBenchmarkRunCsvUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+    )
+
+
+def get_export_aisle_benchmark_compare_csv_use_case(
+    compare_uc: CompareAisleRunsUseCase = Depends(get_compare_aisle_runs_use_case),
+) -> ExportAisleBenchmarkCompareCsvUseCase:
+    return ExportAisleBenchmarkCompareCsvUseCase(compare_uc=compare_uc)
 
 
 def get_analytics_query_service(

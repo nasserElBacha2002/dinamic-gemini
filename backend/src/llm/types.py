@@ -1,14 +1,19 @@
-"""Stage 2.2.D — LLM provider request/response types. v3.2.4: context_instruction/context_images."""
+"""Global-analysis executor I/O types (provider-neutral). v3.2.4: context_instruction / context_images."""
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-# In Gemini path these are PIL.Image; kept as Sequence[Any] to avoid hard PIL dependency here.
+# Optional extra images (e.g. visual references); concrete type is implementation-defined (often PIL).
 ContextImageSequence = Sequence[Any]
 
 
 class LLMRequest:
-    """Input for a single global-analysis LLM call (v2.1 entity detection)."""
+    """
+    Input for one global aisle/entity analysis call (v2.1 JSON schema).
+
+    Used as the ``LlmGlobalAnalysisExecutor`` request shape. Name is historical; fields are
+    vendor-agnostic (paths, prompt text, optional in-memory frames, optional context images).
+    """
 
     def __init__(
         self,
@@ -28,16 +33,19 @@ class LLMRequest:
         self.prompt = prompt
         self.schema_version = schema_version
         self.metadata = dict(metadata) if metadata else {}
-        # Optional in-memory frames (list of np.ndarray) to avoid re-loading from disk.
-        # When provided, GeminiProvider uses these instead of loading from self.frames.
+        # Optional in-memory frames (e.g. BGR ndarray) to avoid re-loading from disk.
         self.frames_nd: Optional[List[Any]] = list(frames_nd) if frames_nd else None
-        # v3.2.4 Phase 4: optional context (e.g. visual reference instruction + images) sent before primary frames.
+        # Optional operator/inventory context (e.g. instructions + reference images) before primary frames.
         self.context_instruction: Optional[str] = context_instruction
         self.context_images: Optional[List[Any]] = list(context_images) if context_images else None
 
 
 class LLMResponse:
-    """Result of analyze_global: parsed v2.1 JSON and optional usage/latency."""
+    """
+    Output of ``LlmGlobalAnalysisExecutor.execute`` (parsed v2.1 JSON + attribution).
+
+    ``provider`` identifies the logical vendor key (e.g. ``gemini``, ``fake``), not an SDK type.
+    """
 
     def __init__(
         self,

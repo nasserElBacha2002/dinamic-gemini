@@ -13,8 +13,32 @@ from typing import Optional, Tuple
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
 
-# Cargar variables de entorno desde .env si existe
-load_dotenv()
+# backend/src/config.py -> parents[1] == backend/, parents[2] == repo root
+_CONFIG_FILE = Path(__file__).resolve()
+_BACKEND_ROOT = _CONFIG_FILE.parents[1]
+_REPO_ROOT = _BACKEND_ROOT.parent
+
+
+def _load_dotenv_files(*, for_reload: bool = False) -> None:
+    """Load `.env` from repo root and `backend/` so vars match `dev.sh` / root `.env` when cwd is `backend/`.
+
+    Initial load: repo root does not override existing OS env (exported vars win). `backend/.env` can
+    override keys from repo for local developer overrides. Cwd `.env` fills remaining gaps.
+
+    Reload: file values override OS env so edits to `.env` take effect after `reload_settings()`.
+    """
+    override_repo = for_reload
+    repo_env = _REPO_ROOT / ".env"
+    if repo_env.is_file():
+        load_dotenv(repo_env, override=override_repo)
+    backend_env = _BACKEND_ROOT / ".env"
+    if backend_env.is_file():
+        load_dotenv(backend_env, override=True)
+    load_dotenv(override=for_reload)
+
+
+# Cargar variables de entorno desde .env (raíz del repo + backend + cwd)
+_load_dotenv_files(for_reload=False)
 
 
 def _parse_max_frames_to_send() -> Optional[int]:
@@ -309,6 +333,18 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o"),
         description="OpenAI model name (used when llm_provider=openai). Env: OPENAI_MODEL.",
     )
+    openai_request_timeout_sec: float = Field(
+        default_factory=lambda: float(os.getenv("OPENAI_REQUEST_TIMEOUT_SEC", "120")),
+        ge=5.0,
+        le=600.0,
+        description="HTTP timeout (seconds) for OpenAI API calls. Env: OPENAI_REQUEST_TIMEOUT_SEC.",
+    )
+    openai_vision_max_image_side: int = Field(
+        default_factory=lambda: int(os.getenv("OPENAI_VISION_MAX_IMAGE_SIDE", "2048")),
+        ge=512,
+        le=4096,
+        description="Max longest side (px) for images sent to OpenAI vision (downscaled if larger). Env: OPENAI_VISION_MAX_IMAGE_SIDE.",
+    )
     fake_llm_fixture_path: Optional[str] = Field(
         default_factory=lambda: (os.getenv("FAKE_LLM_FIXTURE_PATH") or "").strip() or None,
         description="Path to JSON fixture for fake provider (optional). Env: FAKE_LLM_FIXTURE_PATH.",
@@ -316,6 +352,24 @@ class Settings(BaseModel):
     hybrid_prompt: str = Field(
         default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
         description="Perfil de prompt para el pipeline híbrido (ej. global_v21). Env: HYBRID_PROMPT.",
+    )
+    # Comma-separated lists for POST /process model pickers (Phase 5 corrections)
+    processing_gemini_models: str = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "PROCESSING_GEMINI_MODELS",
+                "gemini-2.0-flash-exp,gemini-1.5-flash,gemini-1.5-pro",
+            )
+            or "gemini-2.0-flash-exp"
+        ),
+        description="Comma-separated Gemini model ids offered in processing-provider-options. Env: PROCESSING_GEMINI_MODELS.",
+    )
+    processing_openai_models: str = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_OPENAI_MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo")
+            or "gpt-4o"
+        ),
+        description="Comma-separated OpenAI model ids for processing-provider-options / POST /process. Env: PROCESSING_OPENAI_MODELS.",
     )
 
     # Frame Extraction Settings
@@ -964,8 +1018,7 @@ def reload_settings() -> Settings:
         Settings: Nueva instancia de configuración.
     """
     global _settings
-    # Recargar variables de entorno
-    load_dotenv(override=True)
+    _load_dotenv_files(for_reload=True)
     _settings = Settings()
     return _settings
 

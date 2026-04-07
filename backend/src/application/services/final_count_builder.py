@@ -84,6 +84,7 @@ class FinalCountBuilder:
                     explanation_summary=_explanation_summary(group),
                     metadata={},
                     created_at=now,
+                    job_id=group[0].job_id,
                 )
             )
         return result

@@ -43,4 +43,11 @@ class MergeResultItemResponse(BaseModel):
 
 class MergeResultsResponse(BaseModel):
     results: List[MergeResultItemResponse]
+    result_job_id: Optional[str] = Field(
+        None, description="Effective job slice; null means legacy null-job final_count rows."
+    )
+    result_context_source: str = Field(
+        ...,
+        description="explicit | operational | legacy — how result_job_id was resolved.",
+    )
 

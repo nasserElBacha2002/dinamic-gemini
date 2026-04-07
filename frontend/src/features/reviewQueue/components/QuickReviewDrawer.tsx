@@ -102,7 +102,7 @@ export default function QuickReviewDrawer({
     inventoryId,
     aisleId,
     activePositionId,
-    { enabled }
+    { enabled, jobId: context?.jobId }
   );
 
   useEffect(() => {
@@ -310,6 +310,7 @@ export default function QuickReviewDrawer({
                     <ResultReviewActions
                       result={result}
                       actionLoading={actionLoading}
+                      readOnly={Boolean(context?.reviewReadOnly)}
                       onConfirm={handleConfirm}
                       onUpdateQuantity={handleUpdateQuantity}
                       onUpdateSku={handleUpdateSku}

@@ -83,7 +83,7 @@ def test_map_hybrid_report_to_domain_one_entity():
     assert pr.position_id == pos.id
     assert pr.sku == "SKU-001"
     assert pr.detected_quantity == 5
-    assert pr.qty_source in ("detected", "consolidated")
+    assert pr.qty_source in ("detected", "consolidated", "label_explicit")
     assert pr.qty_inference_reason is None
     assert pr.qty_parse_status is not None
 
@@ -121,6 +121,51 @@ def test_map_hybrid_report_needs_review():
     assert result.positions[0].needs_review is True
     assert result.evidences[0].storage_path == "no_artifact"
     assert result.evidences[0].source_asset_id is None
+
+
+def test_map_hybrid_report_openai_style_needs_review_uses_product_label_quantity_when_final_null():
+    """Multi-provider: hybrid report has final_quantity=null but model quantity on product_label_quantity.
+
+    Mirrors PALLET + NEEDS_REVIEW when label qty exists without position barcode (count_status
+    clears final_quantity). Mapper must not treat null final_quantity as the only quantity field.
+    """
+    report = {
+        "entities": [
+            {
+                "entity_uid": "e-openai-nr",
+                "entity_type": "PALLET",
+                "model_entity_id": "entity_1",
+                "internal_code": None,
+                "position_barcode": None,
+                "product_label_quantity": 12,
+                "product_label_bbox": [0.077, 0.517, 0.813, 0.793],
+                "final_quantity": None,
+                "confidence": 0.97,
+                "count_status": "NEEDS_REVIEW",
+                "evidence_path": "evidence/crop.jpg",
+                "has_boxes": True,
+            }
+        ]
+    }
+    now = datetime.now(timezone.utc)
+    result = map_hybrid_report_to_domain(
+        aisle_id="a",
+        report=report,
+        run_dir=Path("/run"),
+        run_id="run",
+        job_id="j",
+        now=now,
+    )
+    pr = result.product_records[0]
+    assert pr.detected_quantity == 12
+    assert pr.qty_source == "label_explicit"
+    assert pr.qty_inference_reason is None
+    assert pr.qty_parse_status == "valid_positive"
+    summary = result.positions[0].detected_summary_json or {}
+    assert summary.get("qty_final") == 12
+    assert summary.get("qty_origin_field") == "product_label_quantity"
+    assert result.positions[0].needs_review is True
+    assert pr.sku == "UNKNOWN"
 
 
 def test_map_hybrid_report_infers_min_qty_when_counted_has_evidence_but_missing_qty():
@@ -327,10 +372,17 @@ def test_map_hybrid_report_stores_position_barcode_and_review_display_label_for_
     assert summary.get("position_barcode") == "PALLET-99"
     assert summary.get("review_display_label") == "Pallet PALLET-99"
     assert summary.get("internal_code") is None
+
+
+def test_persist_aisle_result_use_case_saves_positions_products_evidences() -> None:
     """PersistAisleResultUseCase saves positions, products, evidences."""
     position_repo = MagicMock()
     product_repo = MagicMock()
     evidence_repo = MagicMock()
+    aisle_repo = MagicMock()
+    mock_aisle = MagicMock()
+    mock_aisle.inventory_id = "inv-persist-test"
+    aisle_repo.get_by_id.return_value = mock_aisle
     clock = MagicMock()
     now = datetime.now(timezone.utc)
     clock.now.return_value = now
@@ -340,6 +392,7 @@ def test_map_hybrid_report_stores_position_barcode_and_review_display_label_for_
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         clock=clock,
+        aisle_repo=aisle_repo,
     )
     report = {
         "entities": [

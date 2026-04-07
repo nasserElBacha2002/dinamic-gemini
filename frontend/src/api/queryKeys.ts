@@ -10,6 +10,8 @@ export const queryKeys = {
     all: ['v3', 'inventories'] as const,
     list: () => [...queryKeys.inventories.all, 'list'] as const,
     detail: (inventoryId: string) => [...queryKeys.inventories.all, 'detail', inventoryId] as const,
+    /** Selectable pipeline providers for POST aisle process (Phase 5). */
+    processingProviderOptions: () => [...queryKeys.inventories.all, 'processing-provider-options'] as const,
     visualReferences: (inventoryId: string) =>
       [...queryKeys.inventories.all, 'visual-references', inventoryId] as const,
     metrics: (inventoryId: string) => [...queryKeys.inventories.all, 'metrics', inventoryId] as const,
@@ -22,9 +24,15 @@ export const queryKeys = {
     executionLog: (inventoryId: string, aisleId: string, jobId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'jobs', jobId, 'execution-log'] as const,
     jobDetail: (inventoryId: string, aisleId: string, jobId: string) =>
-      [...queryKeys.inventories.all, 'aisles', inventoryId, 'jobs', jobId, 'detail'] as const,
+      [...queryKeys.inventories.all, 'aisles', inventoryId, aisleId, 'jobs', jobId, 'detail'] as const,
     mergeResults: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId] as const,
+    /** GET .../aisles/{aisle}/jobs (run list for selector). */
+    aisleJobs: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle-jobs', aisleId] as const,
+    /** Phase 6 — explicit two-run compare (benchmark analytics payload). */
+    benchmarkCompare: (inventoryId: string, aisleId: string, jobAId: string, jobBId: string) =>
+      [...queryKeys.inventories.all, 'benchmark-compare', inventoryId, aisleId, jobAId, jobBId] as const,
   },
 
   analytics: {

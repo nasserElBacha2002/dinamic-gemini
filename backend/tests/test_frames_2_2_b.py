@@ -247,11 +247,14 @@ def test_pipeline_runs_with_photos_frames(tmp_path):
     settings.photo_jpeg_quality = 85
     settings.photos_min_side = 64
 
-    mock_provider = MagicMock()
-    mock_provider.analyze_global.return_value = LLMResponse(
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
         provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
     )
-    with patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider):
+    with patch(
+        "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
+        return_value=(mock_executor, "gemini"),
+    ):
         pipe = HybridInventoryPipeline()
         result = pipe._run_hybrid(
             "",
@@ -306,11 +309,14 @@ def test_pipeline_truncates_frames_to_hybrid_max_frames(tmp_path):
     settings.photo_jpeg_quality = 85
     settings.photos_min_side = 32
 
-    mock_provider = MagicMock()
-    mock_provider.analyze_global.return_value = LLMResponse(
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = LLMResponse(
         provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
     )
-    with patch("src.pipeline.hybrid_inventory_pipeline.get_llm_provider", return_value=mock_provider):
+    with patch(
+        "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
+        return_value=(mock_executor, "gemini"),
+    ):
         pipe = HybridInventoryPipeline()
         pipe._run_hybrid(
             "",
@@ -321,7 +327,7 @@ def test_pipeline_truncates_frames_to_hybrid_max_frames(tmp_path):
             logger=logger,
             job_input=job_input,
         )
-        call_args = mock_provider.analyze_global.call_args
+        call_args = mock_executor.execute.call_args
         assert call_args is not None
         request = call_args[0][0]
         frames_passed = request.frames

@@ -1,6 +1,19 @@
 export { useInventoriesList, useInventoryDetail, useInventoryVisualReferences } from './useInventories';
-export { useInventoryMetrics, useAislesList, useExecutionLog, useAisleJobDetail } from './useAisles';
-export { useAislePositions, usePositionDetail, useAisleMergeResults } from './usePositions';
+export {
+  useInventoryMetrics,
+  useAislesList,
+  useProcessingProviderOptions,
+  useExecutionLog,
+  useAisleJobDetail,
+  useAisleJobsList,
+  useAisleBenchmarkCompare,
+} from './useAisles';
+export {
+  useAislePositions,
+  usePositionDetail,
+  useAisleMergeResults,
+  positionsListQueryKeyPart,
+} from './usePositions';
 export { useReviewQueue } from './useReviewQueue';
 export {
   useCreateInventory,
@@ -15,4 +28,5 @@ export {
   useDeleteInventoryVisualReference,
   useReplaceInventoryVisualReference,
   useSubmitReviewAction,
+  usePromoteAisleOperationalJob,
 } from './useMutations';

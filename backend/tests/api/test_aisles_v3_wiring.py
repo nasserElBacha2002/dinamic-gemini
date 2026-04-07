@@ -5,8 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
+import src.config as config_mod
 from src.api.server import app
 from src.api.dependencies import (
     get_artifact_storage,
@@ -152,6 +154,125 @@ def test_post_aisle_process_returns_202_and_job_id() -> None:
     data = response.json()
     assert "job_id" in data
     assert len(data["job_id"]) > 0
+
+
+def test_get_processing_provider_options_returns_registered_keys() -> None:
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        response = client.get("/api/v3/inventories/processing-provider-options")
+        assert response.status_code == 200
+        data = response.json()
+        assert "default_provider_key" in data
+        assert "default_prompt_key" in data
+        assert len(data.get("prompt_profiles", [])) >= 2
+        keys = {p["key"] for p in data["providers"]}
+        assert keys == {"fake", "gemini", "openai"}
+        for p in data["providers"]:
+            assert p["execution_mode"] in ("native", "transitional_bridge")
+            assert "models" in p and isinstance(p["models"], list) and len(p["models"]) >= 1
+            assert p.get("default_model")
+        gemini = next(x for x in data["providers"] if x["key"] == "gemini")
+        assert any(m["id"] == "gemini-2.0-flash-exp" for m in gemini["models"])
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+
+
+def test_get_processing_provider_options_reflects_env_processing_model_lists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PROCESSING_*_MODELS must drive GET processing-provider-options (not only pydantic defaults)."""
+    monkeypatch.setenv("PROCESSING_GEMINI_MODELS", "gemini-alpha,gemini-beta")
+    monkeypatch.setenv("PROCESSING_OPENAI_MODELS", "gpt-alpha,gpt-beta")
+    config_mod._settings = None
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        response = client.get("/api/v3/inventories/processing-provider-options")
+        assert response.status_code == 200
+        data = response.json()
+        gemini = next(p for p in data["providers"] if p["key"] == "gemini")
+        openai_p = next(p for p in data["providers"] if p["key"] == "openai")
+        assert [m["id"] for m in gemini["models"]] == ["gemini-alpha", "gemini-beta"]
+        assert [m["id"] for m in openai_p["models"]] == ["gpt-alpha", "gpt-beta"]
+        assert gemini["default_model"] == "gemini-alpha"
+        assert openai_p["default_model"] == "gpt-alpha"
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("PROCESSING_GEMINI_MODELS", raising=False)
+        monkeypatch.delenv("PROCESSING_OPENAI_MODELS", raising=False)
+        config_mod._settings = None
+
+
+def test_post_process_with_explicit_fake_provider_persisted_on_status() -> None:
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        create_resp = client.post("/api/v3/inventories", json={"name": "For Prov Fake"})
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "PF-01"},
+        )
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+
+        proc = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": "fake"},
+        )
+        assert proc.status_code == 202
+        status = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
+        assert status.status_code == 200
+        lj = status.json()["latest_job"]
+        assert lj is not None
+        assert lj.get("provider_name") == "fake"
+        assert lj.get("model_name") == "fixture"
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+
+
+def test_post_process_invalid_model_for_provider_returns_422() -> None:
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        create_resp = client.post("/api/v3/inventories", json={"name": "For Bad Model"})
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "BM-01"},
+        )
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": "fake", "model_name": "not-a-valid-model"},
+        )
+        assert response.status_code == 422
+        assert "model" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+
+
+def test_post_process_unknown_provider_returns_422() -> None:
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        create_resp = client.post("/api/v3/inventories", json={"name": "For Prov 422"})
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "PX-01"},
+        )
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": "not-a-real-provider"},
+        )
+        assert response.status_code == 422
+        assert "unknown" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
 
 
 def test_post_aisle_process_aisle_not_found_returns_404() -> None:
@@ -629,7 +750,18 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
         def __init__(self) -> None:
             self.launched: list[str] = []
 
-        def create_and_launch_attempt(self, *, aisle, payload, attempt_count, retry_of_job_id=None, log_prefix="job.start_requested"):  # type: ignore[no-untyped-def]
+        def create_and_launch_attempt(  # type: ignore[no-untyped-def]
+            self,
+            *,
+            aisle,
+            payload,
+            attempt_count,
+            retry_of_job_id=None,
+            log_prefix="job.start_requested",
+            provider_name="gemini",
+            model_name=None,
+            prompt_key="global_v21",
+        ):
             job = Job(
                 id="job-retry-created",
                 target_type="aisle",
@@ -642,6 +774,9 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
                 attempt_count=attempt_count,
                 retry_of_job_id=retry_of_job_id,
                 execution_id="exec-job-retry-created",
+                provider_name=provider_name,
+                model_name=model_name,
+                prompt_key=prompt_key,
             )
             self.launched.append(job.id)
             job_repo.save(job)
@@ -662,6 +797,9 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
             created_at=now,
             updated_at=now,
             attempt_count=1,
+            provider_name="fake",
+            model_name="fixture",
+            prompt_key="global_v21",
         )
     )
 
@@ -680,6 +818,9 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
         assert data["attempt_count"] == 2
         assert data["retry_of_job_id"] == "job-failed"
         assert data["execution_id"] == "exec-job-retry-created"
+        assert data.get("provider_name") == "fake"
+        assert data.get("model_name") == "fixture"
+        assert data.get("prompt_key") == "global_v21"
         assert launch_service.launched == [data["id"]]
     finally:
         app.dependency_overrides.pop(get_current_admin, None)

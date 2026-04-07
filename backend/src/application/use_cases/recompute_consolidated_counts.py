@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Literal, Union
 
 from src.application.ports.repositories import (
     FinalCountRepository,
+    JOB_ID_FILTER_UNSET,
     NormalizedLabelRepository,
     PositionRepository,
     ProductRecordRepository,
@@ -23,12 +25,17 @@ from src.domain.labels.merge import MergeRuleEngine
 
 logger = logging.getLogger(__name__)
 
+RecomputeJobScope = Union[str, Literal["all"], Literal["legacy_null"]]
+"""``all`` = entire aisle (pre-multi-run behavior). ``legacy_null`` = ``job_id IS NULL`` rows only. ``str`` = one job."""
+
 
 @dataclass
 class RecomputeConsolidatedCountsCommand:
     inventory_id: str
     aisle_id: str
     apply_to_product_records: bool = True
+    #: Prefer a concrete scope from callers; ``all`` is pre-multi-run aisle-wide (mixes runs).
+    job_scope: RecomputeJobScope = "all"
 
 
 @dataclass
@@ -66,12 +73,13 @@ class RecomputeConsolidatedCountsUseCase:
     def execute(self, command: RecomputeConsolidatedCountsCommand) -> RecomputeConsolidatedCountsResult:
         inv_id = command.inventory_id
         aisle_id = command.aisle_id
+        label_job_kw = self._label_job_kw(command.job_scope)
 
-        raw_labels = list(self._raw_repo.list_for_scope(inv_id, aisle_id))
+        raw_labels = list(self._raw_repo.list_for_scope(inv_id, aisle_id, **label_job_kw))
         if not raw_labels:
             logger.debug("RecomputeConsolidatedCounts: no raw labels for scope %s/%s", inv_id, aisle_id)
-            self._normalized_repo.replace_for_scope(inv_id, aisle_id)
-            self._final_repo.replace_for_scope(inv_id, aisle_id)
+            self._normalized_repo.replace_for_scope(inv_id, aisle_id, **label_job_kw)
+            self._final_repo.replace_for_scope(inv_id, aisle_id, **label_job_kw)
             return RecomputeConsolidatedCountsResult(
                 raw_count=0,
                 normalized_count=0,
@@ -80,16 +88,21 @@ class RecomputeConsolidatedCountsUseCase:
             )
 
         normalized = self._normalization.normalize(raw_labels)
-        self._normalized_repo.replace_for_scope(inv_id, aisle_id)
+        self._normalized_repo.replace_for_scope(inv_id, aisle_id, **label_job_kw)
         self._normalized_repo.save_many(normalized)
 
         final_records = self._builder.build(normalized)
-        self._final_repo.replace_for_scope(inv_id, aisle_id)
+        self._final_repo.replace_for_scope(inv_id, aisle_id, **label_job_kw)
         self._final_repo.save_many(final_records)
 
         product_updated = 0
         if command.apply_to_product_records:
-            product_updated = self._apply_final_count_to_product_records(inv_id, aisle_id, final_records)
+            product_updated = self._apply_final_count_to_product_records(
+                inv_id,
+                aisle_id,
+                final_records,
+                command.job_scope,
+            )
 
         return RecomputeConsolidatedCountsResult(
             raw_count=len(raw_labels),
@@ -98,11 +111,20 @@ class RecomputeConsolidatedCountsUseCase:
             product_records_updated=product_updated,
         )
 
+    @staticmethod
+    def _label_job_kw(job_scope: RecomputeJobScope) -> dict:
+        if job_scope == "all":
+            return {"job_id": "all"}
+        if job_scope == "legacy_null":
+            return {"job_id": None}
+        return {"job_id": job_scope}
+
     def _apply_final_count_to_product_records(
         self,
         inventory_id: str,
         aisle_id: str,
         final_records: list,
+        job_scope: RecomputeJobScope,
     ) -> int:
         """Project final_count into ProductRecord with authoritative-quantity safeguards.
 
@@ -120,8 +142,13 @@ class RecomputeConsolidatedCountsUseCase:
             qty_by_pos_sku[key] = rec.quantity
 
         updated = 0
-        # Enumerate all positions in aisle and reset product_records to consolidated quantities.
-        positions = self._position_repo.list_by_aisle(aisle_id)
+        if job_scope == "all":
+            pos_kw: object | str | None = JOB_ID_FILTER_UNSET
+        elif job_scope == "legacy_null":
+            pos_kw = None
+        else:
+            pos_kw = job_scope
+        positions = self._position_repo.list_by_aisle(aisle_id, job_id=pos_kw)
         for pos in positions:
             products = list(self._product_repo.list_by_position(pos.id))
             for prod in products:

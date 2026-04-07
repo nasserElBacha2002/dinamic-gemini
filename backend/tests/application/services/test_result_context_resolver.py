@@ -1,0 +1,165 @@
+"""ResultContextResolver — Phase 2 resolution rules."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from src.application.errors import JobDoesNotBelongToAisleError, JobNotFoundError
+from src.application.services.result_context_resolver import ResultContextResolver
+from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.jobs.entities import Job, JobStatus
+from src.domain.positions.entities import Position, PositionStatus
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+
+
+def _aisle(op_job: str | None = None) -> Aisle:
+    now = datetime.now(timezone.utc)
+    return Aisle(
+        id="a1",
+        inventory_id="inv1",
+        code="A",
+        status=AisleStatus.PROCESSED,
+        created_at=now,
+        updated_at=now,
+        operational_job_id=op_job,
+    )
+
+
+def _job(jid: str, aisle_id: str = "a1") -> Job:
+    now = datetime.now(timezone.utc)
+    return Job(
+        id=jid,
+        target_type="aisle",
+        target_id=aisle_id,
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
+        created_at=now,
+        updated_at=now,
+        provider_name="gemini",
+        model_name="m",
+        prompt_key="p",
+    )
+
+
+def test_explicit_job_valid() -> None:
+    repo = MemoryJobRepository()
+    repo.save(_job("j1"))
+    r = ResultContextResolver(repo).resolve(aisle=_aisle(), explicit_job_id="j1")
+    assert r.job_id_for_slice == "j1"
+    assert r.source == "explicit"
+
+
+def test_explicit_job_missing_raises() -> None:
+    with pytest.raises(JobNotFoundError):
+        ResultContextResolver(MemoryJobRepository()).resolve(aisle=_aisle(), explicit_job_id="missing")
+
+
+def test_explicit_job_wrong_aisle_raises() -> None:
+    repo = MemoryJobRepository()
+    repo.save(_job("j1", aisle_id="other"))
+    with pytest.raises(JobDoesNotBelongToAisleError):
+        ResultContextResolver(repo).resolve(aisle=_aisle(), explicit_job_id="j1")
+
+
+def test_operational_fallback() -> None:
+    repo = MemoryJobRepository()
+    repo.save(_job("op-1"))
+    r = ResultContextResolver(repo).resolve(aisle=_aisle(op_job="op-1"), explicit_job_id=None)
+    assert r.job_id_for_slice == "op-1"
+    assert r.source == "operational"
+
+
+def test_operational_job_missing_raises() -> None:
+    with pytest.raises(JobNotFoundError):
+        ResultContextResolver(MemoryJobRepository()).resolve(
+            aisle=_aisle(op_job="missing-op"), explicit_job_id=None
+        )
+
+
+def test_operational_job_wrong_aisle_raises() -> None:
+    repo = MemoryJobRepository()
+    repo.save(_job("j-op", aisle_id="other-aisle"))
+    with pytest.raises(JobDoesNotBelongToAisleError):
+        ResultContextResolver(repo).resolve(aisle=_aisle(op_job="j-op"), explicit_job_id=None)
+
+
+def test_legacy_fallback() -> None:
+    r = ResultContextResolver(MemoryJobRepository()).resolve(aisle=_aisle(op_job=None), explicit_job_id=None)
+    assert r.job_id_for_slice is None
+    assert r.source == "legacy"
+
+
+def test_explicit_empty_string_treated_as_omitted() -> None:
+    repo = MemoryJobRepository()
+    repo.save(_job("op-1"))
+    r = ResultContextResolver(repo).resolve(aisle=_aisle(op_job="op-1"), explicit_job_id="   ")
+    assert r.source == "operational"
+
+
+def test_no_implicit_latest_when_only_job_scoped_rows_and_no_operational_pointer() -> None:
+    now = datetime.now(timezone.utc)
+    jobs = MemoryJobRepository()
+    jobs.save(_job("js-1"))
+    pos = MemoryPositionRepository()
+    pos.save(
+        Position(
+            "p1",
+            "a1",
+            PositionStatus.DETECTED,
+            0.9,
+            True,
+            None,
+            now,
+            now,
+            job_id="js-1",
+        )
+    )
+    r = ResultContextResolver(jobs, pos).resolve(aisle=_aisle(), explicit_job_id=None)
+    assert r.source == "legacy"
+    assert r.job_id_for_slice is None
+
+
+def test_legacy_wins_when_legacy_row_exists_alongside_job_scoped() -> None:
+    now = datetime.now(timezone.utc)
+    jobs = MemoryJobRepository()
+    jobs.save(_job("js-1"))
+    pos = MemoryPositionRepository()
+    pos.save(
+        Position("pl", "a1", PositionStatus.DETECTED, 0.9, True, None, now, now, job_id=None)
+    )
+    pos.save(
+        Position("pj", "a1", PositionStatus.DETECTED, 0.9, True, None, now, now, job_id="js-1")
+    )
+    r = ResultContextResolver(jobs, pos).resolve(aisle=_aisle(), explicit_job_id=None)
+    assert r.source == "legacy"
+    assert r.job_id_for_slice is None
+
+
+def test_multiple_succeeded_jobs_without_operational_still_resolve_legacy_slice() -> None:
+    t0 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2025, 2, 1, 12, 0, 0, tzinfo=timezone.utc)
+    j_fail = Job(
+        "jf",
+        "aisle",
+        "a1",
+        "process_aisle",
+        JobStatus.FAILED,
+        {},
+        t1,
+        t1,
+    )
+    j_ok = Job("jo", "aisle", "a1", "process_aisle", JobStatus.SUCCEEDED, {}, t0, t0)
+    jobs = MemoryJobRepository()
+    jobs.save(j_ok)
+    jobs.save(j_fail)
+    pos = MemoryPositionRepository()
+    pos.save(
+        Position("p1", "a1", PositionStatus.DETECTED, 0.9, True, None, t1, t1, job_id="jo")
+    )
+    r = ResultContextResolver(jobs, pos).resolve(aisle=_aisle(), explicit_job_id=None)
+    assert r.source == "legacy"
+    assert r.job_id_for_slice is None

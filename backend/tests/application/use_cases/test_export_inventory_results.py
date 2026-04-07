@@ -14,7 +14,9 @@ from src.application.services.csv_inventory_exporter import (
     INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS,
     UTF8_BOM,
 )
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
@@ -48,7 +50,13 @@ def _uc(
         pos_repo.save(p)
     for pr in products or []:
         prod_repo.save(pr)
-    return ExportInventoryResultsUseCase(inv_repo, aisle_repo, pos_repo, prod_repo)
+    return ExportInventoryResultsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(MemoryJobRepository(), pos_repo),
+    )
 
 
 def _parse_csv(text: str) -> tuple[list[str], list[dict[str, str]]]:
@@ -470,3 +478,46 @@ def test_export_technical_csv_keeps_snapshot_fields_separate() -> None:
     assert rows[0]["pallet_id"] == "PAL-1"
     assert rows[0]["aggregated_from_ids"] == "p-a|p-b"
     assert '"explicit_quantity_missing": true' in rows[0]["audit_json"]
+
+
+def test_export_only_includes_operational_job_slice_when_pointer_set() -> None:
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle(
+        "a1",
+        "inv-1",
+        "B1",
+        AisleStatus.COMPLETED,
+        NOW,
+        NOW,
+        operational_job_id="j-op",
+    )
+    positions = [
+        Position(
+            id="p-op",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "IN", "final_quantity": 1, "pallet_id": "A"},
+            job_id="j-op",
+        ),
+        Position(
+            id="p-other",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW_LATE,
+            updated_at=NOW_LATE,
+            detected_summary_json={"internal_code": "OUT", "final_quantity": 2, "pallet_id": "B"},
+            job_id="j-bench",
+        ),
+    ]
+    uc = _uc(inv=inv, aisles=[aisle], positions=positions)
+    _, rows = _parse_csv(uc.execute_csv("inv-1"))
+    assert len(rows) == 1
+    assert rows[0]["position_id"] == "p-op"

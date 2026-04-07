@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
-from src.application.ports.repositories import NormalizedLabelRepository
+from src.application.ports.repositories import LabelJobScope, NormalizedLabelRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.labels.entities import NormalizedLabel
 
@@ -57,6 +57,14 @@ def _safe_load_list(raw: object) -> list[str]:
     return []
 
 
+def _sql_job_predicate(job_id: LabelJobScope) -> tuple[str, list]:
+    if job_id == "all":
+        return "", []
+    if job_id is None:
+        return " AND job_id IS NULL", []
+    return " AND job_id = ?", [job_id]
+
+
 def _row_to_normalized_label(row) -> NormalizedLabel:
     created = _ensure_utc(getattr(row, "created_at", None))
     if created is None:
@@ -76,6 +84,7 @@ def _row_to_normalized_label(row) -> NormalizedLabel:
         review_required=bool(getattr(row, "review_required", False)),
         metadata=_safe_load_json(getattr(row, "metadata_json", None)),
         created_at=created,
+        job_id=getattr(row, "job_id", None),
     )
 
 
@@ -110,15 +119,16 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
                             merge_reason = ?,
                             review_required = ?,
                             metadata_json = ?,
-                            created_at = ?
+                            created_at = ?,
+                            job_id = ?
                     WHEN NOT MATCHED THEN
                         INSERT (
                             id, inventory_id, aisle_id, position_id, group_key,
                             canonical_sku, canonical_product_name, raw_label_ids_json,
                             merge_rule_applied, merge_confidence, merge_reason, review_required,
-                            metadata_json, created_at
+                            metadata_json, created_at, job_id
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         lb.id,
@@ -135,6 +145,7 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
                         lb.review_required,
                         _safe_dump_json(lb.metadata or {}),
                         created,
+                        lb.job_id,
                         lb.id,
                         lb.inventory_id,
                         lb.aisle_id,
@@ -149,30 +160,45 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
                         lb.review_required,
                         _safe_dump_json(lb.metadata or {}),
                         created,
+                        lb.job_id,
                     ),
                 )
 
-    def list_for_scope(self, inventory_id: str, aisle_id: str) -> Sequence[NormalizedLabel]:
+    def list_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> Sequence[NormalizedLabel]:
+        extra_sql, extra_params = _sql_job_predicate(job_id)
         with self._client.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT
                     id, inventory_id, aisle_id, position_id, group_key, canonical_sku, canonical_product_name,
                     raw_label_ids_json, merge_rule_applied, merge_confidence, merge_reason, review_required,
-                    metadata_json, created_at
+                    metadata_json, created_at, job_id
                 FROM normalized_labels
-                WHERE inventory_id = ? AND aisle_id = ?
+                WHERE inventory_id = ? AND aisle_id = ?{extra_sql}
                 ORDER BY created_at ASC, id ASC
                 """,
-                (inventory_id, aisle_id),
+                (inventory_id, aisle_id, *extra_params),
             )
             rows = cur.fetchall()
         return [_row_to_normalized_label(r) for r in rows]
 
-    def replace_for_scope(self, inventory_id: str, aisle_id: str) -> None:
+    def replace_for_scope(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        *,
+        job_id: LabelJobScope = "all",
+    ) -> None:
+        extra_sql, extra_params = _sql_job_predicate(job_id)
         with self._client.cursor() as cur:
             cur.execute(
-                "DELETE FROM normalized_labels WHERE inventory_id = ? AND aisle_id = ?",
-                (inventory_id, aisle_id),
+                f"DELETE FROM normalized_labels WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",
+                (inventory_id, aisle_id, *extra_params),
             )
 

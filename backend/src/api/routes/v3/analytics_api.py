@@ -8,11 +8,24 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.application.dto.analytics_dto import AnalyticsFilters
+from src.application.errors import (
+    AisleNotFoundError,
+    BenchmarkCompareJobsMustDifferError,
+    InventoryNotFoundError,
+    JobDoesNotBelongToAisleError,
+    JobNotFoundError,
+)
 from src.application.ports.repositories import AisleRepository
 from src.application.services.analytics_query_service import AnalyticsQueryService
+from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
 from src.auth.dependencies import get_current_admin
 
-from src.api.dependencies import get_aisle_repo, get_analytics_query_service
+from src.api.dependencies import (
+    get_aisle_repo,
+    get_analytics_query_service,
+    get_compare_aisle_runs_use_case,
+)
+from src.api.schemas.benchmark_schemas import AisleBenchmarkCompareResponse
 from src.api.schemas.analytics_schemas import (
     ManualInterventionBreakdownResponse,
     ManualInterventionCategoryResponse,
@@ -80,7 +93,12 @@ def analytics_summary(
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> AnalyticsSummaryResponse:
-    """Return additive operational KPIs for the analytics dashboard.
+    """Return additive KPIs for the analytics dashboard.
+
+    **Multi-run:** position-in-scope counts include **all** non-deleted position rows matching
+    inventory/aisle filters — not the single “resolved slice” per aisle used by Aisle Results
+    (``operational_job_id`` / legacy / explicit ``job_id``). Summary ``notes`` include a reminder;
+    aligning dashboard aggregates with per-run operational semantics is deferred.
 
     ``operator_marked_unknown_*`` fields are populated only from the explicit persisted terminal
     operator outcome. ``unidentified_product_*`` fields are driven by the display-primary product
@@ -282,3 +300,41 @@ def analytics_manual_interventions(
         ],
         notes=list(data.notes),
     )
+
+
+@router.get(
+    "/benchmark/inventories/{inventory_id}/aisles/{aisle_id}/compare",
+    response_model=AisleBenchmarkCompareResponse,
+)
+def analytics_benchmark_compare_aisle_runs(
+    inventory_id: str,
+    aisle_id: str,
+    job_a_id: str = Query(..., alias="job_a_id", min_length=1),
+    job_b_id: str = Query(..., alias="job_b_id", min_length=1),
+    use_case: CompareAisleRunsUseCase = Depends(get_compare_aisle_runs_use_case),
+) -> AisleBenchmarkCompareResponse:
+    """Phase 6 — same payload as ``GET /api/v3/inventories/.../benchmark/compare`` (benchmark-only).
+
+    Exposed under ``/analytics`` so operational KPI routes stay conceptually separate from
+    explicit multi-run inspection workflows.
+    """
+    try:
+        payload = use_case.execute(
+            CompareAisleRunsCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                job_a_id=job_a_id.strip(),
+                job_b_id=job_b_id.strip(),
+            )
+        )
+        return AisleBenchmarkCompareResponse.model_validate(payload)
+    except BenchmarkCompareJobsMustDifferError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e

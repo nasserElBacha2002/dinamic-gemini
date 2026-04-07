@@ -25,14 +25,19 @@ import type {
   InventoryMetrics,
   ExecutionLogResponse,
   JobSummary,
+  AisleJobsListResponse,
   PaginatedInventoryListResponse,
   PaginatedAisleListResponse,
+  ProcessingProviderOptionsResponse,
   ReviewQueueListResponse,
   AnalyticsSummaryResponse,
   AnalyticsTrendsResponse,
   InventoryPerformanceListResponse,
   AisleIssueListResponse,
   QualityPatternListResponse,
+  ManualInterventionBreakdownResponse,
+  AisleBenchmarkCompareResponse,
+  PromoteOperationalJobResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -323,13 +328,36 @@ export async function createAisle(
   return handleResponse<Aisle>(response);
 }
 
+export async function getProcessingProviderOptions(): Promise<ProcessingProviderOptionsResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/processing-provider-options`);
+  return handleResponse<ProcessingProviderOptionsResponse>(response);
+}
+
 export async function startAisleProcessing(
   inventoryId: string,
-  aisleId: string
+  aisleId: string,
+  options?: { providerName?: string | null; modelName?: string | null; promptKey?: string | null }
 ): Promise<ProcessAisleResponse> {
+  const body: Record<string, string> = {};
+  const prov = options?.providerName;
+  if (prov != null && String(prov).trim() !== '') {
+    body.provider_name = String(prov).trim().toLowerCase();
+  }
+  const mod = options?.modelName;
+  if (mod != null && String(mod).trim() !== '') {
+    body.model_name = String(mod).trim();
+  }
+  const pk = options?.promptKey;
+  if (pk != null && String(pk).trim() !== '') {
+    body.prompt_key = String(pk).trim();
+  }
   const response = await protectedFetch(
     `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/process`,
-    { method: 'POST' }
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
   );
   return handleResponse<ProcessAisleResponse>(response);
 }
@@ -348,23 +376,32 @@ export async function getAisleStatus(
 /** Run manual authoritative merge for an aisle and update visible results quantities. */
 export async function runAisleMerge(
   inventoryId: string,
-  aisleId: string
+  aisleId: string,
+  options: { jobId: string | null }
 ): Promise<RunMergeResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge`,
-    { method: 'POST' }
-  );
+  const raw = options.jobId != null ? String(options.jobId).trim() : '';
+  const jobId = raw !== '' ? raw : 'legacy';
+  const params = new URLSearchParams();
+  params.set('job_id', jobId);
+  const qs = params.toString();
+  const url = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge?${qs}`;
+  const response = await protectedFetch(url, { method: 'POST' });
   return handleResponse<RunMergeResponse>(response);
 }
 
 /** Read merge/consolidation artifacts for an aisle. */
 export async function getAisleMergeResults(
   inventoryId: string,
-  aisleId: string
+  aisleId: string,
+  options?: { jobId?: string | null }
 ): Promise<MergeResultsResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge-results`
-  );
+  const params = new URLSearchParams();
+  if (options?.jobId != null && String(options.jobId).trim() !== '') {
+    params.set('job_id', String(options.jobId).trim());
+  }
+  const qs = params.toString();
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge-results${qs ? `?${qs}` : ''}`;
+  const response = await protectedFetch(path);
   return handleResponse<MergeResultsResponse>(response);
 }
 
@@ -557,6 +594,8 @@ export interface AislePositionsListQuery {
   page_size?: number;
   sort_by?: string;
   sort_dir?: string;
+  /** When set, list only this inventory job's positions (same as GET query `job_id`). */
+  job_id?: string | null;
 }
 
 function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined): string {
@@ -586,8 +625,103 @@ function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined):
   if (q.sort_dir != null && String(q.sort_dir).trim() !== '') {
     params.set('sort_dir', String(q.sort_dir).trim());
   }
+  if (q.job_id != null && String(q.job_id).trim() !== '') {
+    params.set('job_id', String(q.job_id).trim());
+  }
   const s = params.toString();
   return s ? `?${s}` : '';
+}
+
+/** List process_aisle jobs for an aisle (newest first) — run browser / selector. */
+export async function listAisleJobs(
+  inventoryId: string,
+  aisleId: string,
+  options?: { limit?: number }
+): Promise<AisleJobsListResponse> {
+  const params = new URLSearchParams();
+  if (options?.limit != null && options.limit >= 1) {
+    params.set('limit', String(options.limit));
+  }
+  const qs = params.toString();
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs${qs ? `?${qs}` : ''}`;
+  const response = await protectedFetch(path);
+  return handleResponse<AisleJobsListResponse>(response);
+}
+
+/** Phase 6 — explicit two-run compare for an aisle (benchmark / inspection; read-only). */
+export async function getAisleBenchmarkCompare(
+  inventoryId: string,
+  aisleId: string,
+  jobAId: string,
+  jobBId: string
+): Promise<AisleBenchmarkCompareResponse> {
+  const params = new URLSearchParams({
+    job_a_id: jobAId.trim(),
+    job_b_id: jobBId.trim(),
+  });
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/benchmark/compare?${params}`;
+  const response = await protectedFetch(path);
+  return handleResponse<AisleBenchmarkCompareResponse>(response);
+}
+
+export async function promoteAisleOperationalJob(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<PromoteOperationalJobResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/promote-operational`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId.trim() }),
+    }
+  );
+  return handleResponse<PromoteOperationalJobResponse>(response);
+}
+
+/**
+ * Download Phase 6 benchmark CSV — either one explicit run (append metadata columns) or compare rows.
+ * Provide exactly one of (runJobId) or (jobAId + jobBId).
+ */
+export async function downloadAisleBenchmarkExportCsv(
+  inventoryId: string,
+  aisleId: string,
+  options: { runJobId: string } | { jobAId: string; jobBId: string }
+): Promise<void> {
+  const params = new URLSearchParams({ format: 'csv' });
+  if ('runJobId' in options) {
+    params.set('run_job_id', options.runJobId.trim());
+  } else {
+    params.set('job_a_id', options.jobAId.trim());
+    params.set('job_b_id', options.jobBId.trim());
+  }
+  const path = `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/benchmark/export?${params}`;
+  const response = await protectedFetch(path);
+  const fallbackName =
+    'runJobId' in options
+      ? `benchmark_run_${inventoryId}_${aisleId}_${options.runJobId}.csv`
+      : `benchmark_compare_${inventoryId}_${aisleId}_${options.jobAId}_${options.jobBId}.csv`;
+  if (!response.ok) {
+    const text = await response.text();
+    let data: ApiErrorDetail;
+    try {
+      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+    } catch {
+      data = {};
+    }
+    throwApiErrorIfNotOk(response, text, data);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** List positions (results) for an aisle — Épica 6 / Aisle Results table. */
@@ -669,11 +803,16 @@ export async function getReviewQueuePositions(
 export async function getPositionDetail(
   inventoryId: string,
   aisleId: string,
-  positionId: string
+  positionId: string,
+  options?: { jobId?: string | null }
 ): Promise<PositionDetailResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}`
-  );
+  const params = new URLSearchParams();
+  if (options?.jobId != null && String(options.jobId).trim() !== '') {
+    params.set('job_id', String(options.jobId).trim());
+  }
+  const qs = params.toString();
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs ? `?${qs}` : ''}`;
+  const response = await protectedFetch(path);
   return handleResponse<PositionDetailResponse>(response);
 }
 

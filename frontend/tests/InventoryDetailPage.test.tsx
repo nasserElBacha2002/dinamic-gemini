@@ -34,6 +34,10 @@ const { useCancelAisleJobMock } = vi.hoisted(() => ({
 const { useRetryAisleJobMock } = vi.hoisted(() => ({
   useRetryAisleJobMock: vi.fn(),
 }));
+const { processAisleMutateAsyncMock, useProcessingProviderOptionsMock } = vi.hoisted(() => ({
+  processAisleMutateAsyncMock: vi.fn().mockResolvedValue({ job_id: 'job-new' }),
+  useProcessingProviderOptionsMock: vi.fn(),
+}));
 
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
@@ -51,7 +55,8 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useExecutionLog: useExecutionLogMock,
     useAisleJobDetail: useAisleJobDetailMock,
     useCreateAisle: () => ({ mutateAsync: vi.fn() }),
-    useStartAisleProcessing: () => ({ mutateAsync: vi.fn() }),
+    useProcessingProviderOptions: useProcessingProviderOptionsMock,
+    useStartAisleProcessing: () => ({ mutateAsync: processAisleMutateAsyncMock }),
     useCancelAisleJob: useCancelAisleJobMock,
     useRetryAisleJob: useRetryAisleJobMock,
     useUploadAisleAssetsFlex: () => ({ mutateAsync: vi.fn() }),
@@ -87,6 +92,13 @@ function renderPage() {
 describe('InventoryDetail', () => {
   beforeEach(() => {
     useInventoryVisualReferencesMock.mockReset();
+    useInventoryVisualReferencesMock.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     useAislesListMock.mockReset();
     useUploadInventoryVisualReferencesMock.mockReset();
     useDeleteInventoryVisualReferenceMock.mockReset();
@@ -95,6 +107,38 @@ describe('InventoryDetail', () => {
     useAisleJobDetailMock.mockReset();
     useCancelAisleJobMock.mockReset();
     useRetryAisleJobMock.mockReset();
+    processAisleMutateAsyncMock.mockReset();
+    processAisleMutateAsyncMock.mockResolvedValue({ job_id: 'job-new' });
+    useProcessingProviderOptionsMock.mockReset();
+    useProcessingProviderOptionsMock.mockReturnValue({
+      data: {
+        default_provider_key: 'gemini',
+        default_prompt_key: 'global_v21',
+        prompt_profiles: [
+          { key: 'global_v21', label: 'Prompt A', description: null },
+          { key: 'global_v21_b', label: 'Prompt B', description: null },
+        ],
+        providers: [
+          {
+            key: 'gemini',
+            label: 'Gemini',
+            execution_mode: 'native',
+            models: [{ id: 'gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp' }],
+            default_model: 'gemini-2.0-flash-exp',
+          },
+          {
+            key: 'fake',
+            label: 'Fake (fixtures)',
+            execution_mode: 'transitional_bridge',
+            models: [{ id: 'fixture', label: 'fixture' }],
+            default_model: 'fixture',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
     useUploadInventoryVisualReferencesMock.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
@@ -852,5 +896,49 @@ describe('InventoryDetail', () => {
     renderPage();
 
     expect(screen.getByText('Summary unavailable')).toBeInTheDocument();
+  });
+
+  it('process dialog shows resolved default model id in the model placeholder option', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
+    expect(await screen.findByText(/start processing/i)).toBeInTheDocument();
+
+    const modelSelect = screen.getByLabelText(/^model$/i, { selector: '[role="combobox"]' });
+    fireEvent.mouseDown(modelSelect);
+    expect(
+      await screen.findByRole('option', { name: /default \(gemini-2\.0-flash-exp\)/i })
+    ).toBeInTheDocument();
+  });
+
+  it('process aisle opens provider dialog and passes provider/model/prompt to start mutation', async () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
+
+    expect(await screen.findByText(/start processing/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^provider$/i)).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByLabelText(/^provider$/i));
+    const fakeOption = await screen.findByRole('option', { name: /fake/i });
+    fireEvent.click(fakeOption);
+
+    fireEvent.mouseDown(screen.getByLabelText(/^model$/i));
+    fireEvent.click(await screen.findByRole('option', { name: /^fixture$/i }));
+
+    fireEvent.mouseDown(screen.getByLabelText(/prompt profile/i));
+    fireEvent.click(await screen.findByRole('option', { name: /prompt b/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /^start$/i }));
+
+    await waitFor(() => {
+      expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
+        aisleId: 'aisle-1',
+        providerName: 'fake',
+        modelName: 'fixture',
+        promptKey: 'global_v21_b',
+      });
+    });
   });
 });
