@@ -44,10 +44,14 @@ from src.api.schemas.benchmark_schemas import (
     PromoteOperationalJobRequest,
     PromoteOperationalJobResponse,
 )
+from src.application.services.execution_log_enrichment import (
+    build_enriched_execution_log,
+    execution_log_attachment_filename,
+    format_execution_log_plaintext,
+)
 from src.api.schemas.processing_schemas import (
     AisleJobsListResponse,
     AisleStatusResponse,
-    ExecutionLogEvent,
     ExecutionLogResponse,
     JobSummary,
     ProcessAisleRequest,
@@ -353,7 +357,13 @@ def get_job_execution_log(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     artifact_storage=Depends(get_artifact_storage),
 ) -> ExecutionLogResponse:
-    """Return structured execution log for a job (v3.1.1). Job must belong to this aisle and inventory."""
+    """Return structured execution log for a job (v3.1.1).
+
+    The artifact is loaded for *this* job row (durable key or ``output_dir/<job_id>/run/``).
+    JSONL lines may still reference other ``payload.job_id`` values (e.g. spawned workers);
+    the response enriches each line with ``event_job_id`` / ``is_requested_job_event`` so the
+    UI can filter without losing the raw stream.
+    """
     job = job_repo.get_by_id(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -372,8 +382,58 @@ def get_job_execution_log(
             e.detail,
         )
         raise HTTPException(status_code=e.status_code, detail=e.detail) from e
-    return ExecutionLogResponse(
-        events=[ExecutionLogEvent.model_validate(e) for e in raw_events],
+    payload = build_enriched_execution_log(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
+        requested_job_id=job_id,
+        raw_events=raw_events,
+    )
+    return ExecutionLogResponse.model_validate(payload)
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/execution-log.txt",
+    response_class=Response,
+)
+def get_job_execution_log_txt(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    artifact_storage=Depends(get_artifact_storage),
+) -> Response:
+    """Plain-text execution log for download (same artifact as JSON execution-log)."""
+    job = job_repo.get_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.target_type != "aisle" or job.target_id != aisle_id:
+        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle")
+    aisle = aisle_repo.get_by_id(aisle_id)
+    if aisle is None or aisle.inventory_id != inventory_id:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    try:
+        raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
+    except StoredArtifactAccessError as e:
+        logger.warning(
+            "execution_log_txt_http_error job_id=%s reason=%s detail=%s",
+            job_id,
+            e.reason_code,
+            e.detail,
+        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+    body = build_enriched_execution_log(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
+        requested_job_id=job_id,
+        raw_events=raw_events,
+    )
+    text = format_execution_log_plaintext(body["events"])
+    filename = execution_log_attachment_filename(inventory_id, aisle_id, job_id)
+    return Response(
+        content=text.encode("utf-8"),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

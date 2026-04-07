@@ -456,6 +456,45 @@ export async function getExecutionLog(
   return handleResponse<ExecutionLogResponse>(response);
 }
 
+/** Direct URL for execution log plain-text download (use with authenticated fetch). */
+export function getExecutionLogTxtUrl(inventoryId: string, aisleId: string, jobId: string): string {
+  const inv = encodeURIComponent(inventoryId);
+  const aisle = encodeURIComponent(aisleId);
+  const job = encodeURIComponent(jobId);
+  return `${API_BASE}/api/v3/inventories/${inv}/aisles/${aisle}/jobs/${job}/execution-log.txt`;
+}
+
+/** Download execution log as UTF-8 text (same artifact as JSON execution-log). */
+export async function downloadExecutionLogTxt(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<void> {
+  const path = getExecutionLogTxtUrl(inventoryId, aisleId, jobId);
+  const response = await protectedFetch(path);
+  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_job_${jobId}_execution_log.txt`;
+  if (!response.ok) {
+    const text = await response.text();
+    let data: ApiErrorDetail;
+    try {
+      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+    } catch {
+      data = {};
+    }
+    throwApiErrorIfNotOk(response, text, data);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function getAisleJobDetail(
   inventoryId: string,
   aisleId: string,

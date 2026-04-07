@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ExecutionLogPanel from '../src/components/ExecutionLogPanel';
 
 describe('ExecutionLogPanel', () => {
@@ -120,5 +120,75 @@ describe('ExecutionLogPanel', () => {
       return element?.tagName.toLowerCase() === 'pre' && content.includes('Prompt start');
     });
     expect(longPromptNode).toHaveStyle({ maxHeight: '240px', overflow: 'auto' });
+  });
+
+  it('with enriched log, defaults to current job and hides other job messages until "all" is selected', async () => {
+    render(
+      <ExecutionLogPanel
+        log={{
+          inventory_id: 'i',
+          aisle_id: 'a',
+          requested_job_id: 'job-a',
+          available_job_ids: ['job-a', 'job-b'],
+          available_attempts: [1],
+          available_execution_ids: [],
+          events: [
+            {
+              ts: '2026-01-01T00:00:00Z',
+              stage: 'S',
+              level: 'info',
+              message: 'for-a',
+              event_job_id: 'job-a',
+              event_attempt: 1,
+              is_requested_job_event: true,
+            },
+            {
+              ts: '2026-01-01T00:00:01Z',
+              stage: 'S',
+              level: 'info',
+              message: 'for-b',
+              event_job_id: 'job-b',
+              event_attempt: 1,
+              is_requested_job_event: false,
+            },
+          ],
+        }}
+      />
+    );
+    expect(screen.getByText('for-a')).toBeInTheDocument();
+    expect(screen.queryByText('for-b')).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByLabelText('Job context'));
+    const opt = await screen.findByRole('option', { name: /All job ids in log/i });
+    fireEvent.click(opt);
+    await waitFor(() => {
+      expect(screen.getByText('for-b')).toBeInTheDocument();
+    });
+  });
+
+  it('shows legacy note when no event job_id is present', () => {
+    render(
+      <ExecutionLogPanel
+        log={{
+          inventory_id: 'i',
+          aisle_id: 'a',
+          requested_job_id: 'job-x',
+          available_job_ids: ['job-x'],
+          available_attempts: [],
+          available_execution_ids: [],
+          events: [
+            {
+              ts: 't1',
+              stage: 'S',
+              level: 'info',
+              message: 'legacy-line',
+              is_requested_job_event: true,
+            },
+          ],
+        }}
+      />
+    );
+    expect(screen.getByText(/Job metadata unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText('legacy-line')).toBeInTheDocument();
   });
 });

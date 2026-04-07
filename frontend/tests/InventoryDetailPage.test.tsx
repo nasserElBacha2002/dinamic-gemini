@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import InventoryDetail from '../src/pages/InventoryDetail';
 import { AppSnackbarProvider } from '../src/components/ui';
+import type { ExecutionLogResponse } from '../src/api/types';
 
 const { useInventoryVisualReferencesMock } = vi.hoisted(() => ({
   useInventoryVisualReferencesMock: vi.fn(),
@@ -71,8 +72,22 @@ vi.mock('../src/api/client', async (importOriginal) => {
   return {
     ...actual,
     exportInventoryResultsCsv: vi.fn(),
+    downloadExecutionLogTxt: vi.fn().mockResolvedValue(undefined),
   };
 });
+
+function emptyExecutionLog(overrides: Partial<ExecutionLogResponse> = {}): ExecutionLogResponse {
+  return {
+    inventory_id: 'inv-1',
+    aisle_id: 'aisle-1',
+    requested_job_id: 'job-1',
+    available_job_ids: ['job-1'],
+    available_attempts: [],
+    available_execution_ids: [],
+    events: [],
+    ...overrides,
+  };
+}
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -161,7 +176,7 @@ describe('InventoryDetail', () => {
       reset: vi.fn(),
     });
     useExecutionLogMock.mockReturnValue({
-      data: { events: [] },
+      data: emptyExecutionLog(),
       isLoading: false,
       isFetching: false,
       error: null,
@@ -424,7 +439,7 @@ describe('InventoryDetail', () => {
       refetch: vi.fn(),
     });
     useExecutionLogMock.mockReturnValue({
-      data: {
+      data: emptyExecutionLog({
         events: [
           {
             ts: '2024-01-01T00:01:00Z',
@@ -432,9 +447,13 @@ describe('InventoryDetail', () => {
             level: 'info',
             message: 'stage.started',
             payload: { substep: 'provider_call' },
+            event_job_id: null,
+            event_attempt: null,
+            event_execution_id: null,
+            is_requested_job_event: true,
           },
         ],
-      },
+      }),
       isLoading: false,
       isFetching: false,
       error: null,
@@ -625,7 +644,7 @@ describe('InventoryDetail', () => {
       refetch: detailRefetch,
     });
     useExecutionLogMock.mockReturnValue({
-      data: { events: [] },
+      data: emptyExecutionLog(),
       isLoading: false,
       isFetching: false,
       error: null,
@@ -708,7 +727,7 @@ describe('InventoryDetail', () => {
       refetch: detailRefetch,
     });
     useExecutionLogMock.mockReturnValue({
-      data: { events: [] },
+      data: emptyExecutionLog(),
       isLoading: false,
       isFetching: false,
       error: null,

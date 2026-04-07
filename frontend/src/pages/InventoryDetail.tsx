@@ -25,7 +25,7 @@ import { pathToAislePositions } from '../utils/resultRoutes';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
 import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
 import type { ExecutionLogEvent } from '../api/types';
-import { exportInventoryResultsCsv } from '../api/client';
+import { downloadExecutionLogTxt, exportInventoryResultsCsv } from '../api/client';
 import {
   DataTable,
   ErrorAlert,
@@ -172,6 +172,7 @@ export default function InventoryDetail() {
   const [processPromptKey, setProcessPromptKey] = useState('');
   const [referenceImagesOpen, setReferenceImagesOpen] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [downloadingExecutionLog, setDownloadingExecutionLog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
 
@@ -863,6 +864,25 @@ export default function InventoryDetail() {
                 >
                   {jobDetailQuery.isFetching || executionLogQuery.isFetching ? 'Refreshing…' : 'Refresh'}
                 </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={!inventoryId || !jobDialog || downloadingExecutionLog}
+                  onClick={async () => {
+                    if (!inventoryId || !jobDialog) return;
+                    setDownloadingExecutionLog(true);
+                    try {
+                      await downloadExecutionLogTxt(inventoryId, jobDialog.aisleId, jobDialog.jobId);
+                    } catch (e) {
+                      const err = e instanceof ApiError ? e : new ApiError(String(e));
+                      showSnackbar(getApiErrorMessage(err, 'Failed to download execution log'), 'error');
+                    } finally {
+                      setDownloadingExecutionLog(false);
+                    }
+                  }}
+                >
+                  {downloadingExecutionLog ? 'Downloading…' : 'Download log'}
+                </Button>
                 {isCancelRequested(selectedJob?.status) ? (
                   <Button size="small" variant="outlined" disabled>
                     Cancellation requested
@@ -922,7 +942,7 @@ export default function InventoryDetail() {
                 Execution log
               </Typography>
               <ExecutionLogPanel
-                events={executionLogQuery.data?.events ?? []}
+                log={executionLogQuery.data ?? null}
                 isLoading={executionLogQuery.isLoading}
                 error={executionLogQuery.error}
                 emptyMessage="No log entries yet. The job may not have started or the log file is not available."

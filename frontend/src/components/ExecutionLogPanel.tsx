@@ -1,21 +1,27 @@
 /**
  * Execution log panel (v3.1.1) — operator-facing processing log.
- * Shows timestamp, level, stage, message; highlights errors.
- * Error prop is typed as unknown for safe handling of API/query error shapes.
+ * Shows timestamp, level, stage, message; highlights errors; supports Gemini request blocks.
+ * When given an enriched `log` envelope, shows job/attempt/execution filters (client-side).
  */
 
+import { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Box,
   Chip,
   CircularProgress,
   Divider,
+  FormControl,
+  InputLabel,
   List,
   ListItem,
   ListItemText,
+  MenuItem,
   Paper,
+  Select,
   Typography,
 } from '@mui/material';
-import type { ExecutionLogEvent } from '../api/types';
+import type { ExecutionLogEvent, ExecutionLogResponse } from '../api/types';
 
 /** Derive a readable error message from unknown query/API error shape. */
 export function getReadableErrorMessage(error: unknown): string {
@@ -54,12 +60,19 @@ function levelColor(level: string): 'default' | 'warning' | 'error' | 'success' 
   }
 }
 
-function safePayloadString(payload: Record<string, unknown> | null | undefined): string {
-  if (!payload || typeof payload !== 'object') return '';
+function safePayloadString(payload: unknown): string {
+  if (payload == null) return '';
+  if (typeof payload === 'object') {
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return '[unable to display payload]';
+    }
+  }
   try {
     return JSON.stringify(payload);
   } catch {
-    return '[unable to display payload]';
+    return String(payload);
   }
 }
 
@@ -143,8 +156,19 @@ function formatAttachmentLabel(item: GeminiAttachment): string {
   return `${id}: ${filename}${mime}${resolved}`;
 }
 
+function shortJobLabel(id: string): string {
+  const s = id.trim();
+  if (s.length <= 14) return s;
+  return `${s.slice(0, 8)}…${s.slice(-4)}`;
+}
+
+type JobScope = 'requested' | 'all';
+
 interface ExecutionLogPanelProps {
-  events: ExecutionLogEvent[];
+  /** Enriched API response — enables filters and context chips. */
+  log?: ExecutionLogResponse | null;
+  /** Legacy: raw events only when `log` is omitted (tests / transitional). */
+  events?: ExecutionLogEvent[];
   isLoading?: boolean;
   /** Query/API error; typed unknown so panel never crashes on unexpected shape. */
   error?: unknown;
@@ -152,11 +176,50 @@ interface ExecutionLogPanelProps {
 }
 
 export default function ExecutionLogPanel({
-  events,
+  log,
+  events: eventsProp,
   isLoading,
   error,
   emptyMessage = 'No log entries yet.',
 }: ExecutionLogPanelProps) {
+  const allEvents = log?.events ?? eventsProp ?? [];
+  const haveEnvelope = Boolean(log);
+
+  const hasPayloadJobIds = useMemo(
+    () => allEvents.some((e) => e.event_job_id != null && String(e.event_job_id).trim() !== ''),
+    [allEvents]
+  );
+
+  const [jobScope, setJobScope] = useState<JobScope>('requested');
+  const [attemptKey, setAttemptKey] = useState<string>('all');
+  const [executionKey, setExecutionKey] = useState<string>('all');
+
+  useEffect(() => {
+    setJobScope('requested');
+    setAttemptKey('all');
+    setExecutionKey('all');
+  }, [log?.requested_job_id]);
+
+  const filteredEvents = useMemo(() => {
+    let rows = allEvents;
+    if (haveEnvelope && hasPayloadJobIds) {
+      if (jobScope === 'requested') {
+        rows = rows.filter((e) => e.is_requested_job_event === true);
+      }
+    }
+    if (attemptKey !== 'all') {
+      const n = Number(attemptKey);
+      rows = rows.filter((e) => e.event_attempt === n);
+    }
+    if (executionKey !== 'all') {
+      rows = rows.filter((e) => e.event_execution_id === executionKey);
+    }
+    return rows;
+  }, [allEvents, haveEnvelope, hasPayloadJobIds, jobScope, attemptKey, executionKey]);
+
+  const attemptSelectDisabled = !log || log.available_attempts.length <= 1;
+  const showExecutionFilter = Boolean(log && log.available_execution_ids.length > 1);
+
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
@@ -171,24 +234,114 @@ export default function ExecutionLogPanel({
       </Typography>
     );
   }
-  if (!events || events.length === 0) {
+  if (!allEvents.length) {
     return (
       <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>
         {emptyMessage}
       </Typography>
     );
   }
-  const parsedEvents = events.map((evt) => ({
+
+  const parsedEvents = filteredEvents.map((evt) => ({
     event: evt,
     geminiRequest: parseGeminiRequestPayload(evt),
   }));
-  const geminiRequests = parsedEvents
-    .filter((entry): entry is { event: ExecutionLogEvent; geminiRequest: GeminiRequestPayload } => entry.geminiRequest != null);
+  const geminiRequests = parsedEvents.filter(
+    (entry): entry is { event: ExecutionLogEvent; geminiRequest: GeminiRequestPayload } =>
+      entry.geminiRequest != null
+  );
   const timelineEvents = parsedEvents
     .filter((entry) => entry.geminiRequest == null)
     .map((entry) => entry.event);
+
+  const summaryParts: string[] = [];
+  summaryParts.push(`Visible: ${filteredEvents.length} / ${allEvents.length} events`);
+  if (haveEnvelope && log) {
+    summaryParts.push(`Requested job: ${shortJobLabel(log.requested_job_id)}`);
+    if (hasPayloadJobIds) {
+      summaryParts.push(jobScope === 'requested' ? 'Filter: this job' : 'Filter: all job ids in log');
+    }
+    if (attemptKey !== 'all') {
+      summaryParts.push(`Attempt: ${attemptKey}`);
+    }
+    if (executionKey !== 'all') {
+      summaryParts.push(`Execution: ${shortJobLabel(executionKey)}`);
+    }
+  }
+
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
+      {haveEnvelope && log ? (
+        <>
+          {!hasPayloadJobIds ? (
+            <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
+              Job metadata unavailable for this log (no <code>job_id</code> on events). Showing all entries; download
+              still includes the full file.
+            </Alert>
+          ) : null}
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1.5,
+              alignItems: 'flex-end',
+            }}
+          >
+            {hasPayloadJobIds ? (
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <InputLabel id="exec-log-job-filter-label">Job context</InputLabel>
+                <Select
+                  labelId="exec-log-job-filter-label"
+                  label="Job context"
+                  value={jobScope}
+                  onChange={(e) => setJobScope(e.target.value as JobScope)}
+                >
+                  <MenuItem value="requested">Current job</MenuItem>
+                  <MenuItem value="all">All job ids in log</MenuItem>
+                </Select>
+              </FormControl>
+            ) : null}
+            <FormControl size="small" sx={{ minWidth: 160 }} disabled={attemptSelectDisabled}>
+              <InputLabel id="exec-log-attempt-label">Attempt</InputLabel>
+              <Select
+                labelId="exec-log-attempt-label"
+                label="Attempt"
+                value={attemptKey}
+                onChange={(e) => setAttemptKey(e.target.value)}
+              >
+                <MenuItem value="all">All attempts</MenuItem>
+                {(log.available_attempts ?? []).map((a) => (
+                  <MenuItem key={a} value={String(a)}>
+                    {a}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {showExecutionFilter ? (
+              <FormControl size="small" sx={{ minWidth: 200 }}>
+                <InputLabel id="exec-log-exec-label">Execution id</InputLabel>
+                <Select
+                  labelId="exec-log-exec-label"
+                  label="Execution id"
+                  value={executionKey}
+                  onChange={(e) => setExecutionKey(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  {log.available_execution_ids.map((id) => (
+                    <MenuItem key={id} value={id}>
+                      {shortJobLabel(id)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : null}
+          </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            {summaryParts.join(' · ')}
+          </Typography>
+        </>
+      ) : null}
+
       {geminiRequests.map(({ event, geminiRequest }, requestIndex) => (
         <Paper key={`${event.ts}-${requestIndex}`} variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
@@ -284,54 +437,88 @@ export default function ExecutionLogPanel({
       ))}
 
       <List dense disablePadding sx={{ maxHeight: 360, overflow: 'auto' }}>
-        {timelineEvents.map((evt, i) => (
-          <ListItem key={i} alignItems="flex-start" disableGutters sx={{ py: 0.25 }}>
-            <ListItemText
-              primary={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-                  <Typography component="span" variant="caption" color="text.secondary">
-                    {formatTs(evt.ts)}
-                  </Typography>
-                  <Chip
-                    label={evt.stage}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}
-                  />
-                  <Chip
-                    label={evt.level}
-                    size="small"
-                    color={levelColor(evt.level)}
-                    sx={{ fontSize: '0.65rem' }}
-                  />
-                </Box>
-              }
-              secondary={
-                <>
-                  <Typography variant="body2" component="span" sx={{ display: 'block', mt: 0.25 }}>
-                    {evt.message}
-                  </Typography>
-                  {evt.payload && typeof evt.payload === 'object' && Object.keys(evt.payload).length > 0 && (
-                    <Typography
-                      variant="caption"
-                      component="span"
-                      sx={{ display: 'block', color: 'text.secondary', fontFamily: 'monospace' }}
-                    >
-                      {safePayloadString(evt.payload as Record<string, unknown>)}
-                    </Typography>
-                  )}
-                </>
-              }
-              primaryTypographyProps={{ component: 'div' }}
-              secondaryTypographyProps={{ component: 'div' }}
+        {timelineEvents.map((evt, i) => {
+          const ej = evt.event_job_id;
+          const showJobBadge = haveEnvelope && hasPayloadJobIds && Boolean(ej);
+          const emphasisRequested = evt.is_requested_job_event === true;
+          return (
+            <ListItem
+              key={i}
+              alignItems="flex-start"
+              disableGutters
               sx={{
-                '& .MuiListItemText-secondary': {
-                  color: evt.level === 'error' ? 'error.main' : undefined,
-                },
+                py: 0.5,
+                pl: 0.5,
+                borderLeft: emphasisRequested ? 3 : 0,
+                borderColor: emphasisRequested ? 'primary.main' : 'transparent',
               }}
-            />
-          </ListItem>
-        ))}
+            >
+              <ListItemText
+                primary={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                    <Typography component="span" variant="caption" color="text.secondary">
+                      {formatTs(evt.ts)}
+                    </Typography>
+                    <Chip
+                      label={evt.stage}
+                      size="small"
+                      variant="outlined"
+                      sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}
+                    />
+                    <Chip label={evt.level} size="small" color={levelColor(evt.level)} sx={{ fontSize: '0.65rem' }} />
+                    {showJobBadge ? (
+                      <Chip
+                        label={`job ${shortJobLabel(String(ej))}`}
+                        size="small"
+                        variant="outlined"
+                        color={emphasisRequested ? 'primary' : 'default'}
+                        sx={{ fontSize: '0.65rem' }}
+                      />
+                    ) : null}
+                    {evt.event_attempt != null ? (
+                      <Chip label={`att ${evt.event_attempt}`} size="small" variant="outlined" sx={{ fontSize: '0.65rem' }} />
+                    ) : null}
+                    {evt.event_execution_id ? (
+                      <Chip
+                        label={`exec ${shortJobLabel(evt.event_execution_id)}`}
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontSize: '0.65rem' }}
+                      />
+                    ) : null}
+                    {emphasisRequested ? (
+                      <Chip label="This job" size="small" color="primary" sx={{ fontSize: '0.6rem' }} />
+                    ) : null}
+                  </Box>
+                }
+                secondary={
+                  <>
+                    <Typography variant="body2" component="span" sx={{ display: 'block', mt: 0.25 }}>
+                      {evt.message}
+                    </Typography>
+                    {evt.payload != null &&
+                      (typeof evt.payload !== 'object' || Object.keys(evt.payload as object).length > 0) && (
+                        <Typography
+                          variant="caption"
+                          component="span"
+                          sx={{ display: 'block', color: 'text.secondary', fontFamily: 'monospace' }}
+                        >
+                          {safePayloadString(evt.payload)}
+                        </Typography>
+                      )}
+                  </>
+                }
+                primaryTypographyProps={{ component: 'div' }}
+                secondaryTypographyProps={{ component: 'div' }}
+                sx={{
+                  '& .MuiListItemText-secondary': {
+                    color: evt.level === 'error' ? 'error.main' : undefined,
+                  },
+                }}
+              />
+            </ListItem>
+          );
+        })}
       </List>
     </Box>
   );

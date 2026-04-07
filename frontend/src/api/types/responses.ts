@@ -269,17 +269,27 @@ export interface PromoteOperationalJobResponse {
   operational_job_id: string;
 }
 
-/** Single execution log event (v3.1.1). */
+/** Single execution log event (raw row + derived metadata for filters / export). */
 export interface ExecutionLogEvent {
   ts: string;
   stage: string;
   level: string;
   message: string;
-  payload?: Record<string, unknown> | null;
+  payload?: unknown;
+  event_job_id?: string | null;
+  event_attempt?: number | null;
+  event_execution_id?: string | null;
+  is_requested_job_event?: boolean;
 }
 
-/** GET .../aisles/{aisle_id}/jobs/{job_id}/execution-log response. */
+/** GET .../aisles/{aisle_id}/jobs/{job_id}/execution-log — enriched envelope. */
 export interface ExecutionLogResponse {
+  inventory_id: string;
+  aisle_id: string;
+  requested_job_id: string;
+  available_job_ids: string[];
+  available_attempts: number[];
+  available_execution_ids: string[];
   events: ExecutionLogEvent[];
 }
 
