@@ -7,6 +7,7 @@ import {
   getAisles,
   getInventoryMetrics,
   getExecutionLog,
+  getAisleExecutionLog,
   getAisleJobDetail,
   getProcessingProviderOptions,
   listAisleJobs,
@@ -61,6 +62,20 @@ export function useExecutionLog(
     queryFn: () => getExecutionLog(inventoryId!, aisleId!, jobId!),
     enabled:
       Boolean(inventoryId && aisleId && jobId) && (options?.enabled !== false),
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Aggregated execution log for an aisle (all jobs). Enable when dialog is open. */
+export function useAisleExecutionLog(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.inventories.aisleExecutionLog(inventoryId ?? '', aisleId ?? ''),
+    queryFn: () => getAisleExecutionLog(inventoryId!, aisleId!),
+    enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
     refetchOnWindowFocus: false,
   });
 }

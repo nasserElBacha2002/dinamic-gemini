@@ -1094,6 +1094,9 @@ def test_execution_log_and_lifecycle_when_artifacts_missing() -> None:
         assert "events" in data
         assert data["events"] == [], "missing run dir must yield events: [] (degraded diagnostic)"
         assert isinstance(data["events"], list)
+        assert data.get("requested_job_id") == "job-art-1"
+        assert data.get("inventory_id") == "inv-art"
+        assert data.get("aisle_id") == "aisle-art"
 
         # Lifecycle unchanged and DB-authoritative after reading log
         status_resp2 = c.get("/api/v3/inventories/inv-art/aisles/aisle-art/status")
@@ -1167,7 +1170,11 @@ def test_execution_log_returns_200_empty_events_when_run_dir_exists_but_file_mis
                 "/api/v3/inventories/inv-el/aisles/aisle-el/jobs/job-el-1/execution-log",
             )
             assert log_resp.status_code == 200
-            assert log_resp.json()["events"] == []
+            body = log_resp.json()
+            assert body["events"] == []
+            assert body["requested_job_id"] == "job-el-1"
+            assert body["inventory_id"] == "inv-el"
+            assert body["aisle_id"] == "aisle-el"
         finally:
             mock_load.stop()
             app.dependency_overrides.pop(get_current_admin, None)
@@ -1240,9 +1247,104 @@ def test_execution_log_returns_events_for_canceled_job() -> None:
                 "/api/v3/inventories/inv-cancel-log/aisles/aisle-cancel-log/jobs/job-cancel-log/execution-log"
             )
         assert response.status_code == 200
-        messages = [event["message"] for event in response.json()["events"]]
+        body = response.json()
+        messages = [event["message"] for event in body["events"]]
         assert "job.cancel_requested" in messages
         assert "job.canceled" in messages
+        assert body["inventory_id"] == "inv-cancel-log"
+        assert body["aisle_id"] == "aisle-cancel-log"
+        assert body["requested_job_id"] == "job-cancel-log"
+        for ev in body["events"]:
+            assert "is_requested_job_event" in ev
+            assert "event_job_id" in ev
+
+        txt_resp = c.get(
+            "/api/v3/inventories/inv-cancel-log/aisles/aisle-cancel-log/jobs/job-cancel-log/execution-log.txt"
+        )
+        assert txt_resp.status_code == 200
+        assert "text/plain" in txt_resp.headers.get("content-type", "").lower()
+        cd = txt_resp.headers.get("content-disposition", "")
+        assert "attachment" in cd.lower()
+        assert "inventory_inv-cancel-log_aisle_aisle-cancel-log_job_job-cancel-log_execution_log.txt" in cd
+        assert b"job.canceled" in txt_resp.content
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_aisle_repo, None)
+        app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_artifact_storage, None)
+        import shutil
+
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_execution_log_json_lists_multiple_job_contexts_from_payload() -> None:
+    """Enriched response aggregates job_id / attempt / execution_id from event payloads."""
+    from src.infrastructure.pipeline.v3_job_executor import RUN_ID
+    from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+    inv = Inventory("inv-mix", "Mix", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-mix", "inv-mix", "M-01", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+    job = Job(
+        id="job-main",
+        target_type="aisle",
+        target_id="aisle-mix",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={"aisle_id": "aisle-mix"},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+    base = Path(tempfile.mkdtemp(prefix="mix_exec_"))
+    run_dir = base / "job-main" / RUN_ID
+    run_dir.mkdir(parents=True)
+    lines = [
+        '{"ts":"2025-01-01T00:00:00+00:00","stage":"A","level":"info","message":"one","payload":{"job_id":"job-main","attempt":1,"details":{"execution_id":"ex-1"}}}',
+        '{"ts":"2025-01-01T00:00:01+00:00","stage":"A","level":"info","message":"two","payload":{"job_id":"job-spawn","attempt":2}}',
+    ]
+    (run_dir / "execution_log.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    fake_settings = type(
+        "Settings",
+        (),
+        {
+            "output_dir": str(base),
+            "artifact_storage_legacy_local_read_enabled": True,
+            "artifact_s3_signed_url_ttl_sec": 900,
+            "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+            "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
+        },
+    )()
+    store = V3ArtifactStorageAdapter(base / "artifact-unused")
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    app.dependency_overrides[get_artifact_storage] = lambda: store
+    try:
+        with patch("src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings):
+            c = TestClient(app)
+            response = c.get(
+                "/api/v3/inventories/inv-mix/aisles/aisle-mix/jobs/job-main/execution-log",
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert set(data["available_job_ids"]) == {"job-main", "job-spawn"}
+        assert data["available_attempts"] == [1, 2]
+        assert data["available_execution_ids"] == ["ex-1"]
+        ev0, ev1 = data["events"]
+        assert ev0["event_job_id"] == "job-main"
+        assert ev0["event_attempt"] == 1
+        assert ev0["event_execution_id"] == "ex-1"
+        assert ev0["is_requested_job_event"] is True
+        assert ev1["event_job_id"] == "job-spawn"
+        assert ev1["is_requested_job_event"] is False
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         app.dependency_overrides.pop(get_inventory_repo, None)
@@ -1733,8 +1835,11 @@ def test_execution_log_from_durable_metadata_not_local_disk() -> None:
             f"/api/v3/inventories/inv-p4/aisles/aisle-p4/jobs/{job_id}/execution-log",
         )
         assert log_resp.status_code == 200, log_resp.text
-        assert len(log_resp.json()["events"]) == 1
-        assert log_resp.json()["events"][0]["message"] == "m"
+        j = log_resp.json()
+        assert len(j["events"]) == 1
+        assert j["events"][0]["message"] == "m"
+        assert j["requested_job_id"] == job_id
+        assert j["inventory_id"] == "inv-p4"
     finally:
         mock_st.stop()
         app.dependency_overrides.pop(get_current_admin, None)

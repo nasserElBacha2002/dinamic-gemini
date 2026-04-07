@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import InventoryDetail from '../src/pages/InventoryDetail';
 import { AppSnackbarProvider } from '../src/components/ui';
+import type { ExecutionLogResponse } from '../src/api/types';
+import { downloadAisleExecutionLogTxt, downloadExecutionLogTxt } from '../src/api/client';
 
 const { useInventoryVisualReferencesMock } = vi.hoisted(() => ({
   useInventoryVisualReferencesMock: vi.fn(),
@@ -22,11 +24,17 @@ const { useReplaceInventoryVisualReferenceMock } = vi.hoisted(() => ({
 const { useExecutionLogMock } = vi.hoisted(() => ({
   useExecutionLogMock: vi.fn(),
 }));
+const { useAisleExecutionLogMock } = vi.hoisted(() => ({
+  useAisleExecutionLogMock: vi.fn(),
+}));
 const { useAisleJobDetailMock } = vi.hoisted(() => ({
   useAisleJobDetailMock: vi.fn(),
 }));
 const { useAislesListMock } = vi.hoisted(() => ({
   useAislesListMock: vi.fn(),
+}));
+const { useAisleJobsListMock } = vi.hoisted(() => ({
+  useAisleJobsListMock: vi.fn(),
 }));
 const { useCancelAisleJobMock } = vi.hoisted(() => ({
   useCancelAisleJobMock: vi.fn(),
@@ -52,7 +60,9 @@ vi.mock('../src/hooks', async (importOriginal) => {
     }),
     useInventoryVisualReferences: useInventoryVisualReferencesMock,
     useAislesList: useAislesListMock,
+    useAisleJobsList: useAisleJobsListMock,
     useExecutionLog: useExecutionLogMock,
+    useAisleExecutionLog: useAisleExecutionLogMock,
     useAisleJobDetail: useAisleJobDetailMock,
     useCreateAisle: () => ({ mutateAsync: vi.fn() }),
     useProcessingProviderOptions: useProcessingProviderOptionsMock,
@@ -71,8 +81,23 @@ vi.mock('../src/api/client', async (importOriginal) => {
   return {
     ...actual,
     exportInventoryResultsCsv: vi.fn(),
+    downloadExecutionLogTxt: vi.fn().mockResolvedValue(undefined),
+    downloadAisleExecutionLogTxt: vi.fn().mockResolvedValue(undefined),
   };
 });
+
+function emptyExecutionLog(overrides: Partial<ExecutionLogResponse> = {}): ExecutionLogResponse {
+  return {
+    inventory_id: 'inv-1',
+    aisle_id: 'aisle-1',
+    requested_job_id: 'job-1',
+    available_job_ids: ['job-1'],
+    available_attempts: [],
+    available_execution_ids: [],
+    events: [],
+    ...overrides,
+  };
+}
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -104,6 +129,8 @@ describe('InventoryDetail', () => {
     useDeleteInventoryVisualReferenceMock.mockReset();
     useReplaceInventoryVisualReferenceMock.mockReset();
     useExecutionLogMock.mockReset();
+    useAisleExecutionLogMock.mockReset();
+    useAisleJobsListMock.mockReset();
     useAisleJobDetailMock.mockReset();
     useCancelAisleJobMock.mockReset();
     useRetryAisleJobMock.mockReset();
@@ -161,7 +188,14 @@ describe('InventoryDetail', () => {
       reset: vi.fn(),
     });
     useExecutionLogMock.mockReturnValue({
-      data: { events: [] },
+      data: emptyExecutionLog(),
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleExecutionLogMock.mockReturnValue({
+      data: undefined,
       isLoading: false,
       isFetching: false,
       error: null,
@@ -169,6 +203,14 @@ describe('InventoryDetail', () => {
     });
     useAisleJobDetailMock.mockReturnValue({
       data: null,
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleJobsListMock.mockReturnValue({
+      data: { jobs: [] },
       isLoading: false,
       isFetching: false,
       isError: false,
@@ -307,7 +349,7 @@ describe('InventoryDetail', () => {
     expect(screen.getByRole('button', { name: /close reference images drawer/i })).toBeInTheDocument();
   });
 
-  it('loads the execution log and job detail on demand without polling options', async () => {
+  it('loads observability queries only after opening the unified dialog (no polling)', async () => {
     useInventoryVisualReferencesMock.mockImplementation(() => ({
       data: { items: [] },
       isLoading: false,
@@ -343,28 +385,243 @@ describe('InventoryDetail', () => {
       error: null,
       refetch: vi.fn(),
     });
+    useAisleJobsListMock.mockReturnValue({
+      data: {
+        jobs: [
+          {
+            id: 'job-1',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
 
     renderPage();
 
-    expect(useExecutionLogMock).toHaveBeenCalled();
-    expect(useExecutionLogMock.mock.calls[0]?.[3]).toMatchObject({ enabled: false });
-    expect(useAisleJobDetailMock).toHaveBeenCalled();
-    expect(useAisleJobDetailMock.mock.calls[0]?.[3]).toMatchObject({ enabled: false });
+    expect(useExecutionLogMock).not.toHaveBeenCalled();
+    expect(useAisleJobDetailMock).not.toHaveBeenCalled();
+    expect(useAisleExecutionLogMock).not.toHaveBeenCalled();
+    expect(useAisleJobsListMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /view job details/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
 
     await waitFor(() => {
-      const lastCall = useExecutionLogMock.mock.calls.at(-1);
+      const lastLogCall = useExecutionLogMock.mock.calls.at(-1);
       const lastDetailCall = useAisleJobDetailMock.mock.calls.at(-1);
-      expect(lastCall?.[3]).toMatchObject({ enabled: true });
+      expect(lastLogCall?.[3]).toMatchObject({ enabled: true });
       expect(lastDetailCall?.[3]).toMatchObject({ enabled: true });
       expect(screen.getByRole('button', { name: /^refresh$/i })).toBeInTheDocument();
     });
     expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).not.toHaveProperty('refetchInterval');
   });
 
-  it('renders job detail metadata, lineage, and execution log in the job dialog', async () => {
+  it('opens one observability dialog for merged aisle logs by default', async () => {
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'created',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            assets_count: 3,
+            positions_count: 0,
+            pending_review_positions_count: 0,
+            latest_job: null,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /aisle observability/i })).toBeInTheDocument();
+    });
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+
+    const scopeControl = screen.getByRole('combobox', { name: /log scope/i });
+    expect(scopeControl.textContent).toMatch(/merged aisle log/i);
+
+    const lastAisleLog = useAisleExecutionLogMock.mock.calls.at(-1);
+    expect(lastAisleLog?.[2]).toMatchObject({ enabled: true });
+    const lastJobLog = useExecutionLogMock.mock.calls.at(-1);
+    expect(lastJobLog?.[3]).toMatchObject({ enabled: false });
+  });
+
+  it('download actions call the correct execution-log endpoints from the unified dialog', async () => {
+    vi.mocked(downloadAisleExecutionLogTxt).mockClear();
+    vi.mocked(downloadExecutionLogTxt).mockClear();
+
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'processing',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            assets_count: 3,
+            positions_count: 0,
+            pending_review_positions_count: 0,
+            latest_job: {
+              id: 'job-1',
+              status: 'running',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+            },
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleJobsListMock.mockReturnValue({
+      data: {
+        jobs: [
+          {
+            id: 'job-1',
+            status: 'running',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleJobDetailMock.mockReturnValue({
+      data: {
+        id: 'job-1',
+        status: 'running',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /download merged log/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /download merged log/i }));
+    await waitFor(() => {
+      expect(vi.mocked(downloadAisleExecutionLogTxt)).toHaveBeenCalledWith('inv-1', 'aisle-1');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /download selected job log/i }));
+    await waitFor(() => {
+      expect(vi.mocked(downloadExecutionLogTxt)).toHaveBeenCalledWith('inv-1', 'aisle-1', 'job-1');
+    });
+  });
+
+  it('switching log scope toggles which execution log query is active', async () => {
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'processing',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            assets_count: 3,
+            positions_count: 0,
+            pending_review_positions_count: 0,
+            latest_job: {
+              id: 'job-1',
+              status: 'running',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+            },
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleJobsListMock.mockReturnValue({
+      data: {
+        jobs: [
+          {
+            id: 'job-1',
+            status: 'running',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleJobDetailMock.mockReturnValue({
+      data: {
+        id: 'job-1',
+        status: 'running',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+
+    await waitFor(() => {
+      expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).toMatchObject({ enabled: true });
+    });
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /log scope/i }));
+    fireEvent.click(screen.getByRole('option', { name: /merged aisle log/i }));
+
+    await waitFor(() => {
+      expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).toMatchObject({ enabled: false });
+    });
+  });
+
+  it('renders job metadata and execution log inside the unified observability dialog', async () => {
     useInventoryVisualReferencesMock.mockImplementation(() => ({
       data: { items: [] },
       isLoading: false,
@@ -398,6 +655,25 @@ describe('InventoryDetail', () => {
       error: null,
       refetch: vi.fn(),
     });
+    useAisleJobsListMock.mockReturnValue({
+      data: {
+        jobs: [
+          {
+            id: 'job-1',
+            status: 'starting',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            attempt_count: 2,
+            retry_of_job_id: 'job-0',
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     useAisleJobDetailMock.mockReturnValue({
       data: {
         id: 'job-1',
@@ -424,7 +700,7 @@ describe('InventoryDetail', () => {
       refetch: vi.fn(),
     });
     useExecutionLogMock.mockReturnValue({
-      data: {
+      data: emptyExecutionLog({
         events: [
           {
             ts: '2024-01-01T00:01:00Z',
@@ -432,9 +708,13 @@ describe('InventoryDetail', () => {
             level: 'info',
             message: 'stage.started',
             payload: { substep: 'provider_call' },
+            event_job_id: null,
+            event_attempt: null,
+            event_execution_id: null,
+            is_requested_job_event: true,
           },
         ],
-      },
+      }),
       isLoading: false,
       isFetching: false,
       error: null,
@@ -444,13 +724,14 @@ describe('InventoryDetail', () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /view job details/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /job details/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /aisle observability/i })).toBeInTheDocument();
     });
-    expect(screen.getAllByText('Attempt 2')).toHaveLength(2);
-    expect(screen.getByText('Retry of job job-0')).toBeInTheDocument();
+    expect(screen.getByText('Attempt 2')).toBeInTheDocument();
+    expect(screen.getByText('Retry of job')).toBeInTheDocument();
+    expect(screen.getByText('job-0')).toBeInTheDocument();
     expect(screen.getByText('Current stage')).toBeInTheDocument();
     expect(screen.getAllByText('AnalysisStage').length).toBeGreaterThan(0);
     expect(screen.getByText('Current step')).toBeInTheDocument();
@@ -492,6 +773,23 @@ describe('InventoryDetail', () => {
       error: null,
       refetch: vi.fn(),
     });
+    useAisleJobsListMock.mockReturnValue({
+      data: {
+        jobs: [
+          {
+            id: 'job-1',
+            status: 'running',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     useAisleJobDetailMock.mockReturnValue({
       data: {
         id: 'job-1',
@@ -508,7 +806,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /view job details/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /cancel job/i })).toBeInTheDocument();
     });
@@ -547,6 +845,23 @@ describe('InventoryDetail', () => {
       error: null,
       refetch: vi.fn(),
     });
+    useAisleJobsListMock.mockReturnValue({
+      data: {
+        jobs: [
+          {
+            id: 'job-1',
+            status: 'failed',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     useAisleJobDetailMock.mockReturnValue({
       data: {
         id: 'job-1',
@@ -563,7 +878,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /view job details/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /retry job/i })).toBeInTheDocument();
     });
@@ -611,6 +926,23 @@ describe('InventoryDetail', () => {
       error: null,
       refetch: aislesRefetch,
     });
+    useAisleJobsListMock.mockReturnValue({
+      data: {
+        jobs: [
+          {
+            id: 'job-1',
+            status: 'running',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     useAisleJobDetailMock.mockReturnValue({
       data: {
         id: 'job-1',
@@ -625,7 +957,7 @@ describe('InventoryDetail', () => {
       refetch: detailRefetch,
     });
     useExecutionLogMock.mockReturnValue({
-      data: { events: [] },
+      data: emptyExecutionLog(),
       isLoading: false,
       isFetching: false,
       error: null,
@@ -638,7 +970,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /view job details/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /cancel job/i })).toBeInTheDocument();
     });
@@ -654,7 +986,6 @@ describe('InventoryDetail', () => {
 
   it('retry action triggers mutation and switches the dialog to the new attempt', async () => {
     const aislesRefetch = vi.fn().mockResolvedValue(undefined);
-    const logRefetch = vi.fn().mockResolvedValue(undefined);
     const detailRefetch = vi.fn().mockResolvedValue(undefined);
     const retryMutateAsync = vi.fn().mockResolvedValue({
       id: 'job-2',
@@ -694,26 +1025,59 @@ describe('InventoryDetail', () => {
       error: null,
       refetch: aislesRefetch,
     });
-    useAisleJobDetailMock.mockReturnValue({
+    useAisleJobsListMock.mockReturnValue({
       data: {
-        id: 'job-1',
-        status: 'failed',
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z',
+        jobs: [
+          {
+            id: 'job-2',
+            status: 'starting',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            attempt_count: 2,
+          },
+          {
+            id: 'job-1',
+            status: 'failed',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
       },
       isLoading: false,
       isFetching: false,
       isError: false,
       error: null,
-      refetch: detailRefetch,
+      refetch: vi.fn(),
     });
-    useExecutionLogMock.mockReturnValue({
-      data: { events: [] },
+    useAisleJobDetailMock.mockImplementation((_inv, _aisle, jobId) => ({
+      data:
+        jobId === 'job-2'
+          ? {
+              id: 'job-2',
+              status: 'starting',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+              attempt_count: 2,
+            }
+          : {
+              id: 'job-1',
+              status: 'failed',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+            },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: detailRefetch,
+    }));
+    useExecutionLogMock.mockImplementation((_inv, _aisle, jobId) => ({
+      data: emptyExecutionLog({ requested_job_id: jobId ?? 'job-1' }),
       isLoading: false,
       isFetching: false,
       error: null,
-      refetch: logRefetch,
-    });
+      refetch: vi.fn(),
+    }));
     useRetryAisleJobMock.mockReturnValue({
       mutateAsync: retryMutateAsync,
       isPending: false,
@@ -721,7 +1085,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /view job details/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /retry job/i })).toBeInTheDocument();
     });
@@ -730,8 +1094,6 @@ describe('InventoryDetail', () => {
     await waitFor(() => {
       expect(retryMutateAsync).toHaveBeenCalledWith({ aisleId: 'aisle-1', jobId: 'job-1' });
       expect(aislesRefetch).toHaveBeenCalled();
-      expect(logRefetch).toHaveBeenCalled();
-      expect(detailRefetch).toHaveBeenCalled();
     });
     await waitFor(() => {
       const lastCall = useAisleJobDetailMock.mock.calls.at(-1);
