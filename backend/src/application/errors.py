@@ -94,3 +94,7 @@ class InvalidProcessingModelError(Exception):
 
 class InvalidProcessingPromptKeyError(Exception):
     """Raised when prompt_key is not a registered hybrid prompt profile."""
+
+
+class JobPromotionNotAllowedError(Exception):
+    """Raised when a benchmark run cannot be promoted to operational (wrong scope, state, or type)."""

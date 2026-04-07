@@ -30,6 +30,9 @@ export const queryKeys = {
     /** GET .../aisles/{aisle}/jobs (run list for selector). */
     aisleJobs: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle-jobs', aisleId] as const,
+    /** Phase 6 — explicit two-run compare (benchmark analytics payload). */
+    benchmarkCompare: (inventoryId: string, aisleId: string, jobAId: string, jobBId: string) =>
+      [...queryKeys.inventories.all, 'benchmark-compare', inventoryId, aisleId, jobAId, jobBId] as const,
   },
 
   analytics: {

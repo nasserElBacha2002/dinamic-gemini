@@ -6,6 +6,7 @@ export {
   useExecutionLog,
   useAisleJobDetail,
   useAisleJobsList,
+  useAisleBenchmarkCompare,
 } from './useAisles';
 export {
   useAislePositions,
@@ -27,4 +28,5 @@ export {
   useDeleteInventoryVisualReference,
   useReplaceInventoryVisualReference,
   useSubmitReviewAction,
+  usePromoteAisleOperationalJob,
 } from './useMutations';

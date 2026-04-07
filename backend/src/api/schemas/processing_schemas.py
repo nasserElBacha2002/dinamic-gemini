@@ -92,6 +92,8 @@ class JobSummary(BaseModel):
     model_name: Optional[str] = None
     prompt_key: Optional[str] = None
     prompt_version: Optional[str] = None
+    #: True when this job is the aisle ``operational_job_id`` pointer (Phase 6 run browser).
+    is_operational: bool = False
 
 
 class AisleStatusResponse(BaseModel):

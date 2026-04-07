@@ -36,6 +36,8 @@ import type {
   AisleIssueListResponse,
   QualityPatternListResponse,
   ManualInterventionBreakdownResponse,
+  AisleBenchmarkCompareResponse,
+  PromoteOperationalJobResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -644,6 +646,82 @@ export async function listAisleJobs(
   const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs${qs ? `?${qs}` : ''}`;
   const response = await protectedFetch(path);
   return handleResponse<AisleJobsListResponse>(response);
+}
+
+/** Phase 6 — explicit two-run compare for an aisle (benchmark / inspection; read-only). */
+export async function getAisleBenchmarkCompare(
+  inventoryId: string,
+  aisleId: string,
+  jobAId: string,
+  jobBId: string
+): Promise<AisleBenchmarkCompareResponse> {
+  const params = new URLSearchParams({
+    job_a_id: jobAId.trim(),
+    job_b_id: jobBId.trim(),
+  });
+  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/benchmark/compare?${params}`;
+  const response = await protectedFetch(path);
+  return handleResponse<AisleBenchmarkCompareResponse>(response);
+}
+
+export async function promoteAisleOperationalJob(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<PromoteOperationalJobResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/promote-operational`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId.trim() }),
+    }
+  );
+  return handleResponse<PromoteOperationalJobResponse>(response);
+}
+
+/**
+ * Download Phase 6 benchmark CSV — either one explicit run (append metadata columns) or compare rows.
+ * Provide exactly one of (runJobId) or (jobAId + jobBId).
+ */
+export async function downloadAisleBenchmarkExportCsv(
+  inventoryId: string,
+  aisleId: string,
+  options: { runJobId: string } | { jobAId: string; jobBId: string }
+): Promise<void> {
+  const params = new URLSearchParams({ format: 'csv' });
+  if ('runJobId' in options) {
+    params.set('run_job_id', options.runJobId.trim());
+  } else {
+    params.set('job_a_id', options.jobAId.trim());
+    params.set('job_b_id', options.jobBId.trim());
+  }
+  const path = `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/benchmark/export?${params}`;
+  const response = await protectedFetch(path);
+  const fallbackName =
+    'runJobId' in options
+      ? `benchmark_run_${inventoryId}_${aisleId}_${options.runJobId}.csv`
+      : `benchmark_compare_${inventoryId}_${aisleId}_${options.jobAId}_${options.jobBId}.csv`;
+  if (!response.ok) {
+    const text = await response.text();
+    let data: ApiErrorDetail;
+    try {
+      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+    } catch {
+      data = {};
+    }
+    throwApiErrorIfNotOk(response, text, data);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** List positions (results) for an aisle — Épica 6 / Aisle Results table. */

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from src.api.dependencies import (
     get_artifact_storage,
     get_create_aisle_use_case,
@@ -20,6 +20,10 @@ from src.api.dependencies import (
     get_list_aisle_jobs_use_case,
     get_job_repo,
     get_run_aisle_merge_use_case,
+    get_compare_aisle_runs_use_case,
+    get_promote_aisle_operational_job_use_case,
+    get_export_aisle_benchmark_run_csv_use_case,
+    get_export_aisle_benchmark_compare_csv_use_case,
 )
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
@@ -34,6 +38,11 @@ from src.api.schemas.merge_schemas import (
 from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest
 from src.api.schemas.listing_schemas import PaginatedAisleListResponse, compute_total_pages
 from src.application.ports.contracts import AisleTableQuery
+from src.api.schemas.benchmark_schemas import (
+    AisleBenchmarkCompareResponse,
+    PromoteOperationalJobRequest,
+    PromoteOperationalJobResponse,
+)
 from src.api.schemas.processing_schemas import (
     AisleJobsListResponse,
     AisleStatusResponse,
@@ -51,6 +60,7 @@ from src.application.errors import (
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
+    JobPromotionNotAllowedError,
     InvalidProcessingModelError,
     InvalidProcessingPromptKeyError,
     ProcessingProviderNotConfiguredError,
@@ -69,7 +79,17 @@ from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsCommand,
     GetAisleMergeResultsUseCase,
 )
+from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
+from src.application.use_cases.export_aisle_benchmark import (
+    ExportAisleBenchmarkCompareCsvUseCase,
+    ExportAisleBenchmarkRunCommand,
+    ExportAisleBenchmarkRunCsvUseCase,
+)
 from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, ListAisleJobsUseCase
+from src.application.use_cases.promote_aisle_operational_job import (
+    PromoteAisleOperationalJobCommand,
+    PromoteAisleOperationalJobUseCase,
+)
 from src.application.use_cases.run_aisle_merge import (
     RunAisleMergeCommand,
     RunAisleMergeUseCase,
@@ -219,9 +239,12 @@ def list_aisle_jobs(
         result = use_case.execute(
             ListAisleJobsCommand(inventory_id=inventory_id, aisle_id=aisle_id, limit=limit)
         )
+        op = result.operational_job_id
         return AisleJobsListResponse(
-            operational_job_id=result.operational_job_id,
-            jobs=[job_to_summary(j) for j in result.jobs],
+            operational_job_id=op,
+            jobs=[
+                job_to_summary(j, is_operational=(op is not None and op == j.id)) for j in result.jobs
+            ],
         )
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail="Inventory not found")
@@ -478,3 +501,134 @@ def get_aisle_merge_results(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except JobDoesNotBelongToAisleError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/benchmark/compare",
+    response_model=AisleBenchmarkCompareResponse,
+)
+def compare_aisle_benchmark_runs(
+    inventory_id: str,
+    aisle_id: str,
+    job_a_id: str = Query(..., alias="job_a_id", min_length=1),
+    job_b_id: str = Query(..., alias="job_b_id", min_length=1),
+    use_case: CompareAisleRunsUseCase = Depends(get_compare_aisle_runs_use_case),
+) -> AisleBenchmarkCompareResponse:
+    """Phase 6 — read-only compare metrics between two explicit runs (same aisle, same inventory).
+
+    For **benchmark / inspection** only; does not alter operational analytics defaults.
+    """
+    try:
+        payload = use_case.execute(
+            CompareAisleRunsCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                job_a_id=job_a_id.strip(),
+                job_b_id=job_b_id.strip(),
+            )
+        )
+        return AisleBenchmarkCompareResponse.model_validate(payload)
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/promote-operational",
+    response_model=PromoteOperationalJobResponse,
+)
+def promote_aisle_operational_job(
+    inventory_id: str,
+    aisle_id: str,
+    body: PromoteOperationalJobRequest,
+    use_case: PromoteAisleOperationalJobUseCase = Depends(get_promote_aisle_operational_job_use_case),
+) -> PromoteOperationalJobResponse:
+    """Set ``aisles.operational_job_id`` to a succeeded process_aisle job; prior runs stay persisted."""
+    try:
+        jid = use_case.execute(
+            PromoteAisleOperationalJobCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                job_id=body.job_id.strip(),
+            )
+        )
+        return PromoteOperationalJobResponse(aisle_id=aisle_id, operational_job_id=jid)
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except JobPromotionNotAllowedError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+
+@router.get("/{inventory_id}/aisles/{aisle_id}/benchmark/export")
+def export_aisle_benchmark(
+    inventory_id: str,
+    aisle_id: str,
+    export_format: str = Query("csv", alias="format", description="Only csv supported."),
+    run_job_id: str | None = Query(
+        None,
+        description="Single-run export: job slice with benchmark metadata columns appended.",
+    ),
+    job_a_id: str | None = Query(None, alias="job_a_id"),
+    job_b_id: str | None = Query(None, alias="job_b_id"),
+    run_exporter: ExportAisleBenchmarkRunCsvUseCase = Depends(get_export_aisle_benchmark_run_csv_use_case),
+    compare_exporter: ExportAisleBenchmarkCompareCsvUseCase = Depends(
+        get_export_aisle_benchmark_compare_csv_use_case
+    ),
+) -> Response:
+    """Explicit benchmark exports (operational default export on GET .../export unchanged)."""
+    if (export_format or "").strip().lower() != "csv":
+        raise HTTPException(status_code=422, detail="Only format=csv is supported")
+    has_run = bool(run_job_id and str(run_job_id).strip())
+    has_pair = bool(job_a_id and str(job_a_id).strip() and job_b_id and str(job_b_id).strip())
+    if has_run == has_pair:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide exactly one of: run_job_id (single-run export) or both job_a_id and job_b_id (compare export).",
+        )
+    try:
+        if has_run:
+            csv_body = run_exporter.execute_csv(
+                ExportAisleBenchmarkRunCommand(
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                    run_job_id=str(run_job_id).strip(),
+                )
+            )
+            fname = f"benchmark_run_{inventory_id}_{aisle_id}_{str(run_job_id).strip()}.csv"
+        else:
+            csv_body = compare_exporter.execute_csv(
+                CompareAisleRunsCommand(
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                    job_a_id=str(job_a_id).strip(),
+                    job_b_id=str(job_b_id).strip(),
+                )
+            )
+            fname = (
+                f"benchmark_compare_{inventory_id}_{aisle_id}_"
+                f"{str(job_a_id).strip()}_{str(job_b_id).strip()}.csv"
+            )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
+    except AisleNotFoundError:
+        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except JobDoesNotBelongToAisleError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return Response(
+        content=csv_body.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )

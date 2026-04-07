@@ -15,6 +15,7 @@ import {
   deleteInventoryVisualReference,
   replaceInventoryVisualReference,
   submitReviewAction,
+  promoteAisleOperationalJob,
 } from '../api/client';
 import type { CreateInventoryRequest, CreateAisleRequest, ReviewActionRequest } from '../api/types';
 import { queryKeys } from '../api/queryKeys';
@@ -161,6 +162,22 @@ export function useReplaceInventoryVisualReference(inventoryId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+    },
+  });
+}
+
+/** Phase 6 — point operational_job_id at a succeeded run (benchmark → operational). */
+export function usePromoteAisleOperationalJob(inventoryId: string, aisleId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => promoteAisleOperationalJob(inventoryId, aisleId, jobId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.inventories.all, 'benchmark-compare'] });
     },
   });
 }

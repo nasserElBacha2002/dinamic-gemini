@@ -1,10 +1,19 @@
 /**
- * Phase 3 — minimal run picker for multi-run aisles (backend-resolved default vs explicit job).
+ * Phase 3 / Phase 6 — run picker for multi-run aisles (resolver default vs explicit job).
  *
  * `valueJobId` is the effective run shown in the control (from URL and/or backend-resolved slice).
  */
 
-import { FormControl, InputLabel, MenuItem, Select, type SelectChangeEvent, Stack, Typography } from '@mui/material';
+import {
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  type SelectChangeEvent,
+  Stack,
+  Typography,
+  Chip,
+} from '@mui/material';
 import type { JobSummary } from '../../../api/types';
 
 function shortId(id: string, n = 10): string {
@@ -18,6 +27,7 @@ function formatJobLine(j: JobSummary): string {
   if (j.provider_name) parts.push(j.provider_name);
   if (j.model_name) parts.push(j.model_name);
   if (j.prompt_key) parts.push(j.prompt_key);
+  if (j.prompt_version) parts.push(String(j.prompt_version));
   return parts.join(' · ');
 }
 
@@ -59,7 +69,7 @@ export default function AisleRunSelector({
   }
 
   return (
-    <FormControl size="small" sx={{ minWidth: 280, maxWidth: 420 }} disabled={disabled || loading}>
+    <FormControl size="small" sx={{ minWidth: 280, maxWidth: 480 }} disabled={disabled || loading}>
       <InputLabel id="aisle-run-select-label">Browse run</InputLabel>
       <Select
         labelId="aisle-run-select-label"
@@ -67,35 +77,39 @@ export default function AisleRunSelector({
         value={value}
         onChange={handleChange}
         displayEmpty
+        MenuProps={{
+          PaperProps: { sx: { maxHeight: 360 } },
+        }}
       >
         <MenuItem value="">
           <Stack spacing={0.25}>
             <Typography variant="body2">Default (API resolver)</Typography>
             <Typography variant="caption" color="text.secondary">
               {urlPinned
-                ? 'Clears ?jobId= and uses the API default resolver for this aisle'
-                : 'No ?jobId= in URL — backend picks operational / legacy / latest-succeeded'}
+                ? 'Clears ?jobId= and uses the operational or legacy null-job slice from the server'
+                : 'No explicit run in URL — backend uses operational_job_id when set, else legacy rows'}
             </Typography>
           </Stack>
         </MenuItem>
         {jobs.map((j) => {
-          const isOp = operationalJobId != null && operationalJobId === j.id;
+          const isOp = Boolean(operationalJobId != null && operationalJobId === j.id);
+          const isBench = !isOp && j.status === 'succeeded';
           return (
             <MenuItem key={j.id} value={j.id}>
-              <Stack spacing={0.25} sx={{ width: '100%' }}>
-                <Typography variant="body2" component="span">
-                  {formatJobLine(j)}
-                  {isOp ? (
-                    <Typography component="span" variant="caption" sx={{ ml: 1, color: 'success.main' }}>
-                      operational
-                    </Typography>
-                  ) : null}
-                </Typography>
-                {(j.model_name || j.prompt_key) && (
-                  <Typography variant="caption" color="text.secondary" noWrap>
-                    {[j.model_name, j.prompt_key].filter(Boolean).join(' · ')}
+              <Stack spacing={0.5} sx={{ width: '100%', py: 0.25 }}>
+                <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Typography variant="body2" component="span">
+                    {formatJobLine(j)}
                   </Typography>
-                )}
+                  {isOp ? <Chip size="small" label="Operational" color="success" variant="outlined" /> : null}
+                  {isBench ? (
+                    <Chip size="small" label="Benchmark" color="default" variant="outlined" />
+                  ) : null}
+                </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {[j.provider_name, j.model_name, j.prompt_key, j.prompt_version].filter(Boolean).join(' · ') ||
+                    '—'}
+                </Typography>
               </Stack>
             </MenuItem>
           );

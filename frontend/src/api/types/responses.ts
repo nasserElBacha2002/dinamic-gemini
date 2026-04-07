@@ -199,12 +199,74 @@ export interface JobSummary {
   prompt_key?: string | null;
   /** Tracked prompt line (e.g. prompt_key@v2.1); empty if unknown. */
   prompt_version?: string | null;
+  /** True when this job is the aisle operational pointer (Phase 6 jobs list). */
+  is_operational?: boolean;
 }
 
 /** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */
 export interface AisleJobsListResponse {
   operational_job_id?: string | null;
   jobs: JobSummary[];
+}
+
+/** Phase 6 — GET .../benchmark/compare (read-only, explicit job pair). */
+export interface BenchmarkRunSliceMetrics {
+  raw_rows_considered: number;
+  consolidated_positions: number;
+  total_quantity: number;
+  unknown_internal_code_count: number;
+  needs_review_count: number;
+}
+
+export interface BenchmarkRunCompareSide {
+  job_id: string;
+  status: string;
+  provider_name?: string | null;
+  model_name?: string | null;
+  prompt_key?: string | null;
+  prompt_version?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  metrics: BenchmarkRunSliceMetrics;
+}
+
+export interface BenchmarkCompareDiffSummary {
+  keys_only_in_a: number;
+  keys_only_in_b: number;
+  keys_in_both: number;
+  quantity_changed: number;
+  sku_changed: number;
+  position_code_changed: number;
+}
+
+export interface BenchmarkCompareDiffRow {
+  match_key: string;
+  side: string;
+  quantity_a?: number | null;
+  quantity_b?: number | null;
+  sku_a?: string | null;
+  sku_b?: string | null;
+  position_code_a?: string | null;
+  position_code_b?: string | null;
+}
+
+export interface AisleBenchmarkCompareResponse {
+  inventory_id: string;
+  aisle_id: string;
+  workflow: string;
+  read_only: boolean;
+  raw_fetch_truncated: { job_a: boolean; job_b: boolean };
+  run_a: BenchmarkRunCompareSide;
+  run_b: BenchmarkRunCompareSide;
+  diff_summary: BenchmarkCompareDiffSummary;
+  diff_rows: BenchmarkCompareDiffRow[];
+  diff_rows_truncated: boolean;
+}
+
+export interface PromoteOperationalJobResponse {
+  aisle_id: string;
+  operational_job_id: string;
 }
 
 /** Single execution log event (v3.1.1). */

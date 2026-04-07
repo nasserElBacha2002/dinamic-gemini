@@ -88,6 +88,12 @@ from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
 from src.application.use_cases.list_aisle_jobs import ListAisleJobsUseCase
+from src.application.use_cases.compare_aisle_runs import CompareAisleRunsUseCase
+from src.application.use_cases.promote_aisle_operational_job import PromoteAisleOperationalJobUseCase
+from src.application.use_cases.export_aisle_benchmark import (
+    ExportAisleBenchmarkCompareCsvUseCase,
+    ExportAisleBenchmarkRunCsvUseCase,
+)
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
@@ -640,6 +646,60 @@ def get_list_aisle_jobs_use_case(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
     )
+
+
+def get_compare_aisle_runs_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> CompareAisleRunsUseCase:
+    from src.config import load_settings
+
+    return CompareAisleRunsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=position_repo,
+        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+    )
+
+
+def get_promote_aisle_operational_job_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+) -> PromoteAisleOperationalJobUseCase:
+    return PromoteAisleOperationalJobUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+    )
+
+
+def get_export_aisle_benchmark_run_csv_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+) -> ExportAisleBenchmarkRunCsvUseCase:
+    from src.config import load_settings
+
+    return ExportAisleBenchmarkRunCsvUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+    )
+
+
+def get_export_aisle_benchmark_compare_csv_use_case(
+    compare_uc: CompareAisleRunsUseCase = Depends(get_compare_aisle_runs_use_case),
+) -> ExportAisleBenchmarkCompareCsvUseCase:
+    return ExportAisleBenchmarkCompareCsvUseCase(compare_uc=compare_uc)
 
 
 def get_analytics_query_service(

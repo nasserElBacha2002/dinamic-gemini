@@ -150,3 +150,11 @@ Authoritative expanded DoD and test matrix: **`docs/multi_provider_planning_revi
 4.  **Integration**: Ensure that after a job finishes, the UI still shows "the latest" set by passing the `latest_job_id` to the existing list API.
 
 *Rationale*: This secures the data layer first, preventing "Position Explosion" and enabling benchmarking storage immediately, even before the UI and multi-provider selection are fully built.
+
+---
+
+## Phase 6 (implemented) — benchmark product layer
+
+See **[phase6_benchmark_product.md](./phase6_benchmark_product.md)** for compare endpoints, explicit benchmark export,
+promotion workflow, and frontend routes. Operational analytics and default exports remain separate; benchmark
+flows are always explicit (`job_a_id` / `job_b_id` or `run_job_id`).

@@ -10,6 +10,7 @@ import {
   getAisleJobDetail,
   getProcessingProviderOptions,
   listAisleJobs,
+  getAisleBenchmarkCompare,
   type AislesListQuery,
 } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
@@ -89,6 +90,24 @@ export function useAisleJobsList(
     queryKey: [...queryKeys.inventories.aisleJobs(inventoryId ?? '', aisleId ?? ''), limit] as const,
     queryFn: () => listAisleJobs(inventoryId!, aisleId!, { limit }),
     enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Phase 6 — benchmark compare for explicit job pair (read-only analytics payload). */
+export function useAisleBenchmarkCompare(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  jobAId: string | undefined,
+  jobBId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  const a = jobAId?.trim() ?? '';
+  const b = jobBId?.trim() ?? '';
+  return useQuery({
+    queryKey: queryKeys.inventories.benchmarkCompare(inventoryId ?? '', aisleId ?? '', a, b),
+    queryFn: () => getAisleBenchmarkCompare(inventoryId!, aisleId!, a, b),
+    enabled: Boolean(inventoryId && aisleId && a && b) && (options?.enabled !== false),
     refetchOnWindowFocus: false,
   });
 }

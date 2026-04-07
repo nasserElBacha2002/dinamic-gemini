@@ -4,7 +4,22 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Alert, Box, Button, TextField, Tooltip, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { exportInventoryResultsCsv, type AislePositionsListQuery } from '../api/client';
 import { getApiErrorMessage } from '../utils/apiErrors';
 import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
@@ -18,6 +33,7 @@ import {
   useAisleMergeResults,
   useRunAisleMerge,
   useAisleJobsList,
+  usePromoteAisleOperationalJob,
 } from '../hooks';
 import {
   useResultSummaries,
@@ -109,11 +125,17 @@ export default function AislePositionsPage() {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [compareJobA, setCompareJobA] = useState('');
+  const [compareJobB, setCompareJobB] = useState('');
+  const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
+  const [promoteJobId, setPromoteJobId] = useState('');
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const routeIdentityRef = useRef<string>('');
   /** When true, user chose "Default (API resolver)" — keep list request without job_id even if result_job_id repeats. */
   const [preferDefaultSlice, setPreferDefaultSlice] = useState(false);
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
+  const promoteMutation = usePromoteAisleOperationalJob(inventoryId ?? '', aisleId ?? '');
 
   const jobIdParam = searchParams.get('jobId')?.trim() || null;
 
@@ -181,6 +203,30 @@ export default function AislePositionsPage() {
 
   /** Authoritative job for merge, detail, and merge-results; from list response, not URL alone. */
   const visibleJobId = resultJobId ?? null;
+
+  const visibleJobSummary = useMemo(
+    () => jobs.find((j) => j.id === visibleJobId) ?? null,
+    [jobs, visibleJobId]
+  );
+
+  const canPromoteCurrentRun = Boolean(
+    inventoryId &&
+      aisleId &&
+      visibleJobId &&
+      visibleJobSummary?.status === 'succeeded' &&
+      operationalJobId !== visibleJobId
+  );
+
+  const openCompareDialog = useCallback(() => {
+    const a = visibleJobId ?? jobs[0]?.id ?? '';
+    const b =
+      jobs.find((j) => j.id !== a)?.id ??
+      operationalJobId ??
+      '';
+    setCompareJobA(a);
+    setCompareJobB(b);
+    setCompareDialogOpen(true);
+  }, [visibleJobId, jobs, operationalJobId]);
 
   /** Aligns dropdown with the run actually shown: URL pin wins; else backend-resolved id when it appears in the jobs list. */
   const effectiveSelectorJobId = useMemo(() => {
@@ -261,6 +307,14 @@ export default function AislePositionsPage() {
   const reviewReadOnly = Boolean(
     operationalJobId && visibleJobId && operationalJobId !== visibleJobId
   );
+  const compareOperationalShortcut =
+    Boolean(
+      inventoryId &&
+        aisleId &&
+        operationalJobId &&
+        visibleJobId &&
+        operationalJobId !== visibleJobId
+    );
 
   const handleOpenReview = useCallback(
     (resultId: string) => {
@@ -338,9 +392,13 @@ export default function AislePositionsPage() {
     [mergeResultsQuery.data?.results]
   );
   const mergeButtonVisible = Boolean(inventoryId && aisleId && hasResults);
-  const mergeButtonDisabled = mergeMutation.isPending || mergeCandidates.groupCount === 0;
-  const mergeDisabledReason =
-    mergeCandidates.groupCount === 0 ? 'No repeated SKUs detected in current results' : '';
+  const mergeButtonDisabled =
+    mergeMutation.isPending || mergeCandidates.groupCount === 0 || reviewReadOnly;
+  const mergeDisabledReason = reviewReadOnly
+    ? 'Merge is only available on the operational job slice'
+    : mergeCandidates.groupCount === 0
+      ? 'No repeated SKUs detected in current results'
+      : '';
   const mergeFeedback = useMemo(() => {
     if (lastMergeResponse != null) {
       if (lastMergeResponse.product_records_updated > 0) {
@@ -445,6 +503,36 @@ export default function AislePositionsPage() {
                 </span>
               </Tooltip>
             ) : null}
+            {jobs.length >= 2 ? (
+              <Button size="small" variant="outlined" onClick={openCompareDialog}>
+                Compare runs…
+              </Button>
+            ) : null}
+            {compareOperationalShortcut ? (
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() =>
+                  navigate(
+                    `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(visibleJobId!)}&jobBId=${encodeURIComponent(operationalJobId!)}`
+                  )
+                }
+              >
+                Compare to operational
+              </Button>
+            ) : null}
+            {canPromoteCurrentRun ? (
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  setPromoteJobId(visibleJobId ?? '');
+                  setPromoteDialogOpen(true);
+                }}
+              >
+                Promote run to operational…
+              </Button>
+            ) : null}
             <Button
               size="small"
               variant="outlined"
@@ -478,6 +566,16 @@ export default function AislePositionsPage() {
           </Box>
         }
       />
+
+      {reviewReadOnly ? (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          You are viewing a non-operational run (read-only review). Operational slice uses job{' '}
+          <Typography component="span" variant="body2" sx={{ fontFamily: 'monospace' }}>
+            {operationalJobId?.slice(0, 10)}…
+          </Typography>
+          . Promote a succeeded run to shift editability.
+        </Alert>
+      ) : null}
 
       {aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource) ? (
         <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
@@ -652,6 +750,115 @@ export default function AislePositionsPage() {
           )}
         </>
       ) : null}
+
+      <Dialog open={compareDialogOpen} onClose={() => setCompareDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Compare two runs (benchmark)</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Choose two explicit job ids for this aisle. Compare is read-only and does not change the operational
+            slice.
+          </Typography>
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+            <InputLabel id="cmp-a-label">Run A</InputLabel>
+            <Select
+              labelId="cmp-a-label"
+              label="Run A"
+              value={compareJobA}
+              onChange={(e) => setCompareJobA(String(e.target.value))}
+            >
+              {jobs.map((j) => (
+                <MenuItem key={`a-${j.id}`} value={j.id}>
+                  {j.id.slice(0, 10)}… · {j.status}
+                  {j.is_operational ? ' · operational' : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth size="small">
+            <InputLabel id="cmp-b-label">Run B</InputLabel>
+            <Select
+              labelId="cmp-b-label"
+              label="Run B"
+              value={compareJobB}
+              onChange={(e) => setCompareJobB(String(e.target.value))}
+            >
+              {jobs.map((j) => (
+                <MenuItem key={`b-${j.id}`} value={j.id}>
+                  {j.id.slice(0, 10)}… · {j.status}
+                  {j.is_operational ? ' · operational' : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCompareDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={!compareJobA || !compareJobB || compareJobA === compareJobB}
+            onClick={() => {
+              setCompareDialogOpen(false);
+              navigate(
+                `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(compareJobA)}&jobBId=${encodeURIComponent(compareJobB)}`
+              );
+            }}
+          >
+            Open compare
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={promoteDialogOpen} onClose={() => setPromoteDialogOpen(false)}>
+        <DialogTitle>Promote run to operational</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Sets the aisle operational pointer to the selected succeeded job. Other runs stay stored for
+            benchmarking; review edits apply only to the operational slice. SKU corrections are not copied from
+            other runs automatically.
+          </Typography>
+          <FormControl fullWidth size="small">
+            <InputLabel id="promote-job-label">Job</InputLabel>
+            <Select
+              labelId="promote-job-label"
+              label="Job"
+              value={promoteJobId}
+              onChange={(e) => setPromoteJobId(String(e.target.value))}
+            >
+              {jobs
+                .filter((j) => j.status === 'succeeded' && j.id !== operationalJobId)
+                .map((j) => (
+                  <MenuItem key={j.id} value={j.id}>
+                    {j.id.slice(0, 12)}… · {j.provider_name ?? '—'} · {j.prompt_key ?? '—'}
+                  </MenuItem>
+                ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPromoteDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={!promoteJobId || promoteMutation.isPending}
+            onClick={() => {
+              void (async () => {
+                try {
+                  await promoteMutation.mutateAsync(promoteJobId);
+                  setPromoteDialogOpen(false);
+                  showSnackbar('Operational run updated', 'success');
+                  void refetch();
+                  void aisleJobsQuery.refetch();
+                } catch (e) {
+                  const err = e instanceof ApiError ? e : new ApiError(String(e));
+                  showSnackbar(getApiErrorMessage(err, 'Promotion failed'), 'error');
+                }
+              })();
+            }}
+          >
+            {promoteMutation.isPending ? 'Promoting…' : 'Confirm promote'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <QuickReviewDrawer
         open={Boolean(quickContext)}

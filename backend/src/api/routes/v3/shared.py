@@ -472,7 +472,7 @@ def status_response_from_result(result: AisleProcessingStatusResult) -> AisleSta
     )
 
 
-def job_to_summary(j: Job) -> JobSummary:
+def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
     return JobSummary(
         id=j.id,
         status=j.status.value,
@@ -496,6 +496,7 @@ def job_to_summary(j: Job) -> JobSummary:
         model_name=j.model_name,
         prompt_key=j.prompt_key,
         prompt_version=j.prompt_version,
+        is_operational=is_operational,
     )
 
 
