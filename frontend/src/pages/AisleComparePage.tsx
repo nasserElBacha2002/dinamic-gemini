@@ -50,7 +50,7 @@ export default function AisleComparePage() {
   }
 
   const breadcrumbs = [
-    { label: 'Inventories', to: '/inventories' as const },
+    { label: 'Inventories', to: '/' as const },
     ...(inventory ? [{ label: inventory.name, to: `/inventories/${inventoryId}` as const }] : []),
     {
       label: aisle?.code ?? 'Aisle',

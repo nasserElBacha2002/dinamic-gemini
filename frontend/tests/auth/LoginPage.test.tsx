@@ -23,7 +23,7 @@ function renderLoginPage() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/dashboard" element={<div>Dashboard shell</div>} />
+          <Route path="/" element={<div>Inventories home</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>
@@ -81,7 +81,7 @@ describe('LoginPage', () => {
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'pass' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
 
-    expect(await screen.findByText('Dashboard shell')).toBeInTheDocument();
+    expect(await screen.findByText('Inventories home')).toBeInTheDocument();
     // v3.2.3.E6: token is stored as a structured session; use helper for contract stability.
     expect(getStoredToken()).toBe('jwt-123');
   });

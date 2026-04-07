@@ -553,7 +553,7 @@ export default function InventoryDetail() {
     return (
       <>
         <ErrorAlert message={inventoryError} onRetry={() => inventoryQuery.refetch()} />
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/inventories')}>
+        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
           Back to list
         </Button>
       </>
@@ -565,7 +565,7 @@ export default function InventoryDetail() {
       {inventory && (
         <>
           <PageHeader
-            breadcrumbs={[{ label: 'Inventories', to: '/inventories' }]}
+            breadcrumbs={[{ label: 'Inventories', to: '/' }]}
             title={inventory.name}
             subtitle={
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>

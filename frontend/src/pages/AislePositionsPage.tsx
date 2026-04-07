@@ -443,7 +443,7 @@ export default function AislePositionsPage() {
     return (
       <>
         <Alert severity="warning">Missing inventory or aisle.</Alert>
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/inventories')}>
+        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
           Back to list
         </Button>
       </>
@@ -451,7 +451,7 @@ export default function AislePositionsPage() {
   }
 
   const breadcrumbs = [
-    { label: 'Inventories', to: '/inventories' as const },
+    { label: 'Inventories', to: '/' as const },
     ...(inventory
       ? [{ label: inventory.name, to: `/inventories/${inventoryId}` as const }]
       : []),
