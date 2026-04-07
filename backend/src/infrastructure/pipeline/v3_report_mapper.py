@@ -105,10 +105,18 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
 def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tuple[int, Dict[str, Any]]:
     """Resolve final qty + provenance for one report entity (v3.2.2).
 
+    ``final_quantity`` in the hybrid report is always emitted (often ``null`` when count_status left
+    the quantity unmerged, e.g. PALLET with label qty but no position barcode → NEEDS_REVIEW). In that
+    case we must read ``product_label_quantity``; treating null ``final_quantity`` as the only field
+    incorrectly discards explicit model quantities (OpenAI/Gemini multi-provider).
+
     Returns (qty_final, qty_meta_for_summary_json).
     """
-    # Prefer final_quantity field if present (pipeline-derived), else product_label_quantity.
-    if "final_quantity" in entity:
+    raw: Any = None
+    present = False
+    origin = "missing"
+
+    if "final_quantity" in entity and entity.get("final_quantity") is not None:
         raw = entity.get("final_quantity")
         present = True
         origin = "final_quantity"
@@ -116,10 +124,23 @@ def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tup
         raw = entity.get("product_label_quantity")
         present = True
         origin = "product_label_quantity"
+    elif "final_quantity" in entity:
+        raw = entity.get("final_quantity")
+        present = True
+        origin = "final_quantity"
     else:
         raw = None
         present = False
         origin = "missing"
+
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "v3 qty field pick: entity_uid=%s origin=%s raw=%r has_valid_evidence=%s",
+            entity.get("entity_uid"),
+            origin,
+            raw,
+            has_valid_evidence,
+        )
 
     normalized = normalize_raw_qty(raw, field_was_present=present)
 

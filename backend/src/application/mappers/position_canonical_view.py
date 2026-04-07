@@ -117,11 +117,14 @@ def resolve_qty_contract_from_position_legacy(p: Position, *, has_evidence: bool
         resolved = qty_is_resolved if isinstance(qty_is_resolved, bool) else None
         return (int(qty_final), api_source, (str(qty_reason) if qty_reason is not None else None), resolved)
 
-    if "final_quantity" in j:
+    if "final_quantity" in j and j.get("final_quantity") is not None:
         raw = j.get("final_quantity")
         present = True
     elif "product_label_quantity" in j:
         raw = j.get("product_label_quantity")
+        present = True
+    elif "final_quantity" in j:
+        raw = j.get("final_quantity")
         present = True
     else:
         raw = None
