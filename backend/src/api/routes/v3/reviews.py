@@ -1,4 +1,4 @@
-"""v3 position review actions: confirm, update_quantity, update_sku, mark_unknown, delete_position."""
+"""v3 position review actions: confirm, corrections, mark_unknown, mark_image_mismatch, delete_position."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from src.api.dependencies import (
     get_confirm_position_use_case,
     get_mark_position_unknown_use_case,
+    get_mark_position_image_mismatch_use_case,
     get_update_product_quantity_use_case,
     get_update_product_sku_use_case,
     get_update_position_code_use_case,
@@ -19,10 +20,12 @@ from src.application.use_cases.update_product_quantity import UpdateProductQuant
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
 from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
+from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
 
 from .shared import (
     handle_confirm,
     handle_mark_unknown,
+    handle_mark_image_mismatch,
     handle_update_quantity,
     handle_update_sku,
     handle_update_position_code,
@@ -43,17 +46,23 @@ def submit_review_action(
     body: ReviewActionRequest,
     confirm_uc: ConfirmPositionUseCase = Depends(get_confirm_position_use_case),
     mark_unknown_uc: MarkPositionUnknownUseCase = Depends(get_mark_position_unknown_use_case),
+    mark_image_mismatch_uc: MarkPositionImageMismatchUseCase = Depends(
+        get_mark_position_image_mismatch_use_case
+    ),
     update_quantity_uc: UpdateProductQuantityUseCase = Depends(get_update_product_quantity_use_case),
     update_sku_uc: UpdateProductSkuUseCase = Depends(get_update_product_sku_use_case),
     update_pos_code_uc: UpdatePositionCodeUseCase = Depends(get_update_position_code_use_case),
     delete_uc: DeletePositionUseCase = Depends(get_delete_position_use_case),
 ) -> None:
-    """Submit a manual review action (confirm, update_quantity, update_sku, mark_unknown, delete_position)."""
+    """Submit a manual review action (confirm, corrections, mark_unknown, mark_image_mismatch, delete_position)."""
     if body.action_type == "confirm":
         handle_confirm(inventory_id, aisle_id, position_id, confirm_uc)
         return
     if body.action_type == "mark_unknown":
         handle_mark_unknown(inventory_id, aisle_id, position_id, mark_unknown_uc)
+        return
+    if body.action_type == "mark_image_mismatch":
+        handle_mark_image_mismatch(inventory_id, aisle_id, position_id, mark_image_mismatch_uc)
         return
     if body.action_type == "update_quantity":
         handle_update_quantity(inventory_id, aisle_id, position_id, body, update_quantity_uc)

@@ -256,6 +256,38 @@ def test_post_review_update_quantity_without_product_id_uses_single_product() ->
         app.dependency_overrides.clear()
 
 
+def test_post_review_mark_image_mismatch_returns_204_and_preserves_sku() -> None:
+    client = TestClient(app)
+    repos = _seed_repos()
+    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
+    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
+    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
+    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
+    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
+    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
+    try:
+        resp = client.post(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
+            json={"action_type": "mark_image_mismatch"},
+        )
+        assert resp.status_code == 204
+
+        detail = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1"
+        )
+        assert detail.status_code == 200
+        data = detail.json()
+        assert data["position"]["status"] == "reviewed"
+        assert data["position"]["needs_review"] is False
+        assert data["position"]["review_resolution"] == "image_mismatch"
+        assert data["position"]["sku"] == "SKU-REVIEW"
+        assert len(data["review_actions"]) == 1
+        assert data["review_actions"][0]["action_type"] == "mark_image_mismatch"
+        assert data["review_actions"][0]["after_json"].get("review_resolution") == "image_mismatch"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_review_mark_unknown_returns_204_and_detail_exposes_terminal_resolution() -> None:
     client = TestClient(app)
     repos = _seed_repos()

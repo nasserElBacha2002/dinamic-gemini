@@ -17,6 +17,7 @@ export type ReviewStatus =
   | 'DETECTED'
   | 'CONFIRMED'
   | 'NEEDS_REVIEW'
+  | 'IMAGE_MISMATCH'
   | 'MISSING'
   | 'INVALID'
   | 'NOT_COUNTABLE';

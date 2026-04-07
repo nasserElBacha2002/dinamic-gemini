@@ -416,6 +416,8 @@ export interface PositionSummary {
   has_evidence: boolean;
   /** Multi-run: storage row job id; null = legacy. Used for review drawer / detail `job_id` query. */
   job_id?: string | null;
+  /** Terminal operator review outcome when set (e.g. confirmed, unknown, image_mismatch). */
+  review_resolution?: string | null;
 }
 
 /**

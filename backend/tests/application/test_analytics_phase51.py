@@ -344,14 +344,16 @@ def test_manual_intervention_breakdown_exposes_unknown_and_keeps_invalid_blocked
         ReviewAction("c", "p3", ReviewActionType.UPDATE_SKU, {}, {}, _utc(2)),
         ReviewAction("d", "p4", ReviewActionType.MARK_UNKNOWN, {}, {}, _utc(3)),
         ReviewAction("e", "p5", ReviewActionType.DELETE_POSITION, {}, {}, _utc(4)),
+        ReviewAction("f", "p6", ReviewActionType.MARK_IMAGE_MISMATCH, {}, {}, _utc(5)),
     ]
     breakdown = compute_manual_intervention_breakdown(actions, None, None)
-    assert breakdown.reviewed_positions_count == 4
-    assert breakdown.intervention_positions_count == 5
+    assert breakdown.reviewed_positions_count == 5
+    assert breakdown.intervention_positions_count == 6
     assert breakdown.confirmed_count == 1
     assert breakdown.qty_corrected_count == 1
     assert breakdown.sku_corrected_count == 1
     assert breakdown.operator_marked_unknown_count == 1
+    assert breakdown.image_mismatch_count == 1
     assert breakdown.deleted_count == 1
     assert breakdown.unknown_available is True
     assert breakdown.invalid_available is False

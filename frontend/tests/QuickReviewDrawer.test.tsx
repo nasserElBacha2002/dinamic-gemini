@@ -113,6 +113,27 @@ describe('QuickReviewDrawer', () => {
     showSnackbarMock.mockClear();
   });
 
+  it('Wrong image triggers mark_image_mismatch mutation', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderDrawer(baseContext);
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    fireEvent.click(screen.getByRole('button', { name: /Wrong image/i }));
+    expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
+    expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'mark_image_mismatch' });
+    await waitFor(() => {
+      expect(showSnackbarMock).toHaveBeenCalledTimes(1);
+    });
+    expect(showSnackbarMock).toHaveBeenCalledWith('Flagged wrong image (traceability)', 'success');
+  });
+
   it('confirm result triggers exactly one mutation request', async () => {
     const { useResultDetail } = await import('../src/features/results');
     vi.mocked(useResultDetail).mockReturnValue({
@@ -171,8 +192,9 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    fireEvent.change(screen.getByLabelText(/Corrected quantity/i), { target: { value: '5' } });
-    fireEvent.click(screen.getByRole('button', { name: /Update quantity/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Correct quantity/i }));
+    fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({
       action_type: 'update_quantity',
@@ -196,8 +218,9 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    fireEvent.change(screen.getByLabelText(/^SKU$/i), { target: { value: 'NEW-SKU' } });
-    fireEvent.click(screen.getByRole('button', { name: /Update SKU/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Correct SKU/i }));
+    fireEvent.change(screen.getByPlaceholderText(/Update SKU/i), { target: { value: 'NEW-SKU' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({
       action_type: 'update_sku',
@@ -264,7 +287,7 @@ describe('QuickReviewDrawer', () => {
     expect(screen.getByText(/IMG_1024.JPG/)).toBeInTheDocument();
   });
 
-  it('shows Open fullscreen when sourceImageId is present', async () => {
+  it('shows Preview when sourceImageId is present', async () => {
     const { useResultDetail } = await import('../src/features/results');
     vi.mocked(useResultDetail).mockReturnValue({
       result: mockResultDetail({ sourceImageId: 'asset-uuid-123' }),
@@ -276,7 +299,7 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByRole('button', { name: /Open fullscreen/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Preview$/i })).toBeInTheDocument();
   });
 
   it('shows no-evidence state when no source image', async () => {
@@ -316,7 +339,7 @@ describe('QuickReviewDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   });
 
-  it('shows Review actions and Confirm result', async () => {
+  it('shows review controls: confirm and wrong-image action', async () => {
     const { useResultDetail } = await import('../src/features/results');
     vi.mocked(useResultDetail).mockReturnValue({
       result: mockResultDetail(),
@@ -328,8 +351,8 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByText('Review actions')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Confirm result/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Wrong image/i })).toBeInTheDocument();
   });
 
   it('shows prev/next when resultIds has multiple and position is in list', async () => {
@@ -411,7 +434,7 @@ describe('QuickReviewDrawer', () => {
   it('last of three disables Next', async () => {
     const { useResultDetail } = await import('../src/features/results');
     vi.mocked(useResultDetail).mockReturnValue({
-      result: mockResultDetail(),
+      result: mockResultDetail({ id: 'pos-3' }),
       isLoading: false,
       isError: false,
       error: null,

@@ -83,6 +83,15 @@ describe('alignPositionToResultReviewTarget', () => {
     expect(r.resolutionKind).toBe('human_confirmed');
     expect(r.isApproximate).toBe(false);
   });
+  it('maps reviewed + image_mismatch to its own plan target (not unknown)', () => {
+    expect(
+      alignPositionToResultReviewTarget('reviewed', false, 'image_mismatch')
+    ).toMatchObject({
+      target: 'image_mismatch',
+      resolutionKind: 'image_mismatch',
+      isApproximate: false,
+    });
+  });
   it('maps corrected and deleted', () => {
     expect(alignPositionToResultReviewTarget('corrected', false)).toMatchObject({
       target: 'corrected',

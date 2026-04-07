@@ -28,6 +28,7 @@ export type ResultReviewResolutionKind =
   | 'human_confirmed'
   | 'auto_accepted'
   | 'corrected'
+  | 'image_mismatch'
   | 'deleted'
   | 'unknown';
 
@@ -122,16 +123,19 @@ export function alignAisleApiStatusToTarget(
 
 /**
  * Result: API position detected | reviewed | corrected | deleted + needs_review.
- * Plan: pending_review | confirmed | corrected | deleted.
+ * Plan: pending_review | confirmed | corrected | image_mismatch | deleted.
  *
  * `target === 'confirmed'` covers both human-confirmed (`reviewed`) and auto-accepted
  * (`detected` + !needs_review); use `resolutionKind` to tell them apart.
+ * Terminal `review_resolution === 'image_mismatch'` maps to its own target (not unknown / confirmed).
  */
 export function alignPositionToResultReviewTarget(
   positionStatus: string | null | undefined,
-  needsReview: boolean
+  needsReview: boolean,
+  reviewResolution?: string | null
 ): ResultReviewAlignment {
   const raw = norm(positionStatus);
+  const res = norm(reviewResolution);
   if (raw === 'detected' && needsReview) {
     return {
       rawPositionStatus: raw,
@@ -151,6 +155,15 @@ export function alignPositionToResultReviewTarget(
     };
   }
   if (raw === 'reviewed') {
+    if (res === 'image_mismatch') {
+      return {
+        rawPositionStatus: raw,
+        needsReview,
+        target: 'image_mismatch',
+        isApproximate: false,
+        resolutionKind: 'image_mismatch',
+      };
+    }
     return {
       rawPositionStatus: raw,
       needsReview,

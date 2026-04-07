@@ -177,6 +177,13 @@ export default function QuickReviewDrawer({
     [executeReviewAction]
   );
 
+  const handleMarkImageMismatch = useCallback(() => {
+    void executeReviewAction(
+      { action_type: 'mark_image_mismatch' },
+      { successMessage: 'Flagged wrong image (traceability)' }
+    );
+  }, [executeReviewAction]);
+
   const handleDeleteClick = useCallback(() => {
     setInvalidConfirmError(null);
     setInvalidConfirmOpen(true);
@@ -316,6 +323,7 @@ export default function QuickReviewDrawer({
                       onUpdateQuantity={handleUpdateQuantity}
                       onUpdateSku={handleUpdateSku}
                       onUpdatePositionCode={handleUpdatePositionCode}
+                      onMarkImageMismatch={handleMarkImageMismatch}
                       onDeleteClick={handleDeleteClick}
                     />
                   </Box>

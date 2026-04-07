@@ -519,6 +519,13 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     available=True,
                 ),
                 ManualInterventionCategoryDTO(
+                    category="image_mismatch",
+                    count=breakdown.image_mismatch_count,
+                    percentage=pct(breakdown.image_mismatch_count),
+                    available=True,
+                    notes="Wrong image/evidence association flagged; SKU/qty unchanged",
+                ),
+                ManualInterventionCategoryDTO(
                     category="deleted",
                     count=breakdown.deleted_count,
                     percentage=pct(breakdown.deleted_count),

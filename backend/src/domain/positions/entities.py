@@ -27,6 +27,9 @@ class PositionReviewResolution(str, Enum):
     - quantity provenance such as ``qty_source="unknown"``
     - product-identification issues such as a display-primary product row with ``sku="UNKNOWN"``
     - pending review (represented by ``None`` while no terminal operator decision exists)
+
+    ``IMAGE_MISMATCH``: operator says evidence/image linkage is wrong; does not imply SKU/qty or
+    product identification errors (traceability-only flag).
     """
 
     CONFIRMED = "confirmed"
@@ -34,6 +37,7 @@ class PositionReviewResolution(str, Enum):
     SKU_CORRECTED = "sku_corrected"
     POSITION_CODE_CORRECTED = "position_code_corrected"
     UNKNOWN = "unknown"
+    IMAGE_MISMATCH = "image_mismatch"
     DELETED = "deleted"
 
 

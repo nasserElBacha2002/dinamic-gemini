@@ -62,6 +62,7 @@ export const REVIEW_ACTION_TYPES = [
   'update_sku',
   'update_position_code',
   'mark_unknown',
+  'mark_image_mismatch',
   'delete_position',
 ] as const;
 export type ReviewActionType = (typeof REVIEW_ACTION_TYPES)[number];

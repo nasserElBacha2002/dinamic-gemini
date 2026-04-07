@@ -327,6 +327,7 @@ ReviewActionTypeLiteral = Literal[
     "update_sku",
     "update_position_code",
     "mark_unknown",
+    "mark_image_mismatch",
     "delete_position",
 ]
 

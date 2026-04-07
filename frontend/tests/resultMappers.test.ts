@@ -58,6 +58,11 @@ describe('mapPositionStatusToReviewStatus', () => {
   it('maps corrected -> CONFIRMED', () => {
     expect(mapPositionStatusToReviewStatus('corrected', false)).toBe('CONFIRMED');
   });
+  it('maps reviewed + review_resolution image_mismatch -> IMAGE_MISMATCH', () => {
+    expect(mapPositionStatusToReviewStatus('reviewed', false, 'image_mismatch')).toBe(
+      'IMAGE_MISMATCH'
+    );
+  });
   it('maps deleted -> INVALID', () => {
     expect(mapPositionStatusToReviewStatus('deleted', false)).toBe('INVALID');
   });
@@ -122,6 +127,30 @@ describe('mapPositionSummaryToResultSummary', () => {
     const r = mapPositionSummaryToResultSummary(p);
     expect(r.hasEvidence).toBe(false);
     expect(r.reviewStatus).toBe('CONFIRMED');
+  });
+
+  it('review_resolution image_mismatch maps list row to IMAGE_MISMATCH', () => {
+    const p: PositionSummary = {
+      id: 'pos-img',
+      aisle_id: 'aisle-1',
+      status: 'reviewed',
+      confidence: 0.9,
+      needs_review: false,
+      primary_evidence_id: 'ev-1',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-02T00:00:00Z',
+      sku: 'SKU-X',
+      detected_quantity: 4,
+      corrected_quantity: null,
+      qty: 4,
+      qtySource: 'detected',
+      has_evidence: true,
+      review_resolution: 'image_mismatch',
+    };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.reviewStatus).toBe('IMAGE_MISMATCH');
+    expect(r.sku).toBe('SKU-X');
+    expect(r.resolvedQty).toBe(4);
   });
 
   it('Sprint 2: prefers nested product/quantity/traceability blocks over divergent legacy flat fields', () => {
