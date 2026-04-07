@@ -898,6 +898,37 @@ describe('InventoryDetail', () => {
     expect(screen.getByText('Summary unavailable')).toBeInTheDocument();
   });
 
+  it('disables Process aisle when the aisle has no uploaded assets and shows helper text', async () => {
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'created',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            assets_count: 0,
+            positions_count: 0,
+            pending_review_positions_count: 0,
+            latest_job: null,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    const processItem = screen.getByRole('menuitem', { name: /process aisle/i });
+    expect(processItem).toHaveAttribute('aria-disabled', 'true');
+    expect(processItem.textContent).toMatch(/upload at least one image before processing/i);
+  });
+
   it('process dialog shows resolved default model id in the model placeholder option', async () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));

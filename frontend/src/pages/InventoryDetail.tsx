@@ -125,6 +125,10 @@ function canRetryJob(status?: string | null): boolean {
   return normalized === 'failed' || normalized === 'canceled';
 }
 
+/** Shown when Process aisle is disabled due to no uploaded source assets (`assets_count` on the aisle row). */
+const PROCESS_AISLE_NEEDS_ASSETS_MESSAGE =
+  'You need to upload at least one image before processing.';
+
 function metadataRowsForJob(job: NonNullable<Aisle['latest_job']> | null | undefined): Array<{ label: string; value: string }> {
   if (!job) return [];
   return [
@@ -280,10 +284,39 @@ export default function InventoryDetail() {
     }
   }, [aislesQuery, processDialog, processModelKey, processMutation, processPromptKey, processProviderKey, showSnackbar]);
 
-  const isAisleProcessingDisabled = (aisle: Aisle): boolean => {
-    const status = (aisle.status || '').toLowerCase();
-    return status === 'queued' || status === 'processing' || processingAisleId === aisle.id;
-  };
+  const isAisleProcessingDisabled = useCallback(
+    (aisle: Aisle): boolean => {
+      const status = (aisle.status || '').toLowerCase();
+      return status === 'queued' || status === 'processing' || processingAisleId === aisle.id;
+    },
+    [processingAisleId]
+  );
+
+  /** Uses `assets_count` from the aisles list (same source as the Uploaded assets column). */
+  const getProcessAisleMenuState = useCallback(
+    (aisle: Aisle): { disabled: boolean; disabledReason?: string } => {
+      const busy = isAisleProcessingDisabled(aisle);
+      const noListYet = !aislesQuery.data;
+      const missingAssets = Boolean(aislesQuery.data) && (aisle.assets_count ?? 0) < 1;
+      const disabled = busy || noListYet || missingAssets;
+      if (busy) {
+        return { disabled };
+      }
+      if (noListYet) {
+        return {
+          disabled,
+          disabledReason: aislesQuery.isLoading
+            ? 'Loading aisle data…'
+            : 'Unable to verify uploaded assets.',
+        };
+      }
+      if (missingAssets) {
+        return { disabled, disabledReason: PROCESS_AISLE_NEEDS_ASSETS_MESSAGE };
+      }
+      return { disabled };
+    },
+    [aislesQuery.data, aislesQuery.isLoading, isAisleProcessingDisabled]
+  );
 
   const handleUploadClick = (aisleId: string) => {
     setUploadError(null);
@@ -453,6 +486,7 @@ export default function InventoryDetail() {
         align: 'right',
         width: 56,
         cell: (a) => {
+          const processState = getProcessAisleMenuState(a);
           return (
             <RowActionMenu
               ariaLabel={`Actions for aisle ${a.code}`}
@@ -467,7 +501,8 @@ export default function InventoryDetail() {
                   id: 'process',
                   label: processingAisleId === a.id ? 'Starting…' : 'Process aisle',
                   onClick: () => openProcessDialogForAisle(a.id, a.code),
-                  disabled: isAisleProcessingDisabled(a),
+                  disabled: processState.disabled,
+                  disabledReason: processState.disabledReason,
                 },
                 ...(a.latest_job
                   ? [
@@ -489,7 +524,16 @@ export default function InventoryDetail() {
         },
       },
     ];
-  }, [inventoryId, navigate, openProcessDialogForAisle, processingAisleId, uploadingAisleId]);
+  }, [
+    aislesQuery.data,
+    aislesQuery.isLoading,
+    getProcessAisleMenuState,
+    inventoryId,
+    navigate,
+    openProcessDialogForAisle,
+    processingAisleId,
+    uploadingAisleId,
+  ]);
 
   if (inventoryLoading && !inventory) {
     return (

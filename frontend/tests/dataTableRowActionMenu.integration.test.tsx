@@ -5,6 +5,7 @@
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
 import { ThemeProvider } from '@mui/material';
 import theme from '../src/theme';
 import DataTable, { type DataTableColumn } from '../src/components/ui/DataTable';
@@ -55,6 +56,28 @@ describe('DataTable + RowActionMenu', () => {
 
     await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(1));
     expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('shows disabledReason under the label when a row action is disabled', () => {
+    render(
+      <WithTheme>
+        <RowActionMenu
+          ariaLabel="Row actions"
+          items={[
+            {
+              id: 'process',
+              label: 'Process aisle',
+              onClick: vi.fn(),
+              disabled: true,
+              disabledReason: 'You need to upload at least one image before processing.',
+            },
+          ]}
+        />
+      </WithTheme>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /row actions/i }));
+    expect(screen.getByText(/upload at least one image before processing/i)).toBeInTheDocument();
   });
 
   it('still calls onRowClick when clicking a non-interactive cell', () => {
