@@ -26,7 +26,7 @@ GitHub Actions workflow: **`.github/workflows/deploy-dev-opencloud-backend.yml`*
 ### Jobs
 
 1. **Migration file guard** — On `push` only, runs `backend/scripts/check_migration_presence.py` when a valid base SHA exists (same idea as the old ECS pipeline’s guard, without AWS).
-2. **SSH deploy** — Connects to the server, hard-resets the repo to `origin/develop`, builds and starts containers with **`docker-compose`** for the API, then retries **local** `GET http://127.0.0.1:8000/health` for up to ~60s.
+2. **SSH deploy** — Connects on **SSH port 37783** (hardcoded in the workflow, not 22), hard-resets the repo to `origin/develop`, verifies repo path / compose file / root `.env` / `docker-compose` on `PATH`, then builds and starts containers with **`docker-compose` (v1)** for the API, then retries **local** `GET http://127.0.0.1:8000/health` for up to ~60s (maps to container port 8000).
 3. **Optional public smoke** — If `DEV_BACKEND_URL` is set, curls `{BASE}/health` from the GitHub runner.
 
 ## Server layout
@@ -36,8 +36,9 @@ GitHub Actions workflow: **`.github/workflows/deploy-dev-opencloud-backend.yml`*
 | Repository path | `/opt/dinamic/dinamic-gemini` |
 | Branch checked out | `develop` (hard reset to `origin/develop`) |
 | Compose file | `backend/docker-compose.yml` |
-| API port (host) | `8000` |
-| Container env | `backend/.env` on the server (**not** in git) |
+| API port (host) | `8000` → container `8000` |
+| Container env | **Repository root** `.env` at `/opt/dinamic/dinamic-gemini/.env` — referenced from compose as `../.env` (**not** in git) |
+| SSH (Actions → server) | Port **37783** (set in workflow; change the workflow if your sshd port changes) |
 
 ### Non-interactive Git on the server
 
@@ -55,6 +56,7 @@ cd /opt/dinamic/dinamic-gemini
 git fetch origin
 git switch develop 2>/dev/null || git checkout develop
 git reset --hard origin/develop
+# Deploy script also checks: backend/docker-compose.yml exists, repo root .env exists, docker-compose on PATH
 cd backend
 docker-compose build --pull
 docker-compose up -d --remove-orphans
@@ -66,7 +68,7 @@ docker-compose ps
 
 | Secret | Required | Purpose |
 |--------|----------|---------|
-| `DEV_HOST` | Yes | Server hostname or IP |
+| `DEV_HOST` | Yes | Server hostname or IP (no port — port **37783** is fixed in the workflow YAML) |
 | `DEV_USER` | Yes | SSH user |
 | `DEV_SSH_PRIVATE_KEY` | Yes | Private key for that user (PEM) |
 | `DEV_BACKEND_URL` | No | e.g. `https://api-dev.example.com` — trailing slash optional; used for post-deploy `GET /health` from Actions |
@@ -87,7 +89,7 @@ No AWS secrets are used for this DEV path.
 
 2. Ensure **`git fetch origin` works non-interactively** from that clone (see **Non-interactive Git on the server** above).
 
-3. Create **`backend/.env`** with everything the API needs (SQL Server, keys, etc.). This file is gitignored.
+3. Create **`.env` at the repository root** (`/opt/dinamic/dinamic-gemini/.env`) with everything the API needs (SQL Server, keys, etc.). `backend/docker-compose.yml` loads it via `env_file: ../.env`. This file is gitignored.
 
 4. Install **Docker Engine** and the classic **`docker-compose`** standalone (on `PATH`). The Docker Compose **v2 plugin** (`docker compose`) is **not** required for this DEV flow.
 

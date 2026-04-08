@@ -8,9 +8,12 @@
 # Secrets: DEV_HOST, DEV_USER, DEV_SSH_PRIVATE_KEY
 # Optional secret: DEV_BACKEND_URL — if set, runner curls public /health after deploy.
 #
+# SSH: port is set explicitly below (non-default; not port 22).
+#
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
 #   cd backend && docker-compose build --pull && docker-compose up -d
 # git fetch origin must work non-interactively (deploy key or credentials on the server).
+# Env file for the API is at repo root: /opt/dinamic/dinamic-gemini/.env (see backend/docker-compose.yml env_file).
 #
 # =============================================================================
 
@@ -72,11 +75,28 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd /opt/dinamic/dinamic-gemini
+            REPO_ROOT=/opt/dinamic/dinamic-gemini
+            if [ ! -d "${REPO_ROOT}" ]; then
+              echo "ERROR: repo directory missing: ${REPO_ROOT}" >&2
+              exit 1
+            fi
+            cd "${REPO_ROOT}"
             git fetch origin
             git switch develop 2>/dev/null || git checkout develop
             git reset --hard origin/develop
-            cd backend
+            if [ ! -f "${REPO_ROOT}/backend/docker-compose.yml" ]; then
+              echo "ERROR: missing compose file: ${REPO_ROOT}/backend/docker-compose.yml" >&2
+              exit 1
+            fi
+            if [ ! -f "${REPO_ROOT}/.env" ]; then
+              echo "ERROR: missing env file at repo root (Compose expects it): ${REPO_ROOT}/.env" >&2
+              exit 1
+            fi
+            if ! command -v docker-compose >/dev/null 2>&1; then
+              echo "ERROR: docker-compose not found on PATH (install docker-compose v1 standalone)" >&2
+              exit 1
+            fi
+            cd "${REPO_ROOT}/backend"
             docker-compose build --pull
             docker-compose up -d --remove-orphans
             docker-compose ps
@@ -90,7 +110,8 @@ jobs:
               sleep 2
             done
             if [ "${ok}" -ne 1 ]; then
-              echo "ERROR: local /health did not succeed within retry window" >&2
+              echo "ERROR: GET http://127.0.0.1:8000/health did not succeed within ~60s (30 attempts, host port maps to compose service api)." >&2
+              echo "Hint: cd ${REPO_ROOT}/backend && docker-compose ps && docker-compose logs --tail=100 api" >&2
               exit 1
             fi
             echo "Local /health OK"
