@@ -139,7 +139,7 @@ docker-compose run --rm api python scripts/db_migrate.py validate
 ## SQL Server on DEV (OpenCloud)
 
 - Full details: **`backend/README.md`** → *SQL Server configuration*.
-- **`SQLSERVER_DRIVER`:** optional when an ODBC driver is auto-detected; otherwise set to the exact name from `pyodbc.drivers()` (e.g. `ODBC Driver 18 for SQL Server` on hosts where Microsoft’s driver is installed). The default **ARM64** API image may ship **without** that driver — then use **`SQLSERVER_CONNECTION_STRING`** or install a supported driver before relying on split env vars.
+- **`SQLSERVER_DRIVER`:** optional when an ODBC driver is auto-detected; otherwise set to the exact name from `pyodbc.drivers()` (typically **`ODBC Driver 18 for SQL Server`** in the shipped API/worker images). Host ODBC paths do not apply inside the container — use env loaded into the container only.
 - **Schema guard skipped / incomplete SQL Server config** is expected until server, database, credentials, and a working driver (or full connection string) are configured.
 
 ## Frontend DEV
