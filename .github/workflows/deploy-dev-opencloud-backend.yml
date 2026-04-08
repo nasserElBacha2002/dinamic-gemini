@@ -72,6 +72,7 @@ jobs:
           username: ${{ secrets.DEV_USER }}
           port: 37783
           key: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+          command_timeout: 30m
           script_stop: true
           script: |
             set -euo pipefail

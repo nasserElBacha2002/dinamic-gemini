@@ -1,0 +1,46 @@
+# Reduce docker build context (backend/); do not exclude files required by COPY in Dockerfile.
+# Keep: requirements.txt, Dockerfile, src/, scripts/, pyproject.toml, etc.
+
+.git
+.gitignore
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+.venv/
+venv/
+env/
+ENV/
+
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+node_modules/
+
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Not needed at API runtime; includes large test fixtures
+tests/
+
+output/
