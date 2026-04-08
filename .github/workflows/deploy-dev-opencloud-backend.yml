@@ -67,6 +67,7 @@ jobs:
         with:
           host: ${{ secrets.DEV_HOST }}
           username: ${{ secrets.DEV_USER }}
+          port: 37783
           key: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
           script_stop: true
           script: |
