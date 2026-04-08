@@ -148,6 +148,12 @@ def start_worker() -> None:
         logger.info("API startup deploy_git_sha=%s", _git_sha)
     settings = load_settings()
     sql_res = resolve_sqlserver_connection_config()
+    if sql_res.connection_string.strip() and sql_res.sql_server_connect_target:
+        logger.info(
+            "SQL Server ODBC SERVER (non-secret): %s config_mode=%s",
+            sql_res.sql_server_connect_target,
+            sql_res.mode,
+        )
     if settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_res.connection_string.strip():
         required_version = settings.db_schema_required_version or get_required_schema_version()
         if required_version:

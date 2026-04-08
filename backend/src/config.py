@@ -6,6 +6,7 @@ con valores por defecto sensatos.
 """
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -146,6 +147,87 @@ def _pick_odbc_driver_for_split_config(env_driver: str) -> Tuple[str, str]:
     return "", ""
 
 
+def _dockerenv_present() -> bool:
+    """True when running inside a typical Linux container (Docker / containerd)."""
+    try:
+        return Path("/.dockerenv").is_file()
+    except OSError:
+        return False
+
+
+def _is_loopback_host_only(host: str) -> bool:
+    h = host.strip()
+    if h.startswith("[") and "]" in h:
+        h = h[h.index("[") + 1 : h.index("]")].lower()
+    else:
+        h = h.lower()
+    return h in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
+
+
+def _is_loopback_server_field(server_field: str) -> bool:
+    """True if ODBC SERVER= value points at loopback (supports ,port and \\instance)."""
+    left = server_field.strip().split(",", 1)[0].strip()
+    host_only = left.split("\\", 1)[0].strip()
+    return _is_loopback_host_only(host_only)
+
+
+def _remap_sql_server_field(server_field: str, new_host: str) -> str:
+    """Replace loopback host with new_host; preserve ,port and \\instance suffix."""
+    s = server_field.strip()
+    comma = s.find(",")
+    if comma >= 0:
+        left, right = s[:comma], s[comma + 1 :]
+        return f"{_remap_sql_server_host_part(left.strip(), new_host)},{right.strip()}"
+    return _remap_sql_server_host_part(s, new_host)
+
+
+def _remap_sql_server_host_part(host_part: str, new_host: str) -> str:
+    if "\\" in host_part:
+        h, inst = host_part.split("\\", 1)
+        if _is_loopback_host_only(h):
+            return f"{new_host}\\{inst}"
+        return host_part
+    if _is_loopback_host_only(host_part):
+        return new_host
+    return host_part
+
+
+def _docker_sql_reachable_host() -> str:
+    """Host used when remapping loopback inside a container (Linux: set via SQLSERVER_DOCKER_HOST or extra_hosts)."""
+    return (os.getenv("SQLSERVER_DOCKER_HOST") or "").strip() or "host.docker.internal"
+
+
+def remap_sqlserver_server_for_container_if_needed(server: str) -> str:
+    """If inside Docker and SERVER points at loopback, map to host gateway (see SQLSERVER_DOCKER_HOST)."""
+    if not _dockerenv_present() or not _is_loopback_server_field(server):
+        return server.strip()
+    return _remap_sql_server_field(server, _docker_sql_reachable_host())
+
+
+_ODBC_SERVER_KW_RE = re.compile(r"(?i)(SERVER\s*=\s*)([^;]+)")
+
+
+def remap_sqlserver_connection_string_server_if_needed(connection_string: str) -> str:
+    """Rewrite SERVER= loopback targets inside Docker (full-string config mode)."""
+
+    if not _dockerenv_present():
+        return connection_string
+
+    def repl(m: re.Match[str]) -> str:
+        prefix, value = m.group(1), m.group(2).strip()
+        if not _is_loopback_server_field(value):
+            return m.group(0)
+        return prefix + _remap_sql_server_field(value, _docker_sql_reachable_host())
+
+    return _ODBC_SERVER_KW_RE.sub(repl, connection_string)
+
+
+def odbc_connection_string_server_keyword_value(connection_string: str) -> Optional[str]:
+    """Parse SERVER=… from an ODBC string for safe logging (no credentials)."""
+    m = _ODBC_SERVER_KW_RE.search(connection_string)
+    return m.group(2).strip() if m else None
+
+
 @dataclass(frozen=True)
 class SqlServerConnectionResolution:
     """Canonical outcome of resolving SQL Server env (no secrets)."""
@@ -160,6 +242,9 @@ class SqlServerConnectionResolution:
 
     hint: Optional[str] = None
     """Actionable message when ``connection_string`` is empty (safe for logs / JSON)."""
+
+    sql_server_connect_target: Optional[str] = None
+    """``SERVER=`` value used after Docker loopback remapping (safe for logs; no credentials)."""
 
 
 class SqlServerConfigurationError(ValueError):
@@ -181,12 +266,14 @@ def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
     """Single source of truth for SQL Server env → ODBC connection string (canonical resolver)."""
     raw = (os.getenv("SQLSERVER_CONNECTION_STRING") or "").strip()
     if raw:
+        remapped = remap_sqlserver_connection_string_server_if_needed(raw)
         return SqlServerConnectionResolution(
             mode="connection_string",
-            connection_string=raw,
+            connection_string=remapped,
             missing_env_vars=(),
             driver_resolution="SQLSERVER_CONNECTION_STRING",
             hint=None,
+            sql_server_connect_target=odbc_connection_string_server_keyword_value(remapped),
         )
 
     server = (os.getenv("SQLSERVER_SERVER") or "").strip()
@@ -212,6 +299,7 @@ def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
                 "SQLSERVER_SERVER, SQLSERVER_DATABASE, SQLSERVER_UID, SQLSERVER_PWD (and SQLSERVER_DRIVER "
                 "or install Microsoft ODBC Driver for SQL Server). In CI, pass these as job env/secrets."
             ),
+            sql_server_connect_target=None,
         )
 
     missing = tuple(name for name, val in core.items() if not val)
@@ -226,6 +314,7 @@ def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
                 "SQLSERVER_DATABASE, SQLSERVER_UID, SQLSERVER_PWD. "
                 "Run `dinamic-db-migrate config-check` in CI before apply/validate."
             ),
+            sql_server_connect_target=None,
         )
 
     driver, dsrc = _pick_odbc_driver_for_split_config(env_driver)
@@ -239,10 +328,12 @@ def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
                 "No ODBC driver could be resolved. Set SQLSERVER_DRIVER (e.g. 'ODBC Driver 18 for SQL Server') "
                 "or install Microsoft ODBC Driver for SQL Server on the runner so pyodbc lists it."
             ),
+            sql_server_connect_target=None,
         )
 
+    server_eff = remap_sqlserver_server_for_container_if_needed(server)
     cs = (
-        f"DRIVER={{{driver}}};SERVER={server};DATABASE={database};UID={uid};PWD={pwd};"
+        f"DRIVER={{{driver}}};SERVER={server_eff};DATABASE={database};UID={uid};PWD={pwd};"
         "TrustServerCertificate=yes"
     )
     return SqlServerConnectionResolution(
@@ -251,6 +342,7 @@ def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
         missing_env_vars=(),
         driver_resolution=dsrc,
         hint=None,
+        sql_server_connect_target=server_eff,
     )
 
 

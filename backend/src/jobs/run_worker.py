@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from src.config import load_settings
+from src.config import load_settings, resolve_sqlserver_connection_config
 from src.jobs.worker_bootstrap import (
     append_worker_bootstrap_event,
     checkpoint_v3_job_bootstrap,
@@ -69,6 +69,14 @@ def _log_sql_worker_health() -> None:
         logger.warning("Worker SQL health detail: pyodbc import failed: %s", pyodbc_error)
     if repo_error:
         logger.warning("Worker SQL health detail: repository init check failed: %s", repo_error)
+
+    r = resolve_sqlserver_connection_config()
+    if r.connection_string.strip() and r.sql_server_connect_target:
+        logger.info(
+            "Worker SQL Server ODBC SERVER (non-secret): %s config_mode=%s",
+            r.sql_server_connect_target,
+            r.mode,
+        )
 
 
 def _log_storage_provider() -> None:

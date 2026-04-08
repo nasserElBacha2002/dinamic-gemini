@@ -109,7 +109,9 @@ All DB access (API, workers, `dinamic-db-migrate`) resolves the ODBC connection 
 
 If `SQLSERVER_DRIVER` is omitted, the resolver picks an installed driver in order: exact names `ODBC Driver 18/17/13 for SQL Server`, then any `pyodbc` driver name containing `SQL Server`.
 
-**`SQLSERVER_DRIVER` — expected value:** The **exact** driver name as listed by `pyodbc.drivers()` in the running environment (ODBCinst.ini), e.g. `ODBC Driver 18 for SQL Server` or `ODBC Driver 17 for SQL Server` when Microsoft’s driver is installed. If auto-detection finds nothing (common on the **default ARM64 Docker image**, which does not bundle `msodbcsql18`), set **`SQLSERVER_CONNECTION_STRING`** to a full ODBC string with a driver that actually exists on that host, or install a SQL Server ODBC driver in the image/host and then set split vars **including** `SQLSERVER_DRIVER` if needed. Messages like *missing `SQLSERVER_DRIVER`* or *Schema guard skipped: SQL Server config incomplete* indicate the resolver could not build a connection string (incomplete vars or no resolvable driver).
+**`SQLSERVER_DRIVER` — expected value:** The **exact** driver name from `pyodbc.drivers()` (e.g. **`ODBC Driver 18 for SQL Server`**). The default **Dockerfile** / **Dockerfile.worker** install **msodbcsql18** for the image architecture (amd64 or arm64 via Microsoft’s multi-arch Debian repo — do not pin `[arch=amd64]` in apt). Omit `SQLSERVER_DRIVER` to auto-pick among installed Microsoft drivers. *missing `SQLSERVER_DRIVER`* / *Schema guard skipped* mean incomplete split vars or no matching driver in **that** environment (host vs container differ: the container must have the driver inside the image).
+
+**Docker vs host SQL Server:** Inside a container, **`localhost` / `127.0.0.1` refer to the container**, not your Mac/Windows/Linux host. If SQL Server runs on the host and your `.env` uses loopback, keep that `.env` for native runs; in Docker the resolver **rewrites** loopback `SQLSERVER_SERVER` / `SERVER=` in `SQLSERVER_CONNECTION_STRING` to **`host.docker.internal`** when `/.dockerenv` is present (override with **`SQLSERVER_DOCKER_HOST`** e.g. `172.17.0.1` on Linux). **`backend/docker-compose.yml`** adds `extra_hosts: host.docker.internal:host-gateway` so Linux Docker can resolve that name. Use an explicit port when needed: **`host.docker.internal,1433`** (ODBC `SERVER` syntax).
 
 **Early validation (local / CI):**
 
@@ -118,7 +120,7 @@ cd backend && pip install -e .
 dinamic-db-migrate config-check   # or: dinamic-db-migrate doctor
 ```
 
-Exits `0` when a connection string can be built, `3` when not. Output is JSON with `config_mode` (`connection_string` | `split_env` | `unset` | `incomplete_split`), `missing_env_vars`, and `driver_resolution` — **no passwords**.
+Exits `0` when a connection string can be built, `3` when not. Output is JSON with `config_mode` (`connection_string` | `split_env` | `unset` | `incomplete_split`), `missing_env_vars`, `driver_resolution`, and when ok **`sqlserver_connect_target`** (ODBC `SERVER=` value after Docker loopback remap) — **no passwords**.
 
 On failure, exceptions include `SqlServerConfigurationError.config_mode` and `missing_env_vars`.
 
@@ -135,7 +137,7 @@ This backend now uses a versioned schema guard to prevent rolling out code again
   - `dinamic-db-migrate status|apply|validate` (console script from the install)
 - **DEV (OpenCloud):** migrations are run on the Ubuntu server (or in a one-off container), not by GitHub Actions — see `docs/deployment/DEV-OPENCLOUD.md`.
 - **AWS ECS (archived):** former one-off migration task script lives under `deployment/archive/aws-ecs-dev-legacy/scripts/run-ecs-migration-task.sh` for reference if a future production pipeline uses ECS again.
-- Backend container image includes `pyodbc` and `unixODBC`; **Microsoft ODBC Driver 18** (`msodbcsql18`) is not installed in the default Dockerfile so the image builds on **ARM64** (install a SQL Server driver in a derived image or on the host for amd64-only packages).
+- Backend container images install **`pyodbc`**, **unixODBC**, and **Microsoft ODBC Driver 18** (`msodbcsql18`) using the architecture-native package from Microsoft’s Debian 12 repo (same driver name **`ODBC Driver 18 for SQL Server`** inside the container as on a typical Linux host).
 - Runtime guard:
   - startup check compares DB version vs required version
   - `/ready` returns `503` when schema is incompatible
