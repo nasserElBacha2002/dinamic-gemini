@@ -26,7 +26,7 @@ GitHub Actions workflow: **`.github/workflows/deploy-dev-opencloud-backend.yml`*
 ### Jobs
 
 1. **Migration file guard** — On `push` only, runs `backend/scripts/check_migration_presence.py` when a valid base SHA exists (same idea as the old ECS pipeline’s guard, without AWS).
-2. **SSH deploy** — Connects on **SSH port 37783** (hardcoded in the workflow, not 22), hard-resets the repo to `origin/develop`, verifies repo path / compose file / root `.env` / `docker-compose` on `PATH`, then builds and starts containers with **`docker-compose` (v1)** for the API, then retries **local** `GET http://127.0.0.1:8000/health` for up to ~60s (maps to container port 8000).
+2. **SSH deploy** — Connects on **SSH port 37783** (hardcoded in the workflow, not 22), hard-resets the repo to `origin/develop`, verifies repo path / compose file / root `.env` / `docker-compose` on `PATH`, then **`docker-compose down`** (best-effort), **`docker-compose up -d --build`**, and retries **local** `GET http://127.0.0.1:8000/health` for up to **~135s** (45 × 3s) so slow imports / startup after the container listens still pass.
 3. **Optional public smoke** — If `DEV_BACKEND_URL` is set, curls `{BASE}/health` from the GitHub runner.
 
 ## Server layout
@@ -58,10 +58,10 @@ git switch develop 2>/dev/null || git checkout develop
 git reset --hard origin/develop
 # Deploy script also checks: backend/docker-compose.yml exists, repo root .env exists, docker-compose on PATH
 cd backend
-docker-compose build --pull
-docker-compose up -d --remove-orphans
+docker-compose down --remove-orphans || true
+docker-compose up -d --build
 docker-compose ps
-# Workflow retries GET /health on localhost for up to ~60s (container startup).
+# Workflow retries GET /health on localhost for up to ~135s (45 x 3s).
 ```
 
 ## GitHub Secrets
@@ -91,6 +91,10 @@ No AWS secrets are used for this DEV path.
 
 3. Create **`.env` at the repository root** (`/opt/dinamic/dinamic-gemini/.env`) with everything the API needs (SQL Server, keys, etc.). `backend/docker-compose.yml` loads it via `env_file: ../.env`. This file is gitignored.
 
+### `.env` values with `$` (docker-compose v1)
+
+**docker-compose** treats `$NAME` in many contexts as a variable to substitute. If a value must contain a **literal dollar** (e.g. passlib hashes like `$pbkdf2-sha256$...`, or other secrets with `$`), **double it**: use **`$$`** so compose passes a single `$` into the container (e.g. `$$pbkdf2-sha256$...`). Otherwise you will see warnings such as *The "pbkdf2" variable is not set* and values can be corrupted.
+
 4. Install **Docker Engine** and the classic **`docker-compose`** standalone (on `PATH`). The Docker Compose **v2 plugin** (`docker compose`) is **not** required for this DEV flow.
 
 5. Add the GitHub Actions (or deploy) **public SSH key** to `~/.ssh/authorized_keys` for `DEV_USER`.
@@ -99,7 +103,7 @@ No AWS secrets are used for this DEV path.
 
    ```bash
    cd /opt/dinamic/dinamic-gemini/backend
-   docker-compose build --pull && docker-compose up -d
+   docker-compose down --remove-orphans || true && docker-compose up -d --build
    ```
 
 ## Manual redeploy on the server
@@ -108,7 +112,7 @@ Same as the remote block above, or:
 
 ```bash
 cd /opt/dinamic/dinamic-gemini && git fetch origin && git reset --hard origin/develop
-cd backend && docker-compose build --pull && docker-compose up -d --remove-orphans
+cd backend && docker-compose down --remove-orphans || true && docker-compose up -d --build
 ```
 
 ## Database migrations (DEV) — **manual by design**
@@ -131,6 +135,12 @@ docker-compose run --rm api python scripts/db_migrate.py validate
 ```
 
 **Not intended:** wiring `apply` into GitHub Actions for this DEV path unless you add a separate, reviewed workflow later; the current design is **manual migrations on the VPS** after automated code deploy.
+
+## SQL Server on DEV (OpenCloud)
+
+- Full details: **`backend/README.md`** → *SQL Server configuration*.
+- **`SQLSERVER_DRIVER`:** optional when an ODBC driver is auto-detected; otherwise set to the exact name from `pyodbc.drivers()` (e.g. `ODBC Driver 18 for SQL Server` on hosts where Microsoft’s driver is installed). The default **ARM64** API image may ship **without** that driver — then use **`SQLSERVER_CONNECTION_STRING`** or install a supported driver before relying on split env vars.
+- **Schema guard skipped / incomplete SQL Server config** is expected until server, database, credentials, and a working driver (or full connection string) are configured.
 
 ## Frontend DEV
 

@@ -11,7 +11,7 @@
 # SSH: port is set explicitly below (non-default; not port 22).
 #
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
-#   cd backend && docker-compose build --pull && docker-compose up -d
+#   cd backend && docker-compose down ... && docker-compose up -d --build
 # git fetch origin must work non-interactively (deploy key or credentials on the server).
 # Env file for the API is at repo root: /opt/dinamic/dinamic-gemini/.env (see backend/docker-compose.yml env_file).
 #
@@ -98,20 +98,20 @@ jobs:
               exit 1
             fi
             cd "${REPO_ROOT}/backend"
-            docker-compose build --pull
-            docker-compose up -d --remove-orphans
+            docker-compose down --remove-orphans || true
+            docker-compose up -d --build
             docker-compose ps
             ok=0
-            for i in $(seq 1 30); do
+            for i in $(seq 1 45); do
               if curl -sfS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/health >/dev/null; then
                 ok=1
                 break
               fi
-              echo "Local /health attempt ${i}/30 not ready; sleeping 2s..."
-              sleep 2
+              echo "Local /health attempt ${i}/45 not ready; sleeping 3s..."
+              sleep 3
             done
             if [ "${ok}" -ne 1 ]; then
-              echo "ERROR: GET http://127.0.0.1:8000/health did not succeed within ~60s (30 attempts, host port maps to compose service api)." >&2
+              echo "ERROR: GET http://127.0.0.1:8000/health did not succeed within ~135s (45 attempts x 3s; allow time after Uvicorn binds for app import/DB)." >&2
               echo "Hint: cd ${REPO_ROOT}/backend && docker-compose ps && docker-compose logs --tail=100 api" >&2
               exit 1
             fi

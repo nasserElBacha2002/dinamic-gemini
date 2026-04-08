@@ -8,15 +8,13 @@ ENV PYTHONUNBUFFERED=1
 ENV FORWARDED_TRUSTED_HOSTS=*
 
 # System deps:
-# - unixODBC runtime/dev needed by pyodbc
-# - Microsoft ODBC Driver 18 for SQL Server (msodbcsql18)
+# - unixODBC runtime/dev for pyodbc (SQL Server requires a driver at runtime; Microsoft msodbcsql18 is amd64-only
+#   and is omitted so this image builds on ARM64. Install a supported driver in derived images if needed.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    apt-transport-https \
     build-essential \
     ca-certificates \
     curl \
     git \
-    gnupg \
     libglib2.0-0 \
     libgssapi-krb5-2 \
     libsm6 \
@@ -26,12 +24,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     unixodbc \
     unixodbc-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg \
-    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/microsoft-prod.list \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -40,11 +32,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     python - <<'PY'
 import pyodbc
-drivers = {d.strip() for d in pyodbc.drivers()}
-required = {"ODBC Driver 18 for SQL Server"}
-if not (drivers & required):
-    raise SystemExit(f"Missing SQL Server ODBC driver. Installed drivers: {sorted(drivers)}")
-print("pyodbc import OK; SQL Server ODBC drivers:", sorted(drivers))
+
+_drivers = sorted({d.strip() for d in pyodbc.drivers() if d.strip()})
+print("pyodbc import OK; ODBC drivers visible to pyodbc:", _drivers)
 PY
 
 COPY . .
