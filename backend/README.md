@@ -141,7 +141,7 @@ This backend now uses a versioned schema guard to prevent rolling out code again
 
 Important env vars:
 
-- SQL Server: see **SQL Server configuration** above. On the DEV VPS, credentials live in `backend/.env` (not committed). A future production setup may use a different secret store (e.g. ECS secrets); `main` is not treated as production in this repo.
+- SQL Server: see **SQL Server configuration** above. On the DEV OpenCloud server, credentials live in the **repository root** `.env` (e.g. `/opt/dinamic/dinamic-gemini/.env`), loaded by `backend/docker-compose.yml` — not committed. A future production setup may use a different secret store (e.g. ECS secrets); `main` is not treated as production in this repo.
 - `DB_SCHEMA_SERVICE_NAME` (default: `inventory-api`)
 - `DB_SCHEMA_REQUIRED_VERSION` (optional override)
 - `DB_SCHEMA_GUARD_ENABLED` (default: `true`)

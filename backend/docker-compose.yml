@@ -1,5 +1,5 @@
 # DEV backend on Ubuntu (OpenCloud): build from this Dockerfile, bind port 8000.
-# Server-side secrets: create backend/.env (never commit; see docs/deployment/DEV-OPENCLOUD.md).
+# Server-side secrets: repository root `.env` as ../.env from this file (never commit; see docs/deployment/DEV-OPENCLOUD.md).
 
 services:
   api:
@@ -9,5 +9,5 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - ../.env
     restart: unless-stopped
