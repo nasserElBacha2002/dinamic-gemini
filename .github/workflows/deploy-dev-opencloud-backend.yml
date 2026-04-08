@@ -1,0 +1,111 @@
+# =============================================================================
+# DEV — Deploy backend to OpenCloud (SSH + Docker Compose)
+# =============================================================================
+#
+# Branching: feature → main → develop; DEV deploy runs from develop only.
+# main is not production. Production will use a dedicated branch later.
+#
+# Secrets: DEV_HOST, DEV_USER, DEV_SSH_PRIVATE_KEY
+# Optional secret: DEV_BACKEND_URL — if set, runner curls public /health after deploy.
+#
+# Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
+#   cd backend && docker-compose build --pull && docker-compose up -d
+# git fetch origin must work non-interactively (deploy key or credentials on the server).
+#
+# =============================================================================
+
+name: DEV — OpenCloud backend (SSH)
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-dev-opencloud-backend.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: dev-opencloud-backend-develop
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migration-presence:
+    name: Migration file guard (push only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate migration presence for DB-layer changes
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "Skipping (workflow_dispatch)."
+            exit 0
+          fi
+          BASE="${{ github.event.before }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "Skipping migration presence check (no base ref)."
+            exit 0
+          fi
+          python3 backend/scripts/check_migration_presence.py \
+            --base-ref "$BASE" \
+            --head-ref "${{ github.sha }}"
+
+  deploy:
+    name: SSH deploy + local health
+    runs-on: ubuntu-latest
+    needs: [migration-presence]
+    steps:
+      - name: Deploy on server (git reset + docker-compose)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USER }}
+          key: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /opt/dinamic/dinamic-gemini
+            git fetch origin
+            git switch develop 2>/dev/null || git checkout develop
+            git reset --hard origin/develop
+            cd backend
+            docker-compose build --pull
+            docker-compose up -d --remove-orphans
+            docker-compose ps
+            ok=0
+            for i in $(seq 1 30); do
+              if curl -sfS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/health >/dev/null; then
+                ok=1
+                break
+              fi
+              echo "Local /health attempt ${i}/30 not ready; sleeping 2s..."
+              sleep 2
+            done
+            if [ "${ok}" -ne 1 ]; then
+              echo "ERROR: local /health did not succeed within retry window" >&2
+              exit 1
+            fi
+            echo "Local /health OK"
+
+  public-smoke:
+    name: Optional public /health
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    steps:
+      - name: GET /health from DEV_BACKEND_URL
+        env:
+          BASE_URL: ${{ secrets.DEV_BACKEND_URL }}
+        run: |
+          if [ -z "${BASE_URL}" ]; then
+            echo "DEV_BACKEND_URL not set; skipping public smoke."
+            exit 0
+          fi
+          BASE="${BASE_URL%/}"
+          curl --fail --show-error --silent --connect-timeout 10 --max-time 30 "${BASE}/health"
