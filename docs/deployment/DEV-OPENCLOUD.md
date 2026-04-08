@@ -26,7 +26,7 @@ GitHub Actions workflow: **`.github/workflows/deploy-dev-opencloud-backend.yml`*
 ### Jobs
 
 1. **Migration file guard** — On `push` only, runs `backend/scripts/check_migration_presence.py` when a valid base SHA exists (same idea as the old ECS pipeline’s guard, without AWS).
-2. **SSH deploy** — Connects to the server, hard-resets the repo to `origin/develop`, builds and starts Docker Compose for the API.
+2. **SSH deploy** — Connects to the server, hard-resets the repo to `origin/develop`, builds and starts containers with **`docker-compose`** for the API, then retries **local** `GET http://127.0.0.1:8000/health` for up to ~60s.
 3. **Optional public smoke** — If `DEV_BACKEND_URL` is set, curls `{BASE}/health` from the GitHub runner.
 
 ## Server layout
@@ -39,6 +39,15 @@ GitHub Actions workflow: **`.github/workflows/deploy-dev-opencloud-backend.yml`*
 | API port (host) | `8000` |
 | Container env | `backend/.env` on the server (**not** in git) |
 
+### Non-interactive Git on the server
+
+Automated deploy runs `git fetch origin` over SSH **without a TTY**. The clone at `/opt/dinamic/dinamic-gemini` must already be configured so **`git fetch` / `git pull` succeed without prompts**, for example:
+
+- **SSH deploy key** with read access to the repo (`core.sshCommand` or `~/.ssh/config` host entry), or  
+- **HTTPS** with a credential helper / long-lived token (not an interactive login).
+
+If `git fetch` waits for a password, the workflow will hang or fail.
+
 Remote commands (conceptually):
 
 ```bash
@@ -47,10 +56,10 @@ git fetch origin
 git switch develop 2>/dev/null || git checkout develop
 git reset --hard origin/develop
 cd backend
-docker compose build --pull
-docker compose up -d --remove-orphans
-docker compose ps
-curl -sfS http://127.0.0.1:8000/health
+docker-compose build --pull
+docker-compose up -d --remove-orphans
+docker-compose ps
+# Workflow retries GET /health on localhost for up to ~60s (container startup).
 ```
 
 ## GitHub Secrets
@@ -76,11 +85,11 @@ No AWS secrets are used for this DEV path.
    git checkout develop
    ```
 
-2. Ensure **`git fetch` works** (deploy key or HTTPS credentials on the server).
+2. Ensure **`git fetch origin` works non-interactively** from that clone (see **Non-interactive Git on the server** above).
 
 3. Create **`backend/.env`** with everything the API needs (SQL Server, keys, etc.). This file is gitignored.
 
-4. Install **Docker Engine** + **Docker Compose v2** plugin.
+4. Install **Docker Engine** and the classic **`docker-compose`** standalone (on `PATH`). The Docker Compose **v2 plugin** (`docker compose`) is **not** required for this DEV flow.
 
 5. Add the GitHub Actions (or deploy) **public SSH key** to `~/.ssh/authorized_keys` for `DEV_USER`.
 
@@ -88,7 +97,7 @@ No AWS secrets are used for this DEV path.
 
    ```bash
    cd /opt/dinamic/dinamic-gemini/backend
-   docker compose build --pull && docker compose up -d
+   docker-compose build --pull && docker-compose up -d
    ```
 
 ## Manual redeploy on the server
@@ -97,22 +106,29 @@ Same as the remote block above, or:
 
 ```bash
 cd /opt/dinamic/dinamic-gemini && git fetch origin && git reset --hard origin/develop
-cd backend && docker compose build --pull && docker compose up -d --remove-orphans
+cd backend && docker-compose build --pull && docker-compose up -d --remove-orphans
 ```
 
-## Database migrations (DEV)
+## Database migrations (DEV) — **manual by design**
 
-The OpenCloud workflow **does not** run `db_migrate.py` automatically. The old ECS pipeline ran migrations inside a VPC task; on the VPS you should run migrations when schema changes land, for example:
+| Policy | Detail |
+|--------|--------|
+| **Deploy workflow** | Does **not** run `db_migrate.py` (no `apply`, no post-deploy validate). Keeps the SSH deploy simple, avoids blind applies against the shared DEV DB, and stays **AWS-free**. |
+| **CI guard** | On **push** to `develop`, the **migration file guard** job still runs `check_migration_presence.py` when a valid base SHA exists, so DB-layer changes are not merged into `develop` without a migration file when required. |
+| **Operators** | After a deploy, when schema changes are included in the new image, run migrations **on the server** explicitly (order: config-check → apply → validate). |
+
+The old ECS DEV pipeline ran migrations inside a VPC task; OpenCloud DEV replaces that with **explicit operator steps** after deploy.
+
+Example (service name `api` — see `backend/docker-compose.yml`):
 
 ```bash
 cd /opt/dinamic/dinamic-gemini/backend
-# adjust: run via compose exec, or a one-off container with same .env
-docker compose run --rm api python scripts/db_migrate.py config-check
-docker compose run --rm api python scripts/db_migrate.py apply
-docker compose run --rm api python scripts/db_migrate.py validate
+docker-compose run --rm api python scripts/db_migrate.py config-check
+docker-compose run --rm api python scripts/db_migrate.py apply
+docker-compose run --rm api python scripts/db_migrate.py validate
 ```
 
-(Exact invocation depends on how you mount env and whether the API service name is `api` — see `backend/docker-compose.yml`.)
+**Not intended:** wiring `apply` into GitHub Actions for this DEV path unless you add a separate, reviewed workflow later; the current design is **manual migrations on the VPS** after automated code deploy.
 
 ## Frontend DEV
 

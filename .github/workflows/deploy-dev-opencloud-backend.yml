@@ -9,7 +9,8 @@
 # Optional secret: DEV_BACKEND_URL — if set, runner curls public /health after deploy.
 #
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
-#   cd backend && docker compose build --pull && docker compose up -d
+#   cd backend && docker-compose build --pull && docker-compose up -d
+# git fetch origin must work non-interactively (deploy key or credentials on the server).
 #
 # =============================================================================
 
@@ -61,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [migration-presence]
     steps:
-      - name: Deploy on server (git reset + docker compose)
+      - name: Deploy on server (git reset + docker-compose)
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEV_HOST }}
@@ -75,10 +76,22 @@ jobs:
             git switch develop 2>/dev/null || git checkout develop
             git reset --hard origin/develop
             cd backend
-            docker compose build --pull
-            docker compose up -d --remove-orphans
-            docker compose ps
-            curl -sfS --connect-timeout 10 --max-time 30 http://127.0.0.1:8000/health >/dev/null
+            docker-compose build --pull
+            docker-compose up -d --remove-orphans
+            docker-compose ps
+            ok=0
+            for i in $(seq 1 30); do
+              if curl -sfS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/health >/dev/null; then
+                ok=1
+                break
+              fi
+              echo "Local /health attempt ${i}/30 not ready; sleeping 2s..."
+              sleep 2
+            done
+            if [ "${ok}" -ne 1 ]; then
+              echo "ERROR: local /health did not succeed within retry window" >&2
+              exit 1
+            fi
             echo "Local /health OK"
 
   public-smoke:
