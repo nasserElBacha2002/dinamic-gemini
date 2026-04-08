@@ -7,6 +7,8 @@ import pytest
 from src.config import (
     SqlServerConfigurationError,
     load_settings,
+    remap_sqlserver_connection_string_server_if_needed,
+    remap_sqlserver_server_for_container_if_needed,
     resolve_sqlserver_connection_config,
     resolve_sqlserver_effective_connection_string,
 )
@@ -104,3 +106,59 @@ def test_migration_cli_config_check_exits_3_when_unset(monkeypatch: pytest.Monke
 
     assert main(["config-check"]) == 3
     assert main(["doctor"]) == 3
+
+
+def test_docker_loopback_server_remapped_to_host_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.config._dockerenv_present", lambda: True)
+    monkeypatch.delenv("SQLSERVER_DOCKER_HOST", raising=False)
+    assert remap_sqlserver_server_for_container_if_needed("localhost") == "host.docker.internal"
+    assert remap_sqlserver_server_for_container_if_needed("127.0.0.1,1433") == "host.docker.internal,1433"
+
+
+def test_docker_loopback_respects_sqlserver_docker_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.config._dockerenv_present", lambda: True)
+    monkeypatch.setenv("SQLSERVER_DOCKER_HOST", "172.17.0.1")
+    assert remap_sqlserver_server_for_container_if_needed("localhost") == "172.17.0.1"
+
+
+def test_non_docker_keeps_localhost(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.config._dockerenv_present", lambda: False)
+    assert remap_sqlserver_server_for_container_if_needed("localhost") == "localhost"
+
+
+def test_split_env_in_docker_remaps_server_in_connection_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.config._dockerenv_present", lambda: True)
+    monkeypatch.delenv("SQLSERVER_DOCKER_HOST", raising=False)
+    monkeypatch.setenv("SQLSERVER_SERVER", "localhost")
+    monkeypatch.setenv("SQLSERVER_DATABASE", "db1")
+    monkeypatch.setenv("SQLSERVER_UID", "u")
+    monkeypatch.setenv("SQLSERVER_PWD", "p")
+    monkeypatch.setenv("SQLSERVER_DRIVER", "ODBC Driver 18 for SQL Server")
+    cs, missing = resolve_sqlserver_effective_connection_string()
+    assert missing == ()
+    assert "SERVER=host.docker.internal" in cs
+    cfg = resolve_sqlserver_connection_config()
+    assert cfg.sql_server_connect_target == "host.docker.internal"
+
+
+def test_connection_string_mode_remapped_in_docker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.config._dockerenv_present", lambda: True)
+    monkeypatch.delenv("SQLSERVER_DOCKER_HOST", raising=False)
+    raw = (
+        "DRIVER={ODBC Driver 18 for SQL Server};SERVER=127.0.0.1,1433;DATABASE=db1;"
+        "UID=u;PWD=p;TrustServerCertificate=yes"
+    )
+    monkeypatch.setenv("SQLSERVER_CONNECTION_STRING", raw)
+    cfg = resolve_sqlserver_connection_config()
+    assert "SERVER=host.docker.internal,1433" in cfg.connection_string
+    assert cfg.sql_server_connect_target == "host.docker.internal,1433"
+
+
+def test_remap_connection_string_helper_idempotent_off_docker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.config._dockerenv_present", lambda: False)
+    s = "DRIVER={x};SERVER=localhost;DATABASE=d;"
+    assert remap_sqlserver_connection_string_server_if_needed(s) == s

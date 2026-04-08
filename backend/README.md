@@ -111,6 +111,8 @@ If `SQLSERVER_DRIVER` is omitted, the resolver picks an installed driver in orde
 
 **`SQLSERVER_DRIVER` — expected value:** The **exact** driver name from `pyodbc.drivers()` (e.g. **`ODBC Driver 18 for SQL Server`**). The default **Dockerfile** / **Dockerfile.worker** install **msodbcsql18** for the image architecture (amd64 or arm64 via Microsoft’s multi-arch Debian repo — do not pin `[arch=amd64]` in apt). Omit `SQLSERVER_DRIVER` to auto-pick among installed Microsoft drivers. *missing `SQLSERVER_DRIVER`* / *Schema guard skipped* mean incomplete split vars or no matching driver in **that** environment (host vs container differ: the container must have the driver inside the image).
 
+**Docker vs host SQL Server:** Inside a container, **`localhost` / `127.0.0.1` refer to the container**, not your Mac/Windows/Linux host. If SQL Server runs on the host and your `.env` uses loopback, keep that `.env` for native runs; in Docker the resolver **rewrites** loopback `SQLSERVER_SERVER` / `SERVER=` in `SQLSERVER_CONNECTION_STRING` to **`host.docker.internal`** when `/.dockerenv` is present (override with **`SQLSERVER_DOCKER_HOST`** e.g. `172.17.0.1` on Linux). **`backend/docker-compose.yml`** adds `extra_hosts: host.docker.internal:host-gateway` so Linux Docker can resolve that name. Use an explicit port when needed: **`host.docker.internal,1433`** (ODBC `SERVER` syntax).
+
 **Early validation (local / CI):**
 
 ```bash
@@ -118,7 +120,7 @@ cd backend && pip install -e .
 dinamic-db-migrate config-check   # or: dinamic-db-migrate doctor
 ```
 
-Exits `0` when a connection string can be built, `3` when not. Output is JSON with `config_mode` (`connection_string` | `split_env` | `unset` | `incomplete_split`), `missing_env_vars`, and `driver_resolution` — **no passwords**.
+Exits `0` when a connection string can be built, `3` when not. Output is JSON with `config_mode` (`connection_string` | `split_env` | `unset` | `incomplete_split`), `missing_env_vars`, `driver_resolution`, and when ok **`sqlserver_connect_target`** (ODBC `SERVER=` value after Docker loopback remap) — **no passwords**.
 
 On failure, exceptions include `SqlServerConfigurationError.config_mode` and `missing_env_vars`.
 

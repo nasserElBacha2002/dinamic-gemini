@@ -10,4 +10,7 @@ services:
       - "8000:8000"
     env_file:
       - ../.env
+    # Linux Docker: map host.docker.internal → host gateway (Mac/Win Desktop already provide the name).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

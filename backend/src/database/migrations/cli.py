@@ -59,6 +59,9 @@ def cmd_config_check() -> int:
         "missing_env_vars": list(r.missing_env_vars),
         "driver_resolution": r.driver_resolution,
         "hint": r.hint if not r.connection_string.strip() else None,
+        "sqlserver_connect_target": r.sql_server_connect_target
+        if r.connection_string.strip()
+        else None,
     }
     _print(out)
     return 0 if out["ok"] else 3
