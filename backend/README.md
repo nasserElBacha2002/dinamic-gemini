@@ -131,9 +131,8 @@ This backend now uses a versioned schema guard to prevent rolling out code again
   - `python scripts/db_migrate.py status|apply|validate|config-check`
   - `python -m src.database.migrations status|apply|validate|config-check`
   - `dinamic-db-migrate status|apply|validate` (console script from the install)
-- CI/CD production path (recommended): run migrations via one-off ECS task inside VPC
-  using `.github/scripts/run-ecs-migration-task.sh` with command
-  `python scripts/db_migrate.py config-check && python scripts/db_migrate.py apply && python scripts/db_migrate.py validate`.
+- **DEV (OpenCloud):** migrations are run on the Ubuntu server (or in a one-off container), not by GitHub Actions — see `docs/deployment/DEV-OPENCLOUD.md`.
+- **AWS ECS (archived):** former one-off migration task script lives under `deployment/archive/aws-ecs-dev-legacy/scripts/run-ecs-migration-task.sh` for reference if a future production pipeline uses ECS again.
 - Backend container image includes SQL Server runtime support (`pyodbc`, `unixODBC`, `msodbcsql18`) and fails at build-time if ODBC Driver 18 is unavailable.
 - Runtime guard:
   - startup check compares DB version vs required version
@@ -142,7 +141,7 @@ This backend now uses a versioned schema guard to prevent rolling out code again
 
 Important env vars:
 
-- SQL Server: see **SQL Server configuration** above. In production CI, DB creds stay in ECS task definition / secrets; GitHub runner only needs AWS/ECS metadata (task definition, container name, subnets, security groups).
+- SQL Server: see **SQL Server configuration** above. On the DEV VPS, credentials live in `backend/.env` (not committed). A future production setup may use a different secret store (e.g. ECS secrets); `main` is not treated as production in this repo.
 - `DB_SCHEMA_SERVICE_NAME` (default: `inventory-api`)
 - `DB_SCHEMA_REQUIRED_VERSION` (optional override)
 - `DB_SCHEMA_GUARD_ENABLED` (default: `true`)

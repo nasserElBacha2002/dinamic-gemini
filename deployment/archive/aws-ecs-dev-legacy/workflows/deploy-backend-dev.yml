@@ -1,6 +1,9 @@
 # =============================================================================
-# Deploy Dev — API + Worker (ECS, digest-pinned)
+# ARCHIVED COPY — former path: .github/workflows/deploy-backend-dev.yml
+# Not active: GitHub only loads workflows from .github/workflows/*.yml at repo root.
 # =============================================================================
+#
+# Deploy Dev — API + Worker (ECS, digest-pinned)
 #
 # Single pipeline for production-style dev deploys: migrations, then API + worker ECS services.
 # Pushes images as :$GITHUB_SHA only (no `latest`). Registers a new task definition revision

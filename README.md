@@ -40,6 +40,8 @@ Sistema en Python que procesa videos de depósito, extrae fotogramas estratégic
 
    La aplicación tiene **backend** (Python, en `backend/`) y **frontend** (React, en `frontend/`). Ver [REPO_STRUCTURE.md](REPO_STRUCTURE.md) para la estructura del repo.
 
+   **Despliegue DEV** (rama `develop`, servidor Ubuntu/OpenCloud vía GitHub Actions + Docker): [docs/deployment/DEV-OPENCLOUD.md](docs/deployment/DEV-OPENCLOUD.md). `main` no es producción.
+
 ## ⚙️ Configuración
 
 1. **Copiar el archivo de ejemplo de variables de entorno:**

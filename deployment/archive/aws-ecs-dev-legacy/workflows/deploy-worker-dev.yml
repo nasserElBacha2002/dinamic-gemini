@@ -1,15 +1,19 @@
+# =============================================================================
+# ARCHIVED COPY — former path: .github/workflows/deploy-worker-dev.yml
+# Not active while stored under deployment/archive/.
+# =============================================================================
+#
 # File: deploy-worker-dev.yml (name is historical). Runs only on workflow_dispatch.
 #
 # Optional manual job — does NOT build images, push ECR, or update ECS services.
-#
-# Worker (and API) production deploys run exclusively in:
-#   .github/workflows/deploy-backend-dev.yml
-# (develop push or workflow_dispatch there: migrations + digest-pinned API + digest-pinned worker).
 #
 # Use this workflow when you need an extra in-VPC schema check (config-check + validate only)
 # without running a full deploy.
 # It uses the same migration runner pattern (task-definition-family + image digest), not a pinned
 # task-definition revision.
+#
+# Restore: copy this file to .github/workflows/ and scripts to .github/scripts/ per README in this archive.
+#
 
 name: Validate schema (manual, ECS task)
 
