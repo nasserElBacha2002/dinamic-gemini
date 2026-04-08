@@ -1,6 +1,5 @@
 # DEV backend on Ubuntu (OpenCloud): build from this Dockerfile, bind port 8000.
 # Server-side secrets: create backend/.env (never commit; see docs/deployment/DEV-OPENCLOUD.md).
-name: dinamic-backend-dev
 
 services:
   api:
