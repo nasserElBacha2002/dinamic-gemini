@@ -549,6 +549,16 @@ export default function InventoryDetail() {
                 >
                   {t('aisle.visual_refs_title')}
                 </Button>
+                {inventory.processing_mode === 'test' ? (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    data-testid="inventory-header-compare-runs"
+                    onClick={() => navigate(`/inventories/${inventoryId}/analytics/compare`)}
+                  >
+                    {t('analytics.compare_runs_link')}
+                  </Button>
+                ) : null}
                 <Button
                   variant="outlined"
                   size="small"
@@ -594,26 +604,6 @@ export default function InventoryDetail() {
             ) : null}
 
             {aislesError ? <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} /> : null}
-
-            {inventory.processing_mode === 'test' ? (
-              <SectionCard
-                title={t('analytics.section_title')}
-                subtitle={t('analytics.section_subtitle')}
-                variant="elevation"
-                elevation={1}
-              >
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={() => navigate(`/inventories/${inventoryId}/analytics/compare`)}
-                >
-                  {t('analytics.compare_runs_link')}
-                </Button>
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-                  {t('analytics.compare_runs_help')}
-                </Typography>
-              </SectionCard>
-            ) : null}
 
             <SectionCard
               title={t('aisle.list_title')}
