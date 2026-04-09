@@ -1,7 +1,7 @@
 /**
- * Phase 3 / Phase 6 — run picker for multi-run aisles (resolver default vs explicit job).
+ * Phase 3 / Phase 6 — run picker for multi-run aisles (test inventories).
  *
- * `valueJobId` is the effective run shown in the control (from URL and/or backend-resolved slice).
+ * When `jobs` is non-empty, `valueJobId` must be a concrete job id (URL-aligned with the list query).
  */
 
 import {
@@ -36,16 +36,10 @@ function formatJobLine(j: JobSummary): string {
 export type AisleRunSelectorProps = {
   operationalJobId?: string | null;
   jobs: JobSummary[];
-  /**
-   * Effective run shown as selected: explicit URL job, or backend-resolved job when no URL pin.
-   * Empty string / null → Default (API resolver) row.
-   */
-  valueJobId: string | null;
-  onChange: (jobId: string | null) => void;
+  /** Must match one of `jobs[].id` (page aligns URL + list query to this id). */
+  valueJobId: string;
+  onChange: (jobId: string) => void;
   disabled?: boolean;
-  loading?: boolean;
-  /** True when `?jobId=` is present (explicit URL pin). */
-  urlPinned?: boolean;
 };
 
 export default function AisleRunSelector({
@@ -54,44 +48,33 @@ export default function AisleRunSelector({
   valueJobId,
   onChange,
   disabled,
-  loading,
-  urlPinned = false,
 }: AisleRunSelectorProps) {
   const { t } = useTranslation();
-  const trimmed = valueJobId?.trim() ?? '';
+  const trimmed = valueJobId.trim();
   const validIds = new Set(jobs.map((j) => j.id));
-  const value = trimmed !== '' && validIds.has(trimmed) ? trimmed : '';
+  const fallback = jobs[0]?.id ?? '';
+  const value = trimmed !== '' && validIds.has(trimmed) ? trimmed : fallback;
 
   const handleChange = (e: SelectChangeEvent<string>) => {
-    const v = e.target.value;
-    onChange(v === '' ? null : v);
+    onChange(e.target.value);
   };
 
-  if (jobs.length === 0 && !loading) {
+  if (jobs.length === 0) {
     return null;
   }
 
   return (
-    <FormControl size="small" sx={{ minWidth: 280, maxWidth: 480 }} disabled={disabled || loading}>
+    <FormControl size="small" sx={{ minWidth: 280, maxWidth: 480 }} disabled={disabled}>
       <InputLabel id="aisle-run-select-label">{t('results.browse_run')}</InputLabel>
       <Select
         labelId="aisle-run-select-label"
         label={t('results.browse_run')}
         value={value}
         onChange={handleChange}
-        displayEmpty
         MenuProps={{
           PaperProps: { sx: { maxHeight: 360 } },
         }}
       >
-        <MenuItem value="">
-          <Stack spacing={0.25}>
-            <Typography variant="body2">{t('results.run_selector_default')}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {urlPinned ? t('results.run_selector_help_url_pinned') : t('results.run_selector_help_no_url')}
-            </Typography>
-          </Stack>
-        </MenuItem>
         {jobs.map((j) => {
           const isOp = Boolean(operationalJobId != null && operationalJobId === j.id);
           const isBench = !isOp && j.status === 'succeeded';

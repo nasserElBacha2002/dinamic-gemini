@@ -27,9 +27,10 @@ import {
   FilterToolbar,
   LoadingBlock,
   SectionCard,
+  TableSearchField,
   type DataTableSortDirection,
 } from '../components/ui';
-import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
+import { DEFAULT_LIST_PAGE_SIZE, TABLE_SERVER_SEARCH_DEBOUNCE_MS } from '../constants/dataTable';
 import ReviewQueueKpiCards from '../features/reviewQueue/components/ReviewQueueKpiCards';
 import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDrawer';
 import {
@@ -38,7 +39,7 @@ import {
   type QuickReviewContext,
 } from '../features/reviewQueue/quickReviewContext';
 import ReviewQueueTable from '../features/reviewQueue/components/ReviewQueueTable';
-import { useAislesList, useInventoriesList, useReviewQueue } from '../hooks';
+import { useAislesList, useDebouncedSearchInput, useInventoriesList, useReviewQueue } from '../hooks';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 function parseOptional01(raw: string): number | null {
   const t = raw.trim();
@@ -60,7 +61,7 @@ export default function ReviewQueuePage() {
   const [traceability, setTraceability] = useState('');
   const [hasEvidence, setHasEvidence] = useState('');
   const [qtyZero, setQtyZero] = useState('');
-  const [skuContains, setSkuContains] = useState('');
+  const skuSearch = useDebouncedSearchInput(TABLE_SERVER_SEARCH_DEBOUNCE_MS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
   const [apiSortBy, setApiSortBy] = useState<'priority' | 'updated_at' | 'confidence' | 'created_at'>(
@@ -104,7 +105,7 @@ export default function ReviewQueuePage() {
       traceability: traceability.trim() || null,
       has_evidence: hasEv,
       qty_zero: qz,
-      sku_contains: skuContains.trim() || null,
+      sku_contains: skuSearch.applied || null,
       position_status: positionStatus.trim() || null,
       sort_by: apiSortBy,
       sort_dir: apiSortDir,
@@ -122,7 +123,7 @@ export default function ReviewQueuePage() {
     traceability,
     hasEvidence,
     qtyZero,
-    skuContains,
+    skuSearch.applied,
     positionStatus,
     apiSortBy,
     apiSortDir,
@@ -145,12 +146,16 @@ export default function ReviewQueuePage() {
     setTraceability('');
     setHasEvidence('');
     setQtyZero('');
-    setSkuContains('');
+    skuSearch.setInput('');
     setPage(1);
     setApiSortBy('priority');
     setApiSortDir('desc');
     setActiveSortColumnId('priority');
-  }, []);
+  }, [skuSearch.setInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [skuSearch.applied]);
 
   const resetDisabled =
     inventoryId === '' &&
@@ -161,7 +166,7 @@ export default function ReviewQueuePage() {
     traceability === '' &&
     hasEvidence === '' &&
     qtyZero === '' &&
-    skuContains === '' &&
+    skuSearch.input === '' &&
     apiSortBy === 'priority' &&
     apiSortDir === 'desc' &&
     activeSortColumnId === 'priority' &&
@@ -435,16 +440,12 @@ export default function ReviewQueuePage() {
               </Select>
             </FormControl>
 
-            <TextField
-              size="small"
+            <TableSearchField
               label={t('results.search_sku')}
               placeholder={t('common.contains_placeholder')}
-              value={skuContains}
-              onChange={(e) => {
-                setSkuContains(e.target.value);
-                setPage(1);
-              }}
-              sx={{ minWidth: 180, flex: '1 1 180px' }}
+              value={skuSearch.input}
+              onChange={(v) => skuSearch.setInput(v)}
+              data-testid="review-queue-sku-search"
             />
           </Box>
         </Box>

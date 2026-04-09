@@ -23,15 +23,18 @@ import { getJobStatusLabel, jobStatusToBadgeSemantic } from '../utils/jobStatus'
 import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../utils/aisleStatus';
 import { formatDate } from '../utils/formatDate';
 import { pathToAislePositions } from '../utils/resultRoutes';
+import { rowMatchesSearchQuery } from '../utils/tableSearch';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
 import { exportInventoryResultsCsv } from '../api/client';
 import {
   DataTable,
   ErrorAlert,
+  FilterToolbar,
   LoadingBlock,
   RowActionMenu,
   SectionCard,
   StatusBadge,
+  TableSearchField,
   useAppSnackbar,
   type DataTableColumn,
 } from '../components/ui';
@@ -131,6 +134,7 @@ export default function InventoryDetail() {
   const [processPromptKey, setProcessPromptKey] = useState('');
   const [referenceImagesOpen, setReferenceImagesOpen] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [aisleTableSearch, setAisleTableSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadAisleIdRef = useRef<string | null>(null);
 
@@ -140,6 +144,10 @@ export default function InventoryDetail() {
   });
   const aislesQuery = useAislesList(inventoryId, { enabled: Boolean(inventoryId && inventoryQuery.data) });
   const aisles = aislesQuery.data?.items ?? [];
+  const filteredAisles = useMemo(
+    () => aisles.filter((a) => rowMatchesSearchQuery(aisleTableSearch, [a.code, a.status, a.id])),
+    [aisles, aisleTableSearch]
+  );
   const processingProviderOptsQuery = useProcessingProviderOptions({
     enabled: Boolean(processDialog && inventoryId),
   });
@@ -629,21 +637,37 @@ export default function InventoryDetail() {
                 style={{ display: 'none' }}
                 onChange={handleFileInputChange}
               />
+              <FilterToolbar
+                onReset={() => setAisleTableSearch('')}
+                resetDisabled={!aisleTableSearch.trim()}
+              >
+                <TableSearchField
+                  label={t('table.search_label')}
+                  placeholder={t('aisle.search_aisles_placeholder')}
+                  value={aisleTableSearch}
+                  onChange={setAisleTableSearch}
+                  data-testid="inventory-aisles-search"
+                />
+              </FilterToolbar>
               <DataTable<Aisle>
-                rows={aisles}
+                rows={filteredAisles}
                 rowKey={(a) => a.id}
                 columns={aisleColumns}
                 loading={aislesLoading}
                 onRowClick={(a) => navigate(pathToAislePositions(inventoryId ?? '', a.id))}
-                emptyState={{
-                  title: t('aisle.empty_table_title'),
-                  message: t('aisle.empty_table_message'),
-                  action: (
-                    <Button variant="contained" onClick={() => setCreateAisleOpen(true)}>
-                      {t('aisle.create')}
-                    </Button>
-                  ),
-                }}
+                emptyState={
+                  aisleTableSearch.trim() && !aislesLoading && aisles.length > 0 && filteredAisles.length === 0
+                    ? { message: t('table.empty_no_match') }
+                    : {
+                        title: t('aisle.empty_table_title'),
+                        message: t('aisle.empty_table_message'),
+                        action: (
+                          <Button variant="contained" onClick={() => setCreateAisleOpen(true)}>
+                            {t('aisle.create')}
+                          </Button>
+                        ),
+                      }
+                }
               />
             </SectionCard>
           </Box>

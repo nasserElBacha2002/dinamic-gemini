@@ -9,6 +9,9 @@
 
 export const DEFAULT_LIST_PAGE_SIZE = 25;
 
+/** Debounce for search strings that trigger server list queries (inventories, review queue SKU, etc.). */
+export const TABLE_SERVER_SEARCH_DEBOUNCE_MS = 300;
+
 export const TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200] as const;
 
 /** i18n key — used when `DataTable` shows its built-in empty state. */

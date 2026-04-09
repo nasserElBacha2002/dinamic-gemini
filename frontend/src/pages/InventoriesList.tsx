@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Link } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -10,16 +10,18 @@ import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../u
 import {
   DataTable,
   ErrorAlert,
+  FilterToolbar,
   SectionCard,
   StatusBadge,
+  TableSearchField,
   useAppSnackbar,
   type DataTableColumn,
   type DataTableSortDirection,
 } from '../components/ui';
 import { PageHeader } from '../components/shell';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
-import { useInventoriesList, useCreateInventory } from '../hooks';
-import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
+import { useDebouncedSearchInput, useInventoriesList, useCreateInventory } from '../hooks';
+import { DEFAULT_LIST_PAGE_SIZE, TABLE_SERVER_SEARCH_DEBOUNCE_MS } from '../constants/dataTable';
 import { INVENTORY_LIST_EMPTY_MESSAGE_KEY, INVENTORY_LIST_EMPTY_TITLE_KEY } from '../constants/uiCopy';
 
 export default function InventoriesList() {
@@ -32,6 +34,11 @@ export default function InventoriesList() {
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState<DataTableSortDirection>('desc');
+  const {
+    input: searchInput,
+    setInput: setSearchInput,
+    applied: searchApplied,
+  } = useDebouncedSearchInput(TABLE_SERVER_SEARCH_DEBOUNCE_MS);
 
   const listQuery = useMemo(
     () => ({
@@ -39,9 +46,14 @@ export default function InventoriesList() {
       page_size: pageSize,
       sort_by: sortBy,
       sort_dir: sortDir,
+      search: searchApplied || undefined,
     }),
-    [page, pageSize, sortBy, sortDir]
+    [page, pageSize, sortBy, sortDir, searchApplied]
   );
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchApplied]);
 
   const { data, isLoading, isError, error, refetch } = useInventoriesList(listQuery);
   const inventories: InventoryListItem[] = data?.items ?? [];
@@ -157,26 +169,47 @@ export default function InventoriesList() {
 
       {!errorMessage ? (
       <SectionCard title={t('inventory.all_inventories')} subtitle={t('inventory.all_inventories_subtitle')}>
+        <FilterToolbar
+          onReset={() => {
+            setSearchInput('');
+            setPage(1);
+            setSortBy('created_at');
+            setSortDir('desc');
+          }}
+          resetDisabled={
+            searchInput === '' && page === 1 && sortBy === 'created_at' && sortDir === 'desc'
+          }
+        >
+          <TableSearchField
+            value={searchInput}
+            onChange={setSearchInput}
+            data-testid="inventories-list-search"
+          />
+        </FilterToolbar>
         <DataTable<InventoryListItem>
           rows={inventories}
           rowKey={(inv) => inv.id}
           columns={columns}
           loading={isLoading}
-          emptyState={{
-            title: t(INVENTORY_LIST_EMPTY_TITLE_KEY),
-            message: t(INVENTORY_LIST_EMPTY_MESSAGE_KEY),
-            action: (
-              <Button
-                variant="contained"
-                onClick={() => {
-                  setCreateError(null);
-                  setCreateOpen(true);
-                }}
-              >
-                {t('inventory.create')}
-              </Button>
-            ),
-          }}
+          emptyState={
+            searchApplied.trim() !== '' && !isLoading && (data?.total_items ?? 0) === 0
+              ? { message: t('table.empty_no_match') }
+              : {
+                  title: t(INVENTORY_LIST_EMPTY_TITLE_KEY),
+                  message: t(INVENTORY_LIST_EMPTY_MESSAGE_KEY),
+                  action: (
+                    <Button
+                      variant="contained"
+                      onClick={() => {
+                        setCreateError(null);
+                        setCreateOpen(true);
+                      }}
+                    >
+                      {t('inventory.create')}
+                    </Button>
+                  ),
+                }
+          }
           sort={{
             sortBy,
             sortDir,

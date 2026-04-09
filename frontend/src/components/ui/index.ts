@@ -46,6 +46,8 @@ export type { WizardModalProps } from './WizardModal';
 
 export { default as FilterToolbar } from './FilterToolbar';
 export type { FilterToolbarProps } from './FilterToolbar';
+export { default as TableSearchField } from './TableSearchField';
+export type { TableSearchFieldProps } from './TableSearchField';
 export { default as RowActionMenu } from './RowActionMenu';
 export type { RowActionMenuProps, RowActionMenuItem } from './RowActionMenu';
 

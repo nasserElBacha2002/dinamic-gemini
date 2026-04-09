@@ -509,7 +509,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(select.textContent).toMatch(/job-resolv/i);
   });
 
-  it('warns when jobId in URL is not in the jobs list', () => {
+  it('repairs invalid jobId in URL to a listed run (no lingering unknown-job warning)', async () => {
+    inventoryDetailState.data.processing_mode = 'test';
     aisleJobsListState.data = {
       operational_job_id: null,
       jobs: [
@@ -522,7 +523,11 @@ describe('AislePositionsPage (Aisle Results)', () => {
       ],
     };
     renderPageAt('/inventories/inv-1/aisles/aisle-1/positions?jobId=unknown-job');
-    expect(screen.getByText(/not in the recent runs list/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByText(/not in the recent runs list/i)).toBeNull();
+    });
+    const select = screen.getByLabelText(/browse run/i);
+    expect(select.textContent).toMatch(/job-a/i);
   });
 
   it('does not show run selector for production inventories when jobs exist', () => {

@@ -29,12 +29,14 @@ import {
   FilterToolbar,
   KpiCard,
   SectionCard,
+  TableSearchField,
   type DataTableColumn,
 } from '../../components/ui';
 import { PageHeader } from '../../components/shell';
 import { useInventoriesList } from '../../hooks/useInventories';
 import { useAislesList } from '../../hooks/useAisles';
 import { formatDate } from '../../utils/formatDate';
+import { rowMatchesSearchQuery } from '../../utils/tableSearch';
 import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { ApiError } from '../../api/types';
 import i18n from '../../i18n';
@@ -256,6 +258,8 @@ export default function MetricsPage() {
   const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
   const [aislePage, setAislePage] = useState(1);
   const [aislePageSize, setAislePageSize] = useState(10);
+  const [perfTableSearch, setPerfTableSearch] = useState('');
+  const [aisleMetricsTableSearch, setAisleMetricsTableSearch] = useState('');
 
   const {
     summary,
@@ -277,17 +281,40 @@ export default function MetricsPage() {
         : String(errors[0])
       : null;
 
+  const inventoryRowsFiltered = useMemo(() => {
+    const items = inventoryPerformance?.items ?? [];
+    return items.filter((r) =>
+      rowMatchesSearchQuery(perfTableSearch, [
+        r.inventory_name,
+        r.inventory_id,
+        String(r.total_positions ?? r.positions_count ?? ''),
+      ])
+    );
+  }, [inventoryPerformance?.items, perfTableSearch]);
+
   const inventoryRowsSorted = useMemo(
-    () => sortInventoryRows(inventoryPerformance?.items ?? [], inventorySortBy, inventorySortDir),
-    [inventoryPerformance?.items, inventorySortBy, inventorySortDir]
+    () => sortInventoryRows(inventoryRowsFiltered, inventorySortBy, inventorySortDir),
+    [inventoryRowsFiltered, inventorySortBy, inventorySortDir]
   );
   const inventoryRowsPaged = useMemo(
     () => paginateRows(inventoryRowsSorted, inventoryPage, inventoryPageSize),
     [inventoryRowsSorted, inventoryPage, inventoryPageSize]
   );
+  const aisleRowsFiltered = useMemo(() => {
+    const items = aisleIssues?.items ?? [];
+    return items.filter((r) =>
+      rowMatchesSearchQuery(aisleMetricsTableSearch, [
+        r.aisle_code,
+        r.inventory_name,
+        r.aisle_id,
+        r.most_common_issue,
+      ])
+    );
+  }, [aisleIssues?.items, aisleMetricsTableSearch]);
+
   const aisleRowsSorted = useMemo(
     () =>
-      [...(aisleIssues?.items ?? [])].sort(
+      [...aisleRowsFiltered].sort(
         (left, right) =>
           (numberOrZero(right.needs_review_count) +
             numberOrZero(right.unidentified_product_count ?? right.unknown_count) +
@@ -300,12 +327,21 @@ export default function MetricsPage() {
           numberOrZero(right.needs_review_count) - numberOrZero(left.needs_review_count) ||
           numberOrZero(right.total_results) - numberOrZero(left.total_results)
       ),
-    [aisleIssues?.items]
+    [aisleRowsFiltered]
   );
   const aisleRowsPaged = useMemo(
     () => paginateRows(aisleRowsSorted, aislePage, aislePageSize),
     [aisleRowsSorted, aislePage, aislePageSize]
   );
+
+  useEffect(() => {
+    setInventoryPage(1);
+  }, [perfTableSearch]);
+
+  useEffect(() => {
+    setAislePage(1);
+  }, [aisleMetricsTableSearch]);
+
   const qualityRowsOrdered = useMemo(
     () =>
       [...(quality?.items ?? [])].sort(
@@ -942,6 +978,18 @@ export default function MetricsPage() {
         title={t('analytics.inventory_performance_title')}
         subtitle={t('analytics.inventory_performance_subtitle')}
       >
+        <FilterToolbar
+          onReset={() => setPerfTableSearch('')}
+          resetDisabled={!perfTableSearch.trim()}
+        >
+          <TableSearchField
+            label={t('table.search_label')}
+            placeholder={t('analytics.search_inventory_performance_placeholder')}
+            value={perfTableSearch}
+            onChange={setPerfTableSearch}
+            data-testid="metrics-inventory-performance-search"
+          />
+        </FilterToolbar>
         <DataTable<InventoryPerformanceRow>
           rows={inventoryRowsPaged}
           rowKey={(r) => r.inventory_id}
@@ -963,7 +1011,11 @@ export default function MetricsPage() {
             onPageChange: setInventoryPage,
             onPageSizeChange: setInventoryPageSize,
           }}
-          emptyState={{ message: t('analytics.empty_inventory_performance') }}
+          emptyState={
+            perfTableSearch.trim() && !isLoading && inventoryRowsSorted.length === 0
+              ? { message: t('table.empty_no_match') }
+              : { message: t('analytics.empty_inventory_performance') }
+          }
         />
       </SectionCard>
 
@@ -1026,6 +1078,18 @@ export default function MetricsPage() {
             title={t('analytics.aisles_attention_title')}
             subtitle={t('analytics.aisles_attention_subtitle')}
           >
+            <FilterToolbar
+              onReset={() => setAisleMetricsTableSearch('')}
+              resetDisabled={!aisleMetricsTableSearch.trim()}
+            >
+              <TableSearchField
+                label={t('table.search_label')}
+                placeholder={t('analytics.search_aisle_metrics_placeholder')}
+                value={aisleMetricsTableSearch}
+                onChange={setAisleMetricsTableSearch}
+                data-testid="metrics-aisle-issues-search"
+              />
+            </FilterToolbar>
             <DataTable<AisleIssueRow>
               rows={aisleRowsPaged}
               rowKey={(r) => `${r.inventory_id}-${r.aisle_id}`}
@@ -1039,7 +1103,11 @@ export default function MetricsPage() {
                 onPageChange: setAislePage,
                 onPageSizeChange: setAislePageSize,
               }}
-              emptyState={{ message: t('analytics.empty_aisle_metrics') }}
+              emptyState={
+                aisleMetricsTableSearch.trim() && !isLoading && aisleRowsSorted.length === 0
+                  ? { message: t('table.empty_no_match') }
+                  : { message: t('analytics.empty_aisle_metrics') }
+              }
             />
           </SectionCard>
         </Grid>
