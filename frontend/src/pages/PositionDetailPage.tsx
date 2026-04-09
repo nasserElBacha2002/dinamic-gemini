@@ -4,12 +4,14 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, CircularProgress } from '@mui/material';
 import { parseResultDetailNavigationState } from '../features/results';
 import { useInventoryDetail, useAislesList } from '../hooks';
 
 export default function PositionDetailPage() {
+  const { t } = useTranslation();
   const { inventoryId, aisleId, positionId } = useParams<{
     inventoryId: string;
     aisleId: string;
@@ -29,7 +31,7 @@ export default function PositionDetailPage() {
     if (redirected.current || !inventoryId || !aisleId || !positionId) return;
     if (!invQ.data?.name || !aislesQ.isFetched) return;
 
-    const aisleCode = aislesQ.data?.items?.find((a) => a.id === aisleId)?.code ?? '—';
+    const aisleCode = aislesQ.data?.items?.find((a) => a.id === aisleId)?.code ?? t('common.em_dash');
     const resultIds = navState?.resultIds ?? [positionId];
     redirected.current = true;
 
@@ -76,14 +78,15 @@ export default function PositionDetailPage() {
     navState,
     navigate,
     jobIdFromQuery,
+    t,
   ]);
 
   if (!inventoryId || !aisleId || !positionId) {
     return (
       <>
-        <Alert severity="warning">Missing inventory, aisle, or position.</Alert>
+        <Alert severity="warning">{t('positions.missing_params')}</Alert>
         <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
-          Back to list
+          {t('inventory.back_to_list')}
         </Button>
       </>
     );
@@ -91,7 +94,7 @@ export default function PositionDetailPage() {
 
   return (
     <Box display="flex" justifyContent="center" alignItems="center" minHeight={200} p={3}>
-      <CircularProgress aria-label="Opening review" />
+      <CircularProgress aria-label={t('positions.opening_review')} />
     </Box>
   );
 }

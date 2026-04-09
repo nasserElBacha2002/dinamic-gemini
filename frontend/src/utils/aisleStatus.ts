@@ -3,26 +3,19 @@
  */
 
 import type { StatusBadgeSemantic } from '../components/ui/StatusBadge';
+import i18n from '../i18n';
 
 type ChipColor = 'default' | 'primary' | 'success' | 'error' | 'warning';
 
 /**
- * Display label for an aisle status string (user-friendly, known values normalized).
+ * Display label for an aisle status string (localized).
  */
 export function getAisleStatusLabel(status: string): string {
   const s = (status || '').trim().toLowerCase();
-  if (!s) return '—';
-  const known: Record<string, string> = {
-    created: 'Created',
-    assets_uploaded: 'Assets uploaded',
-    queued: 'Queued',
-    processing: 'Processing',
-    processed: 'Processed',
-    in_review: 'In review',
-    completed: 'Completed',
-    failed: 'Failed',
-  };
-  return known[s] ?? status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  if (!s) return i18n.t('common.em_dash');
+  const key = `aisle.status.${s}`;
+  if (i18n.exists(key)) return i18n.t(key);
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 }
 
 /**

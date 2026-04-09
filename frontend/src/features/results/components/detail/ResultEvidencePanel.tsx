@@ -1,15 +1,11 @@
 /**
  * Epic 4 — Evidence panel for Result Detail.
  * Phase 6: Primary vs supporting evidence clearly labeled for operator hierarchy.
- *
- * Semantics:
- * - Primary evidence: source image (when available) or primary evidence record; labeled "Primary evidence".
- * - Supporting evidence: all other evidence; labeled "Supporting evidence".
- * - No evidence: intentional "No evidence available" state.
  */
 
 import { useState, useCallback, useMemo } from 'react';
 import { Paper, Typography, Box, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
 
@@ -24,15 +20,14 @@ export default function ResultEvidencePanel({
   inventoryId,
   aisleId,
 }: ResultEvidencePanelProps) {
+  const { t } = useTranslation();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const sourceImageId =
     result.sourceImageId != null && String(result.sourceImageId).trim() !== ''
       ? result.sourceImageId.trim()
       : null;
-  const canShowImage = Boolean(
-    sourceImageId && inventoryId && aisleId
-  );
+  const canShowImage = Boolean(sourceImageId && inventoryId && aisleId);
   const jobId = (() => {
     const entityId = result.technicalMetadata?.entityId;
     if (!entityId || typeof entityId !== 'string') return null;
@@ -58,7 +53,7 @@ export default function ResultEvidencePanel({
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
       <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
-        Evidence
+        {t('results.evidence_panel.heading')}
       </Typography>
 
       {!hasAnyEvidence && !canShowImage && (
@@ -71,16 +66,14 @@ export default function ResultEvidencePanel({
             borderRadius: 1,
           }}
         >
-          <Typography color="text.secondary">
-            No evidence available for this result.
-          </Typography>
+          <Typography color="text.secondary">{t('results.evidence_panel.none')}</Typography>
         </Box>
       )}
 
       {canShowImage && (
         <Box>
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-            Primary evidence
+            {t('results.evidence_panel.primary_heading')}
           </Typography>
           <Box
             sx={{
@@ -105,8 +98,8 @@ export default function ResultEvidencePanel({
                 src={loadState.imageSrc}
                 alt={
                   result.sourceFileName
-                    ? `Source: ${result.sourceFileName}`
-                    : 'Source image for this result'
+                    ? t('results.evidence_panel.alt_source_named', { fileName: result.sourceFileName })
+                    : t('results.evidence_panel.alt_source_generic')
                 }
                 style={{
                   maxWidth: '100%',
@@ -123,7 +116,7 @@ export default function ResultEvidencePanel({
           </Box>
           {result.sourceFileName && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Source file: {result.sourceFileName}
+              {t('results.evidence_panel.source_file', { name: result.sourceFileName })}
             </Typography>
           )}
           <Button
@@ -131,18 +124,18 @@ export default function ResultEvidencePanel({
             variant="outlined"
             onClick={handleOpenImage}
             sx={{ mt: 1 }}
-            aria-label="View full image"
+            aria-label={t('results.view_full_image')}
             disabled={loadState.status !== 'loaded'}
           >
-            View full image
+            {t('results.view_full_image')}
           </Button>
           {supportingEvidence.length > 0 && (
             <>
               <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2, mb: 0.5 }}>
-                Supporting evidence
+                {t('results.evidence_panel.supporting_heading')}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {supportingEvidence.length} supporting item(s).
+                {t('results.evidence_panel.supporting_count', { count: supportingEvidence.length })}
               </Typography>
             </>
           )}
@@ -154,20 +147,20 @@ export default function ResultEvidencePanel({
           {primaryEvidence && (
             <>
               <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                Primary evidence
+                {t('results.evidence_panel.primary_heading')}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Primary evidence recorded. Image preview is not available for this result.
+                {t('results.evidence_panel.recorded_no_preview')}
               </Typography>
             </>
           )}
           {supportingEvidence.length > 0 && (
             <>
               <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1.5, mb: 0.5 }}>
-                Supporting evidence
+                {t('results.evidence_panel.supporting_heading')}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {supportingEvidence.length} supporting item(s).
+                {t('results.evidence_panel.supporting_count', { count: supportingEvidence.length })}
               </Typography>
             </>
           )}
@@ -175,18 +168,16 @@ export default function ResultEvidencePanel({
       )}
 
       <Dialog open={dialogOpen} onClose={handleCloseImage} maxWidth="md" fullWidth>
-        <DialogTitle>Source image</DialogTitle>
+        <DialogTitle>{t('results.evidence_panel.dialog_title')}</DialogTitle>
         <DialogContent>
           {loadState.status === 'loaded' && (
             <img
               src={loadState.imageSrc}
-              alt="Source image"
+              alt={t('results.evidence_panel.dialog_alt')}
               style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
             />
           )}
-          {loadState.status === 'error' && (
-            <Typography color="error">{loadState.message}</Typography>
-          )}
+          {loadState.status === 'error' && <Typography color="error">{loadState.message}</Typography>}
           {loadState.status === 'loading' && (
             <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
               <CircularProgress />
@@ -195,7 +186,7 @@ export default function ResultEvidencePanel({
           {loadState.status === 'idle' && null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseImage}>Close</Button>
+          <Button onClick={handleCloseImage}>{t('common.close')}</Button>
         </DialogActions>
       </Dialog>
     </Paper>

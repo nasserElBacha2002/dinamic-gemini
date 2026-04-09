@@ -1,37 +1,31 @@
 import { matchPath } from 'react-router-dom';
 
 /**
- * Sprint 2.1 transitional mapping: pathname → topbar title/subtitle.
- *
- * This centralizes route semantics for the shell only. It is acceptable for the foundation
- * sprint but is not the long-term page-metadata strategy: later sprints may move titles to
- * route meta, a small registry, or per-route loaders without growing this function indefinitely.
- *
- * @see Re diseño 3.3 §4.3 (contextual page title in the topbar)
+ * Sprint 2.1 transitional mapping: pathname → i18n keys for shell topbar title/subtitle.
  */
-export function topBarCopy(pathname: string): { title: string; subtitle?: string } {
+export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: string } {
   if (pathname === '/inventories' || pathname === '/') {
-    return { title: 'Inventories', subtitle: 'Manage inventories, aisles, processing, and review' };
+    return { titleKey: 'routes.inventories.title', subtitleKey: 'routes.inventories.subtitle' };
   }
   if (pathname.startsWith('/inventories/')) {
     if (matchPath('/inventories/:inventoryId/aisles/:aisleId/positions/:positionId', pathname)) {
-      return { title: 'Result review', subtitle: 'Evidence and review actions' };
+      return { titleKey: 'routes.result_review.title', subtitleKey: 'routes.result_review.subtitle' };
     }
     if (matchPath('/inventories/:inventoryId/aisles/:aisleId/compare', pathname)) {
-      return { title: 'Compare runs', subtitle: 'Benchmark — two runs side by side' };
+      return { titleKey: 'routes.compare_runs.title', subtitleKey: 'routes.compare_runs.subtitle' };
     }
     if (matchPath('/inventories/:inventoryId/aisles/:aisleId/positions', pathname)) {
-      return { title: 'Aisle results', subtitle: 'Prioritize review' };
+      return { titleKey: 'routes.aisle_results.title', subtitleKey: 'routes.aisle_results.subtitle' };
     }
     if (matchPath('/inventories/:inventoryId', pathname)) {
-      return { title: 'Inventory', subtitle: 'Aisles and processing' };
+      return { titleKey: 'routes.inventory_detail.title', subtitleKey: 'routes.inventory_detail.subtitle' };
     }
   }
   if (pathname === '/review-queue') {
-    return { title: 'Review queue', subtitle: 'Cross-inventory review workload' };
+    return { titleKey: 'routes.review_queue.title', subtitleKey: 'routes.review_queue.subtitle' };
   }
   if (pathname === '/metrics') {
-    return { title: 'Metrics', subtitle: 'Quality, processing, and review performance' };
+    return { titleKey: 'routes.metrics.title', subtitleKey: 'routes.metrics.subtitle' };
   }
-  return { title: 'Dinamic Inventory', subtitle: 'v3' };
+  return { titleKey: 'shell.default_title', subtitleKey: 'shell.default_subtitle' };
 }

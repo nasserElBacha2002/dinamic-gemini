@@ -2,6 +2,7 @@
  * Epic 5 — Previous/next navigation and position indicator for Result Detail.
  */
 
+import { useTranslation } from 'react-i18next';
 import { Box, Button, Typography } from '@mui/material';
 import type { ResultNavigationContext } from '../../utils/navigationContext';
 
@@ -16,6 +17,7 @@ export default function ResultDetailNavigation({
   onNavigate,
   disabled,
 }: ResultDetailNavigationProps) {
+  const { t } = useTranslation();
   const { currentIndex, previousId, nextId, total } = context;
   const oneBased = currentIndex + 1;
 
@@ -30,25 +32,25 @@ export default function ResultDetailNavigation({
       }}
     >
       <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
-        Result {oneBased} of {total}
+        {t('results.result_position_in_list', { current: oneBased, total })}
       </Typography>
       <Button
         size="small"
         variant="outlined"
         disabled={disabled || !previousId}
         onClick={() => previousId && !disabled && onNavigate(previousId)}
-        aria-label="Previous result"
+        aria-label={t('results.prev_result')}
       >
-        ← Previous
+        {t('results.navigation_previous')}
       </Button>
       <Button
         size="small"
         variant="outlined"
         disabled={disabled || !nextId}
         onClick={() => nextId && !disabled && onNavigate(nextId)}
-        aria-label="Next result"
+        aria-label={t('results.next_result')}
       >
-        Next →
+        {t('results.navigation_next')}
       </Button>
     </Box>
   );

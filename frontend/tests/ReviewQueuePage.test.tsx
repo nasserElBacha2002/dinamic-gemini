@@ -107,7 +107,7 @@ describe('ReviewQueuePage', () => {
   it('renders header, KPI band, filters region, and queue table', () => {
     renderPage();
     expect(screen.getByRole('heading', { name: /review queue/i })).toBeInTheDocument();
-    expect(screen.getByText('Pending review')).toBeInTheDocument();
+    expect(screen.getAllByText('Needs review').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Invalid traceability')).toBeInTheDocument();
     expect(screen.getByText('Missing evidence')).toBeInTheDocument();
     expect(screen.getByLabelText(/filters/i)).toBeInTheDocument();

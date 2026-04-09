@@ -14,7 +14,9 @@ import {
   Typography,
   Chip,
 } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import type { JobSummary } from '../../../api/types';
+import i18n from '../../../i18n';
 
 function shortId(id: string, n = 10): string {
   return id.length <= n ? id : `${id.slice(0, n)}…`;
@@ -55,6 +57,7 @@ export default function AisleRunSelector({
   loading,
   urlPinned = false,
 }: AisleRunSelectorProps) {
+  const { t } = useTranslation();
   const trimmed = valueJobId?.trim() ?? '';
   const validIds = new Set(jobs.map((j) => j.id));
   const value = trimmed !== '' && validIds.has(trimmed) ? trimmed : '';
@@ -70,10 +73,10 @@ export default function AisleRunSelector({
 
   return (
     <FormControl size="small" sx={{ minWidth: 280, maxWidth: 480 }} disabled={disabled || loading}>
-      <InputLabel id="aisle-run-select-label">Browse run</InputLabel>
+      <InputLabel id="aisle-run-select-label">{t('results.browse_run')}</InputLabel>
       <Select
         labelId="aisle-run-select-label"
-        label="Browse run"
+        label={t('results.browse_run')}
         value={value}
         onChange={handleChange}
         displayEmpty
@@ -83,11 +86,9 @@ export default function AisleRunSelector({
       >
         <MenuItem value="">
           <Stack spacing={0.25}>
-            <Typography variant="body2">Default (API resolver)</Typography>
+            <Typography variant="body2">{t('results.run_selector_default')}</Typography>
             <Typography variant="caption" color="text.secondary">
-              {urlPinned
-                ? 'Clears ?jobId= and uses the operational or legacy null-job slice from the server'
-                : 'No explicit run in URL — backend uses operational_job_id when set, else legacy rows'}
+              {urlPinned ? t('results.run_selector_help_url_pinned') : t('results.run_selector_help_no_url')}
             </Typography>
           </Stack>
         </MenuItem>
@@ -101,14 +102,16 @@ export default function AisleRunSelector({
                   <Typography variant="body2" component="span">
                     {formatJobLine(j)}
                   </Typography>
-                  {isOp ? <Chip size="small" label="Operational" color="success" variant="outlined" /> : null}
+                  {isOp ? (
+                    <Chip size="small" label={t('common.operational')} color="success" variant="outlined" />
+                  ) : null}
                   {isBench ? (
-                    <Chip size="small" label="Benchmark" color="default" variant="outlined" />
+                    <Chip size="small" label={t('common.benchmark')} color="default" variant="outlined" />
                   ) : null}
                 </Stack>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   {[j.provider_name, j.model_name, j.prompt_key, j.prompt_version].filter(Boolean).join(' · ') ||
-                    '—'}
+                    i18n.t('common.em_dash')}
                 </Typography>
               </Stack>
             </MenuItem>

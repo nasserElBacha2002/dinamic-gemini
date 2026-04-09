@@ -4,28 +4,20 @@
 
 import type { JobStatus } from '../api/types';
 import type { StatusBadgeSemantic } from '../components/ui/StatusBadge';
+import i18n from '../i18n';
 
 type ChipColor = 'default' | 'primary' | 'success' | 'error' | 'warning';
 type JobStatusLike = JobStatus | string;
 
 /**
- * Display label for a job status string (capitalized, known values normalized).
- * Supports the full v3 job status set, including cancellation and timeout.
+ * Display label for a job status string (localized).
  */
 export function getJobStatusLabel(status: JobStatusLike): string {
   const s = (status || '').trim().toLowerCase();
-  if (!s) return '—';
-  const known: Record<string, string> = {
-    queued: 'Queued',
-    starting: 'Starting',
-    running: 'Running',
-    cancel_requested: 'Cancel requested',
-    canceled: 'Canceled',
-    timed_out: 'Timed out',
-    succeeded: 'Succeeded',
-    failed: 'Failed',
-  };
-  return known[s] ?? status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  if (!s) return i18n.t('common.em_dash');
+  const key = `jobs.status.${s}`;
+  if (i18n.exists(key)) return i18n.t(key);
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 }
 
 /**

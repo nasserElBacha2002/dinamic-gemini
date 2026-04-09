@@ -2,6 +2,8 @@
  * Sprint 4.1 — Quick filters for Aisle Results (operational chips).
  */
 
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ToggleButtonGroup, ToggleButton } from '@mui/material';
 import type { ResultsFilterKind } from '../selectors/resultsFilters';
 
@@ -11,16 +13,20 @@ export interface ResultsQuickFiltersProps {
   counts?: Partial<Record<ResultsFilterKind, number>>;
 }
 
-const FILTER_OPTIONS: { value: ResultsFilterKind; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'needs_review', label: 'Needs review' },
-  { value: 'low_confidence', label: 'Low confidence' },
-  { value: 'qty_zero', label: 'Qty zero' },
-  { value: 'invalid_traceability', label: 'Invalid traceability' },
-  { value: 'missing_evidence', label: 'Missing evidence' },
-];
-
 export default function ResultsQuickFilters({ value, onChange, counts }: ResultsQuickFiltersProps) {
+  const { t } = useTranslation();
+  const filterOptions = useMemo(
+    (): { value: ResultsFilterKind; label: string }[] => [
+      { value: 'all', label: t('results.filters.all') },
+      { value: 'needs_review', label: t('results.filters.needs_review') },
+      { value: 'low_confidence', label: t('results.filters.low_confidence') },
+      { value: 'qty_zero', label: t('results.filters.qty_zero') },
+      { value: 'invalid_traceability', label: t('results.filters.invalid_traceability') },
+      { value: 'missing_evidence', label: t('results.filters.missing_evidence') },
+    ],
+    [t]
+  );
+
   return (
     <ToggleButtonGroup
       value={value}
@@ -29,7 +35,7 @@ export default function ResultsQuickFilters({ value, onChange, counts }: Results
       size="small"
       sx={{ flexWrap: 'wrap', gap: 0.5 }}
     >
-      {FILTER_OPTIONS.map((opt) => {
+      {filterOptions.map((opt) => {
         const count = counts?.[opt.value];
         const label =
           count != null && opt.value !== 'all' ? `${opt.label} (${count})` : opt.label;

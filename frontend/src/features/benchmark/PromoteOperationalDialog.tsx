@@ -2,6 +2,7 @@
  * Phase 6 — promote a succeeded run to the aisle operational pointer (no automatic correction transfer).
  */
 
+import { useTranslation } from 'react-i18next';
 import {
   Button,
   Dialog,
@@ -15,6 +16,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { JobSummary } from '../../api/types';
+import i18n from '../../i18n';
 
 export type PromoteOperationalDialogProps = {
   open: boolean;
@@ -37,37 +39,37 @@ export default function PromoteOperationalDialog({
   onConfirm,
   isPending,
 }: PromoteOperationalDialogProps) {
+  const { t } = useTranslation();
   const eligible = jobs.filter((j) => j.status === 'succeeded' && j.id !== operationalJobId);
+  const dash = i18n.t('common.em_dash');
 
   return (
     <Dialog open={open} onClose={onClose}>
-      <DialogTitle>Promote run to operational</DialogTitle>
+      <DialogTitle>{t('benchmark.promote_title')}</DialogTitle>
       <DialogContent>
         <Typography variant="body2" sx={{ mb: 2 }}>
-          Updates only <strong>which job slice is operational</strong>. Other runs stay stored for benchmarking.
-          Review edits apply to the operational slice afterward; corrections are not copied automatically from
-          other runs.
+          {t('benchmark.promote_body')}
         </Typography>
         <FormControl fullWidth size="small">
-          <InputLabel id="promote-job-label">Succeeded run</InputLabel>
+          <InputLabel id="promote-job-label">{t('benchmark.succeeded_run_label')}</InputLabel>
           <Select
             labelId="promote-job-label"
-            label="Succeeded run"
+            label={t('benchmark.succeeded_run_label')}
             value={promoteJobId}
             onChange={(e) => onPromoteJobIdChange(String(e.target.value))}
           >
             {eligible.map((j) => (
               <MenuItem key={j.id} value={j.id}>
-                {j.id.slice(0, 12)}… · {j.provider_name ?? '—'} · {j.prompt_key ?? '—'}
+                {j.id.slice(0, 12)}… · {j.provider_name ?? dash} · {j.prompt_key ?? dash}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{t('common.cancel')}</Button>
         <Button variant="contained" color="warning" disabled={!promoteJobId || isPending} onClick={onConfirm}>
-          {isPending ? 'Promoting…' : 'Confirm promote'}
+          {isPending ? t('benchmark.promoting') : t('benchmark.confirm_promote')}
         </Button>
       </DialogActions>
     </Dialog>

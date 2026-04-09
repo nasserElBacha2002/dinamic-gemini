@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Button,
@@ -38,14 +39,17 @@ export interface ImageViewerProps {
  */
 export default function ImageViewer({
   src,
-  alt = 'Image',
-  title = 'Image viewer',
+  alt,
+  title,
   loading = false,
   error = null,
   caption,
   minHeight = 300,
   maxHeight = 'min(72vh, 720px)',
 }: ImageViewerProps) {
+  const { t } = useTranslation();
+  const altText = alt ?? t('image_viewer.alt_default');
+  const titleText = title ?? t('image_viewer.title_default');
   const [zoom, setZoom] = useState(1);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
 
@@ -101,7 +105,7 @@ export default function ImageViewer({
           <Box
             component="img"
             src={src!}
-            alt={alt}
+            alt={altText}
             sx={{
               maxWidth: '100%',
               maxHeight: '100%',
@@ -120,7 +124,7 @@ export default function ImageViewer({
         )}
         {!loading && !error && !src && (
           <Typography color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-            No image available
+            {t('image_viewer.no_image')}
           </Typography>
         )}
       </Box>
@@ -140,25 +144,25 @@ export default function ImageViewer({
 
       {/* Interaction Controls */}
       <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1.5 }}>
-        <Tooltip title="Zoom out">
+        <Tooltip title={t('results.zoom_out')}>
           <span>
             <IconButton
               size="small"
               onClick={onZoomOut}
               disabled={!isLoaded || zoom <= ZOOM_MIN}
-              aria-label="Zoom out"
+              aria-label={t('results.zoom_out')}
             >
               <ZoomOutIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="Zoom in">
+        <Tooltip title={t('results.zoom_in')}>
           <span>
             <IconButton
               size="small"
               onClick={onZoomIn}
               disabled={!isLoaded || zoom >= ZOOM_MAX}
-              aria-label="Zoom in"
+              aria-label={t('results.zoom_in')}
             >
               <ZoomInIcon fontSize="small" />
             </IconButton>
@@ -173,10 +177,10 @@ export default function ImageViewer({
           startIcon={<FullscreenIcon fontSize="small" />}
           onClick={() => setFullscreenOpen(true)}
           disabled={!isLoaded}
-          aria-label="Open fullscreen"
+          aria-label={t('results.open_fullscreen')}
           sx={{ ml: 1 }}
         >
-          Fullscreen
+          {t('image_viewer.fullscreen')}
         </Button>
       </Box>
 
@@ -222,15 +226,15 @@ export default function ImageViewer({
                 textOverflow: 'ellipsis',
                 fontSize: '0.85rem',
               }}
-              title={title}
+              title={titleText}
             >
-              {title}
+              {titleText}
             </Typography>
-            <Tooltip title="Exit fullscreen (Esc)">
+            <Tooltip title={t('results.exit_fullscreen')}>
               <IconButton
                 color="inherit"
                 onClick={() => setFullscreenOpen(false)}
-                aria-label="Exit fullscreen"
+                aria-label={t('results.exit_fullscreen')}
                 edge="end"
                 size="small"
               >
@@ -254,7 +258,7 @@ export default function ImageViewer({
               <Box
                 component="img"
                 src={src!}
-                alt={alt}
+                alt={altText}
                 sx={{
                   maxWidth: '100%',
                   maxHeight: '100%',
@@ -274,10 +278,10 @@ export default function ImageViewer({
             }}
           >
             <Typography variant="caption" sx={{ flex: 1, color: 'grey.500' }}>
-              Esc to close
+              {t('image_viewer.esc_to_close')}
             </Typography>
             <Button onClick={() => setFullscreenOpen(false)} color="inherit" size="small">
-              Close
+              {t('common.close')}
             </Button>
           </DialogActions>
         </Box>

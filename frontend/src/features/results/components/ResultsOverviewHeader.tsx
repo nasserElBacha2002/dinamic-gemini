@@ -5,6 +5,7 @@
  * for this screen (result list for the aisle). See `layout/AppShell.tsx` for shell vs page header rules.
  */
 
+import { useTranslation } from 'react-i18next';
 import { Button, Typography, Box } from '@mui/material';
 
 export interface ResultsOverviewHeaderProps {
@@ -16,20 +17,23 @@ export interface ResultsOverviewHeaderProps {
 }
 
 export default function ResultsOverviewHeader({
-  title = 'Results',
+  title,
   context,
   onBack,
-  backLabel = 'Back to inventory',
+  backLabel,
 }: ResultsOverviewHeaderProps) {
+  const { t } = useTranslation();
+  const resolvedTitle = title ?? t('positions.title_results');
+  const resolvedBackLabel = backLabel ?? t('results.overview_back_inventory');
   return (
     <Box sx={{ mb: 3 }}>
       {onBack && (
         <Button sx={{ mb: 1.5 }} onClick={onBack}>
-          ← {backLabel}
+          ← {resolvedBackLabel}
         </Button>
       )}
       <Typography variant="h5" component="h1">
-        {title}
+        {resolvedTitle}
       </Typography>
       {context && (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>

@@ -1,5 +1,6 @@
 import { useState, MouseEvent } from 'react';
 import { Avatar, IconButton, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Typography, Box } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuth } from '../../features/auth';
 
@@ -7,6 +8,7 @@ import { useAuth } from '../../features/auth';
  * Session control in the topbar corner — Re diseño 3.3 §4.3 (logout inside user menu, not a prominent standalone button).
  */
 export default function UserMenu() {
+  const { t } = useTranslation();
   const { user, logout } = useAuth();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const open = Boolean(anchor);
@@ -14,7 +16,7 @@ export default function UserMenu() {
   const handleOpen = (e: MouseEvent<HTMLElement>) => setAnchor(e.currentTarget);
   const handleClose = () => setAnchor(null);
 
-  const label = user?.username ?? 'User';
+  const label = user?.username ?? t('common.user');
   const initial = label.trim().charAt(0).toUpperCase() || '?';
 
   return (
@@ -22,7 +24,7 @@ export default function UserMenu() {
       <IconButton
         onClick={handleOpen}
         size="small"
-        aria-label="Open account menu"
+        aria-label={t('common.open_account_menu')}
         aria-controls={open ? 'account-menu' : undefined}
         aria-haspopup="true"
         aria-expanded={open ? 'true' : undefined}
@@ -54,7 +56,7 @@ export default function UserMenu() {
           <ListItemIcon>
             <LogoutIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText>Log out</ListItemText>
+          <ListItemText>{t('common.logout')}</ListItemText>
         </MenuItem>
       </Menu>
     </>

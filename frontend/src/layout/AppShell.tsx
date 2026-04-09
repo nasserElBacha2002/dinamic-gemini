@@ -25,6 +25,7 @@ import {
   Toolbar,
   Typography,
 } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import { DRAWER_WIDTH, PRIMARY_NAV_ITEMS, type PrimaryNavItem } from './navConfig.tsx';
 import { topBarCopy } from './shellTopBarCopy.ts';
 import UserMenu from '../components/shell/UserMenu';
@@ -42,7 +43,8 @@ function pathMatchesNav(to: string, pathname: string): boolean {
  */
 export default function AppShell() {
   const { pathname } = useLocation();
-  const { title, subtitle } = topBarCopy(pathname);
+  const { t } = useTranslation();
+  const { titleKey, subtitleKey } = topBarCopy(pathname);
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
@@ -62,10 +64,10 @@ export default function AppShell() {
       >
         <Toolbar sx={{ flexDirection: 'column', alignItems: 'flex-start', py: 2, gap: 0.5 }}>
           <Typography variant="subtitle1" fontWeight={700} component="div">
-            Dinamic Inventory
+            {t('shell.brand')}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Operations
+            {t('shell.operations')}
           </Typography>
         </Toolbar>
         <List dense sx={{ px: 1 }}>
@@ -76,7 +78,10 @@ export default function AppShell() {
                 <ListItemIcon sx={{ minWidth: 36, color: selected ? 'primary.main' : 'text.secondary' }}>
                   {item.icon}
                 </ListItemIcon>
-                <ListItemText primary={item.label} primaryTypographyProps={{ variant: 'body2', fontWeight: selected ? 600 : 400 }} />
+                <ListItemText
+                  primary={t(item.labelKey)}
+                  primaryTypographyProps={{ variant: 'body2', fontWeight: selected ? 600 : 400 }}
+                />
               </ListItemButton>
             );
           })}
@@ -97,11 +102,11 @@ export default function AppShell() {
           <Toolbar sx={{ gap: 2, minHeight: { xs: 56, sm: 64 } }}>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="h6" component="p" noWrap sx={{ fontSize: { xs: '1rem', sm: '1.15rem' }, fontWeight: 600 }}>
-                {title}
+                {t(titleKey)}
               </Typography>
-              {subtitle ? (
+              {subtitleKey ? (
                 <Typography variant="caption" color="text.secondary" noWrap display="block">
-                  {subtitle}
+                  {t(subtitleKey)}
                 </Typography>
               ) : null}
             </Box>

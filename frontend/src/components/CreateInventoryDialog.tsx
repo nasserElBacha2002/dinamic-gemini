@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Box,
@@ -16,7 +17,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { createInventory, uploadInventoryVisualReferences } from '../api/client';
 import type { CreateInventoryRequest, Inventory } from '../api/types';
 import { ApiError } from '../api/types';
-import { getApiErrorMessage } from '../utils/apiErrors';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 import WizardModal from './ui/WizardModal';
 
 type PendingVisualReferenceFile = { file: File; previewUrl: string };
@@ -38,6 +39,7 @@ export default function CreateInventoryDialog({
   onError,
   createInventoryFn,
 }: CreateInventoryDialogProps) {
+  const { t } = useTranslation();
   const doCreate = createInventoryFn ?? createInventory;
 
   const maxFiles = 3;
@@ -101,11 +103,11 @@ export default function CreateInventoryDialog({
   const validateStep1 = (): boolean => {
     const trimmed = (name || '').trim();
     if (!trimmed) {
-      setValidationError('Name is required');
+      setValidationError(t('dialogs.inventory.validation_name_required'));
       return false;
     }
     if (trimmed.length > 255) {
-      setValidationError('Name must be at most 255 characters');
+      setValidationError(t('dialogs.inventory.validation_name_max'));
       return false;
     }
     return true;
@@ -123,11 +125,11 @@ export default function CreateInventoryDialog({
     const incoming = Array.from(files);
     const invalid = incoming.find((f) => !allowedTypes.has((f.type || '').toLowerCase()));
     if (invalid) {
-      setFilesError('Only JPG/JPEG, PNG, and WEBP files are allowed.');
+      setFilesError(t('dialogs.inventory.files_type_error'));
       return;
     }
     if (pendingFiles.length + incoming.length > maxFiles) {
-      setFilesError(`You can upload up to ${maxFiles} images.`);
+      setFilesError(t('dialogs.inventory.max_files_error', { max: maxFiles }));
       return;
     }
     const next = incoming.map((file) => ({ file, previewUrl: URL.createObjectURL(file) }));
@@ -188,7 +190,7 @@ export default function CreateInventoryDialog({
       handleClose();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      const msg = getApiErrorMessage(err, 'Failed to create inventory');
+      const msg = resolveApiErrorMessage(err, 'errors.create_inventory');
       setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
       onError(msg);
     } finally {
@@ -219,17 +221,17 @@ export default function CreateInventoryDialog({
         // Important: inventory exists now. Do not call onError (parent would show "create failed").
         // Keep the dialog open in "retry upload" mode.
         const err = e instanceof ApiError ? e : new ApiError(String(e));
-        const msg = getApiErrorMessage(err, 'Visual reference upload failed');
+        const msg = resolveApiErrorMessage(err, 'errors.reference_upload_failed');
         setUploadState('failed');
         setUploadError(
           typeof msg === 'string'
-            ? `Inventory created, but reference image upload failed: ${msg}`
-            : 'Inventory created, but reference image upload failed.',
+            ? t('dialogs.inventory.partial_failure_detail', { message: msg })
+            : t('dialogs.inventory.partial_failure_generic'),
         );
       }
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      const msg = getApiErrorMessage(err, 'Failed to create inventory');
+      const msg = resolveApiErrorMessage(err, 'errors.create_inventory');
       setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
       onError(msg);
     } finally {
@@ -248,12 +250,12 @@ export default function CreateInventoryDialog({
       handleClose();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      const msg = getApiErrorMessage(err, 'Visual reference upload failed');
+      const msg = resolveApiErrorMessage(err, 'errors.reference_upload_failed');
       setUploadState('failed');
       setUploadError(
         typeof msg === 'string'
-          ? `Inventory created, but reference image upload failed: ${msg}`
-          : 'Inventory created, but reference image upload failed.',
+          ? t('dialogs.inventory.partial_failure_detail', { message: msg })
+          : t('dialogs.inventory.partial_failure_generic'),
       );
     } finally {
       setSubmitting(false);
@@ -268,46 +270,46 @@ export default function CreateInventoryDialog({
 
   const primaryCtaLabel = useMemo(() => {
     if (createdInventory) {
-      if (pendingFiles.length === 0) return 'Continue to inventory';
-      if (uploadState === 'failed') return 'Retry upload';
-      return 'Upload references';
+      if (pendingFiles.length === 0) return t('dialogs.inventory.continue_to_inventory');
+      if (uploadState === 'failed') return t('dialogs.inventory.retry_upload');
+      return t('dialogs.inventory.upload_references');
     }
-    if (pendingFiles.length > 0) return 'Create inventory and upload references';
-    return 'Create inventory';
-  }, [createdInventory, pendingFiles.length, uploadState]);
+    if (pendingFiles.length > 0) return t('dialogs.inventory.create_and_upload');
+    return t('dialogs.inventory.create_inventory_action');
+  }, [createdInventory, pendingFiles.length, uploadState, t]);
 
   return (
     <WizardModal
       open={open}
       onClose={handleClose}
-      title="Create inventory"
-      stepLabels={['Inventory details', 'Visual references (optional)']}
+      title={t('dialogs.inventory.wizard_title')}
+      stepLabels={t('dialogs.inventory.step_labels').split('|')}
       activeStep={activeStep}
       actions={
         activeStep === 0 ? (
           <>
             <Button onClick={handleClose} disabled={submitting}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleContinueToStep2} variant="contained" disabled={submitting}>
-              Continue
+              {t('common.continue')}
             </Button>
           </>
         ) : (
           <>
             <Button onClick={handleClose} disabled={submitting}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={() => setActiveStep(0)} disabled={submitting || createdInventory != null}>
-              Back
+              {t('common.back')}
             </Button>
             {createdInventory ? (
               <Button onClick={handleContinueToInventory} disabled={submitting}>
-                Continue without references
+                {t('dialogs.inventory.continue_without_refs')}
               </Button>
             ) : (
               <Button onClick={handleCreateOnly} disabled={submitting}>
-                Create without references
+                {t('dialogs.inventory.create_without_refs')}
               </Button>
             )}
             <Button
@@ -333,7 +335,7 @@ export default function CreateInventoryDialog({
         <TextField
           autoFocus
           margin="dense"
-          label="Inventory name"
+          label={t('dialogs.inventory.inventory_name')}
           fullWidth
           variant="outlined"
           value={name}
@@ -346,10 +348,10 @@ export default function CreateInventoryDialog({
       ) : (
         <Box>
           <Typography variant="h6" sx={{ mb: 1 }}>
-            Reference images (optional)
+            {t('dialogs.inventory.reference_step_title')}
           </Typography>
           <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-            These images help the system better understand what valid labels, pallets, or expected visual standards look like for this inventory.
+            {t('dialogs.inventory.reference_step_body')}
           </Typography>
 
           {filesError ? (
@@ -390,7 +392,7 @@ export default function CreateInventoryDialog({
               handleDropFiles(e.dataTransfer?.files ?? null);
             }}
             role="region"
-            aria-label="Reference images dropzone"
+            aria-label={t('dialogs.inventory.reference_dropzone')}
             aria-describedby={dropzoneHelpId}
             sx={{
               mb: 2,
@@ -408,13 +410,13 @@ export default function CreateInventoryDialog({
           >
             <Box sx={{ minWidth: 0 }}>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                Drag & drop images here
+                {t('dialogs.inventory.dropzone_primary')}
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block">
-                {pendingFiles.length}/{maxFiles} selected
+                {t('dialogs.inventory.selected_ratio', { count: pendingFiles.length, max: maxFiles })}
               </Typography>
               <Typography id={dropzoneHelpId} variant="caption" color="text.secondary" display="block">
-                JPG/PNG/WEBP • max {maxFiles} • or use “Select images”
+                {t('dialogs.inventory.dropzone_formats_line', { max: maxFiles })}
               </Typography>
             </Box>
             <Button
@@ -423,7 +425,7 @@ export default function CreateInventoryDialog({
               disabled={submitting || pendingFiles.length >= maxFiles}
               size="small"
             >
-              Select images
+              {t('dialogs.inventory.select_files')}
               <input
                 hidden
                 type="file"
@@ -433,13 +435,13 @@ export default function CreateInventoryDialog({
                   handleAddFiles(e.target.files);
                   e.currentTarget.value = '';
                 }}
-                aria-label="Select reference images"
+                aria-label={t('dialogs.inventory.select_files')}
               />
             </Button>
           </Box>
 
           <Typography variant="caption" display="block" sx={{ mb: 1, color: 'text.secondary' }}>
-            Up to {maxFiles} images (JPG/JPEG, PNG, WEBP).
+            {t('dialogs.inventory.footer_formats', { max: maxFiles })}
           </Typography>
 
           {pendingFiles.length > 0 ? (
@@ -463,7 +465,11 @@ export default function CreateInventoryDialog({
                             {(p.file.size / 1024).toFixed(1)} KB
                           </Typography>
                         </Box>
-                        <IconButton aria-label={`Remove ${p.file.name}`} onClick={() => handleRemoveFile(idx)} disabled={submitting}>
+                        <IconButton
+                          aria-label={t('dialogs.inventory.remove_file_a11y', { name: p.file.name })}
+                          onClick={() => handleRemoveFile(idx)}
+                          disabled={submitting}
+                        >
                           <CloseRoundedIcon fontSize="small" />
                         </IconButton>
                       </Box>
@@ -476,7 +482,7 @@ export default function CreateInventoryDialog({
 
           {createdInventory && uploadError ? (
             <Alert severity="info" sx={{ mt: 2 }}>
-              Inventory <strong>{createdInventory.name}</strong> was created. You can continue now and retry uploading references later.
+              {t('dialogs.inventory.partial_info', { name: createdInventory.name })}
             </Alert>
           ) : null}
         </Box>

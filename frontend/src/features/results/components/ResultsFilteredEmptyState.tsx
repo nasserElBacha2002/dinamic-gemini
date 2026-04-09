@@ -2,6 +2,7 @@
  * Epic 3 — Empty state when filters return no results.
  */
 
+import { useTranslation } from 'react-i18next';
 import { Paper, Typography, Button } from '@mui/material';
 
 export interface ResultsFilteredEmptyStateProps {
@@ -11,14 +12,15 @@ export interface ResultsFilteredEmptyStateProps {
 export default function ResultsFilteredEmptyState({
   onClearFilter,
 }: ResultsFilteredEmptyStateProps) {
+  const { t } = useTranslation();
   return (
     <Paper sx={{ p: 4, textAlign: 'center' }}>
       <Typography color="text.secondary" sx={{ mb: 2 }}>
-        No results match the current filter.
+        {t('results.filtered_empty_message')}
       </Typography>
       {onClearFilter && (
         <Button variant="outlined" size="small" onClick={onClearFilter}>
-          Clear filter
+          {t('results.clear_filter')}
         </Button>
       )}
     </Paper>

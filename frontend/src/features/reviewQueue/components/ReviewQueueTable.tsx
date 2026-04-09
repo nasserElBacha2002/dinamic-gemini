@@ -3,7 +3,9 @@
  */
 
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button, Link as MuiLink, Typography } from '@mui/material';
+import i18n from '../../../i18n';
 import { Link as RouterLink } from 'react-router-dom';
 import type { ReviewQueueItem } from '../../../api/types';
 import {
@@ -46,14 +48,14 @@ function displaySku(item: ReviewQueueItem): string {
   const r = mapPositionSummaryToResultSummary(item.position);
   const s = r.sku;
   if (s != null && String(s).trim() !== '') return String(s).trim();
-  return '—';
+  return i18n.t('common.em_dash');
 }
 
 function displayQty(item: ReviewQueueItem): string {
   const r = mapPositionSummaryToResultSummary(item.position);
   const v = r.resolvedQty ?? r.detectedQty;
   if (v != null && !Number.isNaN(v) && v >= 0) return String(v);
-  return '—';
+  return i18n.t('common.em_dash');
 }
 
 export default function ReviewQueueTable({
@@ -63,11 +65,13 @@ export default function ReviewQueueTable({
   pagination,
   onOpenReview,
 }: ReviewQueueTableProps) {
+  const { t } = useTranslation();
+  const dash = i18n.t('common.em_dash');
   const columns = useMemo<DataTableColumn<ReviewQueueItem>[]>(() => {
     return [
       {
         id: 'priority',
-        label: 'Priority',
+        label: t('review_queue.column_priority'),
         width: 88,
         sortable: true,
         cell: (item) => {
@@ -80,10 +84,10 @@ export default function ReviewQueueTable({
       },
       {
         id: 'sku',
-        label: 'SKU',
+        label: t('common.sku'),
         cell: (item) => {
           const label = displaySku(item);
-          if (label === '—') {
+          if (label === dash) {
             return (
               <Typography variant="body2" color="text.secondary" component="span">
                 {label}
@@ -95,7 +99,7 @@ export default function ReviewQueueTable({
               variant="text"
               size="small"
               onClick={() => onOpenReview(item)}
-              aria-label={`Review ${label}`}
+              aria-label={t('review_queue_table.review_aria', { sku: label })}
               sx={{
                 fontWeight: 650,
                 textTransform: 'none',
@@ -113,21 +117,21 @@ export default function ReviewQueueTable({
       },
       {
         id: 'qty',
-        label: 'Quantity',
+        label: t('review_queue.column_quantity'),
         align: 'right',
         cell: (item) => displayQty(item),
       },
       {
         id: 'confidence',
-        label: 'Confidence',
+        label: t('common.confidence'),
         align: 'right',
         sortable: true,
         cell: (item) =>
-          item.position.confidence != null ? `${(item.position.confidence * 100).toFixed(0)}%` : '—',
+          item.position.confidence != null ? `${(item.position.confidence * 100).toFixed(0)}%` : dash,
       },
       {
         id: 'traceability',
-        label: 'Traceability',
+        label: t('common.traceability'),
         cell: (item) => {
           const r = mapPositionSummaryToResultSummary(item.position);
           return (
@@ -141,7 +145,7 @@ export default function ReviewQueueTable({
       },
       {
         id: 'review_status',
-        label: 'Review status',
+        label: t('results.table_column.review_status'),
         cell: (item) => {
           const r = mapPositionSummaryToResultSummary(item.position);
           return (
@@ -155,7 +159,7 @@ export default function ReviewQueueTable({
       },
       {
         id: 'inventory',
-        label: 'Inventory',
+        label: t('common.inventory'),
         cell: (item) => (
           <MuiLink
             component={RouterLink}
@@ -170,7 +174,7 @@ export default function ReviewQueueTable({
       },
       {
         id: 'aisle',
-        label: 'Aisle',
+        label: t('common.aisle'),
         cell: (item) => (
           <MuiLink
             component={RouterLink}
@@ -185,7 +189,7 @@ export default function ReviewQueueTable({
       },
       {
         id: 'updated_at',
-        label: 'Updated',
+        label: t('common.updated'),
         sortable: true,
         cell: (item) => (
           <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
@@ -194,7 +198,7 @@ export default function ReviewQueueTable({
         ),
       },
     ];
-  }, [onOpenReview]);
+  }, [onOpenReview, t, dash]);
 
   return (
     <DataTable<ReviewQueueItem>
@@ -208,9 +212,8 @@ export default function ReviewQueueTable({
       sort={sort}
       pagination={pagination}
       emptyState={{
-        title: 'No results in this queue',
-        message:
-          'No results match the current filters. Adjust inventory, aisle, or filters, or choose Reset filters.',
+        title: t('review_queue_table.empty_title'),
+        message: t('review_queue_table.empty_message'),
       }}
     />
   );

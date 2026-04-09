@@ -6,16 +6,7 @@
 import type { ReviewStatus } from '../types';
 import type { ChipColorType } from '../../../components/ui/types';
 import type { StatusBadgeSemantic } from '../../../components/ui';
-
-const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
-  DETECTED: 'Detected',
-  CONFIRMED: 'Confirmed',
-  NEEDS_REVIEW: 'Needs review',
-  IMAGE_MISMATCH: 'Wrong image',
-  MISSING: 'Missing',
-  INVALID: 'Invalid',
-  NOT_COUNTABLE: 'Not countable',
-};
+import i18n from '../../../i18n';
 
 const REVIEW_STATUS_COLOR: Record<ReviewStatus, ChipColorType> = {
   DETECTED: 'primary',
@@ -28,7 +19,9 @@ const REVIEW_STATUS_COLOR: Record<ReviewStatus, ChipColorType> = {
 };
 
 export function getReviewStatusLabel(status: ReviewStatus): string {
-  return REVIEW_STATUS_LABEL[status] ?? status;
+  const key = `positions.review_status.${status}`;
+  if (i18n.exists(key)) return i18n.t(key);
+  return status;
 }
 
 export function getReviewStatusColor(status: ReviewStatus): ChipColorType {

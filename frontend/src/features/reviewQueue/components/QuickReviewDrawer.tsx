@@ -3,13 +3,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography, Stack } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { ApiError } from '../../../api/types';
 import type { ReviewActionRequest } from '../../../api/types';
 import { useResultDetail, getResultNavigationContext } from '../../results';
 import { useSubmitReviewAction } from '../../../hooks';
-import { getApiErrorMessage } from '../../../utils/apiErrors';
+import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import {
   ResultEvidenceViewer,
   ResultSummaryCard,
@@ -25,12 +26,13 @@ import type { QuickReviewContext } from '../quickReviewContext';
 import { ConfirmDialog, useAppSnackbar } from '../../../components/ui';
 
 function DrawerCollapsibleSection({
-  title,
+  titleKey,
   children,
 }: {
-  title: string;
+  titleKey: string;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   return (
     <Box sx={{ mt: 1.5, pt: 1, borderTop: 1, borderColor: 'divider' }}>
@@ -51,7 +53,7 @@ function DrawerCollapsibleSection({
         }}
         aria-expanded={expanded}
       >
-        {expanded ? 'Hide' : 'Show'} {title}
+        {expanded ? t('common.hide') : t('common.show')} {t(titleKey)}
       </Button>
       <Collapse in={expanded} timeout="auto" unmountOnExit>
          <Box sx={{ pb: 2 }}>{children}</Box>
@@ -71,6 +73,7 @@ export default function QuickReviewDrawer({
   context,
   onClose,
 }: QuickReviewDrawerProps) {
+  const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
   const [activePositionId, setActivePositionId] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
@@ -138,7 +141,7 @@ export default function QuickReviewDrawer({
         }
       } catch (e) {
         const err = e instanceof ApiError ? e : new ApiError(String(e));
-        setActionError(getApiErrorMessage(err, 'Review action failed'));
+        setActionError(resolveApiErrorMessage(err, 'errors.review_action_failed'));
       } finally {
         reviewMutationInFlightRef.current = false;
       }
@@ -147,42 +150,45 @@ export default function QuickReviewDrawer({
   );
 
   const handleConfirm = useCallback(() => {
-    void executeReviewAction({ action_type: 'confirm' }, { successMessage: 'Result confirmed' });
-  }, [executeReviewAction]);
+    void executeReviewAction({ action_type: 'confirm' }, { successMessage: t('review.snackbar_confirmed') });
+  }, [executeReviewAction, t]);
 
   const handleUpdateQuantity = useCallback(
     (corrected_quantity: number) => {
       void executeReviewAction(
         { action_type: 'update_quantity', corrected_quantity },
-        { successMessage: 'Quantity updated' }
+        { successMessage: t('review.snackbar_qty_updated') }
       );
     },
-    [executeReviewAction]
+    [executeReviewAction, t]
   );
 
   const handleUpdateSku = useCallback(
     (sku: string) => {
-      void executeReviewAction({ action_type: 'update_sku', sku }, { successMessage: 'SKU updated' });
+      void executeReviewAction(
+        { action_type: 'update_sku', sku },
+        { successMessage: t('review.snackbar_sku_updated') }
+      );
     },
-    [executeReviewAction]
+    [executeReviewAction, t]
   );
 
   const handleUpdatePositionCode = useCallback(
     (position_code: string) => {
       void executeReviewAction(
         { action_type: 'update_position_code', position_code },
-        { successMessage: 'Position code updated' }
+        { successMessage: t('review.snackbar_position_updated') }
       );
     },
-    [executeReviewAction]
+    [executeReviewAction, t]
   );
 
   const handleMarkImageMismatch = useCallback(() => {
     void executeReviewAction(
       { action_type: 'mark_image_mismatch' },
-      { successMessage: 'Flagged wrong image (traceability)' }
+      { successMessage: t('review.snackbar_image_mismatch') }
     );
-  }, [executeReviewAction]);
+  }, [executeReviewAction, t]);
 
   const handleDeleteClick = useCallback(() => {
     setInvalidConfirmError(null);
@@ -198,17 +204,17 @@ export default function QuickReviewDrawer({
     setInvalidConfirmLoading(true);
     try {
       await reviewMutation.mutateAsync({ action_type: 'delete_position' });
-      showSnackbar('Result marked invalid', 'success');
+      showSnackbar(t('review.mark_invalid_success'), 'success');
       setInvalidConfirmOpen(false);
       onClose(); // Automatically close after invalidation
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setInvalidConfirmError(getApiErrorMessage(err, 'Could not invalidate result'));
+      setInvalidConfirmError(resolveApiErrorMessage(err, 'errors.invalidate_result'));
     } finally {
       reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);
     }
-  }, [reviewMutation, showSnackbar]);
+  }, [reviewMutation, showSnackbar, t]);
 
   const handleNavigateToResult = useCallback((resultId: string) => {
     setActivePositionId(resultId);
@@ -217,11 +223,11 @@ export default function QuickReviewDrawer({
   const errorMessage =
     isError && error
       ? error instanceof ApiError
-        ? getApiErrorMessage(error, 'Failed to load result')
+        ? resolveApiErrorMessage(error, 'errors.load_result_detail')
         : String(error)
       : null;
 
-  const detailTitle = result?.sku?.trim() ? result.sku.trim() : 'Result';
+  const detailTitle = result?.sku?.trim() ? result.sku.trim() : t('review.detail_title_fallback');
 
   return (
     <>
@@ -242,7 +248,7 @@ export default function QuickReviewDrawer({
         {!context ? (
           <Box sx={{ p: 2 }}>
             <Typography variant="body2" color="text.secondary">
-              Select a result to review.
+              {t('review.select_result_prompt')}
             </Typography>
           </Box>
         ) : (
@@ -265,17 +271,17 @@ export default function QuickReviewDrawer({
             >
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5, fontWeight: 700 }}>
-                  Review Mode
+                  {t('review.drawer_mode_title')}
                 </Typography>
                 <Typography component="h1" variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2, mt: 0.25 }}>
-                  {isLoading && !result ? 'Loading…' : detailTitle}
+                  {isLoading && !result ? t('common.loading') : detailTitle}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, fontWeight: 500 }}>
                   {context.inventoryName} · {context.aisleCode}
                 </Typography>
               </Box>
               <IconButton 
-                aria-label="Close drawer" 
+                aria-label={t('review.quick_drawer_close')} 
                 onClick={onClose} 
                 size="small" 
                 edge="end" 
@@ -293,19 +299,21 @@ export default function QuickReviewDrawer({
                 </Alert>
               ) : null}
 
-              {enabled && isLoading && !result ? <ResultDetailLoadingState message="Loading result…" /> : null}
+              {enabled && isLoading && !result ? (
+                <ResultDetailLoadingState message={t('review.loading_result')} />
+              ) : null}
 
               {errorMessage && !result ? (
                 <>
                   <ResultDetailErrorState message={errorMessage} onRetry={() => refetch()} />
                   <Button sx={{ mt: 2 }} size="small" variant="outlined" onClick={onClose}>
-                    Close
+                    {t('common.close')}
                   </Button>
                 </>
               ) : null}
 
               {!isLoading && !errorMessage && !result && enabled ? (
-                <ResultDetailEmptyState message="Result not found or no longer available." />
+                <ResultDetailEmptyState message={t('review.result_not_found')} />
               ) : null}
 
               {result ? (
@@ -339,11 +347,11 @@ export default function QuickReviewDrawer({
                   )}
 
                   <Box sx={{ pt: 4 }}>
-                    <DrawerCollapsibleSection title="review history">
+                    <DrawerCollapsibleSection titleKey="review.section_history">
                       <ResultReviewHistory items={result.reviewHistory} showHeading={false} />
                     </DrawerCollapsibleSection>
 
-                    <DrawerCollapsibleSection title="technical details">
+                    <DrawerCollapsibleSection titleKey="review.section_technical">
                       <ResultTechnicalMetadata result={result} />
                     </DrawerCollapsibleSection>
                   </Box>
@@ -360,9 +368,9 @@ export default function QuickReviewDrawer({
           setInvalidConfirmOpen(false);
           setInvalidConfirmError(null);
         }}
-        title="Mark result invalid?"
-        description="This sets the result to invalid review status and removes it from active review work. The record stays visible for audit."
-        confirmLabel="Mark invalid"
+        title={t('review.mark_invalid_title')}
+        description={t('review.mark_invalid_description')}
+        confirmLabel={t('review.mark_invalid_cta')}
         confirmColor="error"
         loading={invalidConfirmLoading}
         errorMessage={invalidConfirmError}

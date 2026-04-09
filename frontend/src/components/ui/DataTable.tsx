@@ -32,7 +32,8 @@ import {
   TableRow,
   TableSortLabel,
 } from '@mui/material';
-import { DATATABLE_DEFAULT_EMPTY_MESSAGE, TABLE_PAGE_SIZE_OPTIONS } from '../../constants/dataTable';
+import { useTranslation } from 'react-i18next';
+import { DATATABLE_DEFAULT_EMPTY_MESSAGE_KEY, TABLE_PAGE_SIZE_OPTIONS } from '../../constants/dataTable';
 import EmptyState from './EmptyState';
 
 export type DataTableSortDirection = 'asc' | 'desc';
@@ -147,10 +148,11 @@ export default function DataTable<T>({
   rowHover = true,
   onRowClick,
 }: DataTableProps<T>) {
+  const { t } = useTranslation();
   const colCount = columns.length;
   const emptyDisplay =
     !loading && rows.length === 0
-      ? (emptyState ?? { message: DATATABLE_DEFAULT_EMPTY_MESSAGE })
+      ? (emptyState ?? { message: t(DATATABLE_DEFAULT_EMPTY_MESSAGE_KEY) })
       : null;
   const showEmpty = Boolean(emptyDisplay);
 
@@ -244,7 +246,7 @@ export default function DataTable<T>({
                     pagination.onPageChange(1);
                   }}
                   rowsPerPageOptions={[...TABLE_PAGE_SIZE_OPTIONS]}
-                  labelRowsPerPage="Rows"
+                  labelRowsPerPage={t('common.rows_per_page')}
                 />
               </TableCell>
             </TableRow>

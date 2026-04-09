@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Button,
@@ -26,7 +27,8 @@ import {
   downloadAisleExecutionLogTxt,
   downloadExecutionLogTxt,
 } from '../api/client';
-import { getApiErrorMessage } from '../utils/apiErrors';
+import i18n from '../i18n';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { getJobStatusLabel, jobStatusToBadgeSemantic } from '../utils/jobStatus';
 import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
@@ -45,7 +47,7 @@ import {
 const AISLE_OBSERVABILITY_JOBS_LIMIT = 500;
 
 function formatOptionalDate(value?: string | null): string {
-  return value ? formatDate(value) : '—';
+  return value ? formatDate(value) : i18n.t('common.em_dash');
 }
 
 function canCancelJob(status?: string | null): boolean {
@@ -82,23 +84,30 @@ function jobMetadataRows(
 ): Array<{ label: string; value: string }> {
   if (!job) return [];
   const displayFinished = resolveDisplayFinishedAt(job, executionLogEvents);
+  const dash = i18n.t('common.em_dash');
   return [
-    { label: 'Started', value: formatOptionalDate(job.started_at) },
-    { label: 'Finished', value: formatOptionalDate(displayFinished) },
-    { label: 'Last heartbeat', value: formatOptionalDate(job.last_heartbeat_at) },
-    { label: 'Cancellation requested', value: formatOptionalDate(job.cancel_requested_at) },
-    { label: 'Current stage', value: job.current_stage || '—' },
-    { label: 'Current step', value: job.current_substep || '—' },
-    { label: 'Step started', value: formatOptionalDate(job.current_step_started_at) },
-    { label: 'Execution ID', value: job.execution_id || '—' },
-    { label: 'Provider', value: job.provider_name || '—' },
-    { label: 'Model', value: job.model_name || '—' },
-    { label: 'Prompt key', value: job.prompt_key || '—' },
-    { label: 'Prompt version', value: job.prompt_version || '—' },
-    { label: 'Attempt', value: job.attempt_count ? `Attempt ${job.attempt_count}` : '—' },
-    { label: 'Retry of job', value: job.retry_of_job_id || '—' },
-    { label: 'Failure code', value: job.failure_code || '—' },
-    { label: 'Failure message', value: job.failure_message || job.error_message || '—' },
+    { label: i18n.t('jobs.obs_started'), value: formatOptionalDate(job.started_at) },
+    { label: i18n.t('jobs.obs_finished'), value: formatOptionalDate(displayFinished) },
+    { label: i18n.t('jobs.obs_last_heartbeat'), value: formatOptionalDate(job.last_heartbeat_at) },
+    { label: i18n.t('jobs.obs_cancel_requested'), value: formatOptionalDate(job.cancel_requested_at) },
+    { label: i18n.t('jobs.obs_current_stage'), value: job.current_stage || dash },
+    { label: i18n.t('jobs.obs_current_step'), value: job.current_substep || dash },
+    { label: i18n.t('jobs.obs_step_started'), value: formatOptionalDate(job.current_step_started_at) },
+    { label: i18n.t('common.execution_id'), value: job.execution_id || dash },
+    { label: i18n.t('jobs.obs_provider_row'), value: job.provider_name || dash },
+    { label: i18n.t('jobs.obs_model_row'), value: job.model_name || dash },
+    { label: i18n.t('jobs.obs_prompt_key'), value: job.prompt_key || dash },
+    { label: i18n.t('jobs.obs_prompt_version'), value: job.prompt_version || dash },
+    {
+      label: i18n.t('jobs.obs_attempt_row'),
+      value: job.attempt_count ? i18n.t('jobs.attempt_number', { count: job.attempt_count }) : dash,
+    },
+    { label: i18n.t('jobs.obs_retry_of_job'), value: job.retry_of_job_id || dash },
+    { label: i18n.t('jobs.obs_failure_code'), value: job.failure_code || dash },
+    {
+      label: i18n.t('jobs.obs_failure_message'),
+      value: job.failure_message || job.error_message || dash,
+    },
   ];
 }
 
@@ -125,6 +134,7 @@ export default function AisleObservabilityDialog({
   onClose,
   onAislesInvalidate,
 }: AisleObservabilityDialogProps) {
+  const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
   const [logScope, setLogScope] = useState<LogScope>(() => (initialSelectedJobId ? 'job' : 'merged'));
   const [selectedJobId, setSelectedJobId] = useState<string>(() => initialSelectedJobId ?? '');
@@ -159,10 +169,10 @@ export default function AisleObservabilityDialog({
   const panelError = logScope === 'merged' ? aisleExecutionLogQuery.error : executionLogQuery.error;
   const panelEmptyMessage =
     logScope === 'merged'
-      ? 'No execution log entries found for any job on this aisle.'
+      ? t('jobs.obs_empty_aisle')
       : selectedJobId
-        ? 'No log entries yet for this job, or the log file is not available.'
-        : 'Select a job to load this job’s execution log.';
+        ? t('jobs.obs_empty_job')
+        : t('jobs.obs_select_job');
 
   const refreshBusy =
     aisleExecutionLogQuery.isFetching ||
@@ -194,11 +204,11 @@ export default function AisleObservabilityDialog({
     if (!selectedJobId) return;
     try {
       await cancelJobMutation.mutateAsync({ aisleId, jobId: selectedJobId });
-      showSnackbar('Cancellation requested', 'success');
+      showSnackbar(t('jobs.cancel_success'), 'success');
       await handleRefresh();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      showSnackbar(getApiErrorMessage(err, 'Failed to cancel job'), 'error');
+      showSnackbar(resolveApiErrorMessage(err, 'errors.cancel_job'), 'error');
     }
   };
 
@@ -208,7 +218,10 @@ export default function AisleObservabilityDialog({
       const result = await retryJobMutation.mutateAsync({ aisleId, jobId: selectedJobId });
       setSelectedJobId(result.id);
       setLogScope('job');
-      showSnackbar(`Retry started as attempt ${result.attempt_count ?? 'new'}`, 'success');
+      showSnackbar(
+        t('jobs.retry_started', { attempt: result.attempt_count ?? 'new' }),
+        'success',
+      );
       await Promise.all([
         onAislesInvalidate?.(),
         aisleExecutionLogQuery.refetch(),
@@ -216,7 +229,7 @@ export default function AisleObservabilityDialog({
       ]);
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      showSnackbar(getApiErrorMessage(err, 'Failed to retry job'), 'error');
+      showSnackbar(resolveApiErrorMessage(err, 'errors.retry_job'), 'error');
     }
   };
 
@@ -242,7 +255,7 @@ export default function AisleObservabilityDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth scroll="paper">
-      <DialogTitle>Aisle observability — {aisleCode}</DialogTitle>
+      <DialogTitle>{t('jobs.dialog_title_aisle', { code: aisleCode })}</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
           <Box
@@ -255,7 +268,7 @@ export default function AisleObservabilityDialog({
             }}
           >
             <Button size="small" variant="outlined" onClick={() => void handleRefresh()} disabled={refreshBusy}>
-              {refreshBusy ? 'Refreshing…' : 'Refresh'}
+              {refreshBusy ? t('common.refreshing') : t('jobs.refresh')}
             </Button>
             <Button
               size="small"
@@ -267,13 +280,13 @@ export default function AisleObservabilityDialog({
                   await downloadAisleExecutionLogTxt(inventoryId, aisleId);
                 } catch (e) {
                   const err = e instanceof ApiError ? e : new ApiError(String(e));
-                  showSnackbar(getApiErrorMessage(err, 'Failed to download merged log'), 'error');
+                  showSnackbar(resolveApiErrorMessage(err, 'errors.download_merged_log'), 'error');
                 } finally {
                   setDownloadingMerged(false);
                 }
               }}
             >
-              {downloadingMerged ? 'Downloading…' : 'Download merged log'}
+              {downloadingMerged ? t('jobs.downloading') : t('common.download_merged_log')}
             </Button>
             <Button
               size="small"
@@ -286,19 +299,19 @@ export default function AisleObservabilityDialog({
                   await downloadExecutionLogTxt(inventoryId, aisleId, selectedJobId);
                 } catch (e) {
                   const err = e instanceof ApiError ? e : new ApiError(String(e));
-                  showSnackbar(getApiErrorMessage(err, 'Failed to download job log'), 'error');
+                  showSnackbar(resolveApiErrorMessage(err, 'errors.download_job_log'), 'error');
                 } finally {
                   setDownloadingJobLog(false);
                 }
               }}
             >
-              {downloadingJobLog ? 'Downloading…' : 'Download selected job log'}
+              {downloadingJobLog ? t('jobs.downloading') : t('common.download_selected_job_log')}
             </Button>
             {selectedJobId ? (
               <>
                 {isCancelRequested(selectedJob?.status) ? (
                   <Button size="small" variant="outlined" disabled>
-                    Cancellation requested
+                    {t('jobs.obs_cancel_requested')}
                   </Button>
                 ) : null}
                 {canCancelJob(selectedJob?.status) ? (
@@ -309,7 +322,7 @@ export default function AisleObservabilityDialog({
                     onClick={() => void handleCancelJob()}
                     disabled={cancelJobMutation.isPending}
                   >
-                    {cancelJobMutation.isPending ? 'Cancelling…' : 'Cancel job'}
+                    {cancelJobMutation.isPending ? t('common.cancelling') : t('jobs.cancel_job')}
                   </Button>
                 ) : null}
                 {canRetryJob(selectedJob?.status) ? (
@@ -319,7 +332,7 @@ export default function AisleObservabilityDialog({
                     onClick={() => void handleRetryJob()}
                     disabled={retryJobMutation.isPending}
                   >
-                    {retryJobMutation.isPending ? 'Retrying…' : 'Retry job'}
+                    {retryJobMutation.isPending ? t('common.retrying') : t('jobs.retry_job')}
                   </Button>
                 ) : null}
               </>
@@ -344,29 +357,29 @@ export default function AisleObservabilityDialog({
               }}
             >
               <FormControl size="small" fullWidth>
-                <InputLabel id="obs-scope-label">Log scope</InputLabel>
+                <InputLabel id="obs-scope-label">{t('jobs.log_scope')}</InputLabel>
                 <Select
                   labelId="obs-scope-label"
-                  label="Log scope"
+                  label={t('jobs.log_scope')}
                   value={logScope}
                   onChange={(e) => onScopeChange(e.target.value as LogScope)}
                 >
-                  <MenuItem value="merged">Merged aisle log</MenuItem>
-                  <MenuItem value="job">Selected job log</MenuItem>
+                  <MenuItem value="merged">{t('jobs.scope_merged')}</MenuItem>
+                  <MenuItem value="job">{t('jobs.scope_selected_job')}</MenuItem>
                 </Select>
               </FormControl>
 
               <FormControl size="small" fullWidth>
-                <InputLabel id="obs-job-label">Job</InputLabel>
+                <InputLabel id="obs-job-label">{t('common.job')}</InputLabel>
                 <Select
                   labelId="obs-job-label"
-                  label="Job"
+                  label={t('common.job')}
                   value={selectedJobId}
                   onChange={(e) => onJobSelectChange(e.target.value)}
                   disabled={jobsListQuery.isLoading}
                 >
                   <MenuItem value="">
-                    <em>None (merged only)</em>
+                    <em>{t('jobs.obs_none_merged_only')}</em>
                   </MenuItem>
                   {jobs.map((j) => (
                     <MenuItem key={j.id} value={j.id}>
@@ -388,13 +401,13 @@ export default function AisleObservabilityDialog({
                       ) : null}
                       {jobDetailQuery.isLoading ? (
                         <Typography variant="caption" color="text.secondary">
-                          Loading job…
+                          {t('jobs.obs_loading_job_detail')}
                         </Typography>
                       ) : null}
                     </Box>
                     {jobDetailQuery.error ? (
                       <ErrorAlert
-                        message={getApiErrorMessage(jobDetailQuery.error, 'Failed to load job details')}
+                        message={resolveApiErrorMessage(jobDetailQuery.error, 'errors.load_job_details')}
                         onRetry={() => {
                           void jobDetailQuery.refetch();
                         }}
@@ -420,7 +433,7 @@ export default function AisleObservabilityDialog({
                 </Paper>
               ) : (
                 <Typography variant="caption" color="text.secondary">
-                  Select a job to see live status and metadata.
+                  {t('jobs.obs_select_job_metadata_hint')}
                 </Typography>
               )}
             </Box>
@@ -428,7 +441,7 @@ export default function AisleObservabilityDialog({
             <Box sx={{ flex: 1, minWidth: 0 }}>
               {logScope === 'job' && !selectedJobId ? (
                 <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                  Choose a job to load the job-scoped execution log from the API.
+                  {t('jobs.obs_choose_job_for_log')}
                 </Typography>
               ) : (
                 <ExecutionLogPanel
@@ -443,7 +456,7 @@ export default function AisleObservabilityDialog({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={onClose}>{t('common.close')}</Button>
       </DialogActions>
     </Dialog>
   );

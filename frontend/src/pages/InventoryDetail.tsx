@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -16,7 +17,8 @@ import {
 } from '@mui/material';
 import type { Aisle } from '../api/types';
 import { ApiError } from '../api/types';
-import { getApiErrorMessage } from '../utils/apiErrors';
+import i18n from '../i18n';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { getJobStatusLabel, jobStatusToBadgeSemantic } from '../utils/jobStatus';
 import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../utils/aisleStatus';
 import { formatDate } from '../utils/formatDate';
@@ -65,17 +67,23 @@ function formatReferenceUsageSummary(aisle: Aisle): { label: string; detail?: st
   if (!aisle.latest_job) return null;
   if (!usage) {
     return ['queued', 'running'].includes(String(aisle.latest_job.status).toLowerCase())
-      ? { label: 'Pending run summary', semantic: 'neutral' }
-      : { label: 'Summary unavailable', semantic: 'neutral' };
+      ? { label: i18n.t('aisle.reference_usage.pending_run_summary'), semantic: 'neutral' }
+      : { label: i18n.t('aisle.reference_usage.summary_unavailable'), semantic: 'neutral' };
   }
 
-  const preparedLabel = usage.resolved_count === 1 ? '1 prepared' : `${usage.resolved_count} prepared`;
-  const sentLabel = usage.provider_consumed_count === 1 ? '1 sent to Gemini' : `${usage.provider_consumed_count} sent to Gemini`;
+  const preparedLabel =
+    usage.resolved_count === 1
+      ? i18n.t('aisle.reference_usage.prepared_one')
+      : i18n.t('aisle.reference_usage.prepared_many', { count: usage.resolved_count });
+  const sentLabel =
+    usage.provider_consumed_count === 1
+      ? i18n.t('aisle.reference_usage.sent_one')
+      : i18n.t('aisle.reference_usage.sent_many', { count: usage.provider_consumed_count });
 
   if (usage.resolution_error) {
     return {
-      label: 'Reference setup failed',
-      detail: `${preparedLabel}. Not sent to Gemini.`,
+      label: i18n.t('aisle.reference_usage.reference_setup_failed'),
+      detail: i18n.t('aisle.reference_usage.setup_failed_detail', { prepared: preparedLabel }),
       semantic: 'error',
     };
   }
@@ -90,23 +98,20 @@ function formatReferenceUsageSummary(aisle: Aisle): { label: string; detail?: st
 
   if (usage.resolved) {
     return {
-      label: 'References not sent',
+      label: i18n.t('aisle.reference_usage.references_not_sent'),
       detail: preparedLabel,
       semantic: 'warning',
     };
   }
 
   return {
-    label: 'Processed without references',
+    label: i18n.t('aisle.reference_usage.processed_without_references'),
     semantic: 'neutral',
   };
 }
 
-/** Shown when Process aisle is disabled due to no uploaded source assets (`assets_count` on the aisle row). */
-const PROCESS_AISLE_NEEDS_ASSETS_MESSAGE =
-  'You need to upload at least one image before processing.';
-
 export default function InventoryDetail() {
+  const { t } = useTranslation();
   const { inventoryId } = useParams<{ inventoryId: string }>();
   const navigate = useNavigate();
   const { showSnackbar } = useAppSnackbar();
@@ -163,22 +168,22 @@ export default function InventoryDetail() {
   const inventoryError =
     inventoryQuery.isError && inventoryQuery.error
       ? inventoryQuery.error instanceof ApiError && inventoryQuery.error.status === 404
-        ? 'Inventory not found'
-        : getApiErrorMessage(inventoryQuery.error, 'Failed to load inventory')
+        ? t('inventory.not_found')
+        : resolveApiErrorMessage(inventoryQuery.error, 'errors.load_inventory')
       : null;
   const aislesLoading = aislesQuery.isLoading;
   const aislesError =
     aislesQuery.isError && aislesQuery.error
-      ? getApiErrorMessage(aislesQuery.error, 'Failed to load aisles')
+      ? resolveApiErrorMessage(aislesQuery.error, 'errors.load_aisles')
       : null;
   const visualReferences = visualReferencesQuery.data?.items ?? [];
   const visualReferencesError =
     visualReferencesQuery.isError && visualReferencesQuery.error
-      ? getApiErrorMessage(visualReferencesQuery.error, 'Failed to load reference images')
+      ? resolveApiErrorMessage(visualReferencesQuery.error, 'errors.load_reference_images')
       : null;
 
   const handleCreateAisleSuccess = () => {
-    showSnackbar('Aisle created', 'success');
+    showSnackbar(t('aisle.aisle_created_snackbar'), 'success');
     void aislesQuery.refetch();
   };
 
@@ -213,16 +218,16 @@ export default function InventoryDetail() {
         modelName: processModelKey.trim() === '' ? null : processModelKey.trim(),
         promptKey: processPromptKey.trim() === '' ? null : processPromptKey.trim(),
       });
-      showSnackbar('Processing started', 'success');
+      showSnackbar(t('aisle.processing_started_snackbar'), 'success');
       setProcessDialog(null);
       void aislesQuery.refetch();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setProcessError(getApiErrorMessage(err, 'Failed to start processing'));
+      setProcessError(resolveApiErrorMessage(err, 'errors.start_processing'));
     } finally {
       setProcessingAisleId(null);
     }
-  }, [aislesQuery, processDialog, processModelKey, processMutation, processPromptKey, processProviderKey, showSnackbar]);
+  }, [aislesQuery, processDialog, processModelKey, processMutation, processPromptKey, processProviderKey, showSnackbar, t]);
 
   const isAisleProcessingDisabled = useCallback(
     (aisle: Aisle): boolean => {
@@ -246,16 +251,16 @@ export default function InventoryDetail() {
         return {
           disabled,
           disabledReason: aislesQuery.isLoading
-            ? 'Loading aisle data…'
-            : 'Unable to verify uploaded assets.',
+            ? t('aisle.upload_error_verify')
+            : t('aisle.upload_error_fallback'),
         };
       }
       if (missingAssets) {
-        return { disabled, disabledReason: PROCESS_AISLE_NEEDS_ASSETS_MESSAGE };
+        return { disabled, disabledReason: t('aisle.upload_need_image') };
       }
       return { disabled };
     },
-    [aislesQuery.data, aislesQuery.isLoading, isAisleProcessingDisabled]
+    [aislesQuery.data, aislesQuery.isLoading, isAisleProcessingDisabled, t]
   );
 
   const handleUploadClick = (aisleId: string) => {
@@ -275,11 +280,11 @@ export default function InventoryDetail() {
     setUploadingAisleId(ctx.aisleId);
     try {
       const result = await uploadMutation.mutateAsync({ aisleId: ctx.aisleId, files: ctx.files });
-      showSnackbar(`${result.assets.length} asset(s) uploaded`, 'success');
+      showSnackbar(t('aisle.assets_uploaded_snackbar', { count: result.assets.length }), 'success');
       void aislesQuery.refetch();
     } catch (err) {
       const apiErr = err instanceof ApiError ? err : new ApiError(String(err));
-      setUploadError(getApiErrorMessage(apiErr, 'Upload failed'));
+      setUploadError(resolveApiErrorMessage(apiErr, 'errors.upload_failed'));
     } finally {
       setUploadingAisleId(null);
     }
@@ -289,7 +294,7 @@ export default function InventoryDetail() {
     return [
       {
         id: 'code',
-        label: 'Aisle code',
+        label: t('aisle.code_label'),
         cell: (a) => (
           <Button
             variant="text"
@@ -313,7 +318,7 @@ export default function InventoryDetail() {
       },
       {
         id: 'aisle_status',
-        label: 'Aisle status',
+        label: t('aisle.column_aisle_status'),
         cell: (a) => (
           <StatusBadge
             label={getAisleStatusLabel(String(a.status))}
@@ -323,13 +328,13 @@ export default function InventoryDetail() {
       },
       {
         id: 'assets',
-        label: 'Uploaded assets',
+        label: t('aisle.column_assets'),
         align: 'right',
-        cell: (a) => (typeof a.assets_count === 'number' ? a.assets_count : '—'),
+        cell: (a) => (typeof a.assets_count === 'number' ? a.assets_count : t('common.em_dash')),
       },
       {
         id: 'processing',
-        label: 'Processing status',
+        label: t('aisle.column_processing'),
         cell: (a) =>
           a.latest_job ? (
             <StatusBadge
@@ -337,25 +342,25 @@ export default function InventoryDetail() {
               semantic={jobStatusToBadgeSemantic(a.latest_job.status)}
             />
           ) : (
-            '—'
+            t('common.em_dash')
           ),
       },
       {
         id: 'run_provider',
-        label: 'Run provider',
-        cell: (a) => (a.latest_job?.provider_name ? String(a.latest_job.provider_name) : '—'),
+        label: t('aisle.column_run_provider'),
+        cell: (a) => (a.latest_job?.provider_name ? String(a.latest_job.provider_name) : t('common.em_dash')),
       },
       {
         id: 'run_model',
-        label: 'Run model',
-        cell: (a) => (a.latest_job?.model_name ? String(a.latest_job.model_name) : '—'),
+        label: t('aisle.column_run_model'),
+        cell: (a) => (a.latest_job?.model_name ? String(a.latest_job.model_name) : t('common.em_dash')),
       },
       {
         id: 'reference_usage',
-        label: 'Reference usage',
+        label: t('aisle.column_reference_usage'),
         cell: (a) => {
           const summary = formatReferenceUsageSummary(a);
-          if (!summary) return '—';
+          if (!summary) return t('common.em_dash');
           return (
             <Box sx={{ display: 'grid', gap: 0.5, maxWidth: 180 }}>
               <StatusBadge label={summary.label} semantic={summary.semantic} />
@@ -370,41 +375,44 @@ export default function InventoryDetail() {
       },
       {
         id: 'results_found',
-        label: 'Results found',
+        label: t('aisle.column_results_found'),
         align: 'right',
-        cell: (a) => (typeof a.positions_count === 'number' ? a.positions_count : '—'),
+        cell: (a) => (typeof a.positions_count === 'number' ? a.positions_count : t('common.em_dash')),
       },
       {
         id: 'pending_review',
-        label: 'Pending review',
+        label: t('aisle.column_pending_review'),
         align: 'right',
-        cell: (a) => (typeof a.pending_review_positions_count === 'number' ? a.pending_review_positions_count : '—'),
+        cell: (a) =>
+          typeof a.pending_review_positions_count === 'number'
+            ? a.pending_review_positions_count
+            : t('common.em_dash'),
       },
       {
         id: 'last_updated',
-        label: 'Last updated',
+        label: t('common.last_updated'),
         cell: (a) => formatDate(a.last_activity_at ?? a.updated_at),
       },
       {
         id: 'actions',
-        label: 'Actions',
+        label: t('common.actions'),
         align: 'right',
         width: 56,
         cell: (a) => {
           const processState = getProcessAisleMenuState(a);
           return (
             <RowActionMenu
-              ariaLabel={`Actions for aisle ${a.code}`}
+              ariaLabel={t('aisle.row_actions_a11y', { code: a.code })}
               items={[
                 {
                   id: 'upload_assets',
-                  label: uploadingAisleId === a.id ? 'Uploading…' : 'Upload assets',
+                  label: uploadingAisleId === a.id ? t('common.uploading') : t('aisle.upload_assets'),
                   onClick: () => handleUploadClick(a.id),
                   disabled: uploadingAisleId === a.id,
                 },
                 {
                   id: 'execution_logs',
-                  label: 'View logs',
+                  label: t('aisle.view_logs'),
                   onClick: () =>
                     setObservabilityDialog({
                       aisleId: a.id,
@@ -414,7 +422,7 @@ export default function InventoryDetail() {
                 },
                 {
                   id: 'process',
-                  label: processingAisleId === a.id ? 'Starting…' : 'Process aisle',
+                  label: processingAisleId === a.id ? t('common.starting') : t('aisle.process_aisle'),
                   onClick: () => openProcessDialogForAisle(a.id, a.code),
                   disabled: processState.disabled,
                   disabledReason: processState.disabledReason,
@@ -434,6 +442,7 @@ export default function InventoryDetail() {
     openProcessDialogForAisle,
     processingAisleId,
     uploadingAisleId,
+    t,
   ]);
 
   if (inventoryLoading && !inventory) {
@@ -449,7 +458,7 @@ export default function InventoryDetail() {
       <>
         <ErrorAlert message={inventoryError} onRetry={() => inventoryQuery.refetch()} />
         <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
-          Back to list
+          {t('inventory.back_to_list')}
         </Button>
       </>
     );
@@ -460,7 +469,7 @@ export default function InventoryDetail() {
       {inventory && (
         <>
           <PageHeader
-            breadcrumbs={[{ label: 'Inventories', to: '/' }]}
+            breadcrumbs={[{ label: t('aisle.breadcrumb_inventories'), to: '/' }]}
             title={inventory.name}
             subtitle={
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
@@ -471,7 +480,9 @@ export default function InventoryDetail() {
                   />
                 </Box>
                 <Box component="span" sx={{ color: 'text.secondary', typography: 'caption' }}>
-                  Created {formatDate(inventory.created_at ?? undefined)}
+                  {t('inventory.created_date_label', {
+                    date: formatDate(inventory.created_at ?? undefined),
+                  })}
                 </Box>
               </Box>
             }
@@ -482,7 +493,7 @@ export default function InventoryDetail() {
                   size="small"
                   onClick={() => setReferenceImagesOpen(true)}
                 >
-                  Reference images
+                  {t('aisle.visual_refs_title')}
                 </Button>
                 <Button
                   variant="outlined"
@@ -495,16 +506,16 @@ export default function InventoryDetail() {
                       await exportInventoryResultsCsv(inventoryId);
                     } catch (e) {
                       const err = e instanceof ApiError ? e : new ApiError(String(e));
-                      showSnackbar(getApiErrorMessage(err, 'Export failed'), 'error');
+                      showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
                     } finally {
                       setExportingCsv(false);
                     }
                   }}
                 >
-                  {exportingCsv ? 'Exporting…' : 'Export CSV'}
+                  {exportingCsv ? t('common.exporting') : t('aisle.export_csv')}
                 </Button>
                 <Button variant="contained" size="small" onClick={() => setCreateAisleOpen(true)}>
-                  Create aisle
+                  {t('aisle.create')}
                 </Button>
               </Box>
             }
@@ -513,7 +524,7 @@ export default function InventoryDetail() {
             {processError ? (
               <Box data-testid="inventory-process-error">
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                  Starting processing
+                  {t('aisle.process_error_label')}
                 </Typography>
                 <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
               </Box>
@@ -522,7 +533,7 @@ export default function InventoryDetail() {
             {uploadError ? (
               <Box data-testid="inventory-upload-error">
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                  Asset upload
+                  {t('aisle.upload_error_label')}
                 </Typography>
                 <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
               </Box>
@@ -531,8 +542,8 @@ export default function InventoryDetail() {
             {aislesError ? <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} /> : null}
 
             <SectionCard
-              title="Aisles"
-              subtitle="Operational queue for this inventory."
+              title={t('aisle.list_title')}
+              subtitle={t('aisle.list_subtitle')}
               actions={
                 <Button
                   variant="outlined"
@@ -540,7 +551,7 @@ export default function InventoryDetail() {
                   onClick={() => aislesQuery.refetch()}
                   disabled={aislesLoading}
                 >
-                  Refresh
+                  {t('common.refresh')}
                 </Button>
               }
               variant="elevation"
@@ -561,11 +572,11 @@ export default function InventoryDetail() {
                 loading={aislesLoading}
                 onRowClick={(a) => navigate(pathToAislePositions(inventoryId ?? '', a.id))}
                 emptyState={{
-                  title: 'No aisles yet',
-                  message: 'Create an aisle to start processing.',
+                  title: t('aisle.empty_table_title'),
+                  message: t('aisle.empty_table_message'),
                   action: (
                     <Button variant="contained" onClick={() => setCreateAisleOpen(true)}>
-                      Create aisle
+                      {t('aisle.create')}
                     </Button>
                   ),
                 }}
@@ -577,31 +588,33 @@ export default function InventoryDetail() {
 
       <Dialog open={Boolean(processDialog)} onClose={closeProcessDialog} maxWidth="sm" fullWidth>
         <DialogTitle>
-          Start processing{processDialog ? ` — Aisle ${processDialog.aisleCode}` : ''}
+          {processDialog
+            ? t('aisle.process_dialog_title_with_aisle', { code: processDialog.aisleCode })
+            : t('aisle.process_dialog_title')}
         </DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
             <Typography variant="body2" color="text.secondary">
-              Choose provider, model, and prompt profile. &quot;Default (server)&quot; for provider uses{' '}
-              {processingProviderOptsQuery.data?.default_provider_key ?? '…'}. Omitting model uses that
-              provider&apos;s default model (see the Model dropdown). Omitting prompt uses{' '}
-              {processingProviderOptsQuery.data?.default_prompt_key ?? '…'}.
+              {t('aisle.process_dialog_help', {
+                defaultProvider: processingProviderOptsQuery.data?.default_provider_key ?? '…',
+                defaultPrompt: processingProviderOptsQuery.data?.default_prompt_key ?? '…',
+              })}
             </Typography>
             <FormControl fullWidth size="small" disabled={processingProviderOptsQuery.isLoading}>
-              <InputLabel id="process-provider-label">Provider</InputLabel>
+              <InputLabel id="process-provider-label">{t('common.provider')}</InputLabel>
               <Select
                 labelId="process-provider-label"
-                label="Provider"
+                label={t('common.provider')}
                 value={processProviderKey}
                 onChange={(e) => setProcessProviderKey(String(e.target.value))}
               >
                 <MenuItem value="">
-                  <em>Default (server)</em>
+                  <em>{t('aisle.process_default_server')}</em>
                 </MenuItem>
                 {(processingProviderOptsQuery.data?.providers ?? []).map((p) => (
                   <MenuItem key={p.key} value={p.key}>
                     {p.label}
-                    {p.execution_mode === 'transitional_bridge' ? ' (transitional)' : ''}
+                    {p.execution_mode === 'transitional_bridge' ? ` ${t('aisle.execution_mode_transitional')}` : ''}
                   </MenuItem>
                 ))}
               </Select>
@@ -613,22 +626,23 @@ export default function InventoryDetail() {
                 processingProviderOptsQuery.isLoading || !providerConfigForProcess?.models?.length
               }
             >
-              <InputLabel id="process-model-label">Model</InputLabel>
+              <InputLabel id="process-model-label">{t('common.model')}</InputLabel>
               <Select
                 labelId="process-model-label"
-                label="Model"
+                label={t('common.model')}
                 value={processModelKey}
                 onChange={(e) => setProcessModelKey(String(e.target.value))}
               >
                 <MenuItem value="">
                   <em>
-                    Default (
-                    {providerConfigForProcess?.default_model ??
-                      processingProviderOptsQuery.data?.providers?.find(
-                        (p) => p.key === (processingProviderOptsQuery.data?.default_provider_key ?? '')
-                      )?.default_model ??
-                      '…'}
-                    )
+                    {t('aisle.process_default_model_em', {
+                      model:
+                        providerConfigForProcess?.default_model ??
+                        processingProviderOptsQuery.data?.providers?.find(
+                          (p) => p.key === (processingProviderOptsQuery.data?.default_provider_key ?? '')
+                        )?.default_model ??
+                        '…',
+                    })}
                   </em>
                 </MenuItem>
                 {(providerConfigForProcess?.models ?? []).map((m) => (
@@ -639,15 +653,19 @@ export default function InventoryDetail() {
               </Select>
             </FormControl>
             <FormControl fullWidth size="small" disabled={processingProviderOptsQuery.isLoading}>
-              <InputLabel id="process-prompt-label">Prompt profile</InputLabel>
+              <InputLabel id="process-prompt-label">{t('aisle.prompt_profile')}</InputLabel>
               <Select
                 labelId="process-prompt-label"
-                label="Prompt profile"
+                label={t('aisle.prompt_profile')}
                 value={processPromptKey}
                 onChange={(e) => setProcessPromptKey(String(e.target.value))}
               >
                 <MenuItem value="">
-                  <em>Default ({processingProviderOptsQuery.data?.default_prompt_key ?? '…'})</em>
+                  <em>
+                    {t('aisle.process_default_prompt_em', {
+                      prompt: processingProviderOptsQuery.data?.default_prompt_key ?? '…',
+                    })}
+                  </em>
                 </MenuItem>
                 {(processingProviderOptsQuery.data?.prompt_profiles ?? []).map((p) => (
                   <MenuItem key={p.key} value={p.key}>
@@ -658,13 +676,13 @@ export default function InventoryDetail() {
             </FormControl>
             {processingProviderOptsQuery.isError ? (
               <Typography variant="caption" color="error">
-                {getApiErrorMessage(processingProviderOptsQuery.error, 'Could not load provider list')}
+                {resolveApiErrorMessage(processingProviderOptsQuery.error, 'common.provider_list_error')}
               </Typography>
             ) : null}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeProcessDialog}>Cancel</Button>
+          <Button onClick={closeProcessDialog}>{t('common.cancel')}</Button>
           <Button
             variant="contained"
             onClick={() => void confirmProcessDialog()}
@@ -673,7 +691,7 @@ export default function InventoryDetail() {
               (processingProviderOptsQuery.isLoading && processProviderKey.trim() !== '')
             }
           >
-            {processingAisleId === processDialog?.aisleId ? 'Starting…' : 'Start'}
+            {processingAisleId === processDialog?.aisleId ? t('common.starting') : t('aisle.process_start')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -699,21 +717,21 @@ export default function InventoryDetail() {
         isUploading={uploadReferenceImagesMutation.isPending}
         uploadError={
           uploadReferenceImagesMutation.isError && uploadReferenceImagesMutation.error
-            ? getApiErrorMessage(uploadReferenceImagesMutation.error, 'Failed to upload reference images')
+            ? resolveApiErrorMessage(uploadReferenceImagesMutation.error, 'errors.upload_reference_images')
             : null
         }
         onDelete={(referenceId) => deleteReferenceImageMutation.mutateAsync(referenceId)}
         isDeleting={deleteReferenceImageMutation.isPending}
         deleteError={
           deleteReferenceImageMutation.isError && deleteReferenceImageMutation.error
-            ? getApiErrorMessage(deleteReferenceImageMutation.error, 'Failed to delete reference image')
+            ? resolveApiErrorMessage(deleteReferenceImageMutation.error, 'errors.delete_reference_image')
             : null
         }
         onReplace={(referenceId, file) => replaceReferenceImageMutation.mutateAsync({ referenceId, file })}
         isReplacing={replaceReferenceImageMutation.isPending}
         replaceError={
           replaceReferenceImageMutation.isError && replaceReferenceImageMutation.error
-            ? getApiErrorMessage(replaceReferenceImageMutation.error, 'Failed to replace reference image')
+            ? resolveApiErrorMessage(replaceReferenceImageMutation.error, 'errors.replace_reference_image')
             : null
         }
       />

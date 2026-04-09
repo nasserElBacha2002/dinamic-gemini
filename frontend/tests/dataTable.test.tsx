@@ -8,7 +8,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';
 import theme from '../src/theme';
 import DataTable, { type DataTableColumn } from '../src/components/ui/DataTable';
-import { DATATABLE_DEFAULT_EMPTY_MESSAGE } from '../src/constants/dataTable';
+import { DATATABLE_DEFAULT_EMPTY_MESSAGE_KEY } from '../src/constants/dataTable';
+import i18n from '../src/i18n';
 
 function WithTheme({ children }: { children: ReactNode }) {
   return <ThemeProvider theme={theme}>{children}</ThemeProvider>;
@@ -86,7 +87,7 @@ describe('DataTable', () => {
         <DataTable<Row> rows={[]} rowKey={(r) => r.id} columns={columns} />
       </WithTheme>
     );
-    expect(screen.getByText(DATATABLE_DEFAULT_EMPTY_MESSAGE)).toBeInTheDocument();
+    expect(screen.getByText(i18n.t(DATATABLE_DEFAULT_EMPTY_MESSAGE_KEY))).toBeInTheDocument();
   });
 
   it('calls onPageChange with next 1-based page when pagination next is used', () => {
@@ -111,7 +112,7 @@ describe('DataTable', () => {
         />
       </WithTheme>
     );
-    fireEvent.click(screen.getByRole('button', { name: /go to next page/i }));
+    fireEvent.click(screen.getByRole('button', { name: /siguiente|next page/i }));
     expect(onPageChange).toHaveBeenCalledWith(2);
   });
 
@@ -177,7 +178,7 @@ describe('DataTable', () => {
         />
       </WithTheme>
     );
-    const select = screen.getByRole('combobox', { name: /^rows$/i });
+    const select = screen.getByRole('combobox', { name: /filas|rows per page/i });
     fireEvent.mouseDown(select);
     const opt25 = screen.getByRole('option', { name: '25' });
     fireEvent.click(opt25);

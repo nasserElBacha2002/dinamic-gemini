@@ -3,11 +3,14 @@
  */
 
 import type { StatusBadgeSemantic } from '../components/ui/StatusBadge';
+import i18n from '../i18n';
 
 export function formatInventoryStatusLabel(raw: string): string {
-  const s = raw.trim();
-  if (!s) return '—';
-  return s
+  const s = raw.trim().toLowerCase();
+  if (!s) return i18n.t('common.em_dash');
+  const key = `inventory.status.${s}`;
+  if (i18n.exists(key)) return i18n.t(key);
+  return raw
     .split('_')
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
     .join(' ');

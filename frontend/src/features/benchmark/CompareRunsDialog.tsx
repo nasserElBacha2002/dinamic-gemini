@@ -2,6 +2,7 @@
  * Phase 6 — pick two explicit runs for benchmark compare (read-only; separate from operational KPIs).
  */
 
+import { useTranslation } from 'react-i18next';
 import {
   Button,
   Dialog,
@@ -37,55 +38,55 @@ export default function CompareRunsDialog({
   onCompareJobBChange,
   onConfirm,
 }: CompareRunsDialogProps) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Compare two runs</DialogTitle>
+      <DialogTitle>{t('benchmark.compare_two_runs_title')}</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Benchmark compare is read-only and uses a separate path from operational analytics. It does not change
-          which run is operational.
+          {t('benchmark.compare_readonly_explain')}
         </Typography>
         <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-          <InputLabel id="cmp-a-label">Run A</InputLabel>
+          <InputLabel id="cmp-a-label">{t('results.run_a_label')}</InputLabel>
           <Select
             labelId="cmp-a-label"
-            label="Run A"
+            label={t('results.run_a_label')}
             value={compareJobA}
             onChange={(e) => onCompareJobAChange(String(e.target.value))}
           >
             {jobs.map((j) => (
               <MenuItem key={`a-${j.id}`} value={j.id}>
                 {j.id.slice(0, 10)}… · {j.status}
-                {j.is_operational ? ' · operational' : ''}
+                {j.is_operational ? t('benchmark.operational_suffix') : ''}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
         <FormControl fullWidth size="small">
-          <InputLabel id="cmp-b-label">Run B</InputLabel>
+          <InputLabel id="cmp-b-label">{t('results.run_b_label')}</InputLabel>
           <Select
             labelId="cmp-b-label"
-            label="Run B"
+            label={t('results.run_b_label')}
             value={compareJobB}
             onChange={(e) => onCompareJobBChange(String(e.target.value))}
           >
             {jobs.map((j) => (
               <MenuItem key={`b-${j.id}`} value={j.id}>
                 {j.id.slice(0, 10)}… · {j.status}
-                {j.is_operational ? ' · operational' : ''}
+                {j.is_operational ? t('benchmark.operational_suffix') : ''}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{t('common.cancel')}</Button>
         <Button
           variant="contained"
           disabled={!compareJobA || !compareJobB || compareJobA === compareJobB}
           onClick={onConfirm}
         >
-          Open compare
+          {t('benchmark.open_compare')}
         </Button>
       </DialogActions>
     </Dialog>
