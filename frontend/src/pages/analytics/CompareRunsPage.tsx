@@ -1,15 +1,19 @@
 /**
- * Phase 6 — explicit two-run benchmark compare (read-only). Query: jobAId, jobBId.
+ * Analytics — benchmark compare (read-only two-run diff). Query: aisleId, jobAId, jobBId.
  */
 
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Box,
   Button,
+  FormControl,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Table,
   TableBody,
   TableCell,
@@ -17,102 +21,246 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import { PageHeader } from '../components/shell';
-import { useInventoryDetail, useAisleBenchmarkCompare, useAisleJobsList, useAislesList } from '../hooks';
-import { downloadAisleBenchmarkExportCsv } from '../api/client';
-import { ApiError } from '../api/types';
-import { resolveApiErrorMessage } from '../utils/apiErrors';
-import { useAppSnackbar } from '../components/ui';
+import { PageHeader } from '../../components/shell';
+import CompareRunJobPickers from '../../components/compare/CompareRunJobPickers';
+import { useInventoryDetail, useAisleBenchmarkCompare, useAisleJobsList, useAislesList } from '../../hooks';
+import { downloadAisleBenchmarkExportCsv } from '../../api/client';
+import { ApiError } from '../../api/types';
+import { resolveApiErrorMessage } from '../../utils/apiErrors';
+import { useAppSnackbar } from '../../components/ui';
+import { pathToAislePositions } from '../../utils/resultRoutes';
 
-export default function AisleComparePage() {
+export default function CompareRunsPage() {
   const { t } = useTranslation();
-  const { inventoryId, aisleId } = useParams<{ inventoryId: string; aisleId: string }>();
-  const [searchParams] = useSearchParams();
+  const { inventoryId } = useParams<{ inventoryId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { showSnackbar } = useAppSnackbar();
 
+  const aisleId = searchParams.get('aisleId')?.trim() || '';
   const jobAId = searchParams.get('jobAId')?.trim() || '';
   const jobBId = searchParams.get('jobBId')?.trim() || '';
 
+  const [draftJobA, setDraftJobA] = useState('');
+  const [draftJobB, setDraftJobB] = useState('');
+
   const inventoryQuery = useInventoryDetail(inventoryId);
-  const aislesQuery = useAislesList(inventoryId);
-  const compareQuery = useAisleBenchmarkCompare(inventoryId, aisleId, jobAId, jobBId);
-  const jobsQuery = useAisleJobsList(inventoryId, aisleId, { limit: 200 });
+  const aislesQuery = useAislesList(inventoryId, {
+    enabled: Boolean(inventoryId && inventoryQuery.data),
+  });
+  const compareQuery = useAisleBenchmarkCompare(
+    inventoryId,
+    aisleId || undefined,
+    jobAId,
+    jobBId
+  );
+  const jobsQuery = useAisleJobsList(inventoryId, aisleId || undefined, {
+    enabled: Boolean(inventoryId && aisleId && inventoryQuery.data),
+    limit: 200,
+  });
 
   const inventory = inventoryQuery.data;
   const aisle = aislesQuery.data?.items?.find((a) => a.id === aisleId);
+  const jobs = jobsQuery.data?.jobs ?? [];
 
   useEffect(() => {
-    if (!inventoryId || !aisleId) return;
+    if (!inventoryId) return;
     if (!inventoryQuery.isSuccess) return;
     if (!inventory) return;
     if (inventory.processing_mode !== 'test') {
-      navigate(`/inventories/${inventoryId}/aisles/${aisleId}/positions`, { replace: true });
+      navigate(`/inventories/${inventoryId}`, { replace: true });
     }
-  }, [aisleId, inventory, inventoryId, inventoryQuery.isSuccess, navigate]);
+  }, [inventory, inventoryId, inventoryQuery.isSuccess, navigate]);
+
+  useEffect(() => {
+    setDraftJobA(jobAId);
+    setDraftJobB(jobBId);
+  }, [jobAId, jobBId]);
+
+  useEffect(() => {
+    if (jobAId || jobBId || jobs.length < 2) return;
+    const a = jobs[0]?.id ?? '';
+    const b = jobs.find((j) => j.id !== a)?.id ?? '';
+    if (a && b && a !== b) {
+      setDraftJobA(a);
+      setDraftJobB(b);
+    }
+  }, [jobAId, jobBId, jobs]);
+
+  const applyAisleToUrl = useCallback(
+    (nextAisleId: string) => {
+      setSearchParams((prev) => {
+        const p = new URLSearchParams(prev);
+        if (nextAisleId) {
+          p.set('aisleId', nextAisleId);
+        } else {
+          p.delete('aisleId');
+        }
+        p.delete('jobAId');
+        p.delete('jobBId');
+        return p;
+      });
+    },
+    [setSearchParams]
+  );
+
+  const applyJobsToUrl = useCallback(() => {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (draftJobA) p.set('jobAId', draftJobA);
+      else p.delete('jobAId');
+      if (draftJobB) p.set('jobBId', draftJobB);
+      else p.delete('jobBId');
+      return p;
+    });
+  }, [draftJobA, draftJobB, setSearchParams]);
 
   const titleSuffix = useMemo(() => {
     if (!jobAId || !jobBId) return '';
     return `${jobAId.slice(0, 8)}… vs ${jobBId.slice(0, 8)}…`;
   }, [jobAId, jobBId]);
 
-  if (!inventoryId || !aisleId) {
-    return <Alert severity="warning">{t('compare.missing_params')}</Alert>;
+  if (!inventoryId) {
+    return <Alert severity="warning">{t('compare.missing_inventory')}</Alert>;
   }
 
   const breadcrumbs = [
     { label: t('aisle.breadcrumb_inventories'), to: '/' as const },
     ...(inventory ? [{ label: inventory.name, to: `/inventories/${inventoryId}` as const }] : []),
-    {
-      label: aisle?.code ?? t('common.aisle'),
-      to: `/inventories/${inventoryId}/aisles/${aisleId}/positions` as const,
-    },
-    { label: t('compare.breadcrumb') },
+    { label: t('analytics.compare_runs_breadcrumb') },
   ];
 
   const errMsg =
     compareQuery.isError && compareQuery.error
       ? resolveApiErrorMessage(
           compareQuery.error instanceof ApiError ? compareQuery.error : new ApiError(String(compareQuery.error)),
-          'errors.load_compare',
+          'errors.load_compare'
         )
       : null;
+
+  const backHref =
+    aisleId && inventoryId ? pathToAislePositions(inventoryId, aisleId) : `/inventories/${inventoryId}`;
 
   return (
     <>
       <PageHeader
         breadcrumbs={breadcrumbs}
-        title={t('compare.title_with_ids', {
+        title={t('analytics.compare_runs_page_title')}
+        subtitle={t('compare.title_with_ids', {
           suffix: titleSuffix.trim() ? ` ${titleSuffix.trim()}` : '',
         })}
-        subtitle={inventory?.name ?? t('common.em_dash')}
         actions={
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => navigate(`/inventories/${inventoryId}/aisles/${aisleId}/positions`)}
-          >
-            {t('compare.back_to_results')}
+          <Button size="small" variant="outlined" onClick={() => navigate(backHref)}>
+            {aisleId ? t('compare.back_to_results') : t('analytics.back_to_inventory')}
           </Button>
         }
       />
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography variant="overline" color="text.secondary" display="block">
+          {t('analytics.benchmark_context_label')}
+        </Typography>
+        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+          {t('analytics.context_inventory_label')}: {inventory?.name ?? t('common.loading')}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {aisleId
+            ? t('analytics.context_aisle_label', { code: aisle?.code ?? aisleId.slice(0, 8) })
+            : t('analytics.context_aisle_not_selected')}
+        </Typography>
+        {jobAId && jobBId ? (
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1, fontFamily: 'monospace' }}>
+            {t('analytics.context_runs_label')}: {jobAId.slice(0, 12)}… ↔ {jobBId.slice(0, 12)}…
+          </Typography>
+        ) : null}
+      </Paper>
 
       <Alert severity="info" sx={{ mb: 2 }}>
         {t('compare.info_benchmark')}
       </Alert>
 
-      {(!jobAId || !jobBId) && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          {t('compare.warning_need_jobs')}
-          {jobsQuery.data?.jobs?.length ? (
-            <Typography variant="body2" sx={{ mt: 1 }}>
+      {!aisleId ? (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            {t('analytics.select_aisle_title')}
+          </Typography>
+          <FormControl fullWidth size="small" sx={{ maxWidth: 360 }}>
+            <InputLabel id="analytics-aisle-label">{t('common.aisle')}</InputLabel>
+            <Select
+              labelId="analytics-aisle-label"
+              label={t('common.aisle')}
+              value=""
+              displayEmpty
+              onChange={(e) => applyAisleToUrl(String(e.target.value))}
+            >
+              <MenuItem value="" disabled>
+                <em>{t('analytics.select_aisle_placeholder')}</em>
+              </MenuItem>
+              {(aislesQuery.data?.items ?? []).map((a) => (
+                <MenuItem key={a.id} value={a.id}>
+                  {a.code}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Paper>
+      ) : (
+        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel id="switch-aisle-label">{t('analytics.change_aisle')}</InputLabel>
+            <Select
+              labelId="switch-aisle-label"
+              label={t('analytics.change_aisle')}
+              value={aisleId}
+              onChange={(e) => applyAisleToUrl(String(e.target.value))}
+            >
+              {(aislesQuery.data?.items ?? []).map((a) => (
+                <MenuItem key={a.id} value={a.id}>
+                  {a.code}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+      )}
+
+      {aisleId && (!jobAId || !jobBId) ? (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            {t('benchmark.compare_two_runs_title')}
+          </Typography>
+          <CompareRunJobPickers
+            jobs={jobs}
+            jobA={draftJobA}
+            jobB={draftJobB}
+            onJobAChange={setDraftJobA}
+            onJobBChange={setDraftJobB}
+            description={t('benchmark.compare_readonly_explain')}
+          />
+          <Box sx={{ mt: 2 }}>
+            <Button
+              variant="contained"
+              disabled={!draftJobA || !draftJobB || draftJobA === draftJobB}
+              onClick={applyJobsToUrl}
+            >
+              {t('analytics.load_comparison')}
+            </Button>
+          </Box>
+          {jobs.length ? (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
               {t('compare.recent_runs', {
-                ids: jobsQuery.data.jobs.map((j) => j.id.slice(0, 8)).join(', '),
+                ids: jobs.map((j) => j.id.slice(0, 8)).join(', '),
               })}
             </Typography>
           ) : null}
+        </Paper>
+      ) : null}
+
+      {aisleId && (!jobAId || !jobBId) && !jobs.length && jobsQuery.isFetched ? (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {t('compare.warning_need_jobs')}
         </Alert>
-      )}
+      ) : null}
 
       {compareQuery.isFetching ? <Typography sx={{ mb: 2 }}>{t('compare.loading')}</Typography> : null}
       {errMsg ? (

@@ -11,6 +11,9 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
     if (matchPath('/inventories/:inventoryId/aisles/:aisleId/positions/:positionId', pathname)) {
       return { titleKey: 'routes.result_review.title', subtitleKey: 'routes.result_review.subtitle' };
     }
+    if (matchPath('/inventories/:inventoryId/analytics/compare', pathname)) {
+      return { titleKey: 'routes.analytics_compare.title', subtitleKey: 'routes.analytics_compare.subtitle' };
+    }
     if (matchPath('/inventories/:inventoryId/aisles/:aisleId/compare', pathname)) {
       return { titleKey: 'routes.compare_runs.title', subtitleKey: 'routes.compare_runs.subtitle' };
     }

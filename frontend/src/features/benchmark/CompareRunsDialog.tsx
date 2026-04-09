@@ -3,18 +3,8 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import {
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  Typography,
-} from '@mui/material';
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material';
+import CompareRunJobPickers from '../../components/compare/CompareRunJobPickers';
 import type { JobSummary } from '../../api/types';
 
 export type CompareRunsDialogProps = {
@@ -43,41 +33,14 @@ export default function CompareRunsDialog({
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{t('benchmark.compare_two_runs_title')}</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {t('benchmark.compare_readonly_explain')}
-        </Typography>
-        <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-          <InputLabel id="cmp-a-label">{t('results.run_a_label')}</InputLabel>
-          <Select
-            labelId="cmp-a-label"
-            label={t('results.run_a_label')}
-            value={compareJobA}
-            onChange={(e) => onCompareJobAChange(String(e.target.value))}
-          >
-            {jobs.map((j) => (
-              <MenuItem key={`a-${j.id}`} value={j.id}>
-                {j.id.slice(0, 10)}… · {j.status}
-                {j.is_operational ? t('benchmark.operational_suffix') : ''}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <FormControl fullWidth size="small">
-          <InputLabel id="cmp-b-label">{t('results.run_b_label')}</InputLabel>
-          <Select
-            labelId="cmp-b-label"
-            label={t('results.run_b_label')}
-            value={compareJobB}
-            onChange={(e) => onCompareJobBChange(String(e.target.value))}
-          >
-            {jobs.map((j) => (
-              <MenuItem key={`b-${j.id}`} value={j.id}>
-                {j.id.slice(0, 10)}… · {j.status}
-                {j.is_operational ? t('benchmark.operational_suffix') : ''}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <CompareRunJobPickers
+          jobs={jobs}
+          jobA={compareJobA}
+          jobB={compareJobB}
+          onJobAChange={onCompareJobAChange}
+          onJobBChange={onCompareJobBChange}
+          description={t('benchmark.compare_readonly_explain')}
+        />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t('common.cancel')}</Button>
