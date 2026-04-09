@@ -6,13 +6,13 @@ import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Alert, Box, Button, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import { exportAisleResultsCsv, type AislePositionsListQuery } from '../api/client';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
-import { FilterToolbar, SectionCard, useAppSnackbar } from '../components/ui';
+import { FilterToolbar, SectionCard, TableSearchField, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import {
   useInventoryDetail,
@@ -137,20 +137,10 @@ export default function AislePositionsPage() {
   const [tableSort, setTableSort] = useState<'photo' | 'priority'>('photo');
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const routeIdentityRef = useRef<string>('');
-  /** When true, user chose "Default (API resolver)" — keep list request without job_id even if result_job_id repeats. */
-  const [preferDefaultSlice, setPreferDefaultSlice] = useState(false);
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
   const promoteMutation = usePromoteAisleOperationalJob(inventoryId ?? '', aisleId ?? '');
 
   const jobIdParam = searchParams.get('jobId')?.trim() || null;
-
-  const positionsListQuery = useMemo<AislePositionsListQuery>(
-    () => ({
-      ...AISLE_RESULTS_LIST_QUERY,
-      ...(jobIdParam ? { job_id: jobIdParam } : {}),
-    }),
-    [jobIdParam]
-  );
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
@@ -163,6 +153,38 @@ export default function AislePositionsPage() {
   const operationalJobId = aisleJobsQuery.data?.operational_job_id?.trim() || null;
   const inventory = inventoryQuery.data ?? null;
   const isTestInventory = inventory?.processing_mode === 'test';
+
+  /**
+   * Concrete run for positions list + URL when jobs exist: valid `?jobId=` if listed, else
+   * `operational_job_id` from listAisleJobs when listed, else first job. Operational pointer is API-owned;
+   * promote flow updates it — we do not persist a separate “default run” client-side.
+   */
+  const pickedRunJobId = useMemo(() => {
+    if (jobs.length === 0) return null;
+    const url = jobIdParam?.trim();
+    if (url && jobs.some((j) => j.id === url)) return url;
+    if (operationalJobId && jobs.some((j) => j.id === operationalJobId)) return operationalJobId;
+    return jobs[0]?.id ?? null;
+  }, [jobs, operationalJobId, jobIdParam]);
+
+  const blockPositionsForTestNoJobs = Boolean(
+    isTestInventory && aisleJobsQuery.isFetched && !aisleJobsQuery.isLoading && jobs.length === 0
+  );
+  const positionsQueryEnabled = Boolean(
+    inventoryId &&
+      aisleId &&
+      inventoryQuery.data &&
+      aisleJobsQuery.isFetched &&
+      !blockPositionsForTestNoJobs
+  );
+
+  const positionsListQuery = useMemo<AislePositionsListQuery>(() => {
+    const base: AislePositionsListQuery = { ...AISLE_RESULTS_LIST_QUERY };
+    if (aisleJobsQuery.isFetched && pickedRunJobId) {
+      return { ...base, job_id: pickedRunJobId };
+    }
+    return base;
+  }, [aisleJobsQuery.isFetched, pickedRunJobId]);
   const aisle = useMemo(
     () => aislesQuery.data?.items?.find((a) => a.id === aisleId) ?? null,
     [aislesQuery.data?.items, aisleId]
@@ -177,7 +199,10 @@ export default function AislePositionsPage() {
     refetch,
     resultJobId,
     resultContextSource,
-  } = useResultSummaries(inventoryId, aisleId, { listQuery: positionsListQuery });
+  } = useResultSummaries(inventoryId, aisleId, {
+    listQuery: positionsListQuery,
+    enabled: positionsQueryEnabled,
+  });
   const positions = positionsFromQuery ?? [];
   const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId, {
     enabled: Boolean(inventoryId && aisleId && results.length > 0),
@@ -185,20 +210,13 @@ export default function AislePositionsPage() {
   });
 
   const handleRunSelectionChange = useCallback(
-    (next: string | null) => {
-      if (next == null || next === '') {
-        setPreferDefaultSlice(true);
-      } else {
-        setPreferDefaultSlice(false);
-      }
+    (next: string) => {
+      const trimmed = next.trim();
+      if (!trimmed) return;
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev);
-          if (next && next.trim() !== '') {
-            p.set('jobId', next.trim());
-          } else {
-            p.delete('jobId');
-          }
+          p.set('jobId', trimmed);
           return p;
         },
         { replace: true }
@@ -236,20 +254,10 @@ export default function AislePositionsPage() {
     navigate(`/inventories/${inventoryId}/analytics/compare?${params.toString()}`);
   }, [aisleId, inventoryId, jobs, navigate, visibleJobId]);
 
-  /** Aligns dropdown with the run actually shown: URL pin wins; else backend-resolved id when it appears in the jobs list. */
-  const effectiveSelectorJobId = useMemo(() => {
-    if (preferDefaultSlice) return null;
-    const url = jobIdParam?.trim();
-    if (url && jobs.some((j) => j.id === url)) return url;
-    if (!url && resultJobId && jobs.some((j) => j.id === resultJobId)) return resultJobId;
-    return null;
-  }, [preferDefaultSlice, jobIdParam, resultJobId, jobs]);
-
   useEffect(() => {
     const key = `${inventoryId ?? ''}-${aisleId ?? ''}`;
     if (!inventoryId || !aisleId) return;
     if (routeIdentityRef.current !== '' && routeIdentityRef.current !== key) {
-      setPreferDefaultSlice(false);
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev);
@@ -261,6 +269,33 @@ export default function AislePositionsPage() {
     }
     routeIdentityRef.current = key;
   }, [inventoryId, aisleId, setSearchParams]);
+
+  /** Keep URL aligned with the concrete run used for fetching (valid/missing jobId → canonical pick). */
+  useEffect(() => {
+    if (!inventoryId || !aisleId) return;
+    if (!aisleJobsQuery.isFetched) return;
+    if (jobs.length === 0 || !pickedRunJobId) return;
+    if (jobIdParam === pickedRunJobId) return;
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.set('jobId', pickedRunJobId);
+        return p;
+      },
+      { replace: true }
+    );
+  }, [
+    aisleId,
+    aisleJobsQuery.isFetched,
+    inventoryId,
+    jobIdParam,
+    jobs.length,
+    pickedRunJobId,
+    setSearchParams,
+  ]);
+
+  const waitingForJobsList = Boolean(inventoryId && aisleId && inventoryQuery.data && !aisleJobsQuery.isFetched);
+  const resultsLoading = waitingForJobsList || isLoading;
 
   const kpi = useMemo(() => computeResultsKpi(results), [results]);
   const missingEvidenceCount = useMemo(
@@ -403,7 +438,7 @@ export default function AislePositionsPage() {
         ? resolveApiErrorMessage(error, 'errors.load_results')
         : String(error)
       : null;
-  const hasResults = !isLoading && results.length > 0;
+  const hasResults = !resultsLoading && results.length > 0;
   const mergeCandidates = useMemo(() => summarizeLikelyMergeCandidates(positions), [positions]);
   const mergeResultsSummary = useMemo(
     () => summarizeMergeResults(mergeResultsQuery.data?.results),
@@ -489,13 +524,6 @@ export default function AislePositionsPage() {
     { label: t('positions.breadcrumb_results') },
   ];
 
-  const unknownUrlJob =
-    Boolean(jobIdParam) &&
-    aisleJobsQuery.isFetched &&
-    !aisleJobsQuery.isFetching &&
-    jobs.length > 0 &&
-    !jobs.some((j) => j.id === jobIdParam);
-
   const positionsLoadNotFound =
     isError && error instanceof ApiError && error.status === 404 && Boolean(jobIdParam);
 
@@ -563,7 +591,9 @@ export default function AislePositionsPage() {
                 if (!inventoryId || !aisleId) return;
                 setExportingCsv(true);
                 try {
-                  await exportAisleResultsCsv(inventoryId, aisleId, { jobId: jobIdParam });
+                  await exportAisleResultsCsv(inventoryId, aisleId, {
+                    jobId: pickedRunJobId ?? jobIdParam,
+                  });
                 } catch (e) {
                   const err = e instanceof ApiError ? e : new ApiError(String(e));
                   showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
@@ -581,7 +611,7 @@ export default function AislePositionsPage() {
                 void refetch();
                 void aisleJobsQuery.refetch();
               }}
-              disabled={isLoading}
+              disabled={resultsLoading}
             >
               {t('common.refresh')}
             </Button>
@@ -603,14 +633,16 @@ export default function AislePositionsPage() {
       {isTestInventory &&
       (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)) ? (
         <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
-          {aisleJobsQuery.isLoading || jobs.length > 0 ? (
+          {aisleJobsQuery.isLoading && jobs.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              {t('common.loading')}
+            </Typography>
+          ) : jobs.length > 0 && pickedRunJobId ? (
             <AisleRunSelector
               operationalJobId={aisleJobsQuery.data?.operational_job_id ?? null}
               jobs={jobs}
-              valueJobId={effectiveSelectorJobId}
+              valueJobId={pickedRunJobId}
               onChange={handleRunSelectionChange}
-              loading={aisleJobsQuery.isLoading}
-              urlPinned={Boolean(jobIdParam)}
             />
           ) : null}
           {resultContextSource ? (
@@ -620,28 +652,11 @@ export default function AislePositionsPage() {
                 jobSuffix: visibleJobId
                   ? t('positions.resolved_job_bit', { id: `${visibleJobId.slice(0, 10)}…` })
                   : '',
-                noPinNote:
-                  !jobIdParam && visibleJobId && effectiveSelectorJobId === visibleJobId
-                    ? t('positions.resolved_no_url_pin')
-                    : '',
+                noPinNote: '',
               })}
             </Typography>
           ) : null}
         </Box>
-      ) : null}
-
-      {unknownUrlJob ? (
-        <Alert
-          severity="warning"
-          sx={{ mb: 2 }}
-          action={
-            <Button color="inherit" size="small" onClick={() => handleRunSelectionChange(null)}>
-              {t('positions.clear_run_filter')}
-            </Button>
-          }
-        >
-          {t('positions.unknown_url_job')}
-        </Alert>
       ) : null}
 
       {positionsLoadNotFound ? (
@@ -649,7 +664,14 @@ export default function AislePositionsPage() {
           severity="error"
           sx={{ mb: 2 }}
           action={
-            <Button color="inherit" size="small" onClick={() => handleRunSelectionChange(null)}>
+            <Button
+              color="inherit"
+              size="small"
+              disabled={!pickedRunJobId}
+              onClick={() => {
+                if (pickedRunJobId) handleRunSelectionChange(pickedRunJobId);
+              }}
+            >
               {t('positions.clear_run_filter')}
             </Button>
           }
@@ -660,9 +682,17 @@ export default function AislePositionsPage() {
 
       {errorMessage ? <ResultsErrorState message={errorMessage} onRetry={() => refetch()} /> : null}
 
-      {!errorMessage && isLoading ? <ResultsLoadingState message={t('positions.loading_results')} /> : null}
+      {blockPositionsForTestNoJobs ? (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          {t('positions.no_runs_for_aisle')}
+        </Alert>
+      ) : null}
 
-      {!errorMessage && !isLoading && results.length === 0 ? (
+      {!blockPositionsForTestNoJobs && !errorMessage && resultsLoading ? (
+        <ResultsLoadingState message={t('positions.loading_results')} />
+      ) : null}
+
+      {!blockPositionsForTestNoJobs && !errorMessage && !resultsLoading && results.length === 0 ? (
         <>
           <Box sx={{ mb: 3, mt: 1 }}>
             <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600 }}>
@@ -677,16 +707,15 @@ export default function AislePositionsPage() {
             onReset={handleResetFilters}
             resetDisabled={filter === 'all' && !skuSearch.trim()}
           >
-            <TextField
-              size="small"
+            <TableSearchField
               label={t('positions.search_label')}
               placeholder={t('positions.filter_sku_placeholder')}
               value={skuSearch}
-              onChange={(e) => {
-                setSkuSearch(e.target.value);
+              onChange={(v) => {
+                setSkuSearch(v);
                 setPage(1);
               }}
-              sx={{ minWidth: 200 }}
+              data-testid="aisle-positions-sku-search"
             />
             <ResultsQuickFilters
               value={filter}
@@ -708,7 +737,7 @@ export default function AislePositionsPage() {
         </>
       ) : null}
 
-      {!errorMessage && !isLoading && results.length > 0 ? (
+      {!blockPositionsForTestNoJobs && !errorMessage && !resultsLoading && results.length > 0 ? (
         <>
           <Box sx={{ mb: 3, mt: 1 }}>
             <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600 }}>
@@ -729,16 +758,15 @@ export default function AislePositionsPage() {
             onReset={handleResetFilters}
             resetDisabled={filter === 'all' && !skuSearch.trim()}
           >
-            <TextField
-              size="small"
+            <TableSearchField
               label={t('positions.search_label')}
               placeholder={t('positions.filter_sku_placeholder')}
               value={skuSearch}
-              onChange={(e) => {
-                setSkuSearch(e.target.value);
+              onChange={(v) => {
+                setSkuSearch(v);
                 setPage(1);
               }}
-              sx={{ minWidth: 200 }}
+              data-testid="aisle-positions-sku-search"
             />
             <Tooltip title={tableSort === 'photo' ? t('positions.order_api') : t('positions.order_client')}>
               <span>

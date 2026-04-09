@@ -4,13 +4,24 @@ import AisleRunSelector from '../src/features/results/components/AisleRunSelecto
 import type { JobSummary } from '../src/api/types';
 
 describe('AisleRunSelector', () => {
-  it('does not claim latest-succeeded fallback in default row caption', async () => {
+  it('shows only concrete runs (no synthetic default row) and labels operational vs benchmark', () => {
     const jobs: JobSummary[] = [
       {
-        id: 'job-bench-1',
+        id: 'job-op',
         status: 'succeeded',
         created_at: '2026-01-01T12:00:00Z',
         updated_at: '2026-01-01T12:00:00Z',
+        provider_name: 'openai',
+        model_name: 'gpt',
+        prompt_key: 'global_v21',
+        prompt_version: 'global_v21@v1',
+        is_operational: true,
+      },
+      {
+        id: 'job-bench-1',
+        status: 'succeeded',
+        created_at: '2026-01-02T12:00:00Z',
+        updated_at: '2026-01-02T12:00:00Z',
         provider_name: 'openai',
         model_name: 'gpt',
         prompt_key: 'global_v21',
@@ -20,16 +31,14 @@ describe('AisleRunSelector', () => {
     ];
     const onChange = vi.fn();
     render(
-      <AisleRunSelector
-        operationalJobId="job-op"
-        jobs={jobs}
-        valueJobId={null}
-        onChange={onChange}
-        urlPinned={false}
-      />
+      <AisleRunSelector operationalJobId="job-op" jobs={jobs} valueJobId="job-op" onChange={onChange} />
     );
     fireEvent.mouseDown(screen.getByRole('combobox'));
-    expect(screen.getAllByText(/operational_job_id when set, else legacy rows/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByText(/latest-succeeded/i)).toBeNull();
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(2);
+    expect(options[0]).toHaveAttribute('data-value', 'job-op');
+    expect(options[1]).toHaveAttribute('data-value', 'job-bench-1');
+    expect(options[0].textContent).toMatch(/operational/i);
+    expect(options[1].textContent).toMatch(/benchmark/i);
   });
 });
