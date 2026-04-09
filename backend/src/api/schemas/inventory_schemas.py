@@ -1,7 +1,7 @@
 """v3.0 Inventory API schemas (request/response)."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -9,6 +9,19 @@ from pydantic import BaseModel, Field
 class CreateInventoryRequest(BaseModel):
     """POST /api/v3/inventories body."""
     name: str = Field(..., min_length=1, max_length=255)
+    processing_mode: Literal["production", "test"] = Field(
+        "production",
+        description="production = operational defaults and no benchmark UX; test = multi-run experiments.",
+    )
+
+
+class PrimaryExecutionConfigResponse(BaseModel):
+    """Operational primary config snapshot (production inventories)."""
+
+    provider_name: str
+    model_name: str
+    prompt_key: str
+    prompt_version: Optional[str] = None
 
 
 class InventoryResponse(BaseModel):
@@ -16,6 +29,8 @@ class InventoryResponse(BaseModel):
     id: str
     name: str
     status: str
+    processing_mode: str = "production"
+    primary_execution_config: Optional[PrimaryExecutionConfigResponse] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -45,6 +60,10 @@ class InventoryListItemResponse(BaseModel):
             "Freshness for list UX: max of inventory/aisle/position created_at and updated_at. "
             "Not a dedicated last-review or last-job event."
         ),
+    )
+    processing_mode: str = Field(
+        "production",
+        description="production | test — test inventories enable benchmark/compare workflows.",
     )
 
 

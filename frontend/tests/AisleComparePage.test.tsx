@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ThemeProvider } from '@mui/material';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, Route, Routes, RouterProvider } from 'react-router-dom';
 import theme from '../src/theme';
 import AisleComparePage from '../src/pages/AisleComparePage';
 import { AppSnackbarProvider } from '../src/components/ui';
@@ -65,7 +65,11 @@ const hoisted = vi.hoisted(() => {
     diff_rows: [],
     diff_rows_truncated: false,
   };
-  return { downloadCsvMock, comparePayload };
+  return {
+    downloadCsvMock,
+    comparePayload,
+    inventoryProcessingMode: 'test' as 'production' | 'test',
+  };
 });
 
 vi.mock('../src/api/client', async (importOriginal) => {
@@ -78,7 +82,14 @@ vi.mock('../src/hooks', async (importOriginal) => {
   return {
     ...actual,
     useInventoryDetail: () => ({
-      data: { id: 'inv-1', name: 'Test Inventory', status: 'draft', created_at: null },
+      data: {
+        id: 'inv-1',
+        name: 'Test Inventory',
+        status: 'draft',
+        created_at: null,
+        processing_mode: hoisted.inventoryProcessingMode,
+      },
+      isSuccess: true,
       isLoading: false,
       isError: false,
       error: null,
@@ -115,6 +126,7 @@ function WithShell({ children }: { children: ReactNode }) {
 describe('AisleComparePage', () => {
   beforeEach(() => {
     hoisted.downloadCsvMock.mockClear();
+    hoisted.inventoryProcessingMode = 'test';
   });
 
   function renderAt(search: string) {
@@ -159,6 +171,33 @@ describe('AisleComparePage', () => {
         jobAId: 'job-a',
         jobBId: 'job-b',
       });
+    });
+  });
+
+  it('redirects to aisle positions for production inventories', async () => {
+    hoisted.inventoryProcessingMode = 'production';
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/inventories/:inventoryId/aisles/:aisleId/compare',
+          element: <AisleComparePage />,
+        },
+        {
+          path: '/inventories/:inventoryId/aisles/:aisleId/positions',
+          element: <div data-testid="aisle-positions-redirect-target" />,
+        },
+      ],
+      {
+        initialEntries: ['/inventories/inv-1/aisles/aisle-1/compare?jobAId=job-a&jobBId=job-b'],
+      },
+    );
+    render(
+      <WithShell>
+        <RouterProvider router={router} />
+      </WithShell>,
+    );
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/inventories/inv-1/aisles/aisle-1/positions');
     });
   });
 });

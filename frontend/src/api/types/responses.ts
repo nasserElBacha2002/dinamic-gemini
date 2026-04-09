@@ -5,6 +5,7 @@
 
 import type {
   InventoryStatus,
+  InventoryProcessingMode,
   AisleStatus,
   JobStatus,
   PositionStatus,
@@ -15,10 +16,19 @@ import type {
 
 // ─── Inventory ─────────────────────────────────────────────────────────────
 
+export interface PrimaryExecutionConfig {
+  provider_name: string;
+  model_name: string;
+  prompt_key: string;
+  prompt_version?: string | null;
+}
+
 export interface Inventory {
   id: string;
   name: string;
   status: InventoryStatus | string;
+  processing_mode?: InventoryProcessingMode | string;
+  primary_execution_config?: PrimaryExecutionConfig | null;
   created_at?: string | null;
   updated_at?: string | null;
 }

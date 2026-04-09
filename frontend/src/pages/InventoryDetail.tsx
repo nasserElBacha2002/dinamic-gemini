@@ -164,6 +164,7 @@ export default function InventoryDetail() {
   const replaceReferenceImageMutation = useReplaceInventoryVisualReference(inventoryId ?? '');
 
   const inventory = inventoryQuery.data ?? null;
+  const isProductionInventory = (inventory?.processing_mode ?? 'production') !== 'test';
   const inventoryLoading = inventoryQuery.isLoading;
   const inventoryError =
     inventoryQuery.isError && inventoryQuery.error
@@ -201,6 +202,41 @@ export default function InventoryDetail() {
     setProcessPromptKey('');
     setProcessDialog({ aisleId, aisleCode });
   }, []);
+
+  const startProcessForAisle = useCallback(
+    async (aisleId: string, aisleCode: string) => {
+      if (isProductionInventory) {
+        setProcessError(null);
+        setUploadError(null);
+        setProcessingAisleId(aisleId);
+        try {
+          await processMutation.mutateAsync({
+            aisleId,
+            providerName: null,
+            modelName: null,
+            promptKey: null,
+          });
+          showSnackbar(t('aisle.processing_started_snackbar'), 'success');
+          void aislesQuery.refetch();
+        } catch (e) {
+          const err = e instanceof ApiError ? e : new ApiError(String(e));
+          setProcessError(resolveApiErrorMessage(err, 'errors.start_processing'));
+        } finally {
+          setProcessingAisleId(null);
+        }
+        return;
+      }
+      openProcessDialogForAisle(aisleId, aisleCode);
+    },
+    [
+      aislesQuery,
+      isProductionInventory,
+      openProcessDialogForAisle,
+      processMutation,
+      showSnackbar,
+      t,
+    ]
+  );
 
   const closeProcessDialog = useCallback(() => {
     setProcessDialog(null);
@@ -423,7 +459,7 @@ export default function InventoryDetail() {
                 {
                   id: 'process',
                   label: processingAisleId === a.id ? t('common.starting') : t('aisle.process_aisle'),
-                  onClick: () => openProcessDialogForAisle(a.id, a.code),
+                  onClick: () => void startProcessForAisle(a.id, a.code),
                   disabled: processState.disabled,
                   disabledReason: processState.disabledReason,
                 },
@@ -439,7 +475,7 @@ export default function InventoryDetail() {
     getProcessAisleMenuState,
     inventoryId,
     navigate,
-    openProcessDialogForAisle,
+    startProcessForAisle,
     processingAisleId,
     uploadingAisleId,
     t,
@@ -478,7 +514,25 @@ export default function InventoryDetail() {
                     label={formatInventoryStatusLabel(String(inventory.status))}
                     semantic={inventoryStatusToBadgeSemantic(String(inventory.status))}
                   />
+                  <StatusBadge
+                    label={
+                      inventory.processing_mode === 'test'
+                        ? t('inventory.processing_mode_test')
+                        : t('inventory.processing_mode_production')
+                    }
+                    semantic={inventory.processing_mode === 'test' ? 'warning' : 'neutral'}
+                  />
                 </Box>
+                {inventory.primary_execution_config ? (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    {t('inventory.primary_config_title')}:{' '}
+                    {t('inventory.primary_config_summary', {
+                      provider: inventory.primary_execution_config.provider_name,
+                      model: inventory.primary_execution_config.model_name,
+                      prompt: inventory.primary_execution_config.prompt_key,
+                    })}
+                  </Typography>
+                ) : null}
                 <Box component="span" sx={{ color: 'text.secondary', typography: 'caption' }}>
                   {t('inventory.created_date_label', {
                     date: formatDate(inventory.created_at ?? undefined),

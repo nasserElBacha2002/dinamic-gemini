@@ -14,6 +14,7 @@ from src.application.errors import (
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
+    BenchmarkRequiresTestInventoryError,
 )
 from src.application.ports.repositories import AisleRepository
 from src.application.services.analytics_query_service import AnalyticsQueryService
@@ -338,3 +339,5 @@ def analytics_benchmark_compare_aisle_runs(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except JobDoesNotBelongToAisleError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except BenchmarkRequiresTestInventoryError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e

@@ -24,6 +24,11 @@ class InventoryStatus(str, Enum):
     FAILED = "failed"
 
 
+class InventoryProcessingMode(str, Enum):
+    PRODUCTION = "production"
+    TEST = "test"
+
+
 @dataclass
 class Inventory:
     id: str
@@ -32,6 +37,11 @@ class Inventory:
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
+    processing_mode: InventoryProcessingMode = InventoryProcessingMode.PRODUCTION
+    primary_provider_name: Optional[str] = None
+    primary_model_name: Optional[str] = None
+    primary_prompt_key: Optional[str] = None
+    primary_prompt_version: Optional[str] = None
 
     def mark_processing(self, now: datetime) -> None:
         self.status = InventoryStatus.PROCESSING

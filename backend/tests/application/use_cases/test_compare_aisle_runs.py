@@ -12,10 +12,11 @@ from src.application.errors import (
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
+    BenchmarkRequiresTestInventoryError,
 )
 from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
@@ -39,7 +40,16 @@ def _base_deps():
 def test_compare_requires_same_inventory_aisle_and_jobs_exist() -> None:
     inv_repo, aisle_repo, job_repo, pos_repo = _base_deps()
     now = _now()
-    inv_repo.save(Inventory("inv1", "I", InventoryStatus.IN_REVIEW, now, now))
+    inv_repo.save(
+        Inventory(
+            "inv1",
+            "I",
+            InventoryStatus.IN_REVIEW,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
     aisle_repo.save(Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now))
     job_repo.save(
         Job(
@@ -89,7 +99,16 @@ def test_compare_requires_same_inventory_aisle_and_jobs_exist() -> None:
             )
         )
     aisle_repo.save(Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now))
-    inv_repo.save(Inventory("inv2", "I2", InventoryStatus.IN_REVIEW, now, now))
+    inv_repo.save(
+        Inventory(
+            "inv2",
+            "I2",
+            InventoryStatus.IN_REVIEW,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
     aisle_repo.save(Aisle("a2", "inv2", "B", AisleStatus.PROCESSED, now, now))
     with pytest.raises(AisleNotFoundError):
         uc.execute(
@@ -135,7 +154,16 @@ def test_compare_requires_same_inventory_aisle_and_jobs_exist() -> None:
 def test_compare_rejects_identical_jobs() -> None:
     inv_repo, aisle_repo, job_repo, pos_repo = _base_deps()
     now = _now()
-    inv_repo.save(Inventory("inv1", "I", InventoryStatus.IN_REVIEW, now, now))
+    inv_repo.save(
+        Inventory(
+            "inv1",
+            "I",
+            InventoryStatus.IN_REVIEW,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
     aisle_repo.save(Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now))
     job_repo.save(
         Job(
@@ -166,7 +194,16 @@ def test_compare_rejects_identical_jobs() -> None:
 def test_compare_metrics_and_diff_quantity_change() -> None:
     inv_repo, aisle_repo, job_repo, pos_repo = _base_deps()
     now = _now()
-    inv_repo.save(Inventory("inv1", "I", InventoryStatus.IN_REVIEW, now, now))
+    inv_repo.save(
+        Inventory(
+            "inv1",
+            "I",
+            InventoryStatus.IN_REVIEW,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
     aisle_repo.save(
         Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now, operational_job_id="j1")
     )
@@ -234,3 +271,46 @@ def test_compare_metrics_and_diff_quantity_change() -> None:
     assert out["diff_summary"]["keys_in_both"] == 1
     assert out["diff_summary"]["quantity_changed"] == 1
     assert out["diff_summary"]["keys_only_in_a"] == 0
+
+
+def test_compare_rejects_production_inventory() -> None:
+    inv_repo, aisle_repo, job_repo, pos_repo = _base_deps()
+    now = _now()
+    inv_repo.save(Inventory("inv-prod", "I", InventoryStatus.IN_REVIEW, now, now))
+    aisle_repo.save(Aisle("a1", "inv-prod", "A", AisleStatus.PROCESSED, now, now))
+    job_repo.save(
+        Job(
+            id="j1",
+            target_type="aisle",
+            target_id="a1",
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    job_repo.save(
+        Job(
+            id="j2",
+            target_type="aisle",
+            target_id="a1",
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    uc = CompareAisleRunsUseCase(
+        inv_repo, aisle_repo, job_repo, pos_repo, positions_aisle_raw_cap=500
+    )
+    with pytest.raises(BenchmarkRequiresTestInventoryError):
+        uc.execute(
+            CompareAisleRunsCommand(
+                inventory_id="inv-prod",
+                aisle_id="a1",
+                job_a_id="j1",
+                job_b_id="j2",
+            )
+        )

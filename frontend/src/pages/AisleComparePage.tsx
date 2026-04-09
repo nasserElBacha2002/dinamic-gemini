@@ -2,7 +2,7 @@
  * Phase 6 — explicit two-run benchmark compare (read-only). Query: jobAId, jobBId.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -41,6 +41,15 @@ export default function AisleComparePage() {
 
   const inventory = inventoryQuery.data;
   const aisle = aislesQuery.data?.items?.find((a) => a.id === aisleId);
+
+  useEffect(() => {
+    if (!inventoryId || !aisleId) return;
+    if (!inventoryQuery.isSuccess) return;
+    if (!inventory) return;
+    if (inventory.processing_mode !== 'test') {
+      navigate(`/inventories/${inventoryId}/aisles/${aisleId}/positions`, { replace: true });
+    }
+  }, [aisleId, inventory, inventoryId, inventoryQuery.isSuccess, navigate]);
 
   const titleSuffix = useMemo(() => {
     if (!jobAId || !jobBId) return '';

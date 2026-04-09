@@ -15,6 +15,9 @@ export const INVENTORY_STATUSES = [
 ] as const;
 export type InventoryStatus = (typeof INVENTORY_STATUSES)[number];
 
+export const INVENTORY_PROCESSING_MODES = ['production', 'test'] as const;
+export type InventoryProcessingMode = (typeof INVENTORY_PROCESSING_MODES)[number];
+
 export const AISLE_STATUSES = [
   'created',
   'assets_uploaded',

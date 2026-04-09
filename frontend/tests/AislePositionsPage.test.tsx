@@ -62,6 +62,20 @@ const { aisleJobsListState } = vi.hoisted(() => ({
     refetch: vi.fn(),
   },
 }));
+const { inventoryDetailState } = vi.hoisted(() => ({
+  inventoryDetailState: {
+    data: {
+      id: 'inv-1',
+      name: 'Test Inventory',
+      status: 'draft',
+      created_at: null as string | null,
+      processing_mode: 'production' as 'production' | 'test',
+    },
+    isLoading: false,
+    isError: false,
+    error: null as unknown,
+  },
+}));
 
 const mockPositions: PositionSummary[] = [
   {
@@ -149,12 +163,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
   return {
     ...actual,
-    useInventoryDetail: () => ({
-      data: { id: 'inv-1', name: 'Test Inventory', status: 'draft', created_at: null },
-      isLoading: false,
-      isError: false,
-      error: null,
-    }),
+    useInventoryDetail: () => inventoryDetailState,
     useAislesList: () => aislesListState,
     useAisleMergeResults: () => mergeResultsState,
     useAisleJobsList: () => aisleJobsListState,
@@ -222,6 +231,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       aisle_id: 'aisle-1',
       operational_job_id: 'job-bench',
     });
+    inventoryDetailState.data.processing_mode = 'production';
   });
 
   it('shows aisle title, inventory context, and workload KPIs', () => {
@@ -444,6 +454,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
   });
 
   it('shows run selector when jobs exist for the aisle', () => {
+    inventoryDetailState.data.processing_mode = 'test';
     aisleJobsListState.data = {
       operational_job_id: 'job-op',
       jobs: [
@@ -460,6 +471,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
   });
 
   it('shows resolved context line when backend returns result_context_source', () => {
+    inventoryDetailState.data.processing_mode = 'test';
     resultSummariesState.resultContextSource = 'operational';
     resultSummariesState.resultJobId = 'job-x';
     aisleJobsListState.data = {
@@ -478,6 +490,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
   });
 
   it('shows the backend-resolved run in the selector when there is no URL jobId and the job is listed', () => {
+    inventoryDetailState.data.processing_mode = 'test';
     resultSummariesState.resultJobId = 'job-resolved';
     resultSummariesState.resultContextSource = 'operational';
     aisleJobsListState.data = {
@@ -512,7 +525,51 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getByText(/not in the recent runs list/i)).toBeTruthy();
   });
 
+  it('does not show run selector for production inventories when jobs exist', () => {
+    inventoryDetailState.data.processing_mode = 'production';
+    aisleJobsListState.data = {
+      operational_job_id: 'job-op',
+      jobs: [
+        {
+          id: 'job-a',
+          status: 'succeeded',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    };
+    renderPage();
+    expect(screen.queryByLabelText(/browse run/i)).toBeNull();
+  });
+
+  it('hides compare runs for production inventories', () => {
+    inventoryDetailState.data.processing_mode = 'production';
+    aisleJobsListState.data = {
+      operational_job_id: 'job-op',
+      jobs: [
+        {
+          id: 'job-op',
+          status: 'succeeded',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+        {
+          id: 'job-bench',
+          status: 'succeeded',
+          created_at: '2024-01-02T00:00:00Z',
+          updated_at: '2024-01-02T00:00:00Z',
+        },
+      ],
+    };
+    renderPage();
+    expect(screen.queryByRole('button', { name: /compare runs/i })).toBeNull();
+  });
+
   describe('Phase 6 benchmark flows', () => {
+    beforeEach(() => {
+      inventoryDetailState.data.processing_mode = 'test';
+    });
+
     it('shows benchmark read-only alert and disables merge on a non-operational slice', () => {
       resultSummariesState.results = repeatedSkuResults;
       resultSummariesState.positions = repeatedSkuPositions;

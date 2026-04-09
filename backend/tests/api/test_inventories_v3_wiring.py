@@ -1,7 +1,10 @@
 """Lightweight API wiring test: v3 inventories endpoints call use cases and return expected shape."""
 
+from unittest.mock import MagicMock
+
 from fastapi.testclient import TestClient
 
+from src.api.dependencies import get_create_inventory_use_case
 from src.api.server import app
 
 client = TestClient(app)
@@ -14,6 +17,28 @@ def test_post_inventories_returns_201_and_entity() -> None:
     assert "id" in data
     assert data["name"] == "Test Inventory"
     assert data["status"] == "draft"
+    assert data.get("processing_mode") == "production"
+    assert data.get("primary_execution_config") is not None
+
+
+def test_post_inventories_test_mode_and_list_row_includes_processing_mode() -> None:
+    create = client.post("/api/v3/inventories", json={"name": "Lab", "processing_mode": "test"})
+    assert create.status_code == 201
+    created = create.json()
+    assert created["processing_mode"] == "test"
+    assert created.get("primary_execution_config") is None
+
+    listed = client.get("/api/v3/inventories")
+    assert listed.status_code == 200
+    row = next((x for x in listed.json()["items"] if x["id"] == created["id"]), None)
+    assert row is not None
+    assert row["processing_mode"] == "test"
+
+
+def test_get_create_inventory_use_case_factory_matches_constructor() -> None:
+    """Guardrail: dependency provider must construct CreateInventoryUseCase with a single return path."""
+    uc = get_create_inventory_use_case(MagicMock(), MagicMock(), MagicMock())
+    assert hasattr(uc, "execute")
 
 
 def test_get_inventories_returns_list_and_includes_created() -> None:

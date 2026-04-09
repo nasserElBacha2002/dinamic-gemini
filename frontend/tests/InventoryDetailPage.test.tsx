@@ -46,18 +46,27 @@ const { processAisleMutateAsyncMock, useProcessingProviderOptionsMock } = vi.hoi
   processAisleMutateAsyncMock: vi.fn().mockResolvedValue({ job_id: 'job-new' }),
   useProcessingProviderOptionsMock: vi.fn(),
 }));
+const { inventoryDetailHookState } = vi.hoisted(() => ({
+  inventoryDetailHookState: {
+    data: {
+      id: 'inv-1',
+      name: 'Inventory One',
+      status: 'draft',
+      created_at: '2024-01-01T00:00:00Z',
+      processing_mode: 'test' as 'production' | 'test',
+    },
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  },
+}));
 
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
   return {
     ...actual,
-    useInventoryDetail: () => ({
-      data: { id: 'inv-1', name: 'Inventory One', status: 'draft', created_at: '2024-01-01T00:00:00Z' },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }),
+    useInventoryDetail: () => inventoryDetailHookState,
     useInventoryVisualReferences: useInventoryVisualReferencesMock,
     useAislesList: useAislesListMock,
     useAisleJobsList: useAisleJobsListMock,
@@ -116,6 +125,7 @@ function renderPage() {
 
 describe('InventoryDetail', () => {
   beforeEach(() => {
+    inventoryDetailHookState.data.processing_mode = 'test';
     useInventoryVisualReferencesMock.mockReset();
     useInventoryVisualReferencesMock.mockReturnValue({
       data: { items: [] },
@@ -1333,5 +1343,22 @@ describe('InventoryDetail', () => {
         promptKey: 'global_v21_b',
       });
     });
+  });
+
+  it('production inventory starts aisle processing without opening the provider dialog', async () => {
+    inventoryDetailHookState.data.processing_mode = 'production';
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
+
+    await waitFor(() => {
+      expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
+        aisleId: 'aisle-1',
+        providerName: null,
+        modelName: null,
+        promptKey: null,
+      });
+    });
+    expect(screen.queryByLabelText(/^provider$/i)).toBeNull();
   });
 });
