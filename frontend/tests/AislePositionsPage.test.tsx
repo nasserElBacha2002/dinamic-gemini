@@ -597,6 +597,22 @@ describe('AislePositionsPage (Aisle Results)', () => {
       expect(mergeBtn.getAttribute('disabled')).not.toBeNull();
     });
 
+    it('does not show compare runs when fewer than two jobs exist', () => {
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-op',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      renderPage();
+      expect(screen.queryByRole('button', { name: /compare runs/i })).toBeNull();
+    });
+
     it('navigates to analytics compare with preselected runs when compare runs is clicked', async () => {
       resultSummariesState.resultJobId = 'job-op';
       aisleJobsListState.data = {
@@ -644,8 +660,9 @@ describe('AislePositionsPage (Aisle Results)', () => {
         expect(router.state.location.pathname).toBe('/inventories/inv-1/analytics/compare');
         const q = new URLSearchParams(router.state.location.search);
         expect(q.get('aisleId')).toBe('aisle-1');
-        expect(q.get('jobAId')).toBeTruthy();
-        expect(q.get('jobBId')).toBeTruthy();
+        expect(q.get('jobAId')).toBe('job-op');
+        expect(q.get('jobBId')).toBe('job-bench');
+        expect(q.get('jobAId')).not.toBe(q.get('jobBId'));
       });
     });
 

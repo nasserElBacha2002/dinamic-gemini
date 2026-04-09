@@ -25,6 +25,8 @@ export default function CompareRunJobPickers({
   description,
 }: CompareRunJobPickersProps) {
   const { t } = useTranslation();
+  const safeJobA = jobA && jobs.some((j) => j.id === jobA) ? jobA : '';
+  const safeJobB = jobB && jobs.some((j) => j.id === jobB) ? jobB : '';
   return (
     <>
       {description ? (
@@ -37,9 +39,13 @@ export default function CompareRunJobPickers({
         <Select
           labelId="cmp-a-label"
           label={t('results.run_a_label')}
-          value={jobA}
+          value={safeJobA}
+          displayEmpty
           onChange={(e) => onJobAChange(String(e.target.value))}
         >
+          <MenuItem value="" disabled>
+            <em>{t('common.em_dash')}</em>
+          </MenuItem>
           {jobs.map((j) => (
             <MenuItem key={`a-${j.id}`} value={j.id}>
               {j.id.slice(0, 10)}… · {j.status}
@@ -53,9 +59,13 @@ export default function CompareRunJobPickers({
         <Select
           labelId="cmp-b-label"
           label={t('results.run_b_label')}
-          value={jobB}
+          value={safeJobB}
+          displayEmpty
           onChange={(e) => onJobBChange(String(e.target.value))}
         >
+          <MenuItem value="" disabled>
+            <em>{t('common.em_dash')}</em>
+          </MenuItem>
           {jobs.map((j) => (
             <MenuItem key={`b-${j.id}`} value={j.id}>
               {j.id.slice(0, 10)}… · {j.status}

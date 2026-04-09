@@ -48,11 +48,20 @@ export default function CompareRunsPage() {
   const aislesQuery = useAislesList(inventoryId, {
     enabled: Boolean(inventoryId && inventoryQuery.data),
   });
+
+  const compareQueryEnabled = Boolean(
+    (inventoryId ?? '').trim() &&
+      aisleId &&
+      jobAId &&
+      jobBId &&
+      jobAId !== jobBId
+  );
   const compareQuery = useAisleBenchmarkCompare(
     inventoryId,
     aisleId || undefined,
     jobAId,
-    jobBId
+    jobBId,
+    { enabled: compareQueryEnabled }
   );
   const jobsQuery = useAisleJobsList(inventoryId, aisleId || undefined, {
     enabled: Boolean(inventoryId && aisleId && inventoryQuery.data),
@@ -60,8 +69,12 @@ export default function CompareRunsPage() {
   });
 
   const inventory = inventoryQuery.data;
-  const aisle = aislesQuery.data?.items?.find((a) => a.id === aisleId);
+  const aislesItems = aislesQuery.data?.items ?? [];
+  const aisle = aislesItems.find((a) => a.id === aisleId);
   const jobs = jobsQuery.data?.jobs ?? [];
+  /** Avoid MUI out-of-range Select when URL aisle is ahead of the aisles list query. */
+  const aisleSelectValue =
+    aisleId && aislesQuery.isFetched && aislesItems.some((a) => a.id === aisleId) ? aisleId : '';
 
   useEffect(() => {
     if (!inventoryId) return;
@@ -105,12 +118,11 @@ export default function CompareRunsPage() {
   );
 
   const applyJobsToUrl = useCallback(() => {
+    if (!draftJobA || !draftJobB || draftJobA === draftJobB) return;
     setSearchParams((prev) => {
       const p = new URLSearchParams(prev);
-      if (draftJobA) p.set('jobAId', draftJobA);
-      else p.delete('jobAId');
-      if (draftJobB) p.set('jobBId', draftJobB);
-      else p.delete('jobBId');
+      p.set('jobAId', draftJobA);
+      p.set('jobBId', draftJobB);
       return p;
     });
   }, [draftJobA, draftJobB, setSearchParams]);
@@ -180,7 +192,7 @@ export default function CompareRunsPage() {
       </Alert>
 
       {!aisleId ? (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }} data-testid="compare-runs-aisle-scope">
           <Typography variant="subtitle2" gutterBottom>
             {t('analytics.select_aisle_title')}
           </Typography>
@@ -196,7 +208,7 @@ export default function CompareRunsPage() {
               <MenuItem value="" disabled>
                 <em>{t('analytics.select_aisle_placeholder')}</em>
               </MenuItem>
-              {(aislesQuery.data?.items ?? []).map((a) => (
+              {aislesItems.map((a) => (
                 <MenuItem key={a.id} value={a.id}>
                   {a.code}
                 </MenuItem>
@@ -205,16 +217,19 @@ export default function CompareRunsPage() {
           </FormControl>
         </Paper>
       ) : (
-        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+        <Box
+          data-testid="compare-runs-change-aisle"
+          sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}
+        >
           <FormControl size="small" sx={{ minWidth: 200 }}>
             <InputLabel id="switch-aisle-label">{t('analytics.change_aisle')}</InputLabel>
             <Select
               labelId="switch-aisle-label"
               label={t('analytics.change_aisle')}
-              value={aisleId}
+              value={aisleSelectValue}
               onChange={(e) => applyAisleToUrl(String(e.target.value))}
             >
-              {(aislesQuery.data?.items ?? []).map((a) => (
+              {aislesItems.map((a) => (
                 <MenuItem key={a.id} value={a.id}>
                   {a.code}
                 </MenuItem>
@@ -225,7 +240,7 @@ export default function CompareRunsPage() {
       )}
 
       {aisleId && (!jobAId || !jobBId) ? (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }} data-testid="compare-runs-job-scope">
           <Typography variant="subtitle2" gutterBottom>
             {t('benchmark.compare_two_runs_title')}
           </Typography>
@@ -270,7 +285,7 @@ export default function CompareRunsPage() {
       ) : null}
 
       {compareQuery.data ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box data-testid="compare-runs-results" sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
             <Button
               size="small"

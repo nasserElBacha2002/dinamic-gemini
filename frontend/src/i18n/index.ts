@@ -7,7 +7,8 @@ const isDev = import.meta.env.DEV;
 /** Vitest runs with MODE=test; keep English strings so unit tests stay stable. */
 const defaultLng = import.meta.env.MODE === 'test' ? 'en' : 'es';
 
-void i18n.use(initReactI18next).init({
+/** Await in Vitest setup so components render translated strings, not raw keys. */
+export const i18nInit = i18n.use(initReactI18next).init({
   resources: {
     es: { translation: es },
     en: { translation: en },

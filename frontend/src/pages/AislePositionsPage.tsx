@@ -225,16 +225,16 @@ export default function AislePositionsPage() {
 
   const navigateToAnalyticsCompare = useCallback(() => {
     if (!inventoryId || !aisleId) return;
+    if (jobs.length < 2) return;
     const a = visibleJobId ?? jobs[0]?.id ?? '';
-    const b = jobs.find((j) => j.id !== a)?.id ?? operationalJobId ?? '';
+    const b = jobs.find((j) => j.id !== a)?.id ?? '';
+    if (!a || !b || a === b) return;
     const params = new URLSearchParams();
     params.set('aisleId', aisleId);
-    if (a && b && a !== b) {
-      params.set('jobAId', a);
-      params.set('jobBId', b);
-    }
+    params.set('jobAId', a);
+    params.set('jobBId', b);
     navigate(`/inventories/${inventoryId}/analytics/compare?${params.toString()}`);
-  }, [aisleId, inventoryId, jobs, navigate, operationalJobId, visibleJobId]);
+  }, [aisleId, inventoryId, jobs, navigate, visibleJobId]);
 
   /** Aligns dropdown with the run actually shown: URL pin wins; else backend-resolved id when it appears in the jobs list. */
   const effectiveSelectorJobId = useMemo(() => {
