@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Link } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import type { Inventory, InventoryListItem } from '../api/types';
 import { ApiError } from '../api/types';
-import { getApiErrorMessage } from '../utils/apiErrors';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
 import {
@@ -19,9 +20,10 @@ import { PageHeader } from '../components/shell';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
 import { useInventoriesList, useCreateInventory } from '../hooks';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
-import { inventoryListEmpty } from '../constants/uiCopy';
+import { INVENTORY_LIST_EMPTY_MESSAGE_KEY, INVENTORY_LIST_EMPTY_TITLE_KEY } from '../constants/uiCopy';
 
 export default function InventoriesList() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { showSnackbar } = useAppSnackbar();
   const [createOpen, setCreateOpen] = useState(false);
@@ -46,12 +48,16 @@ export default function InventoriesList() {
   const createMutation = useCreateInventory();
 
   const errorMessage =
-    isError && error ? (error instanceof ApiError ? getApiErrorMessage(error, 'Failed to load inventories') : String(error)) : null;
+    isError && error
+      ? error instanceof ApiError
+        ? resolveApiErrorMessage(error, 'errors.load_inventories')
+        : resolveApiErrorMessage(error, 'errors.load_inventories')
+      : null;
 
   const handleCreateSuccess = (created: Inventory) => {
     setCreateOpen(false);
     setCreateError(null);
-    showSnackbar(`Inventory “${created.name}” created`, 'success');
+    showSnackbar(t('inventory.created_snackbar', { name: created.name }), 'success');
     void refetch();
     if (created.id) navigate(`/inventories/${created.id}`);
   };
@@ -60,7 +66,7 @@ export default function InventoriesList() {
     () => [
       {
         id: 'name',
-        label: 'Inventory',
+        label: t('inventory.column_inventory'),
         sortable: true,
         cell: (inv) => (
           <Link
@@ -77,7 +83,7 @@ export default function InventoriesList() {
       },
       {
         id: 'status',
-        label: 'Status',
+        label: t('inventory.column_status'),
         sortable: true,
         cell: (inv) => (
           <StatusBadge
@@ -88,38 +94,38 @@ export default function InventoriesList() {
       },
       {
         id: 'created_at',
-        label: 'Created',
+        label: t('common.created'),
         sortable: true,
         cell: (inv) => formatDate(inv.created_at ?? undefined),
       },
       {
         id: 'aisles_count',
-        label: 'Aisles',
+        label: t('inventory.column_aisles'),
         sortable: true,
         align: 'right',
-        cell: (inv) => (typeof inv.aisles_count === 'number' ? inv.aisles_count : '—'),
+        cell: (inv) => (typeof inv.aisles_count === 'number' ? inv.aisles_count : t('common.em_dash')),
       },
       {
         id: 'pending_review_count',
-        label: 'Pending review',
+        label: t('inventory.column_pending_review'),
         sortable: true,
         align: 'right',
-        cell: (inv) => (typeof inv.pending_review_count === 'number' ? inv.pending_review_count : '—'),
+        cell: (inv) => (typeof inv.pending_review_count === 'number' ? inv.pending_review_count : t('common.em_dash')),
       },
       {
         id: 'last_activity_at',
-        label: 'Last activity',
+        label: t('common.last_activity'),
         sortable: true,
         cell: (inv) => formatDate(inv.last_activity_at ?? undefined),
       },
     ],
-    [navigate]
+    [navigate, t]
   );
 
   return (
     <>
       <PageHeader
-        a11yTitle="Inventories"
+        a11yTitle={t('inventory.page_a11y')}
         actions={
           <Button
             variant="contained"
@@ -128,7 +134,7 @@ export default function InventoriesList() {
               setCreateOpen(true);
             }}
           >
-            Create inventory
+            {t('inventory.create')}
           </Button>
         }
       />
@@ -136,15 +142,15 @@ export default function InventoriesList() {
       {errorMessage && <ErrorAlert message={errorMessage} onRetry={() => refetch()} />}
 
       {!errorMessage ? (
-      <SectionCard title="All inventories" subtitle="Select an inventory to manage aisles, uploads, processing, and review.">
+      <SectionCard title={t('inventory.all_inventories')} subtitle={t('inventory.all_inventories_subtitle')}>
         <DataTable<InventoryListItem>
           rows={inventories}
           rowKey={(inv) => inv.id}
           columns={columns}
           loading={isLoading}
           emptyState={{
-            title: inventoryListEmpty.title,
-            message: inventoryListEmpty.message,
+            title: t(INVENTORY_LIST_EMPTY_TITLE_KEY),
+            message: t(INVENTORY_LIST_EMPTY_MESSAGE_KEY),
             action: (
               <Button
                 variant="contained"
@@ -153,7 +159,7 @@ export default function InventoriesList() {
                   setCreateOpen(true);
                 }}
               >
-                Create inventory
+                {t('inventory.create')}
               </Button>
             ),
           }}

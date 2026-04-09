@@ -5,9 +5,11 @@
 
 import { useMemo, useState } from 'react';
 import { Box, Button, Typography, Divider } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import { ImageAssetCard, ImagePreviewDialog } from '../../../../components/ui';
 import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
+import i18n from '../../../../i18n';
 
 export interface ResultEvidenceViewerProps {
   result: ResultDetail;
@@ -33,11 +35,7 @@ function buildFrames(result: ResultDetail): EvidenceFrame[] {
   const seen = new Set<string>();
   const drafts: Array<{ key: string; fileName: string | null; label: string }> = [];
 
-  const push = (
-    assetId: string | null | undefined,
-    fileName: string | null,
-    label: string
-  ) => {
+  const push = (assetId: string | null | undefined, fileName: string | null, label: string) => {
     const id = assetId != null ? String(assetId).trim() : '';
     if (!id || seen.has(id)) return;
     seen.add(id);
@@ -66,17 +64,17 @@ function buildFrames(result: ResultDetail): EvidenceFrame[] {
       (primaryEvidenceId == null && ev.role === 'PRIMARY');
     let label: string;
     if (isPrimary) {
-      label = 'Primary evidence';
+      label = i18n.t('results.evidence_viewer.primary');
     } else if (sortedEvidence.length === 1) {
-      label = 'Evidence';
+      label = i18n.t('results.evidence_viewer.generic');
     } else {
       supportingOrdinal += 1;
-      label = `Supporting evidence ${supportingOrdinal}`;
+      label = i18n.t('results.evidence_viewer.supporting', { n: supportingOrdinal });
     }
     push(ev.sourceImageId, ev.sourceFileName, label);
   });
 
-  push(result.sourceImageId, result.sourceFileName, 'Full source photo');
+  push(result.sourceImageId, result.sourceFileName, i18n.t('results.evidence_viewer.full_source'));
 
   return drafts.map((d) => ({
     key: d.key,
@@ -86,6 +84,7 @@ function buildFrames(result: ResultDetail): EvidenceFrame[] {
 }
 
 export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: ResultEvidenceViewerProps) {
+  const { t } = useTranslation();
   const frames = useMemo(() => buildFrames(result), [result]);
   const [previewTarget, setPreviewTarget] = useState<EvidenceFrame | null>(null);
 
@@ -93,7 +92,7 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
   const imageSpec = previewTarget
     ? { inventoryId, aisleId, assetId: previewTarget.key, jobId }
     : null;
-  
+
   // Image loading is only triggered when previewTarget is set (on-demand).
   const loadState = useEvidenceImageLoad(imageSpec);
 
@@ -102,7 +101,7 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
   return (
     <Box>
       <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
-        Evidence
+        {t('results.evidence_viewer.heading')}
       </Typography>
 
       {frames.length === 0 && !hasRecordOnly && (
@@ -118,28 +117,27 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
             justifyContent: 'center',
           }}
         >
-          <Typography color="text.secondary">No image evidence available for this result.</Typography>
+          <Typography color="text.secondary">{t('results.evidence_viewer.no_images')}</Typography>
         </Box>
       )}
 
       {hasRecordOnly && (
         <Box sx={{ py: 3, px: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            Evidence is recorded for this result, but no image is available to display here. Use{' '}
-            <strong>Technical metadata</strong> below if you need internal reference fields.
+            {t('results.evidence_viewer.record_only')}
           </Typography>
         </Box>
       )}
 
       {frames.length > 0 && (
         <>
-          <Box 
-            sx={{ 
-              border: '1px solid', 
-              borderColor: 'divider', 
-              borderRadius: 2, 
+          <Box
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 2,
               overflow: 'hidden',
-              bgcolor: 'background.default' 
+              bgcolor: 'background.default',
             }}
           >
             {frames.map((f, i) => (
@@ -147,14 +145,10 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
                 {i > 0 && <Divider />}
                 <ImageAssetCard
                   title={f.fileName || f.label}
-                  subtitle={f.fileName ? f.label : 'Result evidence'}
+                  subtitle={f.fileName ? f.label : t('results.evidence_viewer.subtitle_fallback')}
                   actions={
-                    <Button 
-                      variant="outlined" 
-                      size="small" 
-                      onClick={() => setPreviewTarget(f)}
-                    >
-                      Preview
+                    <Button variant="outlined" size="small" onClick={() => setPreviewTarget(f)}>
+                      {t('results.evidence_viewer.preview')}
                     </Button>
                   }
                 />
@@ -168,10 +162,14 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
             title={
               previewTarget?.fileName
                 ? `${previewTarget.label} · ${previewTarget.fileName}`
-                : previewTarget?.label ?? 'Evidence'
+                : previewTarget?.label ?? t('results.evidence_viewer.title_fallback')
             }
             src={loadState.status === 'loaded' ? loadState.imageSrc : null}
-            alt={previewTarget?.fileName ? `Evidence: ${previewTarget.fileName}` : 'Evidence image'}
+            alt={
+              previewTarget?.fileName
+                ? t('results.evidence_viewer.alt_file', { fileName: previewTarget.fileName })
+                : t('results.evidence_viewer.alt_image')
+            }
             loading={loadState.status === 'loading'}
             error={loadState.status === 'error' ? loadState.message : null}
             caption={previewTarget?.fileName ?? previewTarget?.label}

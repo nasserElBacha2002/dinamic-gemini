@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Dialog, DialogTitle, DialogContent, IconButton, Typography, Box } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ImageViewer, { ImageViewerProps } from './ImageViewer';
@@ -17,6 +18,7 @@ export default function ImagePreviewDialog({
   title,
   ...viewerProps
 }: ImagePreviewDialogProps) {
+  const { t } = useTranslation();
   return (
     <Dialog 
       open={open} 
@@ -43,10 +45,10 @@ export default function ImagePreviewDialog({
           noWrap 
           sx={{ flex: 1, fontWeight: 700, mr: 2 }}
         >
-          {title || 'Image preview'}
+          {title || t('results.image_preview_fallback_title')}
         </Typography>
         <IconButton 
-          aria-label="Close preview" 
+          aria-label={t('results.close_preview')} 
           onClick={onClose} 
           size="small"
           sx={{ color: 'text.secondary' }}

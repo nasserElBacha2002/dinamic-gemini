@@ -3,6 +3,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Box,
@@ -24,13 +25,14 @@ import type {
   ExecutionLogEvent,
   ExecutionLogPanelLog,
 } from '../api/types';
+import i18n from '../i18n';
 
 const JOB_FILTER_REQUESTED = '__job_filter_requested__';
 const JOB_FILTER_ALL = '__job_filter_all__';
 
 /** Derive a readable error message from unknown query/API error shape. */
 export function getReadableErrorMessage(error: unknown): string {
-  if (error == null) return 'Unknown error';
+  if (error == null) return i18n.t('execution_log.unknown_error');
   if (typeof error === 'string') return error;
   if (error instanceof Error) return error.message;
   if (typeof error === 'object' && error !== null && 'message' in error) {
@@ -40,7 +42,7 @@ export function getReadableErrorMessage(error: unknown): string {
   try {
     return String(error);
   } catch {
-    return 'Unknown error';
+    return i18n.t('execution_log.unknown_error');
   }
 }
 
@@ -78,7 +80,7 @@ function safePayloadString(payload: unknown): string {
     try {
       return JSON.stringify(payload);
     } catch {
-      return '[unable to display payload]';
+      return i18n.t('execution_log.payload_unreadable');
     }
   }
   try {
@@ -161,10 +163,14 @@ function parseGeminiRequestPayload(event: ExecutionLogEvent): GeminiRequestPaylo
 }
 
 function formatAttachmentLabel(item: GeminiAttachment): string {
-  const id = item.reference_id ?? item.frame_ref ?? item.role ?? 'attachment';
-  const filename = item.filename ?? 'unknown file';
+  const id =
+    item.reference_id ?? item.frame_ref ?? item.role ?? i18n.t('execution_log.attachment_id_fallback');
+  const filename = item.filename ?? i18n.t('execution_log.unknown_file');
   const mime = item.mime_type ? ` (${item.mime_type})` : '';
-  const resolved = item.role === 'visual_reference' && item.resolved === false ? ' [not resolved]' : '';
+  const resolved =
+    item.role === 'visual_reference' && item.resolved === false
+      ? i18n.t('execution_log.not_resolved_suffix')
+      : '';
   return `${id}: ${filename}${mime}${resolved}`;
 }
 
@@ -217,8 +223,10 @@ export default function ExecutionLogPanel({
   events: eventsProp,
   isLoading,
   error,
-  emptyMessage = 'No log entries yet.',
+  emptyMessage: emptyMessageProp,
 }: ExecutionLogPanelProps) {
+  const { t } = useTranslation();
+  const emptyMessage = emptyMessageProp ?? t('execution_log.empty_default');
   const allEvents = log?.events ?? eventsProp ?? [];
   const haveEnvelope = Boolean(log);
   const aisleMode = Boolean(log && isAisleAggregateLog(log));
@@ -338,7 +346,7 @@ export default function ExecutionLogPanel({
   if (error != null) {
     return (
       <Typography color="error" variant="body2" sx={{ p: 1 }}>
-        Failed to load log: {getReadableErrorMessage(error)}
+        {t('execution_log.load_failed', { message: getReadableErrorMessage(error) })}
       </Typography>
     );
   }
@@ -370,24 +378,27 @@ export default function ExecutionLogPanel({
     .map((entry) => entry.event);
 
   const summaryParts: string[] = [];
-  summaryParts.push(`Visible: ${filteredEvents.length} / ${allEvents.length} events`);
+  summaryParts.push(
+    t('execution_log.summary_visible', { visible: filteredEvents.length, total: allEvents.length }),
+  );
   if (haveEnvelope && log) {
     if (isAisleAggregateLog(log)) {
       const nJobs = log.jobs?.length ?? 0;
       const provs = new Set(
         (log.jobs ?? []).map((j) => j.provider_name).filter((p): p is string => Boolean(p && String(p).trim()))
       );
-      summaryParts.push(`Aisle log · ${nJobs} job(s) · ${provs.size} provider(s)`);
+      summaryParts.push(t('execution_log.summary_aisle', { jobs: nJobs, providers: provs.size }));
     } else {
-      summaryParts.push(`Requested job: ${shortJobLabel(log.requested_job_id)}`);
+      summaryParts.push(t('execution_log.summary_requested', { id: shortJobLabel(log.requested_job_id) }));
     }
     if (hasPayloadJobIds) {
-      if (resolvedJobFilter === JOB_FILTER_REQUESTED) summaryParts.push('Job filter: requested');
-      else if (resolvedJobFilter === JOB_FILTER_ALL) summaryParts.push('Job filter: all');
-      else summaryParts.push(`Job filter: ${jobMenuItemLabel(resolvedJobFilter, log)}`);
+      if (resolvedJobFilter === JOB_FILTER_REQUESTED) summaryParts.push(t('execution_log.filter_requested'));
+      else if (resolvedJobFilter === JOB_FILTER_ALL) summaryParts.push(t('execution_log.filter_all'));
+      else summaryParts.push(t('execution_log.filter_job', { label: jobMenuItemLabel(resolvedJobFilter, log) }));
     }
-    if (attemptKey !== 'all') summaryParts.push(`Attempt: ${attemptKey}`);
-    if (executionKey !== 'all') summaryParts.push(`Execution: ${shortJobLabel(executionKey)}`);
+    if (attemptKey !== 'all') summaryParts.push(t('execution_log.attempt_summary', { attempt: attemptKey }));
+    if (executionKey !== 'all')
+      summaryParts.push(t('execution_log.execution_summary', { id: shortJobLabel(executionKey) }));
   }
 
   const requestedJobId = log && !isAisleAggregateLog(log) ? log.requested_job_id : null;
@@ -402,13 +413,12 @@ export default function ExecutionLogPanel({
         <>
           {!hasPayloadJobIds ? (
             <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
-              Job metadata unavailable for this log (no <code>job_id</code> on events). Showing all entries; download
-              still includes the full file.
+              {t('execution_log.job_metadata_unavailable')}
             </Alert>
           ) : null}
           {logSourceIssues.length ? (
             <Alert severity="warning" variant="outlined" sx={{ py: 0.5 }}>
-              {logSourceIssues.length} job log source(s) missing or failed to load; merged view may be incomplete.
+              {t('execution_log.log_sources_warning', { count: logSourceIssues.length })}
             </Alert>
           ) : null}
           <Box
@@ -421,10 +431,10 @@ export default function ExecutionLogPanel({
           >
             {showJobFilter ? (
               <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel id="exec-log-job-filter-label">Job</InputLabel>
+                <InputLabel id="exec-log-job-filter-label">{t('execution_log.pick_job')}</InputLabel>
                 <Select
                   labelId="exec-log-job-filter-label"
-                  label="Job"
+                  label={t('execution_log.pick_job')}
                   value={
                     resolvedJobFilter === JOB_FILTER_REQUESTED || resolvedJobFilter === JOB_FILTER_ALL
                       ? resolvedJobFilter
@@ -436,8 +446,8 @@ export default function ExecutionLogPanel({
                   }
                   onChange={(e) => handleJobFilterChange(e.target.value)}
                 >
-                  {!aisleMode ? <MenuItem value={JOB_FILTER_REQUESTED}>Requested job</MenuItem> : null}
-                  <MenuItem value={JOB_FILTER_ALL}>All jobs in log</MenuItem>
+                  {!aisleMode ? <MenuItem value={JOB_FILTER_REQUESTED}>{t('execution_log.requested_job')}</MenuItem> : null}
+                  <MenuItem value={JOB_FILTER_ALL}>{t('execution_log.all_jobs')}</MenuItem>
                   {jobIdsForMenu.map((jid) => (
                     <MenuItem key={jid} value={jid}>
                       {jobMenuItemLabel(jid, log)}
@@ -447,14 +457,14 @@ export default function ExecutionLogPanel({
               </FormControl>
             ) : null}
             <FormControl size="small" sx={{ minWidth: 160 }} disabled={attemptSelectDisabled}>
-              <InputLabel id="exec-log-attempt-label">Attempt</InputLabel>
+              <InputLabel id="exec-log-attempt-label">{t('execution_log.attempt')}</InputLabel>
               <Select
                 labelId="exec-log-attempt-label"
-                label="Attempt"
+                label={t('execution_log.attempt')}
                 value={attemptSelectDisabled ? 'all' : attemptKey}
                 onChange={(e) => setAttemptKey(e.target.value)}
               >
-                <MenuItem value="all">All attempts</MenuItem>
+                <MenuItem value="all">{t('execution_log.all_attempts')}</MenuItem>
                 {contextualAttempts.map((a) => (
                   <MenuItem key={a} value={String(a)}>
                     {a}
@@ -464,14 +474,14 @@ export default function ExecutionLogPanel({
             </FormControl>
             {showExecutionFilter ? (
               <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel id="exec-log-exec-label">Execution id</InputLabel>
+                <InputLabel id="exec-log-exec-label">{t('execution_log.execution_id')}</InputLabel>
                 <Select
                   labelId="exec-log-exec-label"
-                  label="Execution id"
+                  label={t('execution_log.execution_id')}
                   value={executionKey}
                   onChange={(e) => setExecutionKey(e.target.value)}
                 >
-                  <MenuItem value="all">All</MenuItem>
+                  <MenuItem value="all">{t('results.filters.all')}</MenuItem>
                   {contextualExecutionIds.map((id) => (
                     <MenuItem key={id} value={id}>
                       {shortJobLabel(id)}
@@ -495,7 +505,9 @@ export default function ExecutionLogPanel({
         >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
             <Typography variant="subtitle2">
-              Gemini request{geminiRequests.length > 1 ? ` ${requestIndex + 1}` : ''}
+              {geminiRequests.length > 1
+                ? t('execution_log.gemini_request_n', { n: requestIndex + 1 })
+                : t('execution_log.gemini_request')}
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {formatTs(event.ts)}
@@ -503,7 +515,7 @@ export default function ExecutionLogPanel({
           </Box>
 
           <Box>
-            <Typography variant="subtitle2">Prompt</Typography>
+            <Typography variant="subtitle2">{t('execution_log.prompt_heading')}</Typography>
             <Box
               component="pre"
               sx={{
@@ -521,13 +533,13 @@ export default function ExecutionLogPanel({
                 bgcolor: 'action.hover',
               }}
             >
-              {geminiRequest.prompt_text ?? 'Prompt not available.'}
+              {geminiRequest.prompt_text ?? t('execution_log.prompt_missing')}
             </Box>
           </Box>
 
           {geminiRequest.context_instruction ? (
             <Box>
-              <Typography variant="subtitle2">Reference guidance</Typography>
+              <Typography variant="subtitle2">{t('execution_log.reference_guidance')}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, whiteSpace: 'pre-wrap' }}>
                 {geminiRequest.context_instruction}
               </Typography>
@@ -537,16 +549,18 @@ export default function ExecutionLogPanel({
           <Divider />
 
           <Box sx={{ display: 'grid', gap: 1.25 }}>
-            <Typography variant="subtitle2">Attached files</Typography>
+            <Typography variant="subtitle2">{t('execution_log.attached_files')}</Typography>
             <Typography variant="body2" color="text.secondary">
-              Primary evidence: {geminiRequest.attachment_summary?.primary_evidence_count ?? 0} | Reference images:{' '}
-              {geminiRequest.attachment_summary?.visual_reference_count ?? 0} | Total:{' '}
-              {geminiRequest.attachment_summary?.total_count ?? 0}
+              {t('execution_log.attachment_counts', {
+                primary: geminiRequest.attachment_summary?.primary_evidence_count ?? 0,
+                refs: geminiRequest.attachment_summary?.visual_reference_count ?? 0,
+                total: geminiRequest.attachment_summary?.total_count ?? 0,
+              })}
             </Typography>
 
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                Primary evidence
+                {t('execution_log.primary_evidence')}
               </Typography>
               {geminiRequest.primary_evidence_attachments?.length ? (
                 <List dense disablePadding>
@@ -558,14 +572,14 @@ export default function ExecutionLogPanel({
                 </List>
               ) : (
                 <Typography variant="body2" color="text.secondary">
-                  No primary evidence attachments recorded.
+                  {t('execution_log.no_primary_evidence')}
                 </Typography>
               )}
             </Box>
 
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                Reference images
+                {t('execution_log.reference_images')}
               </Typography>
               {geminiRequest.visual_reference_attachments?.length ? (
                 <List dense disablePadding>
@@ -577,7 +591,7 @@ export default function ExecutionLogPanel({
                 </List>
               ) : (
                 <Typography variant="body2" color="text.secondary">
-                  No reference images were attached to this Gemini request.
+                  {t('execution_log.no_reference_images')}
                 </Typography>
               )}
             </Box>
@@ -625,7 +639,7 @@ export default function ExecutionLogPanel({
                     <Chip label={evt.level} size="small" color={levelColor(evt.level)} sx={{ fontSize: '0.65rem' }} />
                     {showJobBadge ? (
                       <Chip
-                        label={`job ${shortJobLabel(String(ej))}`}
+                        label={t('execution_log.chip_job', { id: shortJobLabel(String(ej)) })}
                         size="small"
                         variant="outlined"
                         color={definitiveRequestedRow ? 'primary' : 'default'}
@@ -633,18 +647,23 @@ export default function ExecutionLogPanel({
                       />
                     ) : null}
                     {evt.event_attempt != null ? (
-                      <Chip label={`att ${evt.event_attempt}`} size="small" variant="outlined" sx={{ fontSize: '0.65rem' }} />
+                      <Chip
+                        label={t('execution_log.chip_att', { n: evt.event_attempt })}
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontSize: '0.65rem' }}
+                      />
                     ) : null}
                     {evt.event_execution_id ? (
                       <Chip
-                        label={`exec ${shortJobLabel(evt.event_execution_id)}`}
+                        label={t('execution_log.chip_exec', { id: shortJobLabel(evt.event_execution_id) })}
                         size="small"
                         variant="outlined"
                         sx={{ fontSize: '0.65rem' }}
                       />
                     ) : null}
                     {showThisJobChip ? (
-                      <Chip label="This job" size="small" color="primary" sx={{ fontSize: '0.6rem' }} />
+                      <Chip label={t('jobs.this_job')} size="small" color="primary" sx={{ fontSize: '0.6rem' }} />
                     ) : null}
                   </Box>
                 }

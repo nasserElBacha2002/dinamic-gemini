@@ -33,7 +33,7 @@ describe('auth API helpers', () => {
       error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials.' },
     });
     expect(isAuthError(err)).toBe(true);
-    expect(getAuthErrorMessage(err)).toBe('Invalid credentials.');
+    expect(getAuthErrorMessage(err)).toBe('Invalid credentials');
   });
 
   it('isAuthError returns false for plain Error', () => {

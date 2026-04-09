@@ -40,13 +40,13 @@ describe('LoginPage', () => {
     renderLoginPage();
     expect(screen.getByLabelText(/username/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /login/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
     expect(screen.getByText('Admin login')).toBeInTheDocument();
   });
 
   it('disables submit when username or password is blank', () => {
     renderLoginPage();
-    const submitBtn = screen.getByRole('button', { name: /login/i });
+    const submitBtn = screen.getByRole('button', { name: /log in/i });
     expect(submitBtn).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'a' } });
     expect(submitBtn).toBeDisabled();
@@ -62,7 +62,7 @@ describe('LoginPage', () => {
 
     fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'secret' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     expect(mockLogin).toHaveBeenCalledWith({ username: 'admin', password: 'secret' });
     expect(screen.getByRole('button', { name: /signing in/i })).toBeInTheDocument();
@@ -79,7 +79,7 @@ describe('LoginPage', () => {
 
     fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'pass' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     expect(await screen.findByText('Inventories home')).toBeInTheDocument();
     // v3.2.3.E6: token is stored as a structured session; use helper for contract stability.
@@ -92,9 +92,9 @@ describe('LoginPage', () => {
 
     fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'wrong' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid credentials.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Invalid credentials/i);
     expect(localStorage.getItem('dinamic_auth_token')).toBeNull();
   });
 });

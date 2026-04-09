@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, IconButton, InputAdornment, TextField, Typography, Paper, Alert } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import { login as loginApi, getAuthErrorMessage } from './api';
@@ -14,6 +15,7 @@ import { setStoredSession } from './storage';
  * via AuthProvider and navigates to home. Shows loading and error state.
  */
 export default function LoginPage() {
+  const { t } = useTranslation();
   const { login } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
@@ -24,7 +26,6 @@ export default function LoginPage() {
 
   const canSubmit = !loading && username.trim() !== '' && password !== '';
   const passwordFieldType = showPassword ? 'text' : 'password';
-  const productLabel = 'Dinamic Inventory';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,10 +55,10 @@ export default function LoginPage() {
     >
       <Paper elevation={2} sx={{ p: 4, width: 360, maxWidth: '100%' }}>
         <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1.2 }}>
-          {productLabel}
+          {t('auth.product_label')}
         </Typography>
         <Typography variant="h5" component="h1" gutterBottom>
-          Admin login
+          {t('auth.login_title')}
         </Typography>
         <Box component="form" onSubmit={handleSubmit} noValidate autoComplete="off">
           {errorMessage && (
@@ -66,7 +67,7 @@ export default function LoginPage() {
             </Alert>
           )}
           <TextField
-            label="Username"
+            label={t('common.username')}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             margin="normal"
@@ -76,7 +77,7 @@ export default function LoginPage() {
             disabled={loading}
           />
           <TextField
-            label="Password"
+            label={t('common.password')}
             type={passwordFieldType}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -89,7 +90,7 @@ export default function LoginPage() {
               endAdornment: (
                 <InputAdornment position="end">
                   <IconButton
-                    aria-label={showPassword ? 'Hide characters' : 'Show characters'}
+                    aria-label={showPassword ? t('common.hide_password') : t('common.show_password')}
                     aria-pressed={showPassword}
                     onClick={() => setShowPassword((v) => !v)}
                     onMouseDown={(e) => e.preventDefault()}
@@ -110,7 +111,7 @@ export default function LoginPage() {
             sx={{ mt: 2 }}
             disabled={!canSubmit}
           >
-            {loading ? 'Signing in…' : 'Login'}
+            {loading ? t('common.signing_in') : t('common.login')}
           </Button>
         </Box>
       </Paper>

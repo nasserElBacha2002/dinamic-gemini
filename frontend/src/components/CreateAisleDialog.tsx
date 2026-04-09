@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Box,
@@ -9,7 +10,7 @@ import {
 import { createAisle } from '../api/client';
 import type { CreateAisleRequest } from '../api/types';
 import { ApiError } from '../api/types';
-import { getApiErrorMessage } from '../utils/apiErrors';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 import BaseDialog from './ui/BaseDialog';
 
 export interface CreateAisleDialogProps {
@@ -34,6 +35,7 @@ export default function CreateAisleDialog({
   createAisleFn,
   existingAisleCodes,
 }: CreateAisleDialogProps) {
+  const { t } = useTranslation();
   const doCreate = createAisleFn ?? ((body: CreateAisleRequest) => createAisle(inventoryId, body));
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -68,11 +70,11 @@ export default function CreateAisleDialog({
 
   const validateForSubmit = (next: string): string => {
     const trimmed = (next || '').trim();
-    if (!trimmed) return 'Aisle code is required.';
-    if (trimmed.length > 64) return 'Aisle code must be at most 64 characters.';
-    if (!inventoryId) return 'Inventory not set.';
+    if (!trimmed) return t('dialogs.aisle.validation_code_required');
+    if (trimmed.length > 64) return t('dialogs.aisle.validation_code_max');
+    if (!inventoryId) return t('dialogs.aisle.validation_inventory_missing');
     if (normalizedExistingCodes.has(trimmed.toLowerCase())) {
-      return 'This aisle code already exists in this inventory.';
+      return t('dialogs.aisle.validation_duplicate');
     }
     return '';
   };
@@ -81,9 +83,9 @@ export default function CreateAisleDialog({
     const trimmed = (next || '').trim();
     // Keep typing experience calm: don't show "required" while user is editing.
     if (!trimmed) return '';
-    if (trimmed.length > 64) return 'Aisle code must be at most 64 characters.';
+    if (trimmed.length > 64) return t('dialogs.aisle.validation_code_max');
     if (normalizedExistingCodes.has(trimmed.toLowerCase())) {
-      return 'This aisle code already exists in this inventory.';
+      return t('dialogs.aisle.validation_duplicate');
     }
     return '';
   };
@@ -103,13 +105,11 @@ export default function CreateAisleDialog({
       setCreatedCode(trimmed);
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      const msg = getApiErrorMessage(err, 'Failed to create aisle');
+      const msg = resolveApiErrorMessage(err, 'errors.create_aisle');
       if (err.status === 409) {
-        setValidationError(
-          typeof msg === 'string' ? msg : 'This aisle code already exists in this inventory.'
-        );
+        setValidationError(typeof msg === 'string' ? msg : t('dialogs.aisle.validation_duplicate'));
       } else {
-        const inline = typeof msg === 'string' ? msg : 'Failed to create aisle.';
+        const inline = typeof msg === 'string' ? msg : t('errors.create_aisle');
         setValidationError(inline);
         onError?.(inline);
       }
@@ -123,8 +123,8 @@ export default function CreateAisleDialog({
       open={open}
       onClose={handleClose}
       disableClose={submitting}
-      title="Create aisle"
-      subtitle="Enter a short, unique aisle code for this inventory (e.g. A-01)."
+      title={t('aisle.create_title')}
+      subtitle={t('aisle.create_subtitle')}
       actionsSx={{ px: 3, pb: 2 }}
       actions={
         createdCode ? (
@@ -140,16 +140,16 @@ export default function CreateAisleDialog({
                 });
               }}
             >
-              Create another
+              {t('dialogs.aisle.create_another')}
             </Button>
             <Button onClick={handleClose} variant="contained">
-              Close
+              {t('common.close')}
             </Button>
           </>
         ) : (
           <>
             <Button onClick={handleClose} disabled={submitting}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleSubmit}
@@ -157,7 +157,7 @@ export default function CreateAisleDialog({
               disabled={submitting}
               startIcon={submitting ? <CircularProgress size={16} /> : undefined}
             >
-              Create aisle
+              {t('aisle.create')}
             </Button>
           </>
         )
@@ -165,7 +165,7 @@ export default function CreateAisleDialog({
     >
       {createdCode ? (
         <Alert severity="success" sx={{ mb: 2 }}>
-          Aisle <strong>{createdCode}</strong> created.
+          {t('dialogs.aisle.success_created', { code: createdCode ?? '' })}
         </Alert>
       ) : null}
 
@@ -173,7 +173,7 @@ export default function CreateAisleDialog({
         <TextField
           autoFocus
           margin="dense"
-          label="Aisle code"
+          label={t('aisle.code_label')}
           fullWidth
           variant="outlined"
           value={code}

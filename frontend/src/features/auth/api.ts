@@ -9,6 +9,8 @@ import type {
   LoginResponseDto,
   AuthErrorResponseDto,
 } from './types';
+import i18n from '../../i18n';
+import { authErrorCodeToTranslationKey, backendDetailToTranslationKey } from '../../utils/errorTranslations';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -81,9 +83,19 @@ export function isAuthError(error: unknown): error is AuthApiError {
   return error instanceof AuthApiError;
 }
 
-/** Get user-facing message from an auth API error. */
+/** Get user-facing message from an auth API error (localized). */
 export function getAuthErrorMessage(error: unknown): string {
-  if (error instanceof AuthApiError) return error.responseBody.error.message;
-  if (error instanceof Error && error.message) return error.message;
-  return 'Authentication failed';
+  if (error instanceof AuthApiError) {
+    const codeKey = authErrorCodeToTranslationKey(error.responseBody.error.code);
+    if (codeKey) return i18n.t(codeKey);
+    const detailKey = backendDetailToTranslationKey(error.responseBody.error.message);
+    if (detailKey) return i18n.t(detailKey);
+    return i18n.t('errors.generic');
+  }
+  if (error instanceof Error && error.message?.trim()) {
+    const detailKey = backendDetailToTranslationKey(error.message);
+    if (detailKey) return i18n.t(detailKey);
+    return error.message.trim();
+  }
+  return i18n.t('errors.auth.fallback');
 }

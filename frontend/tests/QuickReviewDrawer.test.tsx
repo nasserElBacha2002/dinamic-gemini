@@ -248,7 +248,7 @@ describe('QuickReviewDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /Mark result invalid/i }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Mark invalid' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/Not allowed/i);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/Not allowed|could not complete/i);
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'delete_position' });
   });

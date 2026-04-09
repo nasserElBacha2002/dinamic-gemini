@@ -1,4 +1,5 @@
 import { alpha, createTheme } from '@mui/material/styles';
+import { esES } from '@mui/material/locale';
 import type { Shadows } from '@mui/material/styles';
 
 /**
@@ -23,7 +24,8 @@ shadows[1] = '0px 1px 2px rgba(15, 23, 42, 0.06), 0px 1px 3px rgba(15, 23, 42, 0
 shadows[2] = '0px 2px 4px rgba(15, 23, 42, 0.06), 0px 2px 8px rgba(15, 23, 42, 0.04)';
 shadows[3] = '0px 4px 8px rgba(15, 23, 42, 0.06), 0px 2px 4px rgba(15, 23, 42, 0.04)';
 
-const theme = createTheme({
+const theme = createTheme(
+  {
   palette: {
     mode: 'light',
     primary: {
@@ -261,7 +263,9 @@ const theme = createTheme({
       },
     },
   },
-});
+},
+esES,
+);
 
 // Sprint 2.3–2.4: StatusBadge, FilterToolbar, DataTable — `DataTable` uses `size="small"` + `MuiTableCell` head overrides above.
 

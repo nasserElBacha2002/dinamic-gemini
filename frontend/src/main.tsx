@@ -1,3 +1,5 @@
+import './i18n';
+import i18n from './i18n';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
@@ -10,7 +12,7 @@ import App from './App';
 import theme from './theme';
 
 const root = document.getElementById('root');
-if (!root) throw new Error('Root element not found');
+if (!root) throw new Error(i18n.t('root.not_found'));
 
 const queryClient = new QueryClient({
   defaultOptions: {

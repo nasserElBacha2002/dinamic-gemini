@@ -2,21 +2,19 @@
  * Helpers for consistent position status chip presentation in result views.
  */
 
+import i18n from '../i18n';
+
 type ChipColor = 'default' | 'primary' | 'success' | 'error' | 'warning';
 
 /**
- * Display label for a position status string (user-friendly, known values normalized).
+ * Display label for a position status string (localized).
  */
 export function getPositionStatusLabel(status: string): string {
   const s = (status || '').trim().toLowerCase();
-  if (!s) return '—';
-  const known: Record<string, string> = {
-    detected: 'Detected',
-    reviewed: 'Reviewed',
-    corrected: 'Corrected',
-    deleted: 'Deleted',
-  };
-  return known[s] ?? status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  if (!s) return i18n.t('common.em_dash');
+  const key = `positions.status.${s}`;
+  if (i18n.exists(key)) return i18n.t(key);
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 }
 
 /**

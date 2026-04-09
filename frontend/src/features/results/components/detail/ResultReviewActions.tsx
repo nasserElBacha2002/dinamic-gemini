@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Box, Button, Stack, TextField, IconButton, Typography } from '@mui/material';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import CloseIcon from '@mui/icons-material/Close';
@@ -33,6 +34,7 @@ export default function ResultReviewActions({
   onMarkImageMismatch,
   onDeleteClick,
 }: ResultReviewActionsProps) {
+  const { t } = useTranslation();
   const [activeEditor, setActiveEditor] = useState<'qty' | 'sku' | 'pos' | null>(null);
   const qtyButtonRef = useRef<HTMLButtonElement>(null);
   const skuButtonRef = useRef<HTMLButtonElement>(null);
@@ -71,7 +73,7 @@ export default function ResultReviewActions({
     return (
       <Box sx={{ mt: 1 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          This result is from a non-operational run. Open the operational job to confirm or correct.
+          {t('review.actions.readonly_run')}
         </Typography>
       </Box>
     );
@@ -97,10 +99,10 @@ export default function ResultReviewActions({
               boxShadow: '0 4px 12px rgba(var(--mui-palette-primary-mainChannel), 0.2)',
             }}
           >
-            {actionLoading ? 'Confirming…' : 'Confirm result'}
+            {actionLoading ? t('review.actions.confirming') : t('review.actions.confirm_result')}
           </Button>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'center', opacity: 0.7, fontWeight: 500 }}>
-            Accept current data as correct
+            {t('review.actions.accept_current')}
           </Typography>
         </Box>
       )}
@@ -113,7 +115,7 @@ export default function ResultReviewActions({
             color="text.secondary"
             sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1.2 }}
           >
-            Evidence / image
+            {t('review.actions.evidence_section')}
           </Typography>
           <Button
             variant="outlined"
@@ -124,17 +126,16 @@ export default function ResultReviewActions({
             disabled={actionLoading}
             sx={{ textTransform: 'none', fontWeight: 600, py: 1, borderRadius: 1.5 }}
           >
-            Wrong image
+            {t('review.actions.wrong_image')}
           </Button>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, lineHeight: 1.4 }}>
-            Flag when the detection looks right but the photo or crop does not belong to this row. SKU and quantity
-            stay unchanged.
+            {t('review.actions.wrong_image_help')}
           </Typography>
         </Box>
       ) : (
         <Box sx={{ mb: 3, p: 1.5, borderRadius: 1.5, bgcolor: 'action.hover', border: 1, borderColor: 'divider' }}>
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            This result is flagged as wrong image / evidence linkage (traceability only).
+            {t('review.actions.image_mismatch_state')}
           </Typography>
         </Box>
       )}
@@ -142,7 +143,7 @@ export default function ResultReviewActions({
       {/* Progressive Corrections */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1.2 }}>
-          Correction tools
+          {t('review.actions.correction_tools')}
         </Typography>
 
         <Stack spacing={0.5}>
@@ -171,7 +172,7 @@ export default function ResultReviewActions({
                  '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
                }}
              >
-               Correct quantity
+               {t('review.actions.correct_quantity')}
              </Button>
            )}
 
@@ -200,7 +201,7 @@ export default function ResultReviewActions({
                  '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
                }}
              >
-               Correct SKU
+               {t('review.actions.correct_sku')}
              </Button>
            )}
 
@@ -229,7 +230,7 @@ export default function ResultReviewActions({
                  '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
                }}
              >
-               Correct Position Code
+               {t('review.actions.correct_position_code')}
              </Button>
            )}
         </Stack>
@@ -248,10 +249,10 @@ export default function ResultReviewActions({
            }}
         >
           <Typography variant="caption" sx={{ fontWeight: 700, mb: 0.5, display: 'block', color: 'error.main', textTransform: 'uppercase', letterSpacing: 1 }}>
-            Danger zone
+            {t('review.actions.danger_zone')}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.4 }}>
-            Only use this if the result is a false detection or contains data that shouldn't be reviewed. 
+            {t('review.actions.danger_zone_help')}
           </Typography>
           <Button
             variant="outlined"
@@ -262,7 +263,7 @@ export default function ResultReviewActions({
             disabled={actionLoading}
             sx={{ textTransform: 'none', fontWeight: 600, py: 0.75, borderRadius: 1.5 }}
           >
-            Mark result invalid
+            {t('review.actions.mark_result_invalid')}
           </Button>
         </Box>
       </Box>
@@ -286,6 +287,7 @@ function QuantityEditor({
   onCancel: () => void; 
   loading: boolean;
 }) {
+  const { t } = useTranslation();
   const [val, setVal] = useState(String(initialValue));
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -299,7 +301,7 @@ function QuantityEditor({
   return (
     <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, fontWeight: 700 }}>
-        New quantity
+        {t('review.actions.new_quantity')}
       </Typography>
       <Stack direction="row" spacing={1} alignItems="flex-start">
         <TextField
@@ -316,7 +318,7 @@ function QuantityEditor({
             }
           }}
           error={!isValid && val !== ''}
-          placeholder="0"
+          placeholder={t('results.qty_placeholder')}
           type="text"
           inputMode="numeric"
           disabled={loading}
@@ -329,7 +331,7 @@ function QuantityEditor({
           disabled={loading || !isValid}
           sx={{ minWidth: 64, height: 40 }}
         >
-          {loading ? '...' : 'Save'}
+          {loading ? t('common.submitting') : t('common.save')}
         </Button>
         <IconButton size="small" onClick={onCancel} disabled={loading} sx={{ height: 40, width: 40 }}>
           <CloseIcon fontSize="small" />
@@ -350,6 +352,7 @@ function SkuEditor({
   onCancel: () => void; 
   loading: boolean;
 }) {
+  const { t } = useTranslation();
   const [val, setVal] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -363,7 +366,7 @@ function SkuEditor({
   return (
     <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, fontWeight: 700 }}>
-        Corrected SKU
+        {t('review.actions.corrected_sku_heading')}
       </Typography>
       <Stack direction="row" spacing={1} alignItems="flex-start">
         <TextField
@@ -380,7 +383,7 @@ function SkuEditor({
             }
           }}
           error={!isValid && val.length > 0}
-          placeholder="Update SKU..."
+          placeholder={t('results.update_sku_placeholder')}
           disabled={loading}
           inputProps={{ maxLength: SKU_MAX_LEN }}
           autoComplete="off"
@@ -392,7 +395,7 @@ function SkuEditor({
           disabled={loading || !isValid}
           sx={{ minWidth: 64, height: 40 }}
         >
-          {loading ? '...' : 'Save'}
+          {loading ? t('common.submitting') : t('common.save')}
         </Button>
         <IconButton size="small" onClick={onCancel} disabled={loading} sx={{ height: 40, width: 40 }}>
           <CloseIcon fontSize="small" />
@@ -413,6 +416,7 @@ function PositionCodeEditor({
   onCancel: () => void; 
   loading: boolean;
 }) {
+  const { t } = useTranslation();
   const [val, setVal] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -426,7 +430,7 @@ function PositionCodeEditor({
   return (
     <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, fontWeight: 700 }}>
-        Corrected Position Code
+        {t('review.actions.corrected_position_heading')}
       </Typography>
       <Stack direction="row" spacing={1} alignItems="flex-start">
         <TextField
@@ -443,7 +447,7 @@ function PositionCodeEditor({
             }
           }}
           error={!isValid && val.length > 0}
-          placeholder="Update Position Code..."
+          placeholder={t('results.update_position_placeholder')}
           disabled={loading}
           inputProps={{ maxLength: POS_CODE_MAX_LEN }}
           autoComplete="off"
@@ -455,7 +459,7 @@ function PositionCodeEditor({
           disabled={loading || !isValid}
           sx={{ minWidth: 64, height: 40 }}
         >
-          {loading ? '...' : 'Save'}
+          {loading ? t('common.submitting') : t('common.save')}
         </Button>
         <IconButton size="small" onClick={onCancel} disabled={loading} sx={{ height: 40, width: 40 }}>
           <CloseIcon fontSize="small" />

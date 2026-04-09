@@ -4,6 +4,7 @@
  */
 
 import { Chip, Tooltip } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import type { ApiTraceabilityStatus } from '../../api/types';
 import type { ChipColorType } from './types';
 
@@ -12,13 +13,6 @@ const TRACEABILITY_COLOR: Record<ApiTraceabilityStatus, ChipColorType> = {
   missing: 'default',
   invalid: 'error',
   unvalidated: 'info',
-};
-
-const TRACEABILITY_LABEL: Record<ApiTraceabilityStatus, string> = {
-  valid: 'Valid',
-  missing: 'Missing',
-  invalid: 'Invalid',
-  unvalidated: 'Unvalidated',
 };
 
 export type { ApiTraceabilityStatus };
@@ -37,8 +31,9 @@ export default function TraceabilityChip({
   variant = 'outlined',
   tooltip,
 }: TraceabilityChipProps) {
+  const { t } = useTranslation();
   const color = TRACEABILITY_COLOR[status];
-  const label = TRACEABILITY_LABEL[status];
+  const label = t(`traceability.${status}`);
   const chip = (
     <Chip
       label={label}

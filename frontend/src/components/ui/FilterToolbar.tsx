@@ -7,6 +7,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Box, Button, Divider } from '@mui/material';
 
 export interface FilterToolbarProps {
@@ -22,14 +23,16 @@ export interface FilterToolbarProps {
 export default function FilterToolbar({
   children,
   onReset,
-  resetLabel = 'Reset filters',
+  resetLabel,
   resetDisabled = false,
   endActions,
 }: FilterToolbarProps) {
+  const { t } = useTranslation();
+  const resolvedResetLabel = resetLabel ?? t('common.reset_filters');
   return (
     <Box
       component="section"
-      aria-label="Filters"
+      aria-label={t('common.filters_section_a11y')}
       sx={{
         display: 'flex',
         flexWrap: 'wrap',
@@ -48,7 +51,7 @@ export default function FilterToolbar({
       <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1, flexShrink: 0 }}>
         {onReset ? (
           <Button size="small" variant="text" color="inherit" onClick={onReset} disabled={resetDisabled}>
-            {resetLabel}
+            {resolvedResetLabel}
           </Button>
         ) : null}
         {endActions ? (

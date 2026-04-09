@@ -186,7 +186,9 @@ describe('MetricsPage', () => {
       errors: [new ApiError('Server error', 500)],
     });
     renderMetrics();
-    expect(screen.getByText(/Server error|Failed to load metrics/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Server error|Failed to load metrics|could not complete the operation/i),
+    ).toBeInTheDocument();
   });
 
   it('renders inventory performance link and aisle issue link', () => {

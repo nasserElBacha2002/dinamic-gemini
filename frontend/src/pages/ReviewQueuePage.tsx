@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -38,7 +39,7 @@ import {
 } from '../features/reviewQueue/quickReviewContext';
 import ReviewQueueTable from '../features/reviewQueue/components/ReviewQueueTable';
 import { useAislesList, useInventoriesList, useReviewQueue } from '../hooks';
-import { getApiErrorMessage } from '../utils/apiErrors';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 function parseOptional01(raw: string): number | null {
   const t = raw.trim();
   if (t === '') return null;
@@ -48,6 +49,7 @@ function parseOptional01(raw: string): number | null {
 }
 
 export default function ReviewQueuePage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [inventoryId, setInventoryId] = useState('');
@@ -75,16 +77,12 @@ export default function ReviewQueuePage() {
   const minConfParsedRQ = parseOptional01(minConfidenceStr);
   const maxConfParsedRQ = parseOptional01(maxConfidenceStr);
   const minConfidenceFieldError =
-    minConfidenceStr.trim() !== '' && minConfParsedRQ === null
-      ? 'Enter a decimal from 0 to 1 (e.g. 0.5).'
-      : '';
+    minConfidenceStr.trim() !== '' && minConfParsedRQ === null ? t('results.min_confidence_help') : '';
   const maxConfidenceFieldError =
-    maxConfidenceStr.trim() !== '' && maxConfParsedRQ === null
-      ? 'Enter a decimal from 0 to 1 (e.g. 0.5).'
-      : '';
+    maxConfidenceStr.trim() !== '' && maxConfParsedRQ === null ? t('results.min_confidence_help') : '';
   const confidenceRangeError =
     minConfParsedRQ != null && maxConfParsedRQ != null && minConfParsedRQ > maxConfParsedRQ
-      ? 'Min confidence cannot be greater than max.'
+      ? t('results.confidence_range_error')
       : '';
   const confidenceFiltersInvalid =
     minConfidenceFieldError !== '' || maxConfidenceFieldError !== '' || confidenceRangeError !== '';
@@ -172,7 +170,7 @@ export default function ReviewQueuePage() {
   const errorMessage =
     queueQuery.isError && queueQuery.error
       ? queueQuery.error instanceof ApiError
-        ? getApiErrorMessage(queueQuery.error, 'Failed to load review queue')
+        ? resolveApiErrorMessage(queueQuery.error, 'errors.load_review_queue')
         : String(queueQuery.error)
       : null;
 
@@ -218,10 +216,10 @@ export default function ReviewQueuePage() {
   return (
     <>
       <PageHeader
-        a11yTitle="Review queue"
+        a11yTitle={t('routes.review_queue.title')}
         actions={
           <Button size="small" variant="outlined" onClick={() => queueQuery.refetch()} disabled={queueQuery.isFetching}>
-            Refresh
+            {t('common.refresh')}
           </Button>
         }
       />
@@ -231,7 +229,11 @@ export default function ReviewQueuePage() {
       ) : null}
 
       {queueQuery.isLoading && !queueQuery.data ? (
-        <LoadingBlock message="Loading review workload…" py={2} sx={{ mb: 2, justifyContent: 'flex-start' }} />
+        <LoadingBlock
+          message={t('results.loading_workload')}
+          py={2}
+          sx={{ mb: 2, justifyContent: 'flex-start' }}
+        />
       ) : summary ? (
         <ReviewQueueKpiCards summary={summary} />
       ) : null}
@@ -257,13 +259,13 @@ export default function ReviewQueuePage() {
             }}
           >
             <Typography variant="caption" color="text.secondary" sx={{ width: '100%', lineHeight: 1.2 }}>
-              Scope
+              {t('review_queue.filter_scope')}
             </Typography>
             <FormControl size="small" sx={{ minWidth: 160 }}>
-              <InputLabel id="rq-inv-label">Inventory</InputLabel>
+              <InputLabel id="rq-inv-label">{t('common.inventory')}</InputLabel>
               <Select
                 labelId="rq-inv-label"
-                label="Inventory"
+                label={t('common.inventory')}
                 value={inventoryId}
                 onChange={(e) => {
                   setInventoryId(String(e.target.value));
@@ -271,7 +273,7 @@ export default function ReviewQueuePage() {
                 }}
               >
                 <MenuItem value="">
-                  <em>All</em>
+                  <em>{t('results.filters.all')}</em>
                 </MenuItem>
                 {(inventoriesQuery.data?.items ?? []).map((inv) => (
                   <MenuItem key={inv.id} value={inv.id}>
@@ -282,10 +284,10 @@ export default function ReviewQueuePage() {
             </FormControl>
 
             <FormControl size="small" sx={{ minWidth: 140 }} disabled={!inventoryId}>
-              <InputLabel id="rq-aisle-label">Aisle</InputLabel>
+              <InputLabel id="rq-aisle-label">{t('common.aisle')}</InputLabel>
               <Select
                 labelId="rq-aisle-label"
-                label="Aisle"
+                label={t('common.aisle')}
                 value={aisleId}
                 onChange={(e) => {
                   setAisleId(String(e.target.value));
@@ -293,7 +295,7 @@ export default function ReviewQueuePage() {
                 }}
               >
                 <MenuItem value="">
-                  <em>All</em>
+                  <em>{t('results.filters.all')}</em>
                 </MenuItem>
                 {(aislesQuery.data?.items ?? []).map((a) => (
                   <MenuItem key={a.id} value={a.id}>
@@ -304,10 +306,10 @@ export default function ReviewQueuePage() {
             </FormControl>
 
             <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel id="rq-status-label">Status</InputLabel>
+              <InputLabel id="rq-status-label">{t('common.status')}</InputLabel>
               <Select
                 labelId="rq-status-label"
-                label="Status"
+                label={t('common.status')}
                 value={positionStatus}
                 onChange={(e) => {
                   setPositionStatus(String(e.target.value));
@@ -315,13 +317,13 @@ export default function ReviewQueuePage() {
                 }}
               >
                 <MenuItem value="">
-                  <em>All</em>
+                  <em>{t('results.filters.all')}</em>
                 </MenuItem>
-                <MenuItem value="detected">Pending review (detected)</MenuItem>
-                <MenuItem value="confirmed">Confirmed (reviewed/corrected)</MenuItem>
-                <MenuItem value="reviewed">Reviewed</MenuItem>
-                <MenuItem value="corrected">Corrected</MenuItem>
-                <MenuItem value="deleted">Deleted</MenuItem>
+                <MenuItem value="detected">{t('results.status_menu_detected')}</MenuItem>
+                <MenuItem value="confirmed">{t('results.status_menu_confirmed')}</MenuItem>
+                <MenuItem value="reviewed">{t('results.status_menu_reviewed')}</MenuItem>
+                <MenuItem value="corrected">{t('results.status_menu_corrected')}</MenuItem>
+                <MenuItem value="deleted">{t('results.status_menu_deleted')}</MenuItem>
               </Select>
             </FormControl>
           </Box>
@@ -339,12 +341,12 @@ export default function ReviewQueuePage() {
             }}
           >
             <Typography variant="caption" color="text.secondary" sx={{ width: '100%', lineHeight: 1.2 }}>
-              Quality &amp; SKU
+              {t('review_queue.filter_quality_sku')}
             </Typography>
             <TextField
               size="small"
-              label="Min confidence"
-              placeholder="0–1"
+              label={t('results.min_confidence')}
+              placeholder={t('review_queue.placeholder_confidence')}
               value={minConfidenceStr}
               onChange={(e) => {
                 setMinConfidenceStr(e.target.value);
@@ -354,15 +356,13 @@ export default function ReviewQueuePage() {
               inputProps={{ inputMode: 'decimal' }}
               error={Boolean(minConfidenceFieldError || confidenceRangeError)}
               helperText={
-                minConfidenceFieldError ||
-                (confidenceRangeError ? 'Cannot be greater than max.' : '') ||
-                ' '
+                minConfidenceFieldError || (confidenceRangeError ? t('results.cannot_exceed_max') : '') || ' '
               }
             />
             <TextField
               size="small"
-              label="Max confidence"
-              placeholder="0–1"
+              label={t('results.max_confidence')}
+              placeholder={t('review_queue.placeholder_confidence')}
               value={maxConfidenceStr}
               onChange={(e) => {
                 setMaxConfidenceStr(e.target.value);
@@ -372,17 +372,15 @@ export default function ReviewQueuePage() {
               inputProps={{ inputMode: 'decimal' }}
               error={Boolean(maxConfidenceFieldError || confidenceRangeError)}
               helperText={
-                maxConfidenceFieldError ||
-                (confidenceRangeError ? 'Must be greater than or equal to min.' : '') ||
-                ' '
+                maxConfidenceFieldError || (confidenceRangeError ? t('results.must_be_gte_min') : '') || ' '
               }
             />
 
             <FormControl size="small" sx={{ minWidth: 140 }}>
-              <InputLabel id="rq-tr-label">Traceability</InputLabel>
+              <InputLabel id="rq-tr-label">{t('common.traceability')}</InputLabel>
               <Select
                 labelId="rq-tr-label"
-                label="Traceability"
+                label={t('common.traceability')}
                 value={traceability}
                 onChange={(e) => {
                   setTraceability(String(e.target.value));
@@ -390,20 +388,20 @@ export default function ReviewQueuePage() {
                 }}
               >
                 <MenuItem value="">
-                  <em>All</em>
+                  <em>{t('results.filters.all')}</em>
                 </MenuItem>
-                <MenuItem value="valid">Valid</MenuItem>
-                <MenuItem value="missing">Missing</MenuItem>
-                <MenuItem value="invalid">Invalid</MenuItem>
-                <MenuItem value="unvalidated">Unvalidated</MenuItem>
+                <MenuItem value="valid">{t('traceability.valid')}</MenuItem>
+                <MenuItem value="missing">{t('traceability.missing')}</MenuItem>
+                <MenuItem value="invalid">{t('traceability.invalid')}</MenuItem>
+                <MenuItem value="unvalidated">{t('traceability.unvalidated')}</MenuItem>
               </Select>
             </FormControl>
 
             <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel id="rq-ev-label">Evidence</InputLabel>
+              <InputLabel id="rq-ev-label">{t('common.evidence')}</InputLabel>
               <Select
                 labelId="rq-ev-label"
-                label="Evidence"
+                label={t('common.evidence')}
                 value={hasEvidence}
                 onChange={(e) => {
                   setHasEvidence(String(e.target.value));
@@ -411,18 +409,18 @@ export default function ReviewQueuePage() {
                 }}
               >
                 <MenuItem value="">
-                  <em>All</em>
+                  <em>{t('results.filters.all')}</em>
                 </MenuItem>
-                <MenuItem value="yes">Present</MenuItem>
-                <MenuItem value="no">Missing</MenuItem>
+                <MenuItem value="yes">{t('common.present')}</MenuItem>
+                <MenuItem value="no">{t('traceability.missing')}</MenuItem>
               </Select>
             </FormControl>
 
             <FormControl size="small" sx={{ minWidth: 120 }}>
-              <InputLabel id="rq-qz-label">Qty zero</InputLabel>
+              <InputLabel id="rq-qz-label">{t('results.qty_zero')}</InputLabel>
               <Select
                 labelId="rq-qz-label"
-                label="Qty zero"
+                label={t('results.qty_zero')}
                 value={qtyZero}
                 onChange={(e) => {
                   setQtyZero(String(e.target.value));
@@ -430,17 +428,17 @@ export default function ReviewQueuePage() {
                 }}
               >
                 <MenuItem value="">
-                  <em>All</em>
+                  <em>{t('results.filters.all')}</em>
                 </MenuItem>
-                <MenuItem value="yes">Yes</MenuItem>
-                <MenuItem value="no">No</MenuItem>
+                <MenuItem value="yes">{t('common.yes')}</MenuItem>
+                <MenuItem value="no">{t('common.no')}</MenuItem>
               </Select>
             </FormControl>
 
             <TextField
               size="small"
-              label="Search SKU"
-              placeholder="Contains…"
+              label={t('results.search_sku')}
+              placeholder={t('common.contains_placeholder')}
               value={skuContains}
               onChange={(e) => {
                 setSkuContains(e.target.value);
@@ -453,13 +451,23 @@ export default function ReviewQueuePage() {
       </FilterToolbar>
 
       <SectionCard
-        title="Prioritized results"
+        title={t('results.prioritized_results')}
         subtitle={
           activeSortColumnId === 'priority'
-            ? 'Sorted by priority (P1 first), then newest updated.'
+            ? t('results.sort_priority_default')
             : activeSortColumnId === 'confidence'
-              ? `Sorted by confidence (${apiSortDir === 'desc' ? 'high → low' : 'low → high'}).`
-              : `Sorted by updated (${apiSortDir === 'desc' ? 'newest first' : 'oldest first'}).`
+              ? t('results.sort_confidence', {
+                  order:
+                    apiSortDir === 'desc'
+                      ? t('results.sort_confidence_high_low')
+                      : t('results.sort_confidence_low_high'),
+                })
+              : t('results.sort_updated', {
+                  order:
+                    apiSortDir === 'desc'
+                      ? t('results.sort_updated_newest')
+                      : t('results.sort_updated_oldest'),
+                })
         }
       >
         <Box sx={{ overflow: 'auto' }}>

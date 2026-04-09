@@ -3,7 +3,9 @@
  */
 
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button, Typography } from '@mui/material';
+import i18n from '../../../i18n';
 import type { ResultSummary } from '../types';
 import {
   DataTable,
@@ -30,7 +32,7 @@ export interface ResultsTableProps {
 
 function displaySku(r: ResultSummary): string {
   if (r.sku != null && r.sku.trim() !== '') return r.sku.trim();
-  return '—';
+  return i18n.t('common.em_dash');
 }
 
 function displayQty(r: ResultSummary): string {
@@ -40,7 +42,7 @@ function displayQty(r: ResultSummary): string {
   if (value != null && !Number.isNaN(value) && value >= 0) {
     return String(value);
   }
-  return '—';
+  return i18n.t('common.em_dash');
 }
 
 function prioritySemantic(
@@ -58,11 +60,13 @@ export default function ResultsTable({
   pagination,
   loading,
 }: ResultsTableProps) {
+  const { t } = useTranslation();
+  const dash = i18n.t('common.em_dash');
   const columns = useMemo<DataTableColumn<ResultSummary>[]>(() => {
     return [
       {
         id: 'priority',
-        label: 'Priority',
+        label: t('results.table_column.priority'),
         width: 88,
         cell: (r) => {
           const p = deriveResultPriority(r);
@@ -73,10 +77,10 @@ export default function ResultsTable({
       },
       {
         id: 'sku',
-        label: 'SKU',
+        label: t('results.table_column.sku'),
         cell: (r) => {
           const label = displaySku(r);
-          if (label === '—') {
+          if (label === dash) {
             return (
               <Typography variant="body2" color="text.secondary" component="span">
                 {label}
@@ -88,7 +92,7 @@ export default function ResultsTable({
               variant="text"
               size="small"
               onClick={() => onOpenReview(r.id)}
-              aria-label={`Review ${label}`}
+              aria-label={t('results.table_review_aria', { sku: label })}
               sx={{
                 fontWeight: 650,
                 textTransform: 'none',
@@ -106,18 +110,18 @@ export default function ResultsTable({
       },
       {
         id: 'position_code',
-        label: 'Position code',
-        cell: (r) => (r.positionCode != null && r.positionCode.trim() !== '' ? r.positionCode : '—'),
+        label: t('results.table_column.position_code'),
+        cell: (r) => (r.positionCode != null && r.positionCode.trim() !== '' ? r.positionCode : dash),
       },
       {
         id: 'qty',
-        label: 'Quantity',
+        label: t('results.table_column.quantity'),
         align: 'right',
         cell: (r) => displayQty(r),
       },
       {
         id: 'review_status',
-        label: 'Review status',
+        label: t('results.table_column.review_status'),
         cell: (r) => (
           <StatusBadge
             label={getReviewStatusLabel(r.reviewStatus)}
@@ -128,7 +132,7 @@ export default function ResultsTable({
       },
       {
         id: 'traceability',
-        label: 'Traceability',
+        label: t('common.traceability'),
         cell: (r) => (
           <TraceabilityChip
             status={visibleTraceabilityToApiStatus(r.traceabilityStatus)}
@@ -139,16 +143,16 @@ export default function ResultsTable({
       },
       {
         id: 'confidence',
-        label: 'Confidence',
+        label: t('common.confidence'),
         align: 'right',
-        cell: (r) => (r.confidence != null ? `${(r.confidence * 100).toFixed(0)}%` : '—'),
+        cell: (r) => (r.confidence != null ? `${(r.confidence * 100).toFixed(0)}%` : dash),
       },
       {
         id: 'evidence',
-        label: 'Evidence',
+        label: t('results.table_column.evidence'),
         cell: (r) => (
           <StatusBadge
-            label={r.hasEvidence ? 'Present' : 'Missing'}
+            label={r.hasEvidence ? t('results.evidence_present') : t('results.evidence_missing')}
             semantic={r.hasEvidence ? 'success' : 'warning'}
             variant="outlined"
           />
@@ -156,7 +160,7 @@ export default function ResultsTable({
       },
       {
         id: 'updated',
-        label: 'Updated',
+        label: t('results.table_column.updated'),
         cell: (r) => (
           <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
             {formatDate(r.updatedAt)}
@@ -164,7 +168,7 @@ export default function ResultsTable({
         ),
       },
     ];
-  }, [onOpenReview]);
+  }, [onOpenReview, t, dash]);
 
   return (
     <DataTable<ResultSummary>

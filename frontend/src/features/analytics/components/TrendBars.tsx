@@ -1,4 +1,5 @@
 import { Box, Typography } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import type { AnalyticsTrendPoint } from '../types';
 
 export interface TrendBarsProps {
@@ -10,6 +11,7 @@ export interface TrendBarsProps {
 }
 
 export default function TrendBars({ title, subtitle, points, emptyMessage }: TrendBarsProps) {
+  const { t } = useTranslation();
   const max = Math.max(1, ...points.map((p) => p.reviewed_results));
 
   if (!points.length) {
@@ -24,7 +26,7 @@ export default function TrendBars({ title, subtitle, points, emptyMessage }: Tre
           </Typography>
         ) : null}
         <Typography variant="body2" color="text.secondary">
-          {emptyMessage ?? 'No trend data for this range. Try widening the date range or clearing filters.'}
+          {emptyMessage ?? t('results.trend_empty_default')}
         </Typography>
       </Box>
     );

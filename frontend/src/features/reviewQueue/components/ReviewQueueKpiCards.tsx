@@ -2,6 +2,7 @@
  * Sprint 4.2 — Review Queue KPI band (five workload signals).
  */
 
+import { useTranslation } from 'react-i18next';
 import { Box } from '@mui/material';
 import { KpiCard } from '../../../components/ui';
 import type { ReviewQueueSummary } from '../../../api/types';
@@ -11,6 +12,7 @@ export interface ReviewQueueKpiCardsProps {
 }
 
 export default function ReviewQueueKpiCards({ summary }: ReviewQueueKpiCardsProps) {
+  const { t } = useTranslation();
   return (
     <Box
       sx={{
@@ -28,19 +30,19 @@ export default function ReviewQueueKpiCards({ summary }: ReviewQueueKpiCardsProp
       }}
     >
       <Box sx={{ minWidth: 0 }}>
-        <KpiCard label="Pending review" value={summary.pending_review} />
+        <KpiCard label={t('results.kpi_needs_review')} value={summary.pending_review} />
       </Box>
       <Box sx={{ minWidth: 0 }}>
-        <KpiCard label="Low confidence" value={summary.low_confidence} />
+        <KpiCard label={t('results.kpi_low_confidence')} value={summary.low_confidence} />
       </Box>
       <Box sx={{ minWidth: 0 }}>
-        <KpiCard label="Invalid traceability" value={summary.invalid_traceability} />
+        <KpiCard label={t('results.kpi_invalid_traceability')} value={summary.invalid_traceability} />
       </Box>
       <Box sx={{ minWidth: 0 }}>
-        <KpiCard label="Qty zero" value={summary.qty_zero} />
+        <KpiCard label={t('results.kpi_qty_zero')} value={summary.qty_zero} />
       </Box>
       <Box sx={{ minWidth: 0 }}>
-        <KpiCard label="Missing evidence" value={summary.missing_evidence} />
+        <KpiCard label={t('results.kpi_missing_evidence')} value={summary.missing_evidence} />
       </Box>
     </Box>
   );

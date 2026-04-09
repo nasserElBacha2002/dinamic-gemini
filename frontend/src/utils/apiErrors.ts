@@ -3,7 +3,9 @@
  * Supports FastAPI detail as string, validation array, and non-JSON errors.
  */
 
+import i18n from '../i18n';
 import { ApiError } from '../api/types';
+import { backendDetailToTranslationKey } from './errorTranslations';
 
 /**
  * FastAPI validation error item shape.
@@ -14,9 +16,7 @@ interface ValidationErrorItem {
   type?: string;
 }
 
-function isValidationDetail(
-  detail: unknown
-): detail is ValidationErrorItem[] {
+function isValidationDetail(detail: unknown): detail is ValidationErrorItem[] {
   return Array.isArray(detail) && detail.length > 0;
 }
 
@@ -28,12 +28,8 @@ function messageFromValidationItem(item: ValidationErrorItem): string {
 }
 
 /**
- * Extracts a user-facing message from an API error or unknown throwable.
- *
- * - detail as string → use it
- * - detail as FastAPI validation array [{ msg: "..." }] → first message or "Validation error"
- * - ApiError with message → fallback to err.message
- * - Otherwise → fallback
+ * Extracts a raw message from an API error or unknown throwable (often English from the server).
+ * Prefer `resolveApiErrorMessage` for UI.
  */
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError && error.data?.detail !== undefined) {
@@ -56,4 +52,13 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
     return error.trim();
   }
   return fallback;
+}
+
+/** User-facing Spanish message: maps known backend text to i18n; otherwise generic fallback. */
+export function resolveApiErrorMessage(error: unknown, fallbackKey: string): string {
+  const raw = getApiErrorMessage(error, '');
+  if (!raw.trim()) return i18n.t(fallbackKey);
+  const mapped = backendDetailToTranslationKey(raw);
+  if (mapped) return i18n.t(mapped);
+  return i18n.t('errors.generic');
 }

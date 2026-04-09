@@ -129,7 +129,7 @@ describe('ReferenceImagesDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /^preview$/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/preview failed/i)).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent(/preview failed|could not complete the operation/i);
     });
   });
 

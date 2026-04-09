@@ -9,6 +9,7 @@
 
 import type { ReactNode } from 'react';
 import { Alert, Button, DialogContentText } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import BaseDialog from './BaseDialog';
 
 export interface ConfirmDialogProps {
@@ -35,14 +36,18 @@ export default function ConfirmDialog({
   onClose,
   title,
   description,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  cancelLabel,
   onConfirm,
   loading = false,
-  confirmPendingLabel = 'Working…',
+  confirmPendingLabel,
   confirmColor = 'primary',
   errorMessage,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
+  const cancel = cancelLabel ?? t('common.cancel');
+  const confirm = confirmLabel ?? t('common.confirm');
+  const pending = confirmPendingLabel ?? t('common.working');
   return (
     <BaseDialog
       open={open}
@@ -55,7 +60,7 @@ export default function ConfirmDialog({
       actions={
         <>
           <Button onClick={onClose} disabled={loading}>
-            {cancelLabel}
+            {cancel}
           </Button>
           <Button
             variant="contained"
@@ -63,7 +68,7 @@ export default function ConfirmDialog({
             onClick={() => void onConfirm()}
             disabled={loading}
           >
-            {loading ? confirmPendingLabel : confirmLabel}
+            {loading ? pending : confirm}
           </Button>
         </>
       }

@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import '../i18n';
 
 // jsdom doesn't implement createObjectURL/revokeObjectURL; used for local file previews.
 if (!('createObjectURL' in URL)) {

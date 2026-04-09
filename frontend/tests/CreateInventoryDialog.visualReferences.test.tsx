@@ -52,7 +52,7 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    expect(screen.getByText(/reference images/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /reference images/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /create without references/i }));
 

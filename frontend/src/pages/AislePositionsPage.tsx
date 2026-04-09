@@ -3,10 +3,12 @@
  */
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import { exportAisleResultsCsv, type AislePositionsListQuery } from '../api/client';
-import { getApiErrorMessage } from '../utils/apiErrors';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
@@ -102,7 +104,19 @@ function summarizeMergeResults(results: MergeResultItemResponse[] | undefined): 
   };
 }
 
+function mergeConsolidatedDetail(t: TFunction, summary: MergeResultsSummary): string {
+  const examples =
+    summary.skuExamples.length > 0
+      ? t('positions.merge_examples_paren', { list: summary.skuExamples.join(', ') })
+      : '';
+  if (summary.groupCount === 1) {
+    return t('positions.merge_repeated_sku_one', { examples });
+  }
+  return t('positions.merge_repeated_sku_other', { count: summary.groupCount, examples });
+}
+
 export default function AislePositionsPage() {
+  const { t } = useTranslation();
   const { inventoryId, aisleId } = useParams<{ inventoryId: string; aisleId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -320,7 +334,7 @@ export default function AislePositionsPage() {
       setQuickContext({
         inventoryId,
         inventoryName: inventory.name,
-        aisleCode: aisle?.code ?? '—',
+        aisleCode: aisle?.code ?? t('common.em_dash'),
         aisleId,
         positionId: resultId,
         resultIds: sortedForTable.map((r) => r.id),
@@ -341,6 +355,7 @@ export default function AislePositionsPage() {
       filter,
       visibleJobId,
       reviewReadOnly,
+      t,
     ]
   );
 
@@ -354,7 +369,7 @@ export default function AislePositionsPage() {
     setQuickContext({
       inventoryId,
       inventoryName: inventory.name,
-      aisleCode: aisle?.code ?? '—',
+      aisleCode: aisle?.code ?? t('common.em_dash'),
       aisleId,
       positionId: p.positionId,
       resultIds: p.resultIds,
@@ -382,7 +397,7 @@ export default function AislePositionsPage() {
   const errorMessage =
     isError && error
       ? error instanceof ApiError
-        ? getApiErrorMessage(error, 'Failed to load results')
+        ? resolveApiErrorMessage(error, 'errors.load_results')
         : String(error)
       : null;
   const hasResults = !isLoading && results.length > 0;
@@ -395,34 +410,36 @@ export default function AislePositionsPage() {
   const mergeButtonDisabled =
     mergeMutation.isPending || mergeCandidates.groupCount === 0 || reviewReadOnly;
   const mergeDisabledReason = reviewReadOnly
-    ? 'Merge is only available on the operational job slice'
+    ? t('positions.merge_unavailable')
     : mergeCandidates.groupCount === 0
-      ? 'No repeated SKUs detected in current results'
+      ? t('positions.merge_no_skus')
       : '';
   const mergeFeedback = useMemo(() => {
     if (lastMergeResponse != null) {
       if (lastMergeResponse.product_records_updated > 0) {
-        const summaryText = lastMergeSummary
-          ? ` Latest merge consolidated ${lastMergeSummary.groupCount} repeated SKU ${lastMergeSummary.groupCount === 1 ? 'group' : 'groups'}${lastMergeSummary.skuExamples.length > 0 ? ` (${lastMergeSummary.skuExamples.join(', ')})` : ''}.`
+        const detailExtra = lastMergeSummary
+          ? t('positions.merge_visible_detail_space', { detail: mergeConsolidatedDetail(t, lastMergeSummary) })
           : '';
         return {
           severity: 'success' as const,
-          text: `Visible results updated after merge.${summaryText}`,
+          text: `${t('positions.merge_visible_updated')}${detailExtra}`,
         };
       }
       return {
         severity: 'info' as const,
-        text: 'Merge completed with no visible quantity changes.',
+        text: t('positions.merge_no_change'),
       };
     }
     if (mergeResultsSummary != null) {
       return {
         severity: 'info' as const,
-        text: `Latest merge consolidated ${mergeResultsSummary.groupCount} repeated SKU ${mergeResultsSummary.groupCount === 1 ? 'group' : 'groups'}${mergeResultsSummary.skuExamples.length > 0 ? ` (${mergeResultsSummary.skuExamples.join(', ')})` : ''}.`,
+        text: t('positions.merge_history_consolidated', {
+          detail: mergeConsolidatedDetail(t, mergeResultsSummary),
+        }),
       };
     }
     return null;
-  }, [lastMergeResponse, lastMergeSummary, mergeResultsSummary]);
+  }, [lastMergeResponse, lastMergeSummary, mergeResultsSummary, t]);
 
   const handleRunMerge = useCallback(async () => {
     if (!inventoryId || !aisleId) return;
@@ -441,34 +458,32 @@ export default function AislePositionsPage() {
       setLastMergeResponse(result);
       setLastMergeSummary(summarizeMergeResults(refreshedMergeResults.data?.results));
       showSnackbar(
-        result.product_records_updated > 0
-          ? 'Repeated labels merged'
-          : 'Merge completed with no visible quantity changes',
+        result.product_records_updated > 0 ? t('positions.merge_started') : t('positions.merge_no_change'),
         'success'
       );
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
-      showSnackbar(getApiErrorMessage(err, 'Merge failed'), 'error');
+      showSnackbar(resolveApiErrorMessage(err, 'errors.merge_failed'), 'error');
     }
-  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, showSnackbar, visibleJobId]);
+  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, showSnackbar, t, visibleJobId]);
 
   if (!inventoryId || !aisleId) {
     return (
       <>
-        <Alert severity="warning">Missing inventory or aisle.</Alert>
+        <Alert severity="warning">{t('positions.missing_inventory_aisle_page')}</Alert>
         <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
-          Back to list
+          {t('inventory.back_to_list')}
         </Button>
       </>
     );
   }
 
   const breadcrumbs = [
-    { label: 'Inventories', to: '/' as const },
+    { label: t('aisle.breadcrumb_inventories'), to: '/' as const },
     ...(inventory
       ? [{ label: inventory.name, to: `/inventories/${inventoryId}` as const }]
       : []),
-    { label: 'Aisle results' },
+    { label: t('positions.breadcrumb_results') },
   ];
 
   const unknownUrlJob =
@@ -485,8 +500,8 @@ export default function AislePositionsPage() {
     <>
       <PageHeader
         breadcrumbs={breadcrumbs}
-        title={aisle?.code ?? 'Aisle'}
-        subtitle={inventory?.name ?? (inventoryQuery.isLoading ? 'Loading…' : '—')}
+        title={aisle?.code ?? t('common.aisle')}
+        subtitle={inventory?.name ?? (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'))}
         actions={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
             {mergeButtonVisible ? (
@@ -498,18 +513,18 @@ export default function AislePositionsPage() {
                     onClick={() => void handleRunMerge()}
                     disabled={mergeButtonDisabled}
                   >
-                    {mergeMutation.isPending ? 'Merging…' : 'Merge repeated labels'}
+                    {mergeMutation.isPending ? t('common.merging') : t('aisle.merge_repeated_labels')}
                   </Button>
                 </span>
               </Tooltip>
             ) : null}
             {jobs.length >= 2 ? (
               <Button size="small" variant="outlined" onClick={openCompareDialog}>
-                Compare runs…
+                {t('positions.compare_runs')}
               </Button>
             ) : null}
             {compareOperationalShortcut ? (
-              <Tooltip title="Opens read-only benchmark compare vs the current operational run (separate from default analytics).">
+              <Tooltip title={t('aisle.compare_runs_tooltip')}>
                 <Button
                   size="small"
                   variant="outlined"
@@ -519,7 +534,7 @@ export default function AislePositionsPage() {
                     )
                   }
                 >
-                  Compare this run to operational
+                  {t('positions.compare_to_operational')}
                 </Button>
               </Tooltip>
             ) : null}
@@ -532,7 +547,7 @@ export default function AislePositionsPage() {
                   setPromoteDialogOpen(true);
                 }}
               >
-                Promote run to operational…
+                {t('positions.promote_run')}
               </Button>
             ) : null}
             <Button
@@ -546,13 +561,13 @@ export default function AislePositionsPage() {
                   await exportAisleResultsCsv(inventoryId, aisleId, { jobId: jobIdParam });
                 } catch (e) {
                   const err = e instanceof ApiError ? e : new ApiError(String(e));
-                  showSnackbar(getApiErrorMessage(err, 'Export failed'), 'error');
+                  showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
                 } finally {
                   setExportingCsv(false);
                 }
               }}
             >
-              {exportingCsv ? 'Exporting…' : 'Export this aisle (CSV)'}
+              {exportingCsv ? t('common.exporting') : t('positions.export_aisle_csv')}
             </Button>
             <Button
               size="small"
@@ -563,7 +578,7 @@ export default function AislePositionsPage() {
               }}
               disabled={isLoading}
             >
-              Refresh
+              {t('common.refresh')}
             </Button>
           </Box>
         }
@@ -571,12 +586,12 @@ export default function AislePositionsPage() {
 
       {reviewReadOnly ? (
         <Alert severity="info" sx={{ mb: 2 }}>
-          Benchmark / non-operational slice: review actions are read-only. The operational job is{' '}
-          <Typography component="span" variant="body2" sx={{ fontFamily: 'monospace' }}>
-            {operationalJobId?.slice(0, 10)}…
-          </Typography>{' '}
-          (merge and corrections apply only there). Promote a succeeded run to switch the operational pointer —
-          corrections are not copied from other runs automatically.
+          {t('positions.benchmark_readonly_info', {
+            jobPrefix:
+              operationalJobId != null && operationalJobId.length > 0
+                ? `${operationalJobId.slice(0, 10)}…`
+                : t('common.em_dash'),
+          })}
         </Alert>
       ) : null}
 
@@ -594,11 +609,16 @@ export default function AislePositionsPage() {
           ) : null}
           {resultContextSource ? (
             <Typography variant="caption" color="text.secondary">
-              Resolved: {resultContextSource}
-              {visibleJobId ? ` · job ${visibleJobId.slice(0, 10)}…` : ''}
-              {!jobIdParam && visibleJobId && effectiveSelectorJobId === visibleJobId
-                ? ' (matches selector — no URL pin)'
-                : null}
+              {t('positions.resolved_line', {
+                source: resultContextSource,
+                jobSuffix: visibleJobId
+                  ? t('positions.resolved_job_bit', { id: `${visibleJobId.slice(0, 10)}…` })
+                  : '',
+                noPinNote:
+                  !jobIdParam && visibleJobId && effectiveSelectorJobId === visibleJobId
+                    ? t('positions.resolved_no_url_pin')
+                    : '',
+              })}
             </Typography>
           ) : null}
         </Box>
@@ -610,12 +630,11 @@ export default function AislePositionsPage() {
           sx={{ mb: 2 }}
           action={
             <Button color="inherit" size="small" onClick={() => handleRunSelectionChange(null)}>
-              Clear run filter
+              {t('positions.clear_run_filter')}
             </Button>
           }
         >
-          This job is not in the recent runs list for this aisle. Loading may fail; clear the filter or pick another
-          run.
+          {t('positions.unknown_url_job')}
         </Alert>
       ) : null}
 
@@ -625,23 +644,23 @@ export default function AislePositionsPage() {
           sx={{ mb: 2 }}
           action={
             <Button color="inherit" size="small" onClick={() => handleRunSelectionChange(null)}>
-              Clear run filter
+              {t('positions.clear_run_filter')}
             </Button>
           }
         >
-          No data for this run (invalid or removed). Clear the run filter to use the default resolved slice.
+          {t('positions.no_data_for_run')}
         </Alert>
       ) : null}
 
       {errorMessage ? <ResultsErrorState message={errorMessage} onRetry={() => refetch()} /> : null}
 
-      {!errorMessage && isLoading ? <ResultsLoadingState message="Loading results…" /> : null}
+      {!errorMessage && isLoading ? <ResultsLoadingState message={t('positions.loading_results')} /> : null}
 
       {!errorMessage && !isLoading && results.length === 0 ? (
         <>
           <Box sx={{ mb: 3, mt: 1 }}>
             <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-              Counted total
+              {t('positions.counted_total')}
             </Typography>
             <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
               {kpi.aisleTotalCounted}
@@ -654,8 +673,8 @@ export default function AislePositionsPage() {
           >
             <TextField
               size="small"
-              label="Search"
-              placeholder="Filter by SKU or position"
+              label={t('positions.search_label')}
+              placeholder={t('positions.filter_sku_placeholder')}
               value={skuSearch}
               onChange={(e) => {
                 setSkuSearch(e.target.value);
@@ -679,7 +698,7 @@ export default function AislePositionsPage() {
               }}
             />
           </FilterToolbar>
-          <ResultsEmptyState message="No results yet. Run processing on this aisle to see results." />
+          <ResultsEmptyState message={t('positions.empty_results')} />
         </>
       ) : null}
 
@@ -687,7 +706,7 @@ export default function AislePositionsPage() {
         <>
           <Box sx={{ mb: 3, mt: 1 }}>
             <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-              Counted total
+              {t('positions.counted_total')}
             </Typography>
             <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
               {kpi.aisleTotalCounted}
@@ -706,8 +725,8 @@ export default function AislePositionsPage() {
           >
             <TextField
               size="small"
-              label="Search"
-              placeholder="Filter by SKU or position"
+              label={t('positions.search_label')}
+              placeholder={t('positions.filter_sku_placeholder')}
               value={skuSearch}
               onChange={(e) => {
                 setSkuSearch(e.target.value);
@@ -715,13 +734,7 @@ export default function AislePositionsPage() {
               }}
               sx={{ minWidth: 200 }}
             />
-            <Tooltip
-              title={
-                tableSort === 'photo'
-                  ? 'Backend row order: manifest photo sequence when stored; if missing, stable fallbacks (filename, image id, position). Not historical capture order for legacy rows without sequence.'
-                  : 'Re-orders the current table client-side by review priority heuristics.'
-              }
-            >
+            <Tooltip title={tableSort === 'photo' ? t('positions.order_api') : t('positions.order_client')}>
               <span>
                 <ToggleButtonGroup
                   size="small"
@@ -730,10 +743,10 @@ export default function AislePositionsPage() {
                   onChange={(_, value) => {
                     if (value != null) setTableSort(value);
                   }}
-                  aria-label="Row order"
+                  aria-label={t('common.row_order')}
                 >
-                  <ToggleButton value="photo">Photo order</ToggleButton>
-                  <ToggleButton value="priority">Review priority</ToggleButton>
+                  <ToggleButton value="photo">{t('positions.photo_order')}</ToggleButton>
+                  <ToggleButton value="priority">{t('positions.review_priority_sort')}</ToggleButton>
                 </ToggleButtonGroup>
               </span>
             </Tooltip>
@@ -757,7 +770,7 @@ export default function AislePositionsPage() {
           {sortedForTable.length === 0 ? (
             <ResultsFilteredEmptyState onClearFilter={handleClearFilterOnly} />
           ) : (
-            <SectionCard title="Results">
+            <SectionCard title={t('positions.title_results')}>
               <Box sx={{ overflow: 'auto' }}>
                 <ResultsTable
                   results={tableRows}
@@ -805,12 +818,12 @@ export default function AislePositionsPage() {
             try {
               await promoteMutation.mutateAsync(promoteJobId);
               setPromoteDialogOpen(false);
-              showSnackbar('Operational pointer updated', 'success');
+              showSnackbar(t('aisle.operational_updated_snackbar'), 'success');
               void refetch();
               void aisleJobsQuery.refetch();
             } catch (e) {
               const err = e instanceof ApiError ? e : new ApiError(String(e));
-              showSnackbar(getApiErrorMessage(err, 'Promotion failed'), 'error');
+              showSnackbar(resolveApiErrorMessage(err, 'errors.promotion_failed'), 'error');
             }
           })();
         }}
