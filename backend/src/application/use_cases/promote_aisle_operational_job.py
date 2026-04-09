@@ -11,6 +11,9 @@ from src.application.errors import (
     JobNotFoundError,
     JobPromotionNotAllowedError,
 )
+from src.application.services.inventory_processing_mode import (
+    require_test_inventory_for_experimental_features,
+)
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.domain.jobs.entities import JobStatus
 
@@ -37,6 +40,7 @@ class PromoteAisleOperationalJobUseCase:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
+        require_test_inventory_for_experimental_features(inv)
         aisle = self._aisle_repo.get_by_id(command.aisle_id)
         if aisle is None or aisle.inventory_id != command.inventory_id:
             raise AisleNotFoundError(

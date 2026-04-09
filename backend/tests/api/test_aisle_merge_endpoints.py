@@ -33,7 +33,7 @@ def test_run_merge_endpoint_returns_counts() -> None:
     app.dependency_overrides[get_run_aisle_merge_use_case] = lambda: StubRunMergeUseCase()
     try:
         client = TestClient(app)
-        resp = client.post("/api/v3/inventories/inv1/aisles/a1/merge")
+        resp = client.post("/api/v3/inventories/inv1/aisles/a1/merge?job_id=legacy")
         assert resp.status_code == 202
         data = resp.json()
         assert data["operation_mode"] == "manual_authoritative"

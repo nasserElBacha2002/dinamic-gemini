@@ -8,14 +8,17 @@ import {
   CardContent,
   CardMedia,
   CircularProgress,
+  FormLabel,
   IconButton,
   Stack,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { createInventory, uploadInventoryVisualReferences } from '../api/client';
-import type { CreateInventoryRequest, Inventory } from '../api/types';
+import type { CreateInventoryRequest, Inventory, InventoryProcessingMode } from '../api/types';
 import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import WizardModal from './ui/WizardModal';
@@ -58,6 +61,7 @@ export default function CreateInventoryDialog({
   const [uploadError, setUploadError] = useState('');
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [processingMode, setProcessingMode] = useState<InventoryProcessingMode>('production');
   const dragDepthRef = useRef(0);
   const dropzoneHelpId = useId();
 
@@ -92,6 +96,7 @@ export default function CreateInventoryDialog({
     setCreatedInventory(null);
     setUploadError('');
     setUploadState('idle');
+    setProcessingMode('production');
   };
 
   const handleClose = () => {
@@ -162,7 +167,10 @@ export default function CreateInventoryDialog({
   const createInventoryOnce = async (): Promise<Inventory> => {
     if (createdInventory) return createdInventory;
     const trimmed = (name || '').trim();
-    const created = await doCreate({ name: trimmed } as CreateInventoryRequest);
+    const created = await doCreate({
+      name: trimmed,
+      processing_mode: processingMode,
+    } satisfies CreateInventoryRequest);
     setCreatedInventory(created);
     return created;
   };
@@ -332,19 +340,42 @@ export default function CreateInventoryDialog({
       fullWidth
     >
       {activeStep === 0 ? (
-        <TextField
-          autoFocus
-          margin="dense"
-          label={t('dialogs.inventory.inventory_name')}
-          fullWidth
-          variant="outlined"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          error={Boolean(validationError)}
-          helperText={validationError}
-          disabled={submitting || createdInventory != null}
-          inputProps={{ maxLength: 255 }}
-        />
+        <Stack spacing={2}>
+          <TextField
+            autoFocus
+            margin="dense"
+            label={t('dialogs.inventory.inventory_name')}
+            fullWidth
+            variant="outlined"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            error={Boolean(validationError)}
+            helperText={validationError}
+            disabled={submitting || createdInventory != null}
+            inputProps={{ maxLength: 255 }}
+          />
+          <Box>
+            <FormLabel component="legend">{t('dialogs.inventory.processing_mode_label')}</FormLabel>
+            <ToggleButtonGroup
+              exclusive
+              value={processingMode}
+              onChange={(_, v: InventoryProcessingMode | null) => {
+                if (v != null) setProcessingMode(v);
+              }}
+              size="small"
+              sx={{ mt: 1 }}
+              disabled={submitting || createdInventory != null}
+            >
+              <ToggleButton value="production">{t('dialogs.inventory.processing_mode_real')}</ToggleButton>
+              <ToggleButton value="test">{t('dialogs.inventory.processing_mode_test')}</ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+              {processingMode === 'production'
+                ? t('dialogs.inventory.processing_mode_real_help')
+                : t('dialogs.inventory.processing_mode_test_help')}
+            </Typography>
+          </Box>
+        </Stack>
       ) : (
         <Box>
           <Typography variant="h6" sx={{ mb: 1 }}>

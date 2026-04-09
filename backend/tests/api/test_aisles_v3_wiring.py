@@ -205,7 +205,10 @@ def test_get_processing_provider_options_reflects_env_processing_model_lists(
 def test_post_process_with_explicit_fake_provider_persisted_on_status() -> None:
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
-        create_resp = client.post("/api/v3/inventories", json={"name": "For Prov Fake"})
+        create_resp = client.post(
+            "/api/v3/inventories",
+            json={"name": "For Prov Fake", "processing_mode": "test"},
+        )
         assert create_resp.status_code == 201
         inv_id = create_resp.json()["id"]
         aisle_resp = client.post(
@@ -230,10 +233,44 @@ def test_post_process_with_explicit_fake_provider_persisted_on_status() -> None:
         app.dependency_overrides.pop(get_current_admin, None)
 
 
+def test_post_process_production_inventory_ignores_request_provider_and_uses_snapshot() -> None:
+    """Production must not honor experimental provider/model selection from the request body."""
+    create_resp = client.post(
+        "/api/v3/inventories",
+        json={"name": "Prod Snap Body Ignored", "processing_mode": "production"},
+    )
+    assert create_resp.status_code == 201
+    inv_body = create_resp.json()
+    inv_id = inv_body["id"]
+    primary = inv_body.get("primary_execution_config")
+    assert primary is not None
+    expected_provider = primary["provider_name"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "PS-01"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+    proc = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+        json={"provider_name": "fake", "model_name": "fixture"},
+    )
+    assert proc.status_code == 202
+    status = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
+    assert status.status_code == 200
+    lj = status.json()["latest_job"]
+    assert lj is not None
+    assert lj.get("provider_name") == expected_provider
+    assert lj.get("provider_name") != "fake"
+
+
 def test_post_process_invalid_model_for_provider_returns_422() -> None:
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
-        create_resp = client.post("/api/v3/inventories", json={"name": "For Bad Model"})
+        create_resp = client.post(
+            "/api/v3/inventories",
+            json={"name": "For Bad Model", "processing_mode": "test"},
+        )
         assert create_resp.status_code == 201
         inv_id = create_resp.json()["id"]
         aisle_resp = client.post(
@@ -255,7 +292,10 @@ def test_post_process_invalid_model_for_provider_returns_422() -> None:
 def test_post_process_unknown_provider_returns_422() -> None:
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
-        create_resp = client.post("/api/v3/inventories", json={"name": "For Prov 422"})
+        create_resp = client.post(
+            "/api/v3/inventories",
+            json={"name": "For Prov 422", "processing_mode": "test"},
+        )
         assert create_resp.status_code == 201
         inv_id = create_resp.json()["id"]
         aisle_resp = client.post(

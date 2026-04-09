@@ -93,6 +93,20 @@ export default function InventoriesList() {
         ),
       },
       {
+        id: 'processing_mode',
+        label: t('dialogs.inventory.processing_mode_label'),
+        sortable: false,
+        cell: (inv) => {
+          const isTest = inv.processing_mode === 'test';
+          return (
+            <StatusBadge
+              label={isTest ? t('inventory.processing_mode_test') : t('inventory.processing_mode_production')}
+              semantic={isTest ? 'warning' : 'neutral'}
+            />
+          );
+        },
+      },
+      {
         id: 'created_at',
         label: t('common.created'),
         sortable: true,

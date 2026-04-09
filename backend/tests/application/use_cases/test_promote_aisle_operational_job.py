@@ -18,7 +18,7 @@ from src.application.use_cases.promote_aisle_operational_job import (
     PromoteAisleOperationalJobUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
@@ -34,7 +34,16 @@ def test_promote_only_succeeded_process_aisle_for_scoped_job() -> None:
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
     job_repo = MemoryJobRepository()
-    inv_repo.save(Inventory("inv1", "I", InventoryStatus.IN_REVIEW, now, now))
+    inv_repo.save(
+        Inventory(
+            "inv1",
+            "I",
+            InventoryStatus.IN_REVIEW,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
     aisle_repo.save(Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now, operational_job_id=None))
     job_repo.save(
         Job(
@@ -74,7 +83,16 @@ def test_promote_validates_inventory_and_aisle_scope() -> None:
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
     job_repo = MemoryJobRepository()
-    inv_repo.save(Inventory("inv1", "I", InventoryStatus.IN_REVIEW, now, now))
+    inv_repo.save(
+        Inventory(
+            "inv1",
+            "I",
+            InventoryStatus.IN_REVIEW,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
     aisle_repo.save(Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now))
     job_repo.save(
         Job(
@@ -93,7 +111,16 @@ def test_promote_validates_inventory_and_aisle_scope() -> None:
         uc.execute(PromoteAisleOperationalJobCommand("missing", "a1", "jok"))
     with pytest.raises(AisleNotFoundError):
         uc.execute(PromoteAisleOperationalJobCommand("inv1", "missing", "jok"))
-    inv_repo.save(Inventory("inv2", "I2", InventoryStatus.IN_REVIEW, now, now))
+    inv_repo.save(
+        Inventory(
+            "inv2",
+            "I2",
+            InventoryStatus.IN_REVIEW,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
     aisle_repo.save(Aisle("a2", "inv2", "B", AisleStatus.PROCESSED, now, now))
     with pytest.raises(AisleNotFoundError):
         uc.execute(PromoteAisleOperationalJobCommand("inv1", "a2", "jok"))

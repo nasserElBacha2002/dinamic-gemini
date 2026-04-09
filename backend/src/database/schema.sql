@@ -135,6 +135,38 @@ BEGIN
 END;
 GO
 
+-- v3 processing mode + operational primary snapshot (see migrations/versions/0013_inventory_processing_mode.sql)
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'processing_mode')
+    ALTER TABLE inventories ADD processing_mode VARCHAR(20) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'primary_provider_name')
+    ALTER TABLE inventories ADD primary_provider_name NVARCHAR(100) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'primary_model_name')
+    ALTER TABLE inventories ADD primary_model_name NVARCHAR(150) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'primary_prompt_key')
+    ALTER TABLE inventories ADD primary_prompt_key NVARCHAR(150) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'primary_prompt_version')
+    ALTER TABLE inventories ADD primary_prompt_version NVARCHAR(50) NULL;
+GO
+
+-- Align processing_mode with migrations/versions/0013_inventory_processing_mode.sql (backfill, NOT NULL, default).
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'processing_mode')
+BEGIN
+    UPDATE inventories SET processing_mode = 'test' WHERE processing_mode IS NULL;
+END;
+GO
+IF EXISTS (
+    SELECT * FROM sys.columns c
+    WHERE c.object_id = OBJECT_ID('inventories') AND c.name = 'processing_mode' AND c.is_nullable = 1
+)
+    ALTER TABLE inventories ALTER COLUMN processing_mode VARCHAR(20) NOT NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.default_constraints
+    WHERE parent_object_id = OBJECT_ID('inventories') AND name = 'DF_inventories_processing_mode'
+)
+    ALTER TABLE inventories ADD CONSTRAINT DF_inventories_processing_mode DEFAULT ('production') FOR processing_mode;
+GO
+
 -- v3.0 — Aisles (Épica 2, Documento técnico §7.2; FK for future AisleRepository)
 -- Domain assumption: one code per inventory (UNIQUE inventory_id, code).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'aisles')

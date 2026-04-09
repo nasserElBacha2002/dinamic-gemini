@@ -102,6 +102,9 @@ from src.application.services.analytics_query_service import AnalyticsQueryServi
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.operational_execution_config_resolver import (
+    OperationalExecutionConfigResolver,
+)
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
@@ -170,11 +173,25 @@ def get_job_stale_reconciler(
     )
 
 
+def get_operational_execution_config_resolver() -> OperationalExecutionConfigResolver:
+    return OperationalExecutionConfigResolver()
+
+
 def get_create_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
     clock: Clock = Depends(get_clock),
+    operational_resolver: OperationalExecutionConfigResolver = Depends(
+        get_operational_execution_config_resolver
+    ),
 ) -> CreateInventoryUseCase:
-    return CreateInventoryUseCase(inventory_repo=repo, clock=clock)
+    from src.config import load_settings as _load_settings
+
+    return CreateInventoryUseCase(
+        inventory_repo=repo,
+        clock=clock,
+        operational_resolver=operational_resolver,
+        settings_loader=_load_settings,
+    )
 
 
 def get_list_inventories_use_case(

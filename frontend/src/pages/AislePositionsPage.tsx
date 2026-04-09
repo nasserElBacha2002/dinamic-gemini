@@ -166,6 +166,7 @@ export default function AislePositionsPage() {
   const jobs = aisleJobsQuery.data?.jobs ?? [];
   const operationalJobId = aisleJobsQuery.data?.operational_job_id?.trim() || null;
   const inventory = inventoryQuery.data ?? null;
+  const isTestInventory = inventory?.processing_mode === 'test';
   const aisle = useMemo(
     () => aislesQuery.data?.items?.find((a) => a.id === aisleId) ?? null,
     [aislesQuery.data?.items, aisleId]
@@ -317,11 +318,15 @@ export default function AislePositionsPage() {
   }, [positions]);
 
   const reviewReadOnly = Boolean(
-    operationalJobId && visibleJobId && operationalJobId !== visibleJobId
+    isTestInventory &&
+      operationalJobId &&
+      visibleJobId &&
+      operationalJobId !== visibleJobId
   );
   const compareOperationalShortcut =
     Boolean(
-      inventoryId &&
+      isTestInventory &&
+        inventoryId &&
         aisleId &&
         operationalJobId &&
         visibleJobId &&
@@ -518,7 +523,7 @@ export default function AislePositionsPage() {
                 </span>
               </Tooltip>
             ) : null}
-            {jobs.length >= 2 ? (
+            {isTestInventory && jobs.length >= 2 ? (
               <Button size="small" variant="outlined" onClick={openCompareDialog}>
                 {t('positions.compare_runs')}
               </Button>
@@ -538,7 +543,7 @@ export default function AislePositionsPage() {
                 </Button>
               </Tooltip>
             ) : null}
-            {canPromoteCurrentRun ? (
+            {isTestInventory && canPromoteCurrentRun ? (
               <Button
                 size="small"
                 variant="outlined"
@@ -595,7 +600,8 @@ export default function AislePositionsPage() {
         </Alert>
       ) : null}
 
-      {aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource) ? (
+      {isTestInventory &&
+      (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)) ? (
         <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
           {aisleJobsQuery.isLoading || jobs.length > 0 ? (
             <AisleRunSelector
@@ -789,6 +795,7 @@ export default function AislePositionsPage() {
         </>
       ) : null}
 
+      {isTestInventory ? (
       <CompareRunsDialog
         open={compareDialogOpen}
         onClose={() => setCompareDialogOpen(false)}
@@ -804,7 +811,9 @@ export default function AislePositionsPage() {
           );
         }}
       />
+      ) : null}
 
+      {isTestInventory ? (
       <PromoteOperationalDialog
         open={promoteDialogOpen}
         onClose={() => setPromoteDialogOpen(false)}
@@ -828,6 +837,7 @@ export default function AislePositionsPage() {
           })();
         }}
       />
+      ) : null}
 
       <QuickReviewDrawer
         open={Boolean(quickContext)}

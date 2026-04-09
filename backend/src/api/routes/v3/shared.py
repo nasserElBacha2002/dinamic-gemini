@@ -18,7 +18,11 @@ from src.utils.validation import validate_relative_path
 from src.api.schemas.aisle_schemas import AisleResponse, AisleJobSummary
 from src.api.schemas.asset_schemas import SourceAssetResponse
 from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary
-from src.api.schemas.inventory_schemas import InventoryListItemResponse, InventoryResponse
+from src.api.schemas.inventory_schemas import (
+    InventoryListItemResponse,
+    InventoryResponse,
+    PrimaryExecutionConfigResponse,
+)
 from src.application.ports.contracts import InventoryListItem
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
@@ -49,7 +53,7 @@ from src.api.schemas.position_schemas import ReviewActionRequest
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
-from src.domain.inventory.entities import Inventory
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode
 from src.domain.jobs.entities import Job
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
@@ -403,11 +407,30 @@ def handle_delete_position(
         raise review_exception_to_http(e)
 
 
+def _primary_execution_config_from_inventory(inv: Inventory) -> PrimaryExecutionConfigResponse | None:
+    """Expose primary config only when the snapshot is complete (no empty-string placeholders)."""
+    if inv.processing_mode != InventoryProcessingMode.PRODUCTION:
+        return None
+    pn = (inv.primary_provider_name or "").strip()
+    pm = (inv.primary_model_name or "").strip()
+    pk = (inv.primary_prompt_key or "").strip()
+    if not pn or not pm or not pk:
+        return None
+    return PrimaryExecutionConfigResponse(
+        provider_name=pn,
+        model_name=pm,
+        prompt_key=pk,
+        prompt_version=inv.primary_prompt_version,
+    )
+
+
 def inventory_to_response(inv: Inventory) -> InventoryResponse:
     return InventoryResponse(
         id=inv.id,
         name=inv.name,
         status=inv.status.value,
+        processing_mode=inv.processing_mode.value,
+        primary_execution_config=_primary_execution_config_from_inventory(inv),
         created_at=inv.created_at,
         updated_at=inv.updated_at,
     )
@@ -424,6 +447,7 @@ def inventory_list_item_to_response(item: InventoryListItem) -> InventoryListIte
         aisles_count=item.aisles_count,
         pending_review_count=item.pending_review_count,
         last_activity_at=item.last_activity_at,
+        processing_mode=inv.processing_mode.value,
     )
 
 

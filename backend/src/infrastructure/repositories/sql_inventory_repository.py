@@ -14,7 +14,11 @@ from typing import Optional, Sequence
 
 from src.application.ports.repositories import InventoryRepository
 from src.database.sqlserver import SqlServerClient, now_utc
-from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.entities import (
+    Inventory,
+    InventoryProcessingMode,
+    InventoryStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,19 @@ class SqlInventoryRepository(InventoryRepository):
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
 
+    def _row_processing_mode(self, raw: object, inventory_id: str) -> InventoryProcessingMode:
+        s = (raw or "production") if raw is not None else "production"
+        s = str(s).strip().lower()
+        try:
+            return InventoryProcessingMode(s)
+        except ValueError:
+            logger.warning(
+                "Invalid inventory processing_mode from DB: %r, using PRODUCTION for inventory_id=%s",
+                raw,
+                inventory_id,
+            )
+            return InventoryProcessingMode.PRODUCTION
+
     def save(self, inventory: Inventory) -> None:
         """Persist entity; timestamps are taken from the entity (domain-owned)."""
         completed = _ensure_utc(inventory.completed_at)
@@ -41,16 +58,33 @@ class SqlInventoryRepository(InventoryRepository):
             cur.execute(
                 """
                 UPDATE inventories
-                SET name = ?, status = ?, updated_at = ?, completed_at = ?
+                SET name = ?, status = ?, updated_at = ?, completed_at = ?,
+                    processing_mode = ?, primary_provider_name = ?, primary_model_name = ?,
+                    primary_prompt_key = ?, primary_prompt_version = ?
                 WHERE id = ?
                 """,
-                (inventory.name, inventory.status.value, updated, completed, inventory.id),
+                (
+                    inventory.name,
+                    inventory.status.value,
+                    updated,
+                    completed,
+                    inventory.processing_mode.value,
+                    inventory.primary_provider_name,
+                    inventory.primary_model_name,
+                    inventory.primary_prompt_key,
+                    inventory.primary_prompt_version,
+                    inventory.id,
+                ),
             )
             if cur.rowcount == 0:
                 cur.execute(
                     """
-                    INSERT INTO inventories (id, name, status, created_at, updated_at, completed_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO inventories (
+                        id, name, status, created_at, updated_at, completed_at,
+                        processing_mode, primary_provider_name, primary_model_name,
+                        primary_prompt_key, primary_prompt_version
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         inventory.id,
@@ -59,6 +93,11 @@ class SqlInventoryRepository(InventoryRepository):
                         created,
                         updated,
                         completed,
+                        inventory.processing_mode.value,
+                        inventory.primary_provider_name,
+                        inventory.primary_model_name,
+                        inventory.primary_prompt_key,
+                        inventory.primary_prompt_version,
                     ),
                 )
 
@@ -66,7 +105,9 @@ class SqlInventoryRepository(InventoryRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, name, status, created_at, updated_at, completed_at
+                SELECT id, name, status, created_at, updated_at, completed_at,
+                       processing_mode, primary_provider_name, primary_model_name,
+                       primary_prompt_key, primary_prompt_version
                 FROM inventories WHERE id = ?
                 """,
                 (inventory_id,),
@@ -84,6 +125,7 @@ class SqlInventoryRepository(InventoryRepository):
                 inventory_id,
             )
             status = InventoryStatus.DRAFT
+        pm = self._row_processing_mode(getattr(row, "processing_mode", None), inventory_id)
         return Inventory(
             id=row.id,
             name=row.name or "",
@@ -91,6 +133,11 @@ class SqlInventoryRepository(InventoryRepository):
             created_at=_ensure_utc(row.created_at) or now_utc(),
             updated_at=_ensure_utc(row.updated_at) or now_utc(),
             completed_at=_ensure_utc(getattr(row, "completed_at", None)),
+            processing_mode=pm,
+            primary_provider_name=getattr(row, "primary_provider_name", None),
+            primary_model_name=getattr(row, "primary_model_name", None),
+            primary_prompt_key=getattr(row, "primary_prompt_key", None),
+            primary_prompt_version=getattr(row, "primary_prompt_version", None),
         )
 
     def list_all(self) -> Sequence[Inventory]:
@@ -98,7 +145,9 @@ class SqlInventoryRepository(InventoryRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, name, status, created_at, updated_at, completed_at
+                SELECT id, name, status, created_at, updated_at, completed_at,
+                       processing_mode, primary_provider_name, primary_model_name,
+                       primary_prompt_key, primary_prompt_version
                 FROM inventories ORDER BY created_at DESC
                 """
             )
@@ -115,6 +164,8 @@ class SqlInventoryRepository(InventoryRepository):
                     getattr(row, "id", "?"),
                 )
                 status = InventoryStatus.DRAFT
+            inv_id = getattr(row, "id", "?")
+            pm = self._row_processing_mode(getattr(row, "processing_mode", None), str(inv_id))
             out.append(
                 Inventory(
                     id=row.id,
@@ -123,6 +174,11 @@ class SqlInventoryRepository(InventoryRepository):
                     created_at=_ensure_utc(row.created_at) or now_utc(),
                     updated_at=_ensure_utc(row.updated_at) or now_utc(),
                     completed_at=_ensure_utc(getattr(row, "completed_at", None)),
+                    processing_mode=pm,
+                    primary_provider_name=getattr(row, "primary_provider_name", None),
+                    primary_model_name=getattr(row, "primary_model_name", None),
+                    primary_prompt_key=getattr(row, "primary_prompt_key", None),
+                    primary_prompt_version=getattr(row, "primary_prompt_version", None),
                 )
             )
         return out

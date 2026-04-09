@@ -62,7 +62,7 @@ from src.api.schemas.processing_schemas import (
     ProcessAisleRequest,
     ProcessAisleResponse,
 )
-from src.application.ports.repositories import AisleRepository, JobRepository
+from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.application.errors import (
     AisleNotFoundError,
     ActiveJobExistsError,
@@ -75,9 +75,10 @@ from src.application.errors import (
     InvalidProcessingModelError,
     InvalidProcessingPromptKeyError,
     ProcessingProviderNotConfiguredError,
+    BenchmarkRequiresTestInventoryError,
     UnknownProcessingProviderError,
 )
-from src.application.services.processing_provider_resolution import resolve_start_processing_request
+from src.application.services.process_aisle_execution_resolution import resolve_process_aisle_execution_keys
 from src.config import load_settings
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
@@ -107,6 +108,7 @@ from src.application.use_cases.run_aisle_merge import (
     RunAisleMergeCommand,
     RunAisleMergeUseCase,
 )
+from src.api.dependencies import get_inventory_repo
 from .shared import aisle_to_response, job_to_summary, status_response_from_result
 
 logger = logging.getLogger(__name__)
@@ -263,15 +265,27 @@ def start_aisle_processing(
     aisle_id: str,
     payload: ProcessAisleRequest | None = Body(None),
     use_case: StartAisleProcessingUseCase = Depends(get_start_aisle_processing_use_case),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> ProcessAisleResponse:
     try:
+        inv = inventory_repo.get_by_id(inventory_id)
+        if inv is None:
+            raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
         body = payload or ProcessAisleRequest()
         settings = load_settings()
-        pipeline_key, model_name, prompt_key = resolve_start_processing_request(
+        pipeline_key, model_name, prompt_key = resolve_process_aisle_execution_keys(
+            inv,
             requested_provider_name=body.provider_name,
             requested_model_name=body.model_name,
             requested_prompt_key=body.prompt_key,
             settings=settings,
+        )
+        logger.info(
+            "aisle.process_requested inventory_id=%s aisle_id=%s processing_mode=%s provider=%s",
+            inventory_id,
+            aisle_id,
+            inv.processing_mode.value,
+            pipeline_key,
         )
         job_id = use_case.execute(
             StartAisleProcessingCommand(
@@ -283,6 +297,8 @@ def start_aisle_processing(
             )
         )
         return ProcessAisleResponse(job_id=job_id)
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Inventory not found")
     except UnknownProcessingProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except InvalidProcessingModelError as e:
@@ -770,6 +786,8 @@ def compare_aisle_benchmark_runs(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except JobDoesNotBelongToAisleError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except BenchmarkRequiresTestInventoryError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 @router.post(
@@ -801,6 +819,8 @@ def promote_aisle_operational_job(
     except JobDoesNotBelongToAisleError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except JobPromotionNotAllowedError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except BenchmarkRequiresTestInventoryError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
 
@@ -863,6 +883,8 @@ def export_aisle_benchmark(
         raise HTTPException(status_code=422, detail=str(e)) from e
     except BenchmarkCompareJobsMustDifferError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except BenchmarkRequiresTestInventoryError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     return Response(
         content=csv_body.encode("utf-8"),
         media_type="text/csv; charset=utf-8",

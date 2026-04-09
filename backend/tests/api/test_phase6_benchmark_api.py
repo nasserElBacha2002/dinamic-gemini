@@ -20,7 +20,7 @@ from src.api.server import app
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
@@ -41,7 +41,16 @@ def _seed() -> None:
     job_repo = MemoryJobRepository()
     pos_repo = MemoryPositionRepository()
     prod_repo = MemoryProductRecordRepository()
-    inv_repo.save(Inventory("inv-b6", "B6", InventoryStatus.IN_REVIEW, now, now))
+    inv_repo.save(
+        Inventory(
+            "inv-b6",
+            "B6",
+            InventoryStatus.IN_REVIEW,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
     aisle_repo.save(
         Aisle("aisle-b6", "inv-b6", "A", AisleStatus.PROCESSED, now, now, operational_job_id="j1")
     )

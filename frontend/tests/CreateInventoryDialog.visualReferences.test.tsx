@@ -57,7 +57,26 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.click(screen.getByRole('button', { name: /create without references/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
+    expect(createInventoryFn).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'My inv', processing_mode: 'production' }),
+    );
     expect(mockUpload).not.toHaveBeenCalled();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+  });
+
+  it('sends processing_mode test when Test mode is selected', async () => {
+    const { createInventoryFn, onSuccess } = renderDialog();
+
+    fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'Lab inv' } });
+    fireEvent.click(screen.getByRole('button', { name: /test mode/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /create without references/i }));
+
+    await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
+    expect(createInventoryFn).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Lab inv', processing_mode: 'test' }),
+    );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
   });
 

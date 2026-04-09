@@ -66,6 +66,7 @@ from src.application.use_cases.manage_inventory_visual_references import (
     ReplaceInventoryVisualReferenceUseCase,
 )
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
+from src.domain.inventory.entities import InventoryProcessingMode
 from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
@@ -125,7 +126,10 @@ def create_inventory(
     use_case: CreateInventoryUseCase = Depends(get_create_inventory_use_case),
 ) -> InventoryResponse:
     """Create a new inventory (v3.0)."""
-    inventory = use_case.execute(CreateInventoryCommand(name=payload.name))
+    mode = InventoryProcessingMode(payload.processing_mode)
+    inventory = use_case.execute(
+        CreateInventoryCommand(name=payload.name, processing_mode=mode)
+    )
     return inventory_to_response(inventory)
 
 

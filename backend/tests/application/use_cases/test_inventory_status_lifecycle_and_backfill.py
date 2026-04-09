@@ -9,6 +9,9 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.application.use_cases.backfill_inventory_statuses import BackfillInventoryStatusesUseCase
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
+from src.application.services.operational_execution_config_resolver import (
+    OperationalPrimaryExecutionConfig,
+)
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -27,6 +30,21 @@ class FixedClock:
         return self._now
 
 
+class _StubOperationalResolver:
+    def resolve(self, settings: object) -> OperationalPrimaryExecutionConfig:
+        _ = settings
+        return OperationalPrimaryExecutionConfig(
+            provider_name="fake",
+            model_name="fixture",
+            prompt_key="global_v21",
+            prompt_version=None,
+        )
+
+
+def _settings_loader() -> object:
+    return object()
+
+
 def test_inventory_aggregate_lifecycle_through_completed() -> None:
     """draft → processing (aisle exists) → in_review (processed) → completed after review clears."""
     now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -37,7 +55,12 @@ def test_inventory_aggregate_lifecycle_through_completed() -> None:
     review_repo = MemoryReviewActionRepository()
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
 
-    create_inv_uc = CreateInventoryUseCase(inv_repo, clock)
+    create_inv_uc = CreateInventoryUseCase(
+        inv_repo,
+        clock,
+        operational_resolver=_StubOperationalResolver(),
+        settings_loader=_settings_loader,
+    )
     inv = create_inv_uc.execute(CreateInventoryCommand(name="Lifecycle inv"))
     assert inv.status == InventoryStatus.DRAFT
     assert reconciler.reconcile(inv.id) is False
