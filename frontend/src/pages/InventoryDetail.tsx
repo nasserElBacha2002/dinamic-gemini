@@ -549,6 +549,16 @@ export default function InventoryDetail() {
                 >
                   {t('aisle.visual_refs_title')}
                 </Button>
+                {inventory.processing_mode === 'test' ? (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    data-testid="inventory-header-compare-runs"
+                    onClick={() => navigate(`/inventories/${inventoryId}/analytics/compare`)}
+                  >
+                    {t('analytics.compare_runs_link')}
+                  </Button>
+                ) : null}
                 <Button
                   variant="outlined"
                   size="small"

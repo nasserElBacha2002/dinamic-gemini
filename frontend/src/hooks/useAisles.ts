@@ -117,12 +117,15 @@ export function useAisleBenchmarkCompare(
   jobBId: string | undefined,
   options?: { enabled?: boolean }
 ) {
+  const inv = (inventoryId ?? '').trim();
+  const aisle = (aisleId ?? '').trim();
   const a = jobAId?.trim() ?? '';
   const b = jobBId?.trim() ?? '';
+  const paramsReady = Boolean(inv && aisle && a && b && a !== b);
   return useQuery({
-    queryKey: queryKeys.inventories.benchmarkCompare(inventoryId ?? '', aisleId ?? '', a, b),
-    queryFn: () => getAisleBenchmarkCompare(inventoryId!, aisleId!, a, b),
-    enabled: Boolean(inventoryId && aisleId && a && b) && (options?.enabled !== false),
+    queryKey: queryKeys.inventories.benchmarkCompare(inv, aisle, a, b),
+    queryFn: () => getAisleBenchmarkCompare(inv, aisle, a, b),
+    enabled: paramsReady && (options?.enabled !== false),
     refetchOnWindowFocus: false,
   });
 }

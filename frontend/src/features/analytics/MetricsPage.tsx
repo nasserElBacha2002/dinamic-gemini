@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Alert,
   Chip,
@@ -20,6 +20,7 @@ import {
   Skeleton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import {
@@ -208,6 +209,7 @@ function translateQualityIssueType(issueType: string, t: TFunction): string {
 
 export default function MetricsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const initial = useMemo(() => defaultDateRange(), []);
   const [dateFrom, setDateFrom] = useState(initial.from);
   const [dateTo, setDateTo] = useState(initial.to);
@@ -232,6 +234,15 @@ export default function MetricsPage() {
   const aisles = aislesQuery.data?.items ?? [];
   const selectedInventory = inventories.find((inv) => inv.id === inventoryId) ?? null;
   const selectedAisle = aisles.find((aisle) => aisle.id === aisleId) ?? null;
+  const compareRunsHref =
+    Boolean(inventoryId && selectedInventory && selectedInventory.processing_mode === 'test')
+      ? `/inventories/${inventoryId}/analytics/compare`
+      : null;
+  const compareRunsDisabledReason = compareRunsHref
+    ? ''
+    : !inventoryId
+      ? t('analytics.compare_runs_metrics_select_inventory')
+      : t('analytics.compare_runs_metrics_test_only');
 
   useEffect(() => {
     if (aisleId && !aisles.some((aisle) => aisle.id === aisleId)) {
@@ -646,9 +657,27 @@ export default function MetricsPage() {
           setAislePage(1);
         }}
         endActions={
-          <Button size="small" variant="outlined" onClick={() => refetchAll()} disabled={isLoading}>
-            {t('common.refresh')}
-          </Button>
+          <>
+            <Tooltip
+              title={compareRunsDisabledReason}
+              disableHoverListener={Boolean(compareRunsHref)}
+            >
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  data-testid="metrics-compare-runs"
+                  disabled={!compareRunsHref}
+                  onClick={() => compareRunsHref && navigate(compareRunsHref)}
+                >
+                  {t('analytics.compare_runs_link')}
+                </Button>
+              </span>
+            </Tooltip>
+            <Button size="small" variant="outlined" onClick={() => refetchAll()} disabled={isLoading}>
+              {t('common.refresh')}
+            </Button>
+          </>
         }
       >
         <TextField

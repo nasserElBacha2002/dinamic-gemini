@@ -41,7 +41,6 @@ import {
   ResultsErrorState,
   AisleRunSelector,
 } from '../features/results/components';
-import CompareRunsDialog from '../features/benchmark/CompareRunsDialog';
 import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
 
 /** List query: photo-grouped order, no SKU merge — matches operator photo-review expectations. */
@@ -132,9 +131,6 @@ export default function AislePositionsPage() {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
-  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
-  const [compareJobA, setCompareJobA] = useState('');
-  const [compareJobB, setCompareJobB] = useState('');
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [promoteJobId, setPromoteJobId] = useState('');
   /** `photo` keeps API order; `priority` applies client-side review ranking on top of loaded rows. */
@@ -227,16 +223,18 @@ export default function AislePositionsPage() {
       operationalJobId !== visibleJobId
   );
 
-  const openCompareDialog = useCallback(() => {
+  const navigateToAnalyticsCompare = useCallback(() => {
+    if (!inventoryId || !aisleId) return;
+    if (jobs.length < 2) return;
     const a = visibleJobId ?? jobs[0]?.id ?? '';
-    const b =
-      jobs.find((j) => j.id !== a)?.id ??
-      operationalJobId ??
-      '';
-    setCompareJobA(a);
-    setCompareJobB(b);
-    setCompareDialogOpen(true);
-  }, [visibleJobId, jobs, operationalJobId]);
+    const b = jobs.find((j) => j.id !== a)?.id ?? '';
+    if (!a || !b || a === b) return;
+    const params = new URLSearchParams();
+    params.set('aisleId', aisleId);
+    params.set('jobAId', a);
+    params.set('jobBId', b);
+    navigate(`/inventories/${inventoryId}/analytics/compare?${params.toString()}`);
+  }, [aisleId, inventoryId, jobs, navigate, visibleJobId]);
 
   /** Aligns dropdown with the run actually shown: URL pin wins; else backend-resolved id when it appears in the jobs list. */
   const effectiveSelectorJobId = useMemo(() => {
@@ -524,7 +522,7 @@ export default function AislePositionsPage() {
               </Tooltip>
             ) : null}
             {isTestInventory && jobs.length >= 2 ? (
-              <Button size="small" variant="outlined" onClick={openCompareDialog}>
+              <Button size="small" variant="outlined" onClick={navigateToAnalyticsCompare}>
                 {t('positions.compare_runs')}
               </Button>
             ) : null}
@@ -533,11 +531,13 @@ export default function AislePositionsPage() {
                 <Button
                   size="small"
                   variant="outlined"
-                  onClick={() =>
-                    navigate(
-                      `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(visibleJobId!)}&jobBId=${encodeURIComponent(operationalJobId!)}`
-                    )
-                  }
+                  onClick={() => {
+                    const params = new URLSearchParams();
+                    params.set('aisleId', aisleId!);
+                    params.set('jobAId', visibleJobId!);
+                    params.set('jobBId', operationalJobId!);
+                    navigate(`/inventories/${inventoryId}/analytics/compare?${params.toString()}`);
+                  }}
                 >
                   {t('positions.compare_to_operational')}
                 </Button>
@@ -793,24 +793,6 @@ export default function AislePositionsPage() {
             </SectionCard>
           )}
         </>
-      ) : null}
-
-      {isTestInventory ? (
-      <CompareRunsDialog
-        open={compareDialogOpen}
-        onClose={() => setCompareDialogOpen(false)}
-        jobs={jobs}
-        compareJobA={compareJobA}
-        compareJobB={compareJobB}
-        onCompareJobAChange={setCompareJobA}
-        onCompareJobBChange={setCompareJobB}
-        onConfirm={() => {
-          setCompareDialogOpen(false);
-          navigate(
-            `/inventories/${inventoryId}/aisles/${aisleId}/compare?jobAId=${encodeURIComponent(compareJobA)}&jobBId=${encodeURIComponent(compareJobB)}`
-          );
-        }}
-      />
       ) : null}
 
       {isTestInventory ? (

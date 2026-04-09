@@ -123,6 +123,25 @@ function renderPage() {
   );
 }
 
+function renderPageWithCompareRoute() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <AppSnackbarProvider>
+        <MemoryRouter initialEntries={['/inventories/inv-1']}>
+          <Routes>
+            <Route path="/inventories/:inventoryId" element={<InventoryDetail />} />
+            <Route
+              path="/inventories/:inventoryId/analytics/compare"
+              element={<div data-testid="inventory-compare-route">compare</div>}
+            />
+          </Routes>
+        </MemoryRouter>
+      </AppSnackbarProvider>
+    </QueryClientProvider>
+  );
+}
+
 describe('InventoryDetail', () => {
   beforeEach(() => {
     inventoryDetailHookState.data.processing_mode = 'test';
@@ -322,6 +341,23 @@ describe('InventoryDetail', () => {
     expect(screen.queryByText('Activity')).not.toBeInTheDocument();
     expect(screen.queryByText('Logs summary')).not.toBeInTheDocument();
     expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Analytics & benchmarks/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('inventory-header-compare-runs')).toBeInTheDocument();
+  });
+
+  it('hides Compare runs header action for production inventories', () => {
+    inventoryDetailHookState.data.processing_mode = 'production';
+    renderPage();
+    expect(screen.queryByTestId('inventory-header-compare-runs')).not.toBeInTheDocument();
+    inventoryDetailHookState.data.processing_mode = 'test';
+  });
+
+  it('navigates to analytics compare from the Compare runs header button', async () => {
+    renderPageWithCompareRoute();
+    fireEvent.click(screen.getByTestId('inventory-header-compare-runs'));
+    await waitFor(() => {
+      expect(screen.getByTestId('inventory-compare-route')).toBeInTheDocument();
+    });
   });
 
   it('opens the reference images drawer and renders inventory reference data there', () => {

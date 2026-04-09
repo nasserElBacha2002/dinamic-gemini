@@ -1,5 +1,5 @@
 /**
- * Phase 6 — benchmark compare page (read-only payload, export wiring).
+ * Analytics — benchmark compare page (read-only payload, export wiring).
  */
 
 import React from 'react';
@@ -10,7 +10,8 @@ import '@testing-library/jest-dom/vitest';
 import { ThemeProvider } from '@mui/material';
 import { createMemoryRouter, MemoryRouter, Route, Routes, RouterProvider } from 'react-router-dom';
 import theme from '../src/theme';
-import AisleComparePage from '../src/pages/AisleComparePage';
+import CompareRunsPage from '../src/pages/analytics/CompareRunsPage';
+import LegacyAisleCompareRedirect from '../src/pages/analytics/LegacyAisleCompareRedirect';
 import { AppSnackbarProvider } from '../src/components/ui';
 import type { AisleBenchmarkCompareResponse } from '../src/api/types';
 
@@ -123,18 +124,19 @@ function WithShell({ children }: { children: ReactNode }) {
   );
 }
 
-describe('AisleComparePage', () => {
+describe('CompareRunsPage', () => {
   beforeEach(() => {
     hoisted.downloadCsvMock.mockClear();
     hoisted.inventoryProcessingMode = 'test';
   });
 
   function renderAt(search: string) {
+    const path = `/inventories/inv-1/analytics/compare${search}`;
     return render(
       <WithShell>
-        <MemoryRouter initialEntries={[`/inventories/inv-1/aisles/aisle-1/compare${search}`]}>
+        <MemoryRouter initialEntries={[path]}>
           <Routes>
-            <Route path="/inventories/:inventoryId/aisles/:aisleId/compare" element={<AisleComparePage />} />
+            <Route path="/inventories/:inventoryId/analytics/compare" element={<CompareRunsPage />} />
           </Routes>
         </MemoryRouter>
       </WithShell>
@@ -142,7 +144,7 @@ describe('AisleComparePage', () => {
   }
 
   it('renders compare metrics and diff summary for a valid job pair', () => {
-    renderAt('?jobAId=job-a&jobBId=job-b');
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 
     expect(screen.getByText(/Read-only benchmark compare/i)).toBeInTheDocument();
     expect(screen.getByText(/Diff summary/i)).toBeInTheDocument();
@@ -153,7 +155,7 @@ describe('AisleComparePage', () => {
   });
 
   it('shows an honest cap warning when raw fetch hit the server cap', () => {
-    renderAt('?jobAId=job-a&jobBId=job-b');
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 
     const capAlert = screen.getByText(/Raw row load reached the server cap/i).closest('[role="alert"]');
     expect(capAlert).toBeTruthy();
@@ -162,7 +164,7 @@ describe('AisleComparePage', () => {
   });
 
   it('calls benchmark CSV export with the selected job pair', async () => {
-    renderAt('?jobAId=job-a&jobBId=job-b');
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 
     fireEvent.click(screen.getByRole('button', { name: /export compare table/i }));
 
@@ -174,21 +176,21 @@ describe('AisleComparePage', () => {
     });
   });
 
-  it('redirects to aisle positions for production inventories', async () => {
+  it('redirects to inventory detail for production inventories', async () => {
     hoisted.inventoryProcessingMode = 'production';
     const router = createMemoryRouter(
       [
         {
-          path: '/inventories/:inventoryId/aisles/:aisleId/compare',
-          element: <AisleComparePage />,
+          path: '/inventories/:inventoryId/analytics/compare',
+          element: <CompareRunsPage />,
         },
         {
-          path: '/inventories/:inventoryId/aisles/:aisleId/positions',
-          element: <div data-testid="aisle-positions-redirect-target" />,
+          path: '/inventories/:inventoryId',
+          element: <div data-testid="inventory-detail-redirect-target" />,
         },
       ],
       {
-        initialEntries: ['/inventories/inv-1/aisles/aisle-1/compare?jobAId=job-a&jobBId=job-b'],
+        initialEntries: ['/inventories/inv-1/analytics/compare?aisleId=aisle-1&jobAId=job-a&jobBId=job-b'],
       },
     );
     render(
@@ -197,7 +199,39 @@ describe('AisleComparePage', () => {
       </WithShell>,
     );
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/inventories/inv-1/aisles/aisle-1/positions');
+      expect(router.state.location.pathname).toBe('/inventories/inv-1');
+    });
+  });
+});
+
+describe('LegacyAisleCompareRedirect', () => {
+  it('redirects old aisle compare URL to analytics compare preserving query params', async () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/inventories/:inventoryId/aisles/:aisleId/compare',
+          element: <LegacyAisleCompareRedirect />,
+        },
+        {
+          path: '/inventories/:inventoryId/analytics/compare',
+          element: <div data-testid="analytics-compare-target">ok</div>,
+        },
+      ],
+      {
+        initialEntries: ['/inventories/inv-x/aisles/aisle-y/compare?jobAId=ja&jobBId=jb'],
+      },
+    );
+    render(
+      <WithShell>
+        <RouterProvider router={router} />
+      </WithShell>,
+    );
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/inventories/inv-x/analytics/compare');
+      const q = new URLSearchParams(router.state.location.search);
+      expect(q.get('aisleId')).toBe('aisle-y');
+      expect(q.get('jobAId')).toBe('ja');
+      expect(q.get('jobBId')).toBe('jb');
     });
   });
 });

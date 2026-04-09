@@ -1,8 +1,8 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import MetricsPage from '../src/features/analytics/MetricsPage';
 import { ApiError } from '../src/api/types';
 
@@ -122,8 +122,14 @@ function renderMetrics() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <MetricsPage />
+      <MemoryRouter initialEntries={['/metrics']}>
+        <Routes>
+          <Route path="/metrics" element={<MetricsPage />} />
+          <Route
+            path="/inventories/:inventoryId/analytics/compare"
+            element={<div data-testid="metrics-compare-route">compare</div>}
+          />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -134,8 +140,24 @@ describe('MetricsPage', () => {
     mockUseInventoriesList.mockReturnValue({
       data: {
         items: [
-          { id: 'inv-1', name: 'North DC', status: 'active', aisles_count: 2, pending_review_count: 1, last_activity_at: null },
-          { id: 'inv-2', name: 'South DC', status: 'active', aisles_count: 3, pending_review_count: 0, last_activity_at: null },
+          {
+            id: 'inv-1',
+            name: 'North DC',
+            status: 'active',
+            processing_mode: 'test',
+            aisles_count: 2,
+            pending_review_count: 1,
+            last_activity_at: null,
+          },
+          {
+            id: 'inv-2',
+            name: 'South DC',
+            status: 'active',
+            processing_mode: 'production',
+            aisles_count: 3,
+            pending_review_count: 0,
+            last_activity_at: null,
+          },
         ],
         page: 1,
         page_size: 25,
@@ -228,6 +250,36 @@ describe('MetricsPage', () => {
     expect(within(listbox).getByText('All inventories in scope')).toBeInTheDocument();
     expect(within(listbox).getByText('North DC')).toBeInTheDocument();
     expect(within(listbox).getByText('South DC')).toBeInTheDocument();
+  });
+
+  it('shows a Compare runs control in the filter toolbar', () => {
+    renderMetrics();
+    expect(screen.getByTestId('metrics-compare-runs')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /compare runs/i })).toBeDisabled();
+  });
+
+  it('enables Compare runs for a selected test inventory and navigates to analytics compare', async () => {
+    renderMetrics();
+    const invSelect = screen.getByLabelText('Inventory');
+    fireEvent.mouseDown(invSelect);
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('North DC'));
+
+    const compareBtn = screen.getByTestId('metrics-compare-runs');
+    expect(compareBtn).not.toBeDisabled();
+    fireEvent.click(compareBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('metrics-compare-route')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps Compare runs disabled when the selected inventory is production', () => {
+    renderMetrics();
+    const invSelect = screen.getByLabelText('Inventory');
+    fireEvent.mouseDown(invSelect);
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('South DC'));
+
+    expect(screen.getByTestId('metrics-compare-runs')).toBeDisabled();
   });
 
   it('renders the finished operational visuals, compact aisle columns, and ordered quality patterns when truthful data exists', () => {

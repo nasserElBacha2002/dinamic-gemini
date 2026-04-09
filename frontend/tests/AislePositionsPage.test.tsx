@@ -597,7 +597,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       expect(mergeBtn.getAttribute('disabled')).not.toBeNull();
     });
 
-    it('opens compare dialog from aisle results when multiple runs exist', () => {
+    it('does not show compare runs when fewer than two jobs exist', () => {
       aisleJobsListState.data = {
         operational_job_id: 'job-op',
         jobs: [
@@ -607,20 +607,13 @@ describe('AislePositionsPage (Aisle Results)', () => {
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',
           },
-          {
-            id: 'job-bench',
-            status: 'succeeded',
-            created_at: '2024-01-02T00:00:00Z',
-            updated_at: '2024-01-02T00:00:00Z',
-          },
         ],
       };
       renderPage();
-      fireEvent.click(screen.getByRole('button', { name: /compare runs/i }));
-      expect(screen.getByText(/Compare two runs/i)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /compare runs/i })).toBeNull();
     });
 
-    it('navigates to compare route with both job ids when confirming compare', async () => {
+    it('navigates to analytics compare with preselected runs when compare runs is clicked', async () => {
       resultSummariesState.resultJobId = 'job-op';
       aisleJobsListState.data = {
         operational_job_id: 'job-op',
@@ -646,7 +639,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
             element: <AislePositionsPage />,
           },
           {
-            path: '/inventories/:inventoryId/aisles/:aisleId/compare',
+            path: '/inventories/:inventoryId/analytics/compare',
             element: <div data-testid="compare-route-marker">compare</div>,
           },
         ],
@@ -662,12 +655,14 @@ describe('AislePositionsPage (Aisle Results)', () => {
       );
 
       fireEvent.click(screen.getByRole('button', { name: /compare runs/i }));
-      fireEvent.click(screen.getByRole('button', { name: /open compare/i }));
 
       await waitFor(() => {
-        expect(router.state.location.pathname).toBe('/inventories/inv-1/aisles/aisle-1/compare');
-        expect(router.state.location.search).toContain('jobAId=');
-        expect(router.state.location.search).toContain('jobBId=');
+        expect(router.state.location.pathname).toBe('/inventories/inv-1/analytics/compare');
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('aisleId')).toBe('aisle-1');
+        expect(q.get('jobAId')).toBe('job-op');
+        expect(q.get('jobBId')).toBe('job-bench');
+        expect(q.get('jobAId')).not.toBe(q.get('jobBId'));
       });
     });
 

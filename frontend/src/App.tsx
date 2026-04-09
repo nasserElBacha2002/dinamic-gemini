@@ -7,7 +7,8 @@ import AppShell from './layout/AppShell';
 import InventoriesList from './pages/InventoriesList';
 import InventoryDetail from './pages/InventoryDetail';
 import AislePositionsPage from './pages/AislePositionsPage';
-import AisleComparePage from './pages/AisleComparePage';
+import CompareRunsPage from './pages/analytics/CompareRunsPage';
+import LegacyAisleCompareRedirect from './pages/analytics/LegacyAisleCompareRedirect';
 import PositionDetailPage from './pages/PositionDetailPage';
 import ReviewQueuePage from './pages/ReviewQueuePage';
 import MetricsPage from './pages/MetricsPage';
@@ -36,7 +37,8 @@ function App() {
   const listEl = useMemo(() => <InventoriesList />, []);
   const detailEl = useMemo(() => <InventoryDetail />, []);
   const positionsEl = useMemo(() => <AislePositionsPage />, []);
-  const compareEl = useMemo(() => <AisleComparePage />, []);
+  const compareRunsEl = useMemo(() => <CompareRunsPage />, []);
+  const legacyCompareRedirectEl = useMemo(() => <LegacyAisleCompareRedirect />, []);
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
   const reviewQueueEl = useMemo(() => <ReviewQueuePage />, []);
   const metricsEl = useMemo(() => <MetricsPage />, []);
@@ -63,7 +65,8 @@ function App() {
         <Route path="settings" element={<Navigate to="/" replace />} />
         <Route path="inventories/:inventoryId" element={detailEl} />
         <Route path="inventories/:inventoryId/aisles/:aisleId/positions" element={positionsEl} />
-        <Route path="inventories/:inventoryId/aisles/:aisleId/compare" element={compareEl} />
+        <Route path="inventories/:inventoryId/analytics/compare" element={compareRunsEl} />
+        <Route path="inventories/:inventoryId/aisles/:aisleId/compare" element={legacyCompareRedirectEl} />
         <Route path="inventories/:inventoryId/aisles/:aisleId/positions/:positionId" element={positionDetailEl} />
       </Route>
     </Routes>
