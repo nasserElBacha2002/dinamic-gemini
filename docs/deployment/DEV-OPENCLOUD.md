@@ -37,6 +37,7 @@ GitHub Actions workflow: **`.github/workflows/deploy-dev-opencloud-backend.yml`*
 | Branch checked out | `develop` (hard reset to `origin/develop`) |
 | Compose file | `backend/docker-compose.yml` |
 | API port (host) | `8000` → container `8000` |
+| Local artifact persistence (DEV, `ARTIFACT_STORAGE_PROVIDER=local`) | Bind mount **`data/output` → `/app/output`** (repo-relative from compose: `../data/output:/app/output`). With default **`OUTPUT_DIR=output`**, the effective artifact base remains **`/app/output/v3_uploads`** in the container; files survive **`docker-compose up --build`** and container recreate. On the canonical server path, host files live under **`/opt/dinamic/dinamic-gemini/data/output/`** (e.g. visual references under `…/data/output/v3_uploads/inventories/...`). The `data/` tree is gitignored. |
 | Container env | **Repository root** `.env` at `/opt/dinamic/dinamic-gemini/.env` — referenced from compose as `../.env` (**not** in git) |
 | SSH (Actions → server) | Port **37783** (set in workflow; change the workflow if your sshd port changes) |
 
