@@ -167,9 +167,9 @@ def test_get_processing_provider_options_returns_registered_keys() -> None:
         assert "default_prompt_key" in data
         assert len(data.get("prompt_profiles", [])) >= 2
         keys = {p["key"] for p in data["providers"]}
-        assert {"gemini", "openai"}.issubset(keys)
+        assert keys == {"gemini", "openai"}
         for p in data["providers"]:
-            assert p["execution_mode"] in ("native", "transitional_bridge")
+            assert p["execution_mode"] == "native"
             assert "models" in p and isinstance(p["models"], list) and len(p["models"]) >= 1
             assert p.get("default_model")
         gemini = next(x for x in data["providers"] if x["key"] == "gemini")

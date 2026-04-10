@@ -2,8 +2,6 @@
 
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.providers.registry import (
-    TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS,
-    TransitionalLlmProviderBridgeExecutor,
     UnknownPipelineProviderError,
     default_analysis_provider,
     resolve_llm_executor,
@@ -11,8 +9,6 @@ from src.pipeline.providers.registry import (
 )
 
 __all__ = [
-    "TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS",
-    "TransitionalLlmProviderBridgeExecutor",
     "UnknownPipelineProviderError",
     "default_analysis_provider",
     "normalize_pipeline_provider_key",

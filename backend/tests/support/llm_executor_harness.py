@@ -43,7 +43,7 @@ HARNESS_LOGICAL_PROVIDER_KEY = "test_llm"
 HARNESS_RESPONSE_PROVIDER = "test_llm"
 HARNESS_DEFAULT_MODEL = "test-model"
 
-# Minimal v2.1-shaped dict for deterministic success defaults (aligned with FakeProvider default).
+# Minimal v2.1-shaped dict for deterministic success defaults.
 MINIMAL_V21_PARSED: dict[str, Any] = {
     "total_entities_detected": 0,
     "entities": [],
@@ -166,7 +166,7 @@ def executor_from_json_fixture(
     """
     Build a ``TestLLMExecutor`` that returns the JSON file contents as ``parsed_json``.
 
-    Replaces E2E usage of ``fake_llm_fixture_path`` + ``FakeProvider`` at the executor boundary.
+    Replaces legacy E2E wiring that loaded JSON via a production fake provider; tests patch the executor boundary instead.
     """
     raw = Path(path).read_text(encoding="utf-8")
     data: dict[str, Any] = json.loads(raw)

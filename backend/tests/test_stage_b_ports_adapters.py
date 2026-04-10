@@ -110,7 +110,6 @@ def test_hybrid_global_analysis_strategy_returns_analysis_result(monkeypatch: py
     )
     settings = MagicMock()
     settings.llm_provider = "openai"
-    settings.fake_llm_fixture_path = None
     job_input = MagicMock()
     context = RunContext(
         job_id="j1",

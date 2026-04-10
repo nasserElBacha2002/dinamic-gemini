@@ -26,8 +26,6 @@ def models_for_provider(provider_key: str, settings: Any) -> List[_ModelPair]:
         if not ids:
             ids = [getattr(settings, "openai_model", "gpt-4o")]
         return [(m, m) for m in ids]
-    if key == "fake":
-        return [("fixture", "Fixture (deterministic JSON, no network)")]
     return []
 
 
@@ -48,8 +46,6 @@ def default_model_for_provider(provider_key: str, settings: Any) -> str | None:
     if key == "openai":
         dm = str(getattr(settings, "openai_model", "") or "gpt-4o").strip()
         return dm if dm in allowed_ids else allowed_ids[0]
-    if key == "fake":
-        return "fixture"
     return allowed_ids[0]
 
 

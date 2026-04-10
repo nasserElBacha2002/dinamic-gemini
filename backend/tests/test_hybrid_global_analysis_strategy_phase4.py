@@ -39,7 +39,6 @@ def _run_context(metadata: dict | None = None, settings_output_dir: str = "/tmp/
     job_input.input_type = "video"
     settings = MagicMock()
     settings.llm_provider = "openai"
-    settings.fake_llm_fixture_path = None
     settings.output_dir = settings_output_dir
     settings.hybrid_prompt = "global_v21"
     return RunContext(

@@ -105,7 +105,6 @@ def make_offline_pipeline_settings(
     """Settings for offline runs; LLM path uses ``patch_offline_hybrid_json_fixture`` (vendor-agnostic)."""
     s = MagicMock()
     s.llm_provider = llm_provider
-    s.fake_llm_fixture_path = None
     s.gemini_api_key = ""
     s.openai_api_key = "offline-test-key"
     s.photo_resize_max_side = photo_resize_max_side

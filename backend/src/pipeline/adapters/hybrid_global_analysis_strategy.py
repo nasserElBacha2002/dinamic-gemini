@@ -2,7 +2,7 @@
 Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–5).
 
 Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
-call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI, fake, etc.).
+call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI).
 """
 
 from __future__ import annotations

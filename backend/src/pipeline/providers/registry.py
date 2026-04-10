@@ -7,30 +7,23 @@ Resolution rules
 * Otherwise ``settings.llm_provider`` is used (CLI / dev / legacy config).
 * Unknown keys raise ``UnknownPipelineProviderError`` (no silent vendor fallback).
 
-Transitional bridge (explicit)
-------------------------------
-``gemini`` maps to a **native** executor: ``GeminiSdkAdapter`` implements
-``LlmGlobalAnalysisExecutor.execute`` directly (vendor SDK only inside ``src/llm/gemini_sdk_adapter.py``).
+Registered providers
+--------------------
+* ``gemini`` → ``GeminiSdkAdapter`` (native executor; vendor SDK inside adapter).
+* ``openai`` → ``OpenAiSdkAdapter`` (native executor).
 
-``fake`` still wraps the historical ``LLMProvider.analyze_global`` protocol via
-``TransitionalLlmProviderBridgeExecutor``. ``openai`` uses ``OpenAiSdkAdapter`` (native executor).
-Generic pipeline code
-must depend only on ``LlmGlobalAnalysisExecutor``, not on ``LLMProvider``.
+Generic pipeline code must depend only on ``LlmGlobalAnalysisExecutor``, not on legacy ``LLMProvider``.
 
 Default analysis strategy
 -------------------------
 ``default_analysis_provider()`` returns ``HybridGlobalAnalysisStrategy`` when the orchestrator is
-constructed without injection. That is **runtime wiring** for the shared hybrid global-analysis
-path; the actual LLM vendor is chosen at execute time via the registry.
+constructed without injection. The LLM vendor is chosen at execute time via the registry.
 """
 
 from __future__ import annotations
 
 from typing import Any, Final, Optional
 
-from src.llm.providers.base import LLMProvider
-from src.llm.providers.fake_provider import FakeProvider
-from src.llm.types import LLMRequest, LLMResponse
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
@@ -40,27 +33,7 @@ class UnknownPipelineProviderError(LookupError):
     """Raised when ``provider_name`` does not map to a registered pipeline provider."""
 
 
-class TransitionalLlmProviderBridgeExecutor:
-    """
-    Wraps a legacy ``LLMProvider`` as ``LlmGlobalAnalysisExecutor``.
-
-    **Transitional:** ``fake`` uses this until a native fake executor exists. Do not add new
-    providers here long-term — implement ``LlmGlobalAnalysisExecutor``
-    directly instead.
-    """
-
-    def __init__(self, inner: LLMProvider) -> None:
-        self._inner = inner
-
-    def execute(self, request: LLMRequest, settings: Any) -> LLMResponse:
-        del settings  # legacy API ignores settings on call (configured at construction)
-        return self._inner.analyze_global(request)
-
-
-# Registry keys that use ``TransitionalLlmProviderBridgeExecutor`` (documented for Phase 4 closure).
-TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS: Final[frozenset[str]] = frozenset({"fake"})
-
-_KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "fake", "openai"})
+_KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "openai"})
 
 
 def registered_pipeline_provider_keys() -> frozenset[str]:
@@ -72,16 +45,17 @@ def resolve_llm_executor(provider_key: str, settings: Any) -> LlmGlobalAnalysisE
     """
     Return the executor for ``provider_key``.
 
+    ``settings`` is unused here; native adapters read credentials in ``execute(request, settings)``.
+
     Raises:
         UnknownPipelineProviderError: if ``provider_key`` is not registered.
     """
+    _ = settings
     key = (provider_key or "").strip().lower()
     if key == "gemini":
         from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
 
         return GeminiSdkAdapter()
-    if key == "fake":
-        return TransitionalLlmProviderBridgeExecutor(FakeProvider(settings))
     if key == "openai":
         from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 
@@ -105,7 +79,7 @@ def default_analysis_provider() -> AnalysisProvider:
     Runtime default when ``HybridInventoryPipeline`` is built without an injected ``AnalysisProvider``.
 
     Returns ``HybridGlobalAnalysisStrategy``, which resolves the **executor** from
-    ``RunContext.pipeline_provider_name`` + settings via the registry (Gemini, OpenAI, fake, etc.).
+    ``RunContext.pipeline_provider_name`` + settings via the registry (Gemini, OpenAI).
     """
     from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 

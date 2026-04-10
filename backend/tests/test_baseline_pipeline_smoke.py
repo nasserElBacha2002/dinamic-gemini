@@ -28,7 +28,6 @@ def _make_offline_pipeline_settings() -> MagicMock:
     """Minimal settings when hybrid LLM resolution is patched (no network)."""
     s = MagicMock()
     s.llm_provider = "openai"
-    s.fake_llm_fixture_path = None
     s.gemini_api_key = ""
     s.openai_api_key = "offline-test-key"
     s.photo_resize_max_side = 1280

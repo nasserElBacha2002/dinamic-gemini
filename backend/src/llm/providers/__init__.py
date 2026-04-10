@@ -1,4 +1,4 @@
-"""Stage 2.2.D — LLM providers (gemini, openai, fake)."""
+"""Stage 2.2.D — LLM providers (gemini, openai)."""
 
 from src.llm.providers.base import LLMProvider
 

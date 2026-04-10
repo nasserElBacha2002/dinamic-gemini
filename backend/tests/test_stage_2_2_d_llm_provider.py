@@ -4,8 +4,6 @@ Stage 2.2.D — LLM Provider Strategy (Strategy pattern).
 Tests:
 - Pipeline uses provider factory; no direct Gemini imports in pipeline.
 - Hybrid pipeline E2E without network via ``patch_offline_hybrid_json_fixture`` (Phase 2 harness).
-
-Implementation tests for ``FakeProvider`` live in ``tests/llm/test_fake_provider_transitional_implementation.py``.
 """
 
 import json
@@ -51,7 +49,6 @@ def test_hybrid_pipeline_e2e_patched_executor_no_network(tmp_path: Path, monkeyp
     job_input = JobInput(video_path="", input_type="photos")
     settings = MagicMock()
     settings.llm_provider = "openai"
-    settings.fake_llm_fixture_path = None
     settings.gemini_api_key = ""
     settings.openai_api_key = "offline-test-key"
     settings.photo_resize_max_side = 1280

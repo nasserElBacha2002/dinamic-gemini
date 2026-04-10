@@ -78,7 +78,6 @@ from src.application.use_cases.upload_inventory_visual_references import (
 )
 from src.config import load_settings
 from src.pipeline.providers.registry import (
-    TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS,
     normalize_pipeline_provider_key,
     registered_pipeline_provider_keys,
 )
@@ -182,13 +181,10 @@ def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
     ]
     items: List[ProcessingProviderOptionItem] = []
     for key in sorted(registered_pipeline_provider_keys()):
-        mode = "transitional_bridge" if key in TRANSITIONAL_LLM_PROVIDER_BRIDGE_KEYS else "native"
+        mode = "native"
         if key == "gemini":
             label = "Gemini"
             desc = "Native Gemini SDK path (GEMINI_API_KEY required when explicitly selected)."
-        elif key == "fake":
-            label = "Fake (fixtures, no network)"
-            desc = "Transitional bridge to FakeProvider — for dev/CI and controlled validation."
         elif key == "openai":
             label = "OpenAI"
             desc = "Native OpenAI vision path (Chat Completions + json_object). OPENAI_API_KEY required when explicitly selected."

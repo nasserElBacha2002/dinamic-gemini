@@ -412,10 +412,10 @@ class Settings(BaseModel):
         le=60.0,
         description="Espera inicial entre reintentos en segundos (0.1 a 60).",
     )
-    # Stage 2.2.D — LLM provider strategy (gemini | openai | fake)
+    # Stage 2.2.D — LLM provider strategy (gemini | openai)
     llm_provider: str = Field(
         default_factory=lambda: (os.getenv("LLM_PROVIDER", "gemini") or "gemini").strip().lower(),
-        description="LLM provider: gemini, openai, or fake. Env: LLM_PROVIDER.",
+        description="LLM provider: gemini or openai. Env: LLM_PROVIDER.",
     )
     openai_api_key: str = Field(
         default_factory=lambda: os.getenv("OPENAI_API_KEY", ""),
@@ -436,10 +436,6 @@ class Settings(BaseModel):
         ge=512,
         le=4096,
         description="Max longest side (px) for images sent to OpenAI vision (downscaled if larger). Env: OPENAI_VISION_MAX_IMAGE_SIDE.",
-    )
-    fake_llm_fixture_path: Optional[str] = Field(
-        default_factory=lambda: (os.getenv("FAKE_LLM_FIXTURE_PATH") or "").strip() or None,
-        description="Path to JSON fixture for fake provider (optional). Env: FAKE_LLM_FIXTURE_PATH.",
     )
     hybrid_prompt: str = Field(
         default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
@@ -1036,10 +1032,10 @@ class Settings(BaseModel):
     @field_validator("llm_provider")
     @classmethod
     def validate_llm_provider(cls, v: str) -> str:
-        """Provider must be gemini, openai, or fake."""
+        """Provider must be gemini or openai."""
         v = (v or "gemini").strip().lower()
-        if v not in ("gemini", "openai", "fake"):
-            raise ValueError("llm_provider must be one of: gemini, openai, fake")
+        if v not in ("gemini", "openai"):
+            raise ValueError("llm_provider must be one of: gemini, openai")
         return v
 
     @field_validator("output_dir")

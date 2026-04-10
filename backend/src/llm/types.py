@@ -44,7 +44,7 @@ class LLMResponse:
     """
     Output of ``LlmGlobalAnalysisExecutor.execute`` (parsed v2.1 JSON + attribution).
 
-    ``provider`` identifies the logical vendor key (e.g. ``gemini``, ``fake``), not an SDK type.
+    ``provider`` identifies the logical vendor key (e.g. ``gemini``, ``openai``), not an SDK type.
     """
 
     def __init__(

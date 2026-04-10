@@ -15,7 +15,7 @@ class ProcessAisleRequest(BaseModel):
     provider_name: Optional[str] = Field(
         None,
         description=(
-            "Pipeline provider key (gemini, fake, openai). Omit or null to use the server default "
+            "Pipeline provider key (gemini, openai). Omit or null to use the server default "
             "(settings.llm_provider) without proactive credential validation."
         ),
     )
@@ -45,7 +45,7 @@ class ProcessingProviderOptionItem(BaseModel):
     label: str
     execution_mode: str = Field(
         ...,
-        description="native | transitional_bridge — informational for UI; both are real execution paths.",
+        description="native — pipeline providers use native SDK executors.",
     )
     description: Optional[str] = None
     models: List[ProcessingModelOption] = Field(default_factory=list)
