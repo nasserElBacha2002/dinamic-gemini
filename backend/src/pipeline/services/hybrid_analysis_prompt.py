@@ -1,8 +1,8 @@
 """
 Hybrid global-analysis prompt assembly (provider-neutral).
 
-Base text: ``default_hybrid_composer.compose_base`` only. Photos jobs may append image IDs via
-``enrich_prompt_with_image_ids`` here — not inside the composer (single enrichment site for this path).
+Uses ``prompt_composer.hybrid_assembly`` for profile + base composition; applies photo enrichments
+once here (step 4 of the Phase 5 flow).
 """
 
 from __future__ import annotations
@@ -10,8 +10,11 @@ from __future__ import annotations
 from typing import Optional
 
 from src.jobs.image_identity import load_job_images_from_manifest
-from src.llm.prompt_composer.composer import default_hybrid_composer
 from src.llm.prompt_composer.enrichments import enrich_prompt_with_image_ids
+from src.llm.prompt_composer.hybrid_assembly import (
+    compose_hybrid_base,
+    resolve_hybrid_profile_name,
+)
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
@@ -24,17 +27,15 @@ def build_hybrid_analysis_prompt_text(context: RunContext) -> str:
     Does not append product/label association blocks (regression guard vs main).
     """
     settings = context.settings
-    job_pk = getattr(context, "job_prompt_key", None)
-    profile = (
-        str(job_pk).strip()
-        if job_pk and str(job_pk).strip()
-        else str(getattr(settings, "hybrid_prompt", "global_v21") or "global_v21").strip()
+    profile = resolve_hybrid_profile_name(
+        job_prompt_key=getattr(context, "job_prompt_key", None),
+        settings=settings,
     )
     effective_provider = normalize_pipeline_provider_key(
         getattr(context, "pipeline_provider_name", None),
         settings,
     )
-    prompt_text = default_hybrid_composer.compose_base(profile, effective_provider)
+    prompt_text = compose_hybrid_base(profile, effective_provider)
     job_input = getattr(context, "job_input", None)
     if job_input and getattr(job_input, "input_type", "") == "photos":
         manifest_rel = (getattr(job_input, "input_manifest_path", None) or "").strip()

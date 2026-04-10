@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from src.llm.prompts import get_hybrid_prompt, registered_hybrid_prompt_keys
+from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
+from src.llm.prompts import get_hybrid_prompt
 
 
 def test_global_v21_b_is_registered() -> None:

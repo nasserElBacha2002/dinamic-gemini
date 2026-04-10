@@ -181,7 +181,8 @@ Output:
 - Return confidence as a numeric value (0.0 to 1.0).
 """
 
-# Registry: hybrid entries use default/openai; legacy entries use system/user.
+# **Internal registry** — consumed only by ``HybridPromptComposer`` / ``hybrid_resolution``.
+# Do not import ``PROMPTS`` from application, adapter, or pipeline code; use ``hybrid_assembly``.
 PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
     "global_v21": {"default": _GLOBAL_V21, "openai": _GLOBAL_V21_OPENAI},
     "global_v21_b": {"default": _GLOBAL_V21_B, "openai": _GLOBAL_V21_B_OPENAI},
@@ -193,5 +194,5 @@ PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
     },
 }
 
-# Canonical v2.1 base text as sent on the wire (``get_hybrid_prompt`` / composer apply ``.rstrip()``).
+# Canonical v2.1 base text as sent on the wire (composer ``.rstrip()`` on the default branch).
 GLOBAL_ENTITY_ANALYSIS_PROMPT_V21: Final[str] = _GLOBAL_V21.rstrip()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, List, Sequence, Tuple
 
-from src.llm.prompts import registered_hybrid_prompt_keys
+from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
 
 _ModelPair = Tuple[str, str]
 

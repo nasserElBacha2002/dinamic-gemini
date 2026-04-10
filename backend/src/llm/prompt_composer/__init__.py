@@ -1,10 +1,13 @@
 """
-Phase 4 — hybrid prompt composition.
+Hybrid prompt composition (Phase 4–5).
 
-**Base text:** ``HybridPromptComposer.compose_base`` / ``default_hybrid_composer`` is the single
-source of truth. ``src.llm.prompts.get_hybrid_prompt`` is a one-line compatibility wrapper.
+**Base text (production):** ``hybrid_assembly`` only. ``HybridPromptComposer.compose_base`` is internal
+to that stack plus ``get_hybrid_prompt`` (legacy/tests).
 
-**Enrichments:** ``prompt_composer.enrichments`` only; never applied inside the composer.
+**Compatibility:** ``src.llm.prompts.get_hybrid_prompt`` remains a thin test/legacy delegate.
+
+**Enrichments:** ``prompt_composer.enrichments`` only; pipeline applies them in
+``pipeline.services.hybrid_analysis_prompt``.
 """
 
 from __future__ import annotations

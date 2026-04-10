@@ -16,6 +16,7 @@ from src.application.services.processing_experiment_catalog import (
     models_for_provider,
     normalize_requested_model,
 )
+from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
 from src.pipeline.providers.registry import (
     normalize_pipeline_provider_key,
     registered_pipeline_provider_keys,
@@ -54,8 +55,6 @@ def resolve_start_processing_request(
         prompt_key = default_prompt_key(settings)
     else:
         if not is_valid_prompt_key(pk_raw, settings):
-            from src.llm.prompts import registered_hybrid_prompt_keys
-
             raise InvalidProcessingPromptKeyError(
                 f"Unknown prompt profile {pk_raw!r}. Known keys: {sorted(registered_hybrid_prompt_keys())}"
             )

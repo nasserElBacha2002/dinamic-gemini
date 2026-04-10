@@ -20,7 +20,7 @@ from src.exceptions.global_analysis_exceptions import (
 from src.llm.errors import LLMProviderError
 from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
-from src.llm.prompts import get_hybrid_prompt
+from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
 from src.llm.types import LLMRequest, LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class GeminiSdkAdapter:
         prompt_text = (
             use_request_prompt
             if use_request_prompt is not None
-            else get_hybrid_prompt(getattr(settings, "hybrid_prompt", "global_v21"))
+            else compose_hybrid_base_from_settings(settings, pipeline_provider_key=None)
         )
         meta = request.metadata or {}
         effective_model = (meta.get("gemini_model_name") or "").strip() or getattr(

@@ -27,7 +27,7 @@ from openai import (
 
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.errors import LLMProviderError
-from src.llm.prompts import get_hybrid_prompt
+from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
 from src.llm.types import LLMRequest, LLMResponse
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
@@ -139,10 +139,7 @@ class OpenAiSdkAdapter:
         prompt_text = (
             use_request_prompt
             if use_request_prompt is not None
-            else get_hybrid_prompt(
-                getattr(settings, "hybrid_prompt", "global_v21"),
-                "openai",
-            )
+            else compose_hybrid_base_from_settings(settings, pipeline_provider_key="openai")
         )
         if request.context_instruction and str(request.context_instruction).strip():
             prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text

@@ -1,4 +1,13 @@
-"""Provider policy overlay for hybrid registry entries (``default`` vs ``openai`` branch)."""
+"""
+Provider policy overlay for hybrid registry entries (``default`` vs ``openai`` branch).
+
+**Parity-only model:** only the literal key ``openai`` selects the ``openai`` fragment; everything
+else uses ``default``. This is **not** the long-term multi-vendor strategy — Claude, DeepSeek, etc.
+must get explicit overlays in a later phase, not implicit mapping through this rule.
+
+**Phase 6:** prompt traceability and audit hooks belong at enrichment / request-assembly layers, not
+here; this module stays pure string resolution.
+"""
 
 from __future__ import annotations
 
@@ -43,8 +52,8 @@ def resolve_hybrid_entry_for_provider(
     Legacy ``PROMPTS`` rows that use ``system``/``user`` (non-hybrid) are not valid hybrid entries;
     for backward compatibility they fall back to **global_v21 default** text only, with **no** OpenAI
     overlay (``provider_key`` ignored for that fallback). Future providers (e.g. Claude, DeepSeek)
-    must not rely on this special-case; Phase 5+ will replace overlay selection with an explicit
-    policy map.
+    must not rely on this special-case; a future phase will replace overlay selection with an explicit
+    policy map (see module docstring).
 
     All returned strings are ``.rstrip()``'d for wire consistency with historical behavior.
     """

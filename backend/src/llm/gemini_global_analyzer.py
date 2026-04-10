@@ -14,7 +14,7 @@ from src.exceptions.global_analysis_exceptions import (
     GlobalAnalysisValidationError,
 )
 from src.llm.gemini_client import GeminiClient
-from src.llm.prompts import get_hybrid_prompt
+from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base
 from src.llm.types import ContextImageSequence
 from src.models.schemas import GlobalEntityResponseV21
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
@@ -70,7 +70,7 @@ class GeminiGlobalAnalyzer:
         prompt = (
             self._prompt_text
             if self._prompt_text is not None
-            else get_hybrid_prompt()
+            else compose_hybrid_base("global_v21", None)
         )
         # v3.2.4: apply context_instruction and context_images independently
         if context_instruction and context_instruction.strip():
