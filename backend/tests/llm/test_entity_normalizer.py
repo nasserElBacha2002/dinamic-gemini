@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.llm.normalization.entity_normalizer import normalize_llm_response
+from tests.support.llm_executor_harness import HARNESS_RESPONSE_PROVIDER
 
 
 def test_openai_style_quantity_maps_to_product_label_quantity() -> None:
@@ -20,7 +21,7 @@ def test_openai_style_quantity_maps_to_product_label_quantity() -> None:
     assert "quantity" not in out["entities"][0]
 
 
-def test_gemini_style_unchanged_when_canonical_present() -> None:
+def test_non_openai_style_unchanged_when_canonical_present() -> None:
     """Canonical quantity preserved; alias keys not introduced. Input is not mutated."""
     inp = {
         "total_entities_detected": 1,
@@ -34,7 +35,7 @@ def test_gemini_style_unchanged_when_canonical_present() -> None:
             }
         ],
     }
-    out = normalize_llm_response(inp, "gemini")
+    out = normalize_llm_response(inp, HARNESS_RESPONSE_PROVIDER)
     e = out["entities"][0]
     assert e["product_label_quantity"] == 12
     assert e["position_barcode"] == "P1"
@@ -67,7 +68,7 @@ def test_mixed_prefers_existing_product_label_quantity() -> None:
 
 def test_missing_canonical_fields_default_to_none() -> None:
     inp = {"entities": [{}]}
-    out = normalize_llm_response(inp, "gemini")
+    out = normalize_llm_response(inp, HARNESS_RESPONSE_PROVIDER)
     ent = out["entities"][0]
     assert ent["position_barcode"] is None
     assert ent["internal_code"] is None

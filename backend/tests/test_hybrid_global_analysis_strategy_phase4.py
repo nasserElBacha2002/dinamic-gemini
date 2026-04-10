@@ -22,22 +22,15 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
     ProviderCapabilities,
 )
+from tests.support.llm_executor_harness import HARNESS_LOGICAL_PROVIDER_KEY
 
 
 @pytest.fixture(autouse=True)
 def _patch_default_hybrid_llm_executor(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Phase 2: default tests use ``TestLLMExecutor`` instead of registry ``fake``."""
-    from tests.support.llm_executor_harness import (
-        TestLLMExecutor,
-        llm_response_success,
-        patch_hybrid_resolve_llm_executor,
-    )
+    """Phase 2: default tests use ``TestLLMExecutor`` (vendor-agnostic resolved key)."""
+    from tests.support.llm_executor_harness import TestLLMExecutor, patch_hybrid_resolve_llm_executor
 
-    patch_hybrid_resolve_llm_executor(
-        monkeypatch,
-        TestLLMExecutor(response=llm_response_success(provider="gemini", model="gemini-2.0-flash-exp")),
-        resolved_provider_key="gemini",
-    )
+    patch_hybrid_resolve_llm_executor(monkeypatch, TestLLMExecutor())
 
 
 def _run_context(metadata: dict | None = None, settings_output_dir: str = "/tmp/out") -> RunContext:
@@ -45,7 +38,7 @@ def _run_context(metadata: dict | None = None, settings_output_dir: str = "/tmp/
     job_input.metadata = metadata
     job_input.input_type = "video"
     settings = MagicMock()
-    settings.llm_provider = "gemini"
+    settings.llm_provider = "openai"
     settings.fake_llm_fixture_path = None
     settings.output_dir = settings_output_dir
     settings.hybrid_prompt = "global_v21"
@@ -277,8 +270,10 @@ def test_hybrid_strategy_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     assert prepared_call is not None
     payload = prepared_call.kwargs["payload"]
     assert payload["event_type"] == "analysis_request"
-    assert payload["pipeline_provider"] == "gemini"
-    assert "Analyze the provided warehouse aisle evidence (photos and/or extracted frames)." in payload["prompt_text"]
+    assert payload["pipeline_provider"] == HARNESS_LOGICAL_PROVIDER_KEY
+    assert "Entity types:" in payload["prompt_text"]
+    assert "PALLET" in payload["prompt_text"]
+    assert "total_entities_detected" in payload["prompt_text"]
     assert payload["attachment_summary"]["primary_evidence_count"] == 1
     assert payload["attachment_summary"]["visual_reference_count"] == 1
     assert payload["primary_evidence_attachments"][0]["frame_ref"] == "img_001"

@@ -21,6 +21,7 @@ from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageIn
 from src.pipeline.stages.input_preparation_stage import PreparedInput
 from src.jobs.models import JobInput
 from src.frames.types import FramesBundle
+from tests.support.llm_executor_harness import HARNESS_RESPONSE_PROVIDER
 
 
 def test_frame_acquisition_stage_returns_acquired_frames(tmp_path: Path) -> None:
@@ -154,7 +155,7 @@ def test_analysis_stage_delegates_to_provider() -> None:
     mock_provider = MagicMock()
     mock_provider.analyze.return_value = AnalysisResult(
         parsed_json={"total_entities_detected": 0, "entities": []},
-        provider_name="gemini",
+        provider_name=HARNESS_RESPONSE_PROVIDER,
         provider_metadata=None,
     )
 
@@ -163,7 +164,7 @@ def test_analysis_stage_delegates_to_provider() -> None:
 
     assert isinstance(result, AnalysisStageResult)
     assert result.parsed_json == {"total_entities_detected": 0, "entities": []}
-    assert result.provider_name == "gemini"
+    assert result.provider_name == HARNESS_RESPONSE_PROVIDER
     mock_provider.analyze.assert_called_once()
     call_kw = mock_provider.analyze.call_args
     assert call_kw[0][0] is context
@@ -189,7 +190,7 @@ def test_entity_resolution_stage_parses_and_resolves() -> None:
                 },
             ],
         },
-        provider_name="gemini",
+        provider_name=HARNESS_RESPONSE_PROVIDER,
     )
 
     stage = EntityResolutionStage()

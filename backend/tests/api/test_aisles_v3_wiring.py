@@ -36,6 +36,7 @@ from src.infrastructure.repositories.memory_job_repository import MemoryJobRepos
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
 from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 client = TestClient(app)
 
@@ -802,7 +803,7 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
             attempt_count,
             retry_of_job_id=None,
             log_prefix="job.start_requested",
-            provider_name="gemini",
+            provider_name=STUB_PRIMARY_PROVIDER,
             model_name=None,
             prompt_key="global_v21",
         ):
@@ -841,8 +842,8 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
             created_at=now,
             updated_at=now,
             attempt_count=1,
-            provider_name="gemini",
-            model_name="gemini-2.0-flash-exp",
+            provider_name=STUB_PRIMARY_PROVIDER,
+            model_name=STUB_PRIMARY_MODEL,
             prompt_key="global_v21",
         )
     )
@@ -862,8 +863,8 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
         assert data["attempt_count"] == 2
         assert data["retry_of_job_id"] == "job-failed"
         assert data["execution_id"] == "exec-job-retry-created"
-        assert data.get("provider_name") == "gemini"
-        assert data.get("model_name") == "gemini-2.0-flash-exp"
+        assert data.get("provider_name") == STUB_PRIMARY_PROVIDER
+        assert data.get("model_name") == STUB_PRIMARY_MODEL
         assert data.get("prompt_key") == "global_v21"
         assert launch_service.launched == [data["id"]]
     finally:

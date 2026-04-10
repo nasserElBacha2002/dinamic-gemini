@@ -25,6 +25,7 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
+from tests.support.llm_executor_harness import HARNESS_RESPONSE_PROVIDER
 
 
 # --- Contract: any AnalysisProvider returns expected shape ---
@@ -33,7 +34,7 @@ from src.pipeline.ports.analysis_provider import (
 class FakeAnalysisProvider:
     """Minimal implementation of AnalysisProvider for contract tests."""
 
-    def __init__(self, parsed_json: dict, provider_name: str = "gemini") -> None:
+    def __init__(self, parsed_json: dict, provider_name: str = HARNESS_RESPONSE_PROVIDER) -> None:
         self._parsed_json = parsed_json
         self._provider_name = provider_name
 
@@ -105,11 +106,10 @@ def test_hybrid_global_analysis_strategy_returns_analysis_result(monkeypatch: py
 
     patch_hybrid_resolve_llm_executor(
         monkeypatch,
-        TestLLMExecutor(response=llm_response_success(provider="gemini", model="gemini-2.0-flash-exp")),
-        resolved_provider_key="gemini",
+        TestLLMExecutor(response=llm_response_success(parsed_json={"total_entities_detected": 0, "entities": []})),
     )
     settings = MagicMock()
-    settings.llm_provider = "gemini"
+    settings.llm_provider = "openai"
     settings.fake_llm_fixture_path = None
     job_input = MagicMock()
     context = RunContext(
@@ -130,7 +130,7 @@ def test_hybrid_global_analysis_strategy_returns_analysis_result(monkeypatch: py
         metadata={"frame_count": 1},
     )
     assert isinstance(result, AnalysisResult)
-    assert result.provider_name == "gemini"
+    assert result.provider_name == HARNESS_RESPONSE_PROVIDER
     assert "total_entities_detected" in result.parsed_json
     assert "entities" in result.parsed_json
     entities = parse_entities(result.parsed_json, job_id="j1")

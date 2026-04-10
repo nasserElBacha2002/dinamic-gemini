@@ -20,6 +20,7 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 
 class FixedClock:
@@ -34,8 +35,8 @@ class _StubOperationalResolver:
     def resolve(self, settings: object) -> OperationalPrimaryExecutionConfig:
         _ = settings
         return OperationalPrimaryExecutionConfig(
-            provider_name="gemini",
-            model_name="gemini-2.0-flash-exp",
+            provider_name=STUB_PRIMARY_PROVIDER,
+            model_name=STUB_PRIMARY_MODEL,
             prompt_key="global_v21",
             prompt_version=None,
         )

@@ -13,6 +13,14 @@ resolve_llm_executor`` at import time or you will keep a stale function referenc
 
 **Phase 2:** Migrate tests that use ``provider_name="fake"`` / ``LLM_PROVIDER=fake`` to this
 boundary instead of the transitional ``FakeProvider``.
+
+**Standard offline pipeline pattern:** ``patch_hybrid_resolve_llm_executor`` +
+``executor_from_json_fixture`` (or a ``TestLLMExecutor``). This patches the name bound in
+``HybridGlobalAnalysisStrategy``, so the resolved logical key matches ``HARNESS_LOGICAL_PROVIDER_KEY``
+instead of following ``settings.llm_provider`` (avoids coupling tests to Gemini).
+
+**Registry-only patch:** ``patch_registry_resolve_llm_executor`` is for tests that call
+``registry.resolve_llm_executor`` directly; full hybrid runs should prefer the hybrid patch above.
 """
 
 from __future__ import annotations
@@ -26,6 +34,14 @@ import pytest
 
 from src.llm.errors import LLMProviderError
 from src.llm.types import LLMRequest, LLMResponse
+
+# Logical provider key returned as the second element of ``resolve_llm_executor_for_context`` when
+# using ``patch_hybrid_resolve_llm_executor`` with defaults — not a registered production key.
+HARNESS_LOGICAL_PROVIDER_KEY = "test_llm"
+
+# Attribution strings on ``LLMResponse`` for harness-built successes (not registry keys).
+HARNESS_RESPONSE_PROVIDER = "test_llm"
+HARNESS_DEFAULT_MODEL = "test-model"
 
 # Minimal v2.1-shaped dict for deterministic success defaults (aligned with FakeProvider default).
 MINIMAL_V21_PARSED: dict[str, Any] = {
@@ -68,8 +84,8 @@ class TestLLMExecutor:
         if self._response is not None:
             return self._response
         return LLMResponse(
-            provider="test_llm",
-            model="fixture",
+            provider=HARNESS_RESPONSE_PROVIDER,
+            model=HARNESS_DEFAULT_MODEL,
             latency_ms=0,
             parsed_json=dict(MINIMAL_V21_PARSED),
             raw_text=None,
@@ -80,8 +96,8 @@ class TestLLMExecutor:
 def llm_response_success(
     *,
     parsed_json: dict[str, Any] | None = None,
-    provider: str = "test_llm",
-    model: str | None = "test-model",
+    provider: str = HARNESS_RESPONSE_PROVIDER,
+    model: str | None = HARNESS_DEFAULT_MODEL,
     raw_text: str | None = None,
     latency_ms: int = 0,
     usage: dict[str, Any] | None = None,
@@ -102,13 +118,14 @@ def patch_hybrid_resolve_llm_executor(
     monkeypatch: pytest.MonkeyPatch,
     executor: Any,
     *,
-    resolved_provider_key: str = "gemini",
+    resolved_provider_key: str = HARNESS_LOGICAL_PROVIDER_KEY,
 ) -> None:
     """
     Patch ``resolve_llm_executor_for_context`` as bound in ``HybridGlobalAnalysisStrategy``.
 
-    ``resolved_provider_key`` is the second tuple element (e.g. ``gemini`` / ``openai``) and
-    affects model metadata injection in the strategy.
+    ``resolved_provider_key`` is the second tuple element (logging / metadata). Default
+    ``HARNESS_LOGICAL_PROVIDER_KEY`` keeps tests vendor-agnostic; pass ``\"gemini\"`` or
+    ``\"openai\"`` when exercising provider-specific request metadata branches.
     """
 
     def _fake_resolve(
@@ -140,11 +157,11 @@ def patch_registry_resolve_llm_executor(
     )
 
 
-def test_executor_from_json_path(
+def executor_from_json_fixture(
     path: str | Path,
     *,
-    provider: str = "gemini",
-    model: str = "gemini-2.0-flash-exp",
+    provider: str = HARNESS_RESPONSE_PROVIDER,
+    model: str | None = HARNESS_DEFAULT_MODEL,
 ) -> TestLLMExecutor:
     """
     Build a ``TestLLMExecutor`` that returns the JSON file contents as ``parsed_json``.
@@ -156,3 +173,12 @@ def test_executor_from_json_path(
     return TestLLMExecutor(
         response=llm_response_success(parsed_json=data, provider=provider, model=model),
     )
+
+
+def patch_offline_hybrid_json_fixture(monkeypatch: pytest.MonkeyPatch, path: str | Path) -> None:
+    """Apply ``patch_hybrid_resolve_llm_executor`` with an executor built from fixture JSON."""
+    patch_hybrid_resolve_llm_executor(monkeypatch, executor_from_json_fixture(path))
+
+
+# Back-compat alias (older Phase 2 migrations).
+test_executor_from_json_path = executor_from_json_fixture

@@ -11,6 +11,7 @@ from src.application.services.operational_execution_config_resolver import (
 )
 from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
+from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 
 class FixedClock:
@@ -39,8 +40,8 @@ class StubOperationalResolver:
     def resolve(self, settings: Any) -> OperationalPrimaryExecutionConfig:
         _ = settings
         return OperationalPrimaryExecutionConfig(
-            provider_name="gemini",
-            model_name="gemini-2.0-flash-exp",
+            provider_name=STUB_PRIMARY_PROVIDER,
+            model_name=STUB_PRIMARY_MODEL,
             prompt_key="global_v21",
             prompt_version=None,
         )
@@ -66,8 +67,8 @@ def test_create_inventory_production_snapshots_operational_config() -> None:
     assert result.name == "Warehouse A"
     assert result.status == InventoryStatus.DRAFT
     assert result.processing_mode == InventoryProcessingMode.PRODUCTION
-    assert result.primary_provider_name == "gemini"
-    assert result.primary_model_name == "gemini-2.0-flash-exp"
+    assert result.primary_provider_name == STUB_PRIMARY_PROVIDER
+    assert result.primary_model_name == STUB_PRIMARY_MODEL
     assert result.primary_prompt_key == "global_v21"
     assert result.created_at == now
     assert result.updated_at == now

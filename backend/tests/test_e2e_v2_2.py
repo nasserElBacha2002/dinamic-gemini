@@ -88,25 +88,26 @@ def run_pipeline_sync(
     return result.exit_code
 
 
-def _patch_registry_executor_from_json(monkeypatch: pytest.MonkeyPatch, fixture_path: Path) -> None:
-    from tests.support.llm_executor_harness import patch_registry_resolve_llm_executor, test_executor_from_json_path
+def _patch_offline_hybrid_executor_from_json(monkeypatch: pytest.MonkeyPatch, fixture_path: Path) -> None:
+    from tests.support.llm_executor_harness import patch_offline_hybrid_json_fixture
 
-    patch_registry_resolve_llm_executor(monkeypatch, test_executor_from_json_path(fixture_path))
+    patch_offline_hybrid_json_fixture(monkeypatch, fixture_path)
 
 
 def make_offline_pipeline_settings(
     *,
-    llm_provider: str = "gemini",
+    llm_provider: str = "openai",
     output_dir: Optional[Path] = None,
     photos_min_side: int = 64,
     photo_resize_max_side: int = 1280,
     photo_jpeg_quality: int = 85,
 ) -> MagicMock:
-    """Settings for offline pipeline runs (logical provider key + keys; LLM via patched executor)."""
+    """Settings for offline runs; LLM path uses ``patch_offline_hybrid_json_fixture`` (vendor-agnostic)."""
     s = MagicMock()
     s.llm_provider = llm_provider
     s.fake_llm_fixture_path = None
-    s.gemini_api_key = "offline-test-key"
+    s.gemini_api_key = ""
+    s.openai_api_key = "offline-test-key"
     s.photo_resize_max_side = photo_resize_max_side
     s.photo_jpeg_quality = photo_jpeg_quality
     s.photos_min_side = photos_min_side
@@ -122,7 +123,7 @@ def make_offline_pipeline_settings(
 
 def test_e2e_video_job_generates_report_and_evidence(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Video path: stub frames + patched executor from fixture JSON; assert report + evidence + stable order."""
-    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
+    _patch_offline_hybrid_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
     job_id = "e2e_video_01"
     run_id = "run"
     create_temp_job_dirs(tmp_path, job_id)
@@ -188,7 +189,7 @@ def test_e2e_video_job_generates_report_and_evidence(tmp_path, monkeypatch: pyte
 
 def test_e2e_photos_job_persists_normalized_and_generates_report(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Photos job: input_photos + manifest, normalization, patched executor; assert normalized dir + report + evidence."""
-    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
+    _patch_offline_hybrid_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
     job_id = "e2e_photos_01"
     run_id = "run"
     run_dir = tmp_path / job_id / run_id
@@ -279,7 +280,7 @@ def test_e2e_evidence_localization_modes(tmp_path, monkeypatch: pytest.MonkeyPat
     )
 
     # 1) With bboxes -> LOCALIZED
-    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
+    _patch_offline_hybrid_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
     settings_ok = make_offline_pipeline_settings()
     with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle
@@ -315,7 +316,7 @@ def test_e2e_evidence_localization_modes(tmp_path, monkeypatch: pytest.MonkeyPat
         frame_refs=["frame_000000", "frame_000001"],
         metadata={"source": "video", "frame_count": 2, "selected_by": "video_sampling", "frame_indices": [0, 1]},
     )
-    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_UNLOCALIZED)
+    _patch_offline_hybrid_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_UNLOCALIZED)
     settings_u = make_offline_pipeline_settings()
     with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle2
@@ -342,7 +343,7 @@ def test_e2e_evidence_localization_modes(tmp_path, monkeypatch: pytest.MonkeyPat
 
 def test_pipeline_completes_without_gemini_client_when_executor_is_patched(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Patched registry executor: pipeline completes without instantiating GeminiClient."""
-    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
+    _patch_offline_hybrid_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
     job_id = "e2e_patched_executor"
     run_dir = tmp_path / job_id / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -358,7 +359,7 @@ def test_pipeline_completes_without_gemini_client_when_executor_is_patched(tmp_p
         frame_refs=["frame_000000", "frame_000001"],
         metadata={"source": "video", "frame_count": 2, "selected_by": "video_sampling", "frame_indices": [0, 1]},
     )
-    settings = make_offline_pipeline_settings(llm_provider="gemini")
+    settings = make_offline_pipeline_settings()
     gemini_constructor_called = []
 
     def _track_gemini(*args, **kwargs):

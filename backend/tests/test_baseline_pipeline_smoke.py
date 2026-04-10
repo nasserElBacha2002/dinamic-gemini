@@ -25,11 +25,12 @@ GLOBAL_ANALYSIS_OK = FIXTURES_V21 / "global_analysis_ok.json"
 
 
 def _make_offline_pipeline_settings() -> MagicMock:
-    """Minimal settings when ``resolve_llm_executor`` is patched (no network)."""
+    """Minimal settings when hybrid LLM resolution is patched (no network)."""
     s = MagicMock()
-    s.llm_provider = "gemini"
+    s.llm_provider = "openai"
     s.fake_llm_fixture_path = None
-    s.gemini_api_key = "offline-test-key"
+    s.gemini_api_key = ""
+    s.openai_api_key = "offline-test-key"
     s.photo_resize_max_side = 1280
     s.photo_jpeg_quality = 85
     s.photos_min_side = 64
@@ -70,9 +71,9 @@ def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path, monkeypatch: pytest
     This test must pass before and after all Stage A refactors (RunContext,
     PipelineStage, InputPreparationStage, minimal pipeline integration).
     """
-    from tests.support.llm_executor_harness import patch_registry_resolve_llm_executor, test_executor_from_json_path
+    from tests.support.llm_executor_harness import patch_offline_hybrid_json_fixture
 
-    patch_registry_resolve_llm_executor(monkeypatch, test_executor_from_json_path(GLOBAL_ANALYSIS_OK))
+    patch_offline_hybrid_json_fixture(monkeypatch, GLOBAL_ANALYSIS_OK)
 
     job_id = "baseline_smoke_01"
     run_id = "run"

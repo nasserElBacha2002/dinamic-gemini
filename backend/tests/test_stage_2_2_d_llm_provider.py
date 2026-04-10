@@ -3,21 +3,20 @@ Stage 2.2.D — LLM Provider Strategy (Strategy pattern).
 
 Tests:
 - Pipeline uses provider factory; no direct Gemini imports in pipeline.
-- ``FakeProvider`` unit tests (production transitional implementation; not the default pipeline path).
-- Hybrid pipeline E2E without network via patched ``resolve_llm_executor`` + fixture JSON (Phase 2 harness).
+- Hybrid pipeline E2E without network via ``patch_offline_hybrid_json_fixture`` (Phase 2 harness).
+
+Implementation tests for ``FakeProvider`` live in ``tests/llm/test_fake_provider_transitional_implementation.py``.
 """
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import cv2
 import numpy as np
 import pytest
 
 from src.jobs.models import JobInput
-from src.llm.providers.fake_provider import DEFAULT_FAKE_RESPONSE, FakeProvider
-from src.llm.types import LLMRequest, LLMResponse
 
 
 def test_pipeline_hybrid_does_not_import_gemini_sdk():
@@ -31,54 +30,12 @@ def test_pipeline_hybrid_does_not_import_gemini_sdk():
     assert hasattr(reg, "resolve_llm_executor"), "Registry must expose LLM executor resolution"
 
 
-def test_fake_provider_returns_v21_shaped_json():
-    """FakeProvider returns dict with total_entities_detected and entities (v2.1)."""
-    settings = MagicMock()
-    settings.fake_llm_fixture_path = None
-    provider = FakeProvider(settings)
-    request = LLMRequest(
-        job_id="j1",
-        frames=[],
-        frame_refs=[],
-        prompt="",
-        schema_version="v2.1",
-        metadata={},
-    )
-    response = provider.analyze_global(request)
-    assert response.provider == "fake"
-    assert "total_entities_detected" in response.parsed_json
-    assert "entities" in response.parsed_json
-    assert isinstance(response.parsed_json["entities"], list)
-    assert response.parsed_json["total_entities_detected"] == len(response.parsed_json["entities"])
-
-
-def test_fake_provider_uses_fixture_path_when_set(tmp_path):
-    """When FAKE_LLM_FIXTURE_PATH is set, FakeProvider loads JSON from file."""
-    fixture = {"total_entities_detected": 1, "entities": [{"model_entity_id": "e1", "entity_type": "PALLET"}]}
-    path = tmp_path / "fixture.json"
-    path.write_text(json.dumps(fixture), encoding="utf-8")
-    settings = MagicMock()
-    settings.fake_llm_fixture_path = str(path)
-    provider = FakeProvider(settings)
-    request = LLMRequest(job_id="j1", frames=[], frame_refs=[], prompt="", schema_version="v2.1", metadata={})
-    response = provider.analyze_global(request)
-    assert response.parsed_json["total_entities_detected"] == 1
-    assert len(response.parsed_json["entities"]) == 1
-    assert response.parsed_json["entities"][0]["model_entity_id"] == "e1"
-
-
-def test_fake_provider_default_fixture_is_minimal():
-    """Default in-code fixture is minimal v2.1 (0 entities)."""
-    assert DEFAULT_FAKE_RESPONSE["total_entities_detected"] == 0
-    assert DEFAULT_FAKE_RESPONSE["entities"] == []
-
-
-def test_hybrid_pipeline_e2e_patched_executor_no_network(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Registry returns ``TestLLMExecutor`` with fixture JSON; pipeline runs without network."""
-    from tests.support.llm_executor_harness import patch_registry_resolve_llm_executor, test_executor_from_json_path
+def test_hybrid_pipeline_e2e_patched_executor_no_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hybrid path uses patched ``resolve_llm_executor_for_context`` + fixture JSON; no network."""
+    from tests.support.llm_executor_harness import patch_offline_hybrid_json_fixture
 
     fixtures_v21 = Path(__file__).resolve().parent / "fixtures" / "v2_1"
-    patch_registry_resolve_llm_executor(monkeypatch, test_executor_from_json_path(fixtures_v21 / "global_analysis_ok.json"))
+    patch_offline_hybrid_json_fixture(monkeypatch, fixtures_v21 / "global_analysis_ok.json")
 
     run_dir = tmp_path / "job_photos" / "run"
     run_dir.mkdir(parents=True)
@@ -93,9 +50,10 @@ def test_hybrid_pipeline_e2e_patched_executor_no_network(tmp_path, monkeypatch: 
 
     job_input = JobInput(video_path="", input_type="photos")
     settings = MagicMock()
-    settings.llm_provider = "gemini"
+    settings.llm_provider = "openai"
     settings.fake_llm_fixture_path = None
-    settings.gemini_api_key = "offline-test-key"
+    settings.gemini_api_key = ""
+    settings.openai_api_key = "offline-test-key"
     settings.photo_resize_max_side = 1280
     settings.photo_jpeg_quality = 85
     settings.photos_min_side = 64

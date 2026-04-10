@@ -56,10 +56,10 @@ describe('useStartAisleProcessing', () => {
       wrapper: wrapper(qc),
     });
 
-    await result.current.mutateAsync({ aisleId: 'aisle-9', providerName: 'gemini' });
+    await result.current.mutateAsync({ aisleId: 'aisle-9', providerName: 'openai' });
 
     expect(client.startAisleProcessing).toHaveBeenCalledWith('inv-1', 'aisle-9', {
-      providerName: 'gemini',
+      providerName: 'openai',
     });
   });
 });
