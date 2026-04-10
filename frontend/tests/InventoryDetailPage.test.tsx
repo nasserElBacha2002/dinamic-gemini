@@ -183,11 +183,11 @@ describe('InventoryDetail', () => {
             default_model: 'gemini-2.0-flash-exp',
           },
           {
-            key: 'fake',
-            label: 'Fake (fixtures)',
-            execution_mode: 'transitional_bridge',
-            models: [{ id: 'fixture', label: 'fixture' }],
-            default_model: 'fixture',
+            key: 'openai',
+            label: 'OpenAI',
+            execution_mode: 'native',
+            models: [{ id: 'gpt-4o-mini', label: 'gpt-4o-mini' }],
+            default_model: 'gpt-4o-mini',
           },
         ],
       },
@@ -1360,11 +1360,11 @@ describe('InventoryDetail', () => {
     expect(screen.getByLabelText(/^provider$/i)).toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByLabelText(/^provider$/i));
-    const fakeOption = await screen.findByRole('option', { name: /fake/i });
-    fireEvent.click(fakeOption);
+    const openaiOption = await screen.findByRole('option', { name: /openai/i });
+    fireEvent.click(openaiOption);
 
     fireEvent.mouseDown(screen.getByLabelText(/^model$/i));
-    fireEvent.click(await screen.findByRole('option', { name: /^fixture$/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /^gpt-4o-mini$/i }));
 
     fireEvent.mouseDown(screen.getByLabelText(/prompt profile/i));
     fireEvent.click(await screen.findByRole('option', { name: /prompt b/i }));
@@ -1374,8 +1374,8 @@ describe('InventoryDetail', () => {
     await waitFor(() => {
       expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
         aisleId: 'aisle-1',
-        providerName: 'fake',
-        modelName: 'fixture',
+        providerName: 'openai',
+        modelName: 'gpt-4o-mini',
         promptKey: 'global_v21_b',
       });
     });

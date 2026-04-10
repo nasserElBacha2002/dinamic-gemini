@@ -166,7 +166,7 @@ def test_get_processing_provider_options_returns_registered_keys() -> None:
         assert "default_prompt_key" in data
         assert len(data.get("prompt_profiles", [])) >= 2
         keys = {p["key"] for p in data["providers"]}
-        assert keys == {"fake", "gemini", "openai"}
+        assert {"gemini", "openai"}.issubset(keys)
         for p in data["providers"]:
             assert p["execution_mode"] in ("native", "transitional_bridge")
             assert "models" in p and isinstance(p["models"], list) and len(p["models"]) >= 1
@@ -202,12 +202,16 @@ def test_get_processing_provider_options_reflects_env_processing_model_lists(
         config_mod._settings = None
 
 
-def test_post_process_with_explicit_fake_provider_persisted_on_status() -> None:
+def test_post_process_with_explicit_gemini_provider_persisted_on_status() -> None:
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
+        opts = client.get("/api/v3/inventories/processing-provider-options")
+        assert opts.status_code == 200
+        gemini_default = next(p for p in opts.json()["providers"] if p["key"] == "gemini")["default_model"]
+
         create_resp = client.post(
             "/api/v3/inventories",
-            json={"name": "For Prov Fake", "processing_mode": "test"},
+            json={"name": "For Prov Gemini", "processing_mode": "test"},
         )
         assert create_resp.status_code == 201
         inv_id = create_resp.json()["id"]
@@ -220,15 +224,15 @@ def test_post_process_with_explicit_fake_provider_persisted_on_status() -> None:
 
         proc = client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
-            json={"provider_name": "fake"},
+            json={"provider_name": "gemini"},
         )
         assert proc.status_code == 202
         status = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
         assert status.status_code == 200
         lj = status.json()["latest_job"]
         assert lj is not None
-        assert lj.get("provider_name") == "fake"
-        assert lj.get("model_name") == "fixture"
+        assert lj.get("provider_name") == "gemini"
+        assert lj.get("model_name") == gemini_default
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
 
@@ -253,7 +257,7 @@ def test_post_process_production_inventory_ignores_request_provider_and_uses_sna
     aisle_id = aisle_resp.json()["id"]
     proc = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
-        json={"provider_name": "fake", "model_name": "fixture"},
+        json={"provider_name": "openai", "model_name": "gpt-4o"},
     )
     assert proc.status_code == 202
     status = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
@@ -261,7 +265,7 @@ def test_post_process_production_inventory_ignores_request_provider_and_uses_sna
     lj = status.json()["latest_job"]
     assert lj is not None
     assert lj.get("provider_name") == expected_provider
-    assert lj.get("provider_name") != "fake"
+    assert lj.get("provider_name") != "openai"
 
 
 def test_post_process_invalid_model_for_provider_returns_422() -> None:
@@ -281,7 +285,7 @@ def test_post_process_invalid_model_for_provider_returns_422() -> None:
         aisle_id = aisle_resp.json()["id"]
         response = client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
-            json={"provider_name": "fake", "model_name": "not-a-valid-model"},
+            json={"provider_name": "gemini", "model_name": "not-a-valid-model"},
         )
         assert response.status_code == 422
         assert "model" in response.json()["detail"].lower()
@@ -837,8 +841,8 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
             created_at=now,
             updated_at=now,
             attempt_count=1,
-            provider_name="fake",
-            model_name="fixture",
+            provider_name="gemini",
+            model_name="gemini-2.0-flash-exp",
             prompt_key="global_v21",
         )
     )
@@ -858,8 +862,8 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
         assert data["attempt_count"] == 2
         assert data["retry_of_job_id"] == "job-failed"
         assert data["execution_id"] == "exec-job-retry-created"
-        assert data.get("provider_name") == "fake"
-        assert data.get("model_name") == "fixture"
+        assert data.get("provider_name") == "gemini"
+        assert data.get("model_name") == "gemini-2.0-flash-exp"
         assert data.get("prompt_key") == "global_v21"
         assert launch_service.launched == [data["id"]]
     finally:

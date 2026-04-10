@@ -67,7 +67,7 @@ def test_mixed_prefers_existing_product_label_quantity() -> None:
 
 def test_missing_canonical_fields_default_to_none() -> None:
     inp = {"entities": [{}]}
-    out = normalize_llm_response(inp, "fake")
+    out = normalize_llm_response(inp, "gemini")
     ent = out["entities"][0]
     assert ent["position_barcode"] is None
     assert ent["internal_code"] is None

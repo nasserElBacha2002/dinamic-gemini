@@ -154,7 +154,7 @@ def test_analysis_stage_delegates_to_provider() -> None:
     mock_provider = MagicMock()
     mock_provider.analyze.return_value = AnalysisResult(
         parsed_json={"total_entities_detected": 0, "entities": []},
-        provider_name="fake",
+        provider_name="gemini",
         provider_metadata=None,
     )
 
@@ -163,7 +163,7 @@ def test_analysis_stage_delegates_to_provider() -> None:
 
     assert isinstance(result, AnalysisStageResult)
     assert result.parsed_json == {"total_entities_detected": 0, "entities": []}
-    assert result.provider_name == "fake"
+    assert result.provider_name == "gemini"
     mock_provider.analyze.assert_called_once()
     call_kw = mock_provider.analyze.call_args
     assert call_kw[0][0] is context
@@ -189,7 +189,7 @@ def test_entity_resolution_stage_parses_and_resolves() -> None:
                 },
             ],
         },
-        provider_name="fake",
+        provider_name="gemini",
     )
 
     stage = EntityResolutionStage()
@@ -257,5 +257,6 @@ def test_orchestrator_returns_1_on_stage_failure() -> None:
     assert result.exit_code == 1
     logger.exception.assert_called()
     call_args = logger.exception.call_args[0]
-    assert "InputPreparationStage" in call_args[0]
-    assert "j1" in str(call_args)
+    assert call_args[0] == "Stage failure: %s (job_id=%s): %s"
+    assert call_args[1] == "InputPreparationStage"
+    assert call_args[2] == "j1"

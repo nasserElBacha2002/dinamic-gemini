@@ -3,9 +3,8 @@ Stage 2.2.D — LLM Provider Strategy (Strategy pattern).
 
 Tests:
 - Pipeline uses provider factory; no direct Gemini imports in pipeline.
-- FakeProvider returns valid v2.1-shaped JSON.
-- With LLM_PROVIDER=fake, pipeline runs end-to-end without network and produces
-  hybrid_report.json and evidence artifacts.
+- ``FakeProvider`` unit tests (production transitional implementation; not the default pipeline path).
+- Hybrid pipeline E2E without network via patched ``resolve_llm_executor`` + fixture JSON (Phase 2 harness).
 """
 
 import json
@@ -74,9 +73,13 @@ def test_fake_provider_default_fixture_is_minimal():
     assert DEFAULT_FAKE_RESPONSE["entities"] == []
 
 
-@pytest.mark.parametrize("llm_provider", ["fake"])
-def test_hybrid_pipeline_e2e_fake_provider_no_network(tmp_path, llm_provider):
-    """With LLM_PROVIDER=fake, hybrid pipeline runs without network and produces hybrid_report.json and evidence."""
+def test_hybrid_pipeline_e2e_patched_executor_no_network(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Registry returns ``TestLLMExecutor`` with fixture JSON; pipeline runs without network."""
+    from tests.support.llm_executor_harness import patch_registry_resolve_llm_executor, test_executor_from_json_path
+
+    fixtures_v21 = Path(__file__).resolve().parent / "fixtures" / "v2_1"
+    patch_registry_resolve_llm_executor(monkeypatch, test_executor_from_json_path(fixtures_v21 / "global_analysis_ok.json"))
+
     run_dir = tmp_path / "job_photos" / "run"
     run_dir.mkdir(parents=True)
     photos_dir = run_dir / "input_photos"
@@ -90,9 +93,9 @@ def test_hybrid_pipeline_e2e_fake_provider_no_network(tmp_path, llm_provider):
 
     job_input = JobInput(video_path="", input_type="photos")
     settings = MagicMock()
-    settings.llm_provider = llm_provider
+    settings.llm_provider = "gemini"
     settings.fake_llm_fixture_path = None
-    settings.gemini_api_key = "unused"
+    settings.gemini_api_key = "offline-test-key"
     settings.photo_resize_max_side = 1280
     settings.photo_jpeg_quality = 85
     settings.photos_min_side = 64

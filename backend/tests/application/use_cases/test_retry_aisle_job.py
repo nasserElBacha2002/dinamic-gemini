@@ -150,8 +150,8 @@ def test_retry_failed_job_creates_new_attempt_with_lineage() -> None:
         updated_at=now,
         attempt_count=1,
         failure_code="PROCESSING_FAILED",
-        provider_name="fake",
-        model_name="fixture",
+        provider_name="gemini",
+        model_name="gemini-2.0-flash-exp",
         prompt_key="global_v21",
     )
     job_repo.save(original)
@@ -177,8 +177,8 @@ def test_retry_failed_job_creates_new_attempt_with_lineage() -> None:
     assert retried.attempt_count == 2
     assert retried.status == JobStatus.STARTING
     assert retried.execution_id == f"exec-{retried.id}"
-    assert retried.provider_name == "fake"
-    assert retried.model_name == "fixture"
+    assert retried.provider_name == "gemini"
+    assert retried.model_name == "gemini-2.0-flash-exp"
     assert retried.prompt_key == "global_v21"
     assert launcher.launched == [retried.id]
     assert job_repo.get_by_id("job-failed").status == JobStatus.FAILED

@@ -70,7 +70,7 @@ def test_production_logs_when_request_has_overrides(mock_eff, caplog: pytest.Log
     caplog.set_level(logging.WARNING)
     resolve_process_aisle_execution_keys(
         _inv(mode=InventoryProcessingMode.PRODUCTION),
-        requested_provider_name="fake",
+        requested_provider_name="openai",
         requested_model_name="x",
         requested_prompt_key="y",
         settings=object(),

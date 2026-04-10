@@ -218,15 +218,15 @@ def test_start_aisle_processing_persists_explicit_provider_and_prompt() -> None:
         StartAisleProcessingCommand(
             inventory_id="inv1",
             aisle_id="a1",
-            pipeline_provider_key="fake",
-            model_name="fixture",
+            pipeline_provider_key="gemini",
+            model_name="gemini-2.0-flash-exp",
             prompt_key="global_v21",
         )
     )
     saved = job_repo.get_by_id(job_id)
     assert saved is not None
-    assert saved.provider_name == "fake"
-    assert saved.model_name == "fixture"
+    assert saved.provider_name == "gemini"
+    assert saved.model_name == "gemini-2.0-flash-exp"
     assert saved.prompt_key == "global_v21"
 
 

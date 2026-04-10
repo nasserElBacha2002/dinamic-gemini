@@ -39,8 +39,8 @@ class StubOperationalResolver:
     def resolve(self, settings: Any) -> OperationalPrimaryExecutionConfig:
         _ = settings
         return OperationalPrimaryExecutionConfig(
-            provider_name="fake",
-            model_name="fixture",
+            provider_name="gemini",
+            model_name="gemini-2.0-flash-exp",
             prompt_key="global_v21",
             prompt_version=None,
         )
@@ -66,8 +66,8 @@ def test_create_inventory_production_snapshots_operational_config() -> None:
     assert result.name == "Warehouse A"
     assert result.status == InventoryStatus.DRAFT
     assert result.processing_mode == InventoryProcessingMode.PRODUCTION
-    assert result.primary_provider_name == "fake"
-    assert result.primary_model_name == "fixture"
+    assert result.primary_provider_name == "gemini"
+    assert result.primary_model_name == "gemini-2.0-flash-exp"
     assert result.primary_prompt_key == "global_v21"
     assert result.created_at == now
     assert result.updated_at == now

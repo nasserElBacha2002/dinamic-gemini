@@ -28,7 +28,7 @@ def test_openai_profile_uses_openai_variant_for_global_v21() -> None:
 
 def test_non_openai_providers_use_default_variant() -> None:
     default_a = get_hybrid_prompt("global_v21")
-    assert get_hybrid_prompt("global_v21", "fake") == default_a
+    assert get_hybrid_prompt("global_v21", "gemini") == default_a
     assert get_hybrid_prompt("global_v21", "unknown_vendor") == default_a
 
 

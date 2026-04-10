@@ -34,8 +34,8 @@ class _StubOperationalResolver:
     def resolve(self, settings: object) -> OperationalPrimaryExecutionConfig:
         _ = settings
         return OperationalPrimaryExecutionConfig(
-            provider_name="fake",
-            model_name="fixture",
+            provider_name="gemini",
+            model_name="gemini-2.0-flash-exp",
             prompt_key="global_v21",
             prompt_version=None,
         )

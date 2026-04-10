@@ -1,12 +1,12 @@
 """
 Stage 2.2.E — E2E tests and compatibility validation.
 
-Offline, deterministic integration tests using FakeProvider (no network).
+Offline, deterministic integration tests: registry ``resolve_llm_executor`` is patched to a
+``TestLLMExecutor`` fed by JSON fixtures (no network, no ``FakeProvider`` in the pipeline path).
 Validates: video path, photos path, evidence localization, assisted counting API, provider wiring.
 """
 
 import json
-import os
 from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock, patch
@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 import pytest
 
-from src.jobs.job_store import create_job, get_job, update_job
+from src.jobs.job_store import create_job, get_job
 from src.jobs.models import JobStatus
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
@@ -88,20 +88,25 @@ def run_pipeline_sync(
     return result.exit_code
 
 
-def make_fake_settings(
+def _patch_registry_executor_from_json(monkeypatch: pytest.MonkeyPatch, fixture_path: Path) -> None:
+    from tests.support.llm_executor_harness import patch_registry_resolve_llm_executor, test_executor_from_json_path
+
+    patch_registry_resolve_llm_executor(monkeypatch, test_executor_from_json_path(fixture_path))
+
+
+def make_offline_pipeline_settings(
     *,
-    llm_provider: str = "fake",
-    fake_llm_fixture_path: Optional[str] = None,
+    llm_provider: str = "gemini",
     output_dir: Optional[Path] = None,
     photos_min_side: int = 64,
     photo_resize_max_side: int = 1280,
     photo_jpeg_quality: int = 85,
 ) -> MagicMock:
-    """Build a MagicMock settings object for E2E (FakeProvider, no network)."""
+    """Settings for offline pipeline runs (logical provider key + keys; LLM via patched executor)."""
     s = MagicMock()
     s.llm_provider = llm_provider
-    s.fake_llm_fixture_path = fake_llm_fixture_path
-    s.gemini_api_key = "unused"
+    s.fake_llm_fixture_path = None
+    s.gemini_api_key = "offline-test-key"
     s.photo_resize_max_side = photo_resize_max_side
     s.photo_jpeg_quality = photo_jpeg_quality
     s.photos_min_side = photos_min_side
@@ -115,8 +120,9 @@ def make_fake_settings(
 # --- A) E2E Video ---
 
 
-def test_e2e_video_job_generates_report_and_evidence(tmp_path):
-    """Video path: stub frame extraction, FakeProvider with fixture; assert report + evidence + stable order."""
+def test_e2e_video_job_generates_report_and_evidence(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Video path: stub frames + patched executor from fixture JSON; assert report + evidence + stable order."""
+    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
     job_id = "e2e_video_01"
     run_id = "run"
     create_temp_job_dirs(tmp_path, job_id)
@@ -141,7 +147,7 @@ def test_e2e_video_job_generates_report_and_evidence(tmp_path):
         metadata={"source": "video", "frame_count": len(frame_paths), "selected_by": "video_sampling", "frame_indices": [0, 1, 2]},
     )
 
-    settings = make_fake_settings(fake_llm_fixture_path=str(GLOBAL_ANALYSIS_OK))
+    settings = make_offline_pipeline_settings()
     with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_source = MagicMock()
         mock_source.get_frames.return_value = bundle
@@ -180,8 +186,9 @@ def test_e2e_video_job_generates_report_and_evidence(tmp_path):
 # --- B) E2E Photos ---
 
 
-def test_e2e_photos_job_persists_normalized_and_generates_report(tmp_path):
-    """Photos job: input_photos + manifest, normalization, FakeProvider; assert normalized dir + report + evidence."""
+def test_e2e_photos_job_persists_normalized_and_generates_report(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Photos job: input_photos + manifest, normalization, patched executor; assert normalized dir + report + evidence."""
+    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
     job_id = "e2e_photos_01"
     run_id = "run"
     run_dir = tmp_path / job_id / run_id
@@ -222,7 +229,7 @@ def test_e2e_photos_job_persists_normalized_and_generates_report(tmp_path):
         photos_dir="run/input_photos",
     )
 
-    settings = make_fake_settings(fake_llm_fixture_path=str(GLOBAL_ANALYSIS_OK))
+    settings = make_offline_pipeline_settings()
     code = run_pipeline_sync(tmp_path, job_id, run_id, settings=settings, job_input=job_input)
 
     assert code == 0
@@ -249,7 +256,7 @@ def test_e2e_photos_job_persists_normalized_and_generates_report(tmp_path):
 # --- C) Evidence localization modes ---
 
 
-def test_e2e_evidence_localization_modes(tmp_path):
+def test_e2e_evidence_localization_modes(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Run with bbox fixture -> LOCALIZED; with unlocalized fixture -> UNLOCALIZED; assert index and crops."""
     job_id = "e2e_loc"
     run_id = "run"
@@ -272,7 +279,8 @@ def test_e2e_evidence_localization_modes(tmp_path):
     )
 
     # 1) With bboxes -> LOCALIZED
-    settings_ok = make_fake_settings(fake_llm_fixture_path=str(GLOBAL_ANALYSIS_OK))
+    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
+    settings_ok = make_offline_pipeline_settings()
     with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle
         from src.jobs.models import JobInput
@@ -307,7 +315,8 @@ def test_e2e_evidence_localization_modes(tmp_path):
         frame_refs=["frame_000000", "frame_000001"],
         metadata={"source": "video", "frame_count": 2, "selected_by": "video_sampling", "frame_indices": [0, 1]},
     )
-    settings_u = make_fake_settings(fake_llm_fixture_path=str(GLOBAL_ANALYSIS_UNLOCALIZED))
+    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_UNLOCALIZED)
+    settings_u = make_offline_pipeline_settings()
     with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle2
         job_input2 = JobInput(video_path="", mode="hybrid", input_type="video")
@@ -331,9 +340,10 @@ def test_e2e_evidence_localization_modes(tmp_path):
 # --- E) Provider wiring (no network) ---
 
 
-def test_pipeline_uses_fake_provider_no_network(tmp_path):
-    """LLM_PROVIDER=fake: pipeline completes without calling GeminiClient."""
-    job_id = "e2e_fake_only"
+def test_pipeline_completes_without_gemini_client_when_executor_is_patched(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patched registry executor: pipeline completes without instantiating GeminiClient."""
+    _patch_registry_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
+    job_id = "e2e_patched_executor"
     run_dir = tmp_path / job_id / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
     extract_dir = run_dir / ".frames_extract_stub"
@@ -348,20 +358,20 @@ def test_pipeline_uses_fake_provider_no_network(tmp_path):
         frame_refs=["frame_000000", "frame_000001"],
         metadata={"source": "video", "frame_count": 2, "selected_by": "video_sampling", "frame_indices": [0, 1]},
     )
-    settings = make_fake_settings(llm_provider="fake", fake_llm_fixture_path=str(GLOBAL_ANALYSIS_OK))
+    settings = make_offline_pipeline_settings(llm_provider="gemini")
     gemini_constructor_called = []
 
     def _track_gemini(*args, **kwargs):
         gemini_constructor_called.append(1)
-        raise RuntimeError("GeminiClient must not be used when provider is fake")
+        raise RuntimeError("GeminiClient must not be used when executor is injected at registry boundary")
 
     with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle
-        with patch("src.llm.providers.gemini_provider.GeminiClient", side_effect=_track_gemini):
+        with patch("src.llm.gemini_client.GeminiClient", side_effect=_track_gemini):
             from src.jobs.models import JobInput
 
             job_input = JobInput(video_path="", mode="hybrid", input_type="video")
             code = run_pipeline_sync(tmp_path, job_id, "run", settings=settings, job_input=job_input)
     assert code == 0
-    assert len(gemini_constructor_called) == 0, "GeminiClient must not be instantiated when using FakeProvider"
+    assert len(gemini_constructor_called) == 0, "GeminiClient must not be instantiated when registry returns test executor"
     assert (run_dir / "hybrid_report.json").exists()

@@ -100,14 +100,14 @@ def test_resolve_explicit_gemini_without_key_raises() -> None:
         )
 
 
-def test_resolve_fake_uses_fixture_model() -> None:
-    s = _settings()
+def test_resolve_explicit_openai_uses_default_catalog_model() -> None:
+    s = _settings(openai_api_key="sk-test", gemini_api_key="")
     p, m, pk = resolve_start_processing_request(
-        requested_provider_name="fake",
+        requested_provider_name="openai",
         requested_model_name=None,
         requested_prompt_key=None,
         settings=s,
     )
-    assert p == "fake"
-    assert m == "fixture"
+    assert p == "openai"
+    assert m == "gpt-4o"
     assert pk == "global_v21"

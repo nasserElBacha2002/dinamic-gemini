@@ -33,7 +33,7 @@ from src.pipeline.ports.analysis_provider import (
 class FakeAnalysisProvider:
     """Minimal implementation of AnalysisProvider for contract tests."""
 
-    def __init__(self, parsed_json: dict, provider_name: str = "fake") -> None:
+    def __init__(self, parsed_json: dict, provider_name: str = "gemini") -> None:
         self._parsed_json = parsed_json
         self._provider_name = provider_name
 
@@ -95,10 +95,21 @@ def test_analysis_provider_contract_returns_analysis_result() -> None:
     assert len(entities) == 1
 
 
-def test_hybrid_global_analysis_strategy_returns_analysis_result() -> None:
-    """HybridGlobalAnalysisStrategy with fake registry executor returns AnalysisResult; parsed_json usable by parse_entities."""
+def test_hybrid_global_analysis_strategy_returns_analysis_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HybridGlobalAnalysisStrategy with patched executor returns AnalysisResult; parsed_json usable by parse_entities."""
+    from tests.support.llm_executor_harness import (
+        TestLLMExecutor,
+        llm_response_success,
+        patch_hybrid_resolve_llm_executor,
+    )
+
+    patch_hybrid_resolve_llm_executor(
+        monkeypatch,
+        TestLLMExecutor(response=llm_response_success(provider="gemini", model="gemini-2.0-flash-exp")),
+        resolved_provider_key="gemini",
+    )
     settings = MagicMock()
-    settings.llm_provider = "fake"
+    settings.llm_provider = "gemini"
     settings.fake_llm_fixture_path = None
     job_input = MagicMock()
     context = RunContext(
@@ -119,7 +130,7 @@ def test_hybrid_global_analysis_strategy_returns_analysis_result() -> None:
         metadata={"frame_count": 1},
     )
     assert isinstance(result, AnalysisResult)
-    assert result.provider_name == "fake"
+    assert result.provider_name == "gemini"
     assert "total_entities_detected" in result.parsed_json
     assert "entities" in result.parsed_json
     entities = parse_entities(result.parsed_json, job_id="j1")

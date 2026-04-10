@@ -17,7 +17,9 @@ boundary instead of the transitional ``FakeProvider``.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Optional
 
 import pytest
@@ -135,4 +137,22 @@ def patch_registry_resolve_llm_executor(
     monkeypatch.setattr(
         "src.pipeline.providers.registry.resolve_llm_executor",
         _fake_resolve,
+    )
+
+
+def test_executor_from_json_path(
+    path: str | Path,
+    *,
+    provider: str = "gemini",
+    model: str = "gemini-2.0-flash-exp",
+) -> TestLLMExecutor:
+    """
+    Build a ``TestLLMExecutor`` that returns the JSON file contents as ``parsed_json``.
+
+    Replaces E2E usage of ``fake_llm_fixture_path`` + ``FakeProvider`` at the executor boundary.
+    """
+    raw = Path(path).read_text(encoding="utf-8")
+    data: dict[str, Any] = json.loads(raw)
+    return TestLLMExecutor(
+        response=llm_response_success(parsed_json=data, provider=provider, model=model),
     )
