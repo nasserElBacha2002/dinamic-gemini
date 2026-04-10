@@ -439,7 +439,21 @@ class Settings(BaseModel):
     )
     hybrid_prompt: str = Field(
         default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
-        description="Perfil de prompt para el pipeline híbrido (ej. global_v21). Env: HYBRID_PROMPT.",
+        description=(
+            "Perfil de prompt para el pipeline híbrido (ej. global_v21) — **selects the prompt profile / "
+            "family** (which template body is composed). Env: HYBRID_PROMPT. Distinct from "
+            "`prompt_version`, which is an optional traceability label only."
+        ),
+    )
+    prompt_version: Optional[str] = Field(
+        default_factory=lambda: ((os.getenv("PROMPT_VERSION") or "").strip() or None),
+        description=(
+            "Phase 7 — **traceability only**: optional logical label copied into "
+            "`prompt_composition['prompt_version']` for audit and future comparison (e.g. v1, experiment-A). "
+            "Does **not** select prompt content; does **not** override `hybrid_prompt` / profile resolution; "
+            "does **not** affect prompt hashes. Per-job `RunContext.job_prompt_version` overrides this when set. "
+            "Env: PROMPT_VERSION."
+        ),
     )
     # Comma-separated lists for POST /process model pickers (Phase 5 corrections)
     processing_gemini_models: str = Field(

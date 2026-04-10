@@ -3,6 +3,14 @@ Hybrid global-analysis prompt assembly (provider-neutral).
 
 Uses ``prompt_composer.hybrid_assembly`` for profile + base composition; applies photo enrichments
 once here (step 4 of the Phase 5 flow).
+
+**Profile vs Phase 7 version (see also ``prompt_traceability`` module doc):**
+
+- **Profile:** ``resolve_hybrid_profile_name`` + ``compose_hybrid_base`` determine prompt **content**.
+  Recorded in composition as ``profile_name``, ``job_prompt_key``, ``settings_hybrid_prompt_key``.
+- **``prompt_version``:** Optional label from ``RunContext.job_prompt_version`` or ``settings.prompt_version``
+  only; recorded in composition; **no effect** on resolution or text.
+- **Hashes:** ``prompt_hash`` / ``base_prompt_hash`` fingerprint the strings only.
 """
 
 from __future__ import annotations
@@ -79,6 +87,15 @@ def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple
     job_prompt_key_opt = jpk.strip() if isinstance(jpk, str) and jpk.strip() else None
     shp = getattr(settings, "hybrid_prompt", None)
     settings_prompt_opt = shp.strip() if isinstance(shp, str) and shp.strip() else None
+    # Phase 7: optional traceability label only (not profile selection). job_prompt_version wins over settings.prompt_version.
+    jpv = getattr(context, "job_prompt_version", None)
+    prompt_version_opt = None
+    if isinstance(jpv, str) and jpv.strip():
+        prompt_version_opt = jpv.strip()
+    else:
+        spv = getattr(settings, "prompt_version", None)
+        if isinstance(spv, str) and spv.strip():
+            prompt_version_opt = spv.strip()
     composition = build_prompt_composition_dict(
         profile_name=profile,
         pipeline_provider_key=effective_provider,
@@ -88,6 +105,7 @@ def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple
         composition_steps=steps,
         job_prompt_key=job_prompt_key_opt,
         settings_hybrid_prompt_key=settings_prompt_opt,
+        prompt_version=prompt_version_opt,
     )
     return prompt_text, composition
 

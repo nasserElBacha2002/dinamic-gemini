@@ -13,6 +13,23 @@ Phase 6 — prompt composition traceability (JSON-serializable, audit-friendly m
   (env ``DEBUG_LOG_FULL_ANALYSIS_PROMPT``) for optional full ``prompt_text`` in the log payload.
 
 Attached to ``LLMRequest.metadata`` and job ``run_metadata`` without changing prompt text.
+
+**Semantics: profile / key vs version vs hash (do not conflate)**
+
+- **Profile / prompt family (what text template is used):** In composition metadata this is
+  ``profile_name`` (the resolved profile after ``job_prompt_key`` / ``settings.hybrid_prompt``).
+  ``job_prompt_key`` and ``settings_hybrid_prompt_key`` record which inputs contributed. Top-level
+  job ``run_metadata["prompt_key"]`` mirrors the effective profile id for persistence. None of this
+  is the same as Phase 7 ``prompt_version``.
+- **``prompt_version`` (Phase 7, optional):** A logical label for traceability, comparison, and
+  future A/B work. It **does not** select prompt bodies, **does not** change ``resolve_hybrid_profile_name``,
+  **does not** alter prompt text, and **is not** an input to ``prompt_hash`` / ``base_prompt_hash``.
+- **``prompt_hash`` / ``base_prompt_hash``:** SHA-256 of UTF-8 ``final_prompt_text`` / ``base_prompt_text``
+  only — exact fingerprints of the strings sent or built.
+
+**Top-level ``run_metadata["prompt_version"]`` (legacy)** in ``hybrid_inventory_pipeline`` is the
+string ``{prompt_key}@v2.1`` for job ``result_json``. That is **not** the same field as
+``run_metadata["prompt_composition"]["prompt_version"]`` (Phase 7 optional label).
 """
 
 from __future__ import annotations
@@ -62,8 +79,13 @@ class PromptCompositionMetadata:
       model name for the call. These do not change prompt *text*; they describe *who ran* the
       prompt.
 
-    Consumers should treat the whole dict as the Phase 6 contract while understanding which keys
+    Consumers should treat the whole dict as the Phase 6+7 contract while understanding which keys
     are authoritative for “how the prompt was built” vs “how it was executed”.
+
+    **Phase 7 — ``prompt_version``:** Optional logical label (e.g. ``"v1"``, ``"2026-04-10"``) for
+    audit and future comparison. It is **not** the profile selector (that is ``profile_name`` /
+    ``job_prompt_key`` / ``hybrid_prompt``), **not** derived from ``prompt_hash``, does **not** affect
+    prompt text, and is **not** used to pick prompt content in this phase.
     """
 
     schema_version: str
@@ -73,6 +95,7 @@ class PromptCompositionMetadata:
     model_name: Optional[str]
     job_prompt_key: Optional[str]
     settings_hybrid_prompt_key: Optional[str]
+    prompt_version: Optional[str]
     base_prompt_text: str
     final_prompt_text: str
     enrichments_applied: List[str]
@@ -95,12 +118,17 @@ def build_prompt_composition_dict(
     composition_steps: Sequence[Dict[str, Any]],
     job_prompt_key: Optional[str],
     settings_hybrid_prompt_key: Optional[str],
+    prompt_version: Optional[str] = None,
     resolved_llm_provider_key: str = "",
     model_name: Optional[str] = None,
     timestamp: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Build the **prompt-construction** portion of ``prompt_composition`` (hashes from prompt strings).
+
+    ``prompt_version`` is optional traceability metadata only; it does not affect which profile is
+    resolved, does not change prompt strings, and does not affect ``prompt_hash`` /
+    ``base_prompt_hash``.
 
     Leaves ``resolved_llm_provider_key`` / ``model_name`` empty or None until
     ``apply_execution_layer_to_composition`` runs in the analysis strategy. Full ``base_prompt_text``
@@ -117,6 +145,11 @@ def build_prompt_composition_dict(
         settings_hybrid_prompt_key=(
             str(settings_hybrid_prompt_key).strip()
             if settings_hybrid_prompt_key and str(settings_hybrid_prompt_key).strip()
+            else None
+        ),
+        prompt_version=(
+            prompt_version.strip()
+            if isinstance(prompt_version, str) and prompt_version.strip()
             else None
         ),
         base_prompt_text=base_prompt_text,
@@ -217,7 +250,7 @@ def prompt_composition_summary_for_execution_log(
     """
     base_text = full_composition.get("base_prompt_text")
     base_len = len(base_text) if isinstance(base_text, str) else 0
-    return {
+    out: Dict[str, Any] = {
         "schema_version": full_composition.get("schema_version"),
         "profile_name": full_composition.get("profile_name"),
         "pipeline_provider_key": full_composition.get("pipeline_provider_key"),
@@ -233,3 +266,8 @@ def prompt_composition_summary_for_execution_log(
         "base_prompt_char_len": base_len,
         "timestamp": full_composition.get("timestamp"),
     }
+    # Phase 7 label only; omit from log payload when unset (noise / backward compat).
+    pv = full_composition.get("prompt_version")
+    if isinstance(pv, str) and pv.strip():
+        out["prompt_version"] = pv.strip()
+    return out

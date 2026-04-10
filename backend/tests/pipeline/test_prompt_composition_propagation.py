@@ -107,6 +107,66 @@ def test_execution_log_prompt_hash_matches_request_metadata(
     assert payload["prompt_text_sha256"] == ph
 
 
+def test_phase7_prompt_version_propagates_to_request_and_execution_log(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Phase 7: optional prompt_version appears in full composition and redacted log summary."""
+    captured: dict[str, Any] = {}
+
+    def _handler(request: LLMRequest, settings: Any) -> LLMResponse:
+        del settings
+        captured["request"] = request
+        return llm_response_success(parsed_json={"total_entities_detected": 0, "entities": []})
+
+    executor = TestLLMExecutor(handler=_handler)
+    patch_hybrid_resolve_llm_executor(monkeypatch, executor)
+    context = _video_context(tmp_path)
+    context.job_prompt_version = "benchmark-v2"
+    HybridGlobalAnalysisStrategy().analyze(
+        context=context,
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/f.jpg")],
+        frame_refs=["f0"],
+        metadata={"frame_count": 1},
+    )
+    req = captured["request"]
+    pc = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]
+    assert pc.get("prompt_version") == "benchmark-v2"
+    prepared = next(
+        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+    )
+    log_pc = prepared.kwargs["payload"]["prompt_composition"]
+    assert log_pc.get("prompt_version") == "benchmark-v2"
+
+
+def test_phase7_execution_log_omits_prompt_version_key_when_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def _handler(request: LLMRequest, settings: Any) -> LLMResponse:
+        del settings
+        captured["request"] = request
+        return llm_response_success(parsed_json={"total_entities_detected": 0, "entities": []})
+
+    executor = TestLLMExecutor(handler=_handler)
+    patch_hybrid_resolve_llm_executor(monkeypatch, executor)
+    context = _video_context(tmp_path)
+    HybridGlobalAnalysisStrategy().analyze(
+        context=context,
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/f.jpg")],
+        frame_refs=["f0"],
+        metadata={"frame_count": 1},
+    )
+    prepared = next(
+        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+    )
+    log_pc = prepared.kwargs["payload"]["prompt_composition"]
+    assert "prompt_version" not in log_pc
+    assert captured["request"].metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION].get("prompt_version") is None
+
+
 def test_analysis_stage_forwards_prompt_composition_reference() -> None:
     """AnalysisStage must not copy prompt_composition; pipeline persistence relies on object identity."""
     shared: dict = {"prompt_hash": "x", "schema_version": "prompt_composition_v1"}

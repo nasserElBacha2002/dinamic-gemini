@@ -106,6 +106,7 @@ class HybridInventoryPipeline:
         pipeline_provider_name: Optional[str] = None,
         job_model_name: Optional[str] = None,
         job_prompt_key: Optional[str] = None,
+        job_prompt_version: Optional[str] = None,
         cancellation_checkpoint: Any = None,
         **_: object,
     ) -> PipelineRunResult:
@@ -136,6 +137,7 @@ class HybridInventoryPipeline:
             pipeline_provider_name=pipeline_provider_name,
             job_model_name=job_model_name,
             job_prompt_key=job_prompt_key,
+            job_prompt_version=job_prompt_version,
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)
@@ -298,14 +300,16 @@ class HybridInventoryPipeline:
             analysis_result.provider_metadata,
             prompt_composition=analysis_result.prompt_composition,
         )
-        # Phase 7: run attribution for debugging (provider and prompt_key persisted in job.result_json)
+        # Run attribution: provider + effective prompt profile key for job.result_json.
+        # NOTE: top-level run_metadata["prompt_version"] below is legacy "{prompt_key}@v2.1" (report schema tag).
+        # That is unrelated to prompt_composition["prompt_version"] (Phase 7 optional logical label).
         provider = (analysis_result.provider_name or "").strip() or None
         run_metadata["provider"] = provider
         prompt_key = getattr(context, "job_prompt_key", None) or getattr(settings, "hybrid_prompt", None)
         if prompt_key is not None and str(prompt_key).strip():
             pk = str(prompt_key).strip()
             run_metadata["prompt_key"] = pk
-            # Traceability: prompt profile key + hybrid report schema tag (see LLMRequest.schema_version).
+            # Legacy traceability string: profile key + hybrid report schema tag (see LLMRequest.schema_version).
             run_metadata["prompt_version"] = f"{pk}@v2.1"
         if getattr(settings, "debug_run_metadata", False):
             try:

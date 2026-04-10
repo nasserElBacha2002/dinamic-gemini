@@ -147,15 +147,24 @@ class HybridGlobalAnalysisStrategy:
         )
         run_logger = getattr(context, "logger", None)
         if run_logger is not None:
-            run_logger.info(
-                "Prompt composition: profile=%s pipeline_provider=%s llm_provider=%s model=%s prompt_hash=%s enrichments=%s",
+            pv_raw = prompt_composition.get("prompt_version")
+            pv_opt = pv_raw.strip() if isinstance(pv_raw, str) and pv_raw.strip() else None
+            log_parts = [
                 prompt_composition.get("profile_name"),
                 prompt_composition.get("pipeline_provider_key"),
                 prompt_composition.get("resolved_llm_provider_key"),
                 prompt_composition.get("model_name"),
                 prompt_composition.get("prompt_hash"),
                 prompt_composition.get("enrichments_applied"),
+            ]
+            fmt = (
+                "Prompt composition: profile=%s pipeline_provider=%s llm_provider=%s "
+                "model=%s prompt_hash=%s enrichments=%s"
             )
+            if pv_opt:
+                fmt += " prompt_version=%s"
+                log_parts.append(pv_opt)
+            run_logger.info(fmt, *log_parts)
         exec_log = getattr(context, "execution_log", None)
         # Full prompt strings live on ``prompt_composition`` in request/job metadata (audit).
         # Execution log uses a redacted summary plus hash/len unless debug enables full ``prompt_text``.

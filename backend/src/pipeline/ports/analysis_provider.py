@@ -41,9 +41,10 @@ class AnalysisResult:
     by the existing pipeline (parse_entities). Future stages may extend it with metadata such
     as raw response, tokens, latency, model info, or trace IDs.
     v3.2.4 Phase 4: provider_metadata carries visual reference usage (available/consumed/count).
-    Phase 6: optional ``prompt_composition`` — same dict attached to ``LLMRequest.metadata`` for
-    this call (full prompt text for job-level audit). Execution logs use a redacted subset; see
-    ``prompt_traceability`` module docstring.
+    Phase 6–7: optional ``prompt_composition`` — same dict attached to ``LLMRequest.metadata`` for
+    this call (full prompt text for job-level audit). Includes optional Phase 7 ``prompt_version``
+    (logical label only; see ``prompt_traceability`` for distinction vs profile / hash). Execution
+    logs use a redacted subset.
     """
 
     parsed_json: Dict[str, Any]
