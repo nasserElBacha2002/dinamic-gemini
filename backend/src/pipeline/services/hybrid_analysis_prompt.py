@@ -18,7 +18,13 @@ from src.llm.prompt_composer.hybrid_assembly import (
     compose_hybrid_base,
     resolve_hybrid_profile_name,
 )
-from src.llm.prompt_composer.prompt_traceability import build_prompt_composition_dict
+from src.llm.prompt_composer.prompt_traceability import (
+    COMPOSITION_STEP_COMPOSE_HYBRID_BASE,
+    COMPOSITION_STEP_ENRICH_IMAGE_IDS,
+    COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER,
+    COMPOSITION_STEP_RESOLVE_PROFILE,
+    build_prompt_composition_dict,
+)
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
@@ -29,6 +35,9 @@ def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple
     Same prompt text as legacy assembly, plus JSON-serializable composition metadata (Phase 6).
 
     Prompt construction order is unchanged: profile → provider → base → optional image-id enrichment.
+    Returns ``(prompt_text, composition)`` where ``composition`` is the **construction-only** slice;
+    the analysis strategy adds execution-layer fields (resolved provider, model) before attaching to
+    ``LLMRequest.metadata`` (see ``apply_execution_layer_to_composition``).
     """
     settings = context.settings
     steps: list[Dict[str, Any]] = []
@@ -36,14 +45,16 @@ def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple
         job_prompt_key=getattr(context, "job_prompt_key", None),
         settings=settings,
     )
-    steps.append({"step": "resolve_profile", "profile_name": profile})
+    steps.append({"step": COMPOSITION_STEP_RESOLVE_PROFILE, "profile_name": profile})
     effective_provider = normalize_pipeline_provider_key(
         getattr(context, "pipeline_provider_name", None),
         settings,
     )
-    steps.append({"step": "normalize_pipeline_provider", "pipeline_provider_key": effective_provider})
+    steps.append(
+        {"step": COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER, "pipeline_provider_key": effective_provider}
+    )
     base_prompt = compose_hybrid_base(profile, effective_provider)
-    steps.append({"step": "compose_hybrid_base"})
+    steps.append({"step": COMPOSITION_STEP_COMPOSE_HYBRID_BASE})
     enrichments_applied: list[str] = []
     prompt_text = base_prompt
     job_input = getattr(context, "job_input", None)
@@ -59,7 +70,7 @@ def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple
                 enrichments_applied.append(IMAGE_ID_TRACEABILITY_ENRICHMENT_ID)
                 steps.append(
                     {
-                        "step": "enrich_image_ids",
+                        "step": COMPOSITION_STEP_ENRICH_IMAGE_IDS,
                         "enrichment_id": IMAGE_ID_TRACEABILITY_ENRICHMENT_ID,
                         "image_count": len(images),
                     }

@@ -1,6 +1,17 @@
 """
 Phase 6 — prompt composition traceability (JSON-serializable, audit-friendly metadata).
 
+**Persistence vs execution logs**
+
+- The full ``prompt_composition`` dict (including ``base_prompt_text`` and ``final_prompt_text``) is
+  attached to ``LLMRequest.metadata`` and, after analysis, copied into job ``run_metadata`` for
+  **audit replay and debugging**. That choice is intentional for Phase 6; a later phase may trim
+  or externalize large text while keeping hashes.
+- **Execution logs** (``ExecutionLogWriter``) intentionally omit full prompt bodies by default and
+  only record hashes, lengths, and a redacted summary — see
+  ``prompt_composition_summary_for_execution_log`` and ``Settings.debug_log_full_analysis_prompt``
+  (env ``DEBUG_LOG_FULL_ANALYSIS_PROMPT``) for optional full ``prompt_text`` in the log payload.
+
 Attached to ``LLMRequest.metadata`` and job ``run_metadata`` without changing prompt text.
 """
 
@@ -19,6 +30,14 @@ LLM_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
 
 PROMPT_COMPOSITION_SCHEMA_VERSION = "prompt_composition_v1"
 
+# --- composition_steps: lightweight ordered audit trail (not a workflow engine) ---
+# Each entry is a dict with required key ``step`` (one of the constants below). Optional keys
+# document inputs/outputs for humans and future tooling; keep shapes stable when extending.
+COMPOSITION_STEP_RESOLVE_PROFILE = "resolve_profile"
+COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER = "normalize_pipeline_provider"
+COMPOSITION_STEP_COMPOSE_HYBRID_BASE = "compose_hybrid_base"
+COMPOSITION_STEP_ENRICH_IMAGE_IDS = "enrich_image_ids"
+
 
 def sha256_utf8(text: str) -> str:
     """SHA-256 hex digest of UTF-8 encoded text."""
@@ -27,7 +46,25 @@ def sha256_utf8(text: str) -> str:
 
 @dataclass
 class PromptCompositionMetadata:
-    """Structured record of how the hybrid analysis prompt was assembled."""
+    """
+    Single JSON-friendly record for hybrid analysis prompt traceability.
+
+    **Boundary: prompt construction vs execution layer**
+
+    - **Prompt construction** (filled in ``pipeline.services.hybrid_analysis_prompt`` via
+      ``build_prompt_composition_dict``): profile resolution, pipeline provider key used for
+      overlay/compose, config keys that influenced the profile, base/final prompt text, hashes,
+      enrichments, ``composition_steps``, timestamp. ``resolved_llm_provider_key`` and ``model_name``
+      are present as fields but empty/None until the execution step below — the datatype is one
+      blob for practical JSON attachment.
+    - **Execution-layer enrichment** (filled in ``HybridGlobalAnalysisStrategy`` via
+      ``apply_execution_layer_to_composition``): registry-resolved LLM provider key and concrete
+      model name for the call. These do not change prompt *text*; they describe *who ran* the
+      prompt.
+
+    Consumers should treat the whole dict as the Phase 6 contract while understanding which keys
+    are authoritative for “how the prompt was built” vs “how it was executed”.
+    """
 
     schema_version: str
     profile_name: str
@@ -62,7 +99,13 @@ def build_prompt_composition_dict(
     model_name: Optional[str] = None,
     timestamp: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build a JSON-friendly composition record (hashes computed from prompt strings)."""
+    """
+    Build the **prompt-construction** portion of ``prompt_composition`` (hashes from prompt strings).
+
+    Leaves ``resolved_llm_provider_key`` / ``model_name`` empty or None until
+    ``apply_execution_layer_to_composition`` runs in the analysis strategy. Full ``base_prompt_text``
+    and ``final_prompt_text`` are included on purpose for job-level audit (see module docstring).
+    """
     ts = timestamp or datetime.now(timezone.utc).isoformat()
     meta = PromptCompositionMetadata(
         schema_version=PROMPT_COMPOSITION_SCHEMA_VERSION,
@@ -91,27 +134,51 @@ def validate_prompt_composition_dict(meta: Mapping[str, Any]) -> List[str]:
     """
     Return human-readable validation errors; empty list means invariants hold.
 
-    Checks SHA-256 consistency and simple enrichment/base/final alignment.
+    Lightweight structural checks plus SHA-256 consistency and enrichment/base/final alignment.
     """
     errors: List[str] = []
+
+    sv = meta.get("schema_version")
+    if not isinstance(sv, str) or not sv.strip():
+        errors.append("schema_version must be a non-empty string")
+
+    pn = meta.get("profile_name")
+    if not isinstance(pn, str) or not pn.strip():
+        errors.append("profile_name must be a non-empty string")
+
+    ppk = meta.get("pipeline_provider_key")
+    if not isinstance(ppk, str) or not ppk.strip():
+        errors.append("pipeline_provider_key must be a non-empty string")
+
+    enrich = meta.get("enrichments_applied")
+    if not isinstance(enrich, list):
+        errors.append("enrichments_applied must be a list")
+
+    steps = meta.get("composition_steps")
+    if not isinstance(steps, list):
+        errors.append("composition_steps must be a list")
+
     final = meta.get("final_prompt_text")
     if not isinstance(final, str):
         errors.append("final_prompt_text must be a string")
         return errors
+
     want_ph = meta.get("prompt_hash")
     if isinstance(want_ph, str) and want_ph:
         if sha256_utf8(final) != want_ph:
             errors.append("prompt_hash does not match final_prompt_text")
+
     base = meta.get("base_prompt_text")
     if isinstance(base, str):
         want_bh = meta.get("base_prompt_hash")
         if isinstance(want_bh, str) and want_bh:
             if sha256_utf8(base) != want_bh:
                 errors.append("base_prompt_hash does not match base_prompt_text")
-    enrich = meta.get("enrichments_applied")
+
     if isinstance(enrich, list) and len(enrich) == 0:
         if isinstance(base, str) and final != base:
             errors.append("enrichments_applied is empty but base_prompt_text != final_prompt_text")
+
     return errors
 
 
@@ -121,7 +188,13 @@ def apply_execution_layer_to_composition(
     resolved_llm_provider_key: str,
     model_name: Optional[str],
 ) -> Dict[str, Any]:
-    """Copy composition dict and fill provider/model fields from the execution layer."""
+    """
+    Shallow-copy ``composition`` and set **execution-layer** fields.
+
+    The registry-resolved provider key and job model name describe the executor invocation; they
+    are merged into the same dict shape as prompt-construction metadata so one blob can ride on
+    ``LLMRequest.metadata`` and ``run_metadata`` without a second top-level key.
+    """
     out = dict(composition)
     out["resolved_llm_provider_key"] = (resolved_llm_provider_key or "").strip().lower()
     out["model_name"] = (str(model_name).strip() if model_name and str(model_name).strip() else None)
@@ -129,3 +202,34 @@ def apply_execution_layer_to_composition(
     for msg in errs:
         logger.warning("prompt_composition validation: %s", msg)
     return out
+
+
+def prompt_composition_summary_for_execution_log(
+    full_composition: Mapping[str, Any],
+    *,
+    final_prompt_char_len: int,
+) -> Dict[str, Any]:
+    """
+    Redacted subset of ``prompt_composition`` for execution logs (no full prompt bodies).
+
+    Keeps hashes, profile/provider fields, enrichments, steps, and character lengths so log readers
+    align with persisted metadata without duplicating large strings in JSONL.
+    """
+    base_text = full_composition.get("base_prompt_text")
+    base_len = len(base_text) if isinstance(base_text, str) else 0
+    return {
+        "schema_version": full_composition.get("schema_version"),
+        "profile_name": full_composition.get("profile_name"),
+        "pipeline_provider_key": full_composition.get("pipeline_provider_key"),
+        "resolved_llm_provider_key": full_composition.get("resolved_llm_provider_key"),
+        "model_name": full_composition.get("model_name"),
+        "job_prompt_key": full_composition.get("job_prompt_key"),
+        "settings_hybrid_prompt_key": full_composition.get("settings_hybrid_prompt_key"),
+        "enrichments_applied": full_composition.get("enrichments_applied"),
+        "composition_steps": full_composition.get("composition_steps"),
+        "prompt_hash": full_composition.get("prompt_hash"),
+        "base_prompt_hash": full_composition.get("base_prompt_hash"),
+        "final_prompt_char_len": final_prompt_char_len,
+        "base_prompt_char_len": base_len,
+        "timestamp": full_composition.get("timestamp"),
+    }

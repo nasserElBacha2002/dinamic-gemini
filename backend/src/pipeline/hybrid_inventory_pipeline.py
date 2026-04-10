@@ -291,7 +291,8 @@ class HybridInventoryPipeline:
             raise
         except Exception as e:
             return _fail("ReportingStage", e)
-        # Phase 5: build run_metadata in memory (formal AnalysisContext); optional file as debug artifact
+        # Phase 5–6: run_metadata in memory; Phase 6 reuses analysis_result.prompt_composition
+        # (same object as LLMRequest.metadata["prompt_composition"]) — no rebuild.
         run_metadata = build_run_metadata(
             context.analysis_context,
             analysis_result.provider_metadata,

@@ -10,7 +10,14 @@ import pytest
 
 import src.pipeline.services.hybrid_analysis_prompt as hap_mod
 from src.llm.prompt_composer.enrichments import IMAGE_ID_TRACEABILITY_ENRICHMENT_ID
-from src.llm.prompt_composer.prompt_traceability import sha256_utf8, validate_prompt_composition_dict
+from src.llm.prompt_composer.prompt_traceability import (
+    COMPOSITION_STEP_COMPOSE_HYBRID_BASE,
+    COMPOSITION_STEP_ENRICH_IMAGE_IDS,
+    COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER,
+    COMPOSITION_STEP_RESOLVE_PROFILE,
+    sha256_utf8,
+    validate_prompt_composition_dict,
+)
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_text,
@@ -130,6 +137,7 @@ def test_build_hybrid_prompt_photos_calls_image_enrichment_once(
 
 
 def test_build_hybrid_traceability_matches_legacy_prompt_text() -> None:
+    """Video / non-photo path: no enrichments → base and final identical; hashes align; validation OK."""
     settings = MagicMock()
     settings.hybrid_prompt = "global_v21"
     job_input = MagicMock()
@@ -148,7 +156,16 @@ def test_build_hybrid_traceability_matches_legacy_prompt_text() -> None:
     assert text == legacy
     assert meta["final_prompt_text"] == text
     assert meta["base_prompt_text"] == text
+    assert meta["base_prompt_text"] == meta["final_prompt_text"]
+    assert meta["prompt_hash"] == meta["base_prompt_hash"]
+    assert meta["prompt_hash"] == sha256_utf8(text)
     assert meta["enrichments_applied"] == []
+    step_names = [s.get("step") for s in meta["composition_steps"]]
+    assert step_names == [
+        COMPOSITION_STEP_RESOLVE_PROFILE,
+        COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER,
+        COMPOSITION_STEP_COMPOSE_HYBRID_BASE,
+    ]
     assert validate_prompt_composition_dict(meta) == []
 
 
@@ -182,6 +199,7 @@ def test_build_hybrid_traceability_photos_records_enrichment(tmp_path: Path) -> 
     assert IMAGE_ID_TRACEABILITY_ENRICHMENT_ID in meta["enrichments_applied"]
     assert meta["base_prompt_text"] != meta["final_prompt_text"]
     assert meta["prompt_hash"] == sha256_utf8(text)
+    assert meta["composition_steps"][-1]["step"] == COMPOSITION_STEP_ENRICH_IMAGE_IDS
     assert validate_prompt_composition_dict(meta) == []
 
 

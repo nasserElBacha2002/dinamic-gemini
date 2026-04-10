@@ -32,6 +32,7 @@ from src.pipeline.services.analysis_visual_reference_prep import (
 from src.llm.prompt_composer.prompt_traceability import (
     LLM_METADATA_KEY_PROMPT_COMPOSITION,
     apply_execution_layer_to_composition,
+    prompt_composition_summary_for_execution_log,
     sha256_utf8,
 )
 from src.pipeline.services.hybrid_analysis_prompt import (
@@ -119,6 +120,8 @@ class HybridGlobalAnalysisStrategy:
         if jm and str(jm).strip() and rk == "openai":
             req_meta["openai_model_name"] = str(jm).strip()
 
+        # Phase 6: linear propagation — one dict after execution-layer merge is the source of truth
+        # for LLMRequest, AnalysisResult, run_metadata, and (redacted) execution_log summary.
         prompt_composition = apply_execution_layer_to_composition(
             composition_base,
             resolved_llm_provider_key=rk,
@@ -154,6 +157,8 @@ class HybridGlobalAnalysisStrategy:
                 prompt_composition.get("enrichments_applied"),
             )
         exec_log = getattr(context, "execution_log", None)
+        # Full prompt strings live on ``prompt_composition`` in request/job metadata (audit).
+        # Execution log uses a redacted summary plus hash/len unless debug enables full ``prompt_text``.
         debug_full_prompt = getattr(settings, "debug_log_full_analysis_prompt", None) is True
         if exec_log:
             primary_attachments = build_primary_evidence_attachments(frame_paths, frame_refs)
@@ -168,22 +173,10 @@ class HybridGlobalAnalysisStrategy:
                 },
                 "primary_evidence_attachments": primary_attachments,
                 "visual_reference_attachments": visual_reference_attachments,
-                "prompt_composition": {
-                    "schema_version": prompt_composition.get("schema_version"),
-                    "profile_name": prompt_composition.get("profile_name"),
-                    "pipeline_provider_key": prompt_composition.get("pipeline_provider_key"),
-                    "resolved_llm_provider_key": prompt_composition.get("resolved_llm_provider_key"),
-                    "model_name": prompt_composition.get("model_name"),
-                    "job_prompt_key": prompt_composition.get("job_prompt_key"),
-                    "settings_hybrid_prompt_key": prompt_composition.get("settings_hybrid_prompt_key"),
-                    "enrichments_applied": prompt_composition.get("enrichments_applied"),
-                    "composition_steps": prompt_composition.get("composition_steps"),
-                    "prompt_hash": prompt_composition.get("prompt_hash"),
-                    "base_prompt_hash": prompt_composition.get("base_prompt_hash"),
-                    "final_prompt_char_len": len(prompt_text),
-                    "base_prompt_char_len": len(prompt_composition.get("base_prompt_text") or ""),
-                    "timestamp": prompt_composition.get("timestamp"),
-                },
+                "prompt_composition": prompt_composition_summary_for_execution_log(
+                    prompt_composition,
+                    final_prompt_char_len=len(prompt_text),
+                ),
             }
             if debug_full_prompt:
                 log_payload["prompt_text"] = prompt_text

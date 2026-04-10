@@ -144,7 +144,10 @@ def build_run_metadata(
     """
     Build the full run metadata dict (for in-memory propagation to executor).
     Contains visual_reference_context for job-level traceability.
-    Phase 6: optional prompt_composition (omitted when None for backward compatibility).
+    Phase 6: optional ``prompt_composition`` — when provided, the same dict object SHOULD be the
+    one from ``AnalysisResult`` / ``LLMRequest.metadata`` (no re-serialization) so job
+    ``result_json`` matches the analysis call exactly.
+    Omitted when ``None`` for backward compatibility.
     """
     out: Dict[str, Any] = {
         RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: build_visual_reference_context(
