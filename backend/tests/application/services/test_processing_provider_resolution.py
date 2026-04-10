@@ -28,6 +28,9 @@ def _settings(**overrides: object) -> MagicMock:
     s.processing_gemini_models = "gemini-2.0-flash-exp,gemini-1.5-flash"
     s.processing_openai_models = "gpt-4o,gpt-4o-mini"
     s.processing_claude_models = "claude-sonnet-4-20250514,claude-3-5-sonnet-20241022"
+    s.deepseek_api_key = ""
+    s.deepseek_model = "deepseek-chat"
+    s.processing_deepseek_models = "deepseek-chat,deepseek-vl2"
     for k, v in overrides.items():
         setattr(s, k, v)
     return s
@@ -134,6 +137,30 @@ def test_resolve_explicit_claude_without_key_raises() -> None:
     with pytest.raises(ProcessingProviderNotConfiguredError):
         resolve_start_processing_request(
             requested_provider_name="claude",
+            requested_model_name=None,
+            requested_prompt_key=None,
+            settings=s,
+        )
+
+
+def test_resolve_explicit_deepseek_uses_default_catalog_model() -> None:
+    s = _settings(deepseek_api_key="sk-ds-test", gemini_api_key="")
+    p, m, pk = resolve_start_processing_request(
+        requested_provider_name="deepseek",
+        requested_model_name=None,
+        requested_prompt_key=None,
+        settings=s,
+    )
+    assert p == "deepseek"
+    assert m == "deepseek-chat"
+    assert pk == "global_v21"
+
+
+def test_resolve_explicit_deepseek_without_key_raises() -> None:
+    s = _settings(deepseek_api_key="", gemini_api_key="gk")
+    with pytest.raises(ProcessingProviderNotConfiguredError):
+        resolve_start_processing_request(
+            requested_provider_name="deepseek",
             requested_model_name=None,
             requested_prompt_key=None,
             settings=s,

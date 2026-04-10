@@ -12,6 +12,7 @@ Registered providers
 * ``gemini`` → ``GeminiSdkAdapter`` (native executor; vendor SDK inside adapter).
 * ``openai`` → ``OpenAiSdkAdapter`` (native executor).
 * ``claude`` → ``AnthropicSdkAdapter`` (Anthropic Messages API + vision).
+* ``deepseek`` → ``DeepSeekSdkAdapter`` (OpenAI-compatible Chat Completions + vision; Phase 9).
 
 Generic pipeline code must depend only on ``LlmGlobalAnalysisExecutor``, not on legacy ``LLMProvider``.
 
@@ -34,7 +35,7 @@ class UnknownPipelineProviderError(LookupError):
     """Raised when ``provider_name`` does not map to a registered pipeline provider."""
 
 
-_KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "openai", "claude"})
+_KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "openai", "claude", "deepseek"})
 
 
 def registered_pipeline_provider_keys() -> frozenset[str]:
@@ -65,6 +66,10 @@ def resolve_llm_executor(provider_key: str, settings: Any) -> LlmGlobalAnalysisE
         from src.llm.anthropic_sdk_adapter import AnthropicSdkAdapter
 
         return AnthropicSdkAdapter()
+    if key == "deepseek":
+        from src.llm.deepseek_sdk_adapter import DeepSeekSdkAdapter
+
+        return DeepSeekSdkAdapter()
     raise UnknownPipelineProviderError(
         f"Unknown pipeline provider {provider_key!r}. Known: {sorted(_KNOWN_KEYS)}"
     )
@@ -84,7 +89,7 @@ def default_analysis_provider() -> AnalysisProvider:
     Runtime default when ``HybridInventoryPipeline`` is built without an injected ``AnalysisProvider``.
 
     Returns ``HybridGlobalAnalysisStrategy``, which resolves the **executor** from
-    ``RunContext.pipeline_provider_name`` + settings via the registry (Gemini, OpenAI, Claude).
+    ``RunContext.pipeline_provider_name`` + settings via the registry (Gemini, OpenAI, Claude, DeepSeek).
     """
     from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 

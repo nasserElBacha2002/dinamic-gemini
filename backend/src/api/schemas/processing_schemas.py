@@ -15,7 +15,7 @@ class ProcessAisleRequest(BaseModel):
     provider_name: Optional[str] = Field(
         None,
         description=(
-            "Pipeline provider key (gemini, openai, claude). Omit or null to use the server default "
+            "Pipeline provider key (gemini, openai, claude, deepseek). Omit or null to use the server default "
             "(settings.llm_provider) without proactive credential validation."
         ),
     )

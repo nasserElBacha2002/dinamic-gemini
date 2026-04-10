@@ -2,7 +2,7 @@
 Provider policy overlay for hybrid registry entries (``default`` vs ``openai`` branch).
 
 **Overlay rule:** only the literal key ``openai`` selects the ``openai`` fragment. Every other
-registered pipeline key (``gemini``, ``claude``, future vendors, ``None``, etc.) uses the
+registered pipeline key (``gemini``, ``claude``, ``deepseek``, future vendors, ``None``, etc.) uses the
 ``default`` fragment. Adding a new overlay key later (e.g. a ``claude`` fragment in ``PROMPTS``)
 must not change text for ``openai``, ``gemini``, or existing defaults unless explicitly versioned.
 
@@ -10,6 +10,9 @@ must not change text for ``openai``, ``gemini``, or existing defaults unless exp
 ``default`` branch as Gemini. That is a deliberate Phase 8 choice to ship a first-class executor
 without duplicating prompt bodies. A Claude-specific overlay may be introduced in a later phase;
 resolution logic here already isolates overlay selection so that future change stays localized.
+
+**Phase 9 — DeepSeek:** Same as Claude/Gemini for hybrid **base** text: ``deepseek`` uses the
+``default`` fragment only (OpenAI overlay is keyed solely by ``openai``).
 
 **Phase 6:** prompt traceability belongs at enrichment / request-assembly layers, not here;
 this module stays pure string resolution.
@@ -50,8 +53,8 @@ def resolve_hybrid_entry_for_provider(
 
     * If ``provider_key`` is exactly ``openai`` (case-insensitive) and the entry defines an
       ``openai`` string, that variant is used.
-    * Every other key (``gemini``, ``claude``, unknown, ``None``, etc.) uses the ``default``
-      fragment — including Claude in Phase 8 (see module docstring).
+    * Every other key (``gemini``, ``claude``, ``deepseek``, unknown, ``None``, etc.) uses the
+      ``default`` fragment — including Claude (Phase 8) and DeepSeek (Phase 9); see module docstring.
 
     Legacy ``PROMPTS`` rows that use ``system``/``user`` (non-hybrid) are not valid hybrid entries;
     for backward compatibility they fall back to **global_v21 default** text only, with **no** OpenAI

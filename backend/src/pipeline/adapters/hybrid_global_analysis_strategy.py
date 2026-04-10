@@ -2,7 +2,7 @@
 Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–5).
 
 Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
-call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI, Claude).
+call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI, Claude, DeepSeek).
 """
 
 from __future__ import annotations
@@ -125,6 +125,8 @@ class HybridGlobalAnalysisStrategy:
             req_meta["openai_model_name"] = str(jm).strip()
         if jm and str(jm).strip() and rk == "claude":
             req_meta["claude_model_name"] = str(jm).strip()
+        if jm and str(jm).strip() and rk == "deepseek":
+            req_meta["deepseek_model_name"] = str(jm).strip()
 
         # Phase 6: linear propagation — one dict after execution-layer merge is the source of truth
         # for LLMRequest, AnalysisResult, run_metadata, and (redacted) execution_log summary.

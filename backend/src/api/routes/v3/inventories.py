@@ -191,6 +191,12 @@ def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
         elif key == "claude":
             label = "Claude"
             desc = "Native Anthropic Claude path (Messages API + vision). ANTHROPIC_API_KEY required when explicitly selected."
+        elif key == "deepseek":
+            label = "DeepSeek"
+            desc = (
+                "OpenAI-compatible Chat Completions + vision (official openai SDK with custom base URL). "
+                "DEEPSEEK_API_KEY required when explicitly selected."
+            )
         else:
             label = key
             desc = None

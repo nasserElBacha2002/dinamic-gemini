@@ -93,3 +93,8 @@ def _ensure_explicit_provider_configured(key: str, settings: Any) -> None:
             raise ProcessingProviderNotConfiguredError(
                 "Claude is not configured (ANTHROPIC_API_KEY is missing)."
             )
+    elif key == "deepseek":
+        if not (getattr(settings, "deepseek_api_key", "") or "").strip():
+            raise ProcessingProviderNotConfiguredError(
+                "DeepSeek is not configured (DEEPSEEK_API_KEY is missing)."
+            )

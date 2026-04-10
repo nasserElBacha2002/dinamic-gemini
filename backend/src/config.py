@@ -415,7 +415,7 @@ class Settings(BaseModel):
     # Stage 2.2.D / Phase 8 — default LLM provider for pipeline runs without per-job override
     llm_provider: str = Field(
         default_factory=lambda: (os.getenv("LLM_PROVIDER", "gemini") or "gemini").strip().lower(),
-        description="Default pipeline provider: gemini, openai, or claude. Env: LLM_PROVIDER.",
+        description="Default pipeline provider: gemini, openai, claude, or deepseek. Env: LLM_PROVIDER.",
     )
     openai_api_key: str = Field(
         default_factory=lambda: os.getenv("OPENAI_API_KEY", ""),
@@ -508,6 +508,40 @@ class Settings(BaseModel):
             or "claude-sonnet-4-20250514"
         ),
         description="Comma-separated Claude model ids for processing-provider-options. Env: PROCESSING_CLAUDE_MODELS.",
+    )
+    # Phase 9 — DeepSeek (OpenAI-compatible Chat Completions API)
+    deepseek_api_key: str = Field(
+        default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""),
+        description="DeepSeek API key (pipeline provider deepseek). Env: DEEPSEEK_API_KEY.",
+    )
+    deepseek_model: str = Field(
+        default_factory=lambda: (os.getenv("DEEPSEEK_MODEL", "deepseek-chat") or "deepseek-chat").strip(),
+        description="Default DeepSeek model id when job omits model_name. Env: DEEPSEEK_MODEL.",
+    )
+    deepseek_api_base_url: str = Field(
+        default_factory=lambda: (
+            (os.getenv("DEEPSEEK_API_BASE_URL", "https://api.deepseek.com") or "https://api.deepseek.com").strip()
+        ),
+        description="OpenAI-compatible API base URL for DeepSeek. Env: DEEPSEEK_API_BASE_URL.",
+    )
+    deepseek_request_timeout_sec: float = Field(
+        default_factory=lambda: float(os.getenv("DEEPSEEK_REQUEST_TIMEOUT_SEC", "120")),
+        ge=5.0,
+        le=600.0,
+        description="HTTP timeout (seconds) for DeepSeek API calls. Env: DEEPSEEK_REQUEST_TIMEOUT_SEC.",
+    )
+    deepseek_vision_max_image_side: int = Field(
+        default_factory=lambda: int(os.getenv("DEEPSEEK_VISION_MAX_IMAGE_SIDE", "2048")),
+        ge=512,
+        le=4096,
+        description="Max longest side (px) for images sent to DeepSeek vision. Env: DEEPSEEK_VISION_MAX_IMAGE_SIDE.",
+    )
+    processing_deepseek_models: str = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_DEEPSEEK_MODELS", "deepseek-chat,deepseek-vl2")
+            or "deepseek-chat"
+        ),
+        description="Comma-separated DeepSeek model ids for processing-provider-options. Env: PROCESSING_DEEPSEEK_MODELS.",
     )
 
     # Frame Extraction Settings
@@ -1092,8 +1126,8 @@ class Settings(BaseModel):
     def validate_llm_provider(cls, v: str) -> str:
         """Default pipeline provider key (per-job inventory_jobs.provider_name overrides)."""
         v = (v or "gemini").strip().lower()
-        if v not in ("gemini", "openai", "claude"):
-            raise ValueError("llm_provider must be one of: gemini, openai, claude")
+        if v not in ("gemini", "openai", "claude", "deepseek"):
+            raise ValueError("llm_provider must be one of: gemini, openai, claude, deepseek")
         return v
 
     @field_validator("output_dir")

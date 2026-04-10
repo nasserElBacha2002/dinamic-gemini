@@ -31,6 +31,11 @@ def models_for_provider(provider_key: str, settings: Any) -> List[_ModelPair]:
         if not ids:
             ids = [getattr(settings, "anthropic_model", "claude-sonnet-4-20250514")]
         return [(m, m) for m in ids]
+    if key == "deepseek":
+        ids = _split_csv(getattr(settings, "processing_deepseek_models", "") or "")
+        if not ids:
+            ids = [getattr(settings, "deepseek_model", "deepseek-chat")]
+        return [(m, m) for m in ids]
     return []
 
 
@@ -53,6 +58,9 @@ def default_model_for_provider(provider_key: str, settings: Any) -> str | None:
         return dm if dm in allowed_ids else allowed_ids[0]
     if key == "claude":
         dm = str(getattr(settings, "anthropic_model", "") or "claude-sonnet-4-20250514").strip()
+        return dm if dm in allowed_ids else allowed_ids[0]
+    if key == "deepseek":
+        dm = str(getattr(settings, "deepseek_model", "") or "deepseek-chat").strip()
         return dm if dm in allowed_ids else allowed_ids[0]
     return allowed_ids[0]
 

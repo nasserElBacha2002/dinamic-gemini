@@ -201,6 +201,66 @@ def test_claude_traceability_in_execution_log_and_run_metadata(
     assert rm[RUN_METADATA_KEY_PROMPT_COMPOSITION].get("resolved_llm_provider_key") == "claude"
 
 
+def test_deepseek_resolved_key_sets_deepseek_model_name_in_request_and_composition(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def _handler(request: LLMRequest, settings: Any) -> LLMResponse:
+        del settings
+        captured["request"] = request
+        return llm_response_success(provider="deepseek", model="ds-test")
+
+    executor = TestLLMExecutor(handler=_handler)
+    patch_hybrid_resolve_llm_executor(monkeypatch, executor, resolved_provider_key="deepseek")
+    context = _video_context(tmp_path)
+    context.job_model_name = "deepseek-vl2"
+    HybridGlobalAnalysisStrategy().analyze(
+        context=context,
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/f.jpg")],
+        frame_refs=["f0"],
+        metadata={"frame_count": 1},
+    )
+    req = captured["request"]
+    assert req.metadata.get("deepseek_model_name") == "deepseek-vl2"
+    assert req.metadata.get("openai_model_name") is None
+    pc = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]
+    assert pc.get("resolved_llm_provider_key") == "deepseek"
+    assert pc.get("model_name") == "deepseek-vl2"
+
+
+def test_deepseek_traceability_in_execution_log_and_run_metadata(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+
+    def _handler(request: LLMRequest, settings: Any) -> LLMResponse:
+        del settings
+        return llm_response_success(provider="deepseek", model="ds-trace")
+
+    executor = TestLLMExecutor(handler=_handler)
+    patch_hybrid_resolve_llm_executor(monkeypatch, executor, resolved_provider_key="deepseek")
+    context = _video_context(tmp_path)
+    context.job_model_name = "deepseek-chat"
+    result = HybridGlobalAnalysisStrategy().analyze(
+        context=context,
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/f.jpg")],
+        frame_refs=["f0"],
+        metadata={"frame_count": 1},
+    )
+    prepared = next(
+        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+    )
+    assert prepared.kwargs["payload"]["pipeline_provider"] == "deepseek"
+    finished = next(
+        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request finished"
+    )
+    assert finished.kwargs["payload"]["provider"] == "deepseek"
+    rm = build_run_metadata(None, None, prompt_composition=result.prompt_composition)
+    assert rm[RUN_METADATA_KEY_PROMPT_COMPOSITION].get("resolved_llm_provider_key") == "deepseek"
+
+
 def test_phase7_execution_log_omits_prompt_version_key_when_absent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

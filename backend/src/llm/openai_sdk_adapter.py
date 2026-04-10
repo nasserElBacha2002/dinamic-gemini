@@ -2,6 +2,9 @@
 OpenAI SDK adapter — Chat Completions + vision for hybrid global analysis v2.1 (Phase 5).
 
 Vendor-specific code stays here; pipeline uses ``LLMRequest`` / ``LLMResponse`` only.
+
+**Phase 9:** ``OpenAiCompatibleVendorConfig`` parameterizes this adapter for other OpenAI-compatible
+HTTP APIs (e.g. DeepSeek) without changing logical ``LLMResponse.provider`` or mixing metadata keys.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ import io
 import json
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -39,6 +43,46 @@ _JSON_OBJECT_SUFFIX = (
     "Each entity must follow the v2.1 schema from the instructions above: entity_type "
     "(PALLET|EMPTY_PALLET|LOOSE_BOXES), model_entity_id (string), confidence (0..1), "
     "has_boxes (boolean), and optional bbox/quantity fields as specified."
+)
+
+
+@dataclass(frozen=True)
+class OpenAiCompatibleVendorConfig:
+    """Wiring for Chat Completions + vision against one OpenAI-protocol-compatible endpoint.
+
+    ``logical_provider`` is the audit/registry key (e.g. ``openai``, ``deepseek``). It must match
+    request/response metadata and must **not** be confused with the HTTP host (``base_url``).
+    """
+
+    logical_provider: str
+    settings_api_key_attr: str
+    settings_model_attr: str
+    settings_timeout_attr: str
+    settings_max_side_attr: str
+    model_metadata_key: str
+    hybrid_compose_provider_key: str
+    missing_api_key_user_message: str
+    default_model_if_settings_empty: str
+    raw_response_filename: str
+    log_label: str
+    settings_base_url_attr: str
+    default_base_url: Optional[str]
+
+
+_OPENAI_VENDOR = OpenAiCompatibleVendorConfig(
+    logical_provider="openai",
+    settings_api_key_attr="openai_api_key",
+    settings_model_attr="openai_model",
+    settings_timeout_attr="openai_request_timeout_sec",
+    settings_max_side_attr="openai_vision_max_image_side",
+    model_metadata_key="openai_model_name",
+    hybrid_compose_provider_key="openai",
+    missing_api_key_user_message="OPENAI_API_KEY not set",
+    default_model_if_settings_empty="gpt-4o",
+    raw_response_filename="openai_raw_response.json",
+    log_label="OpenAI",
+    settings_base_url_attr="",
+    default_base_url=None,
 )
 
 
@@ -102,21 +146,27 @@ def _image_to_data_url(obj: Any, max_side: int) -> str:
 class OpenAiSdkAdapter:
     """OpenAI Chat Completions (vision) + json_object; maps failures to ``LLMProviderError``."""
 
+    def __init__(self, vendor_config: Optional[OpenAiCompatibleVendorConfig] = None) -> None:
+        self._v = vendor_config or _OPENAI_VENDOR
+
     def execute(self, request: LLMRequest, settings: Any) -> LLMResponse:
-        api_key = (getattr(settings, "openai_api_key", "") or "").strip()
+        v = self._v
+        prov = v.logical_provider
+        api_key = (getattr(settings, v.settings_api_key_attr, "") or "").strip()
         if not api_key:
             raise LLMProviderError(
                 code="NOT_CONFIGURED",
-                message="OPENAI_API_KEY not set",
-                details={"provider": "openai"},
+                message=v.missing_api_key_user_message,
+                details={"provider": prov},
             )
 
         meta = request.metadata or {}
-        job_model = (meta.get("openai_model_name") or "").strip()
-        effective_model = job_model or (getattr(settings, "openai_model", "") or "gpt-4o").strip()
+        job_model = (meta.get(v.model_metadata_key) or "").strip()
+        default_m = (getattr(settings, v.settings_model_attr, "") or v.default_model_if_settings_empty).strip()
+        effective_model = job_model or default_m
 
-        timeout = float(getattr(settings, "openai_request_timeout_sec", 120.0))
-        max_side = int(getattr(settings, "openai_vision_max_image_side", 2048))
+        timeout = float(getattr(settings, v.settings_timeout_attr, 120.0))
+        max_side = int(getattr(settings, v.settings_max_side_attr, 2048))
 
         if request.frames_nd and len(request.frames_nd) > 0:
             frames_nd: List[np.ndarray] = [np.asarray(f) for f in request.frames_nd]
@@ -130,7 +180,7 @@ class OpenAiSdkAdapter:
             raise LLMProviderError(
                 code="NO_FRAMES",
                 message="No frames could be loaded",
-                details={"paths_count": len(request.frames), "provider": "openai"},
+                details={"paths_count": len(request.frames), "provider": prov},
             )
 
         use_request_prompt = (
@@ -139,7 +189,7 @@ class OpenAiSdkAdapter:
         prompt_text = (
             use_request_prompt
             if use_request_prompt is not None
-            else compose_hybrid_base_from_settings(settings, pipeline_provider_key="openai")
+            else compose_hybrid_base_from_settings(settings, pipeline_provider_key=v.hybrid_compose_provider_key)
         )
         if request.context_instruction and str(request.context_instruction).strip():
             prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
@@ -155,13 +205,21 @@ class OpenAiSdkAdapter:
             content.append({"type": "image_url", "image_url": {"url": url, "detail": "auto"}})
 
         logger.info(
-            "OpenAI global analysis: model=%s context_images=%d primary_frames=%d",
+            "%s global analysis: model=%s context_images=%d primary_frames=%d",
+            v.log_label,
             effective_model,
             len(ctx_imgs),
             len(frames_nd),
         )
 
-        client = OpenAI(api_key=api_key, timeout=timeout)
+        base_url: Optional[str] = None
+        if v.settings_base_url_attr:
+            raw_u = (getattr(settings, v.settings_base_url_attr, "") or "").strip()
+            base_url = raw_u or v.default_base_url
+        client_kw: Dict[str, Any] = {"api_key": api_key, "timeout": timeout}
+        if base_url:
+            client_kw["base_url"] = base_url
+        client = OpenAI(**client_kw)
         t0 = time.perf_counter()
         try:
             completion = client.chat.completions.create(
@@ -173,25 +231,25 @@ class OpenAiSdkAdapter:
             raise LLMProviderError(
                 code="NOT_CONFIGURED",
                 message=str(e),
-                details={"provider": "openai"},
+                details={"provider": prov},
             ) from e
         except RateLimitError as e:
             raise LLMProviderError(
                 code="RATE_LIMIT",
                 message=str(e),
-                details={"provider": "openai"},
+                details={"provider": prov},
             ) from e
         except APITimeoutError as e:
             raise LLMProviderError(
                 code="TIMEOUT",
                 message=str(e),
-                details={"provider": "openai"},
+                details={"provider": prov},
             ) from e
         except APIConnectionError as e:
             raise LLMProviderError(
                 code="TIMEOUT",
                 message=str(e),
-                details={"provider": "openai"},
+                details={"provider": prov},
             ) from e
         except APIError as e:
             msg_l = str(e).lower()
@@ -200,18 +258,18 @@ class OpenAiSdkAdapter:
                 raise LLMProviderError(
                     code="RATE_LIMIT",
                     message=str(e),
-                    details={"provider": "openai", "status_code": sc},
+                    details={"provider": prov, "status_code": sc},
                 ) from e
             if sc == 401:
                 raise LLMProviderError(
                     code="NOT_CONFIGURED",
                     message=str(e),
-                    details={"provider": "openai"},
+                    details={"provider": prov},
                 ) from e
             raise LLMProviderError(
                 code="UNKNOWN",
                 message=str(e),
-                details={"provider": "openai", "status_code": sc},
+                details={"provider": prov, "status_code": sc},
             ) from e
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
@@ -219,7 +277,7 @@ class OpenAiSdkAdapter:
         raw_text = (choice.message.content or "").strip() if choice and choice.message else ""
         run_dir = meta.get("run_dir")
         if run_dir:
-            p = Path(str(run_dir)) / "openai_raw_response.json"
+            p = Path(str(run_dir)) / v.raw_response_filename
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(raw_text, encoding="utf-8")
 
@@ -227,18 +285,19 @@ class OpenAiSdkAdapter:
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError as e:
-            logger.warning("OpenAI global analysis: invalid JSON: %s", e)
+            logger.warning("%s global analysis: invalid JSON: %s", v.log_label, e)
             raise LLMProviderError(
                 code="INVALID_JSON",
                 message=f"Invalid JSON: {e}",
-                details={"provider": "openai"},
+                details={"provider": prov},
             ) from e
 
         total = data.get("total_entities_detected")
         entities = data.get("entities") or []
         if isinstance(entities, list) and isinstance(total, (int, float)) and total != len(entities):
             logger.warning(
-                "OpenAI count mismatch: total_entities_detected=%s vs len(entities)=%d; normalizing",
+                "%s count mismatch: total_entities_detected=%s vs len(entities)=%d; normalizing",
+                v.log_label,
                 total,
                 len(entities),
             )
@@ -250,7 +309,7 @@ class OpenAiSdkAdapter:
             raise LLMProviderError(
                 code="SCHEMA_INVALID",
                 message=str(e),
-                details={"provider": "openai"},
+                details={"provider": prov},
             ) from e
 
         usage: Dict[str, Any] = {}
@@ -262,7 +321,7 @@ class OpenAiSdkAdapter:
             }
 
         return LLMResponse(
-            provider="openai",
+            provider=prov,
             model=str(effective_model),
             latency_ms=latency_ms,
             parsed_json=data,
