@@ -23,8 +23,11 @@ def _settings(**overrides: object) -> MagicMock:
     s.openai_api_key = ""
     s.gemini_model_name = "gemini-2.0-flash-exp"
     s.openai_model = "gpt-4o"
+    s.anthropic_api_key = ""
+    s.anthropic_model = "claude-sonnet-4-20250514"
     s.processing_gemini_models = "gemini-2.0-flash-exp,gemini-1.5-flash"
     s.processing_openai_models = "gpt-4o,gpt-4o-mini"
+    s.processing_claude_models = "claude-sonnet-4-20250514,claude-3-5-sonnet-20241022"
     for k, v in overrides.items():
         setattr(s, k, v)
     return s
@@ -111,3 +114,27 @@ def test_resolve_explicit_openai_uses_default_catalog_model() -> None:
     assert p == "openai"
     assert m == "gpt-4o"
     assert pk == "global_v21"
+
+
+def test_resolve_explicit_claude_uses_default_catalog_model() -> None:
+    s = _settings(anthropic_api_key="sk-ant-test", gemini_api_key="")
+    p, m, pk = resolve_start_processing_request(
+        requested_provider_name="claude",
+        requested_model_name=None,
+        requested_prompt_key=None,
+        settings=s,
+    )
+    assert p == "claude"
+    assert m == "claude-sonnet-4-20250514"
+    assert pk == "global_v21"
+
+
+def test_resolve_explicit_claude_without_key_raises() -> None:
+    s = _settings(anthropic_api_key="", gemini_api_key="gk")
+    with pytest.raises(ProcessingProviderNotConfiguredError):
+        resolve_start_processing_request(
+            requested_provider_name="claude",
+            requested_model_name=None,
+            requested_prompt_key=None,
+            settings=s,
+        )

@@ -1,12 +1,18 @@
 """
 Provider policy overlay for hybrid registry entries (``default`` vs ``openai`` branch).
 
-**Parity-only model:** only the literal key ``openai`` selects the ``openai`` fragment; everything
-else uses ``default``. This is **not** the long-term multi-vendor strategy — Claude, DeepSeek, etc.
-must get explicit overlays in a later phase, not implicit mapping through this rule.
+**Overlay rule:** only the literal key ``openai`` selects the ``openai`` fragment. Every other
+registered pipeline key (``gemini``, ``claude``, future vendors, ``None``, etc.) uses the
+``default`` fragment. Adding a new overlay key later (e.g. a ``claude`` fragment in ``PROMPTS``)
+must not change text for ``openai``, ``gemini``, or existing defaults unless explicitly versioned.
 
-**Phase 6:** prompt traceability and audit hooks belong at enrichment / request-assembly layers, not
-here; this module stays pure string resolution.
+**Phase 8 — Claude prompt policy (intentional, not permanent):** Claude uses the **same**
+``default`` branch as Gemini. That is a deliberate Phase 8 choice to ship a first-class executor
+without duplicating prompt bodies. A Claude-specific overlay may be introduced in a later phase;
+resolution logic here already isolates overlay selection so that future change stays localized.
+
+**Phase 6:** prompt traceability belongs at enrichment / request-assembly layers, not here;
+this module stays pure string resolution.
 """
 
 from __future__ import annotations
@@ -42,18 +48,14 @@ def resolve_hybrid_entry_for_provider(
     """
     Resolve one registry entry to the text sent as the hybrid **base** prompt (before enrichments).
 
-    **Parity-preserving provider model (Phase 4 only)** — not the final multi-vendor strategy:
-
     * If ``provider_key`` is exactly ``openai`` (case-insensitive) and the entry defines an
       ``openai`` string, that variant is used.
-    * Every other provider key (``gemini``, unknown, ``None``, future vendors) uses the ``default``
-      fragment.
+    * Every other key (``gemini``, ``claude``, unknown, ``None``, etc.) uses the ``default``
+      fragment — including Claude in Phase 8 (see module docstring).
 
     Legacy ``PROMPTS`` rows that use ``system``/``user`` (non-hybrid) are not valid hybrid entries;
     for backward compatibility they fall back to **global_v21 default** text only, with **no** OpenAI
-    overlay (``provider_key`` ignored for that fallback). Future providers (e.g. Claude, DeepSeek)
-    must not rely on this special-case; a future phase will replace overlay selection with an explicit
-    policy map (see module docstring).
+    overlay (``provider_key`` ignored for that fallback).
 
     All returned strings are ``.rstrip()``'d for wire consistency with historical behavior.
     """

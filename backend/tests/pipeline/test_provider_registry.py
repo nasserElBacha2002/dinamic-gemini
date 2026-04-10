@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.llm.anthropic_sdk_adapter import AnthropicSdkAdapter
 from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
 from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.pipeline.providers.registry import (
@@ -28,13 +29,19 @@ def test_resolve_openai_returns_openai_sdk_adapter() -> None:
     assert isinstance(ex, OpenAiSdkAdapter)
 
 
+def test_resolve_claude_returns_anthropic_sdk_adapter() -> None:
+    settings = MagicMock()
+    ex = resolve_llm_executor("claude", settings)
+    assert isinstance(ex, AnthropicSdkAdapter)
+
+
 def test_resolve_unknown_raises() -> None:
     with pytest.raises(UnknownPipelineProviderError):
         resolve_llm_executor("unknown_vendor_xyz", MagicMock())
 
 
-def test_registered_pipeline_provider_keys_is_gemini_and_openai_only() -> None:
-    assert registered_pipeline_provider_keys() == frozenset({"gemini", "openai"})
+def test_registered_pipeline_provider_keys_includes_gemini_openai_claude() -> None:
+    assert registered_pipeline_provider_keys() == frozenset({"gemini", "openai", "claude"})
 
 
 def test_resolve_llm_executor_for_context_uses_job_provider_name() -> None:

@@ -167,7 +167,7 @@ def test_get_processing_provider_options_returns_registered_keys() -> None:
         assert "default_prompt_key" in data
         assert len(data.get("prompt_profiles", [])) >= 2
         keys = {p["key"] for p in data["providers"]}
-        assert keys == {"gemini", "openai"}
+        assert keys == {"gemini", "openai", "claude"}
         for p in data["providers"]:
             assert p["execution_mode"] == "native"
             assert "models" in p and isinstance(p["models"], list) and len(p["models"]) >= 1
@@ -184,6 +184,7 @@ def test_get_processing_provider_options_reflects_env_processing_model_lists(
     """PROCESSING_*_MODELS must drive GET processing-provider-options (not only pydantic defaults)."""
     monkeypatch.setenv("PROCESSING_GEMINI_MODELS", "gemini-alpha,gemini-beta")
     monkeypatch.setenv("PROCESSING_OPENAI_MODELS", "gpt-alpha,gpt-beta")
+    monkeypatch.setenv("PROCESSING_CLAUDE_MODELS", "claude-alpha,claude-beta")
     config_mod._settings = None
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
@@ -192,14 +193,18 @@ def test_get_processing_provider_options_reflects_env_processing_model_lists(
         data = response.json()
         gemini = next(p for p in data["providers"] if p["key"] == "gemini")
         openai_p = next(p for p in data["providers"] if p["key"] == "openai")
+        claude_p = next(p for p in data["providers"] if p["key"] == "claude")
         assert [m["id"] for m in gemini["models"]] == ["gemini-alpha", "gemini-beta"]
         assert [m["id"] for m in openai_p["models"]] == ["gpt-alpha", "gpt-beta"]
+        assert [m["id"] for m in claude_p["models"]] == ["claude-alpha", "claude-beta"]
         assert gemini["default_model"] == "gemini-alpha"
         assert openai_p["default_model"] == "gpt-alpha"
+        assert claude_p["default_model"] == "claude-alpha"
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         monkeypatch.delenv("PROCESSING_GEMINI_MODELS", raising=False)
         monkeypatch.delenv("PROCESSING_OPENAI_MODELS", raising=False)
+        monkeypatch.delenv("PROCESSING_CLAUDE_MODELS", raising=False)
         config_mod._settings = None
 
 

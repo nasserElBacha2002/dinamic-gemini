@@ -2,7 +2,7 @@
 Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–5).
 
 Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
-call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI).
+call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI, Claude).
 """
 
 from __future__ import annotations
@@ -115,10 +115,16 @@ class HybridGlobalAnalysisStrategy:
         jm = getattr(context, "job_model_name", None)
         rk = (resolved_key or "").strip().lower()
         model_for_meta: Optional[str] = str(jm).strip() if jm and str(jm).strip() else None
+        # Per-vendor model keys on the LLM request are a historical compatibility pattern (each
+        # executor reads its own key). Claude follows the same pattern for consistency. A future
+        # phase may converge on a single provider-neutral metadata field without changing adapters'
+        # outward behavior in one shot.
         if jm and str(jm).strip() and rk == "gemini":
             req_meta["gemini_model_name"] = str(jm).strip()
         if jm and str(jm).strip() and rk == "openai":
             req_meta["openai_model_name"] = str(jm).strip()
+        if jm and str(jm).strip() and rk == "claude":
+            req_meta["claude_model_name"] = str(jm).strip()
 
         # Phase 6: linear propagation — one dict after execution-layer merge is the source of truth
         # for LLMRequest, AnalysisResult, run_metadata, and (redacted) execution_log summary.

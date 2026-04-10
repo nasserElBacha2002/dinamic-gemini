@@ -412,10 +412,10 @@ class Settings(BaseModel):
         le=60.0,
         description="Espera inicial entre reintentos en segundos (0.1 a 60).",
     )
-    # Stage 2.2.D — LLM provider strategy (gemini | openai)
+    # Stage 2.2.D / Phase 8 — default LLM provider for pipeline runs without per-job override
     llm_provider: str = Field(
         default_factory=lambda: (os.getenv("LLM_PROVIDER", "gemini") or "gemini").strip().lower(),
-        description="LLM provider: gemini or openai. Env: LLM_PROVIDER.",
+        description="Default pipeline provider: gemini, openai, or claude. Env: LLM_PROVIDER.",
     )
     openai_api_key: str = Field(
         default_factory=lambda: os.getenv("OPENAI_API_KEY", ""),
@@ -436,6 +436,32 @@ class Settings(BaseModel):
         ge=512,
         le=4096,
         description="Max longest side (px) for images sent to OpenAI vision (downscaled if larger). Env: OPENAI_VISION_MAX_IMAGE_SIDE.",
+    )
+    anthropic_api_key: str = Field(
+        default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""),
+        description="Anthropic API key for Claude (pipeline provider claude). Env: ANTHROPIC_API_KEY.",
+    )
+    anthropic_model: str = Field(
+        default_factory=lambda: (os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514") or "claude-sonnet-4-20250514").strip(),
+        description="Default Claude model id when job omits model_name. Env: ANTHROPIC_MODEL.",
+    )
+    anthropic_request_timeout_sec: float = Field(
+        default_factory=lambda: float(os.getenv("ANTHROPIC_REQUEST_TIMEOUT_SEC", "120")),
+        ge=5.0,
+        le=600.0,
+        description="HTTP timeout (seconds) for Anthropic API calls. Env: ANTHROPIC_REQUEST_TIMEOUT_SEC.",
+    )
+    anthropic_vision_max_image_side: int = Field(
+        default_factory=lambda: int(os.getenv("ANTHROPIC_VISION_MAX_IMAGE_SIDE", "2048")),
+        ge=512,
+        le=4096,
+        description="Max longest side (px) for images sent to Claude vision. Env: ANTHROPIC_VISION_MAX_IMAGE_SIDE.",
+    )
+    anthropic_max_output_tokens: int = Field(
+        default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_OUTPUT_TOKENS", "16384")),
+        ge=1024,
+        le=200000,
+        description="Max output tokens for Claude Messages API. Env: ANTHROPIC_MAX_OUTPUT_TOKENS.",
     )
     hybrid_prompt: str = Field(
         default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
@@ -472,6 +498,16 @@ class Settings(BaseModel):
             or "gpt-4o"
         ),
         description="Comma-separated OpenAI model ids for processing-provider-options / POST /process. Env: PROCESSING_OPENAI_MODELS.",
+    )
+    processing_claude_models: str = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "PROCESSING_CLAUDE_MODELS",
+                "claude-sonnet-4-20250514,claude-3-5-sonnet-20241022",
+            )
+            or "claude-sonnet-4-20250514"
+        ),
+        description="Comma-separated Claude model ids for processing-provider-options. Env: PROCESSING_CLAUDE_MODELS.",
     )
 
     # Frame Extraction Settings
@@ -1054,10 +1090,10 @@ class Settings(BaseModel):
     @field_validator("llm_provider")
     @classmethod
     def validate_llm_provider(cls, v: str) -> str:
-        """Provider must be gemini or openai."""
+        """Default pipeline provider key (per-job inventory_jobs.provider_name overrides)."""
         v = (v or "gemini").strip().lower()
-        if v not in ("gemini", "openai"):
-            raise ValueError("llm_provider must be one of: gemini, openai")
+        if v not in ("gemini", "openai", "claude"):
+            raise ValueError("llm_provider must be one of: gemini, openai, claude")
         return v
 
     @field_validator("output_dir")

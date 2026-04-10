@@ -26,6 +26,11 @@ def models_for_provider(provider_key: str, settings: Any) -> List[_ModelPair]:
         if not ids:
             ids = [getattr(settings, "openai_model", "gpt-4o")]
         return [(m, m) for m in ids]
+    if key == "claude":
+        ids = _split_csv(getattr(settings, "processing_claude_models", "") or "")
+        if not ids:
+            ids = [getattr(settings, "anthropic_model", "claude-sonnet-4-20250514")]
+        return [(m, m) for m in ids]
     return []
 
 
@@ -45,6 +50,9 @@ def default_model_for_provider(provider_key: str, settings: Any) -> str | None:
         return dm if dm in allowed_ids else allowed_ids[0]
     if key == "openai":
         dm = str(getattr(settings, "openai_model", "") or "gpt-4o").strip()
+        return dm if dm in allowed_ids else allowed_ids[0]
+    if key == "claude":
+        dm = str(getattr(settings, "anthropic_model", "") or "claude-sonnet-4-20250514").strip()
         return dm if dm in allowed_ids else allowed_ids[0]
     return allowed_ids[0]
 

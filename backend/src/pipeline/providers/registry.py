@@ -11,6 +11,7 @@ Registered providers
 --------------------
 * ``gemini`` → ``GeminiSdkAdapter`` (native executor; vendor SDK inside adapter).
 * ``openai`` → ``OpenAiSdkAdapter`` (native executor).
+* ``claude`` → ``AnthropicSdkAdapter`` (Anthropic Messages API + vision).
 
 Generic pipeline code must depend only on ``LlmGlobalAnalysisExecutor``, not on legacy ``LLMProvider``.
 
@@ -33,7 +34,7 @@ class UnknownPipelineProviderError(LookupError):
     """Raised when ``provider_name`` does not map to a registered pipeline provider."""
 
 
-_KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "openai"})
+_KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "openai", "claude"})
 
 
 def registered_pipeline_provider_keys() -> frozenset[str]:
@@ -60,6 +61,10 @@ def resolve_llm_executor(provider_key: str, settings: Any) -> LlmGlobalAnalysisE
         from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 
         return OpenAiSdkAdapter()
+    if key == "claude":
+        from src.llm.anthropic_sdk_adapter import AnthropicSdkAdapter
+
+        return AnthropicSdkAdapter()
     raise UnknownPipelineProviderError(
         f"Unknown pipeline provider {provider_key!r}. Known: {sorted(_KNOWN_KEYS)}"
     )
@@ -79,7 +84,7 @@ def default_analysis_provider() -> AnalysisProvider:
     Runtime default when ``HybridInventoryPipeline`` is built without an injected ``AnalysisProvider``.
 
     Returns ``HybridGlobalAnalysisStrategy``, which resolves the **executor** from
-    ``RunContext.pipeline_provider_name`` + settings via the registry (Gemini, OpenAI).
+    ``RunContext.pipeline_provider_name`` + settings via the registry (Gemini, OpenAI, Claude).
     """
     from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 

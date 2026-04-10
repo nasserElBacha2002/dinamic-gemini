@@ -139,6 +139,68 @@ def test_phase7_prompt_version_propagates_to_request_and_execution_log(
     assert log_pc.get("prompt_version") == "benchmark-v2"
 
 
+def test_claude_resolved_key_sets_claude_model_name_in_request_and_composition(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def _handler(request: LLMRequest, settings: Any) -> LLMResponse:
+        del settings
+        captured["request"] = request
+        return llm_response_success(provider="claude", model="claude-test")
+
+    executor = TestLLMExecutor(handler=_handler)
+    patch_hybrid_resolve_llm_executor(monkeypatch, executor, resolved_provider_key="claude")
+    context = _video_context(tmp_path)
+    context.job_model_name = "claude-3-5-sonnet-20241022"
+    HybridGlobalAnalysisStrategy().analyze(
+        context=context,
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/f.jpg")],
+        frame_refs=["f0"],
+        metadata={"frame_count": 1},
+    )
+    req = captured["request"]
+    assert req.metadata.get("claude_model_name") == "claude-3-5-sonnet-20241022"
+    pc = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]
+    assert pc.get("resolved_llm_provider_key") == "claude"
+    assert pc.get("model_name") == "claude-3-5-sonnet-20241022"
+
+
+def test_claude_traceability_in_execution_log_and_run_metadata(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Claude path records ``pipeline_provider`` / response ``provider`` and preserves composition in run_metadata."""
+
+    def _handler(request: LLMRequest, settings: Any) -> LLMResponse:
+        del settings
+        return llm_response_success(provider="claude", model="claude-trace-model")
+
+    executor = TestLLMExecutor(handler=_handler)
+    patch_hybrid_resolve_llm_executor(monkeypatch, executor, resolved_provider_key="claude")
+    context = _video_context(tmp_path)
+    context.job_model_name = "claude-3-5-sonnet-20241022"
+    result = HybridGlobalAnalysisStrategy().analyze(
+        context=context,
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/f.jpg")],
+        frame_refs=["f0"],
+        metadata={"frame_count": 1},
+    )
+    prepared = next(
+        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+    )
+    assert prepared.kwargs["payload"]["pipeline_provider"] == "claude"
+    finished = next(
+        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request finished"
+    )
+    assert finished.kwargs["payload"]["provider"] == "claude"
+
+    rm = build_run_metadata(None, None, prompt_composition=result.prompt_composition)
+    assert rm[RUN_METADATA_KEY_PROMPT_COMPOSITION] is result.prompt_composition
+    assert rm[RUN_METADATA_KEY_PROMPT_COMPOSITION].get("resolved_llm_provider_key") == "claude"
+
+
 def test_phase7_execution_log_omits_prompt_version_key_when_absent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -34,7 +34,7 @@ def resolve_start_processing_request(
     Return ``(pipeline_provider_key, model_name, prompt_key)`` for a new process-aisle job.
 
     * Provider: same rules as before — empty → ``normalize_pipeline_provider_key(None, settings)``
-      without credential gate; explicit → registered keys + credential check for gemini/openai.
+      without credential gate; explicit → registered keys + credential check per vendor.
     * Model: empty → provider default from settings/catalog; explicit → must be in catalog for provider.
     * Prompt: empty → ``default_prompt_key(settings)`` (usually HYBRID_PROMPT); explicit → registered hybrid key.
     """
@@ -87,4 +87,9 @@ def _ensure_explicit_provider_configured(key: str, settings: Any) -> None:
         if not (getattr(settings, "openai_api_key", "") or "").strip():
             raise ProcessingProviderNotConfiguredError(
                 "OpenAI is not configured (OPENAI_API_KEY is missing)."
+            )
+    elif key == "claude":
+        if not (getattr(settings, "anthropic_api_key", "") or "").strip():
+            raise ProcessingProviderNotConfiguredError(
+                "Claude is not configured (ANTHROPIC_API_KEY is missing)."
             )

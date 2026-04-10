@@ -188,6 +188,9 @@ def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
         elif key == "openai":
             label = "OpenAI"
             desc = "Native OpenAI vision path (Chat Completions + json_object). OPENAI_API_KEY required when explicitly selected."
+        elif key == "claude":
+            label = "Claude"
+            desc = "Native Anthropic Claude path (Messages API + vision). ANTHROPIC_API_KEY required when explicitly selected."
         else:
             label = key
             desc = None
