@@ -1,9 +1,10 @@
 """
-Phase 4 — hybrid prompt composition (single source of truth for base text + enrichments).
+Phase 4 — hybrid prompt composition.
 
-``HybridPromptComposer`` resolves profile + provider policy into the same strings as the
-pre–Phase 4 ``get_hybrid_prompt`` API. Public code may import from ``src.llm.prompts`` for
-backward compatibility or use ``default_hybrid_composer`` directly.
+**Base text:** ``HybridPromptComposer.compose_base`` / ``default_hybrid_composer`` is the single
+source of truth. ``src.llm.prompts.get_hybrid_prompt`` is a one-line compatibility wrapper.
+
+**Enrichments:** ``prompt_composer.enrichments`` only; never applied inside the composer.
 """
 
 from __future__ import annotations

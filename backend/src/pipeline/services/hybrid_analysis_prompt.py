@@ -1,8 +1,8 @@
 """
 Hybrid global-analysis prompt assembly (provider-neutral).
 
-Uses ``HybridPromptComposer`` for base text and ``enrichments`` for photos traceability — Phase 4
-single source of truth (parity with legacy ``get_hybrid_prompt`` + image-id appender).
+Base text: ``default_hybrid_composer.compose_base`` only. Photos jobs may append image IDs via
+``enrich_prompt_with_image_ids`` here — not inside the composer (single enrichment site for this path).
 """
 
 from __future__ import annotations

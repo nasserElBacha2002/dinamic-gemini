@@ -1,4 +1,4 @@
-"""Provider policy overlay: pick ``default`` vs ``openai`` fragment for a hybrid registry entry."""
+"""Provider policy overlay for hybrid registry entries (``default`` vs ``openai`` branch)."""
 
 from __future__ import annotations
 
@@ -26,25 +26,36 @@ def registered_hybrid_prompt_keys() -> frozenset[str]:
     return frozenset(HYBRID_PROMPTS.keys())
 
 
-def _global_v21_default_text() -> str:
-    g = PROMPTS["global_v21"]
-    assert isinstance(g, dict)
-    return str(g["default"]).rstrip()
-
-
 def resolve_hybrid_entry_for_provider(
     entry: Union[str, Dict[str, str]],
     provider_key: Optional[str],
 ) -> str:
-    """Pick provider-specific hybrid text when present; otherwise ``default`` or legacy fallback."""
+    """
+    Resolve one registry entry to the text sent as the hybrid **base** prompt (before enrichments).
+
+    **Parity-preserving provider model (Phase 4 only)** — not the final multi-vendor strategy:
+
+    * If ``provider_key`` is exactly ``openai`` (case-insensitive) and the entry defines an
+      ``openai`` string, that variant is used.
+    * Every other provider key (``gemini``, unknown, ``None``, future vendors) uses the ``default``
+      fragment.
+
+    Legacy ``PROMPTS`` rows that use ``system``/``user`` (non-hybrid) are not valid hybrid entries;
+    for backward compatibility they fall back to **global_v21 default** text only, with **no** OpenAI
+    overlay (``provider_key`` ignored for that fallback). Future providers (e.g. Claude, DeepSeek)
+    must not rely on this special-case; Phase 5+ will replace overlay selection with an explicit
+    policy map.
+
+    All returned strings are ``.rstrip()``'d for wire consistency with historical behavior.
+    """
     pk = (provider_key or "").strip().lower()
     if isinstance(entry, str):
         return entry.rstrip()
     if isinstance(entry, dict):
         if "system" in entry:
-            return _global_v21_default_text()
+            return resolve_hybrid_entry_for_provider(PROMPTS["global_v21"], None)
         if isinstance(entry.get("default"), str):
             if pk == "openai" and isinstance(entry.get("openai"), str):
                 return str(entry["openai"]).rstrip()
             return str(entry["default"]).rstrip()
-    return _global_v21_default_text()
+    return resolve_hybrid_entry_for_provider(PROMPTS["global_v21"], None)

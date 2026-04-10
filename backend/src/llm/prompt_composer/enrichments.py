@@ -1,7 +1,9 @@
 """
-Optional prompt fragments appended after base hybrid text (Epic 3.1.A / 3.1.D).
+Optional prompt fragments appended **after** ``HybridPromptComposer.compose_base`` (Epic 3.1.A / D).
 
-Kept separate from profile registry so future phases can schedule enrichments in a composition plan.
+The composer returns base text only; the hybrid pipeline (e.g. ``hybrid_analysis_prompt``) applies
+these helpers explicitly. Do not call them from inside ``compose_base`` — avoids double-append and
+keeps enrichment policy at the request-building layer.
 """
 
 from __future__ import annotations

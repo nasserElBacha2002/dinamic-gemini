@@ -2,6 +2,7 @@
 Phase 4 — golden parity: hybrid base prompt text must not drift silently.
 
 SHA-256 fingerprints lock the four distinct base texts (default vs openai for v21 / v21_b).
+Readable phrase checks make failures easier to diagnose before inspecting hash diffs.
 ``get_hybrid_prompt`` must remain a thin delegate of ``HybridPromptComposer``.
 """
 
@@ -36,11 +37,33 @@ _GOLDEN_BASE: dict[tuple[str, str | None], str] = {
     ("global_v21_b", "openai"): "73f35647625e5259d32bd0af54ce577e4d50f2b301cbbd5af55f30ccb9408c89",
 }
 
+# Distinctive substrings per variant — if a hash fails, missing phrase hints which profile broke.
+_GOLDEN_PHRASES: dict[tuple[str, str | None], tuple[str, ...]] = {
+    ("global_v21", None): ("PALLET", "LOOSE_BOXES", "NORMALIZED coords only"),
+    ("global_v21", "openai"): ("NEVER return quantity = 0", "Return valid JSON only"),
+    ("global_v21_b", None): ("unambiguously", "INSUFFICIENT_EVIDENCE"),
+    ("global_v21_b", "openai"): ("over-abstain", "total_entities_detected"),
+}
+
+
+def _assert_hybrid_base_golden(profile: str, provider: str | None, text: str) -> None:
+    key = (profile, provider)
+    for phrase in _GOLDEN_PHRASES[key]:
+        assert phrase in text, f"expected phrase missing for {key}: {phrase!r}"
+    expected_hash = _GOLDEN_BASE[key]
+    actual_hash = _sha256(text)
+    if actual_hash != expected_hash:
+        preview = text[:160].replace("\n", " ")
+        pytest.fail(
+            f"SHA256 mismatch for {key}: expected {expected_hash}, got {actual_hash} "
+            f"(len={len(text)}). preview={preview!r}…"
+        )
+
 
 @pytest.mark.parametrize("profile,provider", list(_GOLDEN_BASE.keys()))
 def test_hybrid_base_prompt_golden_sha256(profile: str, provider: str | None) -> None:
     text = default_hybrid_composer.compose_base(profile, provider)
-    assert _sha256(text) == _GOLDEN_BASE[(profile, provider)]
+    _assert_hybrid_base_golden(profile, provider, text)
 
 
 def test_gemini_and_unknown_vendor_match_default_variant() -> None:
@@ -80,5 +103,5 @@ def test_image_id_enrichment_parity_sample() -> None:
     enriched = enrich_prompt_with_image_ids(base, images)
     assert "img_001" in enriched
     assert "TRACEABILITY (v3.1)" in enriched
+    assert "source_image_id" in enriched
     assert _sha256(enriched) == "db433a90f3c2eeed054c4650efcf12213c375e1c250f7b6612e9d17e5d96644d"
-

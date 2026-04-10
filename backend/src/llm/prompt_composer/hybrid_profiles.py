@@ -1,16 +1,21 @@
 """
-Semantic hybrid prompt profiles and legacy non-hybrid entries (registry only).
+Registry of prompt bodies keyed for ``PROMPTS`` (hybrid + legacy).
 
-Provider-specific variants live alongside each profile as ``default`` / ``openai`` keys.
-Legacy system/user prompts remain in the same dict for backward compatibility; resolution
-ignores them for hybrid composition.
+* **Hybrid pipeline** (global v2.1 analysis): entries with ``default`` / ``openai`` — resolved only
+  through ``HybridPromptComposer`` + ``resolve_hybrid_entry_for_provider``.
+* **Legacy** (pallet / multi-frame experiments): ``system`` / ``user`` pairs below — **not** used by
+  the hybrid global-analysis composer; kept in one dict for historical imports and tooling.
 """
 
 from __future__ import annotations
 
 from typing import Dict, Final, Union
 
-# --- Base semantic content (Prompt A) ---
+# ---------------------------------------------------------------------------
+# Hybrid v2.1 — global entity analysis (Prompt A / B + OpenAI-tuned variants)
+# ---------------------------------------------------------------------------
+
+# --- Prompt A (global_v21) — default (Gemini-oriented) ---
 _GLOBAL_V21: Final[str] = """\
 Analyze the provided warehouse aisle evidence (photos and/or extracted frames). Detect all distinct visible logistic entities, one entity per visible unit.
 
@@ -32,7 +37,7 @@ Rules:
 - Inventory visual reference images, when provided, are comparative context only. They may help interpret label style, packaging conventions, or the expected visual standard, but they are NOT primary evidence and must not be treated as direct evidence for detections.
 """
 
-# Prompt B (global_v21_b): conservative / anti-hallucination — distinct strategy vs Prompt A.
+# --- Prompt B (global_v21_b) — default (conservative / anti-hallucination) ---
 _GLOBAL_V21_B: Final[str] = """\
 Analyze the provided warehouse aisle evidence (photos and/or extracted frames). Detect logistic entities only when each unit is **unambiguously** visible as a separate physical unit.
 
@@ -51,7 +56,7 @@ Conservative rules (NON-NEGOTIABLE):
 This profile prioritizes traceability and null-handling over aggressive extraction.
 """
 
-# OpenAI-tuned variant for global_v21 (GPT tends to over-abstain with Gemini-oriented text).
+# --- OpenAI-tuned variant for global_v21 ---
 _GLOBAL_V21_OPENAI: Final[str] = """\
 Analyze the provided warehouse aisle images and detect all distinct logistic entities.
 
@@ -87,7 +92,7 @@ Return valid JSON only:
 }
 """
 
-# OpenAI-tuned variant for global_v21_b: same conservative taxonomy, softer abstention for GPT.
+# --- OpenAI-tuned variant for global_v21_b ---
 _GLOBAL_V21_B_OPENAI: Final[str] = """\
 Analyze the provided warehouse aisle evidence (photos and/or extracted frames). Detect logistic entities using the same taxonomy as Prompt B, with guidance suited to models that over-abstain under strict null-only rules.
 
@@ -106,6 +111,10 @@ Rules:
 Output:
 Return valid JSON matching the required entity schema (total_entities_detected + entities array).
 """
+
+# ---------------------------------------------------------------------------
+# Legacy pallet / multi-view prompts (system + user) — not hybrid composer paths
+# ---------------------------------------------------------------------------
 
 _SYSTEM_PALLET_COUNT: Final[str] = """\
 You are an expert in computer vision for logistics inventory management.
@@ -172,7 +181,7 @@ Output:
 - Return confidence as a numeric value (0.0 to 1.0).
 """
 
-# Unified prompt registry: str | hybrid dict | legacy system/user dict
+# Registry: hybrid entries use default/openai; legacy entries use system/user.
 PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
     "global_v21": {"default": _GLOBAL_V21, "openai": _GLOBAL_V21_OPENAI},
     "global_v21_b": {"default": _GLOBAL_V21_B, "openai": _GLOBAL_V21_B_OPENAI},
