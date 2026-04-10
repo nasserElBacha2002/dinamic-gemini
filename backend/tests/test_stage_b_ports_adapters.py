@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from src.llm.prompt_composer.prompt_traceability import sha256_utf8
 from src.jobs.adapters.job_store_adapter import JobStoreRepositoryAdapter
 from src.jobs.models import JobInput, JobRecord, JobStatus
 from src.parsing.global_analysis_parser import parse_entities
@@ -137,6 +138,12 @@ def test_hybrid_global_analysis_strategy_returns_analysis_result(monkeypatch: py
     # v3.2.4 Phase 4: provider_metadata present when no analysis_context
     assert result.provider_metadata is not None
     assert result.provider_metadata["visual_references_available"] is False
+    # Phase 6: prompt traceability
+    assert result.prompt_composition is not None
+    assert result.prompt_composition.get("schema_version") == "prompt_composition_v1"
+    final = result.prompt_composition.get("final_prompt_text")
+    assert isinstance(final, str) and final
+    assert result.prompt_composition.get("prompt_hash") == sha256_utf8(final)
     assert result.provider_metadata["visual_references_consumed"] is False
 
 

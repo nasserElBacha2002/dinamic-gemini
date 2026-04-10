@@ -41,11 +41,13 @@ class AnalysisResult:
     by the existing pipeline (parse_entities). Future stages may extend it with metadata such
     as raw response, tokens, latency, model info, or trace IDs.
     v3.2.4 Phase 4: provider_metadata carries visual reference usage (available/consumed/count).
+    Phase 6: optional prompt_composition (JSON dict) for audit/traceability.
     """
 
     parsed_json: Dict[str, Any]
     provider_name: str
     provider_metadata: Optional[Dict[str, Any]] = None
+    prompt_composition: Optional[Dict[str, Any]] = None
 
 
 class AnalysisProvider(Protocol):

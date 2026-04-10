@@ -15,6 +15,7 @@ from src.pipeline.contracts.analysis_context import (
     VisualReferenceContext,
 )
 from src.pipeline.run_metadata import (
+    RUN_METADATA_KEY_PROMPT_COMPOSITION,
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
     build_run_metadata,
     build_visual_reference_context,
@@ -151,11 +152,22 @@ def test_build_run_metadata_structure() -> None:
         },
     )
     assert RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT in out
+    assert RUN_METADATA_KEY_PROMPT_COMPOSITION not in out
     vrc = out[RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT]
     assert vrc["resolved"] is True
     assert vrc["reference_ids"] == ["x"]
     assert vrc["provider_consumed"] is True
     assert vrc["provider_consumed_count"] == 1
+
+
+def test_build_run_metadata_includes_prompt_composition_when_provided() -> None:
+    pc = {"schema_version": "prompt_composition_v1", "prompt_hash": "abc"}
+    out = build_run_metadata(
+        analysis_context=None,
+        provider_metadata=None,
+        prompt_composition=pc,
+    )
+    assert out[RUN_METADATA_KEY_PROMPT_COMPOSITION] == pc
 
 
 def test_build_visual_reference_context_prefers_provider_confirmed_reference_ids() -> None:

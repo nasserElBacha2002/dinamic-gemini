@@ -23,6 +23,8 @@ from src.pipeline.ports.analysis_provider import (
 
 # Job-level block key (Phase 5)
 RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT = "visual_reference_context"
+# Phase 6 — optional prompt traceability block (backward compatible when absent)
+RUN_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
 
 
 def default_empty_block() -> Dict[str, Any]:
@@ -137,13 +139,18 @@ def build_visual_reference_context(
 def build_run_metadata(
     analysis_context: Optional[Union[AnalysisContext, Dict[str, Any]]],
     provider_metadata: Optional[Dict[str, Any]],
+    prompt_composition: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Build the full run metadata dict (for in-memory propagation to executor).
     Contains visual_reference_context for job-level traceability.
+    Phase 6: optional prompt_composition (omitted when None for backward compatibility).
     """
-    return {
+    out: Dict[str, Any] = {
         RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: build_visual_reference_context(
             analysis_context, provider_metadata
         ),
     }
+    if prompt_composition is not None:
+        out[RUN_METADATA_KEY_PROMPT_COMPOSITION] = prompt_composition
+    return out

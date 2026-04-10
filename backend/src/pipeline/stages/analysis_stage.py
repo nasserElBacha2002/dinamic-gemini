@@ -25,6 +25,7 @@ class AnalysisStageResult:
     parsed_json: Dict[str, Any]
     provider_name: str
     provider_metadata: Optional[Dict[str, Any]] = None
+    prompt_composition: Optional[Dict[str, Any]] = None
 
 
 class AnalysisStage:
@@ -67,4 +68,5 @@ class AnalysisStage:
             parsed_json=parsed,
             provider_name=result.provider_name,
             provider_metadata=result.provider_metadata,
+            prompt_composition=result.prompt_composition,
         )

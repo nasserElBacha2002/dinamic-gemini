@@ -292,7 +292,11 @@ class HybridInventoryPipeline:
         except Exception as e:
             return _fail("ReportingStage", e)
         # Phase 5: build run_metadata in memory (formal AnalysisContext); optional file as debug artifact
-        run_metadata = build_run_metadata(context.analysis_context, analysis_result.provider_metadata)
+        run_metadata = build_run_metadata(
+            context.analysis_context,
+            analysis_result.provider_metadata,
+            prompt_composition=analysis_result.prompt_composition,
+        )
         # Phase 7: run attribution for debugging (provider and prompt_key persisted in job.result_json)
         provider = (analysis_result.provider_name or "").strip() or None
         run_metadata["provider"] = provider

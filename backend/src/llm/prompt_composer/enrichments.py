@@ -12,6 +12,9 @@ from typing import List
 
 from src.jobs.image_identity import JobImage
 
+# Traceability id for Phase 6 metadata (when ``enrich_prompt_with_image_ids`` applies).
+IMAGE_ID_TRACEABILITY_ENRICHMENT_ID = "image_id_traceability_v31"
+
 # Epic 3.1.A — image ID traceability
 _TRACEABILITY_INSTRUCTION: str = """
 

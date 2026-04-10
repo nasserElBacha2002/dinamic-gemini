@@ -904,6 +904,14 @@ class Settings(BaseModel):
         in ("true", "1", "yes"),
         description="Si es True, guarda los frames procesados para debug.",
     )
+    debug_log_full_analysis_prompt: bool = Field(
+        default_factory=lambda: os.getenv("DEBUG_LOG_FULL_ANALYSIS_PROMPT", "false").lower()
+        in ("true", "1", "yes"),
+        description=(
+            "Phase 6: when True, execution_log includes full analysis prompt_text on "
+            "'Analysis request prepared'. Default False (hash + length only)."
+        ),
+    )
 
     # Auth (v3.2.1 — minimal administrative authentication)
     admin_username: str = Field(
