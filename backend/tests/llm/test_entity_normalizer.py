@@ -10,13 +10,17 @@ from src.llm.normalization.entity_normalizer import (
     EXTRACTION_CONTRACT_VERSION_KEY,
     EXTRACTION_CONTRACT_VERSION_VALUE,
     normalize_llm_response,
+    resolve_provider_family,
 )
+from src.parsing.global_analysis_parser import parse_entities
+from src.reporting.display_label import derive_review_display_label
+from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 from tests.support.llm_executor_harness import HARNESS_RESPONSE_PROVIDER
 
-# --- Fixtures from real multi-provider aisle runs (audit payloads) ---
+# --- Fixtures aligned with real provider shapes (single-entity slices; totals match len(entities)) ---
 
 OPENAI_AUDIT_PAYLOAD = {
-    "total_entities_detected": 4,
+    "total_entities_detected": 1,
     "entities": [
         {
             "entity_type": "PALLET",
@@ -31,7 +35,7 @@ OPENAI_AUDIT_PAYLOAD = {
 }
 
 CLAUDE_AUDIT_PAYLOAD = {
-    "total_entities_detected": 5,
+    "total_entities_detected": 1,
     "entities": [
         {
             "entity_type": "PALLET",
@@ -47,7 +51,7 @@ CLAUDE_AUDIT_PAYLOAD = {
 }
 
 GEMINI_AUDIT_PAYLOAD = {
-    "total_entities_detected": 4,
+    "total_entities_detected": 1,
     "entities": [
         {
             "entity_type": "PALLET",
@@ -309,6 +313,122 @@ def test_claude_internal_code_not_overwritten_when_set() -> None:
 def test_unknown_provider_conservative_no_alias_promotion(provider: str) -> None:
     inp = {"entities": [{"quantity": 5, "bbox": [0, 0, 1, 1]}]}
     out = normalize_llm_response(inp, provider)
+    e = out["entities"][0]
+    assert e["product_label_quantity"] is None
+    assert e["product_label_bbox"] is None
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("openai", "openai"),
+        ("OpenAI", "openai"),
+        ("openai_sdk", "openai"),
+        ("gpt-4.1", "openai"),
+        ("anthropic", "claude"),
+        ("claude-3-opus", "claude"),
+        ("Claude", "claude"),
+        ("gemini", "gemini"),
+        ("gemini-2.0-flash-exp", "gemini"),
+        ("google_genai", "gemini"),
+        ("deepseek-chat", "deepseek"),
+        ("test_llm", "test_llm"),
+        ("", "unknown"),
+        ("some_other_vendor", "unknown"),
+    ],
+)
+def test_resolve_provider_family(raw: str, expected: str) -> None:
+    assert resolve_provider_family(raw) == expected
+
+
+def test_openai_canonical_payload_preserved_no_overwrite() -> None:
+    """When OpenAI already returns v2.1 canonical fields, pass through unchanged semantics."""
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "source_image_id": "x",
+                "internal_code": "SKU1",
+                "product_label_quantity": 5,
+                "product_label_bbox": [0.1, 0.2, 0.3, 0.4],
+                "position_barcode": None,
+                "position_label_bbox": None,
+            }
+        ],
+    }
+    expected_ic = inp["entities"][0]["internal_code"]
+    expected_qty = inp["entities"][0]["product_label_quantity"]
+    expected_bbox = list(inp["entities"][0]["product_label_bbox"])
+    out = normalize_llm_response(copy.deepcopy(inp), "openai_sdk")
+    e = out["entities"][0]
+    assert e["internal_code"] == expected_ic
+    assert e["product_label_quantity"] == expected_qty
+    assert e["product_label_bbox"] == expected_bbox
+    assert "quantity" not in e and "bbox" not in e
+
+
+def test_claude_audit_payload_via_anthropic_provider_string() -> None:
+    out = normalize_llm_response(copy.deepcopy(CLAUDE_AUDIT_PAYLOAD), "Anthropic")
+    assert out["entities"][0]["internal_code"] == "1428706"
+
+
+def test_claude_product_label_not_mapped_when_invalid_oocr() -> None:
+    """Noisy / overlong OCR must not become internal_code."""
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "source_image_id": "s",
+                "product_label": "NOT A VALID CODE WITH SPACES",
+            }
+        ],
+    }
+    out = normalize_llm_response(inp, "claude")
+    assert out["entities"][0]["internal_code"] is None
+
+    long_token = "A" * 49
+    inp2 = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "source_image_id": "s",
+                "product_label": long_token,
+            }
+        ],
+    }
+    out2 = normalize_llm_response(inp2, "claude")
+    assert out2["entities"][0]["internal_code"] is None
+
+
+def test_claude_normalize_parse_entities_and_review_display_label() -> None:
+    """Integration: Claude OCR survives normalization and reaches parser + display derivation."""
+    normalized = normalize_llm_response(copy.deepcopy(CLAUDE_AUDIT_PAYLOAD), "claude-3-sonnet")
+    validate_global_analysis_structure_v21(normalized)
+    entities = parse_entities(normalized, job_id="job-claude-int")
+    assert len(entities) == 1
+    ent = entities[0]
+    assert ent.internal_code == "1428706"
+    label = derive_review_display_label(ent.internal_code, ent.position_barcode)
+    assert label == "1428706"
+    assert label is not None
+    assert str(label).lower() != "unknown"
+
+
+def test_gpt_provider_family_strips_aliases_like_openai() -> None:
+    inp = {"entities": [{"quantity": 1, "bbox": [0.0, 0.0, 1.0, 1.0]}]}
+    out = normalize_llm_response(inp, "GPT-4.1")
     e = out["entities"][0]
     assert e["product_label_quantity"] is None
     assert e["product_label_bbox"] is None
