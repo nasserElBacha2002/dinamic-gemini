@@ -100,18 +100,23 @@ export function SelectableOutlineCard({
   title,
   subtitle,
   footer,
+  accessibilityLabel,
 }: {
   selected: boolean;
   onClick: () => void;
   title: string;
   subtitle?: string;
   footer?: ReactNode;
+  /** Full label for assistive tech (e.g. "Provider Gemini, key gemini"). */
+  accessibilityLabel: string;
 }) {
   return (
     <Card
       variant="outlined"
-      role="button"
-      tabIndex={0}
+      role="radio"
+      aria-checked={selected}
+      aria-label={accessibilityLabel}
+      tabIndex={selected ? 0 : -1}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -125,6 +130,10 @@ export function SelectableOutlineCard({
         bgcolor: (theme) => (selected ? theme.palette.action.selected : undefined),
         transition: (theme) =>
           theme.transitions.create(['border-color', 'background-color'], { duration: theme.transitions.duration.shortest }),
+        '&:focus-visible': {
+          outline: (theme) => `2px solid ${theme.palette.primary.main}`,
+          outlineOffset: 2,
+        },
       }}
       onClick={onClick}
     >

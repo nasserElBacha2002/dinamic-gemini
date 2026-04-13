@@ -40,6 +40,8 @@ export const queryKeys = {
   admin: {
     all: ['v3', 'admin'] as const,
     aiConfig: () => [...queryKeys.admin.all, 'ai-config'] as const,
+    aiComposedPrompt: (providerKey: string, promptKey: string, parity: boolean) =>
+      [...queryKeys.admin.all, 'ai-config', 'composed-prompt', providerKey, promptKey, parity] as const,
   },
 
   analytics: {

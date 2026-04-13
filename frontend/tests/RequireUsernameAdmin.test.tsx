@@ -6,11 +6,13 @@ import RequireUsernameAdmin from '../src/features/auth/RequireUsernameAdmin';
 import { AuthContext, createInitialAuthState } from '../src/features/auth/store';
 import type { AuthContextValue } from '../src/features/auth/store';
 
-function renderGate(username: string) {
+function renderGate(username: string | null) {
   const auth: AuthContextValue = {
     ...createInitialAuthState(true),
-    user: { id: 'admin', username, role: 'administrator' },
-    token: 't',
+    user: username
+      ? { id: 'admin', username, role: 'administrator' }
+      : null,
+    token: username ? 't' : null,
     login: vi.fn(),
     logout: vi.fn(),
   };
@@ -42,5 +44,10 @@ describe('RequireUsernameAdmin', () => {
     renderGate('other');
     expect(screen.queryByTestId('secret')).not.toBeInTheDocument();
     expect(screen.getByText(/Access denied|Acceso denegado/i)).toBeInTheDocument();
+  });
+
+  it('does not render children when user is null (redirect to login)', () => {
+    renderGate(null);
+    expect(screen.queryByTestId('secret')).not.toBeInTheDocument();
   });
 });

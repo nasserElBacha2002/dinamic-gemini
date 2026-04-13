@@ -11,32 +11,34 @@ import * as client from '../src/api/client';
 
 vi.mock('../src/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/api/client')>();
-  return { ...actual, getAdminAiConfig: vi.fn() };
+  return {
+    ...actual,
+    getAdminAiConfig: vi.fn(),
+    getAdminAiComposedPrompt: vi.fn(),
+  };
 });
 
-const sampleContract = {
+const sampleResponseContract = {
   expects_json: true,
+  wire_transport: 'gemini_native_json',
   validation_function: 'validate_global_analysis_structure_v21',
   normalization_function: 'normalize_llm_response',
   normalization_family: 'gemini',
+  alias_promotion_policy: 'legacy_qty_bbox_when_canonical_absent_gemini_family',
+  claude_product_label_to_internal_code_when_valid: false,
   required_root_keys: ['total_entities_detected', 'entities'],
-  extra_root_keys_policy: 'extras ignored',
+  extra_root_keys_policy_short: 'extras ignored',
   required_entity_keys: ['entity_type', 'model_entity_id', 'confidence', 'has_boxes'],
   canonical_entity_keys: ['entity_type', 'model_entity_id'],
   nullable_optional_entity_keys: ['internal_code'],
   canonical_example_json: '{"total_entities_detected":0,"entities":[]}',
-  raw_provider_expectation: 'JSON object from model.',
-  canonical_contract_summary: 'Canonical v2.1 shape.',
-  provider_wire_notes: ['note a'],
-  normalization_notes: ['note b'],
+  transport_notes: ['note a'],
 };
 
 const sampleComposition = {
-  hybrid_base_resolution: 'default branch',
-  parity_mode: 'parity text',
-  multimodal_context_rules: 'multimodal text',
-  provider_composition_summary: 'summary',
-  bullets: ['a', 'b'],
+  hybrid_base_mode: 'default_profile_only',
+  parity_mode_affects_prompt_assembly: false,
+  multimodal_context_policy: 'attach_when_adapter_supports_vision',
 };
 
 const samplePayload = {
@@ -50,25 +52,41 @@ const samplePayload = {
       execution_mode: 'native',
       models: [{ id: 'm1', label: 'm1', is_default: true }],
       default_model: 'm1',
-      overview: {
+      capabilities: {
         is_default_pipeline_provider: true,
         credential_configured: true,
-        operationally_available: true,
         multimodal_aisle_analysis_supported: true,
         execution_mode: 'native',
       },
       instructions: { provider_specific_note: 'note' },
-      response_contract: sampleContract,
-      composition_notes: sampleComposition,
-      prompt_variants: [
+      response_contract: sampleResponseContract,
+      composition: sampleComposition,
+      prompt_variant_summaries: [
         {
           prompt_key: 'global_v21',
           pipeline_provider_key: 'gemini',
           prompt_parity_mode: false,
-          variant_label: 'v1',
-          composed_prompt_text: 'x'.repeat(5000),
+          variant_label: 'global_v21 · gemini · parity=false',
         },
       ],
+    },
+    {
+      key: 'openai',
+      label: 'OpenAI',
+      description: null,
+      execution_mode: 'native',
+      models: [],
+      default_model: null,
+      capabilities: {
+        is_default_pipeline_provider: false,
+        credential_configured: false,
+        multimodal_aisle_analysis_supported: true,
+        execution_mode: 'native',
+      },
+      instructions: { provider_specific_note: '' },
+      response_contract: sampleResponseContract,
+      composition: sampleComposition,
+      prompt_variant_summaries: [],
     },
   ],
   prompt_catalog: [{ key: 'global_v21', label: 'A', description: 'x' }],
@@ -102,23 +120,43 @@ function renderWithAuth(user: { username: string } | null) {
 describe('AdminAiConfigPage', () => {
   beforeEach(() => {
     vi.mocked(client.getAdminAiConfig).mockReset();
+    vi.mocked(client.getAdminAiComposedPrompt).mockReset();
     Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
   });
 
-  it('shows loading then provider explorer and composed prompt after opening Prompts tab', async () => {
+  it('shows loading then snapshot and loads composed prompt into the preview region', async () => {
     vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
+    vi.mocked(client.getAdminAiComposedPrompt).mockResolvedValue({
+      prompt_key: 'global_v21',
+      pipeline_provider_key: 'gemini',
+      prompt_parity_mode: false,
+      variant_label: 'global_v21 · gemini · parity=false',
+      composed_prompt_text: 'x'.repeat(500),
+    } as never);
+
     renderWithAuth({ username: 'admin' });
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByText(/Snapshot generated|Instantánea generada/i)).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText(/Snapshot/i)).toBeInTheDocument());
     expect(screen.getAllByText('Gemini').length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /load composed prompt|Cargar prompt/i })).toBeInTheDocument()
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /load composed prompt|Cargar prompt/i }));
+    });
+    await waitFor(() => expect(screen.getByTestId('composed-prompt-body')).toBeInTheDocument());
+    expect(screen.getByTestId('composed-prompt-body').textContent).toContain('x'.repeat(80));
+  });
+
+  it('shows global instructions on Instructions tab', async () => {
+    vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
+    renderWithAuth({ username: 'admin' });
+    await waitFor(() => expect(screen.getByRole('tab', { name: /instructions/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', { name: /instructions/i }));
     await waitFor(() => expect(screen.getByLabelText('global-instructions')).toBeInTheDocument());
-    const pre = screen.getByLabelText('global-instructions');
-    expect(pre.textContent).toContain('Global note');
-    fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
-    await waitFor(() => expect(document.body.textContent).toContain('x'.repeat(200)));
+    expect(screen.getByLabelText('global-instructions').textContent).toContain('Global note');
   });
 
   it('shows forbidden message when API returns 403', async () => {
@@ -128,7 +166,7 @@ describe('AdminAiConfigPage', () => {
     await waitFor(() => expect(screen.getByText(/not allowed|forbidden|permiso/i)).toBeInTheDocument());
   });
 
-  it('copy button triggers clipboard write', async () => {
+  it('copy button triggers clipboard write on instructions tab', async () => {
     vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
     renderWithAuth({ username: 'admin' });
     await waitFor(() => expect(screen.getByRole('tab', { name: /instructions/i })).toBeInTheDocument());
@@ -138,5 +176,30 @@ describe('AdminAiConfigPage', () => {
       fireEvent.click(screen.getAllByLabelText(/copy/i)[0]);
     });
     expect(navigator.clipboard.writeText).toHaveBeenCalled();
+  });
+
+  it('resets to overview when switching provider after viewing prompts', async () => {
+    vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
+    renderWithAuth({ username: 'admin' });
+    await waitFor(() => expect(screen.getByText('OpenAI')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /load composed prompt|Cargar prompt/i })).toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByText('OpenAI'));
+    await waitFor(() => expect(screen.getByRole('tab', { name: /overview|resumen/i })).toHaveAttribute('aria-selected', 'true'));
+  });
+
+  it('shows empty variants when provider has no summaries for the profile', async () => {
+    vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
+    renderWithAuth({ username: 'admin' });
+    await waitFor(() => expect(screen.getByText('OpenAI')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('OpenAI'));
+    fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/No composed variants|No hay variantes|empty_variants/i)
+      ).toBeInTheDocument()
+    );
   });
 });

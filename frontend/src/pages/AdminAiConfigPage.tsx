@@ -14,12 +14,12 @@ import {
   Typography,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { getAdminAiConfig } from '../api/client';
+import { getAdminAiComposedPrompt, getAdminAiConfig } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import {
   ApiError,
+  type AdminAiConfigPromptVariantSummary,
   type AdminAiConfigProviderDetail,
-  type AdminAiConfigPromptVariant,
 } from '../api/types';
 import {
   BulletList,
@@ -30,26 +30,62 @@ import {
 } from '../components/adminAiInspector/InspectorPrimitives';
 import PageHeader from '../components/shell/PageHeader';
 
-function TabPanel({ children, value, index }: { children: React.ReactNode; value: number; index: number }) {
-  if (value !== index) return null;
+const INSPECTOR_TAB_KEYS = ['overview', 'instructions', 'response_contract', 'prompts', 'composition'] as const;
+type InspectorTabKey = (typeof INSPECTOR_TAB_KEYS)[number];
+
+const TAB_LABEL_KEYS: Record<InspectorTabKey, string> = {
+  overview: 'admin_ai_config.tab_overview',
+  instructions: 'admin_ai_config.tab_instructions',
+  response_contract: 'admin_ai_config.tab_response_contract',
+  prompts: 'admin_ai_config.tab_prompts',
+  composition: 'admin_ai_config.tab_composition',
+};
+
+function formatGeneratedAtDisplay(iso: string, locale: string): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return iso;
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(ms);
+}
+
+function TabPanel({
+  children,
+  value,
+  id,
+}: {
+  children: React.ReactNode;
+  value: InspectorTabKey;
+  id: InspectorTabKey;
+}) {
+  if (value !== id) return null;
   return (
-    <Box role="tabpanel" sx={{ pt: 2 }}>
+    <Box
+      role="tabpanel"
+      id={`admin-ai-tabpanel-${id}`}
+      aria-labelledby={`admin-ai-tab-${id}`}
+      sx={{ pt: 2 }}
+    >
       {children}
     </Box>
   );
 }
 
 export default function AdminAiConfigPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const q = useQuery({
     queryKey: queryKeys.admin.aiConfig(),
     queryFn: getAdminAiConfig,
   });
 
   const [selectedProviderKey, setSelectedProviderKey] = useState<string | null>(null);
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [selectedPromptKey, setSelectedPromptKey] = useState<string | null>(null);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState<InspectorTabKey>('overview');
+  const [composeTarget, setComposeTarget] = useState<{
+    prompt_key: string;
+    prompt_parity_mode: boolean;
+  } | null>(null);
 
   const data = q.data;
 
@@ -70,19 +106,34 @@ export default function AdminAiConfigPage() {
   }, [data, selectedProviderKey]);
 
   useEffect(() => {
-    if (!provider) return;
-    const def = provider.models.find((m) => m.is_default)?.id ?? provider.models[0]?.id ?? null;
-    setSelectedModelId(def);
-  }, [provider]);
+    setComposeTarget(null);
+  }, [provider?.key, selectedPromptKey]);
+
+  const composedQ = useQuery({
+    queryKey: queryKeys.admin.aiComposedPrompt(
+      provider?.key ?? '',
+      composeTarget?.prompt_key ?? '',
+      composeTarget?.prompt_parity_mode ?? false
+    ),
+    queryFn: () =>
+      getAdminAiComposedPrompt({
+        pipeline_provider_key: provider!.key,
+        prompt_key: composeTarget!.prompt_key,
+        prompt_parity_mode: composeTarget!.prompt_parity_mode,
+      }),
+    enabled: Boolean(provider && composeTarget && tab === 'prompts'),
+  });
 
   const onRefresh = useCallback(() => {
     void q.refetch();
   }, [q]);
 
-  const filteredVariants: AdminAiConfigPromptVariant[] = useMemo(() => {
+  const filteredSummaries: AdminAiConfigPromptVariantSummary[] = useMemo(() => {
     if (!provider || !selectedPromptKey) return [];
-    return provider.prompt_variants.filter((v) => v.prompt_key === selectedPromptKey);
+    return provider.prompt_variant_summaries.filter((v) => v.prompt_key === selectedPromptKey);
   }, [provider, selectedPromptKey]);
+
+  const generatedDisplay = data ? formatGeneratedAtDisplay(data.generated_at, i18n.language) : '';
 
   if (q.isLoading) {
     return (
@@ -139,32 +190,41 @@ export default function AdminAiConfigPage() {
         }
       />
 
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {t('admin_ai_config.generated_at', { value: data.generated_at })}
-      </Typography>
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">
+          {t('admin_ai_config.generated_at_formatted', { value: generatedDisplay })}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5, mb: 0 }}>
+          {t('admin_ai_config.generated_at_raw', { value: data.generated_at })}
+        </Typography>
+      </Box>
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={4}>
           <Typography variant="overline" color="text.secondary" display="block" sx={{ mb: 1 }}>
             {t('admin_ai_config.pick_provider')}
           </Typography>
-          <Stack spacing={1.5}>
+          <Stack spacing={1.5} role="radiogroup" aria-label={t('admin_ai_config.pick_provider')}>
             {data.providers.map((p) => (
               <SelectableOutlineCard
                 key={p.key}
                 selected={p.key === selectedProviderKey}
                 onClick={() => {
                   setSelectedProviderKey(p.key);
-                  setTab(0);
+                  setTab('overview');
                 }}
                 title={p.label}
                 subtitle={p.key}
+                accessibilityLabel={t('admin_ai_config.provider_card_a11y', {
+                  name: p.label,
+                  key: p.key,
+                })}
                 footer={
                   <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                    {p.overview.is_default_pipeline_provider ? (
+                    {p.capabilities.is_default_pipeline_provider ? (
                       <Chip size="small" label={t('admin_ai_config.default_provider_chip')} />
                     ) : null}
-                    {p.overview.credential_configured ? (
+                    {p.capabilities.credential_configured ? (
                       <Chip size="small" color="success" variant="outlined" label={t('admin_ai_config.configured')} />
                     ) : (
                       <Chip size="small" variant="outlined" label={t('admin_ai_config.not_configured')} />
@@ -174,30 +234,6 @@ export default function AdminAiConfigPage() {
               />
             ))}
           </Stack>
-
-          {provider ? (
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="overline" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                {t('admin_ai_config.pick_model')}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                {t('admin_ai_config.model_hint')}
-              </Typography>
-              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                {provider.models.map((m) => (
-                  <Chip
-                    key={m.id}
-                    size="small"
-                    label={m.is_default ? `${m.label} *` : m.label}
-                    color={m.id === selectedModelId ? 'primary' : 'default'}
-                    variant={m.id === selectedModelId ? 'filled' : 'outlined'}
-                    onClick={() => setSelectedModelId(m.id)}
-                    sx={{ cursor: 'pointer' }}
-                  />
-                ))}
-              </Stack>
-            </Box>
-          ) : null}
         </Grid>
 
         <Grid item xs={12} md={8}>
@@ -207,19 +243,23 @@ export default function AdminAiConfigPage() {
             <>
               <Tabs
                 value={tab}
-                onChange={(_, v) => setTab(v)}
+                onChange={(_, v) => setTab(v as InspectorTabKey)}
                 variant="scrollable"
                 scrollButtons="auto"
                 aria-label={t('admin_ai_config.tabs_aria')}
               >
-                <Tab label={t('admin_ai_config.tab_overview')} />
-                <Tab label={t('admin_ai_config.tab_instructions')} />
-                <Tab label={t('admin_ai_config.tab_response_contract')} />
-                <Tab label={t('admin_ai_config.tab_prompts')} />
-                <Tab label={t('admin_ai_config.tab_composition')} />
+                {INSPECTOR_TAB_KEYS.map((id) => (
+                  <Tab
+                    key={id}
+                    id={`admin-ai-tab-${id}`}
+                    aria-controls={`admin-ai-tabpanel-${id}`}
+                    value={id}
+                    label={t(TAB_LABEL_KEYS[id])}
+                  />
+                ))}
               </Tabs>
 
-              <TabPanel value={tab} index={0}>
+              <TabPanel value={tab} id="overview">
                 <Stack spacing={2}>
                   <Card variant="outlined">
                     <CardContent>
@@ -253,19 +293,15 @@ export default function AdminAiConfigPage() {
                         rows={[
                           {
                             label: t('admin_ai_config.credentials'),
-                            value: provider.overview.credential_configured ? (
+                            value: provider.capabilities.credential_configured ? (
                               <Chip size="small" color="success" label={t('admin_ai_config.configured')} />
                             ) : (
                               <Chip size="small" label={t('admin_ai_config.not_configured')} />
                             ),
                           },
                           {
-                            label: t('admin_ai_config.operational'),
-                            value: provider.overview.operationally_available ? t('common.yes') : t('common.no'),
-                          },
-                          {
                             label: t('admin_ai_config.multimodal'),
-                            value: provider.overview.multimodal_aisle_analysis_supported
+                            value: provider.capabilities.multimodal_aisle_analysis_supported
                               ? t('common.yes')
                               : t('common.no'),
                           },
@@ -274,15 +310,30 @@ export default function AdminAiConfigPage() {
                             value: provider.default_model ?? t('common.em_dash'),
                           },
                           {
-                            label: t('admin_ai_config.selected_model'),
-                            value: selectedModelId ?? t('common.em_dash'),
-                          },
-                          {
                             label: t('admin_ai_config.execution_mode'),
-                            value: provider.overview.execution_mode,
+                            value: provider.capabilities.execution_mode,
                           },
                         ]}
                       />
+                      <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }}>
+                        {t('admin_ai_config.configured_models_readonly')}
+                      </Typography>
+                      {provider.models.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {t('admin_ai_config.no_models_configured')}
+                        </Typography>
+                      ) : (
+                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                          {provider.models.map((m) => (
+                            <Chip
+                              key={m.id}
+                              size="small"
+                              label={m.is_default ? `${m.label} *` : m.label}
+                              variant="outlined"
+                            />
+                          ))}
+                        </Stack>
+                      )}
                       {provider.description ? (
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
                           {provider.description}
@@ -293,7 +344,7 @@ export default function AdminAiConfigPage() {
                 </Stack>
               </TabPanel>
 
-              <TabPanel value={tab} index={1}>
+              <TabPanel value={tab} id="instructions">
                 <Stack spacing={2}>
                   <Card variant="outlined">
                     <CardContent>
@@ -325,35 +376,26 @@ export default function AdminAiConfigPage() {
                 </Stack>
               </TabPanel>
 
-              <TabPanel value={tab} index={2}>
+              <TabPanel value={tab} id="response_contract">
                 <Stack spacing={2}>
                   <Card variant="outlined">
                     <CardContent>
                       <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                        {t('admin_ai_config.response_raw_title')}
-                      </Typography>
-                      <Typography variant="body2" sx={{ mb: 1 }}>
-                        {provider.response_contract.raw_provider_expectation}
-                      </Typography>
-                      <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }}>
-                        {t('admin_ai_config.wire_notes')}
-                      </Typography>
-                      <BulletList items={provider.response_contract.provider_wire_notes} />
-                    </CardContent>
-                  </Card>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                        {t('admin_ai_config.response_canonical_title')}
-                      </Typography>
-                      <Typography variant="body2" sx={{ mb: 2 }}>
-                        {provider.response_contract.canonical_contract_summary}
+                        {t('admin_ai_config.response_contract_title')}
                       </Typography>
                       <KeyValueSummary
                         rows={[
                           {
                             label: t('admin_ai_config.expects_json'),
                             value: provider.response_contract.expects_json ? t('common.yes') : t('common.no'),
+                          },
+                          {
+                            label: t('admin_ai_config.response_wire_transport'),
+                            value: (
+                              <Typography variant="body2" component="span" fontFamily="monospace">
+                                {provider.response_contract.wire_transport}
+                              </Typography>
+                            ),
                           },
                           {
                             label: t('admin_ai_config.validation_fn'),
@@ -380,6 +422,20 @@ export default function AdminAiConfigPage() {
                             ),
                           },
                           {
+                            label: t('admin_ai_config.response_alias_policy'),
+                            value: (
+                              <Typography variant="body2" component="span" fontFamily="monospace">
+                                {provider.response_contract.alias_promotion_policy}
+                              </Typography>
+                            ),
+                          },
+                          {
+                            label: t('admin_ai_config.response_claude_mapping'),
+                            value: provider.response_contract.claude_product_label_to_internal_code_when_valid
+                              ? t('common.yes')
+                              : t('common.no'),
+                          },
+                          {
                             label: t('admin_ai_config.required_root_keys'),
                             value: (
                               <Typography variant="body2" fontFamily="monospace">
@@ -397,7 +453,7 @@ export default function AdminAiConfigPage() {
                           },
                           {
                             label: t('admin_ai_config.extra_root_policy'),
-                            value: provider.response_contract.extra_root_keys_policy,
+                            value: provider.response_contract.extra_root_keys_policy_short,
                           },
                         ]}
                       />
@@ -408,9 +464,9 @@ export default function AdminAiConfigPage() {
                         {provider.response_contract.nullable_optional_entity_keys.join(', ')}
                       </Typography>
                       <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                        {t('admin_ai_config.normalization_notes_heading')}
+                        {t('admin_ai_config.transport_notes_heading')}
                       </Typography>
-                      <BulletList items={provider.response_contract.normalization_notes} />
+                      <BulletList items={provider.response_contract.transport_notes} />
                       <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }}>
                         {t('admin_ai_config.example_json_title')}
                       </Typography>
@@ -425,107 +481,135 @@ export default function AdminAiConfigPage() {
                 </Stack>
               </TabPanel>
 
-              <TabPanel value={tab} index={3}>
+              <TabPanel value={tab} id="prompts">
                 <Stack spacing={2}>
                   <Typography variant="body2" color="text.secondary">
-                    {t('admin_ai_config.prompts_intro')}
+                    {t('admin_ai_config.prompts_intro_lazy')}
                   </Typography>
                   <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                    {data.prompt_catalog.map((row) => (
-                      <Chip
-                        key={row.key}
-                        size="small"
-                        label={row.key}
-                        color={row.key === selectedPromptKey ? 'primary' : 'default'}
-                        variant={row.key === selectedPromptKey ? 'filled' : 'outlined'}
-                        onClick={() => setSelectedPromptKey(row.key)}
-                        sx={{ cursor: 'pointer' }}
-                      />
-                    ))}
+                    {data.prompt_catalog.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        {t('admin_ai_config.empty_prompt_catalog')}
+                      </Typography>
+                    ) : (
+                      data.prompt_catalog.map((row) => (
+                        <Chip
+                          key={row.key}
+                          size="small"
+                          label={row.key}
+                          color={row.key === selectedPromptKey ? 'primary' : 'default'}
+                          variant={row.key === selectedPromptKey ? 'filled' : 'outlined'}
+                          onClick={() => setSelectedPromptKey(row.key)}
+                          sx={{ cursor: 'pointer' }}
+                        />
+                      ))
+                    )}
                   </Stack>
                   {selectedPromptKey ? (
                     <Typography variant="caption" color="text.secondary">
                       {data.prompt_catalog.find((c) => c.key === selectedPromptKey)?.description ?? ''}
                     </Typography>
                   ) : null}
-                  {filteredVariants.length === 0 ? (
+                  {filteredSummaries.length === 0 ? (
                     <EmptyInspectorState message={t('admin_ai_config.empty_variants')} />
                   ) : (
                     <Stack spacing={2}>
-                      {filteredVariants.map((v) => (
-                        <Card key={v.variant_label} variant="outlined">
-                          <CardContent>
-                            <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-                              <Chip size="small" label={v.prompt_key} />
-                              <Chip
-                                size="small"
-                                variant="outlined"
-                                label={
-                                  v.prompt_parity_mode
-                                    ? t('admin_ai_config.parity_on')
-                                    : t('admin_ai_config.parity_off')
-                                }
-                              />
-                            </Stack>
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-                              {v.variant_label}
-                            </Typography>
-                            <CopyableMonospaceBlock
-                              text={v.composed_prompt_text}
-                              maxHeight={480}
-                              copyLabel={t('admin_ai_config.copy_prompt')}
-                              aria-label={`composed-prompt-${v.variant_label}`}
-                            />
-                          </CardContent>
-                        </Card>
-                      ))}
+                      {filteredSummaries.map((s) => {
+                        const active =
+                          composeTarget &&
+                          composeTarget.prompt_key === s.prompt_key &&
+                          composeTarget.prompt_parity_mode === s.prompt_parity_mode;
+                        return (
+                          <Card key={s.variant_label} variant="outlined">
+                            <CardContent>
+                              <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+                                <Chip size="small" label={s.prompt_key} />
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={
+                                    s.prompt_parity_mode
+                                      ? t('admin_ai_config.parity_on')
+                                      : t('admin_ai_config.parity_off')
+                                  }
+                                />
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() =>
+                                    setComposeTarget({
+                                      prompt_key: s.prompt_key,
+                                      prompt_parity_mode: s.prompt_parity_mode,
+                                    })
+                                  }
+                                >
+                                  {t('admin_ai_config.load_composed_prompt')}
+                                </Button>
+                              </Stack>
+                              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                                {s.variant_label}
+                              </Typography>
+                              {active && composedQ.isFetching ? (
+                                <Typography variant="body2" sx={{ mt: 1 }}>
+                                  {t('admin_ai_config.composed_prompt_loading')}
+                                </Typography>
+                              ) : null}
+                              {active && composedQ.isError ? (
+                                <Alert severity="error" sx={{ mt: 1 }}>
+                                  {t('admin_ai_config.composed_prompt_error')}
+                                </Alert>
+                              ) : null}
+                              {active && composedQ.isSuccess ? (
+                                <Box sx={{ mt: 1 }} data-testid="composed-prompt-body">
+                                  <CopyableMonospaceBlock
+                                    text={composedQ.data.composed_prompt_text}
+                                    maxHeight={480}
+                                    copyLabel={t('admin_ai_config.copy_prompt')}
+                                    aria-label={`composed-prompt-${s.variant_label}`}
+                                  />
+                                </Box>
+                              ) : null}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                     </Stack>
                   )}
                 </Stack>
               </TabPanel>
 
-              <TabPanel value={tab} index={4}>
+              <TabPanel value={tab} id="composition">
                 <Stack spacing={2}>
                   <Card variant="outlined">
                     <CardContent>
                       <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                        {t('admin_ai_config.composition_hybrid')}
+                        {t('admin_ai_config.composition_title')}
                       </Typography>
-                      <Typography variant="body2">{provider.composition_notes.hybrid_base_resolution}</Typography>
-                    </CardContent>
-                  </Card>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                        {t('admin_ai_config.composition_parity')}
-                      </Typography>
-                      <Typography variant="body2">{provider.composition_notes.parity_mode}</Typography>
-                    </CardContent>
-                  </Card>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                        {t('admin_ai_config.composition_multimodal')}
-                      </Typography>
-                      <Typography variant="body2">{provider.composition_notes.multimodal_context_rules}</Typography>
-                    </CardContent>
-                  </Card>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                        {t('admin_ai_config.composition_summary')}
-                      </Typography>
-                      <CopyableMonospaceBlock
-                        text={
-                          provider.composition_notes.bullets.length > 0
-                            ? provider.composition_notes.bullets
-                                .filter(Boolean)
-                                .map((line) => `• ${line}`)
-                                .join('\n')
-                            : t('common.em_dash')
-                        }
-                        copyLabel={t('admin_ai_config.copy')}
-                        aria-label="composition-bullets"
+                      <KeyValueSummary
+                        rows={[
+                          {
+                            label: t('admin_ai_config.composition_hybrid_base_mode'),
+                            value: (
+                              <Typography variant="body2" fontFamily="monospace">
+                                {provider.composition.hybrid_base_mode}
+                              </Typography>
+                            ),
+                          },
+                          {
+                            label: t('admin_ai_config.composition_parity_affects'),
+                            value: provider.composition.parity_mode_affects_prompt_assembly
+                              ? t('common.yes')
+                              : t('common.no'),
+                          },
+                          {
+                            label: t('admin_ai_config.composition_multimodal_policy'),
+                            value: (
+                              <Typography variant="body2" fontFamily="monospace">
+                                {provider.composition.multimodal_context_policy}
+                              </Typography>
+                            ),
+                          },
+                        ]}
                       />
                     </CardContent>
                   </Card>

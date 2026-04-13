@@ -78,15 +78,19 @@ def get_current_admin(
     return AuthUser(id="admin", username=username, role=role)
 
 
-def require_username_admin_for_ai_config(
+def require_ai_config_inspection_user(
     admin: AuthUser = Depends(get_current_admin),
 ) -> AuthUser:
     """
-    Stricter than ``get_current_admin``: only the principal whose username is exactly
-    ``admin`` may access AI configuration inspection (navbar + API).
+    Gate for AI configuration inspection (GET ``/api/v3/admin/ai-config`` and related routes).
 
-    Other configured admin usernames (via AUTH_ADMIN_USERNAME) remain valid v3 admins
-    but do not receive this operational surface.
+    Policy (both required):
+    1. Caller passed ``get_current_admin`` — valid admin JWT (any v3 admin username allowed by auth).
+    2. ``AuthUser.username`` is exactly the literal ``\"admin\"`` — the operational inspection principal.
+
+    Other admin accounts (e.g. alternate ``AUTH_ADMIN_USERNAME`` values) remain valid for the rest
+    of v3 but receive **403** here so the inspection UI and lazy prompt endpoints stay tied to the
+    fixed operational username.
     """
     if admin.username != "admin":
         raise AuthHttpError(
@@ -97,3 +101,7 @@ def require_username_admin_for_ai_config(
             ),
         )
     return admin
+
+
+# Backward-compatible name for imports/tests that still reference the old symbol.
+require_username_admin_for_ai_config = require_ai_config_inspection_user

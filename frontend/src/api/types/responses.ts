@@ -198,10 +198,9 @@ export interface AdminAiConfigModelItem {
   is_default: boolean;
 }
 
-export interface AdminAiConfigProviderOverview {
+export interface AdminAiConfigProviderCapabilities {
   is_default_pipeline_provider: boolean;
   credential_configured: boolean;
-  operationally_available: boolean;
   multimodal_aisle_analysis_supported: boolean;
   execution_mode: string;
 }
@@ -212,27 +211,25 @@ export interface AdminAiConfigProviderInstructions {
 
 export interface AdminAiConfigResponseContract {
   expects_json: boolean;
+  wire_transport: string;
   validation_function: string;
   normalization_function: string;
   normalization_family: string;
+  alias_promotion_policy: string;
+  claude_product_label_to_internal_code_when_valid: boolean;
   required_root_keys: string[];
-  extra_root_keys_policy: string;
+  extra_root_keys_policy_short: string;
   required_entity_keys: string[];
   canonical_entity_keys: string[];
   nullable_optional_entity_keys: string[];
   canonical_example_json: string;
-  raw_provider_expectation: string;
-  canonical_contract_summary: string;
-  provider_wire_notes: string[];
-  normalization_notes: string[];
+  transport_notes: string[];
 }
 
-export interface AdminAiConfigCompositionNotes {
-  hybrid_base_resolution: string;
-  parity_mode: string;
-  multimodal_context_rules: string;
-  provider_composition_summary: string;
-  bullets: string[];
+export interface AdminAiConfigComposition {
+  hybrid_base_mode: string;
+  parity_mode_affects_prompt_assembly: boolean;
+  multimodal_context_policy: string;
 }
 
 export interface AdminAiConfigPromptCatalogItem {
@@ -241,7 +238,14 @@ export interface AdminAiConfigPromptCatalogItem {
   description?: string | null;
 }
 
-export interface AdminAiConfigPromptVariant {
+export interface AdminAiConfigPromptVariantSummary {
+  prompt_key: string;
+  pipeline_provider_key: string;
+  prompt_parity_mode: boolean;
+  variant_label: string;
+}
+
+export interface AdminAiComposedPromptResponse {
   prompt_key: string;
   pipeline_provider_key: string;
   prompt_parity_mode: boolean;
@@ -256,11 +260,11 @@ export interface AdminAiConfigProviderDetail {
   execution_mode: string;
   models: AdminAiConfigModelItem[];
   default_model?: string | null;
-  overview: AdminAiConfigProviderOverview;
+  capabilities: AdminAiConfigProviderCapabilities;
   instructions: AdminAiConfigProviderInstructions;
   response_contract: AdminAiConfigResponseContract;
-  composition_notes: AdminAiConfigCompositionNotes;
-  prompt_variants: AdminAiConfigPromptVariant[];
+  composition: AdminAiConfigComposition;
+  prompt_variant_summaries: AdminAiConfigPromptVariantSummary[];
 }
 
 export interface AdminAiConfigResponse {
