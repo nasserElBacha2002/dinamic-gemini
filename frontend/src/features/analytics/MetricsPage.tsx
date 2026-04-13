@@ -13,7 +13,6 @@ import {
   Button,
   Divider,
   FormControl,
-  Grid,
   InputLabel,
   MenuItem,
   Select,
@@ -677,7 +676,7 @@ export default function MetricsPage() {
   );
 
   return (
-    <Box sx={{ pb: 4, width: '100%', minWidth: 0 }}>
+    <Box sx={{ pb: 4, width: '100%', minWidth: 0, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       {errMsg ? <ErrorAlert message={errMsg} onRetry={() => refetchAll()} /> : null}
 
       <PageHeader a11yTitle={t('analytics.page_a11y')} />
@@ -787,23 +786,30 @@ export default function MetricsPage() {
         </Typography>
       ) : null}
 
-      <Grid
-        container
-        spacing={2}
-        sx={{ mb: 2, minWidth: 0, width: '100%', '& > .MuiGrid-item': { minWidth: 0 } }}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: 'minmax(0, 1fr)',
+            sm: 'repeat(2, minmax(0, 1fr))',
+            md: 'repeat(3, minmax(0, 1fr))',
+          },
+          gap: 2,
+          mb: 2,
+          minWidth: 0,
+          width: '100%',
+        }}
       >
         {isLoading && !summary
           ? Array.from({ length: hasUnidentifiedProductRate ? 6 : 5 }).map((_, i) => (
-              <Grid item xs={12} sm={6} md={4} key={`sk-${i}`}>
-                <Skeleton variant="rounded" height={100} />
-              </Grid>
+              <Skeleton key={`sk-${i}`} variant="rounded" height={100} sx={{ minWidth: 0 }} />
             ))
           : kpiCards.map((k) => (
-              <Grid item xs={12} sm={6} md={4} key={k.label}>
+              <Box key={k.label} sx={{ minWidth: 0 }}>
                 <KpiCard label={k.label} value={k.value} description={k.description} />
-              </Grid>
+              </Box>
             ))}
-      </Grid>
+      </Box>
 
       {summary?.notes?.length ? (
         <Alert severity="info" sx={{ mb: 2 }}>
@@ -811,12 +817,17 @@ export default function MetricsPage() {
         </Alert>
       ) : null}
 
-      <Grid
-        container
-        spacing={2}
-        sx={{ mb: 2, minWidth: 0, width: '100%', '& > .MuiGrid-item': { minWidth: 0 } }}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' },
+          gap: 2,
+          mb: 2,
+          minWidth: 0,
+          width: '100%',
+        }}
       >
-        <Grid item xs={12} md={6}>
+        <Box sx={{ minWidth: 0 }}>
           <SectionCard
             title={t('analytics.manual_intervention_title')}
             subtitle={t('analytics.manual_intervention_subtitle')}
@@ -899,8 +910,8 @@ export default function MetricsPage() {
               </Stack>
             )}
           </SectionCard>
-        </Grid>
-        <Grid item xs={12} md={6}>
+        </Box>
+        <Box sx={{ minWidth: 0 }}>
           <SectionCard
             title={t('analytics.resolution_flow_title')}
             subtitle={t('analytics.resolution_flow_subtitle')}
@@ -909,13 +920,23 @@ export default function MetricsPage() {
               <Skeleton variant="rounded" height={220} />
             ) : (
               <Stack spacing={1.25}>
-                <Grid
-                  container
-                  spacing={1.5}
-                  sx={{ minWidth: 0, width: '100%', '& > .MuiGrid-item': { minWidth: 0 } }}
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: 'repeat(2, minmax(0, 1fr))',
+                      md:
+                        (summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null
+                          ? 'repeat(3, minmax(0, 1fr))'
+                          : 'repeat(4, minmax(0, 1fr))',
+                    },
+                    gap: 1.5,
+                    minWidth: 0,
+                    width: '100%',
+                  }}
                 >
                   {resolutionFlowStages.map((item) => (
-                    <Grid item xs={6} md={(summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null ? 4 : 3} key={item.label}>
+                    <Box key={item.label} sx={{ minWidth: 0 }}>
                       <Box
                         sx={{
                           border: 1,
@@ -936,9 +957,9 @@ export default function MetricsPage() {
                           {item.helper}
                         </Typography>
                       </Box>
-                    </Grid>
+                    </Box>
                   ))}
-                </Grid>
+                </Box>
                 <Box
                   sx={{
                     display: 'grid',
@@ -983,8 +1004,8 @@ export default function MetricsPage() {
               </Stack>
             )}
           </SectionCard>
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
 
       <SectionCard
         title={t('analytics.inventory_performance_title')}
@@ -1031,12 +1052,17 @@ export default function MetricsPage() {
         />
       </SectionCard>
 
-      <Grid
-        container
-        spacing={2}
-        sx={{ mb: 2, minWidth: 0, width: '100%', '& > .MuiGrid-item': { minWidth: 0 } }}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' },
+          gap: 2,
+          mb: 2,
+          minWidth: 0,
+          width: '100%',
+        }}
       >
-        <Grid item xs={12} md={6}>
+        <Box sx={{ minWidth: 0 }}>
           <SectionCard
             title={t('analytics.quality_patterns_title')}
             subtitle={t('analytics.quality_patterns_subtitle')}
@@ -1088,8 +1114,8 @@ export default function MetricsPage() {
               </Box>
             )}
           </SectionCard>
-        </Grid>
-        <Grid item xs={12} md={6}>
+        </Box>
+        <Box sx={{ minWidth: 0 }}>
           <SectionCard
             title={t('analytics.aisles_attention_title')}
             subtitle={t('analytics.aisles_attention_subtitle')}
@@ -1126,8 +1152,8 @@ export default function MetricsPage() {
               }
             />
           </SectionCard>
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
     </Box>
   );
 }

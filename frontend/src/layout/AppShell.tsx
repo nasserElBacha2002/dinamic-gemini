@@ -61,7 +61,17 @@ export default function AppShell() {
   }, [user?.username]);
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        minHeight: '100vh',
+        maxWidth: '100%',
+        minWidth: 0,
+        bgcolor: 'background.default',
+        overflowX: 'hidden',
+        overflowY: 'hidden',
+      }}
+    >
       <Drawer
         variant="permanent"
         sx={{
@@ -102,7 +112,17 @@ export default function AppShell() {
         </List>
       </Drawer>
 
-      <Box component="div" sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <Box
+        component="div"
+        sx={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          maxWidth: '100%',
+          overflowX: 'hidden',
+        }}
+      >
         <AppBar
           position="sticky"
           elevation={0}
@@ -111,6 +131,8 @@ export default function AppShell() {
             borderBottom: 1,
             borderColor: 'divider',
             bgcolor: 'background.paper',
+            maxWidth: '100%',
+            minWidth: 0,
           }}
         >
           <Toolbar sx={{ gap: 2, minHeight: { xs: 56, sm: 64 } }}>
@@ -128,8 +150,16 @@ export default function AppShell() {
           </Toolbar>
         </AppBar>
 
-        {/* minWidth:0 so flex descendants (tables, MUI Grid negative margins) cannot force width past the viewport */}
-        <Box sx={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
+        {/* Vertical scroll lives here only; horizontal overflow is clipped at shell + global level. */}
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            maxWidth: '100%',
+            overflowX: 'hidden',
+            overflowY: 'auto',
+          }}
+        >
           <AppMain>
             <Outlet />
           </AppMain>

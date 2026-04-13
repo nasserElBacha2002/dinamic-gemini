@@ -18,11 +18,12 @@ export default function AppMain({ children }: AppMainProps) {
       sx={{
         flex: 1,
         minWidth: 0,
-        p: { xs: 2, md: 3 },
-        maxWidth: MAIN_CONTENT_MAX_WIDTH_PX,
+        maxWidth: `min(100%, ${MAIN_CONTENT_MAX_WIDTH_PX}px)`,
         width: '100%',
+        p: { xs: 2, md: 3 },
         mx: 'auto',
         boxSizing: 'border-box',
+        overflowX: 'hidden',
       }}
     >
       {children}

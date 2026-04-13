@@ -37,17 +37,33 @@ export default function FilterToolbar({
         flexWrap: 'wrap',
         alignItems: 'center',
         gap: 2,
+        rowGap: 1.5,
         py: 1.5,
         px: 0,
         mb: 2,
         borderBottom: 1,
         borderColor: 'divider',
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
       }}
     >
       <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5, flex: 1, minWidth: 0 }}>
         {children}
       </Box>
-      <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 1,
+          rowGap: 1,
+          flexShrink: 0,
+          maxWidth: '100%',
+        }}
+      >
         {onReset ? (
           <Button size="small" variant="text" color="inherit" onClick={onReset} disabled={resetDisabled}>
             {resolvedResetLabel}

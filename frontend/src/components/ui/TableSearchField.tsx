@@ -44,7 +44,11 @@ export default function TableSearchField({
       disabled={disabled}
       data-testid={dataTestId}
       onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
-      sx={{ minWidth, flex: '1 1 180px', maxWidth: 360 }}
+      sx={{
+        minWidth: { xs: 0, sm: minWidth },
+        flex: '1 1 160px',
+        maxWidth: { xs: '100%', sm: 360 },
+      }}
       inputProps={{ 'data-datatable-skip-row-click': '' }}
       InputProps={{
         endAdornment:

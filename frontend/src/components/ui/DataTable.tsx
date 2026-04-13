@@ -241,7 +241,8 @@ export default function DataTable<T>({
           <TableFooter>
             <TableRow>
               <TableCell colSpan={colCount} sx={{ borderBottom: 'none', p: 0 }}>
-                <TablePagination
+                <Box sx={{ overflowX: 'auto', width: '100%', minWidth: 0 }}>
+                  <TablePagination
                   component="div"
                   count={pagination.totalItems}
                   page={Math.max(0, pagination.page - 1)}
@@ -258,6 +259,7 @@ export default function DataTable<T>({
                   rowsPerPageOptions={[...TABLE_PAGE_SIZE_OPTIONS]}
                   labelRowsPerPage={t('common.rows_per_page')}
                 />
+                </Box>
               </TableCell>
             </TableRow>
           </TableFooter>
