@@ -157,7 +157,17 @@ export default function DataTable<T>({
   const showEmpty = Boolean(emptyDisplay);
 
   return (
-    <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 1 }}>
+    <TableContainer
+      component={Paper}
+      variant="outlined"
+      sx={{
+        borderRadius: 1,
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        overflowX: 'auto',
+      }}
+    >
       <Table size={size} stickyHeader={stickyHeader} aria-busy={loading}>
         <TableHead>
           <TableRow>

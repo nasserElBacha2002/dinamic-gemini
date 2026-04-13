@@ -219,7 +219,7 @@ export default function ReviewQueuePage() {
   }, [totalItems, pageSize, page]);
 
   return (
-    <>
+    <Box sx={{ width: '100%', minWidth: 0 }}>
       <PageHeader
         a11yTitle={t('routes.review_queue.title')}
         actions={
@@ -514,6 +514,6 @@ export default function ReviewQueuePage() {
         context={reviewDrawerContext}
         onClose={() => setReviewDrawerContext(null)}
       />
-    </>
+    </Box>
   );
 }

@@ -22,6 +22,7 @@ export default function AppMain({ children }: AppMainProps) {
         maxWidth: MAIN_CONTENT_MAX_WIDTH_PX,
         width: '100%',
         mx: 'auto',
+        boxSizing: 'border-box',
       }}
     >
       {children}

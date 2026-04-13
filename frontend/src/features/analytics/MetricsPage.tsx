@@ -677,7 +677,7 @@ export default function MetricsPage() {
   );
 
   return (
-    <Box sx={{ pb: 4 }}>
+    <Box sx={{ pb: 4, width: '100%', minWidth: 0 }}>
       {errMsg ? <ErrorAlert message={errMsg} onRetry={() => refetchAll()} /> : null}
 
       <PageHeader a11yTitle={t('analytics.page_a11y')} />
@@ -787,7 +787,11 @@ export default function MetricsPage() {
         </Typography>
       ) : null}
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Grid
+        container
+        spacing={2}
+        sx={{ mb: 2, minWidth: 0, width: '100%', '& > .MuiGrid-item': { minWidth: 0 } }}
+      >
         {isLoading && !summary
           ? Array.from({ length: hasUnidentifiedProductRate ? 6 : 5 }).map((_, i) => (
               <Grid item xs={12} sm={6} md={4} key={`sk-${i}`}>
@@ -807,7 +811,11 @@ export default function MetricsPage() {
         </Alert>
       ) : null}
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Grid
+        container
+        spacing={2}
+        sx={{ mb: 2, minWidth: 0, width: '100%', '& > .MuiGrid-item': { minWidth: 0 } }}
+      >
         <Grid item xs={12} md={6}>
           <SectionCard
             title={t('analytics.manual_intervention_title')}
@@ -901,7 +909,11 @@ export default function MetricsPage() {
               <Skeleton variant="rounded" height={220} />
             ) : (
               <Stack spacing={1.25}>
-                <Grid container spacing={1.5}>
+                <Grid
+                  container
+                  spacing={1.5}
+                  sx={{ minWidth: 0, width: '100%', '& > .MuiGrid-item': { minWidth: 0 } }}
+                >
                   {resolutionFlowStages.map((item) => (
                     <Grid item xs={6} md={(summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null ? 4 : 3} key={item.label}>
                       <Box
@@ -1019,7 +1031,11 @@ export default function MetricsPage() {
         />
       </SectionCard>
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Grid
+        container
+        spacing={2}
+        sx={{ mb: 2, minWidth: 0, width: '100%', '& > .MuiGrid-item': { minWidth: 0 } }}
+      >
         <Grid item xs={12} md={6}>
           <SectionCard
             title={t('analytics.quality_patterns_title')}

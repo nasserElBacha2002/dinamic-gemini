@@ -128,7 +128,8 @@ export default function AppShell() {
           </Toolbar>
         </AppBar>
 
-        <Box sx={{ flex: 1, overflow: 'auto' }}>
+        {/* minWidth:0 so flex descendants (tables, MUI Grid negative margins) cannot force width past the viewport */}
+        <Box sx={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
           <AppMain>
             <Outlet />
           </AppMain>
