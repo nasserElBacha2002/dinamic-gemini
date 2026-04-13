@@ -185,6 +185,92 @@ export interface ProcessingProviderOptionsResponse {
   providers: ProcessingProviderOptionItem[];
 }
 
+/** GET /api/v3/admin/ai-config — operational inspection only (username `admin`). */
+export interface AdminAiConfigServerDefaults {
+  llm_provider: string;
+  hybrid_prompt_key: string;
+  prompt_version?: string | null;
+}
+
+export interface AdminAiConfigModelItem {
+  id: string;
+  label: string;
+  is_default: boolean;
+}
+
+export interface AdminAiConfigProviderOverview {
+  is_default_pipeline_provider: boolean;
+  credential_configured: boolean;
+  operationally_available: boolean;
+  multimodal_aisle_analysis_supported: boolean;
+  execution_mode: string;
+}
+
+export interface AdminAiConfigProviderInstructions {
+  provider_specific_note: string;
+}
+
+export interface AdminAiConfigResponseContract {
+  expects_json: boolean;
+  validation_function: string;
+  normalization_function: string;
+  normalization_family: string;
+  required_root_keys: string[];
+  extra_root_keys_policy: string;
+  required_entity_keys: string[];
+  canonical_entity_keys: string[];
+  nullable_optional_entity_keys: string[];
+  canonical_example_json: string;
+  raw_provider_expectation: string;
+  canonical_contract_summary: string;
+  provider_wire_notes: string[];
+  normalization_notes: string[];
+}
+
+export interface AdminAiConfigCompositionNotes {
+  hybrid_base_resolution: string;
+  parity_mode: string;
+  multimodal_context_rules: string;
+  provider_composition_summary: string;
+  bullets: string[];
+}
+
+export interface AdminAiConfigPromptCatalogItem {
+  key: string;
+  label: string;
+  description?: string | null;
+}
+
+export interface AdminAiConfigPromptVariant {
+  prompt_key: string;
+  pipeline_provider_key: string;
+  prompt_parity_mode: boolean;
+  variant_label: string;
+  composed_prompt_text: string;
+}
+
+export interface AdminAiConfigProviderDetail {
+  key: string;
+  label: string;
+  description?: string | null;
+  execution_mode: string;
+  models: AdminAiConfigModelItem[];
+  default_model?: string | null;
+  overview: AdminAiConfigProviderOverview;
+  instructions: AdminAiConfigProviderInstructions;
+  response_contract: AdminAiConfigResponseContract;
+  composition_notes: AdminAiConfigCompositionNotes;
+  prompt_variants: AdminAiConfigPromptVariant[];
+}
+
+export interface AdminAiConfigResponse {
+  generated_at: string;
+  server_defaults: AdminAiConfigServerDefaults;
+  providers: AdminAiConfigProviderDetail[];
+  prompt_catalog: AdminAiConfigPromptCatalogItem[];
+  global_instructions_note: string;
+}
+
 export interface JobSummary {
   id: string;
   status: JobStatus | string;

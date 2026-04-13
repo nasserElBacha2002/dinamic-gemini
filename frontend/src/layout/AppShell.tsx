@@ -26,7 +26,14 @@ import {
   Typography,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { DRAWER_WIDTH, PRIMARY_NAV_ITEMS, type PrimaryNavItem } from './navConfig.tsx';
+import { useMemo } from 'react';
+import { useAuth } from '../features/auth';
+import {
+  ADMIN_AI_CONFIG_NAV_ITEM,
+  DRAWER_WIDTH,
+  PRIMARY_NAV_ITEMS,
+  type PrimaryNavItem,
+} from './navConfig.tsx';
 import { topBarCopy } from './shellTopBarCopy.ts';
 import UserMenu from '../components/shell/UserMenu';
 import AppMain from '../components/shell/AppMain';
@@ -44,7 +51,14 @@ function pathMatchesNav(to: string, pathname: string): boolean {
 export default function AppShell() {
   const { pathname } = useLocation();
   const { t } = useTranslation();
+  const { user } = useAuth();
   const { titleKey, subtitleKey } = topBarCopy(pathname);
+  const navItems = useMemo((): PrimaryNavItem[] => {
+    if (user?.username === 'admin') {
+      return [...PRIMARY_NAV_ITEMS, ADMIN_AI_CONFIG_NAV_ITEM];
+    }
+    return PRIMARY_NAV_ITEMS;
+  }, [user?.username]);
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
@@ -71,7 +85,7 @@ export default function AppShell() {
           </Typography>
         </Toolbar>
         <List dense sx={{ px: 1 }}>
-          {PRIMARY_NAV_ITEMS.map((item: PrimaryNavItem) => {
+          {navItems.map((item: PrimaryNavItem) => {
             const selected = pathMatchesNav(item.to, pathname);
             return (
               <ListItemButton key={item.to} component={RouterLink} to={item.to} selected={selected}>

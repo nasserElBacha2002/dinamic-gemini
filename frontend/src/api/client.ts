@@ -39,6 +39,7 @@ import type {
   ManualInterventionBreakdownResponse,
   AisleBenchmarkCompareResponse,
   PromoteOperationalJobResponse,
+  AdminAiConfigResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -371,6 +372,12 @@ export async function createAisle(
 export async function getProcessingProviderOptions(): Promise<ProcessingProviderOptionsResponse> {
   const response = await protectedFetch(`${API_BASE}/api/v3/inventories/processing-provider-options`);
   return handleResponse<ProcessingProviderOptionsResponse>(response);
+}
+
+/** GET /api/v3/admin/ai-config — restricted to session user `username === 'admin'`. */
+export async function getAdminAiConfig(): Promise<AdminAiConfigResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/admin/ai-config`);
+  return handleResponse<AdminAiConfigResponse>(response);
 }
 
 export async function startAisleProcessing(

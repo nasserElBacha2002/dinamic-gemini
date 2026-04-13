@@ -77,3 +77,23 @@ def get_current_admin(
 
     return AuthUser(id="admin", username=username, role=role)
 
+
+def require_username_admin_for_ai_config(
+    admin: AuthUser = Depends(get_current_admin),
+) -> AuthUser:
+    """
+    Stricter than ``get_current_admin``: only the principal whose username is exactly
+    ``admin`` may access AI configuration inspection (navbar + API).
+
+    Other configured admin usernames (via AUTH_ADMIN_USERNAME) remain valid v3 admins
+    but do not receive this operational surface.
+    """
+    if admin.username != "admin":
+        raise AuthHttpError(
+            status_code=status.HTTP_403_FORBIDDEN,
+            error=AuthError(
+                code="FORBIDDEN",
+                message="AI configuration inspection is restricted to the admin username.",
+            ),
+        )
+    return admin

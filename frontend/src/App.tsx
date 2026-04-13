@@ -12,6 +12,8 @@ import LegacyAisleCompareRedirect from './pages/analytics/LegacyAisleCompareRedi
 import PositionDetailPage from './pages/PositionDetailPage';
 import ReviewQueuePage from './pages/ReviewQueuePage';
 import MetricsPage from './pages/MetricsPage';
+import AdminAiConfigPage from './pages/AdminAiConfigPage';
+import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
 
 /** Minimal full-screen loading while auth bootstrap runs. */
 function AuthLoading() {
@@ -42,6 +44,14 @@ function App() {
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
   const reviewQueueEl = useMemo(() => <ReviewQueuePage />, []);
   const metricsEl = useMemo(() => <MetricsPage />, []);
+  const adminAiConfigEl = useMemo(
+    () => (
+      <RequireUsernameAdmin>
+        <AdminAiConfigPage />
+      </RequireUsernameAdmin>
+    ),
+    []
+  );
 
   if (!initialized) {
     return <AuthLoading />;
@@ -61,6 +71,7 @@ function App() {
         <Route path="inventories" element={listEl} />
         <Route path="review-queue" element={reviewQueueEl} />
         <Route path="metrics" element={metricsEl} />
+        <Route path="admin/ai-config" element={adminAiConfigEl} />
         <Route path="dashboard" element={<Navigate to="/" replace />} />
         <Route path="settings" element={<Navigate to="/" replace />} />
         <Route path="inventories/:inventoryId" element={detailEl} />

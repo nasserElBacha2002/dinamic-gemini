@@ -30,5 +30,8 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
   if (pathname === '/metrics') {
     return { titleKey: 'routes.metrics.title', subtitleKey: 'routes.metrics.subtitle' };
   }
+  if (pathname === '/admin/ai-config') {
+    return { titleKey: 'routes.admin_ai_config.title', subtitleKey: 'routes.admin_ai_config.subtitle' };
+  }
   return { titleKey: 'shell.default_title', subtitleKey: 'shell.default_subtitle' };
 }
