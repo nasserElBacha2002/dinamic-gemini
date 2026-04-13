@@ -10,8 +10,15 @@ OpenAI resolution rules (see ``hybrid_resolution``).
 
 **Response shape:** We append a JSON-only instruction suffix (same *idea* as OpenAI’s text path;
 wording unchanged). Claude returns plain text; we strip optional markdown fences, parse JSON,
-normalize entity count drift, and validate v2.1. Shared extraction with other adapters can be
-factored in a later phase; helpers below keep this file self-contained and small.
+normalize entity count drift, and validate v2.1.
+
+**Capacity / overload:** HTTP 529 and ``overloaded_error`` map to ``PROVIDER_OVERLOADED`` and are
+retried with bounded exponential backoff (see ``Settings.anthropic_max_retries``). Parsing /
+schema failures after a successful HTTP response are **not** retried here.
+
+**Request size:** Large multimodal payloads (many reference + primary images) increase overload risk.
+There is no automatic slimming yet — TODO: consider dropping or downsampling context images after
+repeated ``PROVIDER_OVERLOADED`` (product decision).
 """
 
 from __future__ import annotations
@@ -20,9 +27,10 @@ import base64
 import io
 import json
 import logging
+import random
 import time
 from pathlib import Path
-from typing import Any, Dict, List, NoReturn
+from typing import Any, Dict, List, NoReturn, Tuple
 
 import cv2
 import numpy as np
@@ -43,6 +51,8 @@ _JSON_OBJECT_SUFFIX = (
     "(PALLET|EMPTY_PALLET|LOOSE_BOXES), model_entity_id (string), confidence (0..1), "
     "has_boxes (boolean), and optional bbox/quantity fields as specified."
 )
+
+_RETRY_JITTER_SEC = 0.35
 
 
 def _extract_json_text(raw: str) -> str:
@@ -70,32 +80,81 @@ def _anthropic_jpeg_content_block(jpeg_bytes: bytes) -> Dict[str, Any]:
     }
 
 
-def _raise_llm_error_from_messages_api_exception(e: BaseException) -> NoReturn:
-    """Map ``client.messages.create`` failures to stable ``LLMProviderError`` codes.
+def _request_id_from_anthropic_body(body: Any) -> str | None:
+    if isinstance(body, dict):
+        rid = body.get("request_id")
+        if rid is not None and str(rid).strip():
+            return str(rid).strip()
+    return None
 
-    The Anthropic Python SDK does not always expose a single exception type per HTTP case across
-    versions, so classification is **deliberately heuristic** (substring + status hints). Order
-    matters: first match wins.
 
-    Handled categories:
-        * ``NOT_CONFIGURED`` — missing/invalid auth (401, ``authentication``, ``api_key`` in text).
-        * ``RATE_LIMIT`` — 429 or rate-related wording.
-        * ``TIMEOUT`` — ``timeout`` / ``timed out`` in message.
-        * ``UNKNOWN`` — any other error from this call site.
+def classify_anthropic_messages_api_error(exc: BaseException) -> Tuple[str, Dict[str, Any]]:
+    """Map Anthropic ``messages.create`` failures to ``LLMProviderError.code`` + detail dict.
 
-    Invalid JSON / schema issues are handled separately after a successful HTTP response.
+    Preserves ``request_id`` from JSON body when present (e.g. 529 overload responses).
     """
-    msg = str(e)
+    msg = str(exc)
     msg_l = msg.lower()
-    et = type(e).__name__
-    details: Dict[str, Any] = {"provider": "claude", "error_type": et}
-    if "401" in msg or "authentication" in msg_l or "api_key" in msg_l:
-        raise LLMProviderError(code="NOT_CONFIGURED", message=msg, details=details) from e
-    if "429" in msg or "rate" in msg_l:
-        raise LLMProviderError(code="RATE_LIMIT", message=msg, details=details) from e
+    et = type(exc).__name__
+    details: Dict[str, Any] = {
+        "provider": "claude",
+        "provider_family": "anthropic",
+        "exception_class": et,
+    }
+
+    status_code = getattr(exc, "status_code", None)
+    if status_code is not None:
+        details["http_status"] = int(status_code)
+
+    body = getattr(exc, "body", None)
+    api_error_type: str | None = None
+    if isinstance(body, dict):
+        t = body.get("type")
+        if t is not None:
+            api_error_type = str(t)
+            details["api_error_type"] = api_error_type
+        rid = _request_id_from_anthropic_body(body)
+        if rid:
+            details["request_id"] = rid
+
+    if status_code == 529:
+        return "PROVIDER_OVERLOADED", details
+    if api_error_type == "overloaded_error":
+        return "PROVIDER_OVERLOADED", details
+    if "overloaded_error" in msg_l or "error code: 529" in msg_l:
+        return "PROVIDER_OVERLOADED", details
+
+    if status_code == 429 or "429" in msg or "rate_limit" in msg_l or "rate limit" in msg_l:
+        return "RATE_LIMIT", details
+
+    if status_code == 401 or "401" in msg or "authentication" in msg_l or "api_key" in msg_l:
+        return "NOT_CONFIGURED", details
+
     if "timeout" in msg_l or "timed out" in msg_l:
-        raise LLMProviderError(code="TIMEOUT", message=msg, details=details) from e
-    raise LLMProviderError(code="UNKNOWN", message=msg, details=details) from e
+        return "TIMEOUT", details
+
+    return "UNKNOWN", details
+
+
+def _is_retryable_anthropic_classified_code(code: str) -> bool:
+    return code in ("PROVIDER_OVERLOADED", "RATE_LIMIT")
+
+
+def _raise_llm_error_from_messages_api_exception(
+    exc: BaseException,
+    *,
+    model: str,
+    phase: str,
+    attempt_index: int,
+    max_attempts: int,
+) -> NoReturn:
+    code, details = classify_anthropic_messages_api_error(exc)
+    details["model"] = model
+    details["phase"] = phase
+    details["attempt_index"] = attempt_index
+    details["max_attempts"] = max_attempts
+    details["retryable_class"] = _is_retryable_anthropic_classified_code(code)
+    raise LLMProviderError(code=code, message=str(exc), details=details) from exc
 
 
 def _parsed_v21_from_json_text(cleaned: str) -> dict:
@@ -103,11 +162,11 @@ def _parsed_v21_from_json_text(cleaned: str) -> dict:
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        logger.warning("Claude global analysis: invalid JSON: %s", e)
+        logger.warning("Claude global analysis: phase=response_parse invalid JSON: %s", e)
         raise LLMProviderError(
             code="INVALID_JSON",
             message=f"Invalid JSON: {e}",
-            details={"provider": "claude"},
+            details={"provider": "claude", "phase": "response_parse"},
         ) from e
 
     total = data.get("total_entities_detected")
@@ -126,7 +185,7 @@ def _parsed_v21_from_json_text(cleaned: str) -> dict:
         raise LLMProviderError(
             code="SCHEMA_INVALID",
             message=str(e),
-            details={"provider": "claude"},
+            details={"provider": "claude", "phase": "schema_validate"},
         ) from e
     return data
 
@@ -178,8 +237,9 @@ class AnthropicSdkAdapter:
     """
     Claude Messages API (vision).
 
-    Failures from the HTTP call are mapped in ``_raise_llm_error_from_messages_api_exception``;
-    post-response parse/validate errors use ``INVALID_JSON`` / ``SCHEMA_INVALID``.
+    Transport errors from ``messages.create`` are classified in
+    :func:`classify_anthropic_messages_api_error`; overload / rate-limit are retried.
+    Post-response parse/validate uses ``INVALID_JSON`` / ``SCHEMA_INVALID`` (no transport retry).
     """
 
     def execute(self, request: LLMRequest, settings: Any) -> LLMResponse:
@@ -189,7 +249,7 @@ class AnthropicSdkAdapter:
             raise LLMProviderError(
                 code="NOT_CONFIGURED",
                 message="anthropic package not installed",
-                details={"provider": "claude"},
+                details={"provider": "claude", "phase": "client_init"},
             ) from e
 
         api_key = (getattr(settings, "anthropic_api_key", "") or "").strip()
@@ -197,7 +257,7 @@ class AnthropicSdkAdapter:
             raise LLMProviderError(
                 code="NOT_CONFIGURED",
                 message="ANTHROPIC_API_KEY not set",
-                details={"provider": "claude"},
+                details={"provider": "claude", "phase": "config"},
             )
 
         meta = request.metadata or {}
@@ -210,6 +270,8 @@ class AnthropicSdkAdapter:
         timeout = float(getattr(settings, "anthropic_request_timeout_sec", 120.0))
         max_side = int(getattr(settings, "anthropic_vision_max_image_side", 2048))
         max_tokens = int(getattr(settings, "anthropic_max_output_tokens", 16384))
+        max_attempts = int(getattr(settings, "anthropic_max_retries", 4))
+        base_delay = float(getattr(settings, "anthropic_retry_base_delay_sec", 1.0))
 
         if request.frames_nd and len(request.frames_nd) > 0:
             frames_nd: List[np.ndarray] = [np.asarray(f) for f in request.frames_nd]
@@ -223,7 +285,7 @@ class AnthropicSdkAdapter:
             raise LLMProviderError(
                 code="NO_FRAMES",
                 message="No frames could be loaded",
-                details={"paths_count": len(request.frames), "provider": "claude"},
+                details={"paths_count": len(request.frames), "provider": "claude", "phase": "input"},
             )
 
         use_request_prompt = (
@@ -242,28 +304,89 @@ class AnthropicSdkAdapter:
 
         content: List[Dict[str, Any]] = [{"type": "text", "text": prompt_text}]
         ctx_imgs = list(request.context_images) if request.context_images else []
+        # TODO: overload mitigation — optional reduction of context image count or quality after
+        # repeated PROVIDER_OVERLOADED (requires policy + metrics; high attachment counts stress API).
         for im in ctx_imgs:
             content.append(_anthropic_jpeg_content_block(_image_to_jpeg_bytes(im, max_side)))
         for nd in frames_nd:
             content.append(_anthropic_jpeg_content_block(_bgr_to_jpeg_bytes(nd, max_side)))
 
+        image_blocks = sum(1 for b in content if b.get("type") == "image")
         logger.info(
-            "Claude global analysis: model=%s context_images=%d primary_frames=%d",
+            "Claude phase=api_request_ready model=%s provider_family=anthropic "
+            "context_images=%d primary_frames=%d total_image_attachments=%d text_blocks=1",
             effective_model,
             len(ctx_imgs),
             len(frames_nd),
+            image_blocks,
         )
 
         client = Anthropic(api_key=api_key, timeout=timeout)
         t0 = time.perf_counter()
-        try:
-            message = client.messages.create(
-                model=effective_model,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": content}],
+        message = None
+        for attempt in range(max_attempts):
+            try:
+                logger.debug(
+                    "Claude phase=api_invoke model=%s attempt=%d/%d",
+                    effective_model,
+                    attempt + 1,
+                    max_attempts,
+                )
+                message = client.messages.create(
+                    model=effective_model,
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": content}],
+                )
+                break
+            except Exception as e:
+                code, det = classify_anthropic_messages_api_error(e)
+                det_full = {
+                    **det,
+                    "model": effective_model,
+                    "phase": "api_invoke",
+                    "attempt_index": attempt,
+                    "max_attempts": max_attempts,
+                    "will_retry": False,
+                }
+                retryable = _is_retryable_anthropic_classified_code(code)
+                can_retry = retryable and attempt < max_attempts - 1
+                det_full["retryable"] = retryable
+                det_full["will_retry"] = can_retry
+                logger.warning(
+                    "Claude phase=api_invoke failed model=%s code=%s http_status=%s "
+                    "api_error_type=%s request_id=%s attempt=%d/%d retryable=%s",
+                    effective_model,
+                    code,
+                    det.get("http_status"),
+                    det.get("api_error_type"),
+                    det.get("request_id"),
+                    attempt + 1,
+                    max_attempts,
+                    retryable,
+                )
+                if not can_retry:
+                    _raise_llm_error_from_messages_api_exception(
+                        e,
+                        model=effective_model,
+                        phase="api_invoke",
+                        attempt_index=attempt,
+                        max_attempts=max_attempts,
+                    )
+                delay = base_delay * (2**attempt) + random.uniform(0.0, _RETRY_JITTER_SEC)
+                logger.info(
+                    "Claude phase=api_invoke backing_off_sec=%.2f next_attempt=%d/%d",
+                    delay,
+                    attempt + 2,
+                    max_attempts,
+                )
+                time.sleep(delay)
+
+        if message is None:
+            raise LLMProviderError(
+                code="UNKNOWN",
+                message="Claude messages.create returned no response after retries",
+                details={"provider": "claude", "model": effective_model, "phase": "api_invoke"},
             )
-        except Exception as e:
-            _raise_llm_error_from_messages_api_exception(e)
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
         raw_text = ""
@@ -271,6 +394,12 @@ class AnthropicSdkAdapter:
             btype = getattr(block, "type", None)
             if btype == "text":
                 raw_text += getattr(block, "text", "") or ""
+
+        logger.debug(
+            "Claude phase=response_received model=%s latency_ms=%s",
+            effective_model,
+            latency_ms,
+        )
 
         run_dir = meta.get("run_dir")
         if run_dir:

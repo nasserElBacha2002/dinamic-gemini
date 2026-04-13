@@ -463,6 +463,24 @@ class Settings(BaseModel):
         le=200000,
         description="Max output tokens for Claude Messages API. Env: ANTHROPIC_MAX_OUTPUT_TOKENS.",
     )
+    anthropic_max_retries: int = Field(
+        default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_RETRIES", "4")),
+        ge=1,
+        le=10,
+        description=(
+            "Max attempts for Claude Messages API calls (includes first try). Retries apply to "
+            "PROVIDER_OVERLOADED (529) and RATE_LIMIT only. Env: ANTHROPIC_MAX_RETRIES."
+        ),
+    )
+    anthropic_retry_base_delay_sec: float = Field(
+        default_factory=lambda: float(os.getenv("ANTHROPIC_RETRY_BASE_DELAY_SEC", "1.0")),
+        ge=0.1,
+        le=60.0,
+        description=(
+            "Base delay (seconds) for exponential backoff between Claude retries; small jitter is added. "
+            "Env: ANTHROPIC_RETRY_BASE_DELAY_SEC."
+        ),
+    )
     hybrid_prompt: str = Field(
         default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
         description=(
