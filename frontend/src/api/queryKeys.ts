@@ -37,6 +37,13 @@ export const queryKeys = {
       [...queryKeys.inventories.all, 'benchmark-compare', inventoryId, aisleId, jobAId, jobBId] as const,
   },
 
+  admin: {
+    all: ['v3', 'admin'] as const,
+    aiConfig: () => [...queryKeys.admin.all, 'ai-config'] as const,
+    aiComposedPrompt: (providerKey: string, promptKey: string, parity: boolean) =>
+      [...queryKeys.admin.all, 'ai-config', 'composed-prompt', providerKey, promptKey, parity] as const,
+  },
+
   analytics: {
     all: ['v3', 'analytics'] as const,
     summary: (params: Record<string, string | undefined>) =>

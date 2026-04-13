@@ -39,6 +39,8 @@ import type {
   ManualInterventionBreakdownResponse,
   AisleBenchmarkCompareResponse,
   PromoteOperationalJobResponse,
+  AdminAiComposedPromptResponse,
+  AdminAiConfigResponse,
 } from './types';
 import { ApiError } from './types';
 
@@ -371,6 +373,29 @@ export async function createAisle(
 export async function getProcessingProviderOptions(): Promise<ProcessingProviderOptionsResponse> {
   const response = await protectedFetch(`${API_BASE}/api/v3/inventories/processing-provider-options`);
   return handleResponse<ProcessingProviderOptionsResponse>(response);
+}
+
+/** GET /api/v3/admin/ai-config — restricted to session user `username === 'admin'`. */
+export async function getAdminAiConfig(): Promise<AdminAiConfigResponse> {
+  const response = await protectedFetch(`${API_BASE}/api/v3/admin/ai-config`);
+  return handleResponse<AdminAiConfigResponse>(response);
+}
+
+/** GET composed hybrid base text for one variant (same auth gate as ai-config). */
+export async function getAdminAiComposedPrompt(params: {
+  pipeline_provider_key: string;
+  prompt_key: string;
+  prompt_parity_mode: boolean;
+}): Promise<AdminAiComposedPromptResponse> {
+  const q = new URLSearchParams({
+    prompt_key: params.prompt_key,
+    pipeline_provider_key: params.pipeline_provider_key,
+    prompt_parity_mode: String(params.prompt_parity_mode),
+  });
+  const response = await protectedFetch(
+    `${API_BASE}/api/v3/admin/ai-config/composed-prompt?${q.toString()}`
+  );
+  return handleResponse<AdminAiComposedPromptResponse>(response);
 }
 
 export async function startAisleProcessing(
