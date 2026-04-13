@@ -77,10 +77,8 @@ from src.application.use_cases.upload_inventory_visual_references import (
     UploadedVisualReferenceFile,
 )
 from src.config import load_settings
-from src.pipeline.providers.registry import (
-    normalize_pipeline_provider_key,
-    registered_pipeline_provider_keys,
-)
+from src.pipeline.providers.definitions import PIPELINE_PROVIDER_SPECS
+from src.pipeline.providers.registry import normalize_pipeline_provider_key
 
 from .shared import inventory_list_item_to_response, inventory_to_response
 
@@ -180,35 +178,18 @@ def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
         for k, lab, desc in prompt_profile_catalog()
     ]
     items: List[ProcessingProviderOptionItem] = []
-    for key in sorted(registered_pipeline_provider_keys()):
+    for spec in sorted(PIPELINE_PROVIDER_SPECS, key=lambda s: s.key):
+        key = spec.key
         mode = "native"
-        if key == "gemini":
-            label = "Gemini"
-            desc = "Native Gemini SDK path (GEMINI_API_KEY required when explicitly selected)."
-        elif key == "openai":
-            label = "OpenAI"
-            desc = "Native OpenAI vision path (Chat Completions + json_object). OPENAI_API_KEY required when explicitly selected."
-        elif key == "claude":
-            label = "Claude"
-            desc = "Native Anthropic Claude path (Messages API + vision). ANTHROPIC_API_KEY required when explicitly selected."
-        elif key == "deepseek":
-            label = "DeepSeek"
-            desc = (
-                "OpenAI-compatible Chat Completions + vision (official openai SDK with custom base URL). "
-                "DEEPSEEK_API_KEY required when explicitly selected."
-            )
-        else:
-            label = key
-            desc = None
         pairs = models_for_provider(key, settings)
         mopts = [ProcessingModelOption(id=m, label=lab) for m, lab in pairs]
         dm = default_model_for_provider(key, settings)
         items.append(
             ProcessingProviderOptionItem(
                 key=key,
-                label=label,
+                label=spec.label,
                 execution_mode=mode,
-                description=desc,
+                description=spec.description,
                 models=mopts,
                 default_model=dm,
             )

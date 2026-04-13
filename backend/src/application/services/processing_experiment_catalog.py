@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, List, Sequence, Tuple
 
 from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
+from src.pipeline.providers.definitions import pipeline_provider_spec
 
 _ModelPair = Tuple[str, str]
 
@@ -15,28 +16,19 @@ def _split_csv(raw: str) -> List[str]:
 
 def models_for_provider(provider_key: str, settings: Any) -> List[_ModelPair]:
     """Return (model_id, short_label) pairs offered for the given pipeline provider."""
-    key = (provider_key or "").strip().lower()
-    if key == "gemini":
-        ids = _split_csv(getattr(settings, "processing_gemini_models", "") or "")
-        if not ids:
-            ids = [getattr(settings, "gemini_model_name", "gemini-2.0-flash-exp")]
-        return [(m, m) for m in ids]
-    if key == "openai":
-        ids = _split_csv(getattr(settings, "processing_openai_models", "") or "")
-        if not ids:
-            ids = [getattr(settings, "openai_model", "gpt-4o")]
-        return [(m, m) for m in ids]
-    if key == "claude":
-        ids = _split_csv(getattr(settings, "processing_claude_models", "") or "")
-        if not ids:
-            ids = [getattr(settings, "anthropic_model", "claude-sonnet-4-20250514")]
-        return [(m, m) for m in ids]
-    if key == "deepseek":
-        ids = _split_csv(getattr(settings, "processing_deepseek_models", "") or "")
-        if not ids:
-            ids = [getattr(settings, "deepseek_model", "deepseek-chat")]
-        return [(m, m) for m in ids]
-    return []
+    spec = pipeline_provider_spec(provider_key)
+    if spec is None:
+        return []
+    ids = _split_csv(getattr(settings, spec.processing_models_settings_attr, "") or "")
+    if not ids:
+        raw_dm = getattr(settings, spec.default_model_settings_attr, None)
+        dm = (
+            str(raw_dm).strip()
+            if raw_dm is not None and str(raw_dm).strip()
+            else spec.default_model_fallback
+        )
+        ids = [dm]
+    return [(m, m) for m in ids]
 
 
 def default_model_for_provider(provider_key: str, settings: Any) -> str | None:
@@ -45,24 +37,18 @@ def default_model_for_provider(provider_key: str, settings: Any) -> str | None:
     If ``PROCESSING_*_MODELS`` lists a custom set, ``GEMINI_MODEL_NAME`` / ``OPENAI_MODEL`` may
     not appear in that list; in that case the first offered model is the default.
     """
-    key = (provider_key or "").strip().lower()
+    spec = pipeline_provider_spec(provider_key)
     pairs = models_for_provider(provider_key, settings)
-    if not pairs:
+    if not pairs or spec is None:
         return None
     allowed_ids = [m for m, _ in pairs]
-    if key == "gemini":
-        dm = str(getattr(settings, "gemini_model_name", "") or "gemini-2.0-flash-exp").strip()
-        return dm if dm in allowed_ids else allowed_ids[0]
-    if key == "openai":
-        dm = str(getattr(settings, "openai_model", "") or "gpt-4o").strip()
-        return dm if dm in allowed_ids else allowed_ids[0]
-    if key == "claude":
-        dm = str(getattr(settings, "anthropic_model", "") or "claude-sonnet-4-20250514").strip()
-        return dm if dm in allowed_ids else allowed_ids[0]
-    if key == "deepseek":
-        dm = str(getattr(settings, "deepseek_model", "") or "deepseek-chat").strip()
-        return dm if dm in allowed_ids else allowed_ids[0]
-    return allowed_ids[0]
+    raw_dm = getattr(settings, spec.default_model_settings_attr, None)
+    dm = (
+        str(raw_dm).strip()
+        if raw_dm is not None and str(raw_dm).strip()
+        else spec.default_model_fallback
+    )
+    return dm if dm in allowed_ids else allowed_ids[0]
 
 
 def normalize_requested_model(provider_key: str, requested: str | None, settings: Any) -> str | None:

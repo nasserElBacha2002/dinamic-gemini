@@ -107,10 +107,15 @@ class HybridInventoryPipeline:
         job_model_name: Optional[str] = None,
         job_prompt_key: Optional[str] = None,
         job_prompt_version: Optional[str] = None,
+        job_prompt_parity_mode: bool = False,
         cancellation_checkpoint: Any = None,
         **_: object,
     ) -> PipelineRunResult:
-        """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5)."""
+        """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5).
+
+        ``job_prompt_parity_mode``: when true, OpenAI hybrid **base** uses the same ``default`` branch
+        as other providers (comparison). V3 jobs set this from ``engine_params_json.prompt_parity_mode``.
+        """
         execution_id = video_id
         if job_input is None:
             job_input = JobInput(video_path=video_path or "", mode="hybrid", input_type="video")
@@ -138,6 +143,7 @@ class HybridInventoryPipeline:
             job_model_name=job_model_name,
             job_prompt_key=job_prompt_key,
             job_prompt_version=job_prompt_version,
+            job_prompt_parity_mode=job_prompt_parity_mode,
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)

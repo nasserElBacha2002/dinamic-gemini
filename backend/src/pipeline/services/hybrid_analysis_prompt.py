@@ -30,6 +30,7 @@ from src.llm.prompt_composer.prompt_traceability import (
     COMPOSITION_STEP_COMPOSE_HYBRID_BASE,
     COMPOSITION_STEP_ENRICH_IMAGE_IDS,
     COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER,
+    COMPOSITION_STEP_PROMPT_PARITY_MODE,
     COMPOSITION_STEP_RESOLVE_PROFILE,
     build_prompt_composition_dict,
 )
@@ -61,7 +62,10 @@ def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple
     steps.append(
         {"step": COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER, "pipeline_provider_key": effective_provider}
     )
-    base_prompt = compose_hybrid_base(profile, effective_provider)
+    parity = bool(getattr(context, "job_prompt_parity_mode", False))
+    if parity:
+        steps.append({"step": COMPOSITION_STEP_PROMPT_PARITY_MODE, "prompt_parity_mode": True})
+    base_prompt = compose_hybrid_base(profile, effective_provider, prompt_parity_mode=parity)
     steps.append({"step": COMPOSITION_STEP_COMPOSE_HYBRID_BASE})
     enrichments_applied: list[str] = []
     prompt_text = base_prompt
@@ -106,6 +110,7 @@ def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple
         job_prompt_key=job_prompt_key_opt,
         settings_hybrid_prompt_key=settings_prompt_opt,
         prompt_version=prompt_version_opt,
+        prompt_parity_mode=parity,
     )
     return prompt_text, composition
 

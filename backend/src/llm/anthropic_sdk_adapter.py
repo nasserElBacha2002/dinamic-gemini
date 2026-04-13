@@ -30,6 +30,7 @@ import numpy as np
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.errors import LLMProviderError
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
+from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
 from src.llm.types import LLMRequest, LLMResponse
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
@@ -200,6 +201,7 @@ class AnthropicSdkAdapter:
             )
 
         meta = request.metadata or {}
+        prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
         job_model = (meta.get("claude_model_name") or "").strip()
         effective_model = job_model or (getattr(settings, "anthropic_model", "") or "").strip()
         if not effective_model:
@@ -230,7 +232,9 @@ class AnthropicSdkAdapter:
         prompt_text = (
             use_request_prompt
             if use_request_prompt is not None
-            else compose_hybrid_base_from_settings(settings, pipeline_provider_key="claude")
+            else compose_hybrid_base_from_settings(
+                settings, pipeline_provider_key="claude", prompt_parity_mode=prompt_parity_mode
+            )
         )
         if request.context_instruction and str(request.context_instruction).strip():
             prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text

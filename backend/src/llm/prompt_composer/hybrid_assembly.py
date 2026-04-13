@@ -47,13 +47,20 @@ def resolve_hybrid_profile_name(*, job_prompt_key: Optional[Any], settings: Any)
     return str(getattr(settings, "hybrid_prompt", "global_v21") or "global_v21").strip()
 
 
-def compose_hybrid_base(profile: str, pipeline_provider_key: Optional[str]) -> str:
+def compose_hybrid_base(
+    profile: str,
+    pipeline_provider_key: Optional[str],
+    *,
+    prompt_parity_mode: bool = False,
+) -> str:
     """
     Production helper: composed **base** text only (delegates to ``HybridPromptComposer``).
 
     Do not add enrichments here; do not bypass ``hybrid_resolution``.
     """
-    return default_hybrid_composer.compose_base(profile, pipeline_provider_key)
+    return default_hybrid_composer.compose_base(
+        profile, pipeline_provider_key, prompt_parity_mode=prompt_parity_mode
+    )
 
 
 def compose_hybrid_base_from_settings(
@@ -61,6 +68,7 @@ def compose_hybrid_base_from_settings(
     *,
     pipeline_provider_key: Optional[str],
     job_prompt_key: Optional[Any] = None,
+    prompt_parity_mode: bool = False,
 ) -> str:
     """
     Adapter fallback when ``LLMRequest.prompt`` is empty.
@@ -68,6 +76,11 @@ def compose_hybrid_base_from_settings(
     **Responsibilities:** (1) resolve profile via ``resolve_hybrid_profile_name``;
     (2) call ``compose_hybrid_base``. **Only** those steps — no enrichments, no adapter-specific
     prompt branches, no registry access outside the composer stack.
+
+    ``prompt_parity_mode`` must match ``LLMRequest.metadata`` / ``RunContext.job_prompt_parity_mode``
+    when adapters compose base text for comparison runs.
     """
     profile = resolve_hybrid_profile_name(job_prompt_key=job_prompt_key, settings=settings)
-    return compose_hybrid_base(profile, pipeline_provider_key)
+    return compose_hybrid_base(
+        profile, pipeline_provider_key, prompt_parity_mode=prompt_parity_mode
+    )

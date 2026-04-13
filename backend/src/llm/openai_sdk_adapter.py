@@ -32,6 +32,7 @@ from openai import (
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.errors import LLMProviderError
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
+from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
 from src.llm.types import LLMRequest, LLMResponse
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
@@ -189,7 +190,11 @@ class OpenAiSdkAdapter:
         prompt_text = (
             use_request_prompt
             if use_request_prompt is not None
-            else compose_hybrid_base_from_settings(settings, pipeline_provider_key=v.hybrid_compose_provider_key)
+            else compose_hybrid_base_from_settings(
+                settings,
+                pipeline_provider_key=v.hybrid_compose_provider_key,
+                prompt_parity_mode=prompt_parity_mode,
+            )
         )
         if request.context_instruction and str(request.context_instruction).strip():
             prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text

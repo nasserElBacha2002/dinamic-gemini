@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 
 # Stable key on ``LLMRequest.metadata`` and job-level run_metadata (optional block).
 LLM_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
+# Pre-Phase 10 — comparison parity + canonical identity (also mirrored inside ``prompt_composition``).
+LLM_METADATA_KEY_PROMPT_PARITY_MODE = "prompt_parity_mode"
+LLM_IDENTITY_METADATA_KEY = "llm_identity"
 
 PROMPT_COMPOSITION_SCHEMA_VERSION = "prompt_composition_v1"
 
@@ -54,6 +57,7 @@ COMPOSITION_STEP_RESOLVE_PROFILE = "resolve_profile"
 COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER = "normalize_pipeline_provider"
 COMPOSITION_STEP_COMPOSE_HYBRID_BASE = "compose_hybrid_base"
 COMPOSITION_STEP_ENRICH_IMAGE_IDS = "enrich_image_ids"
+COMPOSITION_STEP_PROMPT_PARITY_MODE = "prompt_parity_mode"
 
 
 def sha256_utf8(text: str) -> str:
@@ -86,6 +90,12 @@ class PromptCompositionMetadata:
     audit and future comparison. It is **not** the profile selector (that is ``profile_name`` /
     ``job_prompt_key`` / ``hybrid_prompt``), **not** derived from ``prompt_hash``, does **not** affect
     prompt text, and is **not** used to pick prompt content in this phase.
+
+    **Pre-Phase 10 — ``prompt_parity_mode``:** When true, hybrid **base** text for OpenAI uses the
+    ``default`` fragment (same as Gemini/Claude/DeepSeek) for fair comparison; recorded for audit.
+
+    **``llm_identity``:** Canonical ``provider_name`` + ``model_name`` (set in
+    ``apply_execution_layer_to_composition``); complements legacy per-vendor request metadata keys.
     """
 
     schema_version: str
@@ -96,6 +106,8 @@ class PromptCompositionMetadata:
     job_prompt_key: Optional[str]
     settings_hybrid_prompt_key: Optional[str]
     prompt_version: Optional[str]
+    prompt_parity_mode: bool
+    llm_identity: Optional[Dict[str, Any]]
     base_prompt_text: str
     final_prompt_text: str
     enrichments_applied: List[str]
@@ -119,6 +131,7 @@ def build_prompt_composition_dict(
     job_prompt_key: Optional[str],
     settings_hybrid_prompt_key: Optional[str],
     prompt_version: Optional[str] = None,
+    prompt_parity_mode: bool = False,
     resolved_llm_provider_key: str = "",
     model_name: Optional[str] = None,
     timestamp: Optional[str] = None,
@@ -152,6 +165,8 @@ def build_prompt_composition_dict(
             if isinstance(prompt_version, str) and prompt_version.strip()
             else None
         ),
+        prompt_parity_mode=bool(prompt_parity_mode),
+        llm_identity=None,
         base_prompt_text=base_prompt_text,
         final_prompt_text=final_prompt_text,
         enrichments_applied=list(enrichments_applied),
@@ -229,8 +244,11 @@ def apply_execution_layer_to_composition(
     ``LLMRequest.metadata`` and ``run_metadata`` without a second top-level key.
     """
     out = dict(composition)
-    out["resolved_llm_provider_key"] = (resolved_llm_provider_key or "").strip().lower()
-    out["model_name"] = (str(model_name).strip() if model_name and str(model_name).strip() else None)
+    rpk = (resolved_llm_provider_key or "").strip().lower()
+    mn = str(model_name).strip() if model_name and str(model_name).strip() else None
+    out["resolved_llm_provider_key"] = rpk
+    out["model_name"] = mn
+    out["llm_identity"] = {"provider_name": rpk, "model_name": mn}
     errs = validate_prompt_composition_dict(out)
     for msg in errs:
         logger.warning("prompt_composition validation: %s", msg)
@@ -270,4 +288,9 @@ def prompt_composition_summary_for_execution_log(
     pv = full_composition.get("prompt_version")
     if isinstance(pv, str) and pv.strip():
         out["prompt_version"] = pv.strip()
+    if full_composition.get("prompt_parity_mode") is True:
+        out["prompt_parity_mode"] = True
+    lid = full_composition.get("llm_identity")
+    if isinstance(lid, dict) and lid:
+        out["llm_identity"] = dict(lid)
     return out

@@ -14,6 +14,11 @@ resolution logic here already isolates overlay selection so that future change s
 **Phase 9 — DeepSeek:** Same as Claude/Gemini for hybrid **base** text: ``deepseek`` uses the
 ``default`` fragment only (OpenAI overlay is keyed solely by ``openai``).
 
+**Pre-Phase 10 — prompt parity mode:** When ``prompt_parity_mode`` is true, the ``openai`` overlay
+is **not** selected even if ``provider_key == \"openai\"``; the ``default`` fragment is used so
+OpenAI matches Gemini/Claude/DeepSeek base text for fair multi-provider comparison. Default is false
+(production preserves historical OpenAI overlay behavior).
+
 **Phase 6:** prompt traceability belongs at enrichment / request-assembly layers, not here;
 this module stays pure string resolution.
 """
@@ -47,14 +52,18 @@ def registered_hybrid_prompt_keys() -> frozenset[str]:
 def resolve_hybrid_entry_for_provider(
     entry: Union[str, Dict[str, str]],
     provider_key: Optional[str],
+    *,
+    prompt_parity_mode: bool = False,
 ) -> str:
     """
     Resolve one registry entry to the text sent as the hybrid **base** prompt (before enrichments).
 
-    * If ``provider_key`` is exactly ``openai`` (case-insensitive) and the entry defines an
-      ``openai`` string, that variant is used.
+    * If ``provider_key`` is exactly ``openai`` (case-insensitive), the entry defines an ``openai``
+      string, and ``prompt_parity_mode`` is false, the ``openai`` fragment is used.
+    * If ``prompt_parity_mode`` is true, the ``openai`` fragment is never used — same ``default``
+      body as other non-OpenAI providers (comparison mode).
     * Every other key (``gemini``, ``claude``, ``deepseek``, unknown, ``None``, etc.) uses the
-      ``default`` fragment — including Claude (Phase 8) and DeepSeek (Phase 9); see module docstring.
+      ``default`` fragment when not in the OpenAI+overlay branch above.
 
     Legacy ``PROMPTS`` rows that use ``system``/``user`` (non-hybrid) are not valid hybrid entries;
     for backward compatibility they fall back to **global_v21 default** text only, with **no** OpenAI
@@ -67,9 +76,18 @@ def resolve_hybrid_entry_for_provider(
         return entry.rstrip()
     if isinstance(entry, dict):
         if "system" in entry:
-            return resolve_hybrid_entry_for_provider(PROMPTS["global_v21"], None)
+            return resolve_hybrid_entry_for_provider(
+                PROMPTS["global_v21"], None, prompt_parity_mode=prompt_parity_mode
+            )
         if isinstance(entry.get("default"), str):
-            if pk == "openai" and isinstance(entry.get("openai"), str):
+            use_openai_overlay = (
+                pk == "openai"
+                and not prompt_parity_mode
+                and isinstance(entry.get("openai"), str)
+            )
+            if use_openai_overlay:
                 return str(entry["openai"]).rstrip()
             return str(entry["default"]).rstrip()
-    return resolve_hybrid_entry_for_provider(PROMPTS["global_v21"], None)
+    return resolve_hybrid_entry_for_provider(
+        PROMPTS["global_v21"], None, prompt_parity_mode=prompt_parity_mode
+    )

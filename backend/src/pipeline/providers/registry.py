@@ -29,13 +29,14 @@ from typing import Any, Final, Optional
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
+from src.pipeline.providers.definitions import registered_pipeline_provider_keys_from_definitions
 
 
 class UnknownPipelineProviderError(LookupError):
     """Raised when ``provider_name`` does not map to a registered pipeline provider."""
 
 
-_KNOWN_KEYS: Final[frozenset[str]] = frozenset({"gemini", "openai", "claude", "deepseek"})
+_KNOWN_KEYS: Final[frozenset[str]] = registered_pipeline_provider_keys_from_definitions()
 
 
 def registered_pipeline_provider_keys() -> frozenset[str]:

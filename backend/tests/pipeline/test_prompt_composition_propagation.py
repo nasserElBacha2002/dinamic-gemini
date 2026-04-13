@@ -9,7 +9,12 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
+from src.llm.prompt_composer.prompt_traceability import (
+    COMPOSITION_STEP_PROMPT_PARITY_MODE,
+    LLM_IDENTITY_METADATA_KEY,
+    LLM_METADATA_KEY_PROMPT_COMPOSITION,
+    LLM_METADATA_KEY_PROMPT_PARITY_MODE,
+)
 from src.llm.types import LLMRequest, LLMResponse
 from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 from src.pipeline.context.run_context import RunContext
@@ -287,6 +292,78 @@ def test_phase7_execution_log_omits_prompt_version_key_when_absent(
     log_pc = prepared.kwargs["payload"]["prompt_composition"]
     assert "prompt_version" not in log_pc
     assert captured["request"].metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION].get("prompt_version") is None
+
+
+def test_prompt_parity_mode_and_llm_identity_traceability(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Parity mode is explicit on request metadata; ``llm_identity`` mirrors composition (harness key)."""
+    captured: dict[str, Any] = {}
+
+    def _handler(request: LLMRequest, settings: Any) -> LLMResponse:
+        del settings
+        captured["request"] = request
+        return llm_response_success(parsed_json={"total_entities_detected": 0, "entities": []})
+
+    executor = TestLLMExecutor(handler=_handler)
+    patch_hybrid_resolve_llm_executor(monkeypatch, executor)
+    context = _video_context(tmp_path)
+    context.pipeline_provider_name = "openai"
+    context.job_model_name = "gpt-4o"
+    context.job_prompt_parity_mode = True
+    HybridGlobalAnalysisStrategy().analyze(
+        context=context,
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/f.jpg")],
+        frame_refs=["f0"],
+        metadata={"frame_count": 1},
+    )
+    req = captured["request"]
+    pc = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]
+    assert pc.get("prompt_parity_mode") is True
+    assert req.metadata[LLM_METADATA_KEY_PROMPT_PARITY_MODE] is True
+    assert req.metadata[LLM_IDENTITY_METADATA_KEY] == {
+        "provider_name": "test_llm",
+        "model_name": "gpt-4o",
+    }
+    step_kinds = [s.get("step") for s in pc.get("composition_steps", []) if isinstance(s, dict)]
+    assert COMPOSITION_STEP_PROMPT_PARITY_MODE in step_kinds
+    prepared = next(
+        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+    )
+    log_pc = prepared.kwargs["payload"]["prompt_composition"]
+    assert log_pc.get("prompt_parity_mode") is True
+    assert log_pc.get("llm_identity") == {"provider_name": "test_llm", "model_name": "gpt-4o"}
+
+
+def test_standard_mode_omits_parity_from_execution_log_summary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When parity is off, execution log summary does not add a parity key (noise reduction)."""
+    captured: dict[str, Any] = {}
+
+    def _handler(request: LLMRequest, settings: Any) -> LLMResponse:
+        del settings
+        captured["request"] = request
+        return llm_response_success(parsed_json={"total_entities_detected": 0, "entities": []})
+
+    executor = TestLLMExecutor(handler=_handler)
+    patch_hybrid_resolve_llm_executor(monkeypatch, executor)
+    context = _video_context(tmp_path)
+    context.job_prompt_parity_mode = False
+    HybridGlobalAnalysisStrategy().analyze(
+        context=context,
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/f.jpg")],
+        frame_refs=["f0"],
+        metadata={"frame_count": 1},
+    )
+    assert captured["request"].metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION].get("prompt_parity_mode") is False
+    prepared = next(
+        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+    )
+    log_pc = prepared.kwargs["payload"]["prompt_composition"]
+    assert "prompt_parity_mode" not in log_pc
 
 
 def test_analysis_stage_forwards_prompt_composition_reference() -> None:

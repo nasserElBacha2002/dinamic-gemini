@@ -30,7 +30,9 @@ from src.pipeline.services.analysis_visual_reference_prep import (
     prepare_visual_reference_inputs,
 )
 from src.llm.prompt_composer.prompt_traceability import (
+    LLM_IDENTITY_METADATA_KEY,
     LLM_METADATA_KEY_PROMPT_COMPOSITION,
+    LLM_METADATA_KEY_PROMPT_PARITY_MODE,
     apply_execution_layer_to_composition,
     prompt_composition_summary_for_execution_log,
     sha256_utf8,
@@ -118,7 +120,8 @@ class HybridGlobalAnalysisStrategy:
         # Per-vendor model keys on the LLM request are a historical compatibility pattern (each
         # executor reads its own key). Claude follows the same pattern for consistency. A future
         # phase may converge on a single provider-neutral metadata field without changing adapters'
-        # outward behavior in one shot.
+        # outward behavior in one shot. Pre-Phase 10: ``llm_identity`` + ``prompt_parity_mode`` on
+        # the request mirror ``prompt_composition`` for comparison tooling.
         if jm and str(jm).strip() and rk == "gemini":
             req_meta["gemini_model_name"] = str(jm).strip()
         if jm and str(jm).strip() and rk == "openai":
@@ -141,6 +144,10 @@ class HybridGlobalAnalysisStrategy:
                 job_id,
             )
         req_meta[LLM_METADATA_KEY_PROMPT_COMPOSITION] = prompt_composition
+        req_meta[LLM_METADATA_KEY_PROMPT_PARITY_MODE] = bool(prompt_composition.get("prompt_parity_mode"))
+        _lid = prompt_composition.get("llm_identity")
+        if isinstance(_lid, dict):
+            req_meta[LLM_IDENTITY_METADATA_KEY] = dict(_lid)
 
         request = LLMRequest(
             job_id=job_id,

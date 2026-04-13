@@ -32,7 +32,13 @@ class HybridPromptComposer:
     Phase 6+ by explicit per-provider policy — do not assume future vendors inherit OpenAI text.
     """
 
-    def compose_base(self, profile_name: str, provider_key: Optional[str] = None) -> str:
+    def compose_base(
+        self,
+        profile_name: str,
+        provider_key: Optional[str] = None,
+        *,
+        prompt_parity_mode: bool = False,
+    ) -> str:
         """
         Return base analysis prompt for the hybrid pipeline only (no traceability / Epic D blocks).
 
@@ -41,8 +47,12 @@ class HybridPromptComposer:
         """
         raw = PROMPTS.get(profile_name)
         if raw is None:
-            return resolve_hybrid_entry_for_provider(PROMPTS["global_v21"], provider_key)
-        return resolve_hybrid_entry_for_provider(raw, provider_key)
+            return resolve_hybrid_entry_for_provider(
+                PROMPTS["global_v21"], provider_key, prompt_parity_mode=prompt_parity_mode
+            )
+        return resolve_hybrid_entry_for_provider(
+            raw, provider_key, prompt_parity_mode=prompt_parity_mode
+        )
 
 
 default_hybrid_composer = HybridPromptComposer()
