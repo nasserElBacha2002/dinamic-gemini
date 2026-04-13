@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
 import type { Aisle, Inventory } from '../src/api/types';
 import {
-  toAisleInventoryRowViewModel,
+  toAisleInventoryRowActionContext,
+  toAisleInventoryRowPresentation,
   toInventoryHeaderViewModel,
 } from '../src/features/inventories/adapters';
 
@@ -25,7 +26,7 @@ describe('inventory view-model adapters', () => {
     expect(vm.primaryConfigCaption).toBeNull();
   });
 
-  it('toAisleInventoryRowViewModel flattens execution summary without leaking raw job in row shape', () => {
+  it('toAisleInventoryRowPresentation exposes latest run snapshot without operational fields', () => {
     const aisle = {
       id: 'a1',
       code: 'A-1',
@@ -45,9 +46,27 @@ describe('inventory view-model adapters', () => {
       },
     } as unknown as Aisle;
 
-    const row = toAisleInventoryRowViewModel(aisle, '—');
-    expect(row.execution?.providerDisplay).toBe('gemini');
-    expect(row.executionJobId).toBe('job-1');
-    expect(row.processMenuAisle).toEqual({ id: 'a1', status: 'processed', assets_count: 2 });
+    const pres = toAisleInventoryRowPresentation(aisle, '—');
+    expect(pres.latestRun?.providerDisplay).toBe('gemini');
+    expect((pres as { observabilityInitialRunId?: string }).observabilityInitialRunId).toBeUndefined();
+  });
+
+  it('toAisleInventoryRowActionContext carries observability run id and process menu input', () => {
+    const aisle = {
+      id: 'a1',
+      code: 'A-1',
+      status: 'processed',
+      assets_count: 2,
+      latest_job: {
+        id: 'job-1',
+        status: 'succeeded',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+    } as unknown as Aisle;
+
+    const action = toAisleInventoryRowActionContext(aisle);
+    expect(action.observabilityInitialRunId).toBe('job-1');
+    expect(action.processMenuAisle).toEqual({ id: 'a1', status: 'processed', assets_count: 2 });
   });
 });

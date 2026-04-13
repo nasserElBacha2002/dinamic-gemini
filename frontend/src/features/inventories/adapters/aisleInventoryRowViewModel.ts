@@ -1,5 +1,5 @@
 /**
- * Flattened aisle list row for inventory screens — execution summary and counts without raw job DTOs in JSX.
+ * Aisle list rows: presentation models for the table plus separate operational context for actions.
  */
 
 import type { Aisle } from '../../../api/types';
@@ -9,15 +9,18 @@ import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../../../utils/
 import { getJobStatusLabel, jobStatusToBadgeSemantic } from '../../../utils/jobStatus';
 import { toReferenceUsageRowViewModel, type ReferenceUsageRowViewModel } from './referenceUsageViewModel';
 import type { AisleProcessMenuInput } from './processAisleMenuState';
+import { getLatestRunFromAisleListItem } from './aisleListRunSource';
 
-export interface AisleExecutionSummaryViewModel {
-  jobStatusLabel: string;
-  jobStatusSemantic: StatusBadgeSemantic;
+/** Snapshot of the latest run as shown in the inventory aisle grid (status + provider/model labels). */
+export interface LatestRunSnapshotViewModel {
+  statusLabel: string;
+  statusSemantic: StatusBadgeSemantic;
   providerDisplay: string;
   modelDisplay: string;
 }
 
-export interface AisleInventoryRowViewModel {
+/** Table cells only — no workflow identifiers or menu gating fields. */
+export interface AisleInventoryRowPresentation {
   id: string;
   code: string;
   aisleStatusLabel: string;
@@ -29,24 +32,32 @@ export interface AisleInventoryRowViewModel {
   pendingReviewCount: number | undefined;
   pendingReviewDisplay: string | number;
   lastUpdatedDisplay: string;
-  execution: AisleExecutionSummaryViewModel | null;
+  latestRun: LatestRunSnapshotViewModel | null;
   referenceUsage: ReferenceUsageRowViewModel | null;
-  executionJobId: string | null;
-  /** Subset of aisle fields for process / upload menu gating */
-  processMenuAisle: AisleProcessMenuInput;
 }
 
-export function toAisleInventoryRowViewModel(
-  aisle: Aisle,
-  emptyLabel: string
-): AisleInventoryRowViewModel {
-  const job = aisle.latest_job;
-  const execution: AisleExecutionSummaryViewModel | null = job
+/**
+ * Data required for row actions (process menu, observability). Not used for rendering badges/text cells.
+ */
+export interface AisleInventoryRowActionContext {
+  processMenuAisle: AisleProcessMenuInput;
+  /** Backend run identifier for log/observability surfaces (v3 job id). */
+  observabilityInitialRunId: string | null;
+}
+
+export interface AisleInventoryTableRow {
+  presentation: AisleInventoryRowPresentation;
+  action: AisleInventoryRowActionContext;
+}
+
+export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string): AisleInventoryRowPresentation {
+  const run = getLatestRunFromAisleListItem(aisle);
+  const latestRun: LatestRunSnapshotViewModel | null = run
     ? {
-        jobStatusLabel: getJobStatusLabel(job.status),
-        jobStatusSemantic: jobStatusToBadgeSemantic(job.status),
-        providerDisplay: job.provider_name ? String(job.provider_name) : emptyLabel,
-        modelDisplay: job.model_name ? String(job.model_name) : emptyLabel,
+        statusLabel: getJobStatusLabel(run.status),
+        statusSemantic: jobStatusToBadgeSemantic(run.status),
+        providerDisplay: run.provider_name ? String(run.provider_name) : emptyLabel,
+        modelDisplay: run.model_name ? String(run.model_name) : emptyLabel,
       }
     : null;
 
@@ -67,20 +78,30 @@ export function toAisleInventoryRowViewModel(
         ? aisle.pending_review_positions_count
         : emptyLabel,
     lastUpdatedDisplay: formatDate(aisle.last_activity_at ?? aisle.updated_at),
-    execution,
+    latestRun,
     referenceUsage: toReferenceUsageRowViewModel(aisle),
-    executionJobId: job?.id ?? null,
+  };
+}
+
+export function toAisleInventoryRowActionContext(aisle: Aisle): AisleInventoryRowActionContext {
+  const run = getLatestRunFromAisleListItem(aisle);
+  return {
     processMenuAisle: {
       id: aisle.id,
       status: aisle.status,
       assets_count: aisle.assets_count,
     },
+    observabilityInitialRunId: run?.id ?? null,
   };
 }
 
-export function toAisleInventoryRowViewModels(
-  aisles: Aisle[],
-  emptyLabel: string
-): AisleInventoryRowViewModel[] {
-  return aisles.map((a) => toAisleInventoryRowViewModel(a, emptyLabel));
+export function toAisleInventoryTableRow(aisle: Aisle, emptyLabel: string): AisleInventoryTableRow {
+  return {
+    presentation: toAisleInventoryRowPresentation(aisle, emptyLabel),
+    action: toAisleInventoryRowActionContext(aisle),
+  };
+}
+
+export function toAisleInventoryTableRows(aisles: Aisle[], emptyLabel: string): AisleInventoryTableRow[] {
+  return aisles.map((a) => toAisleInventoryTableRow(a, emptyLabel));
 }

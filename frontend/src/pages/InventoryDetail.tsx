@@ -1,22 +1,21 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Button, Typography } from '@mui/material';
 import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { rowMatchesSearchQuery } from '../utils/tableSearch';
-import { exportInventoryResultsCsv } from '../api/client';
-import { ErrorAlert, LoadingBlock, StatusBadge, useAppSnackbar } from '../components/ui';
-import { PageHeader } from '../components/shell';
+import { ErrorAlert, LoadingBlock, useAppSnackbar } from '../components/ui';
 import AisleObservabilityDialog from '../components/AisleObservabilityDialog';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import { useInventoryDetail, useAislesList, useCreateAisle } from '../hooks';
-import { toAisleInventoryRowViewModels, toInventoryHeaderViewModel } from '../features/inventories/adapters';
+import { toAisleInventoryTableRows, toInventoryHeaderViewModel } from '../features/inventories/adapters';
 import { useAisleAssetUploadFlow } from '../features/inventories/hooks/useAisleAssetUploadFlow';
 import { useAisleProcessingFlow } from '../features/inventories/hooks/useAisleProcessingFlow';
 import AisleProcessingDialog from '../features/inventories/components/AisleProcessingDialog';
 import InventoryAislesSection from '../features/inventories/components/InventoryAislesSection';
 import InventoryReferenceImagesModule from '../features/inventories/components/InventoryReferenceImagesModule';
+import InventoryDetailHeader from '../features/inventories/components/InventoryDetailHeader';
 
 export default function InventoryDetail() {
   const { t } = useTranslation();
@@ -27,13 +26,11 @@ export default function InventoryDetail() {
   const [observabilityDialog, setObservabilityDialog] = useState<{
     aisleId: string;
     aisleCode: string;
-    initialSelectedJobId: string | null;
+    initialSelectedRunId: string | null;
   } | null>(null);
-  const [exportingCsv, setExportingCsv] = useState(false);
   const [aisleTableSearch, setAisleTableSearch] = useState('');
-
-  const clearUploadErrorRef = useRef<() => void>(() => {});
-  const clearProcessErrorRef = useRef<() => void>(() => {});
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [processError, setProcessError] = useState<string | null>(null);
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, { enabled: Boolean(inventoryId && inventoryQuery.data) });
@@ -43,34 +40,32 @@ export default function InventoryDetail() {
 
   const uploadFlow = useAisleAssetUploadFlow({
     inventoryId: inventoryId ?? '',
+    uploadError,
+    setUploadError,
     onAfterSuccess: () => void aislesQuery.refetch(),
-    onBeforeUpload: () => clearProcessErrorRef.current(),
+    onBeforeUploadAttempt: () => setProcessError(null),
   });
 
   const processFlow = useAisleProcessingFlow({
     inventoryId: inventoryId ?? '',
     isProductionInventory,
+    processError,
+    setProcessError,
     onAfterSuccess: () => void aislesQuery.refetch(),
-    onBeforeProcessMutation: () => clearUploadErrorRef.current(),
+    onBeforeProcessMutation: () => setUploadError(null),
   });
-
-  clearUploadErrorRef.current = () => uploadFlow.setUploadError(null);
-  clearProcessErrorRef.current = () => processFlow.setProcessError(null);
 
   const aisles = aislesQuery.data?.items ?? [];
   const emptyDash = t('common.em_dash');
-  const rowViewModels = useMemo(
-    () => toAisleInventoryRowViewModels(aisles, emptyDash),
-    [aisles, emptyDash]
-  );
-  const filteredRowViewModels = useMemo(() => {
+  const tableRows = useMemo(() => toAisleInventoryTableRows(aisles, emptyDash), [aisles, emptyDash]);
+  const filteredTableRows = useMemo(() => {
     const matchingIds = new Set(
       aisles
         .filter((a) => rowMatchesSearchQuery(aisleTableSearch, [a.code, a.status, a.id]))
         .map((a) => a.id)
     );
-    return rowViewModels.filter((row) => matchingIds.has(row.id));
-  }, [aisles, aisleTableSearch, rowViewModels]);
+    return tableRows.filter((row) => matchingIds.has(row.presentation.id));
+  }, [aisles, aisleTableSearch, tableRows]);
 
   const createAisleMutation = useCreateAisle(inventoryId ?? '');
 
@@ -113,90 +108,29 @@ export default function InventoryDetail() {
             </>
           ) : inventory && headerVm ? (
             <>
-              <PageHeader
-                breadcrumbs={[{ label: t('aisle.breadcrumb_inventories'), to: '/' }]}
-                title={headerVm.title}
-                subtitle={
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
-                      <StatusBadge label={headerVm.statusLabel} semantic={headerVm.statusSemantic} />
-                      <StatusBadge
-                        label={headerVm.processingModeLabel}
-                        semantic={headerVm.processingModeSemantic}
-                      />
-                    </Box>
-                    {headerVm.primaryConfigCaption ? (
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        {headerVm.primaryConfigCaption}
-                      </Typography>
-                    ) : null}
-                    <Box component="span" sx={{ color: 'text.secondary', typography: 'caption' }}>
-                      {headerVm.createdDateCaption}
-                    </Box>
-                  </Box>
-                }
-                actions={
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
-                    <Button variant="outlined" size="small" onClick={openReferenceImages}>
-                      {t('aisle.visual_refs_title')}
-                    </Button>
-                    {inventory.processing_mode === 'test' ? (
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        data-testid="inventory-header-compare-runs"
-                        onClick={() => navigate(`/inventories/${inventoryId}/analytics/compare`)}
-                      >
-                        {t('analytics.compare_runs_link')}
-                      </Button>
-                    ) : null}
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      disabled={!inventoryId || exportingCsv}
-                      onClick={async () => {
-                        if (!inventoryId) return;
-                        setExportingCsv(true);
-                        try {
-                          await exportInventoryResultsCsv(inventoryId);
-                        } catch (e) {
-                          const err = e instanceof ApiError ? e : new ApiError(String(e));
-                          showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
-                        } finally {
-                          setExportingCsv(false);
-                        }
-                      }}
-                    >
-                      {exportingCsv ? t('common.exporting') : t('aisle.export_csv')}
-                    </Button>
-                    <Button variant="contained" size="small" onClick={() => setCreateAisleOpen(true)}>
-                      {t('aisle.create')}
-                    </Button>
-                  </Box>
-                }
+              <InventoryDetailHeader
+                inventory={inventory}
+                inventoryId={inventoryId ?? ''}
+                headerVm={headerVm}
+                onOpenReferenceImages={openReferenceImages}
+                onOpenCreateAisle={() => setCreateAisleOpen(true)}
               />
               <Box sx={{ display: 'grid', gap: 2 }}>
-                {processFlow.processError ? (
+                {processError ? (
                   <Box data-testid="inventory-process-error">
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
                       {t('aisle.process_error_label')}
                     </Typography>
-                    <ErrorAlert
-                      message={processFlow.processError}
-                      onClose={() => processFlow.setProcessError(null)}
-                    />
+                    <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
                   </Box>
                 ) : null}
 
-                {uploadFlow.uploadError ? (
+                {uploadError ? (
                   <Box data-testid="inventory-upload-error">
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
                       {t('aisle.upload_error_label')}
                     </Typography>
-                    <ErrorAlert
-                      message={uploadFlow.uploadError}
-                      onClose={() => uploadFlow.setUploadError(null)}
-                    />
+                    <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
                   </Box>
                 ) : null}
 
@@ -204,16 +138,22 @@ export default function InventoryDetail() {
 
                 <InventoryAislesSection
                   inventoryId={inventoryId ?? ''}
-                  rowViewModels={rowViewModels}
-                  filteredRowViewModels={filteredRowViewModels}
+                  tableRows={tableRows}
+                  filteredTableRows={filteredTableRows}
                   aislesLoading={aislesLoading}
                   aisleTableSearch={aisleTableSearch}
                   onAisleTableSearch={setAisleTableSearch}
                   onRefreshAisles={() => void aislesQuery.refetch()}
                   fileInputRef={uploadFlow.fileInputRef}
-                  onFileInputChange={uploadFlow.handleFileInputChange}
-                  onOpenObservability={setObservabilityDialog}
-                  onRequestUpload={uploadFlow.openPickerForAisle}
+                  onFileInputChange={uploadFlow.handleNativeFileInputChange}
+                  onOpenObservability={(p) =>
+                    setObservabilityDialog({
+                      aisleId: p.aisleId,
+                      aisleCode: p.aisleCode,
+                      initialSelectedRunId: p.initialSelectedRunId,
+                    })
+                  }
+                  onRequestUpload={uploadFlow.beginUploadForAisle}
                   onRequestProcess={(id, code) => void processFlow.requestProcess(id, code)}
                   aislesDataLoaded={Boolean(aislesQuery.data)}
                   processingAisleId={processFlow.processingAisleId}
@@ -255,12 +195,12 @@ export default function InventoryDetail() {
 
           {observabilityDialog && inventoryId ? (
             <AisleObservabilityDialog
-              key={`${observabilityDialog.aisleId}-${observabilityDialog.initialSelectedJobId ?? 'none'}`}
+              key={`${observabilityDialog.aisleId}-${observabilityDialog.initialSelectedRunId ?? 'none'}`}
               open
               inventoryId={inventoryId}
               aisleId={observabilityDialog.aisleId}
               aisleCode={observabilityDialog.aisleCode}
-              initialSelectedJobId={observabilityDialog.initialSelectedJobId}
+              initialSelectedJobId={observabilityDialog.initialSelectedRunId}
               onClose={() => setObservabilityDialog(null)}
               onAislesInvalidate={() => aislesQuery.refetch()}
             />

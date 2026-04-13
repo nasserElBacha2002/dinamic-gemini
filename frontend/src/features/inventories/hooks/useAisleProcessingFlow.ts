@@ -8,8 +8,9 @@ import { useProcessingProviderOptions, useStartAisleProcessing } from '../../../
 export interface UseAisleProcessingFlowOptions {
   inventoryId: string;
   isProductionInventory: boolean;
+  processError?: string | null;
+  setProcessError?: (message: string | null) => void;
   onAfterSuccess?: () => void;
-  /** e.g. clear upload error when processing mutation runs */
   onBeforeProcessMutation?: () => void;
 }
 
@@ -21,14 +22,20 @@ export interface AisleProcessingDialogTarget {
 export function useAisleProcessingFlow({
   inventoryId,
   isProductionInventory,
+  processError: controlledError,
+  setProcessError: controlledSetError,
   onAfterSuccess,
   onBeforeProcessMutation,
 }: UseAisleProcessingFlowOptions) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
 
+  const [internalError, setInternalError] = useState<string | null>(null);
+  const controlled = controlledSetError !== undefined;
+  const processError = controlled ? (controlledError ?? null) : internalError;
+  const setProcessError = controlled ? controlledSetError! : setInternalError;
+
   const [processingAisleId, setProcessingAisleId] = useState<string | null>(null);
-  const [processError, setProcessError] = useState<string | null>(null);
   const [dialogTarget, setDialogTarget] = useState<AisleProcessingDialogTarget | null>(null);
   const [providerKey, setProviderKey] = useState('');
   const [modelKey, setModelKey] = useState('');
@@ -50,13 +57,16 @@ export function useAisleProcessingFlow({
     setModelKey('');
   }, [providerKey]);
 
-  const openDialogForAisle = useCallback((aisleId: string, aisleCode: string) => {
-    setProcessError(null);
-    setProviderKey('');
-    setModelKey('');
-    setPromptKey('');
-    setDialogTarget({ aisleId, aisleCode });
-  }, []);
+  const openDialogForAisle = useCallback(
+    (aisleId: string, aisleCode: string) => {
+      setProcessError(null);
+      setProviderKey('');
+      setModelKey('');
+      setPromptKey('');
+      setDialogTarget({ aisleId, aisleCode });
+    },
+    [setProcessError]
+  );
 
   const closeDialog = useCallback(() => {
     setDialogTarget(null);
@@ -83,7 +93,7 @@ export function useAisleProcessingFlow({
         setProcessingAisleId(null);
       }
     },
-    [onAfterSuccess, onBeforeProcessMutation, processMutation, showSnackbar, t]
+    [onAfterSuccess, onBeforeProcessMutation, processMutation, setProcessError, showSnackbar, t]
   );
 
   const requestProcess = useCallback(
@@ -126,6 +136,7 @@ export function useAisleProcessingFlow({
     processMutation,
     promptKey,
     providerKey,
+    setProcessError,
     showSnackbar,
     t,
   ]);

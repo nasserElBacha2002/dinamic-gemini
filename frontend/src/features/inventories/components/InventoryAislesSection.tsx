@@ -15,15 +15,15 @@ import {
 import { pathToAislePositions } from '../../../utils/resultRoutes';
 import {
   computeProcessAisleMenuState,
-  type AisleInventoryRowViewModel,
+  type AisleInventoryTableRow,
   type ProcessAisleMenuContext,
 } from '../adapters';
 
 export interface InventoryAislesSectionProps {
   inventoryId: string;
   /** All aisles (for empty vs filter-empty). */
-  rowViewModels: AisleInventoryRowViewModel[];
-  filteredRowViewModels: AisleInventoryRowViewModel[];
+  tableRows: AisleInventoryTableRow[];
+  filteredTableRows: AisleInventoryTableRow[];
   aislesLoading: boolean;
   aisleTableSearch: string;
   onAisleTableSearch: (v: string) => void;
@@ -33,7 +33,7 @@ export interface InventoryAislesSectionProps {
   onOpenObservability: (p: {
     aisleId: string;
     aisleCode: string;
-    initialSelectedJobId: string | null;
+    initialSelectedRunId: string | null;
   }) => void;
   onRequestUpload: (aisleId: string) => void;
   onRequestProcess: (aisleId: string, aisleCode: string) => void;
@@ -45,8 +45,8 @@ export interface InventoryAislesSectionProps {
 
 export default function InventoryAislesSection({
   inventoryId,
-  rowViewModels,
-  filteredRowViewModels,
+  tableRows,
+  filteredTableRows,
   aislesLoading,
   aisleTableSearch,
   onAisleTableSearch,
@@ -70,12 +70,11 @@ export default function InventoryAislesSection({
       aislesDataLoaded,
       aislesLoading,
       processingAisleId,
-      t,
     }),
-    [aislesDataLoaded, aislesLoading, processingAisleId, t]
+    [aislesDataLoaded, aislesLoading, processingAisleId]
   );
 
-  const columns = useMemo<DataTableColumn<AisleInventoryRowViewModel>[]>(
+  const columns = useMemo<DataTableColumn<AisleInventoryTableRow>[]>(
     () => [
       {
         id: 'code',
@@ -86,7 +85,7 @@ export default function InventoryAislesSection({
             size="small"
             onClick={(e) => {
               e.stopPropagation();
-              navigate(pathToAislePositions(inventoryId, row.id));
+              navigate(pathToAislePositions(inventoryId, row.presentation.id));
             }}
             sx={{
               fontWeight: 650,
@@ -97,7 +96,7 @@ export default function InventoryAislesSection({
               '&:hover': { textDecoration: 'underline', backgroundColor: 'transparent' },
             }}
           >
-            {row.code}
+            {row.presentation.code}
           </Button>
         ),
       },
@@ -105,23 +104,26 @@ export default function InventoryAislesSection({
         id: 'aisle_status',
         label: t('aisle.column_aisle_status'),
         cell: (row) => (
-          <StatusBadge label={row.aisleStatusLabel} semantic={row.aisleStatusSemantic} />
+          <StatusBadge
+            label={row.presentation.aisleStatusLabel}
+            semantic={row.presentation.aisleStatusSemantic}
+          />
         ),
       },
       {
         id: 'assets',
         label: t('aisle.column_assets'),
         align: 'right',
-        cell: (row) => row.assetsCountDisplay,
+        cell: (row) => row.presentation.assetsCountDisplay,
       },
       {
         id: 'processing',
         label: t('aisle.column_processing'),
         cell: (row) =>
-          row.execution ? (
+          row.presentation.latestRun ? (
             <StatusBadge
-              label={row.execution.jobStatusLabel}
-              semantic={row.execution.jobStatusSemantic}
+              label={row.presentation.latestRun.statusLabel}
+              semantic={row.presentation.latestRun.statusSemantic}
             />
           ) : (
             emptyLabel
@@ -130,18 +132,18 @@ export default function InventoryAislesSection({
       {
         id: 'run_provider',
         label: t('aisle.column_run_provider'),
-        cell: (row) => row.execution?.providerDisplay ?? emptyLabel,
+        cell: (row) => row.presentation.latestRun?.providerDisplay ?? emptyLabel,
       },
       {
         id: 'run_model',
         label: t('aisle.column_run_model'),
-        cell: (row) => row.execution?.modelDisplay ?? emptyLabel,
+        cell: (row) => row.presentation.latestRun?.modelDisplay ?? emptyLabel,
       },
       {
         id: 'reference_usage',
         label: t('aisle.column_reference_usage'),
         cell: (row) => {
-          const summary = row.referenceUsage;
+          const summary = row.presentation.referenceUsage;
           if (!summary) return emptyLabel;
           return (
             <Box sx={{ display: 'grid', gap: 0.5, maxWidth: 180 }}>
@@ -159,18 +161,18 @@ export default function InventoryAislesSection({
         id: 'results_found',
         label: t('aisle.column_results_found'),
         align: 'right',
-        cell: (row) => row.positionsCountDisplay,
+        cell: (row) => row.presentation.positionsCountDisplay,
       },
       {
         id: 'pending_review',
         label: t('aisle.column_pending_review'),
         align: 'right',
-        cell: (row) => row.pendingReviewDisplay,
+        cell: (row) => row.presentation.pendingReviewDisplay,
       },
       {
         id: 'last_updated',
         label: t('common.last_updated'),
-        cell: (row) => row.lastUpdatedDisplay,
+        cell: (row) => row.presentation.lastUpdatedDisplay,
       },
       {
         id: 'actions',
@@ -178,33 +180,37 @@ export default function InventoryAislesSection({
         align: 'right',
         width: 56,
         cell: (row) => {
-          const processState = computeProcessAisleMenuState(row.processMenuAisle, menuCtx);
+          const processState = computeProcessAisleMenuState(row.action.processMenuAisle, menuCtx);
+          const p = row.presentation;
           return (
             <RowActionMenu
-              ariaLabel={t('aisle.row_actions_a11y', { code: row.code })}
+              ariaLabel={t('aisle.row_actions_a11y', { code: p.code })}
               items={[
                 {
                   id: 'upload_assets',
-                  label: uploadingAisleId === row.id ? t('common.uploading') : t('aisle.upload_assets'),
-                  onClick: () => onRequestUpload(row.id),
-                  disabled: uploadingAisleId === row.id,
+                  label: uploadingAisleId === p.id ? t('common.uploading') : t('aisle.upload_assets'),
+                  onClick: () => onRequestUpload(p.id),
+                  disabled: uploadingAisleId === p.id,
                 },
                 {
                   id: 'execution_logs',
                   label: t('aisle.view_logs'),
                   onClick: () =>
                     onOpenObservability({
-                      aisleId: row.id,
-                      aisleCode: row.code,
-                      initialSelectedJobId: row.executionJobId,
+                      aisleId: p.id,
+                      aisleCode: p.code,
+                      initialSelectedRunId: row.action.observabilityInitialRunId,
                     }),
                 },
                 {
                   id: 'process',
-                  label: processingAisleId === row.id ? t('common.starting') : t('aisle.process_aisle'),
-                  onClick: () => void onRequestProcess(row.id, row.code),
+                  label: processingAisleId === p.id ? t('common.starting') : t('aisle.process_aisle'),
+                  onClick: () => void onRequestProcess(p.id, p.code),
                   disabled: processState.disabled,
-                  disabledReason: processState.disabledReason,
+                  disabledReason:
+                    processState.disabledReasonKey !== undefined
+                      ? t(processState.disabledReasonKey)
+                      : undefined,
                 },
               ]}
             />
@@ -255,17 +261,17 @@ export default function InventoryAislesSection({
           data-testid="inventory-aisles-search"
         />
       </FilterToolbar>
-      <DataTable<AisleInventoryRowViewModel>
-        rows={filteredRowViewModels}
-        rowKey={(row) => row.id}
+      <DataTable<AisleInventoryTableRow>
+        rows={filteredTableRows}
+        rowKey={(row) => row.presentation.id}
         columns={columns}
         loading={aislesLoading}
-        onRowClick={(row) => navigate(pathToAislePositions(inventoryId, row.id))}
+        onRowClick={(row) => navigate(pathToAislePositions(inventoryId, row.presentation.id))}
         emptyState={
           aisleTableSearch.trim() &&
           !aislesLoading &&
-          rowViewModels.length > 0 &&
-          filteredRowViewModels.length === 0
+          tableRows.length > 0 &&
+          filteredTableRows.length === 0
             ? { message: t('table.empty_no_match') }
             : {
                 title: t('aisle.empty_table_title'),

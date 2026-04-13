@@ -7,16 +7,21 @@ import type { Aisle } from '../../../api/types';
 /** Minimal aisle fields for process-menu gating (avoids tying the helper to full list DTOs). */
 export type AisleProcessMenuInput = Pick<Aisle, 'id' | 'status' | 'assets_count'>;
 
+export type ProcessAisleMenuDisabledReasonKey =
+  | 'aisle.upload_error_verify'
+  | 'aisle.upload_error_fallback'
+  | 'aisle.upload_need_image';
+
 export interface ProcessAisleMenuState {
   disabled: boolean;
-  disabledReason?: string;
+  /** i18n key for RowActionMenu helper text — translate in UI. */
+  disabledReasonKey?: ProcessAisleMenuDisabledReasonKey;
 }
 
 export interface ProcessAisleMenuContext {
   aislesDataLoaded: boolean;
   aislesLoading: boolean;
   processingAisleId: string | null;
-  t: (key: string) => string;
 }
 
 export function isAisleProcessingBusy(aisle: AisleProcessMenuInput, processingAisleId: string | null): boolean {
@@ -38,13 +43,13 @@ export function computeProcessAisleMenuState(
   if (noListYet) {
     return {
       disabled,
-      disabledReason: ctx.aislesLoading
-        ? ctx.t('aisle.upload_error_verify')
-        : ctx.t('aisle.upload_error_fallback'),
+      disabledReasonKey: ctx.aislesLoading
+        ? 'aisle.upload_error_verify'
+        : 'aisle.upload_error_fallback',
     };
   }
   if (missingAssets) {
-    return { disabled, disabledReason: ctx.t('aisle.upload_need_image') };
+    return { disabled, disabledReasonKey: 'aisle.upload_need_image' };
   }
   return { disabled };
 }

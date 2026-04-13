@@ -2,11 +2,16 @@ export {
   toReferenceUsageRowViewModel,
   type ReferenceUsageRowViewModel,
 } from './referenceUsageViewModel';
+export { getLatestRunFromAisleListItem } from './aisleListRunSource';
 export {
-  toAisleInventoryRowViewModel,
-  toAisleInventoryRowViewModels,
-  type AisleInventoryRowViewModel,
-  type AisleExecutionSummaryViewModel,
+  toAisleInventoryRowPresentation,
+  toAisleInventoryRowActionContext,
+  toAisleInventoryTableRow,
+  toAisleInventoryTableRows,
+  type LatestRunSnapshotViewModel,
+  type AisleInventoryRowPresentation,
+  type AisleInventoryRowActionContext,
+  type AisleInventoryTableRow,
 } from './aisleInventoryRowViewModel';
 export {
   computeProcessAisleMenuState,
@@ -14,5 +19,6 @@ export {
   type AisleProcessMenuInput,
   type ProcessAisleMenuState,
   type ProcessAisleMenuContext,
+  type ProcessAisleMenuDisabledReasonKey,
 } from './processAisleMenuState';
 export { toInventoryHeaderViewModel, type InventoryHeaderViewModel } from './inventoryHeaderViewModel';
