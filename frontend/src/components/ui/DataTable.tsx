@@ -157,7 +157,17 @@ export default function DataTable<T>({
   const showEmpty = Boolean(emptyDisplay);
 
   return (
-    <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 1 }}>
+    <TableContainer
+      component={Paper}
+      variant="outlined"
+      sx={{
+        borderRadius: 1,
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        overflowX: 'auto',
+      }}
+    >
       <Table size={size} stickyHeader={stickyHeader} aria-busy={loading}>
         <TableHead>
           <TableRow>
@@ -231,7 +241,8 @@ export default function DataTable<T>({
           <TableFooter>
             <TableRow>
               <TableCell colSpan={colCount} sx={{ borderBottom: 'none', p: 0 }}>
-                <TablePagination
+                <Box sx={{ overflowX: 'auto', width: '100%', minWidth: 0 }}>
+                  <TablePagination
                   component="div"
                   count={pagination.totalItems}
                   page={Math.max(0, pagination.page - 1)}
@@ -248,6 +259,7 @@ export default function DataTable<T>({
                   rowsPerPageOptions={[...TABLE_PAGE_SIZE_OPTIONS]}
                   labelRowsPerPage={t('common.rows_per_page')}
                 />
+                </Box>
               </TableCell>
             </TableRow>
           </TableFooter>

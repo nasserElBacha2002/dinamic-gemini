@@ -108,9 +108,20 @@ const theme = createTheme(
   components: {
     MuiCssBaseline: {
       styleOverrides: {
+        html: {
+          maxWidth: '100%',
+          overflowX: 'hidden',
+        },
         body: {
+          maxWidth: '100%',
+          overflowX: 'hidden',
           WebkitFontSmoothing: 'antialiased',
           MozOsxFontSmoothing: 'grayscale',
+        },
+        '#root': {
+          maxWidth: '100%',
+          overflowX: 'hidden',
+          minHeight: '100%',
         },
       },
     },

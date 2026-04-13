@@ -28,7 +28,11 @@ export default function SectionCard({
   const hasHeader = Boolean(title) || Boolean(subtitle) || Boolean(actions);
 
   return (
-    <Card variant={variant} elevation={variant === 'elevation' ? elevation : undefined} sx={{ mb: 0 }}>
+    <Card
+      variant={variant}
+      elevation={variant === 'elevation' ? elevation : undefined}
+      sx={{ mb: 0, minWidth: 0, maxWidth: '100%' }}
+    >
       {hasHeader ? (
         <Box
           sx={{
