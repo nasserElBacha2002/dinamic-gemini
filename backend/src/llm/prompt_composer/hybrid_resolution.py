@@ -4,8 +4,9 @@ Provider policy overlay for hybrid registry entries (``default`` vs ``openai`` b
 **Overlay rules:**
 * ``openai`` (when ``prompt_parity_mode`` is false) selects the ``openai`` **replacement** fragment.
 * ``claude`` (when ``prompt_parity_mode`` is false) appends the registry ``claude`` supplement to the
-  ``default`` body (canonical JSON entity contract for text models). Gemini, DeepSeek, and unknown
-  keys use ``default`` only.
+  ``default`` body (canonical JSON entity contract for text models). The same supplement applies when
+  the key normalizes to Claude family: ``anthropic`` or any string starting with ``claude`` (e.g.
+  model slugs). Gemini, DeepSeek, and unknown keys use ``default`` only.
 * ``prompt_parity_mode`` disables both ``openai`` and ``claude`` overlays so comparison runs share
   the same base text as Gemini.
 
@@ -26,6 +27,13 @@ from __future__ import annotations
 from typing import Dict, Final, Optional, Union
 
 from src.llm.prompt_composer.hybrid_profiles import PROMPTS
+
+
+def _normalized_key_for_claude_hybrid_supplement(raw: str) -> str:
+    """Map vendor/model hints to ``claude`` for hybrid supplement selection only (OpenAI branch unchanged)."""
+    if raw == "anthropic" or raw.startswith("claude"):
+        return "claude"
+    return raw
 
 
 def _hybrid_default_text(entry: Union[str, Dict[str, str]]) -> Optional[str]:
@@ -59,10 +67,10 @@ def resolve_hybrid_entry_for_provider(
     * If ``provider_key`` is exactly ``openai`` (case-insensitive), the entry defines an ``openai``
       string, and ``prompt_parity_mode`` is false, the ``openai`` fragment **replaces** ``default``.
     * If ``prompt_parity_mode`` is true, the ``openai`` fragment is never used.
-    * If ``provider_key`` is exactly ``claude`` (case-insensitive), the entry defines a non-empty
-      ``claude`` string, and ``prompt_parity_mode`` is false, that string is **appended** after the
-      ``default`` body (canonical entity JSON contract). Otherwise Claude resolution falls through
-      to ``default`` only (same as Gemini when parity mode is on).
+    * If the key is ``claude`` after Claude-family normalization (``claude``, ``anthropic``, or
+      ``claude-…`` prefixes), the entry defines a non-empty ``claude`` string, and
+      ``prompt_parity_mode`` is false, that string is **appended** after the ``default`` body.
+      Otherwise resolution falls through to ``default`` only (same as Gemini when parity mode is on).
     * Keys ``gemini``, ``deepseek``, ``None``, etc. use the ``default`` fragment only (no append).
 
     Legacy ``PROMPTS`` rows that use ``system``/``user`` (non-hybrid) are not valid hybrid entries;
@@ -88,8 +96,9 @@ def resolve_hybrid_entry_for_provider(
             )
             if use_openai_overlay:
                 return str(entry["openai"]).rstrip()
+            claude_overlay_pk = _normalized_key_for_claude_hybrid_supplement(pk)
             use_claude_supplement = (
-                pk == "claude"
+                claude_overlay_pk == "claude"
                 and not prompt_parity_mode
                 and isinstance(entry.get("claude"), str)
                 and str(entry["claude"]).strip() != ""

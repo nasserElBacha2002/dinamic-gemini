@@ -15,6 +15,10 @@ from src.llm.anthropic_sdk_adapter import (
     classify_anthropic_messages_api_error,
 )
 from src.llm.errors import LLMProviderError
+from src.llm.prompt_composer.hybrid_profiles import (
+    CLAUDE_CONTRACT_MARKER,
+    CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX,
+)
 from src.llm.types import LLMRequest
 
 
@@ -379,3 +383,44 @@ def test_anthropic_auth_error_not_retried() -> None:
     assert ei.value.code == "NOT_CONFIGURED"
     assert client_inst.messages.create.call_count == 1
     sl.assert_not_called()
+
+
+def test_anthropic_adapter_default_prompt_includes_claude_contract_and_json_suffix() -> None:
+    """Empty ``LLMRequest.prompt`` uses ``compose_hybrid_base_from_settings(..., claude)`` + wire suffix."""
+    adapter = AnthropicSdkAdapter()
+    settings = _settings_claude()
+    ok_json = '{"total_entities_detected": 0, "entities": []}'
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = ok_json
+    mock_message = MagicMock()
+    mock_message.content = [text_block]
+    mock_message.usage = None
+
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=[],
+        prompt="",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with patch("anthropic.Anthropic") as client_cls:
+        client_inst = MagicMock()
+        client_inst.messages.create.return_value = mock_message
+        client_cls.return_value = client_inst
+        adapter.execute(req, settings)
+        user_text = client_inst.messages.create.call_args.kwargs["messages"][0]["content"][0]["text"]
+
+    assert CLAUDE_CONTRACT_MARKER in user_text
+    assert CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX in user_text
+    assert "Do NOT include keys:" in user_text
+    for key in (
+        "internal_code",
+        "position_barcode",
+        "product_label_quantity",
+        "product_label_bbox",
+        "position_label_bbox",
+    ):
+        assert key in user_text

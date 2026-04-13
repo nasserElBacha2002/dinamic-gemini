@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.llm.prompt_composer.hybrid_profiles import PROMPTS
+from src.llm.prompt_composer.hybrid_profiles import CLAUDE_CONTRACT_MARKER, PROMPTS
 from src.llm.prompt_composer.hybrid_resolution import resolve_hybrid_entry_for_provider
 
 
@@ -18,7 +18,7 @@ def test_claude_resolves_default_plus_canonical_supplement() -> None:
     assert gemini == default_branch
     assert claude != gemini
     assert claude.startswith(gemini)
-    assert "CLAUDE JSON ENTITY CONTRACT" in claude
+    assert CLAUDE_CONTRACT_MARKER in claude
     if isinstance(entry.get("openai"), str):
         openai = resolve_hybrid_entry_for_provider(entry, "openai")
         assert openai == str(entry["openai"]).rstrip()
@@ -31,6 +31,29 @@ def test_deepseek_resolves_same_hybrid_base_as_gemini() -> None:
     gemini = resolve_hybrid_entry_for_provider(entry, "gemini")
     deepseek = resolve_hybrid_entry_for_provider(entry, "deepseek")
     assert deepseek == gemini
+
+
+def test_claude_supplement_also_applies_for_anthropic_and_claude_model_slug() -> None:
+    entry = PROMPTS.get("global_v21")
+    if not isinstance(entry, dict):
+        pytest.skip("global_v21 is not a dict-shaped hybrid entry")
+    base = resolve_hybrid_entry_for_provider(entry, "gemini")
+    for pk in ("anthropic", "claude-3-5-sonnet-20241022"):
+        t = resolve_hybrid_entry_for_provider(entry, pk)
+        assert t != base
+        assert t.startswith(base)
+        assert CLAUDE_CONTRACT_MARKER in t
+
+
+def test_parity_strips_claude_supplement_for_anthropic_alias() -> None:
+    entry = PROMPTS.get("global_v21")
+    if not isinstance(entry, dict):
+        pytest.skip("global_v21 is not a dict-shaped hybrid entry")
+    full = resolve_hybrid_entry_for_provider(entry, "anthropic", prompt_parity_mode=False)
+    parity = resolve_hybrid_entry_for_provider(entry, "anthropic", prompt_parity_mode=True)
+    assert CLAUDE_CONTRACT_MARKER in full
+    assert CLAUDE_CONTRACT_MARKER not in parity
+    assert parity == resolve_hybrid_entry_for_provider(entry, "gemini", prompt_parity_mode=False)
 
 
 def test_openai_parity_mode_matches_default_branch() -> None:
@@ -61,6 +84,6 @@ def test_parity_mode_strips_claude_supplement() -> None:
         pytest.skip("global_v21 is not a dict-shaped hybrid entry")
     with_sup = resolve_hybrid_entry_for_provider(entry, "claude", prompt_parity_mode=False)
     parity = resolve_hybrid_entry_for_provider(entry, "claude", prompt_parity_mode=True)
-    assert "CLAUDE JSON ENTITY CONTRACT" in with_sup
-    assert "CLAUDE JSON ENTITY CONTRACT" not in parity
+    assert CLAUDE_CONTRACT_MARKER in with_sup
+    assert CLAUDE_CONTRACT_MARKER not in parity
     assert parity == resolve_hybrid_entry_for_provider(entry, "gemini", prompt_parity_mode=False)

@@ -112,38 +112,84 @@ Output:
 Return valid JSON matching the required entity schema (total_entities_detected + entities array).
 """
 
-# --- Claude (text / Messages API) — appended to ``default`` for provider key ``claude`` only ---
-# Aligns free-form JSON output with the same canonical entity keys as ``EntityV21`` / shared pipeline.
-_CLAUDE_V21_CANONICAL_ENTITY_CONTRACT: Final[str] = """\
-CLAUDE JSON ENTITY CONTRACT (non-negotiable — your response JSON must follow this exactly):
+# --- Claude (text / Messages API) — single source of truth for canonical keys / forbidden keys ---
+# Contract paragraph + JSON suffix are built from the same tuples to avoid drift.
+CLAUDE_CONTRACT_MARKER: Final[str] = "CLAUDE JSON ENTITY CONTRACT"
 
-Each entity object MUST include these keys. Use JSON null when a value is not clearly visible, not readable, or uncertain. Do not omit keys.
+# Order matches ``CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX`` / adapter wire instructions.
+CLAUDE_JSON_ENTITY_OUTPUT_KEYS: Final[tuple[str, ...]] = (
+    "entity_type",
+    "model_entity_id",
+    "source_image_id",
+    "confidence",
+    "has_boxes",
+    "position_barcode",
+    "internal_code",
+    "position_label_bbox",
+    "product_label_bbox",
+    "product_label_quantity",
+)
 
-Required core (unchanged semantics):
-- entity_type, model_entity_id, source_image_id, confidence, has_boxes
+CLAUDE_FORBIDDEN_JSON_KEYS: Final[tuple[str, ...]] = (
+    "position_label",
+    "product_label",
+    "quantity",
+    "qty",
+    "detected_quantity",
+    "bbox",
+)
 
-Canonical identity, quantity, and regions (same meaning as the shared v2.1 extraction contract):
-- internal_code (string or null): ONLY product code / SKU / internal product identifier read from the PRODUCT label (on boxes or product). NEVER put location codes, pallet position labels, or aisle labels here.
-- position_barcode (string or null): ONLY position / pallet / location identifier (barcode or numeric code clearly belonging to the pallet position or location label). Do not invent. NEVER use a generic alias key like "position_label" — use position_barcode only.
-- product_label_quantity (integer or null): ONLY if a quantity is explicitly printed on the product label and clearly readable. Detecting one pallet entity does NOT mean quantity = 1. Do not estimate, do not infer from the number of entities, do not use 0 unless zero is explicitly shown on the label and semantically valid. If unsure, null.
-- product_label_bbox (array of 4 numbers or null): normalized [x1,y1,x2,y2] in [0,1], x1<x2, y1<y2 — ONLY the region of the product / SKU / quantity-on-product-label. NOT the full pallet extent, NOT a scene-level bounding box. If no product label region is clearly identifiable, null.
-- position_label_bbox (array of 4 numbers or null): normalized [x1,y1,x2,y2] in [0,1] — ONLY the region of the position / location label. If no position label is visible, null.
 
-FORBIDDEN keys — do not output any of these (put the information in the canonical keys above or null):
-position_label, product_label, quantity, qty, detected_quantity, bbox
+def claude_forbidden_json_keys_csv() -> str:
+    return ", ".join(CLAUDE_FORBIDDEN_JSON_KEYS)
 
-If you would have used a forbidden key, remap: location text → position_barcode; product SKU text → internal_code; product-label ROI → product_label_bbox; position-label ROI → position_label_bbox; printed product quantity → product_label_quantity.
-"""
 
-# Wire-level reminder appended by ``anthropic_sdk_adapter`` after the hybrid base prompt.
-CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX: Final[str] = (
-    "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
-    'Root keys: "total_entities_detected" (non-negative integer) and "entities" (array). '
-    "Each entity MUST be a JSON object including ALL of these keys (use null when unknown): "
-    "entity_type, model_entity_id, source_image_id, confidence, has_boxes, "
-    "position_barcode, internal_code, position_label_bbox, product_label_bbox, product_label_quantity. "
-    "Follow the semantic rules in the instructions above. "
-    "Do NOT include keys: position_label, product_label, quantity, qty, detected_quantity, bbox."
+def build_claude_json_output_instruction_suffix() -> str:
+    keys_csv = ", ".join(CLAUDE_JSON_ENTITY_OUTPUT_KEYS)
+    forb = claude_forbidden_json_keys_csv()
+    return (
+        "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
+        f'Root keys: "total_entities_detected" (non-negative integer) and "entities" (array). '
+        "Each entity MUST be a JSON object including ALL of these keys (use null when unknown): "
+        f"{keys_csv}. "
+        "Follow the semantic rules in the instructions above. "
+        f"Do NOT include keys: {forb}."
+    )
+
+
+CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX: Final[str] = build_claude_json_output_instruction_suffix()
+
+# TODO(post-rollout audit): Monitor real Claude runs for noisy or incorrect ``position_barcode`` fills;
+# remap guidance is intentional for location identifiers, but OCR junk here may need stricter prompt
+# wording or downstream validation if it appears in production.
+_CLAUDE_V21_CANONICAL_ENTITY_CONTRACT: Final[str] = (
+    "CLAUDE JSON ENTITY CONTRACT (non-negotiable — your response JSON must follow this exactly):\n\n"
+    "Each entity object MUST include these keys. Use JSON null when a value is not clearly visible, "
+    "not readable, or uncertain. Do not omit keys.\n\n"
+    "Required core (unchanged semantics):\n"
+    "- entity_type, model_entity_id, source_image_id, confidence, has_boxes\n\n"
+    "Canonical identity, quantity, and regions (same meaning as the shared v2.1 extraction contract):\n"
+    "- internal_code (string or null): ONLY product code / SKU / internal product identifier read from "
+    "the PRODUCT label (on boxes or product). NEVER put location codes, pallet position labels, or "
+    "aisle labels here.\n"
+    "- position_barcode (string or null): ONLY position / pallet / location identifier (barcode or "
+    "numeric code clearly belonging to the pallet position or location label). Do not invent. NEVER use "
+    'a generic alias key like "position_label" — use position_barcode only.\n'
+    "- product_label_quantity (integer or null): ONLY if a quantity is explicitly printed on the product "
+    "label and clearly readable. Detecting one pallet entity does NOT mean quantity = 1. Do not estimate, "
+    "do not infer from the number of entities, do not use 0 unless zero is explicitly shown on the label "
+    "and semantically valid. If unsure, null.\n"
+    "- product_label_bbox (array of 4 numbers or null): normalized [x1,y1,x2,y2] in [0,1], x1<x2, y1<y2 "
+    "— ONLY the region of the product / SKU / quantity-on-product-label. NOT the full pallet extent, NOT "
+    "a scene-level bounding box. If no product label region is clearly identifiable, null.\n"
+    "- position_label_bbox (array of 4 numbers or null): normalized [x1,y1,x2,y2] in [0,1] — ONLY the "
+    "region of the position / location label. If no position label is visible, null.\n\n"
+    "FORBIDDEN keys — do not output any of these (put the information in the canonical keys above or null):\n"
+    + claude_forbidden_json_keys_csv()
+    + "\n\n"
+    "If you would have used a forbidden key, remap: location text → position_barcode; product SKU text → "
+    "internal_code; product-label ROI → product_label_bbox; position-label ROI → position_label_bbox; "
+    "printed product quantity → product_label_quantity."
 )
 
 # ---------------------------------------------------------------------------

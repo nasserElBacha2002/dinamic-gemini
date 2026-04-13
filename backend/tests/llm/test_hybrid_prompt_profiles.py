@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src.llm.prompt_composer.hybrid_profiles import CLAUDE_CONTRACT_MARKER
 from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
 from src.llm.prompts import get_hybrid_prompt
 
@@ -34,7 +35,7 @@ def test_gemini_and_unknown_use_default_variant_claude_gets_supplement() -> None
     claude = get_hybrid_prompt("global_v21", "claude")
     assert claude != default_a
     assert claude.startswith(default_a)
-    assert "CLAUDE JSON ENTITY CONTRACT" in claude
+    assert CLAUDE_CONTRACT_MARKER in claude
 
 
 def test_openai_global_v21_b_differs_from_default_b() -> None:

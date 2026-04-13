@@ -411,6 +411,8 @@ class AnthropicSdkAdapter:
         return LLMResponse(
             provider="claude",
             model=str(effective_model),
+            # Shared field name ``latency_ms`` carries full retry window for Claude (see debug log
+            # ``total_attempt_window_ms``); not a single HTTP round-trip latency.
             latency_ms=total_attempt_window_ms,
             parsed_json=data,
             raw_text=raw_text,

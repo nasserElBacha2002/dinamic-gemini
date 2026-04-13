@@ -46,6 +46,9 @@ class LLMResponse:
     Output of ``LlmGlobalAnalysisExecutor.execute`` (parsed v2.1 JSON + attribution).
 
     ``provider`` identifies the logical vendor key (e.g. ``gemini``, ``openai``, ``claude``, ``deepseek``), not an SDK type.
+
+    ``latency_ms`` semantics are provider-defined (e.g. Claude may set this to the full multi-attempt
+    window, not a single HTTP round trip); see adapter implementations.
     """
 
     def __init__(
