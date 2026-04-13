@@ -89,13 +89,46 @@ def test_claude_contract_emphasizes_explicit_product_label_quantity_and_bbox() -
     # Explicit-only quantity; not entity/pallet count
     assert "product_label_quantity" in text
     assert "position/location label" in text or "location label" in text
-    assert "one PALLET entity" in text or "one pallet entity" in text.lower()
+    assert "one PALLET entity" in text or "one pallet entity" in text.lower() or "PALLET row" in text
     assert "NULLABILITY" in text or "null" in text.lower()
     # product_label_bbox tight vs pallet/scene
     assert "product_label_bbox" in text
     assert "TIGHT" in text or "tight" in text.lower()
     # internal_code vs position
     assert "internal_code" in text and "position_barcode" in text
+
+
+def test_claude_contract_product_label_first_and_visual_search_order() -> None:
+    text = compose_hybrid_base("global_v21", "claude", prompt_parity_mode=False)
+    assert "PRIMARY VISUAL TARGET" in text
+    assert "VISUAL SEARCH ORDER" in text
+    assert "SECONDARY" in text
+    assert "product label first" in text.lower() or "PRODUCT label first" in text
+
+
+def test_claude_contract_binds_bbox_to_product_code_and_quantity() -> None:
+    text = compose_hybrid_base("global_v21", "claude", prompt_parity_mode=False)
+    assert "internal_code" in text and "product_label_bbox" in text
+    assert "MUST also" in text or "must also" in text.lower()
+
+
+def test_claude_contract_position_labels_do_not_substitute_product_fields() -> None:
+    text = compose_hybrid_base("global_v21", "claude", prompt_parity_mode=False)
+    assert "do not substitute" in text.lower() or "Do not substitute" in text
+    assert "location digits" in text.lower() or "location text" in text.lower()
+
+
+def test_claude_contract_prefers_fewer_semantically_strong_entities() -> None:
+    text = compose_hybrid_base("global_v21", "claude", prompt_parity_mode=False)
+    assert "ENTITY QUALITY" in text
+    assert "semantically strong" in text.lower() or "semantically strong" in text
+
+
+def test_claude_suffix_reinforces_product_before_position_tags() -> None:
+    s = CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX
+    assert "Visual priority" in s or "visual priority" in s.lower()
+    assert "product load" in s.lower() or "PRODUCT" in s
+    assert "internal_code" in s and "product_label_bbox" in s
 
 
 def test_claude_suffix_forbids_using_inferred_or_entity_count_as_quantity() -> None:

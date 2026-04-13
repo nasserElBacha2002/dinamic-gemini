@@ -424,5 +424,6 @@ def test_anthropic_adapter_default_prompt_includes_claude_contract_and_json_suff
         "position_label_bbox",
     ):
         assert key in user_text
-    assert "PRIORITY" in user_text
+    assert "VISUAL SEARCH ORDER" in user_text
+    assert "PRIMARY VISUAL TARGET" in user_text
     assert "entity count" in user_text
