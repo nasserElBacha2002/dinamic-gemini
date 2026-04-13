@@ -11,6 +11,7 @@ from src.llm.prompt_composer.hybrid_profiles import (
     CLAUDE_FORBIDDEN_JSON_KEYS,
     CLAUDE_JSON_ENTITY_OUTPUT_KEYS,
     CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX,
+    CLAUDE_QUANTITY_WIRE_REMINDER,
     build_claude_json_output_instruction_suffix,
     claude_forbidden_json_keys_csv,
 )
@@ -36,6 +37,7 @@ def test_claude_json_output_suffix_lists_canonical_and_forbidden() -> None:
     assert "Do NOT include keys:" in s
     for fk in CLAUDE_FORBIDDEN_JSON_KEYS:
         assert fk in s
+    assert CLAUDE_QUANTITY_WIRE_REMINDER.strip() in s
 
 
 def test_claude_contract_and_suffix_share_forbidden_and_entity_key_lists() -> None:
@@ -80,3 +82,25 @@ def test_compose_from_settings_with_normalized_pipeline_provider_claude() -> Non
     assert pk == "claude"
     text = compose_hybrid_base_from_settings(settings, pipeline_provider_key=pk)
     assert CLAUDE_CONTRACT_MARKER in text
+
+
+def test_claude_contract_emphasizes_explicit_product_label_quantity_and_bbox() -> None:
+    text = compose_hybrid_base("global_v21", "claude", prompt_parity_mode=False)
+    # Explicit-only quantity; not entity/pallet count
+    assert "product_label_quantity" in text
+    assert "position/location label" in text or "location label" in text
+    assert "one PALLET entity" in text or "one pallet entity" in text.lower()
+    assert "NULLABILITY" in text or "null" in text.lower()
+    # product_label_bbox tight vs pallet/scene
+    assert "product_label_bbox" in text
+    assert "TIGHT" in text or "tight" in text.lower()
+    # internal_code vs position
+    assert "internal_code" in text and "position_barcode" in text
+
+
+def test_claude_suffix_forbids_using_inferred_or_entity_count_as_quantity() -> None:
+    s = CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX
+    assert "entity count" in s
+    assert "pallet count" in s
+    assert "product_label_quantity" in s
+    assert "null" in s.lower()
