@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { computeProcessAisleMenuState } from '../src/features/inventories/adapters';
 
 describe('computeProcessAisleMenuState', () => {
+  it('returns no reason key when disabled only because aisle is busy', () => {
+    const state = computeProcessAisleMenuState(
+      { id: 'a1', status: 'processing', assets_count: 3 },
+      { aislesDataLoaded: true, aislesLoading: false, processingAisleId: null }
+    );
+    expect(state.disabled).toBe(true);
+    expect(state.disabledReasonKey).toBeUndefined();
+  });
+
   it('returns i18n keys for disabled reasons instead of translated strings', () => {
     const state = computeProcessAisleMenuState(
       { id: 'a1', status: 'created', assets_count: 0 },

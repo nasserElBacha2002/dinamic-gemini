@@ -18,6 +18,10 @@ export interface ProcessAisleMenuState {
   disabledReasonKey?: ProcessAisleMenuDisabledReasonKey;
 }
 
+/**
+ * External inputs for menu gating only — no i18n here.
+ * Callers translate `ProcessAisleMenuState.disabledReasonKey` in the UI layer.
+ */
 export interface ProcessAisleMenuContext {
   aislesDataLoaded: boolean;
   aislesLoading: boolean;

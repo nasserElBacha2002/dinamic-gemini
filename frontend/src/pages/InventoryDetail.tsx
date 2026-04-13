@@ -23,6 +23,7 @@ export default function InventoryDetail() {
   const navigate = useNavigate();
   const { showSnackbar } = useAppSnackbar();
   const [createAisleOpen, setCreateAisleOpen] = useState(false);
+  /** `initialSelectedRunId` is UI naming; v3 API still identifies runs as jobs on the wire. */
   const [observabilityDialog, setObservabilityDialog] = useState<{
     aisleId: string;
     aisleCode: string;
@@ -200,6 +201,7 @@ export default function InventoryDetail() {
               inventoryId={inventoryId}
               aisleId={observabilityDialog.aisleId}
               aisleCode={observabilityDialog.aisleCode}
+              // Run id in inventory UI === job id in v3 observability API (unchanged contract).
               initialSelectedJobId={observabilityDialog.initialSelectedRunId}
               onClose={() => setObservabilityDialog(null)}
               onAislesInvalidate={() => aislesQuery.refetch()}

@@ -13,13 +13,19 @@ export interface UseAisleAssetUploadFlowOptions {
   uploadError?: string | null;
   setUploadError?: (message: string | null) => void;
   onAfterSuccess?: () => void;
-  /** Called immediately before an upload mutation runs (e.g. clear sibling flow errors). */
+  /**
+   * Runs immediately before the upload mutation (when files are known).
+   * Opening the file picker alone does not call this — use it e.g. to clear sibling flow errors.
+   */
   onBeforeUploadAttempt?: () => void;
 }
 
 /**
  * Explicit aisle asset upload flow: pick an aisle, open the native file selector, upload selected files.
- * `pendingPickAisleIdRef` only bridges sync timing between click() and change (React state may lag one frame).
+ *
+ * Internal: `pendingPickAisleIdRef` holds the aisle id between `input.click()` and the `change` event.
+ * React state updates from `beginUploadForAisle` are not guaranteed to flush before `change` fires, so
+ * the ref is the reliable hand-off; it is not part of the public API and is cleared after each pick.
  */
 export function useAisleAssetUploadFlow({
   inventoryId,
@@ -31,6 +37,7 @@ export function useAisleAssetUploadFlow({
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** See module doc — bridges native file input timing only; never exposed to consumers. */
   const pendingPickAisleIdRef = useRef<string | null>(null);
   const [internalError, setInternalError] = useState<string | null>(null);
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);

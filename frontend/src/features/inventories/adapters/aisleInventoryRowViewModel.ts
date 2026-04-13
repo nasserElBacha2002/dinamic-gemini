@@ -19,7 +19,10 @@ export interface LatestRunSnapshotViewModel {
   modelDisplay: string;
 }
 
-/** Table cells only — no workflow identifiers or menu gating fields. */
+/**
+ * Table cells only — labels, semantics, formatted values, and row identity for links/navigation.
+ * Workflow/ops data (`processMenuAisle`, `observabilityInitialRunId`) stays on `AisleInventoryRowActionContext`.
+ */
 export interface AisleInventoryRowPresentation {
   id: string;
   code: string;
