@@ -9,11 +9,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 from src.llm.types import LLMResponse
 from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 from src.pipeline.context.run_context import RunContext
+from src.llm.prompt_composer.prompt_traceability import sha256_utf8
 from src.pipeline.execution_log import ExecutionLogWriter, read_execution_log_file
+from src.pipeline.services.hybrid_analysis_prompt import build_hybrid_analysis_prompt_with_traceability
 from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
@@ -21,6 +24,15 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
     ProviderCapabilities,
 )
+from tests.support.llm_executor_harness import HARNESS_LOGICAL_PROVIDER_KEY
+
+
+@pytest.fixture(autouse=True)
+def _patch_default_hybrid_llm_executor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 2: default tests use ``TestLLMExecutor`` (vendor-agnostic resolved key)."""
+    from tests.support.llm_executor_harness import TestLLMExecutor, patch_hybrid_resolve_llm_executor
+
+    patch_hybrid_resolve_llm_executor(monkeypatch, TestLLMExecutor())
 
 
 def _run_context(metadata: dict | None = None, settings_output_dir: str = "/tmp/out") -> RunContext:
@@ -28,10 +40,10 @@ def _run_context(metadata: dict | None = None, settings_output_dir: str = "/tmp/
     job_input.metadata = metadata
     job_input.input_type = "video"
     settings = MagicMock()
-    settings.llm_provider = "fake"
-    settings.fake_llm_fixture_path = None
+    settings.llm_provider = "openai"
     settings.output_dir = settings_output_dir
     settings.hybrid_prompt = "global_v21"
+    settings.debug_log_full_analysis_prompt = False
     return RunContext(
         job_id="j1",
         run_id="r1",
@@ -245,6 +257,7 @@ def test_hybrid_strategy_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
         },
     )
     context.execution_log = MagicMock()
+    context.settings.debug_log_full_analysis_prompt = True
 
     provider = HybridGlobalAnalysisStrategy()
     provider.analyze(
@@ -260,8 +273,12 @@ def test_hybrid_strategy_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     assert prepared_call is not None
     payload = prepared_call.kwargs["payload"]
     assert payload["event_type"] == "analysis_request"
-    assert payload["pipeline_provider"] == "fake"
-    assert "Analyze the provided warehouse aisle evidence (photos and/or extracted frames)." in payload["prompt_text"]
+    assert payload["pipeline_provider"] == HARNESS_LOGICAL_PROVIDER_KEY
+    assert payload["prompt_composition"]["profile_name"]
+    assert payload["prompt_composition"]["prompt_hash"]
+    assert "Entity types:" in payload["prompt_text"]
+    assert "PALLET" in payload["prompt_text"]
+    assert "total_entities_detected" in payload["prompt_text"]
     assert payload["attachment_summary"]["primary_evidence_count"] == 1
     assert payload["attachment_summary"]["visual_reference_count"] == 1
     assert payload["primary_evidence_attachments"][0]["frame_ref"] == "img_001"
@@ -272,6 +289,59 @@ def test_hybrid_strategy_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     assert payload["visual_reference_attachments"][0]["resolved"] is True
     assert "source_path" not in payload["visual_reference_attachments"][0]
     assert "resolved_path" not in payload["visual_reference_attachments"][0]
+
+
+def test_hybrid_strategy_execution_log_hashes_prompt_when_debug_full_prompt_disabled(tmp_path: Path) -> None:
+    """Phase 6: default execution_log omits full prompt_text; includes SHA-256 and length."""
+    import cv2
+
+    ref_full = tmp_path / "reference-image.jpg"
+    ref_full.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(ref_full), np.zeros((24, 24, 3), dtype=np.uint8))
+
+    context = _run_context(
+        metadata={
+            "analysis_context": {
+                "primary_evidence": [],
+                "visual_references": [
+                    {
+                        "reference_id": "ref-1",
+                        "source_path": "inventories/inv-1/visual_references/reference-image.jpg",
+                        "mime_type": "image/jpeg",
+                        "resolved_path": str(ref_full),
+                    },
+                ],
+                "instructions": ["Use refs as context."],
+            },
+        },
+    )
+    context.execution_log = MagicMock()
+    context.settings.debug_log_full_analysis_prompt = False
+
+    provider = HybridGlobalAnalysisStrategy()
+    provider.analyze(
+        context=context,
+        frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/input/photo-01.jpg")],
+        frame_refs=["img_001"],
+        metadata={"frame_count": 1},
+    )
+
+    prepared_call = next(
+        (call for call in context.execution_log.info.call_args_list if call.args[1] == "Analysis request prepared"),
+        None,
+    )
+    assert prepared_call is not None
+    payload = prepared_call.kwargs["payload"]
+    assert "prompt_text" not in payload
+    assert payload["prompt_text_sha256"]
+    assert payload["prompt_text_len"] > 0
+    pc = payload["prompt_composition"]
+    assert pc["prompt_hash"] == payload["prompt_text_sha256"]
+    prompt_text, comp = build_hybrid_analysis_prompt_with_traceability(context)
+    assert sha256_utf8(prompt_text) == payload["prompt_text_sha256"]
+    assert comp["prompt_hash"] == payload["prompt_text_sha256"]
+    assert len(prompt_text) == payload["prompt_text_len"]
 
 
 def test_hybrid_strategy_logs_unresolved_visual_reference_without_counting_it_as_consumed() -> None:
@@ -390,3 +460,8 @@ def test_openai_job_model_name_passed_in_llm_request_metadata(tmp_path: Path) ->
 
     req = mock_executor.execute.call_args[0][0]
     assert req.metadata.get("openai_model_name") == "gpt-4o-mini"
+    pc = req.metadata.get("prompt_composition")
+    assert isinstance(pc, dict)
+    assert pc.get("resolved_llm_provider_key") == "openai"
+    assert pc.get("model_name") == "gpt-4o-mini"
+    assert pc.get("prompt_hash") == sha256_utf8(req.prompt)

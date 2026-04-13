@@ -6,10 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.llm.anthropic_sdk_adapter import AnthropicSdkAdapter
 from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
+from src.llm.deepseek_sdk_adapter import DeepSeekSdkAdapter
 from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.pipeline.providers.registry import (
-    TransitionalLlmProviderBridgeExecutor,
     UnknownPipelineProviderError,
     registered_pipeline_provider_keys,
     resolve_llm_executor,
@@ -29,27 +30,16 @@ def test_resolve_openai_returns_openai_sdk_adapter() -> None:
     assert isinstance(ex, OpenAiSdkAdapter)
 
 
-def test_resolve_fake_returns_transitional_bridge() -> None:
+def test_resolve_claude_returns_anthropic_sdk_adapter() -> None:
     settings = MagicMock()
-    settings.fake_llm_fixture_path = None
-    ex = resolve_llm_executor("fake", settings)
-    assert isinstance(ex, TransitionalLlmProviderBridgeExecutor)
-    req = MagicMock()
-    req.frames = []
-    req.frames_nd = None
-    # FakeProvider returns minimal JSON without file/network
-    from src.llm.types import LLMRequest
+    ex = resolve_llm_executor("claude", settings)
+    assert isinstance(ex, AnthropicSdkAdapter)
 
-    r = LLMRequest(
-        job_id="j",
-        frames=[],
-        frame_refs=[],
-        prompt="",
-        schema_version="v2.1",
-        metadata={},
-    )
-    out = ex.execute(r, settings)
-    assert out.provider == "fake"
+
+def test_resolve_deepseek_returns_deepseek_sdk_adapter() -> None:
+    settings = MagicMock()
+    ex = resolve_llm_executor("deepseek", settings)
+    assert isinstance(ex, DeepSeekSdkAdapter)
 
 
 def test_resolve_unknown_raises() -> None:
@@ -57,14 +47,15 @@ def test_resolve_unknown_raises() -> None:
         resolve_llm_executor("unknown_vendor_xyz", MagicMock())
 
 
-def test_registered_pipeline_provider_keys_is_stable_set() -> None:
-    assert registered_pipeline_provider_keys() == frozenset({"gemini", "fake", "openai"})
+def test_registered_pipeline_provider_keys_includes_all_vendors() -> None:
+    assert registered_pipeline_provider_keys() == frozenset(
+        {"gemini", "openai", "claude", "deepseek"}
+    )
 
 
 def test_resolve_llm_executor_for_context_uses_job_provider_name() -> None:
     settings = MagicMock()
     settings.llm_provider = "gemini"
-    settings.fake_llm_fixture_path = None
-    ex, key = resolve_llm_executor_for_context("fake", settings)
-    assert key == "fake"
-    assert isinstance(ex, TransitionalLlmProviderBridgeExecutor)
+    ex, key = resolve_llm_executor_for_context("openai", settings)
+    assert key == "openai"
+    assert isinstance(ex, OpenAiSdkAdapter)

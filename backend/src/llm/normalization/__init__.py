@@ -1,5 +1,15 @@
 """LLM response normalization (multi-provider compatibility)."""
 
-from src.llm.normalization.entity_normalizer import normalize_llm_response
+from src.llm.normalization.entity_normalizer import (
+    EXTRACTION_CONTRACT_VERSION_KEY,
+    EXTRACTION_CONTRACT_VERSION_VALUE,
+    normalize_llm_response,
+    resolve_provider_family,
+)
 
-__all__ = ["normalize_llm_response"]
+__all__ = [
+    "EXTRACTION_CONTRACT_VERSION_KEY",
+    "EXTRACTION_CONTRACT_VERSION_VALUE",
+    "normalize_llm_response",
+    "resolve_provider_family",
+]

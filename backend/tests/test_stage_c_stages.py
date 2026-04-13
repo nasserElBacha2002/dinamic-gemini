@@ -15,12 +15,17 @@ from src.domain.entity import Entity
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.stages.frame_acquisition_stage import FrameAcquisitionStage, AcquiredFrames
 from src.pipeline.ports.analysis_provider import AnalysisResult
+from src.llm.normalization.entity_normalizer import (
+    EXTRACTION_CONTRACT_VERSION_KEY,
+    EXTRACTION_CONTRACT_VERSION_VALUE,
+)
 from src.pipeline.stages.analysis_stage import AnalysisStage, AnalysisStageResult
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage, ResolvedEntities
 from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageInput, ReportingResult
 from src.pipeline.stages.input_preparation_stage import PreparedInput
 from src.jobs.models import JobInput
 from src.frames.types import FramesBundle
+from tests.support.llm_executor_harness import HARNESS_RESPONSE_PROVIDER
 
 
 def test_frame_acquisition_stage_returns_acquired_frames(tmp_path: Path) -> None:
@@ -154,7 +159,7 @@ def test_analysis_stage_delegates_to_provider() -> None:
     mock_provider = MagicMock()
     mock_provider.analyze.return_value = AnalysisResult(
         parsed_json={"total_entities_detected": 0, "entities": []},
-        provider_name="fake",
+        provider_name=HARNESS_RESPONSE_PROVIDER,
         provider_metadata=None,
     )
 
@@ -162,8 +167,12 @@ def test_analysis_stage_delegates_to_provider() -> None:
     result = stage.run(context, acquired)
 
     assert isinstance(result, AnalysisStageResult)
-    assert result.parsed_json == {"total_entities_detected": 0, "entities": []}
-    assert result.provider_name == "fake"
+    assert result.parsed_json == {
+        "total_entities_detected": 0,
+        "entities": [],
+        EXTRACTION_CONTRACT_VERSION_KEY: EXTRACTION_CONTRACT_VERSION_VALUE,
+    }
+    assert result.provider_name == HARNESS_RESPONSE_PROVIDER
     mock_provider.analyze.assert_called_once()
     call_kw = mock_provider.analyze.call_args
     assert call_kw[0][0] is context
@@ -189,7 +198,7 @@ def test_entity_resolution_stage_parses_and_resolves() -> None:
                 },
             ],
         },
-        provider_name="fake",
+        provider_name=HARNESS_RESPONSE_PROVIDER,
     )
 
     stage = EntityResolutionStage()
@@ -257,5 +266,6 @@ def test_orchestrator_returns_1_on_stage_failure() -> None:
     assert result.exit_code == 1
     logger.exception.assert_called()
     call_args = logger.exception.call_args[0]
-    assert "InputPreparationStage" in call_args[0]
-    assert "j1" in str(call_args)
+    assert call_args[0] == "Stage failure: %s (job_id=%s): %s"
+    assert call_args[1] == "InputPreparationStage"
+    assert call_args[2] == "j1"

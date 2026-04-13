@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from src.llm.prompt_composer.prompt_traceability import sha256_utf8
 from src.jobs.adapters.job_store_adapter import JobStoreRepositoryAdapter
 from src.jobs.models import JobInput, JobRecord, JobStatus
 from src.parsing.global_analysis_parser import parse_entities
@@ -25,6 +26,7 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
+from tests.support.llm_executor_harness import HARNESS_RESPONSE_PROVIDER
 
 
 # --- Contract: any AnalysisProvider returns expected shape ---
@@ -33,7 +35,7 @@ from src.pipeline.ports.analysis_provider import (
 class FakeAnalysisProvider:
     """Minimal implementation of AnalysisProvider for contract tests."""
 
-    def __init__(self, parsed_json: dict, provider_name: str = "fake") -> None:
+    def __init__(self, parsed_json: dict, provider_name: str = HARNESS_RESPONSE_PROVIDER) -> None:
         self._parsed_json = parsed_json
         self._provider_name = provider_name
 
@@ -95,11 +97,20 @@ def test_analysis_provider_contract_returns_analysis_result() -> None:
     assert len(entities) == 1
 
 
-def test_hybrid_global_analysis_strategy_returns_analysis_result() -> None:
-    """HybridGlobalAnalysisStrategy with fake registry executor returns AnalysisResult; parsed_json usable by parse_entities."""
+def test_hybrid_global_analysis_strategy_returns_analysis_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HybridGlobalAnalysisStrategy with patched executor returns AnalysisResult; parsed_json usable by parse_entities."""
+    from tests.support.llm_executor_harness import (
+        TestLLMExecutor,
+        llm_response_success,
+        patch_hybrid_resolve_llm_executor,
+    )
+
+    patch_hybrid_resolve_llm_executor(
+        monkeypatch,
+        TestLLMExecutor(response=llm_response_success(parsed_json={"total_entities_detected": 0, "entities": []})),
+    )
     settings = MagicMock()
-    settings.llm_provider = "fake"
-    settings.fake_llm_fixture_path = None
+    settings.llm_provider = "openai"
     job_input = MagicMock()
     context = RunContext(
         job_id="j1",
@@ -119,7 +130,7 @@ def test_hybrid_global_analysis_strategy_returns_analysis_result() -> None:
         metadata={"frame_count": 1},
     )
     assert isinstance(result, AnalysisResult)
-    assert result.provider_name == "fake"
+    assert result.provider_name == HARNESS_RESPONSE_PROVIDER
     assert "total_entities_detected" in result.parsed_json
     assert "entities" in result.parsed_json
     entities = parse_entities(result.parsed_json, job_id="j1")
@@ -127,6 +138,12 @@ def test_hybrid_global_analysis_strategy_returns_analysis_result() -> None:
     # v3.2.4 Phase 4: provider_metadata present when no analysis_context
     assert result.provider_metadata is not None
     assert result.provider_metadata["visual_references_available"] is False
+    # Phase 6: prompt traceability
+    assert result.prompt_composition is not None
+    assert result.prompt_composition.get("schema_version") == "prompt_composition_v1"
+    final = result.prompt_composition.get("final_prompt_text")
+    assert isinstance(final, str) and final
+    assert result.prompt_composition.get("prompt_hash") == sha256_utf8(final)
     assert result.provider_metadata["visual_references_consumed"] is False
 
 

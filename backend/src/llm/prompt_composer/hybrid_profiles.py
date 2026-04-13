@@ -1,0 +1,340 @@
+"""
+Registry of prompt bodies keyed for ``PROMPTS`` (hybrid + legacy).
+
+* **Hybrid pipeline** (global v2.1 analysis): entries with ``default`` / ``openai`` / optional ``claude``
+  — resolved only through ``HybridPromptComposer`` + ``resolve_hybrid_entry_for_provider``.
+* **Legacy** (pallet / multi-frame experiments): ``system`` / ``user`` pairs below — **not** used by
+  the hybrid global-analysis composer; kept in one dict for historical imports and tooling.
+"""
+
+from __future__ import annotations
+
+from typing import Dict, Final, Union
+
+# ---------------------------------------------------------------------------
+# Hybrid v2.1 — global entity analysis (Prompt A / B + OpenAI-tuned variants)
+# ---------------------------------------------------------------------------
+
+# --- Prompt A (global_v21) — default (Gemini-oriented) ---
+_GLOBAL_V21: Final[str] = """\
+Analyze the provided warehouse aisle evidence (photos and/or extracted frames). Detect all distinct visible logistic entities, one entity per visible unit.
+
+Entity types:
+- PALLET: pallet structure, may have boxes and position/product labels.
+- EMPTY_PALLET: pallet structure with no boxes on top.
+- LOOSE_BOXES: non-palletized boxed units or grouped boxes without pallet structure (do NOT count as pallet).
+
+Rules:
+- Treat each clearly visible logistic unit as its own entity. If adjacent boxed units are visibly distinct, return them separately.
+- If a visible unit has its own label or a clear visual boundary, prefer treating it as an individual entity.
+- Do NOT collapse multiple labeled or clearly separable visible boxes into one entity.
+- Do NOT duplicate, merge, or infer hidden entities.
+- Do not invent values. Use null if not clearly readable.
+- Do not return quantity 0 for a clearly visible logistic unit unless the evidence strongly supports that.
+- model_entity_id: unique string (e.g. E1, E2). confidence: 0 to 1.
+- Bbox: if you provide position_label_bbox or product_label_bbox, use NORMALIZED coords only: [x1,y1,x2,y2] with floats in [0,1], x1<x2, y1<y2. Use null if region unknown.
+- has_boxes: true if boxes visible on pallet or for LOOSE_BOXES.
+- Inventory visual reference images, when provided, are comparative context only. They may help interpret label style, packaging conventions, or the expected visual standard, but they are NOT primary evidence and must not be treated as direct evidence for detections.
+"""
+
+# --- Prompt B (global_v21_b) — default (conservative / anti-hallucination) ---
+_GLOBAL_V21_B: Final[str] = """\
+Analyze the provided warehouse aisle evidence (photos and/or extracted frames). Detect logistic entities only when each unit is **unambiguously** visible as a separate physical unit.
+
+Entity types (same taxonomy as Prompt A):
+- PALLET, EMPTY_PALLET, LOOSE_BOXES (definitions unchanged).
+
+Conservative rules (NON-NEGOTIABLE):
+- Prefer **abstention** over guessing: if label text, layer count, or bbox extent is not clearly readable, use **null** for that field. Do not invent SKUs, quantities, or bboxes.
+- Do **not** merge adjacent boxed units unless a clear seam, gap, or distinct label proves separation. When in doubt, emit **separate entities** with **lower confidence** rather than one merged entity.
+- If occlusion, motion blur, or missing angles prevents a deterministic count or identity, set an explicit overall decision of **INSUFFICIENT_EVIDENCE** in your reasoning field and keep per-field nulls rather than extrapolating.
+- **Bbox discipline**: only output position_label_bbox / product_label_bbox when the region is clearly visible; use NORMALIZED [x1,y1,x2,y2] in [0,1] or null.
+- **Quantity**: never return quantity 0 for a visible unit unless the evidence clearly supports emptiness; if uncertain, prefer null + low confidence rather than a numeric guess.
+- model_entity_id: unique string (E1, E2, …). confidence: 0 to 1 — use **≤0.5** when evidence is partial.
+- Inventory visual references are **context only**, not primary evidence (same as Prompt A).
+
+This profile prioritizes traceability and null-handling over aggressive extraction.
+"""
+
+# --- OpenAI-tuned variant for global_v21 ---
+_GLOBAL_V21_OPENAI: Final[str] = """\
+Analyze the provided warehouse aisle images and detect all distinct logistic entities.
+
+Entity types:
+- PALLET: pallet structure, may contain boxes
+- EMPTY_PALLET: pallet with no boxes
+- LOOSE_BOXES: grouped boxes without pallet
+
+Rules:
+- One entity per physical unit. Do not merge different pallets.
+- Do not invent values, but provide your best estimate when partial evidence exists.
+- If a field is unclear, prefer a reasonable estimate with lower confidence instead of null.
+
+Important:
+- NEVER return quantity = 0 unless you are certain there are zero items.
+- If uncertain about quantity, return null and reduce confidence.
+- If an entity is visible, it must be returned.
+
+Confidence:
+- Use 0.9–1.0 when clear
+- Use 0.5–0.8 when partially visible
+- Use <0.5 only when uncertain
+
+Bounding boxes:
+- Use normalized coordinates [x1,y1,x2,y2]
+- If unsure → null
+
+Output:
+Return valid JSON only:
+{
+  "total_entities_detected": number,
+  "entities": [...]
+}
+"""
+
+# --- OpenAI-tuned variant for global_v21_b ---
+_GLOBAL_V21_B_OPENAI: Final[str] = """\
+Analyze the provided warehouse aisle evidence (photos and/or extracted frames). Detect logistic entities using the same taxonomy as Prompt B, with guidance suited to models that over-abstain under strict null-only rules.
+
+Entity types:
+- PALLET, EMPTY_PALLET, LOOSE_BOXES (definitions unchanged from Prompt A/B).
+
+Rules:
+- One entity per physical unit. Do not merge different pallets.
+- Do not invent SKU text or barcodes you cannot read; use null for illegible label fields.
+- For counts and similar numeric fields: when evidence is partial, prefer your best estimate with lower confidence rather than null unless the value would be a pure guess.
+- If occlusion, blur, or missing angles make a count unknowable, use null for quantity, confidence ≤0.5, and you may note INSUFFICIENT_EVIDENCE in reasoning.
+- Never return quantity = 0 unless you are certain there are zero items.
+- model_entity_id: unique string (E1, E2, …). Bbox: normalized [x1,y1,x2,y2] in [0,1] or null.
+- Inventory visual references are context only, not primary evidence.
+
+Output:
+Return valid JSON matching the required entity schema (total_entities_detected + entities array).
+"""
+
+# --- Claude (text / Messages API) — single source of truth for canonical keys / forbidden keys ---
+# Contract paragraph + JSON suffix are built from the same tuples to avoid drift.
+CLAUDE_CONTRACT_MARKER: Final[str] = "CLAUDE JSON ENTITY CONTRACT"
+
+# Order matches ``CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX`` / adapter wire instructions.
+CLAUDE_JSON_ENTITY_OUTPUT_KEYS: Final[tuple[str, ...]] = (
+    "entity_type",
+    "model_entity_id",
+    "source_image_id",
+    "confidence",
+    "has_boxes",
+    "position_barcode",
+    "internal_code",
+    "position_label_bbox",
+    "product_label_bbox",
+    "product_label_quantity",
+)
+
+CLAUDE_FORBIDDEN_JSON_KEYS: Final[tuple[str, ...]] = (
+    "position_label",
+    "product_label",
+    "quantity",
+    "qty",
+    "detected_quantity",
+    "bbox",
+)
+
+
+def claude_forbidden_json_keys_csv() -> str:
+    return ", ".join(CLAUDE_FORBIDDEN_JSON_KEYS)
+
+
+# Wire-level echo (kept short; full rules in ``_CLAUDE_V21_CANONICAL_ENTITY_CONTRACT``).
+CLAUDE_QUANTITY_WIRE_REMINDER: Final[str] = (
+    " Visual priority: scan the product load (boxes, shrink-wrap, case faces) for SKU/quantity BEFORE you "
+    "fixate on rack or location tags; position labels are secondary. If internal_code or "
+    "product_label_quantity is non-null, also return product_label_bbox as a tight box on that same "
+    "product-label panel when possible. "
+    "Quantity: use product_label_quantity ONLY for a number explicitly printed on the PRODUCT/SKU label "
+    "(not on the position/location label). If no such number is clearly readable, use null — do not output "
+    "1 because you returned one pallet entity, do not use entity count, pallet count, or estimated box "
+    "count as quantity, and do not guess 0 or 1. product_label_bbox must tightly frame only the "
+    "product/SKU/quantity-on-product-label region, never the whole pallet or a generic scene box; use "
+    "null if that region is not clearly identifiable. Express quantity only via product_label_quantity; "
+    "express product-label location only via product_label_bbox (never generic bbox)."
+)
+
+
+def build_claude_json_output_instruction_suffix() -> str:
+    keys_csv = ", ".join(CLAUDE_JSON_ENTITY_OUTPUT_KEYS)
+    forb = claude_forbidden_json_keys_csv()
+    return (
+        "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
+        f'Root keys: "total_entities_detected" (non-negative integer) and "entities" (array). '
+        "Each entity MUST be a JSON object including ALL of these keys (use null when unknown): "
+        f"{keys_csv}. "
+        "Follow the semantic rules in the instructions above. "
+        f"Do NOT include keys: {forb}."
+        + CLAUDE_QUANTITY_WIRE_REMINDER
+    )
+
+
+CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX: Final[str] = build_claude_json_output_instruction_suffix()
+
+# TODO(post-rollout audit): Monitor real Claude runs for noisy or incorrect ``position_barcode`` fills;
+# remap guidance is intentional for location identifiers, but OCR junk here may need stricter prompt
+# wording or downstream validation if it appears in production.
+_CLAUDE_V21_CANONICAL_ENTITY_CONTRACT: Final[str] = (
+    "CLAUDE JSON ENTITY CONTRACT (non-negotiable — your response JSON must follow this exactly):\n\n"
+    "Each entity object MUST include these keys. Use JSON null when a value is not clearly visible, "
+    "not readable, or uncertain. Do not omit keys.\n\n"
+    "Required core (unchanged semantics):\n"
+    "- entity_type, model_entity_id, source_image_id, confidence, has_boxes\n\n"
+    "PRIMARY VISUAL TARGET — product label first (inventory needs WHAT is on the pallet, not only WHERE):\n"
+    "- The most important surface to inspect is the PRODUCT label on the load: printed SKU/text on boxes, "
+    "case cartons, shrink-wrap stickers, or tape on the wrapped goods. That is where internal_code, "
+    "product_label_quantity, and product_label_bbox must come from when visible.\n"
+    "- Position / location / aisle / bay labels (tags on rack uprights, beam markers, floor plates, "
+    "slot markers near the pallet) are useful for traceability but SECONDARY. Do not spend the whole "
+    "analysis on them while skipping the product-facing labels on the merchandise.\n"
+    "- Preferred: each PALLET entity should reflect that you looked at the load for product-label evidence. "
+    "An entity with only position_barcode filled and all product fields null is weak when a product label "
+    "was actually visible on the boxes or wrap — go back and read the load first.\n\n"
+    "VISUAL SEARCH ORDER — for each distinct physical pallet/load, perform steps in this order:\n"
+    "1) Find the product label / SKU panel on the merchandise (box face, case print, shrink-wrap sticker, "
+    "SKU strip on the stack).\n"
+    "2) If legible, read internal_code from that product label only.\n"
+    "3) If a quantity is printed in that same product-label context (same sticker/block as the SKU), "
+    "read product_label_quantity; otherwise null.\n"
+    "4) Return product_label_bbox as a TIGHT normalized [x1,y1,x2,y2] in [0,1] around that exact label "
+    "panel. If you output non-null internal_code OR non-null product_label_quantity, you MUST also "
+    "return non-null product_label_bbox whenever you can isolate that panel — tie the read to the region.\n"
+    "5) Separately, if a position/location label is visible on structure or a location plate, read "
+    "position_barcode and position_label_bbox from that surface only.\n"
+    "6) If only a position label is visible and no product label appears on the load, keep internal_code, "
+    "product_label_quantity, and product_label_bbox null — do not substitute location text for SKU or "
+    "location digits for quantity.\n\n"
+    "VISUAL DISTINCTION (practical):\n"
+    "- Position labels usually attach to the rack, post, beam, or fixed location marker — they answer "
+    "\"where\".\n"
+    "- Product labels attach to the goods (cardboard, film, case tape) — they answer \"what\" and often "
+    "show case/pack quantity.\n"
+    "- Do not treat a location code as internal_code; do not treat a bay or slot number as "
+    "product_label_quantity.\n\n"
+    "ENTITY QUALITY:\n"
+    "- Prefer fewer, semantically strong pallet entities (you examined the load for a product label when "
+    "the image allows) over many shallow entities that only echo position cues with null product fields.\n"
+    "- Do not inflate rows to fill JSON: respect the default hybrid rules for distinct units, but avoid "
+    "splitting or duplicating mainly because you saw location text while ignoring an unread product face.\n\n"
+    "FIELD REFERENCE (canonical keys):\n"
+    "- internal_code (string or null): ONLY from the product label surface above. NEVER a position code.\n"
+    "- position_barcode (string or null): ONLY from the location/position label. Not the SKU.\n"
+    "- product_label_quantity (integer or null): ONLY digits printed on the product label in the same "
+    "context as the SKU; NOT entity count, NOT pallet count, NOT \"1\" because one PALLET row exists, NOT "
+    "box-stack guesses, NOT numbers from location labels. If you cannot point at that digit on the "
+    "product label, null. No guessed 0 or 1.\n"
+    "- product_label_bbox (array of 4 numbers or null): TIGHT box on the product/SKU/qty panel only — not "
+    "the full pallet footprint, not scene bbox. Null if the panel cannot be isolated; if internal_code or "
+    "product_label_quantity is set, provide this bbox when possible.\n"
+    "- position_label_bbox (array of 4 numbers or null): ONLY the position/location label region.\n\n"
+    "NULLABILITY (critical — downstream treats non-null as explicit evidence):\n"
+    "- When product code, printed product quantity, or the product-label panel is not clearly visible: "
+    "internal_code, product_label_quantity, and product_label_bbox must be null. Never fabricate product "
+    "fields from position labels.\n\n"
+    "FORBIDDEN keys — do not output any of these (put the information in the canonical keys above or null):\n"
+    + claude_forbidden_json_keys_csv()
+    + "\n\n"
+    "If you would have used a forbidden key, remap: location text → position_barcode; product SKU text → "
+    "internal_code; product-label ROI → product_label_bbox; position-label ROI → position_label_bbox; "
+    "printed product-label quantity (and only that) → product_label_quantity. For quantity and "
+    "product-label geometry, use ONLY product_label_quantity and product_label_bbox — never quantity, qty, "
+    "detected_quantity, or generic bbox."
+)
+
+# ---------------------------------------------------------------------------
+# Legacy pallet / multi-view prompts (system + user) — not hybrid composer paths
+# ---------------------------------------------------------------------------
+
+_SYSTEM_PALLET_COUNT: Final[str] = """\
+You are an expert in computer vision for logistics inventory management.
+Your task is to analyze warehouse images, identify distinct pallets, and count boxes per product.
+
+CRITICAL COUNTING LOGIC (Use the 'r' field to write this out step-by-step):
+1. GRID MAPPING: Look at all available angles. Determine the Base Footprint (Width x Depth). 
+   *VISUAL TIP*: Do not rely on overall shape. Look for vertical and horizontal gaps (seams) between boxes. If you see multiple labels or handles, each one belongs to a DIFFERENT box.
+2. HEIGHT: Count total layers from bottom to top.
+3. THEORETICAL MAX: Multiply Base x Layers (Format: "Base [w]x[d]=[layer_tot]. [n] layers=[total]").
+4. DEDUCTION: Scan the TOP layer and corners across ALL frames. Are there missing boxes or empty spaces?
+5. FINAL MATH: Subtract gaps from max (Format: "[total] - [missing] = [final]").
+
+Rules:
+- BOX SEPARATION: Boxes often blend together. Look for tape lines, cardboard seams, and repeated "FRAGIL" logos to distinguish individual units.
+- NEVER assume a solid block. Check for hollow centers or missing top boxes.
+- CROSS-REFERENCE: Use the video sequence to see the pallet from different perspectives. Merge observations.
+- Assign confidence (0.0 to 1.0).
+"""
+
+_USER_PALLET_COUNT: Final[str] = """\
+Analyze the attached image(s). Identify all visible distinct pallets, distinguish the products and calculate the total number of boxes conservatively.
+"""
+
+_USER_MULTI_VIEW_REDUNDANCY: Final[str] = """\
+REDUNDANCY AND VIEW SELECTION (Sprint A):
+- Some images may be repeated or highly similar (same angle, same framing, same visual pattern). If you detect that two or more views are redundant, IGNORE the duplicates and base your analysis on the single best view among them.
+- PRIORITIZE the most useful view: sharpest (least blur), most complete (least occlusion), and with the clearest view of labels/boxes.
+- Use multiple views ONLY when they add genuinely different evidence (e.g. different angle revealing hidden layers). Do NOT assume "more images = sum counts"; maintain anti-double-counting and rely on real diversity.
+"""
+
+_USER_MULTI_FRAME: Final[str] = """\
+Analyze the attached sequence of images. 
+CRITICAL: These images may show multiple angles of the SAME pallet, AND/OR entirely DIFFERENT pallets.
+
+Your specific tasks:
+- Carefully cross-reference visual clues (background racks, labels, shrink wrap patterns, stacking geometry) to determine distinct pallets.
+- MERGE observations of the same pallet across different frames into a single consolidated entry.
+- Separate distinct pallets into individual entries.
+- Ensure absolutely no double-counting occurs. Provide the final, most accurate count for each distinct pallet based on all combined views.
+
+REDUNDANCY (Sprint A): There may be repeated or very similar images (same angle/framing). If two or more views are redundant, ignore the duplicates and use only the best one (sharpest, most complete, least occlusion). Use multiple views only when they add genuinely different evidence; do not assume "more images = sum".
+"""
+
+_USER_MULTI_VIEW_ANTI_SUM: Final[str] = """\
+The attached images are multiple views of the SAME pallet (one physical pallet).
+Your task: MERGE evidence across views into ONE consolidated count.
+
+NON-NEGOTIABLE:
+1) Do NOT sum counts across images. Use views only to reveal hidden faces/layers.
+2) Use a grid method:
+   - Estimate Base Footprint = width x depth (count seams/gaps between boxes).
+   - Estimate Height = number of layers.
+   - Total theoretical max = (w x d) x layers.
+   - Subtract missing boxes/voids if clearly visible.
+3) Depth is critical: use side/angled views to infer depth layers. Do not return a low number just because only the front face is visible.
+
+If depth/layers cannot be inferred deterministically from the provided views (occlusion, blur, missing angles):
+- return decision = "INSUFFICIENT_EVIDENCE" and provide the best bounded estimate range in r (e.g., min/max), with low confidence.
+
+Output:
+- Return ONLY one pallet entry (single JSON) that matches the provided schema.
+- Put step-by-step reasoning in the 'r' field (short and structured).
+- Return confidence as a numeric value (0.0 to 1.0).
+"""
+
+# **Internal registry** — consumed only by ``HybridPromptComposer`` / ``hybrid_resolution``.
+# Do not import ``PROMPTS`` from application, adapter, or pipeline code; use ``hybrid_assembly``.
+PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
+    "global_v21": {
+        "default": _GLOBAL_V21,
+        "openai": _GLOBAL_V21_OPENAI,
+        "claude": _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT,
+    },
+    "global_v21_b": {
+        "default": _GLOBAL_V21_B,
+        "openai": _GLOBAL_V21_B_OPENAI,
+        "claude": _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT,
+    },
+    "pallet_count_simple": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_PALLET_COUNT},
+    "multi_frame_consolidated": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_MULTI_FRAME},
+    "multi_view_per_track": {
+        "system": _SYSTEM_PALLET_COUNT,
+        "user": _USER_MULTI_VIEW_ANTI_SUM + "\n\n" + _USER_MULTI_VIEW_REDUNDANCY,
+    },
+}
+
+# Canonical v2.1 base text as sent on the wire (composer ``.rstrip()`` on the default branch).
+GLOBAL_ENTITY_ANALYSIS_PROMPT_V21: Final[str] = _GLOBAL_V21.rstrip()

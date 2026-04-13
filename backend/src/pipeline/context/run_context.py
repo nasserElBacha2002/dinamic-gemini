@@ -61,9 +61,14 @@ class RunContext:
     analysis_context: Optional["AnalysisContext"] = None
     # Phase 4: logical LLM provider from job (e.g. inventory_jobs.provider_name); None = use settings.llm_provider.
     pipeline_provider_name: Optional[str] = None
-    # Phase 5: per-job model + prompt profile (inventory_jobs.model_name / prompt_key).
+    # Phase 5: per-job model + prompt profile key (inventory_jobs.model_name / prompt_key) — selects profile family.
     job_model_name: Optional[str] = None
     job_prompt_key: Optional[str] = None
+    # Phase 7: optional traceability label from inventory_jobs.prompt_version at run start; overrides
+    # settings.prompt_version for composition metadata only; does not select prompt bodies.
+    job_prompt_version: Optional[str] = None
+    # Pre-Phase 10: when true, OpenAI hybrid base uses the ``default`` fragment (fair comparison).
+    job_prompt_parity_mode: bool = False
 
     def emit_stage_event(
         self,

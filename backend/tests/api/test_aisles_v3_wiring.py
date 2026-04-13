@@ -36,6 +36,7 @@ from src.infrastructure.repositories.memory_job_repository import MemoryJobRepos
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
 from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 client = TestClient(app)
 
@@ -166,9 +167,9 @@ def test_get_processing_provider_options_returns_registered_keys() -> None:
         assert "default_prompt_key" in data
         assert len(data.get("prompt_profiles", [])) >= 2
         keys = {p["key"] for p in data["providers"]}
-        assert keys == {"fake", "gemini", "openai"}
+        assert keys == {"gemini", "openai", "claude", "deepseek"}
         for p in data["providers"]:
-            assert p["execution_mode"] in ("native", "transitional_bridge")
+            assert p["execution_mode"] == "native"
             assert "models" in p and isinstance(p["models"], list) and len(p["models"]) >= 1
             assert p.get("default_model")
         gemini = next(x for x in data["providers"] if x["key"] == "gemini")
@@ -183,6 +184,8 @@ def test_get_processing_provider_options_reflects_env_processing_model_lists(
     """PROCESSING_*_MODELS must drive GET processing-provider-options (not only pydantic defaults)."""
     monkeypatch.setenv("PROCESSING_GEMINI_MODELS", "gemini-alpha,gemini-beta")
     monkeypatch.setenv("PROCESSING_OPENAI_MODELS", "gpt-alpha,gpt-beta")
+    monkeypatch.setenv("PROCESSING_CLAUDE_MODELS", "claude-alpha,claude-beta")
+    monkeypatch.setenv("PROCESSING_DEEPSEEK_MODELS", "ds-alpha,ds-beta")
     config_mod._settings = None
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
@@ -191,23 +194,35 @@ def test_get_processing_provider_options_reflects_env_processing_model_lists(
         data = response.json()
         gemini = next(p for p in data["providers"] if p["key"] == "gemini")
         openai_p = next(p for p in data["providers"] if p["key"] == "openai")
+        claude_p = next(p for p in data["providers"] if p["key"] == "claude")
+        deepseek_p = next(p for p in data["providers"] if p["key"] == "deepseek")
         assert [m["id"] for m in gemini["models"]] == ["gemini-alpha", "gemini-beta"]
         assert [m["id"] for m in openai_p["models"]] == ["gpt-alpha", "gpt-beta"]
+        assert [m["id"] for m in claude_p["models"]] == ["claude-alpha", "claude-beta"]
+        assert [m["id"] for m in deepseek_p["models"]] == ["ds-alpha", "ds-beta"]
         assert gemini["default_model"] == "gemini-alpha"
         assert openai_p["default_model"] == "gpt-alpha"
+        assert claude_p["default_model"] == "claude-alpha"
+        assert deepseek_p["default_model"] == "ds-alpha"
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         monkeypatch.delenv("PROCESSING_GEMINI_MODELS", raising=False)
         monkeypatch.delenv("PROCESSING_OPENAI_MODELS", raising=False)
+        monkeypatch.delenv("PROCESSING_CLAUDE_MODELS", raising=False)
+        monkeypatch.delenv("PROCESSING_DEEPSEEK_MODELS", raising=False)
         config_mod._settings = None
 
 
-def test_post_process_with_explicit_fake_provider_persisted_on_status() -> None:
+def test_post_process_with_explicit_gemini_provider_persisted_on_status() -> None:
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
+        opts = client.get("/api/v3/inventories/processing-provider-options")
+        assert opts.status_code == 200
+        gemini_default = next(p for p in opts.json()["providers"] if p["key"] == "gemini")["default_model"]
+
         create_resp = client.post(
             "/api/v3/inventories",
-            json={"name": "For Prov Fake", "processing_mode": "test"},
+            json={"name": "For Prov Gemini", "processing_mode": "test"},
         )
         assert create_resp.status_code == 201
         inv_id = create_resp.json()["id"]
@@ -220,15 +235,15 @@ def test_post_process_with_explicit_fake_provider_persisted_on_status() -> None:
 
         proc = client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
-            json={"provider_name": "fake"},
+            json={"provider_name": "gemini"},
         )
         assert proc.status_code == 202
         status = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
         assert status.status_code == 200
         lj = status.json()["latest_job"]
         assert lj is not None
-        assert lj.get("provider_name") == "fake"
-        assert lj.get("model_name") == "fixture"
+        assert lj.get("provider_name") == "gemini"
+        assert lj.get("model_name") == gemini_default
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
 
@@ -253,7 +268,7 @@ def test_post_process_production_inventory_ignores_request_provider_and_uses_sna
     aisle_id = aisle_resp.json()["id"]
     proc = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
-        json={"provider_name": "fake", "model_name": "fixture"},
+        json={"provider_name": "openai", "model_name": "gpt-4o"},
     )
     assert proc.status_code == 202
     status = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
@@ -261,7 +276,7 @@ def test_post_process_production_inventory_ignores_request_provider_and_uses_sna
     lj = status.json()["latest_job"]
     assert lj is not None
     assert lj.get("provider_name") == expected_provider
-    assert lj.get("provider_name") != "fake"
+    assert lj.get("provider_name") != "openai"
 
 
 def test_post_process_invalid_model_for_provider_returns_422() -> None:
@@ -281,7 +296,7 @@ def test_post_process_invalid_model_for_provider_returns_422() -> None:
         aisle_id = aisle_resp.json()["id"]
         response = client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
-            json={"provider_name": "fake", "model_name": "not-a-valid-model"},
+            json={"provider_name": "gemini", "model_name": "not-a-valid-model"},
         )
         assert response.status_code == 422
         assert "model" in response.json()["detail"].lower()
@@ -798,7 +813,7 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
             attempt_count,
             retry_of_job_id=None,
             log_prefix="job.start_requested",
-            provider_name="gemini",
+            provider_name=STUB_PRIMARY_PROVIDER,
             model_name=None,
             prompt_key="global_v21",
         ):
@@ -837,8 +852,8 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
             created_at=now,
             updated_at=now,
             attempt_count=1,
-            provider_name="fake",
-            model_name="fixture",
+            provider_name=STUB_PRIMARY_PROVIDER,
+            model_name=STUB_PRIMARY_MODEL,
             prompt_key="global_v21",
         )
     )
@@ -858,8 +873,8 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
         assert data["attempt_count"] == 2
         assert data["retry_of_job_id"] == "job-failed"
         assert data["execution_id"] == "exec-job-retry-created"
-        assert data.get("provider_name") == "fake"
-        assert data.get("model_name") == "fixture"
+        assert data.get("provider_name") == STUB_PRIMARY_PROVIDER
+        assert data.get("model_name") == STUB_PRIMARY_MODEL
         assert data.get("prompt_key") == "global_v21"
         assert launch_service.launched == [data["id"]]
     finally:

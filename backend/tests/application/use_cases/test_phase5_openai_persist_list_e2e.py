@@ -31,7 +31,7 @@ class FixedClock:
 
 
 def test_openai_normalize_persist_list_detail_job_metadata_and_slice_isolation() -> None:
-    """E2E-style chain: alias quantity → canonical report → two job slices → resolver + explicit reads."""
+    """E2E-style chain: canonical ``product_label_quantity`` → normalize → persist → two job slices."""
     now = datetime.now(timezone.utc)
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
@@ -87,7 +87,7 @@ def test_openai_normalize_persist_list_detail_job_metadata_and_slice_isolation()
                 "entity_uid": "ea",
                 "entity_type": "PALLET",
                 "internal_code": "SKU-OPENAI-A",
-                "quantity": 7,
+                "product_label_quantity": 7,
                 "confidence": 0.95,
                 "count_status": "COUNTED",
                 "evidence_path": "evidence/a.jpg",
@@ -112,7 +112,7 @@ def test_openai_normalize_persist_list_detail_job_metadata_and_slice_isolation()
                 "entity_uid": "eb",
                 "entity_type": "PALLET",
                 "internal_code": "SKU-OPENAI-B",
-                "quantity": 3,
+                "product_label_quantity": 3,
                 "confidence": 0.9,
                 "count_status": "COUNTED",
                 "evidence_path": "evidence/b.jpg",

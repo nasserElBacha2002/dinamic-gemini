@@ -32,6 +32,7 @@ class LLMRequest:
         self.frame_refs = list(frame_refs)
         self.prompt = prompt
         self.schema_version = schema_version
+        # Shallow copy; nested values (e.g. Phase 6 ``metadata["prompt_composition"]``) keep object identity.
         self.metadata = dict(metadata) if metadata else {}
         # Optional in-memory frames (e.g. BGR ndarray) to avoid re-loading from disk.
         self.frames_nd: Optional[List[Any]] = list(frames_nd) if frames_nd else None
@@ -44,7 +45,10 @@ class LLMResponse:
     """
     Output of ``LlmGlobalAnalysisExecutor.execute`` (parsed v2.1 JSON + attribution).
 
-    ``provider`` identifies the logical vendor key (e.g. ``gemini``, ``fake``), not an SDK type.
+    ``provider`` identifies the logical vendor key (e.g. ``gemini``, ``openai``, ``claude``, ``deepseek``), not an SDK type.
+
+    ``latency_ms`` semantics are provider-defined (e.g. Claude may set this to the full multi-attempt
+    window, not a single HTTP round trip); see adapter implementations.
     """
 
     def __init__(

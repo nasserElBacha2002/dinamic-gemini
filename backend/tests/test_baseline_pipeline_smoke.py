@@ -1,7 +1,7 @@
 """
 Baseline pipeline smoke test for v2.3.A.
 
-Runs the hybrid pipeline end-to-end with minimal valid input (FakeProvider + stub frames).
+Runs the hybrid pipeline end-to-end with minimal valid input (patched LLM executor + stub frames).
 Serves as a regression guard during Stage A refactors: must remain green before and after
 RunContext, PipelineStage, and InputPreparationStage extraction.
 
@@ -24,12 +24,12 @@ FIXTURES_V21 = Path(__file__).resolve().parent / "fixtures" / "v2_1"
 GLOBAL_ANALYSIS_OK = FIXTURES_V21 / "global_analysis_ok.json"
 
 
-def _make_fake_settings(fixture_path: str):
-    """Minimal settings for FakeProvider (no network)."""
+def _make_offline_pipeline_settings() -> MagicMock:
+    """Minimal settings when hybrid LLM resolution is patched (no network)."""
     s = MagicMock()
-    s.llm_provider = "fake"
-    s.fake_llm_fixture_path = fixture_path
-    s.gemini_api_key = "unused"
+    s.llm_provider = "openai"
+    s.gemini_api_key = ""
+    s.openai_api_key = "offline-test-key"
     s.photo_resize_max_side = 1280
     s.photo_jpeg_quality = 85
     s.photos_min_side = 64
@@ -57,11 +57,11 @@ def _run_pipeline_sync(
     )
 
 
-def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path) -> None:
+def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     Baseline smoke test: pipeline runs with minimal input and produces valid report.
 
-    - Runs pipeline with stub frames and FakeProvider (no network).
+    - Runs pipeline with stub frames and patched registry executor (no network).
     - Asserts exit code 0.
     - Asserts hybrid_report.json exists.
     - Asserts report has required top-level keys: report_version, mode, entities.
@@ -70,6 +70,10 @@ def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path) -> None:
     This test must pass before and after all Stage A refactors (RunContext,
     PipelineStage, InputPreparationStage, minimal pipeline integration).
     """
+    from tests.support.llm_executor_harness import patch_offline_hybrid_json_fixture
+
+    patch_offline_hybrid_json_fixture(monkeypatch, GLOBAL_ANALYSIS_OK)
+
     job_id = "baseline_smoke_01"
     run_id = "run"
     run_dir = tmp_path / job_id / run_id
@@ -95,7 +99,7 @@ def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path) -> None:
         },
     )
 
-    settings = _make_fake_settings(str(GLOBAL_ANALYSIS_OK))
+    settings = _make_offline_pipeline_settings()
     job_input = JobInput(video_path="/dummy/video.mp4", mode="hybrid", input_type="video")
 
     with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:

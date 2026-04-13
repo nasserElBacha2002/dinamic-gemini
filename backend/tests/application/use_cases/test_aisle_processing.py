@@ -26,6 +26,7 @@ from src.application.use_cases.start_aisle_processing import (
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
+from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 
 class FixedClock:
@@ -218,15 +219,15 @@ def test_start_aisle_processing_persists_explicit_provider_and_prompt() -> None:
         StartAisleProcessingCommand(
             inventory_id="inv1",
             aisle_id="a1",
-            pipeline_provider_key="fake",
-            model_name="fixture",
+            pipeline_provider_key=STUB_PRIMARY_PROVIDER,
+            model_name=STUB_PRIMARY_MODEL,
             prompt_key="global_v21",
         )
     )
     saved = job_repo.get_by_id(job_id)
     assert saved is not None
-    assert saved.provider_name == "fake"
-    assert saved.model_name == "fixture"
+    assert saved.provider_name == STUB_PRIMARY_PROVIDER
+    assert saved.model_name == STUB_PRIMARY_MODEL
     assert saved.prompt_key == "global_v21"
 
 

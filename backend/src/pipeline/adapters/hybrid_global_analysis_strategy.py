@@ -2,11 +2,12 @@
 Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–5).
 
 Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
-call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI, fake, etc.).
+call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI, Claude, DeepSeek).
 """
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -28,10 +29,20 @@ from src.pipeline.services.analysis_visual_reference_prep import (
     build_primary_evidence_attachments,
     prepare_visual_reference_inputs,
 )
+from src.llm.prompt_composer.prompt_traceability import (
+    LLM_IDENTITY_METADATA_KEY,
+    LLM_METADATA_KEY_PROMPT_COMPOSITION,
+    LLM_METADATA_KEY_PROMPT_PARITY_MODE,
+    apply_execution_layer_to_composition,
+    prompt_composition_summary_for_execution_log,
+    sha256_utf8,
+)
 from src.pipeline.services.hybrid_analysis_prompt import (
-    build_hybrid_analysis_prompt_text,
+    build_hybrid_analysis_prompt_with_traceability,
     resolve_analysis_context_for_run,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _provider_metadata(
@@ -77,7 +88,7 @@ class HybridGlobalAnalysisStrategy:
         pipeline_provider_name: Optional[str] = getattr(context, "pipeline_provider_name", None)
         executor, resolved_key = resolve_llm_executor_for_context(pipeline_provider_name, settings)
 
-        prompt_text = build_hybrid_analysis_prompt_text(context)
+        prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(context)
 
         analysis_context: Optional[AnalysisContext] = resolve_analysis_context_for_run(context)
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
@@ -105,10 +116,38 @@ class HybridGlobalAnalysisStrategy:
         req_meta: Dict[str, Any] = {**metadata, "run_dir": str(context.run_dir)}
         jm = getattr(context, "job_model_name", None)
         rk = (resolved_key or "").strip().lower()
+        model_for_meta: Optional[str] = str(jm).strip() if jm and str(jm).strip() else None
+        # Per-vendor model keys on the LLM request are a historical compatibility pattern (each
+        # executor reads its own key). Claude follows the same pattern for consistency. A future
+        # phase may converge on a single provider-neutral metadata field without changing adapters'
+        # outward behavior in one shot. Pre-Phase 10: ``llm_identity`` + ``prompt_parity_mode`` on
+        # the request mirror ``prompt_composition`` for comparison tooling.
         if jm and str(jm).strip() and rk == "gemini":
             req_meta["gemini_model_name"] = str(jm).strip()
         if jm and str(jm).strip() and rk == "openai":
             req_meta["openai_model_name"] = str(jm).strip()
+        if jm and str(jm).strip() and rk == "claude":
+            req_meta["claude_model_name"] = str(jm).strip()
+        if jm and str(jm).strip() and rk == "deepseek":
+            req_meta["deepseek_model_name"] = str(jm).strip()
+
+        # Phase 6: linear propagation — one dict after execution-layer merge is the source of truth
+        # for LLMRequest, AnalysisResult, run_metadata, and (redacted) execution_log summary.
+        prompt_composition = apply_execution_layer_to_composition(
+            composition_base,
+            resolved_llm_provider_key=rk,
+            model_name=model_for_meta,
+        )
+        if prompt_composition.get("final_prompt_text") != prompt_text:
+            logger.warning(
+                "prompt_composition final_prompt_text mismatch vs assembled prompt (job_id=%s)",
+                job_id,
+            )
+        req_meta[LLM_METADATA_KEY_PROMPT_COMPOSITION] = prompt_composition
+        req_meta[LLM_METADATA_KEY_PROMPT_PARITY_MODE] = bool(prompt_composition.get("prompt_parity_mode"))
+        _lid = prompt_composition.get("llm_identity")
+        if isinstance(_lid, dict):
+            req_meta[LLM_IDENTITY_METADATA_KEY] = dict(_lid)
 
         request = LLMRequest(
             job_id=job_id,
@@ -121,25 +160,57 @@ class HybridGlobalAnalysisStrategy:
             context_instruction=context_instruction,
             context_images=context_images,
         )
+        run_logger = getattr(context, "logger", None)
+        if run_logger is not None:
+            pv_raw = prompt_composition.get("prompt_version")
+            pv_opt = pv_raw.strip() if isinstance(pv_raw, str) and pv_raw.strip() else None
+            log_parts = [
+                prompt_composition.get("profile_name"),
+                prompt_composition.get("pipeline_provider_key"),
+                prompt_composition.get("resolved_llm_provider_key"),
+                prompt_composition.get("model_name"),
+                prompt_composition.get("prompt_hash"),
+                prompt_composition.get("enrichments_applied"),
+            ]
+            fmt = (
+                "Prompt composition: profile=%s pipeline_provider=%s llm_provider=%s "
+                "model=%s prompt_hash=%s enrichments=%s"
+            )
+            if pv_opt:
+                fmt += " prompt_version=%s"
+                log_parts.append(pv_opt)
+            run_logger.info(fmt, *log_parts)
         exec_log = getattr(context, "execution_log", None)
+        # Full prompt strings live on ``prompt_composition`` in request/job metadata (audit).
+        # Execution log uses a redacted summary plus hash/len unless debug enables full ``prompt_text``.
+        debug_full_prompt = getattr(settings, "debug_log_full_analysis_prompt", None) is True
         if exec_log:
             primary_attachments = build_primary_evidence_attachments(frame_paths, frame_refs)
+            log_payload: Dict[str, Any] = {
+                "event_type": "analysis_request",
+                "pipeline_provider": resolved_key,
+                "context_instruction": context_instruction,
+                "attachment_summary": {
+                    "primary_evidence_count": len(primary_attachments),
+                    "visual_reference_count": consumed_count,
+                    "total_count": len(primary_attachments) + consumed_count,
+                },
+                "primary_evidence_attachments": primary_attachments,
+                "visual_reference_attachments": visual_reference_attachments,
+                "prompt_composition": prompt_composition_summary_for_execution_log(
+                    prompt_composition,
+                    final_prompt_char_len=len(prompt_text),
+                ),
+            }
+            if debug_full_prompt:
+                log_payload["prompt_text"] = prompt_text
+            else:
+                log_payload["prompt_text_sha256"] = sha256_utf8(prompt_text)
+                log_payload["prompt_text_len"] = len(prompt_text)
             exec_log.info(
                 "AnalysisStage",
                 "Analysis request prepared",
-                payload={
-                    "event_type": "analysis_request",
-                    "pipeline_provider": resolved_key,
-                    "prompt_text": prompt_text,
-                    "context_instruction": context_instruction,
-                    "attachment_summary": {
-                        "primary_evidence_count": len(primary_attachments),
-                        "visual_reference_count": consumed_count,
-                        "total_count": len(primary_attachments) + consumed_count,
-                    },
-                    "primary_evidence_attachments": primary_attachments,
-                    "visual_reference_attachments": visual_reference_attachments,
-                },
+                payload=log_payload,
             )
             exec_log.info(
                 "AnalysisStage",
@@ -164,6 +235,7 @@ class HybridGlobalAnalysisStrategy:
                     visual_reference_count=consumed_count,
                     visual_reference_ids=resolved_reference_ids,
                 ),
+                prompt_composition=prompt_composition,
             )
         except Exception as e:
             if exec_log:

@@ -702,7 +702,6 @@ export default function InventoryDetail() {
                 {(processingProviderOptsQuery.data?.providers ?? []).map((p) => (
                   <MenuItem key={p.key} value={p.key}>
                     {p.label}
-                    {p.execution_mode === 'transitional_bridge' ? ` ${t('aisle.execution_mode_transitional')}` : ''}
                   </MenuItem>
                 ))}
               </Select>

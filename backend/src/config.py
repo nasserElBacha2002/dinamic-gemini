@@ -412,10 +412,10 @@ class Settings(BaseModel):
         le=60.0,
         description="Espera inicial entre reintentos en segundos (0.1 a 60).",
     )
-    # Stage 2.2.D — LLM provider strategy (gemini | openai | fake)
+    # Stage 2.2.D / Phase 8 — default LLM provider for pipeline runs without per-job override
     llm_provider: str = Field(
         default_factory=lambda: (os.getenv("LLM_PROVIDER", "gemini") or "gemini").strip().lower(),
-        description="LLM provider: gemini, openai, or fake. Env: LLM_PROVIDER.",
+        description="Default pipeline provider: gemini, openai, claude, or deepseek. Env: LLM_PROVIDER.",
     )
     openai_api_key: str = Field(
         default_factory=lambda: os.getenv("OPENAI_API_KEY", ""),
@@ -437,13 +437,68 @@ class Settings(BaseModel):
         le=4096,
         description="Max longest side (px) for images sent to OpenAI vision (downscaled if larger). Env: OPENAI_VISION_MAX_IMAGE_SIDE.",
     )
-    fake_llm_fixture_path: Optional[str] = Field(
-        default_factory=lambda: (os.getenv("FAKE_LLM_FIXTURE_PATH") or "").strip() or None,
-        description="Path to JSON fixture for fake provider (optional). Env: FAKE_LLM_FIXTURE_PATH.",
+    anthropic_api_key: str = Field(
+        default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""),
+        description="Anthropic API key for Claude (pipeline provider claude). Env: ANTHROPIC_API_KEY.",
+    )
+    anthropic_model: str = Field(
+        default_factory=lambda: (os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514") or "claude-sonnet-4-20250514").strip(),
+        description="Default Claude model id when job omits model_name. Env: ANTHROPIC_MODEL.",
+    )
+    anthropic_request_timeout_sec: float = Field(
+        default_factory=lambda: float(os.getenv("ANTHROPIC_REQUEST_TIMEOUT_SEC", "120")),
+        ge=5.0,
+        le=600.0,
+        description="HTTP timeout (seconds) for Anthropic API calls. Env: ANTHROPIC_REQUEST_TIMEOUT_SEC.",
+    )
+    anthropic_vision_max_image_side: int = Field(
+        default_factory=lambda: int(os.getenv("ANTHROPIC_VISION_MAX_IMAGE_SIDE", "2048")),
+        ge=512,
+        le=4096,
+        description="Max longest side (px) for images sent to Claude vision. Env: ANTHROPIC_VISION_MAX_IMAGE_SIDE.",
+    )
+    anthropic_max_output_tokens: int = Field(
+        default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_OUTPUT_TOKENS", "16384")),
+        ge=1024,
+        le=200000,
+        description="Max output tokens for Claude Messages API. Env: ANTHROPIC_MAX_OUTPUT_TOKENS.",
+    )
+    anthropic_max_retries: int = Field(
+        default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_RETRIES", "4")),
+        ge=1,
+        le=10,
+        description=(
+            "Max attempts for Claude Messages API calls (includes first try). Retries apply only to "
+            "PROVIDER_OVERLOADED (529) and RATE_LIMIT (429). Other classes (e.g. TIMEOUT) are still "
+            "classified for observability but are not retried here. Env: ANTHROPIC_MAX_RETRIES."
+        ),
+    )
+    anthropic_retry_base_delay_sec: float = Field(
+        default_factory=lambda: float(os.getenv("ANTHROPIC_RETRY_BASE_DELAY_SEC", "1.0")),
+        ge=0.1,
+        le=60.0,
+        description=(
+            "Base delay (seconds) for exponential backoff between Claude retries; small jitter is added. "
+            "Env: ANTHROPIC_RETRY_BASE_DELAY_SEC."
+        ),
     )
     hybrid_prompt: str = Field(
         default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
-        description="Perfil de prompt para el pipeline híbrido (ej. global_v21). Env: HYBRID_PROMPT.",
+        description=(
+            "Perfil de prompt para el pipeline híbrido (ej. global_v21) — **selects the prompt profile / "
+            "family** (which template body is composed). Env: HYBRID_PROMPT. Distinct from "
+            "`prompt_version`, which is an optional traceability label only."
+        ),
+    )
+    prompt_version: Optional[str] = Field(
+        default_factory=lambda: ((os.getenv("PROMPT_VERSION") or "").strip() or None),
+        description=(
+            "Phase 7 — **traceability only**: optional logical label copied into "
+            "`prompt_composition['prompt_version']` for audit and future comparison (e.g. v1, experiment-A). "
+            "Does **not** select prompt content; does **not** override `hybrid_prompt` / profile resolution; "
+            "does **not** affect prompt hashes. Per-job `RunContext.job_prompt_version` overrides this when set. "
+            "Env: PROMPT_VERSION."
+        ),
     )
     # Comma-separated lists for POST /process model pickers (Phase 5 corrections)
     processing_gemini_models: str = Field(
@@ -462,6 +517,56 @@ class Settings(BaseModel):
             or "gpt-4o"
         ),
         description="Comma-separated OpenAI model ids for processing-provider-options / POST /process. Env: PROCESSING_OPENAI_MODELS.",
+    )
+    processing_claude_models: str = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "PROCESSING_CLAUDE_MODELS",
+                "claude-sonnet-4-20250514,claude-3-5-sonnet-20241022",
+            )
+            or "claude-sonnet-4-20250514"
+        ),
+        description="Comma-separated Claude model ids for processing-provider-options. Env: PROCESSING_CLAUDE_MODELS.",
+    )
+    # Phase 9 — DeepSeek (OpenAI-compatible Chat Completions API)
+    deepseek_api_key: str = Field(
+        default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""),
+        description="DeepSeek API key (pipeline provider deepseek). Env: DEEPSEEK_API_KEY.",
+    )
+    deepseek_model: str = Field(
+        default_factory=lambda: (os.getenv("DEEPSEEK_MODEL", "deepseek-chat") or "deepseek-chat").strip(),
+        description="Default DeepSeek model id when job omits model_name. Env: DEEPSEEK_MODEL.",
+    )
+    deepseek_api_base_url: str = Field(
+        default_factory=lambda: (
+            (os.getenv("DEEPSEEK_API_BASE_URL", "https://api.deepseek.com") or "https://api.deepseek.com").strip()
+        ),
+        description="OpenAI-compatible API base URL for DeepSeek. Env: DEEPSEEK_API_BASE_URL.",
+    )
+    deepseek_request_timeout_sec: float = Field(
+        default_factory=lambda: float(os.getenv("DEEPSEEK_REQUEST_TIMEOUT_SEC", "120")),
+        ge=5.0,
+        le=600.0,
+        description="HTTP timeout (seconds) for DeepSeek API calls. Env: DEEPSEEK_REQUEST_TIMEOUT_SEC.",
+    )
+    deepseek_vision_max_image_side: int = Field(
+        default_factory=lambda: int(os.getenv("DEEPSEEK_VISION_MAX_IMAGE_SIDE", "2048")),
+        ge=512,
+        le=4096,
+        description=(
+            "Reserved max image side (px); multimodal image jobs are blocked for DeepSeek until the "
+            "hosted API supports them. Env: DEEPSEEK_VISION_MAX_IMAGE_SIDE."
+        ),
+    )
+    processing_deepseek_models: str = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_DEEPSEEK_MODELS", "deepseek-chat")
+            or "deepseek-chat"
+        ),
+        description=(
+            "Comma-separated DeepSeek model ids for processing-provider-options (text-only Chat API; "
+            "image-based hybrid analysis is not supported). Env: PROCESSING_DEEPSEEK_MODELS."
+        ),
     )
 
     # Frame Extraction Settings
@@ -908,6 +1013,14 @@ class Settings(BaseModel):
         in ("true", "1", "yes"),
         description="Si es True, guarda los frames procesados para debug.",
     )
+    debug_log_full_analysis_prompt: bool = Field(
+        default_factory=lambda: os.getenv("DEBUG_LOG_FULL_ANALYSIS_PROMPT", "false").lower()
+        in ("true", "1", "yes"),
+        description=(
+            "Phase 6: when True, execution_log includes full analysis prompt_text on "
+            "'Analysis request prepared'. Default False (hash + length only)."
+        ),
+    )
 
     # Auth (v3.2.1 — minimal administrative authentication)
     admin_username: str = Field(
@@ -1036,10 +1149,10 @@ class Settings(BaseModel):
     @field_validator("llm_provider")
     @classmethod
     def validate_llm_provider(cls, v: str) -> str:
-        """Provider must be gemini, openai, or fake."""
+        """Default pipeline provider key (per-job inventory_jobs.provider_name overrides)."""
         v = (v or "gemini").strip().lower()
-        if v not in ("gemini", "openai", "fake"):
-            raise ValueError("llm_provider must be one of: gemini, openai, fake")
+        if v not in ("gemini", "openai", "claude", "deepseek"):
+            raise ValueError("llm_provider must be one of: gemini, openai, claude, deepseek")
         return v
 
     @field_validator("output_dir")

@@ -20,7 +20,8 @@ from src.exceptions.global_analysis_exceptions import (
 from src.llm.errors import LLMProviderError
 from src.llm.gemini_client import GeminiClient
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
-from src.llm.prompts import get_hybrid_prompt
+from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
+from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
 from src.llm.types import LLMRequest, LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ class GeminiSdkAdapter:
                 message="No frames could be loaded",
                 details={"paths_count": len(request.frames)},
             )
+        meta = request.metadata or {}
+        prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
         use_request_prompt = (
             request.prompt.strip()
             if (request.prompt and request.prompt.strip())
@@ -58,9 +61,10 @@ class GeminiSdkAdapter:
         prompt_text = (
             use_request_prompt
             if use_request_prompt is not None
-            else get_hybrid_prompt(getattr(settings, "hybrid_prompt", "global_v21"))
+            else compose_hybrid_base_from_settings(
+                settings, pipeline_provider_key=None, prompt_parity_mode=prompt_parity_mode
+            )
         )
-        meta = request.metadata or {}
         effective_model = (meta.get("gemini_model_name") or "").strip() or getattr(
             settings, "gemini_model_name", "gemini-2.0-flash-exp"
         )

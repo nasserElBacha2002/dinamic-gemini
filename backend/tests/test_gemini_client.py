@@ -13,7 +13,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.llm.gemini_client import GeminiClient
-from src.llm.prompts import get_hybrid_prompt, GLOBAL_ENTITY_ANALYSIS_PROMPT_V21, HYBRID_PROMPTS
+from src.llm.prompt_composer.hybrid_profiles import GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
+from src.llm.prompt_composer.hybrid_resolution import HYBRID_PROMPTS
+from src.llm.prompts import get_hybrid_prompt
 
 
 # ----------------------------

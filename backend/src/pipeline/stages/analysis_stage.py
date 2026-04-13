@@ -25,6 +25,8 @@ class AnalysisStageResult:
     parsed_json: Dict[str, Any]
     provider_name: str
     provider_metadata: Optional[Dict[str, Any]] = None
+    # Phase 6: pass-through of AnalysisResult.prompt_composition for run_metadata persistence.
+    prompt_composition: Optional[Dict[str, Any]] = None
 
 
 class AnalysisStage:
@@ -67,4 +69,5 @@ class AnalysisStage:
             parsed_json=parsed,
             provider_name=result.provider_name,
             provider_metadata=result.provider_metadata,
+            prompt_composition=result.prompt_composition,
         )

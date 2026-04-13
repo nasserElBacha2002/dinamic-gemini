@@ -1,8 +1,7 @@
 """Legacy LLM provider protocol (Stage 2.2.D).
 
-Still implemented by ``FakeProvider`` / ``OpenAIProvider`` / ``GeminiProvider`` for CLI and tests.
-The pipeline registry prefers ``LlmGlobalAnalysisExecutor``; ``fake`` uses
-``TransitionalLlmProviderBridgeExecutor``. ``openai`` is native via ``OpenAiSdkAdapter``.
+Implemented by ``OpenAIProvider`` / ``GeminiProvider`` for non-pipeline callers.
+The hybrid pipeline resolves ``LlmGlobalAnalysisExecutor`` from the provider registry (Gemini/OpenAI).
 """
 
 from typing import Protocol
@@ -15,7 +14,7 @@ class LLMProvider(Protocol):
 
     @property
     def name(self) -> str:
-        """Logical provider key (e.g. ``gemini``, ``fake``)."""
+        """Logical provider key (e.g. ``gemini``, ``openai``)."""
         ...
 
     def analyze_global(self, request: LLMRequest) -> LLMResponse:
