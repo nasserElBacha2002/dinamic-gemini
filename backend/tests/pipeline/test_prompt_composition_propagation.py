@@ -219,7 +219,7 @@ def test_deepseek_resolved_key_sets_deepseek_model_name_in_request_and_compositi
     executor = TestLLMExecutor(handler=_handler)
     patch_hybrid_resolve_llm_executor(monkeypatch, executor, resolved_provider_key="deepseek")
     context = _video_context(tmp_path)
-    context.job_model_name = "deepseek-vl2"
+    context.job_model_name = "deepseek-reasoner"
     HybridGlobalAnalysisStrategy().analyze(
         context=context,
         frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
@@ -228,11 +228,11 @@ def test_deepseek_resolved_key_sets_deepseek_model_name_in_request_and_compositi
         metadata={"frame_count": 1},
     )
     req = captured["request"]
-    assert req.metadata.get("deepseek_model_name") == "deepseek-vl2"
+    assert req.metadata.get("deepseek_model_name") == "deepseek-reasoner"
     assert req.metadata.get("openai_model_name") is None
     pc = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]
     assert pc.get("resolved_llm_provider_key") == "deepseek"
-    assert pc.get("model_name") == "deepseek-vl2"
+    assert pc.get("model_name") == "deepseek-reasoner"
 
 
 def test_deepseek_traceability_in_execution_log_and_run_metadata(

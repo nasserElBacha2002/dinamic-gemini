@@ -67,8 +67,8 @@ PIPELINE_PROVIDER_SPECS: Final[Tuple[PipelineProviderSpec, ...]] = (
         key="deepseek",
         label="DeepSeek",
         description=(
-            "OpenAI-compatible Chat Completions + vision (official openai SDK with custom base URL). "
-            "DEEPSEEK_API_KEY required when explicitly selected."
+            "OpenAI-compatible Chat Completions (text-only on hosted API; image-based aisle analysis "
+            "is disabled until multimodal is supported). DEEPSEEK_API_KEY required when explicitly selected."
         ),
         credential_settings_attr="deepseek_api_key",
         credential_missing_message="DeepSeek is not configured (DEEPSEEK_API_KEY is missing).",

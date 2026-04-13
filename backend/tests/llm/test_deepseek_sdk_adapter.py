@@ -1,7 +1,8 @@
-"""DeepSeek executor — OpenAI-compatible client wiring, logical provider + metadata keys (Phase 9)."""
+"""DeepSeek executor — multimodal guardrail, OpenAI-compatible client wiring (Phase 9)."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -9,7 +10,8 @@ import pytest
 
 from src.llm.deepseek_sdk_adapter import DeepSeekSdkAdapter
 from src.llm.errors import LLMProviderError
-from src.llm.types import LLMRequest
+from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
+from src.llm.types import LLMRequest, LLMResponse
 
 
 def _settings_deepseek() -> MagicMock:
@@ -23,7 +25,64 @@ def _settings_deepseek() -> MagicMock:
     return s
 
 
-def test_deepseek_sdk_adapter_not_configured_without_api_key() -> None:
+def test_deepseek_blocks_multimodal_when_frames_nd_present() -> None:
+    adapter = DeepSeekSdkAdapter()
+    s = _settings_deepseek()
+    req = LLMRequest(
+        job_id="job-frames",
+        frames=[],
+        frame_refs=[],
+        prompt="p",
+        schema_version="v2.1",
+        metadata={"deepseek_model_name": "deepseek-chat"},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with pytest.raises(LLMProviderError) as ei:
+        adapter.execute(req, s)
+    assert ei.value.code == "UNSUPPORTED_MULTIMODAL_PROVIDER"
+    assert "image-based" in ei.value.message.lower()
+    assert ei.value.details.get("provider") == "deepseek"
+    assert ei.value.details.get("model") == "deepseek-chat"
+    assert ei.value.details.get("job_id") == "job-frames"
+
+
+def test_deepseek_blocks_multimodal_when_context_images_present() -> None:
+    adapter = DeepSeekSdkAdapter()
+    s = _settings_deepseek()
+    req = LLMRequest(
+        job_id="job-ctx",
+        frames=[],
+        frame_refs=[],
+        prompt="p",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=None,
+        context_images=[np.zeros((4, 4, 3), dtype=np.uint8)],
+    )
+    with pytest.raises(LLMProviderError) as ei:
+        adapter.execute(req, s)
+    assert ei.value.code == "UNSUPPORTED_MULTIMODAL_PROVIDER"
+
+
+def test_deepseek_blocks_multimodal_when_frame_paths_present() -> None:
+    adapter = DeepSeekSdkAdapter()
+    s = _settings_deepseek()
+    req = LLMRequest(
+        job_id="job-paths",
+        frames=[Path("/tmp/fake-frame.jpg")],
+        frame_refs=["ref1"],
+        prompt="p",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=None,
+    )
+    with pytest.raises(LLMProviderError) as ei:
+        adapter.execute(req, s)
+    assert ei.value.code == "UNSUPPORTED_MULTIMODAL_PROVIDER"
+
+
+def test_deepseek_sdk_adapter_not_configured_without_api_key_text_only() -> None:
+    """No images: guard passes through; parent rejects missing API key."""
     adapter = DeepSeekSdkAdapter()
     s = _settings_deepseek()
     s.deepseek_api_key = ""
@@ -34,7 +93,6 @@ def test_deepseek_sdk_adapter_not_configured_without_api_key() -> None:
         prompt="p",
         schema_version="v2.1",
         metadata={},
-        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
     )
     with pytest.raises(LLMProviderError) as ei:
         adapter.execute(req, s)
@@ -42,66 +100,75 @@ def test_deepseek_sdk_adapter_not_configured_without_api_key() -> None:
     assert ei.value.details.get("provider") == "deepseek"
 
 
-def test_deepseek_sdk_adapter_uses_job_model_and_sets_openai_client_base_url() -> None:
+def test_deepseek_text_only_delegates_to_openai_parent_execute() -> None:
+    """Text-only request: multimodal guard does not run; parent execute is invoked."""
     adapter = DeepSeekSdkAdapter()
     settings = _settings_deepseek()
-    ok_json = '{"total_entities_detected": 0, "entities": []}'
-    mock_completion = MagicMock()
-    mock_completion.choices = [MagicMock(message=MagicMock(content=ok_json))]
-    mock_completion.usage = None
-
     req = LLMRequest(
-        job_id="j1",
+        job_id="j-text",
         frames=[],
         frame_refs=[],
         prompt="Task for DeepSeek.",
         schema_version="v2.1",
-        metadata={"deepseek_model_name": "deepseek-vl2"},
-        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        metadata={"deepseek_model_name": "deepseek-reasoner"},
     )
-
-    with patch("src.llm.openai_sdk_adapter.OpenAI") as client_cls:
-        client_inst = MagicMock()
-        client_inst.chat.completions.create.return_value = mock_completion
-        client_cls.return_value = client_inst
+    fake = LLMResponse(
+        provider="deepseek",
+        model="deepseek-reasoner",
+        latency_ms=1,
+        parsed_json={"total_entities_detected": 0, "entities": []},
+    )
+    with patch.object(OpenAiSdkAdapter, "execute", return_value=fake) as parent_exec:
         out = adapter.execute(req, settings)
-        assert out.provider == "deepseek"
-        assert out.model == "deepseek-vl2"
-        client_cls.assert_called_once()
-        call_kw = client_cls.call_args.kwargs
-        assert call_kw.get("base_url") == "https://api.deepseek.com"
-        assert call_kw.get("api_key") == "sk-ds-test"
-        cc_kw = client_inst.chat.completions.create.call_args.kwargs
-        assert cc_kw["model"] == "deepseek-vl2"
-        content = cc_kw["messages"][0]["content"]
-        assert content[0]["type"] == "text"
-        assert "Task for DeepSeek" in content[0]["text"]
-        assert sum(1 for p in content if p.get("type") == "image_url") == 1
+    parent_exec.assert_called_once()
+    assert out.provider == "deepseek"
+    assert out.model == "deepseek-reasoner"
 
 
-def test_deepseek_sdk_adapter_maps_schema_invalid() -> None:
+def test_deepseek_text_only_no_frames_raises_no_frames_from_parent() -> None:
     adapter = DeepSeekSdkAdapter()
     settings = _settings_deepseek()
-    bad = '{"total_entities_detected": 1, "entities": [{"entity_type": "INVALID"}]}'
-    mock_completion = MagicMock()
-    mock_completion.choices = [MagicMock(message=MagicMock(content=bad))]
-    mock_completion.usage = None
-
     req = LLMRequest(
-        job_id="j1",
+        job_id="j-empty",
         frames=[],
         frame_refs=[],
         prompt="p",
         schema_version="v2.1",
         metadata={},
+    )
+    with pytest.raises(LLMProviderError) as ei:
+        adapter.execute(req, settings)
+    assert ei.value.code == "NO_FRAMES"
+
+
+def test_openai_adapter_unaffected_by_deepseek_multimodal_guard() -> None:
+    """Regression: OpenAI path still accepts frames (DeepSeek guard is DeepSeek-only)."""
+    from src.llm.openai_sdk_adapter import OpenAiSdkAdapter as OpenAIAdapter
+
+    adapter = OpenAIAdapter()
+    settings = MagicMock()
+    settings.openai_api_key = "sk-openai-test"
+    settings.openai_model = "gpt-4o-mini"
+    settings.openai_request_timeout_sec = 60.0
+    settings.openai_vision_max_image_side = 512
+    settings.hybrid_prompt = "global_v21"
+    ok_json = '{"total_entities_detected": 0, "entities": []}'
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content=ok_json))]
+    mock_completion.usage = None
+    req = LLMRequest(
+        job_id="j-openai",
+        frames=[],
+        frame_refs=[],
+        prompt="Analyze.",
+        schema_version="v2.1",
+        metadata={"openai_model_name": "gpt-4o-mini"},
         frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
     )
-
     with patch("src.llm.openai_sdk_adapter.OpenAI") as client_cls:
         client_inst = MagicMock()
         client_inst.chat.completions.create.return_value = mock_completion
         client_cls.return_value = client_inst
-        with pytest.raises(LLMProviderError) as ei:
-            adapter.execute(req, settings)
-        assert ei.value.code == "SCHEMA_INVALID"
-        assert ei.value.details.get("provider") == "deepseek"
+        out = adapter.execute(req, settings)
+    assert out.provider == "openai"
+    client_inst.chat.completions.create.assert_called_once()

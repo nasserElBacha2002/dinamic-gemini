@@ -553,14 +553,20 @@ class Settings(BaseModel):
         default_factory=lambda: int(os.getenv("DEEPSEEK_VISION_MAX_IMAGE_SIDE", "2048")),
         ge=512,
         le=4096,
-        description="Max longest side (px) for images sent to DeepSeek vision. Env: DEEPSEEK_VISION_MAX_IMAGE_SIDE.",
+        description=(
+            "Reserved max image side (px); multimodal image jobs are blocked for DeepSeek until the "
+            "hosted API supports them. Env: DEEPSEEK_VISION_MAX_IMAGE_SIDE."
+        ),
     )
     processing_deepseek_models: str = Field(
         default_factory=lambda: (
-            os.getenv("PROCESSING_DEEPSEEK_MODELS", "deepseek-chat,deepseek-vl2")
+            os.getenv("PROCESSING_DEEPSEEK_MODELS", "deepseek-chat")
             or "deepseek-chat"
         ),
-        description="Comma-separated DeepSeek model ids for processing-provider-options. Env: PROCESSING_DEEPSEEK_MODELS.",
+        description=(
+            "Comma-separated DeepSeek model ids for processing-provider-options (text-only Chat API; "
+            "image-based hybrid analysis is not supported). Env: PROCESSING_DEEPSEEK_MODELS."
+        ),
     )
 
     # Frame Extraction Settings

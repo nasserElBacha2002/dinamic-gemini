@@ -12,7 +12,7 @@ Registered providers
 * ``gemini`` → ``GeminiSdkAdapter`` (native executor; vendor SDK inside adapter).
 * ``openai`` → ``OpenAiSdkAdapter`` (native executor).
 * ``claude`` → ``AnthropicSdkAdapter`` (Anthropic Messages API + vision).
-* ``deepseek`` → ``DeepSeekSdkAdapter`` (OpenAI-compatible Chat Completions + vision; Phase 9).
+* ``deepseek`` → ``DeepSeekSdkAdapter`` (OpenAI-compatible Chat Completions; multimodal image jobs blocked; Phase 9).
 
 Generic pipeline code must depend only on ``LlmGlobalAnalysisExecutor``, not on legacy ``LLMProvider``.
 

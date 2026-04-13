@@ -30,7 +30,7 @@ def _settings(**overrides: object) -> MagicMock:
     s.processing_claude_models = "claude-sonnet-4-20250514,claude-3-5-sonnet-20241022"
     s.deepseek_api_key = ""
     s.deepseek_model = "deepseek-chat"
-    s.processing_deepseek_models = "deepseek-chat,deepseek-vl2"
+    s.processing_deepseek_models = "deepseek-chat,deepseek-reasoner"
     for k, v in overrides.items():
         setattr(s, k, v)
     return s
