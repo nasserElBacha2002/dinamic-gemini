@@ -181,7 +181,6 @@ _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT: Final[str] = (
     "not readable, or uncertain. Do not omit keys.\n\n"
     "Required core (unchanged semantics):\n"
     "- entity_type, model_entity_id, source_image_id, confidence, has_boxes\n\n"
-    "Canonical identity, quantity, and regions (same meaning as the shared v2.1 extraction contract):\n"
     "PRIORITY — product label vs position (warehouse inventory depends on this separation):\n"
     "- Actively look for the PRODUCT label (on boxes shrink-wrap, case, or SKU sticker): readable SKU text, "
     "and any quantity integer PRINTED ON THAT SAME PRODUCT LABEL context. Position/aisle/pallet location "
