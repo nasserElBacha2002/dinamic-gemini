@@ -15,6 +15,10 @@ from src.domain.entity import Entity
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.stages.frame_acquisition_stage import FrameAcquisitionStage, AcquiredFrames
 from src.pipeline.ports.analysis_provider import AnalysisResult
+from src.llm.normalization.entity_normalizer import (
+    EXTRACTION_CONTRACT_VERSION_KEY,
+    EXTRACTION_CONTRACT_VERSION_VALUE,
+)
 from src.pipeline.stages.analysis_stage import AnalysisStage, AnalysisStageResult
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage, ResolvedEntities
 from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageInput, ReportingResult
@@ -163,7 +167,11 @@ def test_analysis_stage_delegates_to_provider() -> None:
     result = stage.run(context, acquired)
 
     assert isinstance(result, AnalysisStageResult)
-    assert result.parsed_json == {"total_entities_detected": 0, "entities": []}
+    assert result.parsed_json == {
+        "total_entities_detected": 0,
+        "entities": [],
+        EXTRACTION_CONTRACT_VERSION_KEY: EXTRACTION_CONTRACT_VERSION_VALUE,
+    }
     assert result.provider_name == HARNESS_RESPONSE_PROVIDER
     mock_provider.analyze.assert_called_once()
     call_kw = mock_provider.analyze.call_args
