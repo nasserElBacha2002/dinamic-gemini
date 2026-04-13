@@ -3,18 +3,20 @@ Anthropic (Claude) SDK adapter — Messages API + vision for hybrid global analy
 
 Vendor-specific code stays here; pipeline uses ``LLMRequest`` / ``LLMResponse`` only.
 
-**Prompt policy (Phase 8, intentional):** Claude uses the hybrid **default** composer branch — the
-same base bodies as Gemini, not the OpenAI-tuned overlay. That keeps one prompt source of truth for
-this phase; a ``claude``-specific overlay in ``PROMPTS`` can be added later without changing Gemini or
-OpenAI resolution rules (see ``hybrid_resolution``).
+**Prompt policy:** Claude uses the hybrid ``default`` body **plus** the registry ``claude`` supplement
+(see ``hybrid_profiles`` / ``resolve_hybrid_entry_for_provider``) — canonical entity JSON contract
+aligned with ``EntityV21``. It does **not** use the OpenAI-tuned replacement fragment. Gemini still
+uses ``default`` only; structured output enforces schema on the Gemini path separately.
 
 **Response shape:** We append a JSON-only instruction suffix (same *idea* as OpenAI’s text path;
 wording unchanged). Claude returns plain text; we strip optional markdown fences, parse JSON,
 normalize entity count drift, and validate v2.1.
 
-**Capacity / overload:** HTTP 529 and ``overloaded_error`` map to ``PROVIDER_OVERLOADED`` and are
-retried with bounded exponential backoff (see ``Settings.anthropic_max_retries``). Parsing /
-schema failures after a successful HTTP response are **not** retried here.
+**Capacity / overload:** HTTP 529 / ``overloaded_error`` → ``PROVIDER_OVERLOADED``; HTTP 429 →
+``RATE_LIMIT``. Those codes are retried with bounded exponential backoff (see
+``Settings.anthropic_max_retries``). Timeout-like transport errors map to ``TIMEOUT`` (classified
+for observability) but are **not** retried here. Parsing / schema failures after a successful HTTP
+response are **not** retried.
 
 **Request size:** Large multimodal payloads (many reference + primary images) increase overload risk.
 There is no automatic slimming yet — TODO: consider dropping or downsampling context images after
@@ -38,19 +40,15 @@ import numpy as np
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.errors import LLMProviderError
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
+from src.llm.prompt_composer.hybrid_profiles import CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
 from src.llm.types import LLMRequest, LLMResponse
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
 logger = logging.getLogger(__name__)
 
-_JSON_OBJECT_SUFFIX = (
-    "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
-    'Root keys: "total_entities_detected" (non-negative integer) and "entities" (array). '
-    "Each entity must follow the v2.1 schema from the instructions above: entity_type "
-    "(PALLET|EMPTY_PALLET|LOOSE_BOXES), model_entity_id (string), confidence (0..1), "
-    "has_boxes (boolean), and optional bbox/quantity fields as specified."
-)
+# Wire-level JSON shape + forbidden keys; semantic rules live in hybrid ``claude`` supplement + default body.
+_JSON_OBJECT_SUFFIX = CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX
 
 _RETRY_JITTER_SEC = 0.35
 
@@ -238,7 +236,8 @@ class AnthropicSdkAdapter:
     Claude Messages API (vision).
 
     Transport errors from ``messages.create`` are classified in
-    :func:`classify_anthropic_messages_api_error`; overload / rate-limit are retried.
+    :func:`classify_anthropic_messages_api_error`; overload and rate-limit are retried (not
+    ``TIMEOUT`` / auth / unknown).
     Post-response parse/validate uses ``INVALID_JSON`` / ``SCHEMA_INVALID`` (no transport retry).
     """
 
@@ -322,7 +321,7 @@ class AnthropicSdkAdapter:
         )
 
         client = Anthropic(api_key=api_key, timeout=timeout)
-        t0 = time.perf_counter()
+        t_cycle_start = time.perf_counter()
         message = None
         for attempt in range(max_attempts):
             try:
@@ -340,18 +339,8 @@ class AnthropicSdkAdapter:
                 break
             except Exception as e:
                 code, det = classify_anthropic_messages_api_error(e)
-                det_full = {
-                    **det,
-                    "model": effective_model,
-                    "phase": "api_invoke",
-                    "attempt_index": attempt,
-                    "max_attempts": max_attempts,
-                    "will_retry": False,
-                }
                 retryable = _is_retryable_anthropic_classified_code(code)
                 can_retry = retryable and attempt < max_attempts - 1
-                det_full["retryable"] = retryable
-                det_full["will_retry"] = can_retry
                 logger.warning(
                     "Claude phase=api_invoke failed model=%s code=%s http_status=%s "
                     "api_error_type=%s request_id=%s attempt=%d/%d retryable=%s",
@@ -388,7 +377,8 @@ class AnthropicSdkAdapter:
                 details={"provider": "claude", "model": effective_model, "phase": "api_invoke"},
             )
 
-        latency_ms = int((time.perf_counter() - t0) * 1000)
+        # Wall time from first attempt through last successful HTTP response (includes prior failures + backoff).
+        total_attempt_window_ms = int((time.perf_counter() - t_cycle_start) * 1000)
         raw_text = ""
         for block in getattr(message, "content", None) or []:
             btype = getattr(block, "type", None)
@@ -396,9 +386,9 @@ class AnthropicSdkAdapter:
                 raw_text += getattr(block, "text", "") or ""
 
         logger.debug(
-            "Claude phase=response_received model=%s latency_ms=%s",
+            "Claude phase=response_received model=%s total_attempt_window_ms=%s",
             effective_model,
-            latency_ms,
+            total_attempt_window_ms,
         )
 
         run_dir = meta.get("run_dir")
@@ -421,7 +411,7 @@ class AnthropicSdkAdapter:
         return LLMResponse(
             provider="claude",
             model=str(effective_model),
-            latency_ms=latency_ms,
+            latency_ms=total_attempt_window_ms,
             parsed_json=data,
             raw_text=raw_text,
             usage=usage,

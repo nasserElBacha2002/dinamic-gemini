@@ -468,8 +468,9 @@ class Settings(BaseModel):
         ge=1,
         le=10,
         description=(
-            "Max attempts for Claude Messages API calls (includes first try). Retries apply to "
-            "PROVIDER_OVERLOADED (529) and RATE_LIMIT only. Env: ANTHROPIC_MAX_RETRIES."
+            "Max attempts for Claude Messages API calls (includes first try). Retries apply only to "
+            "PROVIDER_OVERLOADED (529) and RATE_LIMIT (429). Other classes (e.g. TIMEOUT) are still "
+            "classified for observability but are not retried here. Env: ANTHROPIC_MAX_RETRIES."
         ),
     )
     anthropic_retry_base_delay_sec: float = Field(

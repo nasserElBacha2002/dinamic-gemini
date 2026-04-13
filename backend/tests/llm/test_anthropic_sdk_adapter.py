@@ -182,6 +182,12 @@ def test_classify_401_not_retryable_not_overloaded() -> None:
     assert det["http_status"] == 401
 
 
+def test_classify_timeout_signal_maps_timeout() -> None:
+    for msg in ("connection timed out", "Read timeout after 30s"):
+        code, _det = classify_anthropic_messages_api_error(Exception(msg))
+        assert code == "TIMEOUT", msg
+
+
 def test_anthropic_retries_529_then_succeeds() -> None:
     adapter = AnthropicSdkAdapter()
     settings = _settings_claude()
@@ -220,6 +226,44 @@ def test_anthropic_retries_529_then_succeeds() -> None:
         assert client_inst.messages.create.call_count == 2
 
 
+def test_anthropic_retries_429_then_succeeds() -> None:
+    adapter = AnthropicSdkAdapter()
+    settings = _settings_claude()
+    settings.anthropic_max_retries = 3
+    ok_json = '{"total_entities_detected": 0, "entities": []}'
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = ok_json
+    mock_message = MagicMock()
+    mock_message.content = [text_block]
+    mock_message.usage = None
+
+    rate_limited = _api_status_error(
+        429,
+        body={"type": "rate_limit_error", "message": "Too many requests"},
+        message="Rate limited",
+    )
+
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=[],
+        prompt="p",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+
+    with patch("anthropic.Anthropic") as client_cls:
+        client_inst = MagicMock()
+        client_inst.messages.create.side_effect = [rate_limited, mock_message]
+        client_cls.return_value = client_inst
+        with patch("time.sleep"):
+            out = adapter.execute(req, settings)
+        assert out.provider == "claude"
+        assert client_inst.messages.create.call_count == 2
+
+
 def test_anthropic_exhausts_retries_on_529_raises_provider_overloaded() -> None:
     adapter = AnthropicSdkAdapter()
     settings = _settings_claude()
@@ -249,6 +293,66 @@ def test_anthropic_exhausts_retries_on_529_raises_provider_overloaded() -> None:
     assert ei.value.details.get("request_id") == "req_final"
     assert ei.value.details.get("retryable_class") is True
     assert client_inst.messages.create.call_count == 2
+
+
+def test_anthropic_exhausts_retries_on_429_raises_rate_limit() -> None:
+    adapter = AnthropicSdkAdapter()
+    settings = _settings_claude()
+    settings.anthropic_max_retries = 3
+    rate_limited = _api_status_error(
+        429,
+        body={"type": "rate_limit_error", "request_id": "req_rl"},
+        message="Rate limited",
+    )
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=[],
+        prompt="p",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with patch("anthropic.Anthropic") as client_cls:
+        client_inst = MagicMock()
+        client_inst.messages.create.side_effect = rate_limited
+        client_cls.return_value = client_inst
+        with patch("time.sleep"):
+            with pytest.raises(LLMProviderError) as ei:
+                adapter.execute(req, settings)
+    assert ei.value.code == "RATE_LIMIT"
+    assert ei.value.details.get("retryable_class") is True
+    assert client_inst.messages.create.call_count == 3
+
+
+def test_anthropic_max_retries_one_single_call_no_sleep_on_overload() -> None:
+    adapter = AnthropicSdkAdapter()
+    settings = _settings_claude()
+    settings.anthropic_max_retries = 1
+    overload = _api_status_error(
+        529,
+        body={"type": "overloaded_error", "request_id": "req_one"},
+        message="Overloaded",
+    )
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=[],
+        prompt="p",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with patch("anthropic.Anthropic") as client_cls:
+        client_inst = MagicMock()
+        client_inst.messages.create.side_effect = overload
+        client_cls.return_value = client_inst
+        with patch("time.sleep") as sl:
+            with pytest.raises(LLMProviderError) as ei:
+                adapter.execute(req, settings)
+    assert ei.value.code == "PROVIDER_OVERLOADED"
+    assert client_inst.messages.create.call_count == 1
+    sl.assert_not_called()
 
 
 def test_anthropic_auth_error_not_retried() -> None:

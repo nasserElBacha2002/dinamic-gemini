@@ -10,8 +10,7 @@ Enrichments (image IDs, product/label) live in ``enrichments`` and run only at e
 (e.g. ``pipeline.services.hybrid_analysis_prompt``). Phase 6 traceability will attach metadata alongside
 that layer, not inside ``compose_base``.
 
-The ``default`` vs ``openai`` overlay is parity-only; see ``hybrid_resolution`` — future providers need
-an explicit map, not this heuristic.
+See ``hybrid_resolution`` for per-provider rules (OpenAI replacement, Claude supplement, default-only).
 """
 
 from __future__ import annotations
@@ -26,10 +25,9 @@ class HybridPromptComposer:
     """
     Composes hybrid global-analysis **base** prompt text from profile + pipeline provider key.
 
-    Provider overlay rules are implemented in ``resolve_hybrid_entry_for_provider`` (Phase 4
-    parity model: only ``openai`` selects the ``openai`` fragment; all other keys use ``default``).
-    That model is intentional for parity with pre-composer behavior and will be superseded in
-    Phase 6+ by explicit per-provider policy — do not assume future vendors inherit OpenAI text.
+    Provider rules are implemented in ``resolve_hybrid_entry_for_provider``: ``openai`` replaces
+    with the OpenAI fragment; ``claude`` appends the canonical JSON entity contract to ``default``;
+    other keys use ``default`` only (see module doc there).
     """
 
     def compose_base(

@@ -1,15 +1,13 @@
 """
 Provider policy overlay for hybrid registry entries (``default`` vs ``openai`` branch).
 
-**Overlay rule:** only the literal key ``openai`` selects the ``openai`` fragment. Every other
-registered pipeline key (``gemini``, ``claude``, ``deepseek``, future vendors, ``None``, etc.) uses the
-``default`` fragment. Adding a new overlay key later (e.g. a ``claude`` fragment in ``PROMPTS``)
-must not change text for ``openai``, ``gemini``, or existing defaults unless explicitly versioned.
-
-**Phase 8 — Claude prompt policy (intentional, not permanent):** Claude uses the **same**
-``default`` branch as Gemini. That is a deliberate Phase 8 choice to ship a first-class executor
-without duplicating prompt bodies. A Claude-specific overlay may be introduced in a later phase;
-resolution logic here already isolates overlay selection so that future change stays localized.
+**Overlay rules:**
+* ``openai`` (when ``prompt_parity_mode`` is false) selects the ``openai`` **replacement** fragment.
+* ``claude`` (when ``prompt_parity_mode`` is false) appends the registry ``claude`` supplement to the
+  ``default`` body (canonical JSON entity contract for text models). Gemini, DeepSeek, and unknown
+  keys use ``default`` only.
+* ``prompt_parity_mode`` disables both ``openai`` and ``claude`` overlays so comparison runs share
+  the same base text as Gemini.
 
 **Phase 9 — DeepSeek:** Same as Claude/Gemini for hybrid **base** text: ``deepseek`` uses the
 ``default`` fragment only (OpenAI overlay is keyed solely by ``openai``).
@@ -59,11 +57,13 @@ def resolve_hybrid_entry_for_provider(
     Resolve one registry entry to the text sent as the hybrid **base** prompt (before enrichments).
 
     * If ``provider_key`` is exactly ``openai`` (case-insensitive), the entry defines an ``openai``
-      string, and ``prompt_parity_mode`` is false, the ``openai`` fragment is used.
-    * If ``prompt_parity_mode`` is true, the ``openai`` fragment is never used — same ``default``
-      body as other non-OpenAI providers (comparison mode).
-    * Every other key (``gemini``, ``claude``, ``deepseek``, unknown, ``None``, etc.) uses the
-      ``default`` fragment when not in the OpenAI+overlay branch above.
+      string, and ``prompt_parity_mode`` is false, the ``openai`` fragment **replaces** ``default``.
+    * If ``prompt_parity_mode`` is true, the ``openai`` fragment is never used.
+    * If ``provider_key`` is exactly ``claude`` (case-insensitive), the entry defines a non-empty
+      ``claude`` string, and ``prompt_parity_mode`` is false, that string is **appended** after the
+      ``default`` body (canonical entity JSON contract). Otherwise Claude resolution falls through
+      to ``default`` only (same as Gemini when parity mode is on).
+    * Keys ``gemini``, ``deepseek``, ``None``, etc. use the ``default`` fragment only (no append).
 
     Legacy ``PROMPTS`` rows that use ``system``/``user`` (non-hybrid) are not valid hybrid entries;
     for backward compatibility they fall back to **global_v21 default** text only, with **no** OpenAI
@@ -80,6 +80,7 @@ def resolve_hybrid_entry_for_provider(
                 PROMPTS["global_v21"], None, prompt_parity_mode=prompt_parity_mode
             )
         if isinstance(entry.get("default"), str):
+            default_text = str(entry["default"]).rstrip()
             use_openai_overlay = (
                 pk == "openai"
                 and not prompt_parity_mode
@@ -87,7 +88,15 @@ def resolve_hybrid_entry_for_provider(
             )
             if use_openai_overlay:
                 return str(entry["openai"]).rstrip()
-            return str(entry["default"]).rstrip()
+            use_claude_supplement = (
+                pk == "claude"
+                and not prompt_parity_mode
+                and isinstance(entry.get("claude"), str)
+                and str(entry["claude"]).strip() != ""
+            )
+            if use_claude_supplement:
+                return (default_text + "\n\n" + str(entry["claude"]).rstrip()).rstrip()
+            return default_text
     return resolve_hybrid_entry_for_provider(
         PROMPTS["global_v21"], None, prompt_parity_mode=prompt_parity_mode
     )

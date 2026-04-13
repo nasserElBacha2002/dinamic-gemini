@@ -21,7 +21,8 @@ Phase 5 — **official production entrypoint** for hybrid **base** prompt text (
 
 1. Resolve profile — ``job_prompt_key`` wins; else ``settings.hybrid_prompt`` (default ``global_v21``).
 2. Resolve provider key — caller supplies pipeline provider string (e.g. from
-   ``normalize_pipeline_provider_key``); adapters pass ``None`` (default fragment) or ``\"openai\"``.
+   ``normalize_pipeline_provider_key``); adapters may pass ``\"claude\"`` (default + canonical JSON
+   supplement), ``\"openai\"`` (OpenAI replacement fragment), or ``None`` / other keys (default only).
 3. Compose base — ``compose_hybrid_base`` → ``HybridPromptComposer.compose_base`` →
    ``resolve_hybrid_entry_for_provider`` only.
 4. Apply enrichments — exclusively at explicit call sites (e.g. ``hybrid_analysis_prompt`` for photo

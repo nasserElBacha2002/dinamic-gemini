@@ -1,8 +1,8 @@
 """
 Registry of prompt bodies keyed for ``PROMPTS`` (hybrid + legacy).
 
-* **Hybrid pipeline** (global v2.1 analysis): entries with ``default`` / ``openai`` — resolved only
-  through ``HybridPromptComposer`` + ``resolve_hybrid_entry_for_provider``.
+* **Hybrid pipeline** (global v2.1 analysis): entries with ``default`` / ``openai`` / optional ``claude``
+  — resolved only through ``HybridPromptComposer`` + ``resolve_hybrid_entry_for_provider``.
 * **Legacy** (pallet / multi-frame experiments): ``system`` / ``user`` pairs below — **not** used by
   the hybrid global-analysis composer; kept in one dict for historical imports and tooling.
 """
@@ -112,6 +112,40 @@ Output:
 Return valid JSON matching the required entity schema (total_entities_detected + entities array).
 """
 
+# --- Claude (text / Messages API) — appended to ``default`` for provider key ``claude`` only ---
+# Aligns free-form JSON output with the same canonical entity keys as ``EntityV21`` / shared pipeline.
+_CLAUDE_V21_CANONICAL_ENTITY_CONTRACT: Final[str] = """\
+CLAUDE JSON ENTITY CONTRACT (non-negotiable — your response JSON must follow this exactly):
+
+Each entity object MUST include these keys. Use JSON null when a value is not clearly visible, not readable, or uncertain. Do not omit keys.
+
+Required core (unchanged semantics):
+- entity_type, model_entity_id, source_image_id, confidence, has_boxes
+
+Canonical identity, quantity, and regions (same meaning as the shared v2.1 extraction contract):
+- internal_code (string or null): ONLY product code / SKU / internal product identifier read from the PRODUCT label (on boxes or product). NEVER put location codes, pallet position labels, or aisle labels here.
+- position_barcode (string or null): ONLY position / pallet / location identifier (barcode or numeric code clearly belonging to the pallet position or location label). Do not invent. NEVER use a generic alias key like "position_label" — use position_barcode only.
+- product_label_quantity (integer or null): ONLY if a quantity is explicitly printed on the product label and clearly readable. Detecting one pallet entity does NOT mean quantity = 1. Do not estimate, do not infer from the number of entities, do not use 0 unless zero is explicitly shown on the label and semantically valid. If unsure, null.
+- product_label_bbox (array of 4 numbers or null): normalized [x1,y1,x2,y2] in [0,1], x1<x2, y1<y2 — ONLY the region of the product / SKU / quantity-on-product-label. NOT the full pallet extent, NOT a scene-level bounding box. If no product label region is clearly identifiable, null.
+- position_label_bbox (array of 4 numbers or null): normalized [x1,y1,x2,y2] in [0,1] — ONLY the region of the position / location label. If no position label is visible, null.
+
+FORBIDDEN keys — do not output any of these (put the information in the canonical keys above or null):
+position_label, product_label, quantity, qty, detected_quantity, bbox
+
+If you would have used a forbidden key, remap: location text → position_barcode; product SKU text → internal_code; product-label ROI → product_label_bbox; position-label ROI → position_label_bbox; printed product quantity → product_label_quantity.
+"""
+
+# Wire-level reminder appended by ``anthropic_sdk_adapter`` after the hybrid base prompt.
+CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX: Final[str] = (
+    "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
+    'Root keys: "total_entities_detected" (non-negative integer) and "entities" (array). '
+    "Each entity MUST be a JSON object including ALL of these keys (use null when unknown): "
+    "entity_type, model_entity_id, source_image_id, confidence, has_boxes, "
+    "position_barcode, internal_code, position_label_bbox, product_label_bbox, product_label_quantity. "
+    "Follow the semantic rules in the instructions above. "
+    "Do NOT include keys: position_label, product_label, quantity, qty, detected_quantity, bbox."
+)
+
 # ---------------------------------------------------------------------------
 # Legacy pallet / multi-view prompts (system + user) — not hybrid composer paths
 # ---------------------------------------------------------------------------
@@ -184,8 +218,16 @@ Output:
 # **Internal registry** — consumed only by ``HybridPromptComposer`` / ``hybrid_resolution``.
 # Do not import ``PROMPTS`` from application, adapter, or pipeline code; use ``hybrid_assembly``.
 PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
-    "global_v21": {"default": _GLOBAL_V21, "openai": _GLOBAL_V21_OPENAI},
-    "global_v21_b": {"default": _GLOBAL_V21_B, "openai": _GLOBAL_V21_B_OPENAI},
+    "global_v21": {
+        "default": _GLOBAL_V21,
+        "openai": _GLOBAL_V21_OPENAI,
+        "claude": _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT,
+    },
+    "global_v21_b": {
+        "default": _GLOBAL_V21_B,
+        "openai": _GLOBAL_V21_B_OPENAI,
+        "claude": _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT,
+    },
     "pallet_count_simple": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_PALLET_COUNT},
     "multi_frame_consolidated": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_MULTI_FRAME},
     "multi_view_per_track": {
