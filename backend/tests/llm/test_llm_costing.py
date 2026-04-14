@@ -41,19 +41,20 @@ def test_normalize_usage_claude_shape() -> None:
     usage, notes = normalize_usage("claude", raw)
     assert usage["input_tokens"] == 200
     assert usage["output_tokens"] == 80
-    assert usage["total_tokens"] == 280
+    assert usage["total_tokens"] is None
     assert not notes
 
 
 def test_normalize_usage_claude_cache_read_split() -> None:
     raw = {"input_tokens": 500, "output_tokens": 100, "cache_read_input_tokens": 200}
     usage, notes = normalize_usage("claude", raw)
-    assert usage["input_tokens"] == 300
+    assert usage["input_tokens"] == 500
     assert usage["cached_input_tokens"] == 200
     assert usage["output_tokens"] == 100
+    assert "usage_dimension_ambiguous:claude_cache_read_vs_gross_input" in notes
 
 
-def test_normalize_usage_gemini_fields_and_total_derived() -> None:
+def test_normalize_usage_gemini_fields_without_derived_total_when_ambiguous() -> None:
     raw = {
         "prompt_token_count": 100,
         "candidates_token_count": 40,
@@ -65,16 +66,14 @@ def test_normalize_usage_gemini_fields_and_total_derived() -> None:
     assert usage["cached_input_tokens"] == 25
     assert usage["output_tokens"] == 40
     assert usage["thinking_tokens"] == 10
-    assert usage["total_tokens"] == 125
-    assert "usage_dimension_ambiguous:total_tokens" in notes
+    assert usage["total_tokens"] is None
     assert "usage_dimension_ambiguous:output_tokens" in notes
 
 
-def test_normalize_usage_gemini_total_fallback_when_only_prompt_and_candidates() -> None:
+def test_normalize_usage_gemini_no_total_derivation_when_not_reported() -> None:
     raw = {"prompt_token_count": 10, "candidates_token_count": 5}
     usage, notes = normalize_usage("gemini", raw)
-    assert usage["total_tokens"] == 15
-    assert "usage_dimension_ambiguous:total_tokens" not in notes
+    assert usage["total_tokens"] is None
 
 
 def test_build_llm_cost_snapshot_exact_when_fully_priced_no_ambiguity() -> None:
@@ -109,6 +108,37 @@ def test_build_llm_cost_snapshot_exact_when_fully_priced_no_ambiguity() -> None:
     assert snap["computed_cost"]["currency"] == "USD"
     assert snap["pricing_snapshot"]["captured_at"]
     assert "Z" in snap["pricing_snapshot"]["captured_at"]
+    assert snap["pricing_snapshot"]["pricing_catalog_entry_captured_at"] is None
+
+
+def test_build_llm_cost_snapshot_preserves_catalog_entry_timestamp() -> None:
+    settings = _settings_with_catalog(
+        {
+            "version": "catalog-v1",
+            "currency": "USD",
+            "entries": [
+                {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "captured_at": "2026-04-14T10:00:00Z",
+                    "input_cost_per_million": 5,
+                    "output_cost_per_million": 15,
+                }
+            ],
+        }
+    )
+    snap = build_llm_cost_snapshot(
+        provider="openai",
+        model="gpt-4o",
+        raw_usage={
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "prompt_tokens_details": {"cached_tokens": 0},
+        },
+        settings=settings,
+    )
+    assert snap["pricing_snapshot"]["captured_at"] is not None
+    assert snap["pricing_snapshot"]["pricing_catalog_entry_captured_at"] == "2026-04-14T10:00:00Z"
 
 
 def test_build_llm_cost_snapshot_estimated_missing_pricing_entry() -> None:
@@ -170,6 +200,23 @@ def test_build_llm_cost_snapshot_unavailable_no_usage() -> None:
     assert "provider_usage_missing" in snap["capture_notes"]
 
 
+def test_build_llm_cost_snapshot_estimated_when_usage_metadata_present_all_zero() -> None:
+    settings = _settings_with_catalog(
+        {
+            "currency": "USD",
+            "entries": [{"provider": "openai", "model": "gpt-4o", "input_cost_per_million": 5}],
+        }
+    )
+    snap = build_llm_cost_snapshot(
+        provider="openai",
+        model="gpt-4o",
+        raw_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        settings=settings,
+    )
+    assert snap["capture_status"] == "estimated"
+    assert "provider_usage_missing" not in snap["capture_notes"]
+
+
 def test_build_llm_cost_snapshot_estimated_cache_write_unpriced() -> None:
     settings = _settings_with_catalog(
         {
@@ -198,6 +245,65 @@ def test_build_llm_cost_snapshot_estimated_cache_write_unpriced() -> None:
     )
     assert snap["capture_status"] == "estimated"
     assert "billable_dimension_not_priced:cache_write_tokens" in snap["capture_notes"]
+
+
+def test_build_llm_cost_snapshot_estimated_for_claude_cache_read_ambiguity() -> None:
+    settings = _settings_with_catalog(
+        {
+            "currency": "USD",
+            "entries": [
+                {
+                    "provider": "claude",
+                    "model": "claude-sonnet-4",
+                    "input_cost_per_million": 3,
+                    "output_cost_per_million": 15,
+                    "cached_input_cost_per_million": 1,
+                }
+            ],
+        }
+    )
+    snap = build_llm_cost_snapshot(
+        provider="claude",
+        model="claude-sonnet-4",
+        raw_usage={
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "cache_read_input_tokens": 20,
+        },
+        settings=settings,
+    )
+    assert snap["capture_status"] == "estimated"
+    assert "usage_dimension_ambiguous:claude_cache_read_vs_gross_input" in snap["capture_notes"]
+
+
+def test_build_llm_cost_snapshot_estimated_when_zero_usage_has_ambiguity_notes() -> None:
+    settings = _settings_with_catalog(
+        {
+            "currency": "USD",
+            "entries": [
+                {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "input_cost_per_million": 5,
+                    "output_cost_per_million": 15,
+                }
+            ],
+        }
+    )
+    snap = build_llm_cost_snapshot(
+        provider="openai",
+        model="gpt-4o",
+        raw_usage={
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "prompt_tokens_details": {"cached_tokens": 0},
+        },
+        settings=settings,
+    )
+    assert snap["capture_status"] == "estimated"
+    assert snap["computed_cost"]["total_cost"] == "0.00000000"
+    assert "provider_usage_missing" not in snap["capture_notes"]
+    assert "pricing_present_but_no_billable_dimensions" not in snap["capture_notes"]
 
 
 def test_sanitize_llm_cost_snapshot_for_compare_strips_raw_usage() -> None:

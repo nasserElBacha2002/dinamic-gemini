@@ -1,36 +1,18 @@
 """
 Provider-agnostic LLM usage/cost snapshot builder.
 
-Captures normalized usage fields from provider-specific raw usage payloads, applies
-pricing configuration snapshot from settings, and computes stable cost subtotals.
-
-Token accounting convention (billing / avoid double-counting)
--------------------------------------------------------------
-After normalization, fields mean:
-
-- ``input_tokens``: **non-cached** input tokens billed at the standard input rate.
-- ``cached_input_tokens``: tokens billed at the cached-input / cache-read rate (prompt cache hits,
-  OpenAI prompt cache, Claude cache read, etc.).
-- ``output_tokens``: completion/output tokens billed at the output rate (excluding thinking
-  tokens when those are reported separately — see ``thinking_tokens``).
-- ``cache_write_tokens``: tokens written to provider-side caches (e.g. Claude cache creation),
-  when the API exposes them. There is currently **no** dedicated price field in the catalog
-  snapshot for this dimension; presence triggers ``estimated`` status if priced totals cannot
-  cover it.
-- ``thinking_tokens``: reasoning/thinking tokens when the provider reports them separately from
-  output. If a provider cannot prove whether thinking is included in output counts, we add
-  ``usage_dimension_ambiguous:<dimension>`` and downgrade to ``estimated``.
-
-Providers differ; when the wire format does not allow a safe split, we record ambiguity notes
-and **never** return ``capture_status="exact"``.
+The snapshot is persisted with each run for auditability. To avoid overclaiming precision:
+- ``total_tokens`` is kept only when reported by the provider payload.
+- ambiguous accounting paths are explicitly marked with ``usage_dimension_ambiguous:*`` notes.
 """
 
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 _MICRO_UNIT = Decimal("1000000")
 _MONEY_QUANT = Decimal("0.00000001")
@@ -41,12 +23,10 @@ def _utc_iso_now() -> str:
 
 
 def _to_int(value: Any) -> Optional[int]:
-    if value is None:
-        return None
-    if isinstance(value, bool):
+    if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
-        return value if value >= 0 else 0
+        return max(0, value)
     if isinstance(value, float):
         if value != value:  # NaN
             return None
@@ -78,58 +58,33 @@ def _as_decimal(value: Any) -> Optional[Decimal]:
         dec = Decimal(str(value))
     except Exception:
         return None
-    if dec < 0:
-        return Decimal("0")
-    return dec
+    return Decimal("0") if dec < 0 else dec
 
 
 def normalize_usage(provider: str, raw_usage: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[str]]:
     """
     Normalize known token/usage fields into a provider-agnostic structure.
 
-    Returns ``(usage, convention_notes)``. ``convention_notes`` are machine codes such as
-    ``usage_dimension_ambiguous:cached_input`` — they feed ``capture_status`` and UI mapping.
+    Returns ``(usage, convention_notes)`` where notes capture ambiguities that should downgrade
+    confidence (``capture_status``).
 
-    Original provider keys are preserved under ``raw_provider_usage_json`` for audit.
+    IMPORTANT: ``total_tokens`` is conservative and provider-native only; we do not derive it.
     """
     notes: List[str] = []
     raw = dict(raw_usage or {})
     p = (provider or "").strip().lower() or "unknown"
 
     usage: Dict[str, Any] = {
-        "input_tokens": _get_first(
-            raw,
-            "input_tokens",
-            "prompt_tokens",
-            "input_token_count",
-            "prompt_token_count",
-        ),
+        "input_tokens": _get_first(raw, "input_tokens", "prompt_tokens", "input_token_count", "prompt_token_count"),
         "output_tokens": _get_first(
-            raw,
-            "output_tokens",
-            "completion_tokens",
-            "candidates_token_count",
-            "output_token_count",
+            raw, "output_tokens", "completion_tokens", "candidates_token_count", "output_token_count"
         ),
         "total_tokens": _get_first(raw, "total_tokens", "total_token_count"),
         "cached_input_tokens": _get_first(
-            raw,
-            "cached_input_tokens",
-            "cached_tokens",
-            "cached_content_token_count",
-            "cache_read_input_tokens",
+            raw, "cached_input_tokens", "cached_tokens", "cached_content_token_count", "cache_read_input_tokens"
         ),
-        "cache_write_tokens": _get_first(
-            raw,
-            "cache_write_tokens",
-            "cache_creation_input_tokens",
-        ),
-        "thinking_tokens": _get_first(
-            raw,
-            "thinking_tokens",
-            "thoughts_token_count",
-            "reasoning_tokens",
-        ),
+        "cache_write_tokens": _get_first(raw, "cache_write_tokens", "cache_creation_input_tokens"),
+        "thinking_tokens": _get_first(raw, "thinking_tokens", "thoughts_token_count", "reasoning_tokens"),
         "tool_requests": _get_first(raw, "tool_requests"),
         "image_input_count": _get_first(raw, "image_input_count", "image_count"),
         "image_input_tokens": _get_first(raw, "image_input_tokens"),
@@ -138,72 +93,63 @@ def normalize_usage(provider: str, raw_usage: Optional[Dict[str, Any]]) -> Tuple
         "raw_provider_usage_json": raw,
     }
 
-    # OpenAI nested details (prompt_tokens_details / completion_tokens_details)
+    # OpenAI nested details
     input_details = raw.get("input_tokens_details") or raw.get("prompt_tokens_details")
-    if isinstance(input_details, dict):
-        if usage["cached_input_tokens"] is None:
-            usage["cached_input_tokens"] = _to_int(input_details.get("cached_tokens"))
+    if isinstance(input_details, dict) and usage["cached_input_tokens"] is None:
+        usage["cached_input_tokens"] = _to_int(input_details.get("cached_tokens"))
     output_details = raw.get("output_tokens_details") or raw.get("completion_tokens_details")
-    if isinstance(output_details, dict):
-        if usage["thinking_tokens"] is None:
-            usage["thinking_tokens"] = _to_int(output_details.get("reasoning_tokens"))
+    if isinstance(output_details, dict) and usage["thinking_tokens"] is None:
+        usage["thinking_tokens"] = _to_int(output_details.get("reasoning_tokens"))
     if usage["tool_requests"] is None and isinstance(raw.get("tool_calls"), list):
         usage["tool_requests"] = len(raw["tool_calls"])
 
-    # --- Provider-specific conventions (non-cached vs cached input) ---
+    # Provider-specific conventions
     if p == "openai":
-        pt = _get_first(raw, "prompt_tokens")
+        prompt_tokens = _get_first(raw, "prompt_tokens")
         cached = usage["cached_input_tokens"]
-        if pt is not None and cached is not None:
-            usage["input_tokens"] = max(0, pt - cached)
+        if prompt_tokens is not None and cached is not None:
+            usage["input_tokens"] = max(0, prompt_tokens - cached)
             usage["cached_input_tokens"] = cached
-        elif pt is not None:
-            usage["input_tokens"] = pt
-            if cached is None:
-                notes.append("usage_dimension_ambiguous:cached_input")
-    elif p == "gemini":
-        pt = _get_first(raw, "prompt_token_count")
-        cc = _get_first(raw, "cached_content_token_count")
-        if pt is not None and cc is not None:
-            usage["input_tokens"] = max(0, pt - cc)
-            usage["cached_input_tokens"] = cc
-        elif pt is not None:
-            usage["input_tokens"] = pt
-            if cc is None and pt > 0:
-                notes.append("usage_dimension_ambiguous:cached_input")
-    elif p == "claude":
-        inp = _get_first(raw, "input_tokens")
-        cread = _get_first(raw, "cache_read_input_tokens")
-        cwrite = _get_first(raw, "cache_creation_input_tokens")
-        if cwrite is not None:
-            usage["cache_write_tokens"] = cwrite
-        if inp is not None and cread is not None:
-            if cread > inp:
-                notes.append("usage_dimension_ambiguous:input_tokens")
-                usage["input_tokens"] = inp
-                usage["cached_input_tokens"] = cread
-            else:
-                usage["input_tokens"] = max(0, inp - cread)
-                usage["cached_input_tokens"] = cread
-        elif inp is not None:
-            usage["input_tokens"] = inp
-            if cread is not None:
-                usage["cached_input_tokens"] = cread
+        elif prompt_tokens is not None:
+            usage["input_tokens"] = prompt_tokens
+            notes.append("usage_dimension_ambiguous:cached_input")
 
-    # Derive total_tokens when missing. If both input and output are already known and there is no
-    # separate thinking stream, the sum is unambiguous for totals display (no note).
-    if usage["total_tokens"] is None:
-        inp = usage["input_tokens"] or 0
-        out = usage["output_tokens"] or 0
-        think = usage["thinking_tokens"] or 0
-        if inp or out or think:
-            usage["total_tokens"] = inp + out + think
-            if (
-                think
-                or usage["input_tokens"] is None
-                or usage["output_tokens"] is None
-            ):
-                notes.append("usage_dimension_ambiguous:total_tokens")
+    elif p == "gemini":
+        prompt_tokens = _get_first(raw, "prompt_token_count")
+        cached = _get_first(raw, "cached_content_token_count")
+        if prompt_tokens is not None and cached is not None:
+            usage["input_tokens"] = max(0, prompt_tokens - cached)
+            usage["cached_input_tokens"] = cached
+        elif prompt_tokens is not None:
+            usage["input_tokens"] = prompt_tokens
+            if prompt_tokens > 0:
+                notes.append("usage_dimension_ambiguous:cached_input")
+
+        # Gemini responses may expose both candidates and thoughts counts. The API shape in this
+        # repo does not guarantee whether thoughts are included in output totals, so we do not
+        # derive ``total_tokens`` and we explicitly mark ambiguity.
+        cand = _get_first(raw, "candidates_token_count")
+        thoughts = _get_first(raw, "thoughts_token_count")
+        if cand is not None and thoughts is not None and thoughts > 0:
+            notes.append("usage_dimension_ambiguous:output_tokens")
+
+    elif p == "claude":
+        # Anthropic Usage fields are present in SDK types, but local code/docs do not prove whether
+        # ``input_tokens`` already includes cache-read tokens. Keep conservative accounting:
+        # preserve gross input, expose cache-read separately, and mark ambiguity when both appear.
+        inp = _get_first(raw, "input_tokens")
+        cache_read = _get_first(raw, "cache_read_input_tokens")
+        cache_write = _get_first(raw, "cache_creation_input_tokens")
+        if cache_write is not None:
+            usage["cache_write_tokens"] = cache_write
+        if inp is not None:
+            usage["input_tokens"] = inp
+        if cache_read is not None:
+            usage["cached_input_tokens"] = cache_read
+            if inp is not None:
+                # Distinct from generic ``total-only`` ambiguity: Claude may report both gross
+                # ``input_tokens`` and ``cache_read_input_tokens`` without a provable relationship.
+                notes.append("usage_dimension_ambiguous:claude_cache_read_vs_gross_input")
 
     if (
         usage["total_tokens"] is not None
@@ -212,13 +158,6 @@ def normalize_usage(provider: str, raw_usage: Optional[Dict[str, Any]]) -> Tuple
         and usage["thinking_tokens"] is None
     ):
         notes.append("usage_dimension_ambiguous:input_tokens")
-
-    # Gemini / multi-token: if both output and thinking present, total may double-count
-    if p == "gemini":
-        cand = _get_first(raw, "candidates_token_count")
-        thoughts = _get_first(raw, "thoughts_token_count")
-        if cand is not None and thoughts is not None and thoughts > 0:
-            notes.append("usage_dimension_ambiguous:output_tokens")
 
     return usage, notes
 
@@ -254,29 +193,77 @@ def _resolve_pricing_entry(catalog: Dict[str, Any], provider: str, model: str) -
     return wildcard
 
 
-def _compute_subtotal(tokens: Optional[int], per_million: Optional[Decimal]) -> Optional[Decimal]:
-    if tokens is None or per_million is None:
-        return None
+def _compute_per_million(tokens: int, per_million: Decimal) -> Decimal:
     return (Decimal(tokens) * per_million / _MICRO_UNIT).quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP)
 
 
-# (usage_key, pricing_snapshot_key) — dimensions we can price via catalog fields.
-_PRICED_DIMENSIONS: Tuple[Tuple[str, str], ...] = (
-    ("input_tokens", "input_cost_per_million"),
-    ("output_tokens", "output_cost_per_million"),
-    ("cached_input_tokens", "cached_input_cost_per_million"),
-    ("thinking_tokens", "thinking_cost_per_million"),
-    ("audio_input_tokens", "audio_input_cost_per_million"),
-    ("video_input_tokens", "video_input_cost_per_million"),
+def _compute_unit(units: int, unit_cost: Decimal) -> Decimal:
+    return (Decimal(units) * unit_cost).quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP)
+
+
+@dataclass(frozen=True)
+class BillableDimension:
+    usage_key: str
+    pricing_key: Optional[str]
+    subtotal_key: Optional[str]
+    mode: Literal["per_million", "unit", "unpriced"]
+
+
+_BILLABLE_DIMENSIONS: Tuple[BillableDimension, ...] = (
+    BillableDimension("input_tokens", "input_cost_per_million", "subtotal_input", "per_million"),
+    BillableDimension("output_tokens", "output_cost_per_million", "subtotal_output", "per_million"),
+    BillableDimension("cached_input_tokens", "cached_input_cost_per_million", "subtotal_cached", "per_million"),
+    BillableDimension("thinking_tokens", "thinking_cost_per_million", "subtotal_thinking", "per_million"),
+    BillableDimension("tool_requests", "tool_request_unit_cost", "subtotal_tools", "unit"),
+    BillableDimension("image_input_count", "image_input_unit_cost", "subtotal_image", "unit"),
+    BillableDimension("audio_input_tokens", "audio_input_cost_per_million", "subtotal_audio", "per_million"),
+    BillableDimension("video_input_tokens", "video_input_cost_per_million", "subtotal_video", "per_million"),
+    BillableDimension("cache_write_tokens", None, None, "unpriced"),
+    BillableDimension("image_input_tokens", None, None, "unpriced"),
 )
 
-# Usage keys that count as billable if > 0 but have no catalog price field in this design.
-_UNPRICED_USAGE_KEYS: Tuple[str, ...] = ("cache_write_tokens",)
+
+_USAGE_METADATA_KEYS: Tuple[str, ...] = (
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "cached_input_tokens",
+    "cache_write_tokens",
+    "thinking_tokens",
+    "tool_requests",
+    "image_input_count",
+    "image_input_tokens",
+    "audio_input_tokens",
+    "video_input_tokens",
+)
 
 
 def _usage_int(usage: Dict[str, Any], key: str) -> Optional[int]:
-    v = usage.get(key)
-    return _to_int(v) if v is not None else None
+    value = usage.get(key)
+    return _to_int(value) if value is not None else None
+
+
+def _has_usage_metadata(usage: Dict[str, Any]) -> bool:
+    return any(usage.get(key) is not None for key in _USAGE_METADATA_KEYS)
+
+
+def _format_money_optional(value: Optional[Decimal]) -> Optional[str]:
+    """Serialize money-like Decimals as fixed-point strings (avoids ``0E-8`` style output)."""
+    if value is None:
+        return None
+    q = value.quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP)
+    return format(q, "f")
+
+
+def _dedupe_keep_order(items: List[str]) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
 
 
 def build_llm_cost_snapshot(
@@ -290,16 +277,17 @@ def build_llm_cost_snapshot(
     Build the auditable usage + pricing + computed-cost snapshot for one LLM call.
 
     ``capture_status``:
-    - ``exact``: all strictly positive billable usage dimensions that appear in normalized usage
-      have a matching non-null catalog price, subtotals are computed for each, and there are no
-      ambiguity or coverage notes.
-    - ``estimated``: usage exists but pricing is incomplete, or notes indicate ambiguity/partial
-      coverage.
-    - ``unavailable``: no meaningful usage to estimate cost.
+    - ``unavailable``: no usage metadata from the provider (empty/omitted usage).
+    - ``estimated``: usage metadata is present but cost is not fully authoritative: ambiguity notes,
+      partial/missing pricing for positive billable usage, or an all-zero usage report that we do not
+      treat as evidence of a priced billable call (still not ``exact``).
+    - ``exact``: unambiguous accounting and full pricing coverage for all positive billable usage
+      dimensions; a stable total can be computed without ambiguity notes.
     """
     provider_norm = (provider or "").strip().lower() or "unknown"
     model_norm = (model or "").strip() or None
     usage, convention_notes = normalize_usage(provider_norm, raw_usage)
+
     catalog = _load_pricing_catalog(settings)
     entry = _resolve_pricing_entry(catalog, provider_norm, model_norm or "")
 
@@ -313,10 +301,11 @@ def build_llm_cost_snapshot(
         (catalog.get("source") if isinstance(catalog.get("source"), str) else None)
         or "settings.llm_pricing_catalog_json"
     )
-
-    catalog_entry_captured_at: Optional[str] = None
-    if isinstance(entry, dict) and entry.get("captured_at") is not None:
-        catalog_entry_captured_at = str(entry.get("captured_at")).strip() or None
+    catalog_entry_captured_at = (
+        str(entry.get("captured_at")).strip()
+        if isinstance(entry, dict) and entry.get("captured_at") is not None and str(entry.get("captured_at")).strip()
+        else None
+    )
 
     pricing_snapshot: Dict[str, Any] = {
         "pricing_source": pricing_source,
@@ -337,7 +326,7 @@ def build_llm_cost_snapshot(
 
     if isinstance(entry, dict):
         if isinstance(entry.get("currency"), str) and entry.get("currency").strip():
-            pricing_snapshot["billing_currency"] = str(entry["currency"]).strip()
+            pricing_snapshot["billing_currency"] = str(entry.get("currency")).strip()
         for key in (
             "input_cost_per_million",
             "output_cost_per_million",
@@ -352,140 +341,79 @@ def build_llm_cost_snapshot(
         if entry.get("thinking_cost_rule") is not None:
             pricing_snapshot["thinking_cost_rule"] = str(entry.get("thinking_cost_rule")).strip() or None
 
-    subtotal_input = _compute_subtotal(usage["input_tokens"], pricing_snapshot["input_cost_per_million"])
-    subtotal_output = _compute_subtotal(usage["output_tokens"], pricing_snapshot["output_cost_per_million"])
-    subtotal_cached = _compute_subtotal(
-        usage["cached_input_tokens"],
-        pricing_snapshot["cached_input_cost_per_million"],
-    )
-    subtotal_thinking = _compute_subtotal(
-        usage["thinking_tokens"],
-        pricing_snapshot["thinking_cost_per_million"],
-    )
-    subtotal_tools: Optional[Decimal] = None
-    tool_unit = pricing_snapshot["tool_request_unit_cost"]
-    tr = _usage_int(usage, "tool_requests")
-    if tr is not None and tool_unit is not None:
-        subtotal_tools = (Decimal(tr) * tool_unit).quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP)
-    subtotal_image: Optional[Decimal] = None
-    image_unit = pricing_snapshot["image_input_unit_cost"]
-    ii = _usage_int(usage, "image_input_count")
-    if ii is not None and image_unit is not None:
-        subtotal_image = (Decimal(ii) * image_unit).quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP)
-    subtotal_audio = _compute_subtotal(usage["audio_input_tokens"], pricing_snapshot["audio_input_cost_per_million"])
-    subtotal_video = _compute_subtotal(usage["video_input_tokens"], pricing_snapshot["video_input_cost_per_million"])
+    subtotals: Dict[str, Optional[Decimal]] = {
+        "subtotal_input": None,
+        "subtotal_output": None,
+        "subtotal_cached": None,
+        "subtotal_thinking": None,
+        "subtotal_tools": None,
+        "subtotal_image": None,
+        "subtotal_audio": None,
+        "subtotal_video": None,
+    }
 
-    parts = [
-        subtotal_input,
-        subtotal_output,
-        subtotal_cached,
-        subtotal_thinking,
-        subtotal_tools,
-        subtotal_image,
-        subtotal_audio,
-        subtotal_video,
-    ]
-    total_cost: Optional[Decimal] = None
-    if any(part is not None for part in parts):
-        total_cost = sum((part for part in parts if part is not None), Decimal("0")).quantize(
-            _MONEY_QUANT, rounding=ROUND_HALF_UP
-        )
-
-    has_usage_signal = any(
-        _usage_int(usage, k) not in (None, 0)
-        for k in (
-            "input_tokens",
-            "output_tokens",
-            "cached_input_tokens",
-            "cache_write_tokens",
-            "thinking_tokens",
-            "tool_requests",
-            "image_input_count",
-            "image_input_tokens",
-            "audio_input_tokens",
-            "video_input_tokens",
-        )
-    ) or (usage.get("total_tokens") is not None and _to_int(usage.get("total_tokens")) not in (None, 0))
-
+    has_usage_metadata = _has_usage_metadata(usage)
+    has_billable_usage_signal = False
     notes: List[str] = list(convention_notes)
-    if not has_usage_signal:
+    unpriced_dimension_present = False
+
+    for dim in _BILLABLE_DIMENSIONS:
+        amount = _usage_int(usage, dim.usage_key)
+        if amount is None:
+            continue
+        if amount > 0:
+            has_billable_usage_signal = True
+
+        if dim.mode == "unpriced":
+            unpriced_dimension_present = True
+            notes.append(f"billable_dimension_not_priced:{dim.usage_key}")
+            continue
+
+        if dim.pricing_key is None or dim.subtotal_key is None:
+            continue
+        price = pricing_snapshot.get(dim.pricing_key)
+        if price is None:
+            notes.append(f"billable_dimension_not_priced:{dim.usage_key}")
+            continue
+
+        assert isinstance(price, Decimal)
+        if dim.mode == "per_million":
+            subtotals[dim.subtotal_key] = _compute_per_million(amount, price)
+        elif dim.mode == "unit":
+            subtotals[dim.subtotal_key] = _compute_unit(amount, price)
+
+    subtotal_values = [v for v in subtotals.values() if v is not None]
+    total_cost: Optional[Decimal] = None
+    if subtotal_values:
+        total_cost = sum(subtotal_values, Decimal("0")).quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP)
+
+    if not has_usage_metadata:
         notes.append("provider_usage_missing")
     if not isinstance(entry, dict):
         notes.append("pricing_entry_missing")
-
-    # Billable dimensions: positive usage requires a price (or explicit unpriced handling).
-    missing_price_dims: List[str] = []
-    if isinstance(entry, dict):
-        for ukey, pkey in _PRICED_DIMENSIONS:
-            n = _usage_int(usage, ukey)
-            if n is not None and n > 0:
-                if pricing_snapshot.get(pkey) is None:
-                    missing_price_dims.append(ukey)
-        trc = _usage_int(usage, "tool_requests")
-        if trc is not None and trc > 0 and pricing_snapshot["tool_request_unit_cost"] is None:
-            missing_price_dims.append("tool_requests")
-        iic = _usage_int(usage, "image_input_count")
-        if iic is not None and iic > 0 and pricing_snapshot["image_input_unit_cost"] is None:
-            missing_price_dims.append("image_input_count")
-        iit = _usage_int(usage, "image_input_tokens")
-        if iit is not None and iit > 0:
-            notes.append("billable_dimension_not_priced:image_input_tokens")
-
-    for uk in _UNPRICED_USAGE_KEYS:
-        n = _usage_int(usage, uk)
-        if n is not None and n > 0:
-            notes.append(f"billable_dimension_not_priced:{uk}")
-
-    for d in missing_price_dims:
-        notes.append(f"billable_dimension_not_priced:{d}")
-
-    if isinstance(entry, dict) and has_usage_signal and total_cost is None and not missing_price_dims:
-        # Pricing row exists but no line items matched (e.g. only unsupported dimensions).
-        pos_priced = any(
-            _usage_int(usage, ukey) not in (None, 0)
-            for ukey, pkey in _PRICED_DIMENSIONS
-            if pricing_snapshot.get(pkey) is not None
-        ) or (
-            tr is not None
-            and tr > 0
-            and pricing_snapshot["tool_request_unit_cost"] is not None
-        ) or (
-            ii is not None
-            and ii > 0
-            and pricing_snapshot["image_input_unit_cost"] is not None
-        )
-        if not pos_priced:
-            notes.append("pricing_present_but_no_billable_dimensions")
-
-    # De-duplicate notes (preserve order)
-    seen: set[str] = set()
-    deduped: List[str] = []
-    for n in notes:
-        if n not in seen:
-            seen.add(n)
-            deduped.append(n)
-    notes = deduped
-
-    ambiguous = any(n.startswith("usage_dimension_ambiguous:") for n in notes)
-    has_pricing = isinstance(entry, dict)
-    priced_coverage_ok = has_pricing and not any(
+    has_billable_not_priced_note = any(
         n.startswith("billable_dimension_not_priced:") for n in notes
     )
-
-    if not has_usage_signal:
-        capture_status = "unavailable"
-    elif (
-        priced_coverage_ok
-        and total_cost is not None
-        and not ambiguous
-        and "pricing_entry_missing" not in notes
-        and "provider_usage_missing" not in notes
+    if (
+        isinstance(entry, dict)
+        and has_billable_usage_signal
+        and not subtotal_values
+        and not unpriced_dimension_present
+        and not has_billable_not_priced_note
     ):
-        capture_status = "exact"
-    elif has_usage_signal:
-        capture_status = "estimated"
-    else:
+        notes.append("pricing_present_but_no_billable_dimensions")
+
+    notes = _dedupe_keep_order(notes)
+    has_pricing = isinstance(entry, dict)
+    ambiguous = any(note.startswith("usage_dimension_ambiguous:") for note in notes)
+    missing_pricing_dimensions = any(note.startswith("billable_dimension_not_priced:") for note in notes)
+
+    if not has_usage_metadata:
         capture_status = "unavailable"
+    elif has_pricing and not ambiguous and not missing_pricing_dimensions and total_cost is not None:
+        capture_status = "exact"
+    else:
+        capture_status = "estimated"
 
     return {
         "provider": provider_norm,
@@ -494,41 +422,25 @@ def build_llm_cost_snapshot(
         "usage": usage,
         "pricing_snapshot": {
             **pricing_snapshot,
-            "input_cost_per_million": str(pricing_snapshot["input_cost_per_million"])
-            if pricing_snapshot["input_cost_per_million"] is not None
-            else None,
-            "output_cost_per_million": str(pricing_snapshot["output_cost_per_million"])
-            if pricing_snapshot["output_cost_per_million"] is not None
-            else None,
-            "cached_input_cost_per_million": str(pricing_snapshot["cached_input_cost_per_million"])
-            if pricing_snapshot["cached_input_cost_per_million"] is not None
-            else None,
-            "thinking_cost_per_million": str(pricing_snapshot["thinking_cost_per_million"])
-            if pricing_snapshot["thinking_cost_per_million"] is not None
-            else None,
-            "tool_request_unit_cost": str(pricing_snapshot["tool_request_unit_cost"])
-            if pricing_snapshot["tool_request_unit_cost"] is not None
-            else None,
-            "image_input_unit_cost": str(pricing_snapshot["image_input_unit_cost"])
-            if pricing_snapshot["image_input_unit_cost"] is not None
-            else None,
-            "audio_input_cost_per_million": str(pricing_snapshot["audio_input_cost_per_million"])
-            if pricing_snapshot["audio_input_cost_per_million"] is not None
-            else None,
-            "video_input_cost_per_million": str(pricing_snapshot["video_input_cost_per_million"])
-            if pricing_snapshot["video_input_cost_per_million"] is not None
-            else None,
+            "input_cost_per_million": _format_money_optional(pricing_snapshot["input_cost_per_million"]),
+            "output_cost_per_million": _format_money_optional(pricing_snapshot["output_cost_per_million"]),
+            "cached_input_cost_per_million": _format_money_optional(pricing_snapshot["cached_input_cost_per_million"]),
+            "thinking_cost_per_million": _format_money_optional(pricing_snapshot["thinking_cost_per_million"]),
+            "tool_request_unit_cost": _format_money_optional(pricing_snapshot["tool_request_unit_cost"]),
+            "image_input_unit_cost": _format_money_optional(pricing_snapshot["image_input_unit_cost"]),
+            "audio_input_cost_per_million": _format_money_optional(pricing_snapshot["audio_input_cost_per_million"]),
+            "video_input_cost_per_million": _format_money_optional(pricing_snapshot["video_input_cost_per_million"]),
         },
         "computed_cost": {
-            "subtotal_input": str(subtotal_input) if subtotal_input is not None else None,
-            "subtotal_output": str(subtotal_output) if subtotal_output is not None else None,
-            "subtotal_cached": str(subtotal_cached) if subtotal_cached is not None else None,
-            "subtotal_thinking": str(subtotal_thinking) if subtotal_thinking is not None else None,
-            "subtotal_tools": str(subtotal_tools) if subtotal_tools is not None else None,
-            "subtotal_image": str(subtotal_image) if subtotal_image is not None else None,
-            "subtotal_audio": str(subtotal_audio) if subtotal_audio is not None else None,
-            "subtotal_video": str(subtotal_video) if subtotal_video is not None else None,
-            "total_cost": str(total_cost) if total_cost is not None else None,
+            "subtotal_input": _format_money_optional(subtotals["subtotal_input"]),
+            "subtotal_output": _format_money_optional(subtotals["subtotal_output"]),
+            "subtotal_cached": _format_money_optional(subtotals["subtotal_cached"]),
+            "subtotal_thinking": _format_money_optional(subtotals["subtotal_thinking"]),
+            "subtotal_tools": _format_money_optional(subtotals["subtotal_tools"]),
+            "subtotal_image": _format_money_optional(subtotals["subtotal_image"]),
+            "subtotal_audio": _format_money_optional(subtotals["subtotal_audio"]),
+            "subtotal_video": _format_money_optional(subtotals["subtotal_video"]),
+            "total_cost": _format_money_optional(total_cost),
             "currency": pricing_snapshot["billing_currency"],
         },
         "capture_status": capture_status,
