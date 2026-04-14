@@ -9,11 +9,14 @@ used by ``parse_entities`` / hybrid reporting, with explicit ``null`` for unknow
   ``detected_quantity`` → ``product_label_quantity`` when canonical qty is absent; ``bbox`` →
   ``product_label_bbox`` when product bbox absent. Gemini structured output already matches
   canonical names; this path is for edge cases and offline tests.
-- **openai** / **deepseek** / **unknown**: **conservative** promotion when the canonical quantity is
-  still unset: a **strictly positive** integer from ``quantity`` / ``qty`` / ``detected_quantity``
-  becomes ``product_label_quantity`` so PALLET rows are not dropped at persistence (UNKNOWN SKU +
-  unresolved zero qty). We still **do not** map generic ``bbox`` into ``product_label_bbox``; when
-  both label bboxes are absent, ``bbox`` is copied to optional ``extent_bbox`` for audit/UI.
+- **openai** (and GPT-family keys resolved to ``openai``): **conservative** promotion when the
+  canonical quantity is still unset: a **strictly positive** integer from ``quantity`` / ``qty`` /
+  ``detected_quantity`` → ``product_label_quantity`` so PALLET rows are not dropped at persistence
+  (UNKNOWN SKU + unresolved zero qty). Generic ``bbox`` is **never** mapped to ``product_label_bbox``;
+  when both label bboxes are absent, ``bbox`` is copied to optional ``extent_bbox`` only.
+- **deepseek**: same conservative rules as **openai** (Chat Completions–compatible JSON shapes).
+- **unknown** (unrecognized ``provider`` string): **no** conservative promotion — vendor-specific
+  aliases are stripped; canonical fields stay null unless already set.
 - **claude**: **no** blind quantity/bbox alias promotion; map ``product_label`` → ``internal_code``
   when ``internal_code`` is unset and the candidate passes :func:`_is_valid_internal_code`; strip
   ``product_label`` and ``position_label`` (never map free-text position copy into ``position_barcode``).
@@ -46,9 +49,12 @@ EXTRACTION_CONTRACT_VERSION_VALUE = "global_analysis.v2_1_canonical"
 # Providers allowed to promote legacy quantity/bbox aliases into canonical fields (family keys).
 _ALIAS_PROMOTE_FAMILIES = frozenset({"gemini", "test_llm"})
 
-# When canonical ``product_label_quantity`` is still null: promote positive int aliases only
-# (never 0 — keeps empty/ambiguous OpenAI payloads auditable).
-_CONSERVATIVE_QTY_PROMOTE_FAMILIES = frozenset({"openai", "deepseek", "unknown"})
+# Chat-completions-shaped providers: conservative qty + extent_bbox from generic bbox only.
+# ``unknown`` is intentionally excluded — unrecognized providers must not inherit OpenAI semantics.
+_OPENAI_FAMILY_CONSERVATIVE_ALIASES = frozenset({"openai"})
+_DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES = frozenset({"deepseek"})
+_CONSERVATIVE_QTY_PROMOTE_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
+_EXTENT_BBOX_FROM_GENERIC_BBOX_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
 
 _ALIAS_KEYS: tuple[str, ...] = ("quantity", "qty", "detected_quantity")
 
@@ -189,7 +195,7 @@ def _maybe_capture_extent_bbox(
     mapped: List[str],
 ) -> None:
     """Preserve vendor ``bbox`` as ``extent_bbox`` when no specialized label bbox exists."""
-    if provider_family not in _CONSERVATIVE_QTY_PROMOTE_FAMILIES:
+    if provider_family not in _EXTENT_BBOX_FROM_GENERIC_BBOX_FAMILIES:
         return
     if entity.get("extent_bbox") is not None:
         return
@@ -244,9 +250,10 @@ def normalize_llm_response(parsed_json: dict, provider: str) -> dict:
 
     Provider-aware rules:
     - **gemini** / **test_llm**: promote quantity/bbox aliases when canonical fields are absent.
-    - **openai** / **deepseek** / **unknown**: positive qty aliases → ``product_label_quantity`` when
-      canonical qty unset; optional ``extent_bbox`` from ``bbox`` when label bboxes unset; then strip
-      residuals. **claude**: strip qty/bbox aliases; map ``product_label`` → ``internal_code`` when validated.
+    - **openai** / **deepseek**: positive qty aliases → ``product_label_quantity`` when canonical qty
+      unset; optional ``extent_bbox`` from ``bbox`` when label bboxes unset; then strip residuals.
+    - **unknown** provider family: strip aliases only (no promotion). **claude**: strip qty/bbox aliases;
+      map ``product_label`` → ``internal_code`` when validated.
     """
     if not isinstance(parsed_json, dict):
         return {}

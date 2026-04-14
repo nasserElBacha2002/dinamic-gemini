@@ -87,13 +87,25 @@ class PersistAisleResultUseCase:
             now=now,
             inventory_id=inventory_id,
         )
+        n_pos = len(mapped.positions)
+        n_prod = len(mapped.product_records)
+        n_evid = len(mapped.evidences)
+        if n_pos != n_prod or n_prod != n_evid:
+            logger.error(
+                "v3.persist_aisle_result mapped_length_mismatch aisle_id=%s job_id=%s "
+                "positions=%d product_records=%d evidences=%d raw_labels=%d",
+                command.aisle_id,
+                command.job_id,
+                n_pos,
+                n_prod,
+                n_evid,
+                len(mapped.raw_labels),
+            )
+            raise ValueError(
+                f"PersistAisleResult invariant broken: positions={n_pos} product_records={n_prod} "
+                f"evidences={n_evid} (must be equal before zip)"
+            )
         try:
-            if not (
-                len(mapped.positions) == len(mapped.product_records) == len(mapped.evidences)
-            ):
-                raise ValueError(
-                    "PersistAisleResult invariant broken: positions/product_records/evidences length mismatch"
-                )
             persisted_positions = 0
             persisted_products = 0
             persisted_evidences = 0

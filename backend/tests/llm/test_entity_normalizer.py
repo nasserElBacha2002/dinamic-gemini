@@ -131,14 +131,24 @@ def test_gemini_audit_payload_unchanged_semantics() -> None:
     assert e["source_image_id"] == "473e4c28-fe42-4abd-a61e-2d3961054046"
 
 
-def test_openai_deepseek_conservative_qty_and_extent_not_product_label_bbox() -> None:
+def test_openai_family_conservative_qty_and_extent_not_product_label_bbox() -> None:
+    """OpenAI / GPT keys: positive ``quantity`` + generic ``bbox`` → canonical qty + ``extent_bbox``."""
     inp = {"entities": [{"quantity": 1, "bbox": [0.0, 0.0, 1.0, 1.0]}]}
-    for prov in ("openai", "deepseek"):
-        out = normalize_llm_response(copy.deepcopy(inp), prov)
-        e = out["entities"][0]
-        assert e["product_label_quantity"] == 1
-        assert e["product_label_bbox"] is None
-        assert e["extent_bbox"] == [0.0, 0.0, 1.0, 1.0]
+    out = normalize_llm_response(copy.deepcopy(inp), "openai")
+    e = out["entities"][0]
+    assert e["product_label_quantity"] == 1
+    assert e["product_label_bbox"] is None
+    assert e["extent_bbox"] == [0.0, 0.0, 1.0, 1.0]
+
+
+def test_deepseek_family_mirrors_openai_conservative_qty_and_extent() -> None:
+    """DeepSeek uses OpenAI-compatible payloads; same conservative alias rules as openai."""
+    inp = {"entities": [{"quantity": 1, "bbox": [0.0, 0.0, 1.0, 1.0]}]}
+    out = normalize_llm_response(copy.deepcopy(inp), "deepseek-chat")
+    e = out["entities"][0]
+    assert e["product_label_quantity"] == 1
+    assert e["product_label_bbox"] is None
+    assert e["extent_bbox"] == [0.0, 0.0, 1.0, 1.0]
 
 
 def test_gemini_promotes_aliases_when_canonical_absent() -> None:
@@ -351,13 +361,34 @@ def test_claude_internal_code_not_overwritten_when_set() -> None:
 
 
 @pytest.mark.parametrize("provider", ["unknown_vendor", ""])
-def test_unknown_provider_conservative_promotes_positive_qty_like_openai(provider: str) -> None:
+def test_unknown_provider_does_not_apply_conservative_qty_or_extent_bbox(provider: str) -> None:
     inp = {"entities": [{"quantity": 5, "bbox": [0, 0, 1, 1]}]}
     out = normalize_llm_response(inp, provider)
     e = out["entities"][0]
-    assert e["product_label_quantity"] == 5
+    assert e["product_label_quantity"] is None
     assert e["product_label_bbox"] is None
-    assert e["extent_bbox"] == [0.0, 0.0, 1.0, 1.0]
+    assert e.get("extent_bbox") is None
+
+
+def test_claude_strips_quantity_and_bbox_without_conservative_promotion() -> None:
+    inp = {
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": False,
+                "quantity": 5,
+                "bbox": [0.0, 0.0, 1.0, 1.0],
+            }
+        ]
+    }
+    out = normalize_llm_response(inp, "claude")
+    e = out["entities"][0]
+    assert e["product_label_quantity"] is None
+    assert e["product_label_bbox"] is None
+    assert e.get("extent_bbox") is None
+    assert "quantity" not in e and "bbox" not in e
 
 
 @pytest.mark.parametrize(

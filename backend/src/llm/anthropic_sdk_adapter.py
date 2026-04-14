@@ -9,8 +9,9 @@ aligned with ``EntityV21``. It does **not** use the OpenAI-tuned replacement fra
 uses ``default`` only; structured output enforces schema on the Gemini path separately.
 
 **Response shape:** We append a JSON-only instruction suffix (same *idea* as OpenAI’s text path;
-wording unchanged). Claude returns plain text; we strip optional markdown fences, parse JSON,
-normalize entity count drift, and validate v2.1.
+wording unchanged). Claude returns ``content[]`` blocks; we concatenate **text** blocks only
+(skipping ``tool_use`` / ``thinking`` / etc.), strip optional markdown fences, extract a JSON object
+(fallback: first balanced ``{...}`` when the model adds prose), align entity counts, and validate v2.1.
 
 **Capacity / overload:** HTTP 529 / ``overloaded_error`` → ``PROVIDER_OVERLOADED``; HTTP 429 →
 ``RATE_LIMIT``. Those codes are retried with bounded exponential backoff (see
@@ -52,6 +53,15 @@ _JSON_OBJECT_SUFFIX = CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX
 
 _RETRY_JITTER_SEC = 0.35
 
+_JSON_PREVIEW_MAX_LEN = 240
+
+
+def _safe_preview(text: str, max_len: int = _JSON_PREVIEW_MAX_LEN) -> str:
+    s = (text or "").replace("\r\n", "\n")
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 3] + "..."
+
 
 def _extract_json_text(raw: str) -> str:
     t = (raw or "").strip()
@@ -63,6 +73,128 @@ def _extract_json_text(raw: str) -> str:
             lines = lines[:-1]
         t = "\n".join(lines).strip()
     return t
+
+
+def _first_balanced_json_object(s: str) -> str | None:
+    """Return the first top-level `{...}` substring with string-aware brace matching, or None."""
+    n = len(s)
+    i = 0
+    while i < n:
+        if s[i] == "{":
+            start = i
+            depth = 0
+            in_str = False
+            esc = False
+            for j in range(i, n):
+                c = s[j]
+                if esc:
+                    esc = False
+                    continue
+                if in_str:
+                    if c == "\\":
+                        esc = True
+                    elif c == '"':
+                        in_str = False
+                    continue
+                if c == '"':
+                    in_str = True
+                    continue
+                if c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return s[start : j + 1]
+            return None
+        i += 1
+    return None
+
+
+def _coerce_claude_response_text_to_json_string(
+    raw_text: str,
+    *,
+    model: str,
+    extraction_meta: Dict[str, Any],
+) -> str:
+    """Turn assistant text into a single JSON object string; raise ``INVALID_JSON`` on failure."""
+    base_details: Dict[str, Any] = {
+        "provider": "claude",
+        "phase": "response_json_extract",
+        "model": model,
+        **extraction_meta,
+    }
+    stripped = (raw_text or "").strip()
+    if not stripped:
+        raise LLMProviderError(
+            code="INVALID_JSON",
+            message="Empty assistant text after extracting text blocks (expected JSON object).",
+            details={
+                **base_details,
+                "reason": "empty_extracted_text",
+                "text_preview": "",
+            },
+        )
+
+    candidates: List[str] = []
+    seen: set[str] = set()
+
+    def _add(c: str) -> None:
+        c2 = c.strip()
+        if c2 and c2 not in seen:
+            seen.add(c2)
+            candidates.append(c2)
+
+    _add(stripped)
+    _add(_extract_json_text(stripped))
+    fb = _first_balanced_json_object(stripped)
+    if fb:
+        _add(fb)
+        _add(_extract_json_text(fb))
+
+    last_err: str | None = None
+    for cand in candidates:
+        try:
+            json.loads(cand)
+            return cand
+        except json.JSONDecodeError as e:
+            last_err = str(e)
+
+    raise LLMProviderError(
+        code="INVALID_JSON",
+        message=f"Invalid JSON: {last_err or 'no parseable object'}",
+        details={
+            **base_details,
+            "reason": "json_decode_failed",
+            "text_preview": _safe_preview(stripped),
+            "candidate_count": len(candidates),
+        },
+    )
+
+
+def _extract_text_and_block_meta_from_anthropic_message(message: Any) -> tuple[str, Dict[str, Any]]:
+    """Concatenate assistant ``text`` blocks only; summarize all block types for logs."""
+    content = getattr(message, "content", None) or []
+    block_types: List[str] = []
+    parts: List[str] = []
+    for block in content:
+        if isinstance(block, dict):
+            btype = str(block.get("type") or "")
+            block_types.append(btype or "?")
+            if btype == "text":
+                parts.append(str(block.get("text") or ""))
+        else:
+            btype = str(getattr(block, "type", "") or "")
+            block_types.append(btype or "?")
+            if btype == "text":
+                parts.append(str(getattr(block, "text", "") or ""))
+    raw_text = "".join(parts)
+    meta: Dict[str, Any] = {
+        "message_object_type": type(message).__name__,
+        "block_count": len(content),
+        "block_types": ",".join(block_types) if block_types else "",
+        "extracted_text_len": len(raw_text),
+    }
+    return raw_text, meta
 
 
 def _anthropic_jpeg_content_block(jpeg_bytes: bytes) -> Dict[str, Any]:
@@ -155,16 +287,24 @@ def _raise_llm_error_from_messages_api_exception(
     raise LLMProviderError(code=code, message=str(exc), details=details) from exc
 
 
-def _parsed_v21_from_json_text(cleaned: str) -> dict:
+def _parsed_v21_from_json_text(cleaned: str, *, error_context: Dict[str, Any] | None = None) -> dict:
     """Parse model JSON text, align ``total_entities_detected`` with ``entities`` length, validate v2.1."""
+    ctx: Dict[str, Any] = {"provider": "claude", "phase": "response_parse"}
+    if error_context:
+        ctx.update(error_context)
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        logger.warning("Claude global analysis: phase=response_parse invalid JSON: %s", e)
+        logger.warning(
+            "Claude global analysis: response_parse invalid JSON model=%s preview=%r err=%s",
+            ctx.get("model"),
+            ctx.get("text_preview"),
+            e,
+        )
         raise LLMProviderError(
             code="INVALID_JSON",
             message=f"Invalid JSON: {e}",
-            details={"provider": "claude", "phase": "response_parse"},
+            details={**ctx, "parse_failure": str(e)},
         ) from e
 
     total = data.get("total_entities_detected")
@@ -183,7 +323,7 @@ def _parsed_v21_from_json_text(cleaned: str) -> dict:
         raise LLMProviderError(
             code="SCHEMA_INVALID",
             message=str(e),
-            details={"provider": "claude", "phase": "schema_validate"},
+            details={**ctx, "phase": "schema_validate"},
         ) from e
     return data
 
@@ -408,12 +548,18 @@ class AnthropicSdkAdapter:
 
         # Wall time from first attempt through last successful HTTP response (includes prior failures + backoff).
         total_attempt_window_ms = int((time.perf_counter() - t_cycle_start) * 1000)
-        raw_text = ""
-        for block in getattr(message, "content", None) or []:
-            btype = getattr(block, "type", None)
-            if btype == "text":
-                raw_text += getattr(block, "text", "") or ""
+        raw_text, block_meta = _extract_text_and_block_meta_from_anthropic_message(message)
 
+        logger.info(
+            "Claude phase=response_content_extracted model=%s provider=claude "
+            "message_object_type=%s block_count=%d block_types=%r extracted_text_len=%d preview=%r",
+            effective_model,
+            block_meta.get("message_object_type"),
+            block_meta.get("block_count"),
+            block_meta.get("block_types"),
+            block_meta.get("extracted_text_len"),
+            _safe_preview(raw_text),
+        )
         logger.debug(
             "Claude phase=response_received model=%s total_attempt_window_ms=%s",
             effective_model,
@@ -426,8 +572,17 @@ class AnthropicSdkAdapter:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(raw_text, encoding="utf-8")
 
-        cleaned = _extract_json_text(raw_text)
-        data = _parsed_v21_from_json_text(cleaned)
+        err_ctx = {
+            "model": effective_model,
+            "text_preview": _safe_preview(raw_text),
+            **block_meta,
+        }
+        json_str = _coerce_claude_response_text_to_json_string(
+            raw_text,
+            model=effective_model,
+            extraction_meta=block_meta,
+        )
+        data = _parsed_v21_from_json_text(json_str, error_context=err_ctx)
 
         usage = _anthropic_message_usage_dict(message)
 
