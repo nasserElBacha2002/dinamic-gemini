@@ -36,13 +36,13 @@ class LlmUsageSnapshotResponse(BaseModel):
     image_input_tokens: Optional[int] = None
     audio_input_tokens: Optional[int] = None
     video_input_tokens: Optional[int] = None
-    raw_provider_usage_json: Optional[dict] = None
 
 
 class LlmPricingSnapshotResponse(BaseModel):
     pricing_source: Optional[str] = None
     pricing_version: Optional[str] = None
     captured_at: Optional[str] = None
+    pricing_catalog_entry_captured_at: Optional[str] = None
     billing_currency: Optional[str] = None
     input_cost_per_million: Optional[str] = None
     output_cost_per_million: Optional[str] = None

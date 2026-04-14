@@ -330,13 +330,13 @@ export interface LlmUsageSnapshot {
   image_input_tokens?: number | null;
   audio_input_tokens?: number | null;
   video_input_tokens?: number | null;
-  raw_provider_usage_json?: Record<string, unknown> | null;
 }
 
 export interface LlmPricingSnapshot {
   pricing_source?: string | null;
   pricing_version?: string | null;
   captured_at?: string | null;
+  pricing_catalog_entry_captured_at?: string | null;
   billing_currency?: string | null;
   input_cost_per_million?: string | null;
   output_cost_per_million?: string | null;

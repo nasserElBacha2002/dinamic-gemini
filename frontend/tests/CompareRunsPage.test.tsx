@@ -193,7 +193,15 @@ describe('CompareRunsPage', () => {
   it('renders total LLM cost and unavailable fallback', () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
     expect(screen.getByText('0.00125000 USD')).toBeInTheDocument();
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
+  });
+
+  it('shows operator-friendly tooltip text for cost details', async () => {
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
+    const unavailableCells = screen.getAllByText('Unavailable');
+    fireEvent.mouseOver(unavailableCells[0]);
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent(/token/i);
   });
 
   it('shows an honest cap warning when raw fetch hit the server cap', () => {

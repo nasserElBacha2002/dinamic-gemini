@@ -150,6 +150,33 @@ def _image_to_data_url(obj: Any, max_side: int) -> str:
     return _pil_to_jpeg_data_url(obj, max_side)
 
 
+def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
+    """Best-effort ``CompletionUsage`` extraction for ``normalize_usage`` (nested details included)."""
+    u = getattr(completion, "usage", None)
+    if u is None:
+        return {}
+    model_dump = getattr(u, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(exclude_none=True)
+    out: Dict[str, Any] = {}
+    for key in (
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "prompt_tokens_details",
+        "completion_tokens_details",
+    ):
+        val = getattr(u, key, None)
+        if val is None:
+            continue
+        nested_dump = getattr(val, "model_dump", None)
+        if callable(nested_dump):
+            out[key] = nested_dump(exclude_none=True)
+        else:
+            out[key] = val
+    return out
+
+
 class OpenAiSdkAdapter:
     """OpenAI Chat Completions (vision) + json_object; maps failures to ``LLMProviderError``."""
 
@@ -168,6 +195,7 @@ class OpenAiSdkAdapter:
             )
 
         meta = request.metadata or {}
+        prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
         job_model = (meta.get(v.model_metadata_key) or "").strip()
         default_m = (getattr(settings, v.settings_model_attr, "") or v.default_model_if_settings_empty).strip()
         effective_model = job_model or default_m
@@ -323,13 +351,7 @@ class OpenAiSdkAdapter:
                 details={"provider": prov},
             ) from e
 
-        usage: Dict[str, Any] = {}
-        if completion.usage:
-            usage = {
-                "prompt_tokens": completion.usage.prompt_tokens,
-                "completion_tokens": completion.usage.completion_tokens,
-                "total_tokens": completion.usage.total_tokens,
-            }
+        usage = _openai_completion_usage_dict(completion)
 
         return LLMResponse(
             provider=prov,

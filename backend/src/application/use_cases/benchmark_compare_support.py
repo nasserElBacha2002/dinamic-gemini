@@ -24,6 +24,15 @@ from src.domain.jobs.entities import Job
 from src.domain.positions.entities import Position, PositionStatus
 
 
+def sanitize_llm_cost_snapshot_for_compare(snapshot: dict[str, object]) -> dict[str, object]:
+    """Drop bulky audit-only fields from usage before returning compare API payloads."""
+    out = dict(snapshot)
+    usage = out.get("usage")
+    if isinstance(usage, dict) and "raw_provider_usage_json" in usage:
+        out["usage"] = {k: v for k, v in usage.items() if k != "raw_provider_usage_json"}
+    return out
+
+
 def _position_code_key(p: Position) -> str:
     c = (p.corrected_position_code or "").strip().lower()
     if c:
@@ -226,7 +235,7 @@ def job_metadata_dict(job: Job) -> dict[str, object | None]:
     if isinstance(job.result_json, dict):
         raw_snapshot = job.result_json.get("llm_cost_snapshot")
         if isinstance(raw_snapshot, dict):
-            llm_cost_snapshot = raw_snapshot
+            llm_cost_snapshot = sanitize_llm_cost_snapshot_for_compare(raw_snapshot)
     return {
         "job_id": job.id,
         "status": job.status.value,

@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -31,6 +32,42 @@ import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { useAppSnackbar } from '../../components/ui';
 import { pathToAislePositions } from '../../utils/resultRoutes';
 
+function userFacingCaptureNote(note: string, t: TFunction): string {
+  if (note === 'provider_usage_missing') {
+    return t(
+      'compare.llm_cost_note.provider_usage_missing',
+      'The provider did not return token usage, so cost cannot be estimated.'
+    );
+  }
+  if (note === 'pricing_entry_missing') {
+    return t(
+      'compare.llm_cost_note.pricing_entry_missing',
+      'No pricing rule matched this model in the catalog, so totals are not computed.'
+    );
+  }
+  if (note === 'pricing_present_but_no_billable_dimensions') {
+    return t(
+      'compare.llm_cost_note.pricing_present_but_no_billable_dimensions',
+      'Pricing is configured but does not cover the usage dimensions reported for this run.'
+    );
+  }
+  if (note.startsWith('billable_dimension_not_priced:')) {
+    const dimension = note.slice('billable_dimension_not_priced:'.length);
+    return t('compare.llm_cost_note.billable_dimension_not_priced', {
+      dimension,
+      defaultValue: `Reported usage includes ${dimension}, which is not priced in the catalog.`,
+    });
+  }
+  if (note.startsWith('usage_dimension_ambiguous:')) {
+    const dimension = note.slice('usage_dimension_ambiguous:'.length);
+    return t('compare.llm_cost_note.usage_dimension_ambiguous', {
+      dimension,
+      defaultValue: `Token accounting is ambiguous for ${dimension}; the total may be approximate.`,
+    });
+  }
+  return note;
+}
+
 function formatCostDisplay(
   run: {
     llm_cost_snapshot?: {
@@ -40,7 +77,8 @@ function formatCostDisplay(
       capture_notes?: string[];
     } | null;
   },
-  unavailableLabel: string
+  unavailableLabel: string,
+  t: TFunction
 ): {
   value: string;
   details: string | null;
@@ -49,11 +87,21 @@ function formatCostDisplay(
   if (!snap) return { value: unavailableLabel, details: null };
   const total = snap.computed_cost?.total_cost?.trim();
   const currency = snap.computed_cost?.currency?.trim() || snap.billing_currency?.trim();
-  const status = snap.capture_status ?? 'unavailable';
+  const statusKey = snap.capture_status ?? 'unavailable';
+  const statusLabel = t(`compare.llm_cost_status.${statusKey}`, {
+    defaultValue:
+      statusKey === 'exact'
+        ? 'Exact (usage fully priced)'
+        : statusKey === 'estimated'
+          ? 'Estimated'
+          : 'Unavailable',
+  });
   const notes = Array.isArray(snap.capture_notes) ? snap.capture_notes : [];
-  const details = [`status=${status}`, ...notes].join(' | ');
+  const noteText = notes.map((n) => userFacingCaptureNote(n, t)).filter(Boolean);
+  const details = [statusLabel, ...noteText].join(' · ');
   if (!total) {
-    return { value: unavailableLabel, details };
+    const showDetails = noteText.length > 0 || statusKey !== 'unavailable';
+    return { value: unavailableLabel, details: showDetails ? details : null };
   }
   return { value: `${total} ${currency || ''}`.trim(), details };
 }
@@ -338,7 +386,7 @@ export default function CompareRunsPage() {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             {(['run_a', 'run_b'] as const).map((side) => {
               const r = compareQuery.data![side];
-              const cost = formatCostDisplay(r, 'Unavailable');
+              const cost = formatCostDisplay(r, 'Unavailable', t);
               return (
                 <Paper key={side} sx={{ p: 2, flex: '1 1 320px' }} variant="outlined">
                   <Typography variant="subtitle2" color="text.secondary">

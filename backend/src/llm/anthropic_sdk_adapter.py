@@ -231,6 +231,35 @@ def _image_to_jpeg_bytes(obj: Any, max_side: int) -> bytes:
     return _pil_to_jpeg_bytes(obj, max_side)
 
 
+def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
+    """Serialize Anthropic ``Usage`` (cache read/create, server tools) for costing normalization."""
+    u = getattr(message, "usage", None)
+    if u is None:
+        return {}
+    model_dump = getattr(u, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(exclude_none=True)
+    out: Dict[str, Any] = {}
+    for key in (
+        "input_tokens",
+        "output_tokens",
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+        "cache_creation",
+        "server_tool_use",
+        "service_tier",
+    ):
+        val = getattr(u, key, None)
+        if val is None:
+            continue
+        nested_dump = getattr(val, "model_dump", None)
+        if callable(nested_dump):
+            out[key] = nested_dump(exclude_none=True)
+        else:
+            out[key] = val
+    return out
+
+
 class AnthropicSdkAdapter:
     """
     Claude Messages API (vision).
@@ -400,13 +429,7 @@ class AnthropicSdkAdapter:
         cleaned = _extract_json_text(raw_text)
         data = _parsed_v21_from_json_text(cleaned)
 
-        usage: Dict[str, Any] = {}
-        u = getattr(message, "usage", None)
-        if u is not None:
-            usage = {
-                "input_tokens": getattr(u, "input_tokens", None),
-                "output_tokens": getattr(u, "output_tokens", None),
-            }
+        usage = _anthropic_message_usage_dict(message)
 
         return LLMResponse(
             provider="claude",
