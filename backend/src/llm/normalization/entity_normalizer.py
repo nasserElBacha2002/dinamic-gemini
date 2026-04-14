@@ -14,7 +14,10 @@ used by ``parse_entities`` / hybrid reporting, with explicit ``null`` for unknow
   ``detected_quantity`` → ``product_label_quantity`` so PALLET rows are not dropped at persistence
   (UNKNOWN SKU + unresolved zero qty). Generic ``bbox`` is **never** mapped to ``product_label_bbox``;
   when both label bboxes are absent, ``bbox`` is copied to optional ``extent_bbox`` only.
-- **deepseek**: same conservative rules as **openai** (Chat Completions–compatible JSON shapes).
+- **deepseek**: conservative qty / ``extent_bbox`` rules match **openai** only as a **compatibility
+  choice** for the current DeepSeek path (OpenAI-style Chat Completions JSON payloads). This is not
+  a blanket guarantee for every future DeepSeek integration; if the wire format diverges, gate
+  DeepSeek separately in code and tests.
 - **unknown** (unrecognized ``provider`` string): **no** conservative promotion — vendor-specific
   aliases are stripped; canonical fields stay null unless already set.
 - **claude**: **no** blind quantity/bbox alias promotion; map ``product_label`` → ``internal_code``
@@ -49,7 +52,9 @@ EXTRACTION_CONTRACT_VERSION_VALUE = "global_analysis.v2_1_canonical"
 # Providers allowed to promote legacy quantity/bbox aliases into canonical fields (family keys).
 _ALIAS_PROMOTE_FAMILIES = frozenset({"gemini", "test_llm"})
 
-# Chat-completions-shaped providers: conservative qty + extent_bbox from generic bbox only.
+# OpenAI + GPT family: conservative qty + extent_bbox from generic bbox (see module docstring).
+# DeepSeek: same runtime rules as OpenAI today because our adapter uses OpenAI-like completions JSON;
+# not an assumption about all future DeepSeek APIs (see module docstring).
 # ``unknown`` is intentionally excluded — unrecognized providers must not inherit OpenAI semantics.
 _OPENAI_FAMILY_CONSERVATIVE_ALIASES = frozenset({"openai"})
 _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES = frozenset({"deepseek"})
@@ -250,8 +255,9 @@ def normalize_llm_response(parsed_json: dict, provider: str) -> dict:
 
     Provider-aware rules:
     - **gemini** / **test_llm**: promote quantity/bbox aliases when canonical fields are absent.
-    - **openai** / **deepseek**: positive qty aliases → ``product_label_quantity`` when canonical qty
-      unset; optional ``extent_bbox`` from ``bbox`` when label bboxes unset; then strip residuals.
+    - **openai** / **deepseek** (latter = compatibility with current OpenAI-like payloads only):
+      positive qty aliases → ``product_label_quantity`` when canonical qty unset; optional
+      ``extent_bbox`` from ``bbox`` when label bboxes unset; then strip residuals.
     - **unknown** provider family: strip aliases only (no promotion). **claude**: strip qty/bbox aliases;
       map ``product_label`` → ``internal_code`` when validated.
     """
