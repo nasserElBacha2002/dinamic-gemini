@@ -30,7 +30,7 @@ from src.application.use_cases.upload_inventory_visual_references import (
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
@@ -339,6 +339,235 @@ def test_mark_success_clears_stale_aisle_error_fields_after_previous_failure() -
     assert updated_aisle.error_code is None
     assert updated_aisle.error_message is None
     assert updated_aisle.retryable is None
+
+
+def test_mark_success_sets_operational_job_id_for_production_inventory() -> None:
+    """After a successful job, production aisles get operational_job_id = job_id (review slice alignment)."""
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="j-prod-1",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-prod",
+        code="A01",
+        status=AisleStatus.PROCESSING,
+        created_at=now,
+        updated_at=now,
+        operational_job_id=None,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+    inv_repo = InMemoryInventoryRepo()
+    inv_repo.save(
+        Inventory(
+            "inv-prod",
+            "Prod WH",
+            InventoryStatus.PROCESSING,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.PRODUCTION,
+        )
+    )
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=inv_repo,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+    executor._mark_success("j-prod-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    saved = aisle_repo.get_by_id("aisle-1")
+    assert saved is not None
+    assert saved.operational_job_id == "j-prod-1"
+
+
+def test_mark_success_overwrites_operational_job_id_on_subsequent_production_run() -> None:
+    """Latest succeeded job becomes operational (policy: always set on success for production)."""
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    for jid in ("j-first", "j-second"):
+        job_repo.save(
+            Job(
+                id=jid,
+                target_type="aisle",
+                target_id="aisle-1",
+                job_type="process_aisle",
+                status=JobStatus.RUNNING,
+                payload_json={"aisle_id": "aisle-1"},
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-prod",
+        code="A01",
+        status=AisleStatus.PROCESSING,
+        created_at=now,
+        updated_at=now,
+        operational_job_id="j-first",
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+    inv_repo = InMemoryInventoryRepo()
+    inv_repo.save(
+        Inventory(
+            "inv-prod",
+            "Prod WH",
+            InventoryStatus.PROCESSING,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.PRODUCTION,
+        )
+    )
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=inv_repo,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+    executor._mark_success("j-second", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    assert aisle_repo.get_by_id("aisle-1") is not None
+    assert aisle_repo.get_by_id("aisle-1").operational_job_id == "j-second"
+
+
+def test_mark_success_does_not_set_operational_job_id_for_test_inventory() -> None:
+    """Test inventories keep explicit promotion; executor does not set operational_job_id here."""
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="j-test-1",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-test",
+        code="A01",
+        status=AisleStatus.PROCESSING,
+        created_at=now,
+        updated_at=now,
+        operational_job_id=None,
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+    inv_repo = InMemoryInventoryRepo()
+    inv_repo.save(
+        Inventory(
+            "inv-test",
+            "Bench",
+            InventoryStatus.PROCESSING,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=inv_repo,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+    executor._mark_success("j-test-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    saved = aisle_repo.get_by_id("aisle-1")
+    assert saved is not None
+    assert saved.operational_job_id is None
+
+
+def test_failed_job_does_not_update_operational_job_id() -> None:
+    """Failure path must preserve existing operational pointer (no auto-repoint on failed run)."""
+    now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="j-fail-1",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.RUNNING,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-prod",
+        code="A01",
+        status=AisleStatus.PROCESSING,
+        created_at=now,
+        updated_at=now,
+        operational_job_id="j-prev-ok",
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(aisle)
+    inv_repo = InMemoryInventoryRepo()
+    inv_repo.save(
+        Inventory(
+            "inv-prod",
+            "Prod WH",
+            InventoryStatus.PROCESSING,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.PRODUCTION,
+        )
+    )
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=noop,
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=inv_repo,
+        inventory_visual_reference_repo=noop,
+        raw_label_repo=noop,
+    )
+    executor._fail_job_and_aisle("j-fail-1", aisle, "boom")
+    saved = aisle_repo.get_by_id("aisle-1")
+    assert saved is not None
+    assert saved.status == AisleStatus.FAILED
+    assert saved.operational_job_id == "j-prev-ok"
 
 
 def test_mark_running_transitions_starting_job_to_running() -> None:

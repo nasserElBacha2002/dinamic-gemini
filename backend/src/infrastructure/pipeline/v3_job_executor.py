@@ -42,6 +42,7 @@ from src.application.use_cases.recompute_consolidated_counts import RecomputeCon
 from src.config import load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.inventory.entities import InventoryProcessingMode
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.io.logging import setup_logger
@@ -461,9 +462,10 @@ class V3JobExecutor:
 
             # Finalization order (intentional):
             # 1) PersistAisleResult — domain rows (positions, product_records, evidences, …).
-            #    Does not set aisles.operational_job_id (canonical run is explicit promotion / later phase).
+            #    Does not set aisles.operational_job_id (that happens in _mark_success for production).
             # 2) Durable artifact upload — execution log + reports to ArtifactStore.
-            # 3) _mark_success — job SUCCEEDED + result_json including durable_artifacts metadata.
+            # 3) _mark_success — job SUCCEEDED + result_json including durable_artifacts metadata;
+            #    for production inventories, sets aisles.operational_job_id = job_id (review slice).
             #
             # If step (2) fails after step (1), the job and aisle are marked FAILED with a clear error.
             # Domain data from (1) may already be committed (partial finalization). There is no automatic
@@ -772,6 +774,13 @@ class V3JobExecutor:
                 job_id,
                 bool(durable_artifacts),
             )
+        # Production: pin the aisle operational pointer to this succeeded job so default result reads
+        # and review mutations use the same slice (ResultContextResolver + review_validation).
+        # Policy: always set to job_id on success (latest succeeded run is operational). Test inventories
+        # are unchanged here — operators use promote-operational for benchmark pinning.
+        inv = self._inventory_repo.get_by_id(aisle.inventory_id)
+        if inv is not None and inv.processing_mode == InventoryProcessingMode.PRODUCTION:
+            aisle.operational_job_id = job_id
         aisle.mark_processed(completion_now)
         self._aisle_repo.save(aisle)
         self._reconcile_inventory_for_aisle(aisle)

@@ -6,9 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import src.application.use_cases.persist_aisle_result as persist_aisle_result_module
 from src.application.use_cases.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
+    should_persist_detected_position,
 )
 from src.domain.evidence.entities import Evidence
 from src.domain.positions.entities import PositionStatus
@@ -417,3 +419,139 @@ def test_persist_aisle_result_use_case_saves_positions_products_evidences() -> N
     assert position_repo.save.call_count == 1
     assert product_repo.save.call_count == 1
     assert evidence_repo.save.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("sku", "qty", "expected"),
+    [
+        ("UNKNOWN", 0, False),
+        ("", 0, False),
+        (None, 0, False),
+        ("UNKNOWN", None, False),
+        ("1242879", 0, True),
+        ("UNKNOWN", 3, True),
+        (None, 5, True),
+    ],
+)
+def test_should_persist_detected_position_business_rule(sku, qty, expected):
+    assert should_persist_detected_position(sku, qty) is expected
+
+
+@pytest.mark.parametrize(
+    ("internal_code", "final_quantity", "expected_saves"),
+    [
+        ("UNKNOWN", 0, 0),
+        ("", 0, 0),
+        (None, 0, 0),
+        ("UNKNOWN", None, 0),
+        ("1242879", 0, 1),
+        ("UNKNOWN", 3, 1),
+        (None, 5, 1),
+    ],
+)
+def test_persist_aisle_result_use_case_applies_unknown_zero_filter(
+    internal_code, final_quantity, expected_saves
+) -> None:
+    position_repo = MagicMock()
+    product_repo = MagicMock()
+    evidence_repo = MagicMock()
+    aisle_repo = MagicMock()
+    mock_aisle = MagicMock()
+    mock_aisle.inventory_id = "inv-persist-test"
+    aisle_repo.get_by_id.return_value = mock_aisle
+    clock = MagicMock()
+    now = datetime.now(timezone.utc)
+    clock.now.return_value = now
+
+    use_case = PersistAisleResultUseCase(
+        position_repo=position_repo,
+        product_record_repo=product_repo,
+        evidence_repo=evidence_repo,
+        clock=clock,
+        aisle_repo=aisle_repo,
+    )
+    report = {
+        "entities": [
+            {
+                "entity_uid": "e-filter",
+                "internal_code": internal_code,
+                "final_quantity": final_quantity,
+                "confidence": 0.9,
+                "count_status": "COUNTED",
+            }
+        ]
+    }
+
+    use_case.execute(
+        PersistAisleResultCommand(
+            aisle_id="aisle-1",
+            job_id="job-1",
+            report=report,
+            run_dir=Path("/out/job-1/run"),
+            run_id="run",
+        )
+    )
+
+    assert position_repo.save.call_count == expected_saves
+    assert product_repo.save.call_count == expected_saves
+    assert evidence_repo.save.call_count == expected_saves
+
+
+def test_persist_aisle_result_raises_on_mapped_length_mismatch(monkeypatch) -> None:
+    position_repo = MagicMock()
+    product_repo = MagicMock()
+    evidence_repo = MagicMock()
+    aisle_repo = MagicMock()
+    mock_aisle = MagicMock()
+    mock_aisle.inventory_id = "inv-persist-test"
+    aisle_repo.get_by_id.return_value = mock_aisle
+    clock = MagicMock()
+    now = datetime.now(timezone.utc)
+    clock.now.return_value = now
+
+    use_case = PersistAisleResultUseCase(
+        position_repo=position_repo,
+        product_record_repo=product_repo,
+        evidence_repo=evidence_repo,
+        clock=clock,
+        aisle_repo=aisle_repo,
+    )
+
+    mapped = map_hybrid_report_to_domain(
+        aisle_id="aisle-1",
+        report={
+            "entities": [
+                {
+                    "entity_uid": "e-mismatch",
+                    "internal_code": "SKU-A",
+                    "final_quantity": 1,
+                    "confidence": 0.9,
+                    "count_status": "COUNTED",
+                }
+            ]
+        },
+        run_dir=Path("/out/job-1/run"),
+        run_id="run",
+        job_id="job-1",
+        now=now,
+    )
+    mapped.evidences = []
+
+    def _fake_mapper(**_kwargs):
+        return mapped
+
+    monkeypatch.setattr(persist_aisle_result_module, "map_hybrid_report_to_domain", _fake_mapper)
+
+    with pytest.raises(
+        ValueError,
+        match="PersistAisleResult invariant broken: positions/product_records/evidences length mismatch",
+    ):
+        use_case.execute(
+            PersistAisleResultCommand(
+                aisle_id="aisle-1",
+                job_id="job-1",
+                report={"entities": []},
+                run_dir=Path("/out/job-1/run"),
+                run_id="run",
+            )
+        )

@@ -9,7 +9,9 @@ Atomicity: Saves positions, then product_records, then evidences, then raw_label
 then recomputes consolidated counts (normalized + final) and updates product records.
 On any save failure we re-raise so the caller can mark the job/aisle as failed.
 
-Phase 2: This use case does **not** set ``aisles.operational_job_id`` (promotion workflow).
+Phase 2: This use case does **not** set ``aisles.operational_job_id`` (promotion workflow for test).
+For **production** inventories, ``V3JobExecutor._mark_success`` sets ``operational_job_id`` to the
+succeeded ``process_aisle`` job so review mutations align with the operational slice.
 Default reads without ``job_id`` use ``ResultContextResolver`` — **operational_job_id**
 if set, else **legacy** null-job rows only (no implicit latest-job slice).
 """
@@ -85,15 +87,34 @@ class PersistAisleResultUseCase:
             inventory_id=inventory_id,
         )
         try:
-            for position in mapped.positions:
+            if not (
+                len(mapped.positions) == len(mapped.product_records) == len(mapped.evidences)
+            ):
+                raise ValueError(
+                    "PersistAisleResult invariant broken: positions/product_records/evidences length mismatch"
+                )
+            persisted_positions = 0
+            persisted_products = 0
+            persisted_evidences = 0
+            for position, product, evidence in zip(mapped.positions, mapped.product_records, mapped.evidences):
+                final_quantity = product.detected_quantity
+                if not should_persist_detected_position(product.sku, final_quantity):
+                    logger.info(
+                        "PersistAisleResult: skipped position persistence sku=%r final_qty=%s reason=%s",
+                        product.sku,
+                        final_quantity,
+                        "unknown_sku_with_zero_qty",
+                    )
+                    continue
                 self._position_repo.save(position)
-            logger.debug("PersistAisleResult: saved %d positions for aisle %s", len(mapped.positions), command.aisle_id)
-            for product in mapped.product_records:
                 self._product_record_repo.save(product)
-            logger.debug("PersistAisleResult: saved %d product_records for aisle %s", len(mapped.product_records), command.aisle_id)
-            for evidence in mapped.evidences:
                 self._evidence_repo.save(evidence)
-            logger.debug("PersistAisleResult: saved %d evidences for aisle %s", len(mapped.evidences), command.aisle_id)
+                persisted_positions += 1
+                persisted_products += 1
+                persisted_evidences += 1
+            logger.debug("PersistAisleResult: saved %d positions for aisle %s", persisted_positions, command.aisle_id)
+            logger.debug("PersistAisleResult: saved %d product_records for aisle %s", persisted_products, command.aisle_id)
+            logger.debug("PersistAisleResult: saved %d evidences for aisle %s", persisted_evidences, command.aisle_id)
 
             if self._raw_label_repo and mapped.raw_labels:
                 self._raw_label_repo.save_many(mapped.raw_labels)
@@ -120,3 +141,14 @@ class PersistAisleResultUseCase:
         except Exception as e:
             logger.exception("PersistAisleResult failed for aisle %s job %s: %s", command.aisle_id, command.job_id, e)
             raise
+
+
+def should_persist_detected_position(sku: Optional[str], final_quantity: Optional[int]) -> bool:
+    """
+    Persist all detections except the explicitly non-actionable case:
+    unknown/empty SKU with exactly zero final quantity.
+    """
+    sku_norm = (sku or "").strip()
+    is_unknown_sku = sku_norm == "" or sku_norm.upper() == "UNKNOWN"
+    qty_norm = 0 if final_quantity is None else final_quantity
+    return not (is_unknown_sku and qty_norm == 0)
