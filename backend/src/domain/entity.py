@@ -35,6 +35,8 @@ class Entity:
     internal_code: Optional[str] = None
     product_label_quantity: Optional[int] = None
     product_label_bbox: Optional[List[float]] = None  # [x1, y1, x2, y2] normalized 0..1
+    #: Normalized scene/pallet extent when the model only provides a generic ``bbox`` (OpenAI path).
+    extent_bbox: Optional[List[float]] = None
     # Structure
     has_boxes: bool = False
     confidence: float = 0.0

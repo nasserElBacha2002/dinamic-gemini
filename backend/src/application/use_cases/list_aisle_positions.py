@@ -143,6 +143,17 @@ class ListAislePositionsUseCase:
         # Bounded raw load within the resolved job slice only — not an unscoped "all rows in aisle" read.
         raw_positions = list(self._position_repo.list_by_aisle_query(command.aisle_id, raw_q))
         raw_truncated = len(raw_positions) >= self._raw_cap
+        logger.info(
+            "v3.list_aisle_positions raw_fetch inventory_id=%s aisle_id=%s job_slice=%r "
+            "context=%s rows=%d cap=%d truncated=%s",
+            command.inventory_id,
+            command.aisle_id,
+            ctx.job_id_for_slice,
+            ctx.source,
+            len(raw_positions),
+            self._raw_cap,
+            raw_truncated,
+        )
 
         sort_key = (command.sort_by or "created_at").strip().lower()
         effective_consolidate = command.consolidate_by_sku

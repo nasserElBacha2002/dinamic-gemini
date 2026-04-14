@@ -38,11 +38,11 @@ from src.validation.global_analysis_schema import validate_global_analysis_struc
 
 logger = logging.getLogger(__name__)
 
-# NOTE: Hybrid OpenAI prompt bodies (``hybrid_profiles``) still encourage filling numbers and
-# bounding boxes. ``normalize_llm_response`` (``entity_normalizer``) deliberately does **not**
-# promote OpenAI ``quantity`` / ``bbox`` into ``product_label_quantity`` / ``product_label_bbox``
-# because those fields are often semantically ambiguous (e.g. one pallet vs label-read qty).
-# Align prompts in a follow-up so the model returns canonical keys and null when unreadable.
+# NOTE: Hybrid OpenAI prompts still encourage ``quantity`` / ``bbox``. ``normalize_llm_response``
+# maps a **strictly positive** ``quantity`` (or qty aliases) into ``product_label_quantity`` when
+# the canonical field is unset, and copies lone ``bbox`` into optional ``extent_bbox`` (not
+# ``product_label_bbox``) so PALLET rows persist for UNKNOWN-SKU jobs. Prefer canonical v2.1 keys
+# from the model when possible.
 
 _JSON_OBJECT_SUFFIX = (
     "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "

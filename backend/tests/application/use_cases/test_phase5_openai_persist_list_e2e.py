@@ -19,7 +19,10 @@ from src.infrastructure.repositories.memory_job_repository import MemoryJobRepos
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
 from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from src.decision.count_status import assign_count_status
 from src.llm.normalization.entity_normalizer import normalize_llm_response
+from src.parsing.global_analysis_parser import parse_entities
+from src.reporting.hybrid_report import build_hybrid_report
 
 
 class FixedClock:
@@ -186,3 +189,123 @@ def test_openai_normalize_persist_list_detail_job_metadata_and_slice_isolation()
     assert detail.run_context.model_name == "gpt-4o-mini"
     assert detail.run_context.prompt_key == "global_v21"
     assert detail.run_context.prompt_version == "global_v21@v2.1"
+
+
+def test_openai_pallet_unknown_sku_quantity_alias_hybrid_persist_list_explicit_job() -> None:
+    """PALLET + ``quantity`` only (no internal_code): normalize → parse → report → persist → explicit GET /positions."""
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    pos_repo = MemoryPositionRepository()
+    product_repo = MemoryProductRecordRepository()
+    evidence_repo = MemoryEvidenceRepository()
+    job_repo = MemoryJobRepository()
+
+    inv_id, aisle_id, job_explicit = "inv-pallet-qty", "aisle-pallet-qty", "job-openai-pallet-qty"
+    inv_repo.save(Inventory(inv_id, "PalletQty", InventoryStatus.IN_REVIEW, now, now))
+    aisle_repo.save(
+        Aisle(
+            aisle_id,
+            inv_id,
+            "A",
+            AisleStatus.PROCESSED,
+            now,
+            now,
+            operational_job_id=None,
+        )
+    )
+    job_repo.save(
+        Job(
+            id=job_explicit,
+            target_type="aisle",
+            target_id=aisle_id,
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+            provider_name="openai",
+            model_name="gpt-4o-mini",
+            prompt_key="global_v21",
+            prompt_version="global_v21@v2.1",
+        )
+    )
+
+    raw = {
+        "total_entities_detected": 2,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "det-1",
+                "confidence": 0.91,
+                "has_boxes": False,
+                "source_image_id": "photo-1",
+                "quantity": 2,
+                "bbox": [0.1, 0.12, 0.45, 0.55],
+            },
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "det-2",
+                "confidence": 0.82,
+                "has_boxes": False,
+                "source_image_id": "photo-2",
+                "quantity": 1,
+                "bbox": [0.2, 0.22, 0.55, 0.65],
+            },
+        ],
+    }
+    normalized = normalize_llm_response(raw, "openai")
+    entities = parse_entities(normalized, job_id=job_explicit)
+    for ent in entities:
+        assign_count_status(ent)
+    hybrid = build_hybrid_report("/tmp/photos_job.mp4", entities, frames_selected=1)
+
+    clock = FixedClock(now)
+    persist = PersistAisleResultUseCase(
+        position_repo=pos_repo,
+        product_record_repo=product_repo,
+        evidence_repo=evidence_repo,
+        clock=clock,
+        aisle_repo=aisle_repo,
+    )
+    persist.execute(
+        PersistAisleResultCommand(
+            aisle_id=aisle_id,
+            job_id=job_explicit,
+            report=hybrid,
+            run_dir=Path("/tmp/pallet-qty-run"),
+            run_id="run-pq",
+        )
+    )
+
+    resolver = ResultContextResolver(job_repo, pos_repo)
+    list_uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        resolver,
+        positions_aisle_raw_cap=500,
+    )
+    listed = list_uc.execute(
+        ListAislePositionsCommand(
+            inventory_id=inv_id,
+            aisle_id=aisle_id,
+            page=1,
+            page_size=50,
+            job_id=job_explicit,
+            consolidate_by_sku=False,
+            sort_by="photo_sequence",
+        )
+    )
+    assert listed.result_context_source == "explicit"
+    assert listed.resolved_job_id == job_explicit
+    assert listed.total_items == 2
+    assert len(listed.positions) == 2
+    for p in listed.positions:
+        prods = product_repo.list_by_position(p.id)
+        assert len(prods) == 1
+        assert prods[0].sku == "UNKNOWN"
+        assert prods[0].detected_quantity >= 1
+        ds = p.detected_summary_json or {}
+        assert ds.get("model_entity_id") in ("det-1", "det-2")
+        assert "extent_bbox" in ds or "product_label_bbox" in ds

@@ -207,3 +207,4 @@ def validate_global_analysis_structure_v21(data: Dict[str, Any]) -> None:
 
         _check_bbox(e, "position_label_bbox", prefix)
         _check_bbox(e, "product_label_bbox", prefix)
+        _check_bbox(e, "extent_bbox", prefix)

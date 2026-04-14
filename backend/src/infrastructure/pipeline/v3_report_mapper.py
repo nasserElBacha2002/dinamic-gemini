@@ -70,7 +70,7 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
     Includes position_barcode and review_display_label so the list API can show a sku fallback
     when internal_code is missing (aligns with derive_review_display_label: internal_code else position_barcode).
     """
-    out = {
+    out: Dict[str, Any] = {
         "entity_uid": entity.get("entity_uid"),
         "entity_type": entity.get("entity_type"),
         "pallet_id": entity.get("pallet_id"),
@@ -79,6 +79,13 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
         "product_label_quantity": entity.get("product_label_quantity"),
         "count_status": entity.get("count_status"),
     }
+    mid = entity.get("model_entity_id")
+    if mid is not None:
+        out["model_entity_id"] = mid if isinstance(mid, str) else str(mid)
+    for bbox_key in ("extent_bbox", "product_label_bbox", "position_label_bbox"):
+        bb = entity.get(bbox_key)
+        if isinstance(bb, list) and len(bb) == 4:
+            out[bbox_key] = bb
     # Fallback display fields for list API when internal_code is null (see BUG_INVESTIGATION_POSITIONS_SKU_QUANTITY_NULL).
     pos_barcode = entity.get("position_barcode")
     if pos_barcode is not None:
@@ -324,6 +331,13 @@ def map_hybrid_report_to_domain(
             except (TypeError, ValueError):
                 ev_frame = None
 
+        bbox_json: Optional[Dict[str, Any]] = None
+        for bbox_key in ("extent_bbox", "product_label_bbox", "position_label_bbox"):
+            bb = entity.get(bbox_key)
+            if isinstance(bb, list) and len(bb) == 4:
+                bbox_json = {bbox_key: bb}
+                break
+
         evidence = Evidence(
             id=evidence_id,
             entity_type="position",
@@ -334,7 +348,7 @@ def map_hybrid_report_to_domain(
             is_primary=True,
             frame_index=ev_frame,
             timestamp_ms=None,
-            bbox_json=None,
+            bbox_json=bbox_json,
             quality_score=entity.get("entity_quality_score"),
         )
         evidences.append(evidence)
