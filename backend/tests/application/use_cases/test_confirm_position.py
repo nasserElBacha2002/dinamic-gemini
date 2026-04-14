@@ -18,7 +18,7 @@ from src.application.services.aisle_review_lifecycle_sync import AisleReviewLife
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
@@ -257,6 +257,48 @@ def test_confirm_position_already_deleted_raises() -> None:
     )
     with pytest.raises(PositionDeletedError):
         use_case.execute("inv-1", "aisle-1", "pos-1")
+
+
+def test_confirm_position_succeeds_when_position_job_matches_operational_pointer() -> None:
+    """When aisle.operational_job_id matches position.job_id, review mutation is allowed."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now, processing_mode=InventoryProcessingMode.PRODUCTION)
+    aisle = Aisle(
+        "aisle-1",
+        "inv-1",
+        "A01",
+        AisleStatus.CREATED,
+        now,
+        now,
+        operational_job_id="job-op",
+    )
+    position = Position(
+        id="pos-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        job_id="job-op",
+    )
+    inv_repo = StubInventoryRepo(inv)
+    aisle_repo = StubAisleRepo(aisle)
+    position_repo = StubPositionRepo(position)
+    review_repo = StubReviewRepo()
+    use_case = ConfirmPositionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        review_repo=review_repo,
+        clock=FixedClock(now),
+        aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
+    )
+    use_case.execute("inv-1", "aisle-1", "pos-1")
+    updated = position_repo.get_by_id("pos-1")
+    assert updated is not None
+    assert updated.status == PositionStatus.REVIEWED
 
 
 def test_confirm_position_non_operational_job_raises() -> None:

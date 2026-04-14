@@ -9,7 +9,9 @@ Atomicity: Saves positions, then product_records, then evidences, then raw_label
 then recomputes consolidated counts (normalized + final) and updates product records.
 On any save failure we re-raise so the caller can mark the job/aisle as failed.
 
-Phase 2: This use case does **not** set ``aisles.operational_job_id`` (promotion workflow).
+Phase 2: This use case does **not** set ``aisles.operational_job_id`` (promotion workflow for test).
+For **production** inventories, ``V3JobExecutor._mark_success`` sets ``operational_job_id`` to the
+succeeded ``process_aisle`` job so review mutations align with the operational slice.
 Default reads without ``job_id`` use ``ResultContextResolver`` — **operational_job_id**
 if set, else **legacy** null-job rows only (no implicit latest-job slice).
 """
