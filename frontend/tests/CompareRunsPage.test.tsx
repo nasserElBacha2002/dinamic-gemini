@@ -208,6 +208,69 @@ describe('CompareRunsPage', () => {
     expect(tip).toHaveTextContent(/mdl2/i);
   });
 
+  it('shows usage not reported when provider usage is missing', async () => {
+    const savedB = { ...hoisted.comparePayload.run_b };
+    hoisted.comparePayload.run_b = {
+      ...savedB,
+      llm_cost_snapshot: {
+        provider: 'openai',
+        model: 'mdl2',
+        pricing_available: true,
+        billing_currency: 'USD',
+        usage: {},
+        pricing_snapshot: null,
+        computed_cost: {
+          total_cost: null,
+          currency: 'USD',
+          total_cost_unavailable_reason: 'provider_usage_missing',
+        },
+        capture_status: 'unavailable',
+        capture_notes: ['provider_usage_missing'],
+      },
+    };
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
+    expect(screen.getByText('Usage not reported')).toBeInTheDocument();
+    fireEvent.mouseOver(screen.getByText('Usage not reported'));
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent(/token usage/i);
+    expect(tip).toHaveTextContent(/mdl2/i);
+    hoisted.comparePayload.run_b = savedB;
+  });
+
+  it('shows not computed for other null-cost cases with model in tooltip', async () => {
+    const savedB = { ...hoisted.comparePayload.run_b };
+    hoisted.comparePayload.run_b = {
+      ...savedB,
+      model_name: 'custom-model',
+      llm_cost_snapshot: {
+        provider: 'openai',
+        model: 'custom-model',
+        pricing_available: true,
+        billing_currency: 'USD',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        pricing_snapshot: {
+          pricing_source: 'settings.llm_pricing_catalog_json',
+          pricing_version: 'catalog-v1',
+          billing_currency: 'USD',
+        },
+        computed_cost: {
+          total_cost: null,
+          currency: 'USD',
+          total_cost_unavailable_reason: 'cost_not_computed',
+        },
+        capture_status: 'unavailable',
+        capture_notes: [],
+      },
+    };
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
+    expect(screen.getByText('Not computed')).toBeInTheDocument();
+    fireEvent.mouseOver(screen.getByText('Not computed'));
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent(/Model:/i);
+    expect(tip).toHaveTextContent(/custom-model/i);
+    hoisted.comparePayload.run_b = savedB;
+  });
+
   it('shows an honest cap warning when raw fetch hit the server cap', () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 

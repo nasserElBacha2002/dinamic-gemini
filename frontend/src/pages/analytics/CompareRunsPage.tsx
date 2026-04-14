@@ -74,6 +74,7 @@ function formatCostDisplay(
     llm_cost_snapshot?: {
       billing_currency?: string | null;
       pricing_available?: boolean | null;
+      model?: string | null;
       computed_cost?: {
         total_cost?: string | null;
         currency?: string | null;
@@ -83,7 +84,6 @@ function formatCostDisplay(
       capture_notes?: string[];
     } | null;
   },
-  _legacyUnavailableLabel: string,
   t: TFunction
 ): {
   value: string;
@@ -120,8 +120,12 @@ function formatCostDisplay(
     } else {
       value = t('compare.llm_cost_display.not_computed', 'Not computed');
     }
-    const showDetails = noteText.length > 0 || statusKey !== 'unavailable' || Boolean(machineReason);
     const modelLabel = (run.model_name || snap.model || '').trim();
+    const showDetails =
+      noteText.length > 0 ||
+      statusKey !== 'unavailable' ||
+      Boolean(machineReason) ||
+      Boolean(modelLabel);
     const detailsWithModel =
       modelLabel && !total
         ? `${details}${details ? ' · ' : ''}${t('compare.llm_cost_display.model_in_tooltip', 'Model: {{model}}', { model: modelLabel })}`
@@ -411,7 +415,7 @@ export default function CompareRunsPage() {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             {(['run_a', 'run_b'] as const).map((side) => {
               const r = compareQuery.data![side];
-              const cost = formatCostDisplay(r, '', t);
+              const cost = formatCostDisplay(r, t);
               return (
                 <Paper key={side} sx={{ p: 2, flex: '1 1 320px' }} variant="outlined">
                   <Typography variant="subtitle2" color="text.secondary">
