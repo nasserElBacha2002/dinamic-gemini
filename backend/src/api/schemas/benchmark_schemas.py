@@ -66,11 +66,13 @@ class LlmComputedCostResponse(BaseModel):
     subtotal_video: Optional[str] = None
     total_cost: Optional[str] = None
     currency: Optional[str] = None
+    total_cost_unavailable_reason: Optional[str] = None
 
 
 class LlmCostSnapshotResponse(BaseModel):
     provider: str
     model: Optional[str] = None
+    pricing_available: Optional[bool] = None
     billing_currency: Optional[str] = None
     usage: LlmUsageSnapshotResponse
     pricing_snapshot: LlmPricingSnapshotResponse

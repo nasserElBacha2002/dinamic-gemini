@@ -41,6 +41,7 @@ const hoisted = vi.hoisted(() => {
       llm_cost_snapshot: {
         provider: 'openai',
         model: 'gpt-4o',
+        pricing_available: true,
         billing_currency: 'USD',
         usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
         pricing_snapshot: {
@@ -76,8 +77,9 @@ const hoisted = vi.hoisted(() => {
       llm_cost_snapshot: {
         provider: 'claude',
         model: 'claude-sonnet-4',
+        pricing_available: false,
         billing_currency: 'USD',
-        usage: {},
+        usage: { input_tokens: 100, output_tokens: 50 },
         pricing_snapshot: {
           pricing_source: 'settings.llm_pricing_catalog_json',
           pricing_version: 'catalog-v1',
@@ -86,9 +88,10 @@ const hoisted = vi.hoisted(() => {
         computed_cost: {
           total_cost: null,
           currency: 'USD',
+          total_cost_unavailable_reason: 'pricing_entry_missing',
         },
-        capture_status: 'unavailable',
-        capture_notes: ['provider_usage_missing'],
+        capture_status: 'estimated',
+        capture_notes: ['pricing_entry_missing'],
       },
     },
     diff_summary: {
@@ -190,18 +193,19 @@ describe('CompareRunsPage', () => {
     expect(screen.getByText('job-b')).toBeInTheDocument();
   });
 
-  it('renders total LLM cost and unavailable fallback', () => {
+  it('renders total LLM cost and no-pricing fallback for run B', () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
     expect(screen.getByText('0.00125000 USD')).toBeInTheDocument();
-    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
+    expect(screen.getByText('No pricing configured')).toBeInTheDocument();
   });
 
   it('shows operator-friendly tooltip text for cost details', async () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
-    const unavailableCells = screen.getAllByText('Unavailable');
-    fireEvent.mouseOver(unavailableCells[0]);
+    const cells = screen.getAllByText('No pricing configured');
+    fireEvent.mouseOver(cells[0]);
     const tip = await screen.findByRole('tooltip');
-    expect(tip).toHaveTextContent(/token/i);
+    expect(tip).toHaveTextContent(/pricing/i);
+    expect(tip).toHaveTextContent(/mdl2/i);
   });
 
   it('shows an honest cap warning when raw fetch hit the server cap', () => {

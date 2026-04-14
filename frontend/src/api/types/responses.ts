@@ -360,11 +360,15 @@ export interface LlmComputedCost {
   subtotal_video?: string | null;
   total_cost?: string | null;
   currency?: string | null;
+  /** Machine-readable when total_cost is null (e.g. pricing_entry_missing). */
+  total_cost_unavailable_reason?: string | null;
 }
 
 export interface LlmCostSnapshot {
   provider: string;
   model?: string | null;
+  /** True when a catalog row matched provider+model (pricing_snapshot may still have null rates). */
+  pricing_available?: boolean | null;
   billing_currency?: string | null;
   usage: LlmUsageSnapshot;
   pricing_snapshot: LlmPricingSnapshot;

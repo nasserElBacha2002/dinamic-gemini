@@ -8,14 +8,42 @@ The snapshot is persisted with each run for auditability. To avoid overclaiming 
 
 from __future__ import annotations
 
+import copy
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
+logger = logging.getLogger(__name__)
+
 _MICRO_UNIT = Decimal("1000000")
 _MONEY_QUANT = Decimal("0.00000001")
+
+# Merged under operator JSON (``LLM_PRICING_CATALOG_JSON``); user entries override on same
+# (provider, model) keys. USD placeholders — tune in deployment catalog or env JSON.
+_EMBEDDED_DEFAULT_LLM_PRICING_CATALOG: Dict[str, Any] = {
+    "version": "dinamic-embedded-pricing-v1",
+    "currency": "USD",
+    "source": "dinamic_embedded_defaults",
+    "entries": [
+        {
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "input_cost_per_million": 5,
+            "output_cost_per_million": 15,
+            "cached_input_cost_per_million": 1.25,
+        },
+        {
+            "provider": "claude",
+            "model": "claude-sonnet-4-20250514",
+            "input_cost_per_million": 3,
+            "output_cost_per_million": 15,
+            "cached_input_cost_per_million": 1,
+        },
+    ],
+}
 
 
 def _utc_iso_now() -> str:
@@ -162,16 +190,57 @@ def normalize_usage(provider: str, raw_usage: Optional[Dict[str, Any]]) -> Tuple
     return usage, notes
 
 
+def _catalog_entry_key(entry: Any) -> Optional[Tuple[str, str]]:
+    if not isinstance(entry, dict):
+        return None
+    p = str(entry.get("provider", "")).strip().lower()
+    m = str(entry.get("model", "")).strip().lower()
+    if not p or not m:
+        return None
+    return (p, m)
+
+
 def _load_pricing_catalog(settings: Any) -> Dict[str, Any]:
+    """Load pricing catalog: embedded defaults merged with ``settings.llm_pricing_catalog_json`` (user wins on key clash)."""
+    base = copy.deepcopy(_EMBEDDED_DEFAULT_LLM_PRICING_CATALOG)
     raw_attr = getattr(settings, "llm_pricing_catalog_json", "")
     raw = raw_attr.strip() if isinstance(raw_attr, str) else ""
     if not raw:
-        return {}
+        return base
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+        logger.warning("llm.pricing_catalog_invalid_json: using embedded defaults only")
+        return base
+    if not isinstance(parsed, dict):
+        return base
+
+    merged: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for ent in base.get("entries") or []:
+        k = _catalog_entry_key(ent)
+        if k:
+            merged[k] = copy.deepcopy(ent)
+    for ent in parsed.get("entries") or []:
+        k = _catalog_entry_key(ent)
+        if k and isinstance(ent, dict):
+            merged[k] = copy.deepcopy(ent)
+
+    ver = parsed.get("version")
+    ver_s = str(ver).strip() if ver is not None and str(ver).strip() else ""
+    cur = parsed.get("currency")
+    cur_s = str(cur).strip() if isinstance(cur, str) and cur.strip() else ""
+
+    out: Dict[str, Any] = {
+        "version": ver_s or str(base.get("version") or ""),
+        "currency": cur_s or str(base.get("currency") or "USD"),
+        "source": (
+            str(parsed["source"]).strip()
+            if isinstance(parsed.get("source"), str) and str(parsed["source"]).strip()
+            else "settings.llm_pricing_catalog_json+dinamic_embedded_defaults"
+        ),
+        "entries": list(merged.values()),
+    }
+    return out
 
 
 def _resolve_pricing_entry(catalog: Dict[str, Any], provider: str, model: str) -> Optional[Dict[str, Any]]:
@@ -179,12 +248,15 @@ def _resolve_pricing_entry(catalog: Dict[str, Any], provider: str, model: str) -
     if not isinstance(entries, list):
         return None
     p = (provider or "").strip().lower()
-    m = (model or "").strip()
+    m = (model or "").strip().lower()
     wildcard: Optional[Dict[str, Any]] = None
     for item in entries:
         if not isinstance(item, dict):
             continue
-        ip = (str(item.get("provider", "")).strip().lower(), str(item.get("model", "")).strip())
+        ip = (
+            str(item.get("provider", "")).strip().lower(),
+            str(item.get("model", "")).strip().lower(),
+        )
         if ip[0] != p:
             continue
         if ip[1] == m:
@@ -291,6 +363,15 @@ def build_llm_cost_snapshot(
 
     catalog = _load_pricing_catalog(settings)
     entry = _resolve_pricing_entry(catalog, provider_norm, model_norm or "")
+    entries_list = catalog.get("entries")
+    n_catalog_entries = len(entries_list) if isinstance(entries_list, list) else 0
+    if not isinstance(entry, dict):
+        logger.info(
+            "llm.pricing_entry_missing provider=%s model=%r catalog_entries=%d",
+            provider_norm,
+            model_norm,
+            n_catalog_entries,
+        )
 
     catalog_currency = (catalog.get("currency") if isinstance(catalog.get("currency"), str) else None) or "USD"
     pricing_version = (
@@ -406,6 +487,7 @@ def build_llm_cost_snapshot(
 
     notes = _dedupe_keep_order(notes)
     has_pricing = isinstance(entry, dict)
+    pricing_available = has_pricing
     ambiguous = any(note.startswith("usage_dimension_ambiguous:") for note in notes)
     missing_pricing_dimensions = any(note.startswith("billable_dimension_not_priced:") for note in notes)
 
@@ -416,9 +498,25 @@ def build_llm_cost_snapshot(
     else:
         capture_status = "estimated"
 
+    total_cost_unavailable_reason: Optional[str] = None
+    if total_cost is None:
+        if "provider_usage_missing" in notes:
+            total_cost_unavailable_reason = "provider_usage_missing"
+        elif "pricing_entry_missing" in notes:
+            total_cost_unavailable_reason = "pricing_entry_missing"
+        elif any(n.startswith("billable_dimension_not_priced:") for n in notes):
+            total_cost_unavailable_reason = "billable_dimension_not_priced"
+        elif "pricing_present_but_no_billable_dimensions" in notes:
+            total_cost_unavailable_reason = "pricing_present_but_no_billable_dimensions"
+        elif ambiguous:
+            total_cost_unavailable_reason = "usage_dimension_ambiguous"
+        elif has_usage_metadata:
+            total_cost_unavailable_reason = "cost_not_computed"
+
     return {
         "provider": provider_norm,
         "model": model_norm,
+        "pricing_available": pricing_available,
         "billing_currency": pricing_snapshot["billing_currency"],
         "usage": usage,
         "pricing_snapshot": {
@@ -443,6 +541,7 @@ def build_llm_cost_snapshot(
             "subtotal_video": _format_money_optional(subtotals["subtotal_video"]),
             "total_cost": _format_money_optional(total_cost),
             "currency": pricing_snapshot["billing_currency"],
+            "total_cost_unavailable_reason": total_cost_unavailable_reason,
         },
         "capture_status": capture_status,
         "capture_notes": notes,

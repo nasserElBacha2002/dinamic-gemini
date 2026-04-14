@@ -70,21 +70,32 @@ function userFacingCaptureNote(note: string, t: TFunction): string {
 
 function formatCostDisplay(
   run: {
+    model_name?: string | null;
     llm_cost_snapshot?: {
       billing_currency?: string | null;
-      computed_cost?: { total_cost?: string | null; currency?: string | null };
+      pricing_available?: boolean | null;
+      computed_cost?: {
+        total_cost?: string | null;
+        currency?: string | null;
+        total_cost_unavailable_reason?: string | null;
+      };
       capture_status?: string;
       capture_notes?: string[];
     } | null;
   },
-  unavailableLabel: string,
+  _legacyUnavailableLabel: string,
   t: TFunction
 ): {
   value: string;
   details: string | null;
 } {
   const snap = run.llm_cost_snapshot;
-  if (!snap) return { value: unavailableLabel, details: null };
+  if (!snap) {
+    return {
+      value: t('compare.llm_cost_display.no_snapshot', 'Cost snapshot unavailable'),
+      details: null,
+    };
+  }
   const total = snap.computed_cost?.total_cost?.trim();
   const currency = snap.computed_cost?.currency?.trim() || snap.billing_currency?.trim();
   const statusKey = snap.capture_status ?? 'unavailable';
@@ -98,10 +109,24 @@ function formatCostDisplay(
   });
   const notes = Array.isArray(snap.capture_notes) ? snap.capture_notes : [];
   const noteText = notes.map((n) => userFacingCaptureNote(n, t)).filter(Boolean);
+  const machineReason = snap.computed_cost?.total_cost_unavailable_reason?.trim();
   const details = [statusLabel, ...noteText].join(' · ');
   if (!total) {
-    const showDetails = noteText.length > 0 || statusKey !== 'unavailable';
-    return { value: unavailableLabel, details: showDetails ? details : null };
+    let value: string;
+    if (notes.includes('pricing_entry_missing') || machineReason === 'pricing_entry_missing') {
+      value = t('compare.llm_cost_display.no_pricing_configured', 'No pricing configured');
+    } else if (notes.includes('provider_usage_missing') || machineReason === 'provider_usage_missing') {
+      value = t('compare.llm_cost_display.usage_not_reported', 'Usage not reported');
+    } else {
+      value = t('compare.llm_cost_display.not_computed', 'Not computed');
+    }
+    const showDetails = noteText.length > 0 || statusKey !== 'unavailable' || Boolean(machineReason);
+    const modelLabel = (run.model_name || snap.model || '').trim();
+    const detailsWithModel =
+      modelLabel && !total
+        ? `${details}${details ? ' · ' : ''}${t('compare.llm_cost_display.model_in_tooltip', 'Model: {{model}}', { model: modelLabel })}`
+        : details;
+    return { value, details: showDetails ? detailsWithModel : null };
   }
   return { value: `${total} ${currency || ''}`.trim(), details };
 }
@@ -386,7 +411,7 @@ export default function CompareRunsPage() {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             {(['run_a', 'run_b'] as const).map((side) => {
               const r = compareQuery.data![side];
-              const cost = formatCostDisplay(r, 'Unavailable', t);
+              const cost = formatCostDisplay(r, '', t);
               return (
                 <Paper key={side} sx={{ p: 2, flex: '1 1 320px' }} variant="outlined">
                   <Typography variant="subtitle2" color="text.secondary">

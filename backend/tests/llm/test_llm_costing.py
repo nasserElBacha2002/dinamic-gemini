@@ -141,6 +141,37 @@ def test_build_llm_cost_snapshot_preserves_catalog_entry_timestamp() -> None:
     assert snap["pricing_snapshot"]["pricing_catalog_entry_captured_at"] == "2026-04-14T10:00:00Z"
 
 
+def test_embedded_defaults_match_openai_gpt_5_4_case_insensitive() -> None:
+    settings = SimpleNamespace(llm_pricing_catalog_json="", llm_pricing_catalog_version="")
+    snap = build_llm_cost_snapshot(
+        provider="openai",
+        model="GPT-5.4",
+        raw_usage={
+            "prompt_tokens": 1_000_000,
+            "completion_tokens": 0,
+            "total_tokens": 1_000_000,
+            "prompt_tokens_details": {"cached_tokens": 0},
+        },
+        settings=settings,
+    )
+    assert snap["pricing_available"] is True
+    assert "pricing_entry_missing" not in snap["capture_notes"]
+    assert snap["computed_cost"]["total_cost"] == "5.00000000"
+    assert snap["computed_cost"]["total_cost_unavailable_reason"] is None
+
+
+def test_embedded_defaults_match_claude_sonnet_4_20250514() -> None:
+    settings = SimpleNamespace(llm_pricing_catalog_json="", llm_pricing_catalog_version="")
+    snap = build_llm_cost_snapshot(
+        provider="claude",
+        model="claude-sonnet-4-20250514",
+        raw_usage={"input_tokens": 1_000_000, "output_tokens": 0},
+        settings=settings,
+    )
+    assert snap["pricing_available"] is True
+    assert snap["computed_cost"]["total_cost"] == "3.00000000"
+
+
 def test_build_llm_cost_snapshot_estimated_missing_pricing_entry() -> None:
     settings = _settings_with_catalog({"version": "catalog-v1", "currency": "USD", "entries": []})
     snap = build_llm_cost_snapshot(
@@ -157,6 +188,8 @@ def test_build_llm_cost_snapshot_estimated_missing_pricing_entry() -> None:
     assert snap["capture_status"] == "estimated"
     assert snap["computed_cost"]["total_cost"] is None
     assert "pricing_entry_missing" in snap["capture_notes"]
+    assert snap["pricing_available"] is False
+    assert snap["computed_cost"]["total_cost_unavailable_reason"] == "pricing_entry_missing"
 
 
 def test_build_llm_cost_snapshot_estimated_partial_pricing() -> None:
