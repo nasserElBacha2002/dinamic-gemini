@@ -222,6 +222,11 @@ def build_compare_diff_rows(
 
 
 def job_metadata_dict(job: Job) -> dict[str, object | None]:
+    llm_cost_snapshot = None
+    if isinstance(job.result_json, dict):
+        raw_snapshot = job.result_json.get("llm_cost_snapshot")
+        if isinstance(raw_snapshot, dict):
+            llm_cost_snapshot = raw_snapshot
     return {
         "job_id": job.id,
         "status": job.status.value,
@@ -232,6 +237,7 @@ def job_metadata_dict(job: Job) -> dict[str, object | None]:
         "created_at": job.created_at.isoformat(),
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+        "llm_cost_snapshot": llm_cost_snapshot,
     }
 
 

@@ -37,6 +37,7 @@ from src.llm.prompt_composer.prompt_traceability import (
     prompt_composition_summary_for_execution_log,
     sha256_utf8,
 )
+from src.llm.costing import build_llm_cost_snapshot
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_with_traceability,
     resolve_analysis_context_for_run,
@@ -226,6 +227,12 @@ class HybridGlobalAnalysisStrategy:
                     payload={"provider": response.provider},
                 )
             consumed = self.get_capabilities().supports_visual_reference_context and consumed_count > 0
+            llm_cost_snapshot = build_llm_cost_snapshot(
+                provider=response.provider,
+                model=response.model,
+                raw_usage=response.usage,
+                settings=settings,
+            )
             return AnalysisResult(
                 parsed_json=response.parsed_json,
                 provider_name=response.provider,
@@ -236,6 +243,7 @@ class HybridGlobalAnalysisStrategy:
                     visual_reference_ids=resolved_reference_ids,
                 ),
                 prompt_composition=prompt_composition,
+                llm_cost_snapshot=llm_cost_snapshot,
             )
         except Exception as e:
             if exec_log:

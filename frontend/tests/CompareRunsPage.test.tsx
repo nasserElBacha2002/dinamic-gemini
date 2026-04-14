@@ -38,6 +38,25 @@ const hoisted = vi.hoisted(() => {
         unknown_internal_code_count: 0,
         needs_review_count: 1,
       },
+      llm_cost_snapshot: {
+        provider: 'openai',
+        model: 'gpt-4o',
+        billing_currency: 'USD',
+        usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+        pricing_snapshot: {
+          pricing_source: 'settings.llm_pricing_catalog_json',
+          pricing_version: 'catalog-v1',
+          billing_currency: 'USD',
+        },
+        computed_cost: {
+          subtotal_input: '0.00050000',
+          subtotal_output: '0.00075000',
+          total_cost: '0.00125000',
+          currency: 'USD',
+        },
+        capture_status: 'exact',
+        capture_notes: [],
+      },
     },
     run_b: {
       job_id: 'job-b',
@@ -53,6 +72,23 @@ const hoisted = vi.hoisted(() => {
         total_quantity: 22,
         unknown_internal_code_count: 1,
         needs_review_count: 0,
+      },
+      llm_cost_snapshot: {
+        provider: 'claude',
+        model: 'claude-sonnet-4',
+        billing_currency: 'USD',
+        usage: {},
+        pricing_snapshot: {
+          pricing_source: 'settings.llm_pricing_catalog_json',
+          pricing_version: 'catalog-v1',
+          billing_currency: 'USD',
+        },
+        computed_cost: {
+          total_cost: null,
+          currency: 'USD',
+        },
+        capture_status: 'unavailable',
+        capture_notes: ['provider_usage_missing'],
       },
     },
     diff_summary: {
@@ -152,6 +188,12 @@ describe('CompareRunsPage', () => {
     expect(screen.getByText(/Only in B:/i)).toBeInTheDocument();
     expect(screen.getByText('job-a')).toBeInTheDocument();
     expect(screen.getByText('job-b')).toBeInTheDocument();
+  });
+
+  it('renders total LLM cost and unavailable fallback', () => {
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
+    expect(screen.getByText('0.00125000 USD')).toBeInTheDocument();
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
   });
 
   it('shows an honest cap warning when raw fetch hit the server cap', () => {

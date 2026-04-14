@@ -20,6 +20,7 @@ import {
   TableHead,
   TableRow,
   Typography,
+  Tooltip,
 } from '@mui/material';
 import { PageHeader } from '../../components/shell';
 import CompareRunJobPickers from '../../components/compare/CompareRunJobPickers';
@@ -29,6 +30,33 @@ import { ApiError } from '../../api/types';
 import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { useAppSnackbar } from '../../components/ui';
 import { pathToAislePositions } from '../../utils/resultRoutes';
+
+function formatCostDisplay(
+  run: {
+    llm_cost_snapshot?: {
+      billing_currency?: string | null;
+      computed_cost?: { total_cost?: string | null; currency?: string | null };
+      capture_status?: string;
+      capture_notes?: string[];
+    } | null;
+  },
+  unavailableLabel: string
+): {
+  value: string;
+  details: string | null;
+} {
+  const snap = run.llm_cost_snapshot;
+  if (!snap) return { value: unavailableLabel, details: null };
+  const total = snap.computed_cost?.total_cost?.trim();
+  const currency = snap.computed_cost?.currency?.trim() || snap.billing_currency?.trim();
+  const status = snap.capture_status ?? 'unavailable';
+  const notes = Array.isArray(snap.capture_notes) ? snap.capture_notes : [];
+  const details = [`status=${status}`, ...notes].join(' | ');
+  if (!total) {
+    return { value: unavailableLabel, details };
+  }
+  return { value: `${total} ${currency || ''}`.trim(), details };
+}
 
 export default function CompareRunsPage() {
   const { t } = useTranslation();
@@ -310,6 +338,7 @@ export default function CompareRunsPage() {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             {(['run_a', 'run_b'] as const).map((side) => {
               const r = compareQuery.data![side];
+              const cost = formatCostDisplay(r, 'Unavailable');
               return (
                 <Paper key={side} sx={{ p: 2, flex: '1 1 320px' }} variant="outlined">
                   <Typography variant="subtitle2" color="text.secondary">
@@ -342,6 +371,18 @@ export default function CompareRunsPage() {
                       <TableRow>
                         <TableCell>{t('compare.metric_needs_review')}</TableCell>
                         <TableCell align="right">{r.metrics.needs_review_count}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>{t('compare.metric_total_cost', 'Total cost')}</TableCell>
+                        <TableCell align="right">
+                          {cost.details ? (
+                            <Tooltip title={cost.details}>
+                              <span>{cost.value}</span>
+                            </Tooltip>
+                          ) : (
+                            cost.value
+                          )}
+                        </TableCell>
                       </TableRow>
                     </TableBody>
                   </Table>

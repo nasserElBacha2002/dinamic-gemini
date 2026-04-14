@@ -62,6 +62,7 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
 from src.pipeline.run_metadata import (
+    RUN_METADATA_KEY_LLM_COST_SNAPSHOT,
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
     build_visual_reference_context,
     default_empty_block,
@@ -758,6 +759,9 @@ class V3JobExecutor:
                 if pvv:
                     job.result_json["prompt_version"] = pvv
                     job.prompt_version = pvv[:256]
+            llm_cost_snapshot = meta.get(RUN_METADATA_KEY_LLM_COST_SNAPSHOT)
+            if isinstance(llm_cost_snapshot, dict):
+                job.result_json[RUN_METADATA_KEY_LLM_COST_SNAPSHOT] = llm_cost_snapshot
             if durable_artifacts:
                 merge_durable_into_result_json(job.result_json, durable_artifacts)
                 logger.info(

@@ -318,6 +318,61 @@ export interface BenchmarkRunSliceMetrics {
   needs_review_count: number;
 }
 
+export interface LlmUsageSnapshot {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+  cached_input_tokens?: number | null;
+  cache_write_tokens?: number | null;
+  thinking_tokens?: number | null;
+  tool_requests?: number | null;
+  image_input_count?: number | null;
+  image_input_tokens?: number | null;
+  audio_input_tokens?: number | null;
+  video_input_tokens?: number | null;
+  raw_provider_usage_json?: Record<string, unknown> | null;
+}
+
+export interface LlmPricingSnapshot {
+  pricing_source?: string | null;
+  pricing_version?: string | null;
+  captured_at?: string | null;
+  billing_currency?: string | null;
+  input_cost_per_million?: string | null;
+  output_cost_per_million?: string | null;
+  cached_input_cost_per_million?: string | null;
+  thinking_cost_per_million?: string | null;
+  tool_request_unit_cost?: string | null;
+  image_input_unit_cost?: string | null;
+  audio_input_cost_per_million?: string | null;
+  video_input_cost_per_million?: string | null;
+  thinking_cost_rule?: string | null;
+}
+
+export interface LlmComputedCost {
+  subtotal_input?: string | null;
+  subtotal_output?: string | null;
+  subtotal_cached?: string | null;
+  subtotal_thinking?: string | null;
+  subtotal_tools?: string | null;
+  subtotal_image?: string | null;
+  subtotal_audio?: string | null;
+  subtotal_video?: string | null;
+  total_cost?: string | null;
+  currency?: string | null;
+}
+
+export interface LlmCostSnapshot {
+  provider: string;
+  model?: string | null;
+  billing_currency?: string | null;
+  usage: LlmUsageSnapshot;
+  pricing_snapshot: LlmPricingSnapshot;
+  computed_cost: LlmComputedCost;
+  capture_status: 'exact' | 'estimated' | 'unavailable' | string;
+  capture_notes?: string[];
+}
+
 export interface BenchmarkRunCompareSide {
   job_id: string;
   status: string;
@@ -329,6 +384,7 @@ export interface BenchmarkRunCompareSide {
   started_at?: string | null;
   finished_at?: string | null;
   metrics: BenchmarkRunSliceMetrics;
+  llm_cost_snapshot?: LlmCostSnapshot | null;
 }
 
 export interface BenchmarkCompareDiffSummary {

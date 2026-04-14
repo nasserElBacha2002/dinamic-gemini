@@ -69,6 +69,18 @@ def _seed() -> None:
                 model_name="gpt",
                 prompt_key="global_v21",
                 prompt_version="pv1",
+                result_json={
+                    "llm_cost_snapshot": {
+                        "provider": "openai",
+                        "model": "gpt",
+                        "billing_currency": "USD",
+                        "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+                        "pricing_snapshot": {"pricing_source": "test", "billing_currency": "USD"},
+                        "computed_cost": {"total_cost": "0.00010000", "currency": "USD"},
+                        "capture_status": "exact",
+                        "capture_notes": [],
+                    }
+                },
             )
         )
     pos_repo.save(
@@ -149,6 +161,7 @@ def test_benchmark_compare_and_jobs_list_operational_flag() -> None:
         body = r.json()
         assert body["workflow"] == "benchmark_compare"
         assert body["diff_summary"]["quantity_changed"] == 1
+        assert body["run_a"]["llm_cost_snapshot"]["computed_cost"]["total_cost"] == "0.00010000"
 
         jr = c.get("/api/v3/inventories/inv-b6/aisles/aisle-b6/jobs")
         assert jr.status_code == 200
