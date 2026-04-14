@@ -163,7 +163,8 @@ def normalize_usage(provider: str, raw_usage: Optional[Dict[str, Any]]) -> Tuple
 
 
 def _load_pricing_catalog(settings: Any) -> Dict[str, Any]:
-    raw = (getattr(settings, "llm_pricing_catalog_json", "") or "").strip()
+    raw_attr = getattr(settings, "llm_pricing_catalog_json", "")
+    raw = raw_attr.strip() if isinstance(raw_attr, str) else ""
     if not raw:
         return {}
     try:

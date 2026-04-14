@@ -27,6 +27,8 @@ class AnalysisStageResult:
     provider_metadata: Optional[Dict[str, Any]] = None
     # Phase 6: pass-through of AnalysisResult.prompt_composition for run_metadata persistence.
     prompt_composition: Optional[Dict[str, Any]] = None
+    # Phase 9: pass-through of provider-agnostic usage+pricing snapshot for run_metadata persistence.
+    llm_cost_snapshot: Optional[Dict[str, Any]] = None
 
 
 class AnalysisStage:
@@ -70,4 +72,5 @@ class AnalysisStage:
             provider_name=result.provider_name,
             provider_metadata=result.provider_metadata,
             prompt_composition=result.prompt_composition,
+            llm_cost_snapshot=result.llm_cost_snapshot,
         )
