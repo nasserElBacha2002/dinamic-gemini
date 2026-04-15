@@ -58,7 +58,6 @@ export function useStartAisleProcessing(inventoryId: string) {
     onSuccess: (_, vars) => {
       const { aisleId } = vars;
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
     },
@@ -175,9 +174,7 @@ export function usePromoteAisleOperationalJob(inventoryId: string, aisleId: stri
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.inventories.all, 'benchmark-compare'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.benchmarkCompareInventory(inventoryId) });
     },
   });
 }
@@ -205,12 +202,7 @@ export function useSubmitReviewAction(inventoryId: string, aisleId: string, posi
       queryClient.invalidateQueries({
         queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId],
       });
-      queryClient.invalidateQueries({
-        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle-jobs', aisleId],
-      });
-      // Also invalidate summary/KPI levels to ensure parent page counts are accurate.
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({ queryKey: ['reviewQueue'] });
     },
   });
