@@ -132,25 +132,23 @@ export default function QuickReviewDrawer({
     [context, activePositionId]
   );
 
+  /** POST ``job_id`` must match ``positions.job_id`` from loaded detail only (never URL/run_context). */
   const storageJobIdForReview = useMemo(() => {
-    const fromContext = context?.jobId;
-    if (fromContext != null && String(fromContext).trim() !== '') {
-      return String(fromContext).trim();
-    }
-    const fromResult = result?.storageJobId;
-    if (fromResult != null && String(fromResult).trim() !== '') {
-      return String(fromResult).trim();
+    const v = result?.storageJobId;
+    if (v != null && String(v).trim() !== '') {
+      return String(v).trim();
     }
     return null;
-  }, [context?.jobId, result?.storageJobId]);
+  }, [result?.storageJobId]);
 
-  const withReviewJobId = useCallback(
-    (body: ReviewActionRequest): ReviewActionRequest => ({
-      ...body,
-      job_id: storageJobIdForReview,
-    }),
-    [storageJobIdForReview]
-  );
+  const withReviewJobId = useCallback((body: ReviewActionRequest): ReviewActionRequest => {
+    const id = storageJobIdForReview?.trim();
+    if (id) {
+      return { ...body, job_id: id };
+    }
+    const { job_id: _omit, ...rest } = body;
+    return rest;
+  }, [storageJobIdForReview]);
 
   /**
    * Single path to the review mutation: one `mutateAsync` per user intent.

@@ -9,6 +9,7 @@ import QuickReviewDrawer from '../src/features/reviewQueue/components/QuickRevie
 import type { QuickReviewContext } from '../src/features/reviewQueue/quickReviewContext';
 import { mapPositionDetailToResultDetail } from '../src/features/results/mappers/positionToResult';
 import { ApiError } from '../src/api/types';
+import type { PositionDetailResponse } from '../src/api/types';
 
 const reviewMutateAsync = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const showSnackbarMock = vi.hoisted(() => vi.fn());
@@ -22,31 +23,29 @@ const basePosition = {
   needs_review: false,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
+  has_evidence: false,
+  qty: 1,
+  qtySource: 'detected' as const,
 };
-
-const mockProducts = [
-  {
-    id: 'pr-1',
-    position_id: 'pos-1',
-    sku: 'SKU001',
-    detected_quantity: 2,
-    confidence: 0.9,
-    created_at: '2024-01-01T00:00:00Z',
-  },
-];
 
 function createDetailData(
   position: typeof basePosition & {
     source_image_id?: string | null;
     source_image_original_filename?: string | null;
     traceability_status?: string | null;
-  }
-) {
+    job_id?: string | null;
+  },
+  runContext?: PositionDetailResponse['run_context']
+): PositionDetailResponse {
   return {
     position: { ...basePosition, ...position },
-    products: mockProducts,
     evidences: [],
     review_actions: [],
+    run_context: runContext ?? {
+      job_id: null,
+      result_context_source: 'legacy',
+      resolved_job_id: null,
+    },
   };
 }
 
@@ -107,10 +106,45 @@ function mockResultDetail(overrides: Partial<ReturnType<typeof mapPositionDetail
   return { ...result, ...overrides };
 }
 
+function mockResultDetailFromApi(
+  positionOverrides: Parameters<typeof createDetailData>[0],
+  runContext?: PositionDetailResponse['run_context'],
+  resultOverrides: Partial<ReturnType<typeof mapPositionDetailToResultDetail>> = {}
+) {
+  const data = createDetailData(positionOverrides, runContext);
+  return { ...mapPositionDetailToResultDetail(data), ...resultOverrides };
+}
+
 describe('QuickReviewDrawer', () => {
   beforeEach(() => {
     reviewMutateAsync.mockClear();
     showSnackbarMock.mockClear();
+  });
+
+  it('review POST job_id uses storage row only, not drawer run_context jobId', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetailFromApi(
+        { ...basePosition, job_id: 'row-storage-job' },
+        {
+          job_id: 'different-slice-job',
+          result_context_source: 'explicit',
+          resolved_job_id: 'resolved-other',
+        }
+      ),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderDrawer({ ...baseContext, jobId: 'url-filter-job' });
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    fireEvent.click(screen.getByRole('button', { name: /Confirm result/i }));
+    expect(reviewMutateAsync).toHaveBeenCalledWith({
+      action_type: 'confirm',
+      job_id: 'row-storage-job',
+    });
   });
 
   it('Wrong image triggers mark_image_mismatch mutation', async () => {
@@ -149,6 +183,7 @@ describe('QuickReviewDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /Confirm result/i }));
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'confirm' });
+    expect(reviewMutateAsync.mock.calls[0][0]).not.toHaveProperty('job_id');
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledTimes(1);
     });

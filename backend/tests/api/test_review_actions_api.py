@@ -188,6 +188,51 @@ def test_post_review_run_scoped_job_id_mismatch_returns_422() -> None:
         app.dependency_overrides.clear()
 
 
+def test_post_review_run_scoped_whitespace_trimmed_job_id_returns_204() -> None:
+    """Whitespace around request job_id is accepted when it matches the row after trim."""
+    client = TestClient(app)
+    repos = _seed_repos()
+    pos = repos["position_repo"].get_by_id("pos-review-1")
+    assert pos is not None
+    repos["position_repo"].save(replace(pos, job_id="job-trim"))
+    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
+    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
+    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
+    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
+    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
+    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
+    try:
+        resp = client.post(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
+            json={"action_type": "confirm", "job_id": "  job-trim  "},
+        )
+        assert resp.status_code == 204
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_review_delete_run_scoped_missing_job_id_returns_422() -> None:
+    client = TestClient(app)
+    repos = _seed_repos()
+    pos = repos["position_repo"].get_by_id("pos-review-1")
+    assert pos is not None
+    repos["position_repo"].save(replace(pos, job_id="job-del-scoped"))
+    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
+    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
+    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
+    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
+    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
+    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
+    try:
+        resp = client.post(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
+            json={"action_type": "delete_position"},
+        )
+        assert resp.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_review_legacy_rejects_spurious_job_id_returns_422() -> None:
     client = TestClient(app)
     repos = _seed_repos()

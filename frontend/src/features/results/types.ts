@@ -110,6 +110,9 @@ export interface ResultDetail {
     primaryEvidenceId?: string | null;
     rawStatus?: string | null;
   };
-  /** Storage run id for POST .../reviews ``job_id`` (null = legacy row). */
+  /** Storage row ``positions.job_id`` for POST .../reviews ``job_id`` only (null/omit = legacy). */
   storageJobId?: string | null;
+  /** Read-path slice hints from API run_context — not used for review writes. */
+  runContextJobId?: string | null;
+  runContextResolvedJobId?: string | null;
 }

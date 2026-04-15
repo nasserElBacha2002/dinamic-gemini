@@ -408,6 +408,7 @@ def handle_delete_position(
         InventoryNotFoundError,
         AisleNotFoundError,
         PositionNotFoundError,
+        ValueError,
         PositionDeletedError,
         ReviewMutationNotAllowedError,
     ) as e:

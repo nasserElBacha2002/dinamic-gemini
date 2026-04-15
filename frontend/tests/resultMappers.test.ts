@@ -381,6 +381,64 @@ describe('mapPositionDetailToResultDetail', () => {
     expect(r.technicalMetadata?.primaryEvidenceId).toBe('ev-1');
   });
 
+  it('storageJobId is only position.job_id; run_context ids are separate (never mixed for review writes)', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-job',
+        aisle_id: 'aisle-1',
+        status: 'detected',
+        confidence: 0.9,
+        needs_review: true,
+        primary_evidence_id: null,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        job_id: 'storage-run-1',
+        qty: 1,
+        qtySource: 'detected',
+        has_evidence: false,
+      },
+      evidences: [],
+      review_actions: [],
+      run_context: {
+        job_id: 'slice-view',
+        result_context_source: 'explicit',
+        resolved_job_id: 'resolved-view',
+      },
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.storageJobId).toBe('storage-run-1');
+    expect(r.runContextJobId).toBe('slice-view');
+    expect(r.runContextResolvedJobId).toBe('resolved-view');
+  });
+
+  it('legacy row: storageJobId null even when run_context carries a slice job_id', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-legacy',
+        aisle_id: 'aisle-1',
+        status: 'detected',
+        confidence: 0.9,
+        needs_review: true,
+        primary_evidence_id: null,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        qty: 1,
+        qtySource: 'detected',
+        has_evidence: false,
+      },
+      evidences: [],
+      review_actions: [],
+      run_context: {
+        job_id: 'only-in-context',
+        result_context_source: 'legacy',
+        resolved_job_id: null,
+      },
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.storageJobId).toBeNull();
+    expect(r.runContextJobId).toBe('only-in-context');
+  });
+
   it('Case 1 — uses typed source_image fields as canonical when present (v3.2.5 Block 3)', () => {
     const data: PositionDetailResponse = {
       position: {

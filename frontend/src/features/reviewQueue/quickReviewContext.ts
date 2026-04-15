@@ -15,7 +15,10 @@ export interface QuickReviewContext {
   resultIds: string[];
   returnTo: ResultDetailReturnTo;
   filter?: ResultsFilterKind;
-  /** Resolved inventory job for position detail / evidence; must match visible aisle results slice. */
+  /**
+   * Query param for GET position detail / evidence (read path). Must not be used as POST /reviews
+   * ``job_id`` — that value comes only from ``position.job_id`` on the loaded row.
+   */
   jobId?: string | null;
   /**
    * Aisle review: fetch position detail without SKU-representative redirect so evidence matches the row.

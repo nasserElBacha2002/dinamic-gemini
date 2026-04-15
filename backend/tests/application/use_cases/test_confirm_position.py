@@ -404,6 +404,40 @@ def test_confirm_position_run_scoped_rejects_wrong_job_id() -> None:
         use_case.execute("inv-1", "aisle-1", "pos-1", "job-wrong")
 
 
+def test_confirm_position_run_scoped_accepts_whitespace_padded_request_job_id() -> None:
+    """Request job_id is normalized (trim); matches storage row after strip."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
+    aisle = Aisle("aisle-1", "inv-1", "A01", AisleStatus.CREATED, now, now)
+    position = Position(
+        id="pos-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        job_id="job-x",
+    )
+    inv_repo = StubInventoryRepo(inv)
+    aisle_repo = StubAisleRepo(aisle)
+    position_repo = StubPositionRepo(position)
+    review_repo = StubReviewRepo()
+    use_case = ConfirmPositionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        review_repo=review_repo,
+        clock=FixedClock(now),
+        aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
+    )
+    use_case.execute("inv-1", "aisle-1", "pos-1", "  job-x  ")
+    updated = position_repo.get_by_id("pos-1")
+    assert updated is not None
+    assert updated.status == PositionStatus.REVIEWED
+
+
 def test_confirm_position_legacy_rejects_spurious_job_id() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
