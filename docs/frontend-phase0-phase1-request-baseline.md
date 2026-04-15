@@ -1,5 +1,9 @@
 # Frontend Request Baseline (Phase 0) + Tactical Dedup (Phase 1)
 
+> **Superseded as the “current architecture” narrative:** later phases (2–7) and the consolidated note
+> [`frontend-cache-update-architecture-phase0-7.md`](./frontend-cache-update-architecture-phase0-7.md) describe
+> the system as implemented today. Keep this document for **historical baseline + flow inventory**.
+
 ## Scope
 
 - Completed now: Phase 0 (baseline mapping) and Phase 1 (safe dedup of `invalidateQueries + manual refetch`).
@@ -65,13 +69,13 @@
 ### 5) Run merge
 
 - Main files: `frontend/src/pages/AislePositionsPage.tsx`, `frontend/src/hooks/useMutations.ts`.
-- Mutation invalidates positions + merge-results.
+- **Update (post Phase 7 closure pass):** mutation invalidates **positions** only; merge-results are refreshed with a **single** `queryClient.fetchQuery` after `mutateAsync` on the page (no `invalidateQueries` + `refetch` duplicate GET).
 - Tactical dedup applied now: removed manual positions `refetch()` after mutation.
 
 ### 6) Promote operational job
 
 - Main files: `frontend/src/pages/AislePositionsPage.tsx`, `frontend/src/hooks/useMutations.ts`.
-- Mutation invalidates aisle jobs, positions, aisles, inventory detail, metrics, benchmark compare.
+- **Current `usePromoteAisleOperationalJob`:** patches or invalidates aisle jobs; invalidates positions, aisles list, and benchmark-compare-under-inventory (see hook comments).
 - Tactical dedup applied now: removed manual positions/jobs refetch after mutation.
 
 ### 7) Open metrics/analytics

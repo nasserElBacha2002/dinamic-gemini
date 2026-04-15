@@ -1,6 +1,6 @@
-# Frontend cache-update architecture (Phases 0–7)
+# Frontend cache-update architecture (Phases 0–9)
 
-This note summarizes the current frontend data-update model after optimization Phases 0 through 7.
+This note summarizes the current frontend data-update model after optimization Phases 0 through 9.
 
 ## System shape
 
@@ -8,6 +8,7 @@ This note summarizes the current frontend data-update model after optimization P
 - **Mutation behavior:** each mutation follows one of two explicit paths:
   - conservative local cache patching when state is known
   - fallback invalidation when patching is uncertain or cache is absent
+- **Manual merge (`useRunAisleMerge`):** positions are invalidated in the mutation; merge-results are refreshed from `AislePositionsPage` via **one** `fetchQuery` after success (no overlapping invalidate + UI `refetch` for that resource).
 - **Review actions:** strategy-driven (`reviewQueue` / `aisleResults` / `detail` / fallback) with shared orchestration.
 
 ## What each phase established
@@ -20,6 +21,8 @@ This note summarizes the current frontend data-update model after optimization P
 - **Phase 5 (+ hardening):** introduced conservative `setQueryData` patching with no-op detection and fallback correctness.
 - **Phase 6:** expanded the model to selected high-ROI mutations (`useCreateAisle`, `usePromoteAisleOperationalJob`).
 - **Phase 7:** consolidated helper responsibilities and conventions (this pass).
+- **Phase 8:** lightweight **dev observability** (ring buffer + optional `console.debug` + `window.__DINAMIC_CACHE_OBS__`) for review cache outcomes, non-review patches, key mutation invalidations, and merge `fetchQuery` — see [`frontend-phase8-cache-observability.md`](./frontend-phase8-cache-observability.md).
+- **Phase 9:** **guardrails** — static `npm run check:cache` script, dev **warnings** on top of Phase 8 events, invariant tests, and a [**pre-merge checklist**](./frontend-cache-data-pre-merge-checklist.md) — see [`frontend-phase9-cache-guardrails.md`](./frontend-phase9-cache-guardrails.md).
 
 ## Current helper organization
 

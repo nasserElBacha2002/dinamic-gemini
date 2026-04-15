@@ -115,6 +115,7 @@ export default function QuickReviewDrawer({
     }
   }, [result?.id, activePositionId, context?.exactPositionDetail]);
 
+  // Production strategies: queue vs aisle results. (`detail` is reserved — see `ReviewMutationStrategy`.)
   const reviewStrategy =
     context?.returnTo === 'review_queue'
       ? 'reviewQueue'

@@ -11,11 +11,11 @@
 
 ## Strategy model
 
-Implemented in `frontend/src/hooks/useMutations.ts`:
+Implemented in `frontend/src/hooks/useMutations.ts` / `reviewActionCachePatch.ts`:
 
-- `reviewQueue`
-- `aisleResults`
-- `detail`
+- `reviewQueue` — production (`QuickReviewDrawer` from review queue).
+- `aisleResults` — production (`QuickReviewDrawer` from aisle results).
+- `detail` — **reserved / test-only**: narrower invalidation than `aisleResults` (no merge-results churn). Implemented and covered by unit tests; **no production call site** until product adds an explicit detail-only route.
 - `undefined` (default fallback = Phase 3 behavior)
 
 ## Invalidation behavior by strategy

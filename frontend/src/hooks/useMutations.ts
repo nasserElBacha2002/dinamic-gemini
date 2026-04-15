@@ -24,6 +24,7 @@ import {
   type ReviewMutationStrategy,
 } from './reviewActionCachePatch';
 import { patchCreateAisleIntoAislesLists, patchPromoteOperationalJobInAisleJobs } from './mutationCachePatch';
+import { recordMutationInvalidationsObs } from '../dev/cacheMutationObservability';
 
 export function useCreateInventory() {
   const queryClient = useQueryClient();
@@ -45,6 +46,10 @@ export function useCreateAisle(inventoryId: string) {
         queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      recordMutationInvalidationsObs({
+        flow: 'useCreateAisle',
+        labels: [...(patched ? [] : ['inventories.aisles(invalidate)']), 'inventories.detail'],
+      });
     },
   });
 }
@@ -65,6 +70,7 @@ export function useStartAisleProcessing(inventoryId: string) {
       }),
     onSuccess: (_, vars) => {
       const { aisleId } = vars;
+      // New run invalidates aisle list + detail, job list, and positions slice for this aisle.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
@@ -79,9 +85,11 @@ export function useCancelAisleJob(inventoryId: string) {
     mutationFn: ({ aisleId, jobId }: { aisleId: string; jobId: string }) =>
       cancelAisleJob(inventoryId, aisleId, jobId),
     onSuccess: (_, vars) => {
+      // Aisle list + jobs + positions can show job status; keep aligned after cancel.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, vars.aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
+      // Job-scoped detail (log / summary) must drop stale state for the cancelled job.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
     },
   });
@@ -96,6 +104,7 @@ export function useRetryAisleJob(inventoryId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, vars.aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
+      // Job-scoped detail must reflect the restarted run (same boundary as cancel).
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
     },
   });
@@ -106,6 +115,11 @@ export interface ReviewMutationOptions {
   strategy?: ReviewMutationStrategy;
 }
 
+/**
+ * Manual merge for one aisle/run. Positions are invalidated here so all subscribers refetch.
+ * Merge-results GET is refreshed only from `AislePositionsPage` via `queryClient.fetchQuery` after
+ * `mutateAsync` — avoids duplicate network when combined with TanStack invalidation (Phase 1).
+ */
 export function useRunAisleMerge(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -114,8 +128,9 @@ export function useRunAisleMerge(inventoryId: string) {
     onSuccess: (_, vars) => {
       const { aisleId } = vars;
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
-      queryClient.invalidateQueries({
-        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId],
+      recordMutationInvalidationsObs({
+        flow: 'useRunAisleMerge',
+        labels: ['positions'],
       });
     },
   });
@@ -192,9 +207,21 @@ export function usePromoteAisleOperationalJob(inventoryId: string, aisleId: stri
       if (!patched) {
         queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
       }
+      // Positions list is job-scoped; default run / evidence can change when operational pointer moves.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
+      // Inventory-detail aisle rows can surface run/operational metadata.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      // Benchmark compare queries are keyed under this inventory; stale pairs would mislead operators.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.benchmarkCompareInventory(inventoryId) });
+      recordMutationInvalidationsObs({
+        flow: 'usePromoteAisleOperationalJob',
+        labels: [
+          ...(!patched ? ['aisleJobs(invalidate)'] : []),
+          'positions',
+          'inventories.aisles',
+          'benchmarkCompareInventory',
+        ],
+      });
     },
   });
 }

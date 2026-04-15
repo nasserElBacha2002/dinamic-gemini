@@ -1,9 +1,7 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import type { Aisle, AisleJobsListResponse } from '../api/types';
-import { queryKeys } from '../api/queryKeys';
-
-const DEFAULT_AISLES_LIST_PAGE = 1;
-const DEFAULT_AISLES_LIST_PAGE_SIZE = 200;
+import { queryKeys, DEFAULT_AISLES_LIST_TABLE_QUERY } from '../api/queryKeys';
+import { recordNonReviewPatchObs } from '../dev/cacheMutationObservability';
 
 type AislesListLike = {
   items: Aisle[];
@@ -23,7 +21,11 @@ function isDefaultAislesListQueryKey(queryKey: QueryKey, inventoryId: string): b
   const page = (params as { page?: unknown }).page;
   const pageSize = (params as { page_size?: unknown }).page_size;
   const keys = Object.keys(params as object);
-  return keys.length === 2 && page === DEFAULT_AISLES_LIST_PAGE && pageSize === DEFAULT_AISLES_LIST_PAGE_SIZE;
+  return (
+    keys.length === 2 &&
+    page === DEFAULT_AISLES_LIST_TABLE_QUERY.page &&
+    pageSize === DEFAULT_AISLES_LIST_TABLE_QUERY.page_size
+  );
 }
 
 /**
@@ -66,6 +68,12 @@ export function patchCreateAisleIntoAislesLists(
     patched = true;
   }
 
+  recordNonReviewPatchObs({
+    flow: 'create_aisle',
+    inventoryId,
+    patched,
+    note: patched ? 'default_aisles_table_row_inserted' : 'skipped_no_eligible_cache_or_full_page',
+  });
   return patched;
 }
 
@@ -104,5 +112,12 @@ export function patchPromoteOperationalJobInAisleJobs(
       };
     }
   );
+  recordNonReviewPatchObs({
+    flow: 'promote_operational_job',
+    inventoryId,
+    aisleId,
+    patched,
+    note: patched ? 'aisle_jobs_operational_flags_updated' : 'no_jobs_list_cache_or_no_change',
+  });
   return patched;
 }

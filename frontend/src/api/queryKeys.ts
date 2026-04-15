@@ -3,6 +3,9 @@
  * Keys are deterministic and domain-oriented for precise invalidation.
  */
 
+/** Default aisles table chunk on inventory detail — shared by `useAislesList` and Phase 6 aisle-list patches. */
+export const DEFAULT_AISLES_LIST_TABLE_QUERY = { page: 1, page_size: 200 } as const;
+
 export const queryKeys = {
   all: ['v3'] as const,
 
@@ -18,6 +21,9 @@ export const queryKeys = {
       [...queryKeys.inventories.all, 'visual-references', inventoryId] as const,
     metrics: (inventoryId: string) => [...queryKeys.inventories.all, 'metrics', inventoryId] as const,
     aisles: (inventoryId: string) => [...queryKeys.inventories.all, 'aisles', inventoryId] as const,
+    /** Inventory-detail default aisles table (single fixed page; see `useAislesList`). */
+    aislesListTable: (inventoryId: string) =>
+      [...queryKeys.inventories.aisles(inventoryId), DEFAULT_AISLES_LIST_TABLE_QUERY] as const,
     positions: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'positions', aisleId] as const,
     positionsList: (inventoryId: string, aisleId: string, params: Record<string, string | number>) =>
@@ -45,6 +51,9 @@ export const queryKeys = {
     /** GET .../aisles/{aisle}/jobs (run list for selector). */
     aisleJobs: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle-jobs', aisleId] as const,
+    /** Run selector list (`listAisleJobs`); `limit` is part of cache identity. */
+    aisleJobsList: (inventoryId: string, aisleId: string, limit: number) =>
+      [...queryKeys.inventories.aisleJobs(inventoryId, aisleId), limit] as const,
     /** Phase 6 — explicit two-run compare (benchmark analytics payload). */
     benchmarkCompare: (inventoryId: string, aisleId: string, jobAId: string, jobBId: string) =>
       [...queryKeys.inventories.all, 'benchmark-compare', inventoryId, aisleId, jobAId, jobBId] as const,

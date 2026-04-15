@@ -14,7 +14,7 @@ import {
   getAisleBenchmarkCompare,
   type AislesListQuery,
 } from '../api/client';
-import { queryKeys } from '../api/queryKeys';
+import { queryKeys, DEFAULT_AISLES_LIST_TABLE_QUERY } from '../api/queryKeys';
 
 export function useInventoryMetrics(inventoryId: string | undefined, options?: { enabled?: boolean }) {
   return useQuery({
@@ -25,12 +25,12 @@ export function useInventoryMetrics(inventoryId: string | undefined, options?: {
 }
 
 /** Large page: detail view table is not yet on `DataTable` pagination; fetch one chunk per inventory. */
-const defaultAisleTableQuery: AislesListQuery = { page: 1, page_size: 200 };
+const aislesListTableQuery: AislesListQuery = { ...DEFAULT_AISLES_LIST_TABLE_QUERY };
 
 export function useAislesList(inventoryId: string | undefined, options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: [...queryKeys.inventories.aisles(inventoryId ?? ''), defaultAisleTableQuery] as const,
-    queryFn: () => getAisles(inventoryId!, defaultAisleTableQuery),
+    queryKey: queryKeys.inventories.aislesListTable(inventoryId ?? ''),
+    queryFn: () => getAisles(inventoryId!, aislesListTableQuery),
     enabled: Boolean(inventoryId) && (options?.enabled !== false),
   });
 }
@@ -102,7 +102,7 @@ export function useAisleJobsList(
 ) {
   const limit = options?.limit ?? 50;
   return useQuery({
-    queryKey: [...queryKeys.inventories.aisleJobs(inventoryId ?? '', aisleId ?? ''), limit] as const,
+    queryKey: queryKeys.inventories.aisleJobsList(inventoryId ?? '', aisleId ?? '', limit),
     queryFn: () => listAisleJobs(inventoryId!, aisleId!, { limit }),
     enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
     refetchOnWindowFocus: false,

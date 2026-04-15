@@ -13,7 +13,16 @@ import type {
   ReviewQueueListResponse,
 } from '../api/types/responses';
 import { queryKeys } from '../api/queryKeys';
+import { recordReviewActionCacheObs } from '../dev/cacheMutationObservability';
 
+/**
+ * Post-success cache behavior for `useSubmitReviewAction`.
+ *
+ * - **`reviewQueue`** / **`aisleResults`**: wired from `QuickReviewDrawer` based on operator route.
+ * - **`detail`**: implemented and unit-tested for a future **position-detail-only** entry point (narrower
+ *   invalidation than `aisleResults`, e.g. no merge-results churn). Not used in production yet — add a
+ *   call site when product requires it; do not wire speculatively.
+ */
 export type ReviewMutationStrategy = 'reviewQueue' | 'aisleResults' | 'detail';
 
 /**
@@ -386,12 +395,25 @@ export function applySubmitReviewActionCacheEffects({
       positionId,
       body
     );
+    const patchHits: Array<'review_queue_list' | 'position_detail' | 'positions_list'> = [];
+    if (!flags.invalidateReviewQueue) patchHits.push('review_queue_list');
+    if (!flags.invalidatePositionDetail) patchHits.push('position_detail');
+    const fallbackInvalidations: string[] = [];
+    if (flags.invalidatePositionDetail) fallbackInvalidations.push('positionDetail');
+    if (flags.invalidateReviewQueue) fallbackInvalidations.push('reviewQueue.all');
     if (flags.invalidatePositionDetail) {
       invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
     }
     if (flags.invalidateReviewQueue) {
       queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
     }
+    recordReviewActionCacheObs({
+      strategy: 'reviewQueue',
+      scope: { inventoryId, aisleId, positionId },
+      patchHits,
+      fallbackInvalidations,
+      directInvalidations: [],
+    });
     return;
   }
 
@@ -403,6 +425,12 @@ export function applySubmitReviewActionCacheEffects({
       positionId,
       body
     );
+    const patchHits: Array<'review_queue_list' | 'position_detail' | 'positions_list'> = [];
+    if (!flags.invalidatePositionsList) patchHits.push('positions_list');
+    if (!flags.invalidatePositionDetail) patchHits.push('position_detail');
+    const fallbackInvalidations: string[] = [];
+    if (flags.invalidatePositionDetail) fallbackInvalidations.push('positionDetail');
+    if (flags.invalidatePositionsList) fallbackInvalidations.push('positions(prefix)');
     if (flags.invalidatePositionDetail) {
       invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
     }
@@ -414,6 +442,13 @@ export function applySubmitReviewActionCacheEffects({
     queryClient.invalidateQueries({
       queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId),
     });
+    recordReviewActionCacheObs({
+      strategy: 'aisleResults',
+      scope: { inventoryId, aisleId, positionId },
+      patchHits,
+      fallbackInvalidations,
+      directInvalidations: ['mergeResults'],
+    });
     return;
   }
 
@@ -421,6 +456,12 @@ export function applySubmitReviewActionCacheEffects({
   // summaries and counts aligned with the reviewed position without touching merge/review-queue domains.
   if (strategy === 'detail') {
     const flags = patchCachesForDetailStrategy(queryClient, inventoryId, aisleId, positionId, body);
+    const patchHits: Array<'review_queue_list' | 'position_detail' | 'positions_list'> = [];
+    if (!flags.invalidatePositionsList) patchHits.push('positions_list');
+    if (!flags.invalidatePositionDetail) patchHits.push('position_detail');
+    const fallbackInvalidations: string[] = [];
+    if (flags.invalidatePositionDetail) fallbackInvalidations.push('positionDetail');
+    if (flags.invalidatePositionsList) fallbackInvalidations.push('positions(prefix)');
     if (flags.invalidatePositionDetail) {
       invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
     }
@@ -429,10 +470,30 @@ export function applySubmitReviewActionCacheEffects({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
       });
     }
+    recordReviewActionCacheObs({
+      strategy: 'detail',
+      scope: { inventoryId, aisleId, positionId },
+      patchHits,
+      fallbackInvalidations,
+      directInvalidations: [],
+    });
     return;
   }
 
   // Default behavior (Phase 3 compatibility) for call sites that do not pass a strategy.
+  recordReviewActionCacheObs({
+    strategy: 'default',
+    scope: { inventoryId, aisleId, positionId },
+    patchHits: [],
+    fallbackInvalidations: [],
+    directInvalidations: [
+      'positionDetail',
+      'positions',
+      'mergeResults',
+      'aisles',
+      'reviewQueue.all',
+    ],
+  });
   invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
   queryClient.invalidateQueries({
     queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
