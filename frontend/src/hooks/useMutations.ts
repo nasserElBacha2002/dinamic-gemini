@@ -24,6 +24,7 @@ import {
   patchCachesForDetailStrategy,
   patchCachesForReviewQueueStrategy,
 } from './reviewActionCachePatch';
+import { patchCreateAisleIntoAislesLists, patchPromoteOperationalJobInAisleJobs } from './mutationCachePatch';
 
 export function useCreateInventory() {
   const queryClient = useQueryClient();
@@ -39,8 +40,11 @@ export function useCreateAisle(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateAisleRequest) => createAisle(inventoryId, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+    onSuccess: (createdAisle) => {
+      const patched = patchCreateAisleIntoAislesLists(queryClient, inventoryId, createdAisle);
+      if (!patched) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
     },
   });
@@ -180,8 +184,16 @@ export function usePromoteAisleOperationalJob(inventoryId: string, aisleId: stri
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (jobId: string) => promoteAisleOperationalJob(inventoryId, aisleId, jobId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
+    onSuccess: (data) => {
+      const patched = patchPromoteOperationalJobInAisleJobs(
+        queryClient,
+        inventoryId,
+        aisleId,
+        data.operational_job_id
+      );
+      if (!patched) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.benchmarkCompareInventory(inventoryId) });
