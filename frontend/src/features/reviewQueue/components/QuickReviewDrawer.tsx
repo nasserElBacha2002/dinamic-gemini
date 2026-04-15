@@ -115,7 +115,15 @@ export default function QuickReviewDrawer({
     }
   }, [result?.id, activePositionId, context?.exactPositionDetail]);
 
-  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId);
+  const reviewStrategy =
+    context?.returnTo === 'review_queue'
+      ? 'reviewQueue'
+      : context?.returnTo === 'aisle_results'
+        ? 'aisleResults'
+        : undefined;
+  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId, {
+    strategy: reviewStrategy,
+  });
   const actionLoading = reviewMutation.isPending;
 
   const navContext = useMemo(

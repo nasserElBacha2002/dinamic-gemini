@@ -94,6 +94,10 @@ export function useRetryAisleJob(inventoryId: string) {
 }
 
 export type RunAisleMergeVariables = { aisleId: string; jobId: string | null };
+export type ReviewMutationStrategy = 'reviewQueue' | 'aisleResults' | 'detail';
+export interface ReviewMutationOptions {
+  strategy?: ReviewMutationStrategy;
+}
 
 export function useRunAisleMerge(inventoryId: string) {
   const queryClient = useQueryClient();
@@ -180,28 +184,51 @@ export function usePromoteAisleOperationalJob(inventoryId: string, aisleId: stri
   });
 }
 
-export function useSubmitReviewAction(inventoryId: string, aisleId: string, positionId: string) {
+export function useSubmitReviewAction(
+  inventoryId: string,
+  aisleId: string,
+  positionId: string,
+  options?: ReviewMutationOptions
+) {
   const queryClient = useQueryClient();
+  const strategy = options?.strategy;
   return useMutation({
     mutationFn: (body: ReviewActionRequest) =>
       submitReviewAction(inventoryId, aisleId, positionId, body),
     onSuccess: () => {
+      // Always refresh the active position detail after a review action.
       queryClient.invalidateQueries({
-        queryKey: [
-          ...queryKeys.inventories.all,
-          'aisles',
-          inventoryId,
-          'positions',
-          aisleId,
-          'detail',
-          positionId,
-        ],
+        queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
       });
+
+      if (strategy === 'reviewQueue') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
+        return;
+      }
+
+      if (strategy === 'aisleResults') {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId),
+        });
+        return;
+      }
+
+      if (strategy === 'detail') {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
+        });
+        return;
+      }
+
+      // Default behavior (Phase 3 compatibility) for call sites that do not pass a strategy.
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
       });
       queryClient.invalidateQueries({
-        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId],
+        queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId),
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
