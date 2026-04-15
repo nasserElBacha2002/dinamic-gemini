@@ -550,6 +550,25 @@ def test_openai_quantity_only_response_does_not_create_fake_internal_code() -> N
     assert entities[0].product_label_quantity == 6
 
 
+def test_openai_sku_alias_is_not_promoted_to_internal_code() -> None:
+    """``sku`` is a downstream/public product field name; avoid upstream alias promotion ambiguity."""
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "source_image_id": "img-1",
+                "sku": "SKU-FROM-ALIAS",
+            }
+        ],
+    }
+    out = normalize_llm_response(copy.deepcopy(inp), "openai")
+    assert out["entities"][0]["internal_code"] is None
+
+
 def test_claude_audit_payload_via_anthropic_provider_string() -> None:
     out = normalize_llm_response(copy.deepcopy(CLAUDE_AUDIT_PAYLOAD), "Anthropic")
     assert out["entities"][0]["internal_code"] == "1428706"

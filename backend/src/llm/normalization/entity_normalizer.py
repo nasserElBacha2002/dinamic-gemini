@@ -60,9 +60,10 @@ _OPENAI_FAMILY_CONSERVATIVE_ALIASES = frozenset({"openai"})
 _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES = frozenset({"deepseek"})
 _CONSERVATIVE_QTY_PROMOTE_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
 _EXTENT_BBOX_FROM_GENERIC_BBOX_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
+_INTERNAL_CODE_ALIAS_PROMOTE_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
 
 _ALIAS_KEYS: tuple[str, ...] = ("quantity", "qty", "detected_quantity")
-_OPENAI_INTERNAL_CODE_ALIAS_KEYS: tuple[str, ...] = ("product_label", "label", "product_code", "sku")
+_OPENAI_INTERNAL_CODE_ALIAS_KEYS: tuple[str, ...] = ("product_label", "label", "product_code")
 
 # ``product_label`` → ``internal_code`` only when string looks like a SKU / code (not noisy OCR).
 _INTERNAL_CODE_MAX_LEN = 48
@@ -201,7 +202,7 @@ def _maybe_promote_openai_internal_code_alias(
     mapped: List[str],
 ) -> None:
     """OpenAI/DeepSeek conservative fallback: map label-like aliases to canonical ``internal_code``."""
-    if provider_family not in _CONSERVATIVE_QTY_PROMOTE_FAMILIES:
+    if provider_family not in _INTERNAL_CODE_ALIAS_PROMOTE_FAMILIES:
         return
     if entity.get("internal_code") not in (None, ""):
         return
