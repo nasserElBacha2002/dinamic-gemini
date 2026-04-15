@@ -7,6 +7,8 @@
 - Kept backward compatibility: call sites without strategy keep Phase 3 invalidation behavior.
 - Did **not** add `setQueryData`, optimistic updates, or a global strategy registry.
 
+**Follow-up:** Phase 5 adds targeted `setQueryData` / `removeQueries` on top of these strategies (see `docs/frontend-phase5-cache-patching.md`).
+
 ## Strategy model
 
 Implemented in `frontend/src/hooks/useMutations.ts`:

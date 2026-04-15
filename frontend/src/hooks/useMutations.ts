@@ -19,6 +19,11 @@ import {
 } from '../api/client';
 import type { CreateInventoryRequest, CreateAisleRequest, ReviewActionRequest } from '../api/types';
 import { queryKeys } from '../api/queryKeys';
+import {
+  patchCachesForAisleResultsStrategy,
+  patchCachesForDetailStrategy,
+  patchCachesForReviewQueueStrategy,
+} from './reviewActionCachePatch';
 
 export function useCreateInventory() {
   const queryClient = useQueryClient();
@@ -195,24 +200,47 @@ export function useSubmitReviewAction(
   return useMutation({
     mutationFn: (body: ReviewActionRequest) =>
       submitReviewAction(inventoryId, aisleId, positionId, body),
-    onSuccess: () => {
-      // Always refresh the active position detail after a review action.
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
-      });
-
+    onSuccess: (_data, body) => {
       // Review Queue screen (`ReviewQueuePage`) loads rows via `useReviewQueue` only; the drawer uses
       // `positionDetail`. Nothing on that route subscribes to aisle `positions`, merge-results, or `aisles`,
       // so invalidating those would only add redundant traffic after a review action.
       if (strategy === 'reviewQueue') {
-        queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
+        const flags = patchCachesForReviewQueueStrategy(
+          queryClient,
+          inventoryId,
+          aisleId,
+          positionId,
+          body
+        );
+        if (flags.invalidatePositionDetail) {
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
+          });
+        }
+        if (flags.invalidateReviewQueue) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
+        }
         return;
       }
 
       if (strategy === 'aisleResults') {
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
-        });
+        const flags = patchCachesForAisleResultsStrategy(
+          queryClient,
+          inventoryId,
+          aisleId,
+          positionId,
+          body
+        );
+        if (flags.invalidatePositionDetail) {
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
+          });
+        }
+        if (flags.invalidatePositionsList) {
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
+          });
+        }
         queryClient.invalidateQueries({
           queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId),
         });
@@ -222,13 +250,30 @@ export function useSubmitReviewAction(
       // Detail flows often sit beside a parent positions list (same aisle); refreshing that list keeps row
       // summaries and counts aligned with the reviewed position without touching merge/review-queue domains.
       if (strategy === 'detail') {
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
-        });
+        const flags = patchCachesForDetailStrategy(
+          queryClient,
+          inventoryId,
+          aisleId,
+          positionId,
+          body
+        );
+        if (flags.invalidatePositionDetail) {
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
+          });
+        }
+        if (flags.invalidatePositionsList) {
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
+          });
+        }
         return;
       }
 
       // Default behavior (Phase 3 compatibility) for call sites that do not pass a strategy.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
+      });
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
       });
