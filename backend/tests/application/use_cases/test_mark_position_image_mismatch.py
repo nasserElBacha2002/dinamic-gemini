@@ -118,7 +118,7 @@ def test_mark_image_mismatch_sets_resolution_without_removing_evidence_pointer()
         clock=clock,
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
-    use_case.execute("inv-1", "aisle-1", "pos-1")
+    use_case.execute("inv-1", "aisle-1", "pos-1", None)
 
     updated = position_repo.get_by_id("pos-1")
     assert updated is not None
@@ -155,4 +155,4 @@ def test_mark_image_mismatch_not_found_raises() -> None:
     )
 
     with pytest.raises(PositionNotFoundError):
-        use_case.execute("inv-1", "aisle-1", "missing")
+        use_case.execute("inv-1", "aisle-1", "missing", None)

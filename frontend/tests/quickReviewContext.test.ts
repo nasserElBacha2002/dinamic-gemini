@@ -1,5 +1,6 @@
 /**
- * Review queue → drawer context must carry position.job_id for multi-run slice alignment.
+ * Review queue → drawer context: ``jobId`` seeds GET position detail / evidence (read path).
+ * POST ``/reviews`` ``job_id`` must come from the loaded detail row only (see QuickReviewDrawer).
  */
 
 import { describe, it, expect } from 'vitest';

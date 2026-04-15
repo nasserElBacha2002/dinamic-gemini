@@ -43,7 +43,6 @@ export default function InventoryDetail() {
     inventoryId: inventoryId ?? '',
     uploadError,
     setUploadError,
-    onAfterSuccess: () => void aislesQuery.refetch(),
     onBeforeUploadAttempt: () => setProcessError(null),
   });
 
@@ -52,7 +51,6 @@ export default function InventoryDetail() {
     isProductionInventory,
     processError,
     setProcessError,
-    onAfterSuccess: () => void aislesQuery.refetch(),
     onBeforeProcessMutation: () => setUploadError(null),
   });
 
@@ -88,7 +86,6 @@ export default function InventoryDetail() {
 
   const handleCreateAisleSuccess = () => {
     showSnackbar(t('aisle.aisle_created_snackbar'), 'success');
-    void aislesQuery.refetch();
   };
 
   return (

@@ -22,4 +22,6 @@ export interface ReviewActionRequest {
   sku?: string | null;
   description?: string | null;
   position_code?: string | null;
+  /** Required when ``position.job_id`` is set; omit entirely for legacy rows (preferred over null). */
+  job_id?: string | null;
 }

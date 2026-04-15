@@ -3,11 +3,15 @@
  */
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
-import { exportAisleResultsCsv, type AislePositionsListQuery } from '../api/client';
+import { exportAisleResultsCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
+import { queryKeys } from '../api/queryKeys';
+import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
+import { recordExplicitRefreshObs, summarizeQueryKey } from '../dev/cacheMutationObservability';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
@@ -137,6 +141,7 @@ export default function AislePositionsPage() {
   const [tableSort, setTableSort] = useState<'photo' | 'priority'>('photo');
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const routeIdentityRef = useRef<string>('');
+  const queryClient = useQueryClient();
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
   const promoteMutation = usePromoteAisleOperationalJob(inventoryId ?? '', aisleId ?? '');
 
@@ -350,12 +355,6 @@ export default function AislePositionsPage() {
     return m;
   }, [positions]);
 
-  const reviewReadOnly = Boolean(
-    isTestInventory &&
-      operationalJobId &&
-      visibleJobId &&
-      operationalJobId !== visibleJobId
-  );
   const compareOperationalShortcut =
     Boolean(
       isTestInventory &&
@@ -379,7 +378,6 @@ export default function AislePositionsPage() {
         returnTo: 'aisle_results',
         filter,
         jobId: visibleJobId ?? undefined,
-        reviewReadOnly,
         exactPositionDetail: true,
       });
     },
@@ -392,7 +390,6 @@ export default function AislePositionsPage() {
       sortedForTable,
       filter,
       visibleJobId,
-      reviewReadOnly,
       t,
     ]
   );
@@ -414,7 +411,6 @@ export default function AislePositionsPage() {
       returnTo: 'aisle_results',
       filter: p.filter ?? filter,
       jobId: p.jobId,
-      reviewReadOnly,
       exactPositionDetail: p.exactPositionDetail ?? true,
     });
     navigate(location.pathname, { replace: true, state: {} });
@@ -427,7 +423,6 @@ export default function AislePositionsPage() {
     aisle,
     filter,
     navigate,
-    reviewReadOnly,
   ]);
 
   const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
@@ -445,13 +440,9 @@ export default function AislePositionsPage() {
     [mergeResultsQuery.data?.results]
   );
   const mergeButtonVisible = Boolean(inventoryId && aisleId && hasResults);
-  const mergeButtonDisabled =
-    mergeMutation.isPending || mergeCandidates.groupCount === 0 || reviewReadOnly;
-  const mergeDisabledReason = reviewReadOnly
-    ? t('positions.merge_unavailable')
-    : mergeCandidates.groupCount === 0
-      ? t('positions.merge_no_skus')
-      : '';
+  const mergeButtonDisabled = mergeMutation.isPending || mergeCandidates.groupCount === 0;
+  const mergeDisabledReason =
+    mergeCandidates.groupCount === 0 ? t('positions.merge_no_skus') : '';
   const mergeFeedback = useMemo(() => {
     if (lastMergeResponse != null) {
       if (lastMergeResponse.product_records_updated > 0) {
@@ -488,13 +479,20 @@ export default function AislePositionsPage() {
         aisleId,
         jobId: visibleJobId ?? null,
       });
-      const [, , refreshedMergeResults] = await Promise.all([
-        refetch(),
-        aislesQuery.refetch(),
-        mergeResultsQuery.refetch(),
-      ]);
+      // Single merge-results refresh (mutation only invalidates positions — avoids invalidate+refetch duplicate GET).
+      const jobIdCanon = canonicalizeOptionalId(visibleJobId);
+      const mergeKey = queryKeys.inventories.mergeResultsForJob(inventoryId, aisleId, jobIdCanon);
+      const mergePayload = await queryClient.fetchQuery({
+        queryKey: mergeKey,
+        queryFn: () => getAisleMergeResults(inventoryId, aisleId, { jobId: jobIdCanon }),
+      });
+      recordExplicitRefreshObs({
+        flow: 'merge_merge_results',
+        mechanism: 'fetchQuery',
+        keySummary: summarizeQueryKey(mergeKey),
+      });
       setLastMergeResponse(result);
-      setLastMergeSummary(summarizeMergeResults(refreshedMergeResults.data?.results));
+      setLastMergeSummary(summarizeMergeResults(mergePayload.results));
       showSnackbar(
         result.product_records_updated > 0 ? t('positions.merge_started') : t('positions.merge_no_change'),
         'success'
@@ -503,7 +501,7 @@ export default function AislePositionsPage() {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       showSnackbar(resolveApiErrorMessage(err, 'errors.merge_failed'), 'error');
     }
-  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, showSnackbar, t, visibleJobId]);
+  }, [aisleId, inventoryId, mergeMutation, queryClient, showSnackbar, t, visibleJobId]);
 
   if (!inventoryId || !aisleId) {
     return (
@@ -618,17 +616,6 @@ export default function AislePositionsPage() {
           </Box>
         }
       />
-
-      {reviewReadOnly ? (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          {t('positions.benchmark_readonly_info', {
-            jobPrefix:
-              operationalJobId != null && operationalJobId.length > 0
-                ? `${operationalJobId.slice(0, 10)}…`
-                : t('common.em_dash'),
-          })}
-        </Alert>
-      ) : null}
 
       {isTestInventory &&
       (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)) ? (
@@ -838,8 +825,6 @@ export default function AislePositionsPage() {
               await promoteMutation.mutateAsync(promoteJobId);
               setPromoteDialogOpen(false);
               showSnackbar(t('aisle.operational_updated_snackbar'), 'success');
-              void refetch();
-              void aisleJobsQuery.refetch();
             } catch (e) {
               const err = e instanceof ApiError ? e : new ApiError(String(e));
               showSnackbar(resolveApiErrorMessage(err, 'errors.promotion_failed'), 'error');

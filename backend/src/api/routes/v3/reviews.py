@@ -56,13 +56,15 @@ def submit_review_action(
 ) -> None:
     """Submit a manual review action (confirm, corrections, mark_unknown, mark_image_mismatch, delete_position)."""
     if body.action_type == "confirm":
-        handle_confirm(inventory_id, aisle_id, position_id, confirm_uc)
+        handle_confirm(inventory_id, aisle_id, position_id, body.job_id, confirm_uc)
         return
     if body.action_type == "mark_unknown":
-        handle_mark_unknown(inventory_id, aisle_id, position_id, mark_unknown_uc)
+        handle_mark_unknown(inventory_id, aisle_id, position_id, body.job_id, mark_unknown_uc)
         return
     if body.action_type == "mark_image_mismatch":
-        handle_mark_image_mismatch(inventory_id, aisle_id, position_id, mark_image_mismatch_uc)
+        handle_mark_image_mismatch(
+            inventory_id, aisle_id, position_id, body.job_id, mark_image_mismatch_uc
+        )
         return
     if body.action_type == "update_quantity":
         handle_update_quantity(inventory_id, aisle_id, position_id, body, update_quantity_uc)
@@ -74,6 +76,6 @@ def submit_review_action(
         handle_update_position_code(inventory_id, aisle_id, position_id, body, update_pos_code_uc)
         return
     if body.action_type == "delete_position":
-        handle_delete_position(inventory_id, aisle_id, position_id, delete_uc)
+        handle_delete_position(inventory_id, aisle_id, position_id, body.job_id, delete_uc)
         return
     raise HTTPException(status_code=422, detail=f"Unknown action_type: {body.action_type!r}")

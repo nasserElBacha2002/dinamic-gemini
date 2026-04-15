@@ -115,13 +115,40 @@ export default function QuickReviewDrawer({
     }
   }, [result?.id, activePositionId, context?.exactPositionDetail]);
 
-  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId);
+  // Production strategies: queue vs aisle results. (`detail` is reserved — see `ReviewMutationStrategy`.)
+  const reviewStrategy =
+    context?.returnTo === 'review_queue'
+      ? 'reviewQueue'
+      : context?.returnTo === 'aisle_results'
+        ? 'aisleResults'
+        : undefined;
+  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId, {
+    strategy: reviewStrategy,
+  });
   const actionLoading = reviewMutation.isPending;
 
   const navContext = useMemo(
     () => (context && activePositionId ? getResultNavigationContext(context.resultIds, activePositionId) : null),
     [context, activePositionId]
   );
+
+  /** POST ``job_id`` must match ``positions.job_id`` from loaded detail only (never URL/run_context). */
+  const storageJobIdForReview = useMemo(() => {
+    const v = result?.storageJobId;
+    if (v != null && String(v).trim() !== '') {
+      return String(v).trim();
+    }
+    return null;
+  }, [result?.storageJobId]);
+
+  const withReviewJobId = useCallback((body: ReviewActionRequest): ReviewActionRequest => {
+    const id = storageJobIdForReview?.trim();
+    if (id) {
+      return { ...body, job_id: id };
+    }
+    const { job_id: _omit, ...rest } = body;
+    return rest;
+  }, [storageJobIdForReview]);
 
   /**
    * Single path to the review mutation: one `mutateAsync` per user intent.
@@ -135,7 +162,7 @@ export default function QuickReviewDrawer({
       reviewMutationInFlightRef.current = true;
       setActionError(null);
       try {
-        await reviewMutation.mutateAsync(body);
+        await reviewMutation.mutateAsync(withReviewJobId(body));
         if (options?.successMessage) {
           showSnackbar(options.successMessage, 'success');
         }
@@ -146,7 +173,7 @@ export default function QuickReviewDrawer({
         reviewMutationInFlightRef.current = false;
       }
     },
-    [reviewMutation, showSnackbar]
+    [reviewMutation, showSnackbar, withReviewJobId]
   );
 
   const handleConfirm = useCallback(() => {
@@ -203,7 +230,7 @@ export default function QuickReviewDrawer({
     setInvalidConfirmError(null);
     setInvalidConfirmLoading(true);
     try {
-      await reviewMutation.mutateAsync({ action_type: 'delete_position' });
+      await reviewMutation.mutateAsync(withReviewJobId({ action_type: 'delete_position' }));
       showSnackbar(t('review.mark_invalid_success'), 'success');
       setInvalidConfirmOpen(false);
       onClose(); // Automatically close after invalidation
@@ -214,7 +241,7 @@ export default function QuickReviewDrawer({
       reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);
     }
-  }, [reviewMutation, showSnackbar, t]);
+  }, [reviewMutation, showSnackbar, t, withReviewJobId]);
 
   const handleNavigateToResult = useCallback((resultId: string) => {
     setActivePositionId(resultId);
@@ -326,7 +353,7 @@ export default function QuickReviewDrawer({
                     <ResultReviewActions
                       result={result}
                       actionLoading={actionLoading}
-                      readOnly={Boolean(context?.reviewReadOnly)}
+                      readOnly={false}
                       onConfirm={handleConfirm}
                       onUpdateQuantity={handleUpdateQuantity}
                       onUpdateSku={handleUpdateSku}

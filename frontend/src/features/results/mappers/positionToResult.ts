@@ -208,6 +208,19 @@ export function mapPositionDetailToResultDetail(
     position.traceability?.status ?? position.traceability_status
   );
 
+  /** Storage row job id only — POST /reviews ``job_id`` must match this (never run_context fallbacks). */
+  const storageJobId =
+    position.job_id != null && String(position.job_id).trim() !== ''
+      ? String(position.job_id).trim()
+      : null;
+  const rc = data.run_context;
+  const runContextJobId =
+    rc?.job_id != null && String(rc.job_id).trim() !== '' ? String(rc.job_id).trim() : null;
+  const runContextResolvedJobId =
+    rc?.resolved_job_id != null && String(rc.resolved_job_id).trim() !== ''
+      ? String(rc.resolved_job_id).trim()
+      : null;
+
   return {
     id: position.id,
     sku,
@@ -244,5 +257,8 @@ export function mapPositionDetailToResultDetail(
         position.traceability?.primary_evidence_id ?? position.primary_evidence_id ?? undefined,
       rawStatus: position.status ?? undefined,
     },
+    storageJobId,
+    runContextJobId,
+    runContextResolvedJobId,
   };
 }

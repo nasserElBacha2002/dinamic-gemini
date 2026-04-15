@@ -64,6 +64,9 @@ def _row_to_review(row: Any) -> ReviewAction:
     after_raw = getattr(row, "after_json", None)
     before = _parse_json_field(before_raw, "before_json", getattr(row, "id", ""), getattr(row, "position_id", ""))
     after = _parse_json_field(after_raw, "after_json", getattr(row, "id", ""), getattr(row, "position_id", ""))
+    jid = getattr(row, "job_id", None)
+    if jid is not None and isinstance(jid, str):
+        jid = jid.strip() or None
     return ReviewAction(
         id=getattr(row, "id", ""),
         position_id=row.position_id or "",
@@ -73,6 +76,7 @@ def _row_to_review(row: Any) -> ReviewAction:
         created_at=created,
         user_id=getattr(row, "user_id", None) or None,
         comment=getattr(row, "comment", None) or None,
+        job_id=jid,
     )
 
 
@@ -89,8 +93,8 @@ class SqlReviewActionRepository(ReviewActionRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO review_actions (id, position_id, action_type, before_json, after_json, created_at, user_id, comment)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO review_actions (id, position_id, action_type, before_json, after_json, created_at, user_id, comment, job_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     review.id,
@@ -101,6 +105,7 @@ class SqlReviewActionRepository(ReviewActionRepository):
                     created,
                     review.user_id,
                     review.comment,
+                    review.job_id,
                 ),
             )
 
@@ -108,7 +113,7 @@ class SqlReviewActionRepository(ReviewActionRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, position_id, action_type, before_json, after_json, created_at, user_id, comment
+                SELECT id, position_id, action_type, before_json, after_json, created_at, user_id, comment, job_id
                 FROM review_actions
                 WHERE position_id = ?
                 ORDER BY created_at ASC, id ASC

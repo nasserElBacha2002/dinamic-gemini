@@ -15,6 +15,9 @@ import type { PositionSummary } from '../src/api/types';
 const { useRunAisleMergeMock } = vi.hoisted(() => ({
   useRunAisleMergeMock: vi.fn(),
 }));
+const { getAisleMergeResultsMock } = vi.hoisted(() => ({
+  getAisleMergeResultsMock: vi.fn(),
+}));
 const { promoteMutateAsync } = vi.hoisted(() => ({
   promoteMutateAsync: vi.fn().mockResolvedValue({
     aisle_id: 'aisle-1',
@@ -147,6 +150,15 @@ const repeatedSkuResults: ResultSummary[] = [
   },
 ];
 
+vi.mock('../src/api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/api/client')>();
+  return {
+    ...actual,
+    getAisleMergeResults: (...args: Parameters<typeof actual.getAisleMergeResults>) =>
+      getAisleMergeResultsMock(...args) as ReturnType<typeof actual.getAisleMergeResults>,
+  };
+});
+
 vi.mock('../src/features/results', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/features/results')>();
   return {
@@ -215,6 +227,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
     aisleJobsListState.isFetched = true;
     aisleJobsListState.isFetching = false;
     useRunAisleMergeMock.mockReset();
+    getAisleMergeResultsMock.mockReset();
+    getAisleMergeResultsMock.mockResolvedValue({ results: [] });
     useRunAisleMergeMock.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue({
         operation_mode: 'manual_authoritative',
@@ -271,30 +285,23 @@ describe('AislePositionsPage (Aisle Results)', () => {
       final_count: 1,
       product_records_updated: 1,
     });
-    const resultsRefetch = vi.fn().mockResolvedValue(undefined);
-    const aislesRefetch = vi.fn().mockResolvedValue(undefined);
-    const mergeResultsRefetch = vi.fn().mockImplementation(async () => {
-      mergeResultsState.data = {
-        results: [
-          {
-            id: 'fc-1',
-            position_id: 'pos-1',
-            sku: 'SKU-001',
-            product_name: 'Product 1',
-            merged_quantity: 6,
-            normalized_label_ids: ['n1', 'n2'],
-            review_required: false,
-            explanation_summary: 'Merged repeated labels',
-            metadata: {},
-            created_at: '2024-01-01T00:00:00Z',
-          },
-        ],
-      };
-      return { data: mergeResultsState.data };
+    getAisleMergeResultsMock.mockResolvedValue({
+      results: [
+        {
+          id: 'fc-1',
+          position_id: 'pos-1',
+          sku: 'SKU-001',
+          product_name: 'Product 1',
+          merged_quantity: 6,
+          normalized_label_ids: ['n1', 'n2'],
+          review_required: false,
+          explanation_summary: 'Merged repeated labels',
+          metadata: {},
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ],
     });
-    resultSummariesState.refetch = resultsRefetch;
-    aislesListState.refetch = aislesRefetch;
-    mergeResultsState.refetch = mergeResultsRefetch;
+    mergeResultsState.data = { results: [] };
     useRunAisleMergeMock.mockReturnValue({
       mutateAsync,
       isPending: false,
@@ -305,9 +312,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
 
     await waitFor(() => {
       expect(mutateAsync).toHaveBeenCalledWith({ aisleId: 'aisle-1', jobId: null });
-      expect(resultsRefetch).toHaveBeenCalled();
-      expect(aislesRefetch).toHaveBeenCalled();
-      expect(mergeResultsRefetch).toHaveBeenCalled();
+      expect(getAisleMergeResultsMock).toHaveBeenCalledWith('inv-1', 'aisle-1', { jobId: null });
     });
 
     expect(screen.getByText(/visible results updated after merge/i)).toBeTruthy();
@@ -327,9 +332,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       final_count: 1,
       product_records_updated: 1,
     });
-    resultSummariesState.refetch = vi.fn().mockResolvedValue(undefined);
-    aislesListState.refetch = vi.fn().mockResolvedValue(undefined);
-    mergeResultsState.refetch = vi.fn().mockResolvedValue({ data: mergeResultsState.data });
+    getAisleMergeResultsMock.mockResolvedValue({ results: [] });
     useRunAisleMergeMock.mockReturnValue({
       mutateAsync,
       isPending: false,
@@ -395,24 +398,21 @@ describe('AislePositionsPage (Aisle Results)', () => {
     resultSummariesState.results = repeatedSkuResults;
     resultSummariesState.positions = repeatedSkuPositions;
     mergeResultsState.data = { results: [] };
-    mergeResultsState.refetch = vi.fn().mockImplementation(async () => {
-      mergeResultsState.data = {
-        results: [
-          {
-            id: 'fc-1',
-            position_id: 'pos-1',
-            sku: 'SKU-001',
-            product_name: 'Product 1',
-            merged_quantity: 6,
-            normalized_label_ids: ['n1', 'n2'],
-            review_required: false,
-            explanation_summary: 'Merged repeated labels',
-            metadata: {},
-            created_at: '2024-01-01T00:00:00Z',
-          },
-        ],
-      };
-      return { data: mergeResultsState.data };
+    getAisleMergeResultsMock.mockResolvedValue({
+      results: [
+        {
+          id: 'fc-1',
+          position_id: 'pos-1',
+          sku: 'SKU-001',
+          product_name: 'Product 1',
+          merged_quantity: 6,
+          normalized_label_ids: ['n1', 'n2'],
+          review_required: false,
+          explanation_summary: 'Merged repeated labels',
+          metadata: {},
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ],
     });
 
     const mutateAsync = vi.fn().mockResolvedValue({
@@ -675,8 +675,6 @@ describe('AislePositionsPage (Aisle Results)', () => {
       resultSummariesState.results = mockResults;
       resultSummariesState.positions = mockPositions;
       resultSummariesState.resultJobId = 'job-bench';
-      resultSummariesState.refetch = vi.fn().mockResolvedValue(undefined);
-      aisleJobsListState.refetch = vi.fn().mockResolvedValue(undefined);
       aisleJobsListState.data = {
         operational_job_id: 'job-op',
         jobs: [
@@ -700,8 +698,6 @@ describe('AislePositionsPage (Aisle Results)', () => {
 
       await waitFor(() => {
         expect(promoteMutateAsync).toHaveBeenCalledWith('job-bench');
-        expect(resultSummariesState.refetch).toHaveBeenCalled();
-        expect(aisleJobsListState.refetch).toHaveBeenCalled();
       });
     });
   });

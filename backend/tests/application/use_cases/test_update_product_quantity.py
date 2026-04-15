@@ -150,7 +150,7 @@ def test_update_quantity_sets_corrected_and_creates_audit() -> None:
         clock=clock,
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
-    use_case.execute("inv-1", "aisle-1", "pos-1", "prod-1", 10)
+    use_case.execute("inv-1", "aisle-1", "pos-1", None, "prod-1", 10)
 
     updated_product = product_repo.get_by_id("prod-1")
     assert updated_product is not None
@@ -194,7 +194,7 @@ def test_update_quantity_negative_raises() -> None:
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
     with pytest.raises(ValueError, match="non-negative"):
-        use_case.execute("inv-1", "aisle-1", "pos-1", "prod-1", -1)
+        use_case.execute("inv-1", "aisle-1", "pos-1", None, "prod-1", -1)
 
 
 def test_update_quantity_product_not_found_raises() -> None:
@@ -220,7 +220,7 @@ def test_update_quantity_product_not_found_raises() -> None:
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
     with pytest.raises(ProductNotFoundError):
-        use_case.execute("inv-1", "aisle-1", "pos-1", "prod-unknown", 5)
+        use_case.execute("inv-1", "aisle-1", "pos-1", None, "prod-unknown", 5)
 
 
 def test_update_quantity_product_wrong_position_raises() -> None:
@@ -251,4 +251,4 @@ def test_update_quantity_product_wrong_position_raises() -> None:
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
     with pytest.raises(ProductNotFoundError):
-        use_case.execute("inv-1", "aisle-1", "pos-1", "prod-1", 5)
+        use_case.execute("inv-1", "aisle-1", "pos-1", None, "prod-1", 5)

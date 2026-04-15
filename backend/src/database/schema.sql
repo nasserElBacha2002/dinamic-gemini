@@ -445,6 +445,18 @@ BEGIN
 END;
 GO
 
+-- Run-scoped review audit: persist inventory job id on each review action (nullable = legacy row).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('review_actions') AND name = 'job_id')
+    ALTER TABLE review_actions ADD job_id VARCHAR(36) NULL;
+GO
+
+UPDATE ra
+SET ra.job_id = p.job_id
+FROM review_actions ra
+INNER JOIN positions p ON p.id = ra.position_id
+WHERE ra.job_id IS NULL AND p.job_id IS NOT NULL;
+GO
+
 -- v3.2.3 — Final count records (consolidated quantity from normalized labels)
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'final_count_records')
 BEGIN

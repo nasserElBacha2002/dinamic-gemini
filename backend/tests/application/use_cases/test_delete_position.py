@@ -117,7 +117,7 @@ def test_delete_position_sets_deleted_and_creates_audit() -> None:
         clock=clock,
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
-    use_case.execute("inv-1", "aisle-1", "pos-1")
+    use_case.execute("inv-1", "aisle-1", "pos-1", None)
 
     updated = position_repo.get_by_id("pos-1")
     assert updated is not None
@@ -146,4 +146,4 @@ def test_delete_position_not_found_raises() -> None:
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
     with pytest.raises(PositionNotFoundError):
-        use_case.execute("inv-1", "aisle-1", "pos-unknown")
+        use_case.execute("inv-1", "aisle-1", "pos-unknown", None)

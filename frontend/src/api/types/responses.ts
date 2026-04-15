@@ -705,6 +705,7 @@ export interface ReviewActionSummary {
   created_at: string;
   user_id?: string | null;
   comment?: string | null;
+  job_id?: string | null;
 }
 
 /** Phase 2 / 5: slice + provider metadata for this row (matches list/merge resolver semantics). */

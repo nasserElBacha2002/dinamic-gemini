@@ -248,10 +248,11 @@ def handle_confirm(
     inventory_id: str,
     aisle_id: str,
     position_id: str,
+    job_id: str | None,
     confirm_uc: ConfirmPositionUseCase,
 ) -> None:
     try:
-        confirm_uc.execute(inventory_id, aisle_id, position_id)
+        confirm_uc.execute(inventory_id, aisle_id, position_id, job_id)
     except (
         InventoryNotFoundError,
         AisleNotFoundError,
@@ -277,6 +278,7 @@ def handle_update_quantity(
             inventory_id,
             aisle_id,
             position_id,
+            body.job_id,
             (body.product_id or "").strip(),
             body.corrected_quantity,
         )
@@ -307,6 +309,7 @@ def handle_update_sku(
             inventory_id,
             aisle_id,
             position_id,
+            body.job_id,
             (body.product_id or "").strip(),
             sku,
             body.description,
@@ -338,6 +341,7 @@ def handle_update_position_code(
             inventory_id,
             aisle_id,
             position_id,
+            body.job_id,
             pos_code,
         )
     except (
@@ -355,10 +359,11 @@ def handle_mark_unknown(
     inventory_id: str,
     aisle_id: str,
     position_id: str,
+    job_id: str | None,
     mark_unknown_uc: MarkPositionUnknownUseCase,
 ) -> None:
     try:
-        mark_unknown_uc.execute(inventory_id, aisle_id, position_id)
+        mark_unknown_uc.execute(inventory_id, aisle_id, position_id, job_id)
     except (
         InventoryNotFoundError,
         AisleNotFoundError,
@@ -374,10 +379,11 @@ def handle_mark_image_mismatch(
     inventory_id: str,
     aisle_id: str,
     position_id: str,
+    job_id: str | None,
     uc: MarkPositionImageMismatchUseCase,
 ) -> None:
     try:
-        uc.execute(inventory_id, aisle_id, position_id)
+        uc.execute(inventory_id, aisle_id, position_id, job_id)
     except (
         InventoryNotFoundError,
         AisleNotFoundError,
@@ -393,14 +399,16 @@ def handle_delete_position(
     inventory_id: str,
     aisle_id: str,
     position_id: str,
+    job_id: str | None,
     delete_uc: DeletePositionUseCase,
 ) -> None:
     try:
-        delete_uc.execute(inventory_id, aisle_id, position_id)
+        delete_uc.execute(inventory_id, aisle_id, position_id, job_id)
     except (
         InventoryNotFoundError,
         AisleNotFoundError,
         PositionNotFoundError,
+        ValueError,
         PositionDeletedError,
         ReviewMutationNotAllowedError,
     ) as e:
@@ -715,6 +723,7 @@ def review_to_response(r: ReviewAction) -> ReviewActionResponse:
         created_at=r.created_at,
         user_id=r.user_id,
         comment=r.comment,
+        job_id=r.job_id,
     )
 
 
