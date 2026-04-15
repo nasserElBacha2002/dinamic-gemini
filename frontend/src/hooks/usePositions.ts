@@ -10,7 +10,11 @@ import {
   type AislePositionsListQuery,
 } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
-import { canonicalizeOptionalId, positionsListKeyPart } from '../api/queryParamCanonicalization';
+import {
+  canonicalizeAislePositionsListQuery,
+  canonicalizeOptionalId,
+  positionsListKeyPart,
+} from '../api/queryParamCanonicalization';
 
 /** Stable cache identity for positions list: job_id and pagination must not alias across runs. */
 export function positionsListQueryKeyPart(q: AislePositionsListQuery | undefined): Record<string, string | number> {
@@ -23,10 +27,11 @@ export function useAislePositions(
   options?: { enabled?: boolean; listQuery?: AislePositionsListQuery }
 ) {
   const listQuery = options?.listQuery;
-  const listKey = positionsListQueryKeyPart(listQuery);
+  const canonical = canonicalizeAislePositionsListQuery(listQuery);
+  const listKey = positionsListKeyPart(canonical);
   return useQuery({
     queryKey: queryKeys.inventories.positionsList(inventoryId ?? '', aisleId ?? '', listKey),
-    queryFn: () => getAislePositions(inventoryId!, aisleId!, listQuery),
+    queryFn: () => getAislePositions(inventoryId!, aisleId!, canonical),
     enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
   });
 }
