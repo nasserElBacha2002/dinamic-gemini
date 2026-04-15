@@ -97,6 +97,28 @@ def resolve_position(
     return position
 
 
+def ensure_position_review_mutable_for_aisle(aisle: Aisle, position: Position) -> None:
+    """Review edits are allowed for both legacy and run-scoped rows under the same aisle.
+
+    Promotion to operational remains a separate concern. Review actions stay attached to the
+    concrete ``position_id`` row being edited, so trial/run-scoped corrections do not mutate
+    canonical rows implicitly.
+    """
+    _ = aisle
+    _ = position
+
+
+def load_aisle_and_ensure_review_mutable(
+    aisle_repo: AisleRepository,
+    aisle_id: str,
+    position: Position,
+) -> None:
+    aisle = aisle_repo.get_by_id(aisle_id)
+    if aisle is None:
+        raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
+    ensure_position_review_mutable_for_aisle(aisle, position)
+
+
 def resolve_product_for_position(
     product_repo: ProductRecordRepository,
     position_id: str,
