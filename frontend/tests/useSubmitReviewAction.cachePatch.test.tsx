@@ -195,6 +195,47 @@ describe('useSubmitReviewAction cache patching (Phase 5)', () => {
     ]);
   });
 
+  it('aisleResults: no-op when payload cannot patch (missing corrected_quantity) invalidates list, detail, and merge', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const plCanon = canonicalizeAislePositionsListQuery({});
+    const plKey = queryKeys.inventories.positionsList('inv-1', 'aisle-1', positionsListKeyPart(plCanon));
+    qc.setQueryData(plKey, {
+      positions: [basePosition({ qty: 3 })],
+      page: 1,
+      page_size: 20,
+      total_items: 1,
+      total_pages: 1,
+      raw_fetch_truncated: false,
+    });
+    const detailKey = queryKeys.inventories.positionDetailScoped('inv-1', 'aisle-1', 'pos-1', null, false);
+    qc.setQueryData(detailKey, {
+      position: basePosition(),
+      evidences: [],
+      review_actions: [],
+      run_context: { result_context_source: 'legacy' },
+    });
+
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(
+      () =>
+        useSubmitReviewAction('inv-1', 'aisle-1', 'pos-1', {
+          strategy: 'aisleResults',
+        }),
+      { wrapper: wrapper(qc) }
+    );
+
+    await result.current.mutateAsync({ action_type: 'update_quantity' });
+    await waitFor(() => expect(client.submitReviewAction).toHaveBeenCalled());
+
+    expect(invalidateSpy).toHaveBeenCalledTimes(3);
+    const keys = invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: unknown }).queryKey);
+    expect(keys).toEqual([
+      queryKeys.inventories.positionDetail('inv-1', 'aisle-1', 'pos-1'),
+      queryKeys.inventories.positions('inv-1', 'aisle-1'),
+      queryKeys.inventories.mergeResults('inv-1', 'aisle-1'),
+    ]);
+  });
+
   it('does not mutate cached data for another inventory', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const plCanon = canonicalizeAislePositionsListQuery({});

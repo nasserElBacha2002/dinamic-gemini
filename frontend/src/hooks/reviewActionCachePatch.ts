@@ -1,6 +1,7 @@
 /**
  * Targeted TanStack Query cache updates after POST .../reviews (no response body).
  * Patches derive only from the review request + known backend review_resolution strings.
+ * Nested server-owned shapes (e.g. full `quantity` blocks) are not invented here — GET remains authoritative.
  */
 
 import type { QueryClient } from '@tanstack/react-query';
@@ -13,90 +14,108 @@ import type {
 } from '../api/types/responses';
 import { queryKeys } from '../api/queryKeys';
 
-/** Exported for unit tests — mirrors backend `PositionReviewResolution` string values. */
+/**
+ * Compare fields this module may change. Used to detect true no-ops so we do not treat
+ * "new object, same semantics" as a successful patch (which would suppress invalidation incorrectly).
+ */
+function positionsSemanticallyEqualForPatch(a: PositionSummary, b: PositionSummary): boolean {
+  if (a === b) return true;
+  return (
+    a.needs_review === b.needs_review &&
+    (a.review_resolution ?? null) === (b.review_resolution ?? null) &&
+    a.qty === b.qty &&
+    (a.corrected_quantity ?? null) === (b.corrected_quantity ?? null) &&
+    (a.sku ?? null) === (b.sku ?? null) &&
+    (a.product?.sku ?? null) === (b.product?.sku ?? null) &&
+    a.position_code === b.position_code &&
+    String(a.status) === String(b.status)
+  );
+}
+
+/**
+ * Exported for unit tests — mirrors backend `PositionReviewResolution` string values.
+ * Only sets flat / explicitly requested fields; does not fabricate nested quantity provenance.
+ */
 export function applyReviewActionToPositionSummary(
   position: PositionSummary,
   body: ReviewActionRequest
 ): PositionSummary {
+  let next: PositionSummary;
   switch (body.action_type) {
     case 'confirm':
-      return {
+      next = {
         ...position,
         needs_review: false,
         review_resolution: 'confirmed',
       };
+      break;
     case 'update_quantity': {
       const q = body.corrected_quantity;
       if (typeof q !== 'number' || !Number.isFinite(q)) return position;
-      return {
+      next = {
         ...position,
         needs_review: false,
         review_resolution: 'qty_corrected',
         qty: q,
         corrected_quantity: q,
-        quantity: position.quantity
-          ? {
-              ...position.quantity,
-              corrected: q,
-              final: q,
-              resolved: true,
-              source: 'manual_review',
-            }
-          : {
-              detected: q,
-              corrected: q,
-              final: q,
-              source: 'manual_review',
-            },
       };
+      break;
     }
     case 'update_sku': {
       const sku = body.sku?.trim() ?? '';
       if (!sku) return position;
-      return {
+      next = {
         ...position,
         needs_review: false,
         review_resolution: 'sku_corrected',
         sku,
-        product: position.product
-          ? { ...position.product, sku }
-          : { sku, identity_source: 'primary_product' },
+        ...(position.product ? { product: { ...position.product, sku } } : {}),
       };
+      break;
     }
     case 'update_position_code': {
       const code = body.position_code?.trim() ?? '';
       if (!code) return position;
-      return {
+      next = {
         ...position,
         needs_review: false,
         review_resolution: 'position_code_corrected',
         position_code: code,
       };
+      break;
     }
     case 'mark_unknown':
-      return {
+      next = {
         ...position,
         needs_review: false,
         review_resolution: 'unknown',
       };
+      break;
     case 'mark_image_mismatch':
-      return {
+      next = {
         ...position,
         needs_review: false,
         review_resolution: 'image_mismatch',
       };
+      break;
     case 'delete_position':
-      return {
+      next = {
         ...position,
         status: 'deleted',
         needs_review: false,
         review_resolution: 'deleted',
       };
+      break;
     default:
       return position;
   }
+  return positionsSemanticallyEqualForPatch(position, next) ? position : next;
 }
 
+/**
+ * After removing a row from a cached page, `total_items` / `total_pages` are best-effort local
+ * approximations for UX (pagination may not match server totals under filters); exact counts come from refetch.
+ */
 function transformReviewQueueList(
   old: ReviewQueueListResponse,
   positionId: string,
@@ -115,6 +134,7 @@ function transformReviewQueueList(
   if (removeRow) {
     const items = old.items.filter((it) => it.position.id !== positionId);
     const removed = old.items.length - items.length;
+    if (removed === 0) return old;
     const totalItems = Math.max(0, old.total_items - removed);
     const totalPages =
       old.page_size && old.page_size > 0
@@ -128,10 +148,13 @@ function transformReviewQueueList(
     };
   }
 
+  const patched = applyReviewActionToPositionSummary(old.items[idx].position, body);
+  if (patched === old.items[idx].position) return old;
+
   const nextItems = old.items.slice();
   nextItems[idx] = {
     ...old.items[idx],
-    position: applyReviewActionToPositionSummary(old.items[idx].position, body),
+    position: patched,
   };
   return { ...old, items: nextItems };
 }
@@ -148,6 +171,7 @@ function transformPositionList(
   if (body.action_type === 'delete_position') {
     const positions = old.positions.filter((p) => p.id !== positionId);
     const removed = old.positions.length - positions.length;
+    if (removed === 0) return old;
     const totalItems = Math.max(0, old.total_items - removed);
     const totalPages =
       old.page_size && old.page_size > 0
@@ -161,8 +185,11 @@ function transformPositionList(
     };
   }
 
+  const patched = applyReviewActionToPositionSummary(old.positions[idx], body);
+  if (patched === old.positions[idx]) return old;
+
   const next = old.positions.slice();
-  next[idx] = applyReviewActionToPositionSummary(next[idx], body);
+  next[idx] = patched;
   return { ...old, positions: next };
 }
 
@@ -192,25 +219,30 @@ function patchPositionDetailQueries(
   body: ReviewActionRequest
 ): boolean {
   const detailKey = queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId);
+
   if (body.action_type === 'delete_position') {
     const hadCachedDetail = queryClient
       .getQueryCache()
       .findAll({ queryKey: detailKey })
       .some((q) => q.state.data !== undefined);
     if (!hadCachedDetail) return false;
+    // Drop detail cache entries so nothing re-renders a deleted row; avoids a refetch that would 404
+    // or show stale evidence. A fresh load after navigation uses list/other queries instead.
     queryClient.removeQueries({ queryKey: detailKey });
     return true;
   }
 
   let changed = false;
   queryClient.setQueriesData<PositionDetailResponse>(
-    { queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId) },
+    { queryKey: detailKey },
     (old) => {
       if (!old) return old;
+      const nextPos = applyReviewActionToPositionSummary(old.position, body);
+      if (nextPos === old.position) return old;
       changed = true;
       return {
         ...old,
-        position: applyReviewActionToPositionSummary(old.position, body),
+        position: nextPos,
       };
     }
   );

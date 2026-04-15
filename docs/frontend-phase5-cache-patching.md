@@ -6,6 +6,15 @@
 - The API returns **no body** (`submitReviewAction` → `void`); patches derive only from the **review request** (`ReviewActionRequest`) and known `review_resolution` strings aligned with backend `PositionReviewResolution`.
 - **No** broad optimistic updates before the server responds, **no** global entity store, **no** merge-summary recomputation.
 
+### Conservative patching rules (hardening)
+
+- **Flat fields only** where possible: `needs_review`, `review_resolution`, `qty`, `corrected_quantity`, flat `sku`, `position_code`, `status` for delete. Nested `quantity` blocks are **not** fabricated; the next GET is authoritative for provenance.
+- **No-op detection:** if the derived position would match the existing one (same semantics), the implementation returns the **same object reference** and does **not** treat the update as a successful patch — invalidation fallback still runs.
+- **Row missing:** if the target `position_id` is not in a cached list, that list is not a “successful” patch — the corresponding `invalidate*` flag stays `true`.
+- **Insufficient payload** (e.g. `update_quantity` without `corrected_quantity`, empty SKU/code): no patch; invalidation applies.
+- **Delete `positionDetail`:** `removeQueries` for the `positionDetail` prefix clears cached detail for that id (including scoped variants) so the UI does not keep showing a deleted row; a refetch would 404 or be misleading. Other inventories’ keys are unaffected.
+- **Pagination counts** after row removal: `total_items` / `total_pages` are **best-effort** local adjustments; server totals under filters may differ until a refetch.
+
 ## What gets patched
 
 | Strategy        | `setQueriesData` / `removeQueries` targets | Invalidation fallback when cache missing or row not found |
