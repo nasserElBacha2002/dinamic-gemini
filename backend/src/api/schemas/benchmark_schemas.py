@@ -24,6 +24,63 @@ class RunSliceMetricsResponse(BaseModel):
     needs_review_count: int
 
 
+class LlmUsageSnapshotResponse(BaseModel):
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    cached_input_tokens: Optional[int] = None
+    cache_write_tokens: Optional[int] = None
+    thinking_tokens: Optional[int] = None
+    tool_requests: Optional[int] = None
+    image_input_count: Optional[int] = None
+    image_input_tokens: Optional[int] = None
+    audio_input_tokens: Optional[int] = None
+    video_input_tokens: Optional[int] = None
+
+
+class LlmPricingSnapshotResponse(BaseModel):
+    pricing_source: Optional[str] = None
+    pricing_version: Optional[str] = None
+    captured_at: Optional[str] = None
+    pricing_catalog_entry_captured_at: Optional[str] = None
+    billing_currency: Optional[str] = None
+    input_cost_per_million: Optional[str] = None
+    output_cost_per_million: Optional[str] = None
+    cached_input_cost_per_million: Optional[str] = None
+    thinking_cost_per_million: Optional[str] = None
+    tool_request_unit_cost: Optional[str] = None
+    image_input_unit_cost: Optional[str] = None
+    audio_input_cost_per_million: Optional[str] = None
+    video_input_cost_per_million: Optional[str] = None
+    thinking_cost_rule: Optional[str] = None
+
+
+class LlmComputedCostResponse(BaseModel):
+    subtotal_input: Optional[str] = None
+    subtotal_output: Optional[str] = None
+    subtotal_cached: Optional[str] = None
+    subtotal_thinking: Optional[str] = None
+    subtotal_tools: Optional[str] = None
+    subtotal_image: Optional[str] = None
+    subtotal_audio: Optional[str] = None
+    subtotal_video: Optional[str] = None
+    total_cost: Optional[str] = None
+    currency: Optional[str] = None
+    total_cost_unavailable_reason: Optional[str] = None
+
+
+class LlmCostSnapshotResponse(BaseModel):
+    provider: str
+    model: Optional[str] = None
+    pricing_available: Optional[bool] = None
+    billing_currency: Optional[str] = None
+    usage: LlmUsageSnapshotResponse
+    pricing_snapshot: LlmPricingSnapshotResponse
+    computed_cost: LlmComputedCostResponse
+    capture_status: str
+    capture_notes: List[str] = Field(default_factory=list)
+
+
 class BenchmarkRunCompareSideResponse(BaseModel):
     job_id: str
     status: str
@@ -35,6 +92,7 @@ class BenchmarkRunCompareSideResponse(BaseModel):
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     metrics: RunSliceMetricsResponse
+    llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
 
 
 class CompareDiffSummaryResponse(BaseModel):

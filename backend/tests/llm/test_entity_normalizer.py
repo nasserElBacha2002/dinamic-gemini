@@ -88,15 +88,16 @@ def _assert_canonical_entity_shape(ent: dict) -> None:
     assert ent["has_boxes"] is False or ent["has_boxes"] is True
 
 
-def test_openai_audit_payload_does_not_promote_quantity_or_bbox() -> None:
+def test_openai_audit_payload_conservative_qty_and_extent_bbox() -> None:
     inp = copy.deepcopy(OPENAI_AUDIT_PAYLOAD)
     out = normalize_llm_response(inp, "openai")
     assert out[EXTRACTION_CONTRACT_VERSION_KEY] == EXTRACTION_CONTRACT_VERSION_VALUE
     assert out["total_entities_detected"] == 1
     e = out["entities"][0]
     _assert_canonical_entity_shape(e)
-    assert e["product_label_quantity"] is None
+    assert e["product_label_quantity"] == 1
     assert e["product_label_bbox"] is None
+    assert e["extent_bbox"] == [0.0, 0.03, 0.94, 0.96]
     assert "quantity" not in e and "bbox" not in e
     assert e["internal_code"] is None
     assert e["source_image_id"] == "473e4c28-fe42-4abd-a61e-2d3961054046"
@@ -130,13 +131,24 @@ def test_gemini_audit_payload_unchanged_semantics() -> None:
     assert e["source_image_id"] == "473e4c28-fe42-4abd-a61e-2d3961054046"
 
 
-def test_openai_strips_ambiguous_aliases_deepseek_same_as_openai() -> None:
+def test_openai_family_conservative_qty_and_extent_not_product_label_bbox() -> None:
+    """OpenAI / GPT keys: positive ``quantity`` + generic ``bbox`` → canonical qty + ``extent_bbox``."""
     inp = {"entities": [{"quantity": 1, "bbox": [0.0, 0.0, 1.0, 1.0]}]}
-    for prov in ("openai", "deepseek"):
-        out = normalize_llm_response(copy.deepcopy(inp), prov)
-        e = out["entities"][0]
-        assert e["product_label_quantity"] is None
-        assert e["product_label_bbox"] is None
+    out = normalize_llm_response(copy.deepcopy(inp), "openai")
+    e = out["entities"][0]
+    assert e["product_label_quantity"] == 1
+    assert e["product_label_bbox"] is None
+    assert e["extent_bbox"] == [0.0, 0.0, 1.0, 1.0]
+
+
+def test_deepseek_family_mirrors_openai_conservative_qty_and_extent() -> None:
+    """DeepSeek uses OpenAI-compatible payloads; same conservative alias rules as openai."""
+    inp = {"entities": [{"quantity": 1, "bbox": [0.0, 0.0, 1.0, 1.0]}]}
+    out = normalize_llm_response(copy.deepcopy(inp), "deepseek-chat")
+    e = out["entities"][0]
+    assert e["product_label_quantity"] == 1
+    assert e["product_label_bbox"] is None
+    assert e["extent_bbox"] == [0.0, 0.0, 1.0, 1.0]
 
 
 def test_gemini_promotes_aliases_when_canonical_absent() -> None:
@@ -228,12 +240,50 @@ def test_openai_quantity_zero_stripped_not_promoted() -> None:
     assert out["entities"][0]["product_label_quantity"] is None
 
 
+def test_openai_positive_quantity_promoted_to_canonical_when_missing() -> None:
+    inp = {
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.88,
+                "has_boxes": False,
+                "source_image_id": "img-1",
+                "quantity": 4,
+            }
+        ]
+    }
+    out = normalize_llm_response(inp, "openai")
+    assert out["entities"][0]["product_label_quantity"] == 4
+    assert "quantity" not in out["entities"][0]
+
+
+def test_openai_extent_bbox_preserved_when_label_bboxes_absent() -> None:
+    bbox = [0.05, 0.06, 0.4, 0.5]
+    inp = {
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.5,
+                "has_boxes": True,
+                "bbox": bbox,
+            }
+        ]
+    }
+    out = normalize_llm_response(inp, "openai")
+    assert out["entities"][0]["extent_bbox"] == bbox
+    assert out["entities"][0]["product_label_bbox"] is None
+    assert "bbox" not in out["entities"][0]
+
+
 def test_non_dict_entities_unchanged() -> None:
     inp = {"entities": [None, "x", {"quantity": 1}]}
     out = normalize_llm_response(inp, "openai")
     assert out["entities"][0] is None
     assert out["entities"][1] == "x"
-    assert out["entities"][2]["product_label_quantity"] is None
+    # Positive ``quantity`` promotes to canonical qty for openai when product_label_quantity unset.
+    assert out["entities"][2]["product_label_quantity"] == 1
 
 
 def test_non_dict_root_returns_empty_dict() -> None:
@@ -282,6 +332,7 @@ def test_openai_does_not_map_bbox_when_product_bbox_missing() -> None:
     out = normalize_llm_response(inp, "openai")
     e = out["entities"][0]
     assert e["product_label_bbox"] is None
+    assert e["extent_bbox"] == [0.0, 0.0, 1.0, 1.0]
     assert "bbox" not in e
 
 
@@ -310,12 +361,34 @@ def test_claude_internal_code_not_overwritten_when_set() -> None:
 
 
 @pytest.mark.parametrize("provider", ["unknown_vendor", ""])
-def test_unknown_provider_conservative_no_alias_promotion(provider: str) -> None:
+def test_unknown_provider_does_not_apply_conservative_qty_or_extent_bbox(provider: str) -> None:
     inp = {"entities": [{"quantity": 5, "bbox": [0, 0, 1, 1]}]}
     out = normalize_llm_response(inp, provider)
     e = out["entities"][0]
     assert e["product_label_quantity"] is None
     assert e["product_label_bbox"] is None
+    assert e.get("extent_bbox") is None
+
+
+def test_claude_strips_quantity_and_bbox_without_conservative_promotion() -> None:
+    inp = {
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": False,
+                "quantity": 5,
+                "bbox": [0.0, 0.0, 1.0, 1.0],
+            }
+        ]
+    }
+    out = normalize_llm_response(inp, "claude")
+    e = out["entities"][0]
+    assert e["product_label_quantity"] is None
+    assert e["product_label_bbox"] is None
+    assert e.get("extent_bbox") is None
+    assert "quantity" not in e and "bbox" not in e
 
 
 @pytest.mark.parametrize(
@@ -426,9 +499,10 @@ def test_claude_normalize_parse_entities_and_review_display_label() -> None:
     assert str(label).lower() != "unknown"
 
 
-def test_gpt_provider_family_strips_aliases_like_openai() -> None:
+def test_gpt_provider_family_normalizes_like_openai_family() -> None:
     inp = {"entities": [{"quantity": 1, "bbox": [0.0, 0.0, 1.0, 1.0]}]}
     out = normalize_llm_response(inp, "GPT-4.1")
     e = out["entities"][0]
-    assert e["product_label_quantity"] is None
+    assert e["product_label_quantity"] == 1
     assert e["product_label_bbox"] is None
+    assert e["extent_bbox"] == [0.0, 0.0, 1.0, 1.0]

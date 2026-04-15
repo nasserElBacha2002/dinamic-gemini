@@ -305,6 +305,8 @@ class HybridInventoryPipeline:
             context.analysis_context,
             analysis_result.provider_metadata,
             prompt_composition=analysis_result.prompt_composition,
+            # Defensive fallback for legacy/mocked stage results without the new field.
+            llm_cost_snapshot=getattr(analysis_result, "llm_cost_snapshot", None),
         )
         # Run attribution: provider + effective prompt profile key for job.result_json.
         # NOTE: top-level run_metadata["prompt_version"] below is legacy "{prompt_key}@v2.1" (report schema tag).

@@ -25,6 +25,8 @@ from src.pipeline.ports.analysis_provider import (
 RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT = "visual_reference_context"
 # Phase 6 — optional prompt traceability block (backward compatible when absent)
 RUN_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
+# Phase 10 — provider-agnostic one-call usage/pricing/cost snapshot
+RUN_METADATA_KEY_LLM_COST_SNAPSHOT = "llm_cost_snapshot"
 
 
 def default_empty_block() -> Dict[str, Any]:
@@ -140,6 +142,7 @@ def build_run_metadata(
     analysis_context: Optional[Union[AnalysisContext, Dict[str, Any]]],
     provider_metadata: Optional[Dict[str, Any]],
     prompt_composition: Optional[Dict[str, Any]] = None,
+    llm_cost_snapshot: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Build the full run metadata dict (for in-memory propagation to executor).
@@ -156,4 +159,6 @@ def build_run_metadata(
     }
     if prompt_composition is not None:
         out[RUN_METADATA_KEY_PROMPT_COMPOSITION] = prompt_composition
+    if llm_cost_snapshot is not None:
+        out[RUN_METADATA_KEY_LLM_COST_SNAPSHOT] = llm_cost_snapshot
     return out

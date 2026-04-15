@@ -222,6 +222,22 @@ def test_compare_metrics_and_diff_quantity_change() -> None:
                 model_name="gpt-4o-mini",
                 prompt_key="global_v21",
                 prompt_version="global_v21@v2.1",
+                result_json={
+                    "llm_cost_snapshot": {
+                        "provider": "openai",
+                        "model": "gpt-4o-mini",
+                        "billing_currency": "USD",
+                        "usage": {"input_tokens": 100, "output_tokens": 40, "total_tokens": 140},
+                        "pricing_snapshot": {
+                            "pricing_source": "settings.llm_pricing_catalog_json",
+                            "pricing_version": "catalog-v1",
+                            "billing_currency": "USD",
+                        },
+                        "computed_cost": {"total_cost": "0.00110000", "currency": "USD"},
+                        "capture_status": "exact",
+                        "capture_notes": [],
+                    }
+                },
             )
         )
 
@@ -271,6 +287,8 @@ def test_compare_metrics_and_diff_quantity_change() -> None:
     assert out["diff_summary"]["keys_in_both"] == 1
     assert out["diff_summary"]["quantity_changed"] == 1
     assert out["diff_summary"]["keys_only_in_a"] == 0
+    assert out["run_a"]["llm_cost_snapshot"] is not None
+    assert out["run_a"]["llm_cost_snapshot"]["computed_cost"]["total_cost"] == "0.00110000"
 
 
 def test_compare_rejects_production_inventory() -> None:

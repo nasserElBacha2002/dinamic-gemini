@@ -8,7 +8,7 @@ Responsabilidades:
 
 import logging
 import time
-from typing import List
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,7 @@ class GeminiClient:
         self.model_name = model_name
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.last_response_usage: Dict[str, Any] = {}
         
         # Inicializar cliente con el nuevo SDK
         self.client = genai.Client(api_key=api_key)
@@ -67,6 +68,38 @@ class GeminiClient:
                 threshold=types.HarmBlockThreshold.BLOCK_NONE
             ),
         ]
+
+    def _extract_usage(self, response: Any) -> Dict[str, Any]:
+        """Best-effort usage extraction across Gemini SDK response variants."""
+        usage: Dict[str, Any] = {}
+        meta = getattr(response, "usage_metadata", None) or getattr(response, "usageMetadata", None)
+        if meta is not None:
+            candidates = {
+                "prompt_token_count": getattr(meta, "prompt_token_count", None)
+                or getattr(meta, "promptTokenCount", None),
+                "candidates_token_count": getattr(meta, "candidates_token_count", None)
+                or getattr(meta, "candidatesTokenCount", None),
+                "total_token_count": getattr(meta, "total_token_count", None)
+                or getattr(meta, "totalTokenCount", None),
+                "thoughts_token_count": getattr(meta, "thoughts_token_count", None)
+                or getattr(meta, "thoughtsTokenCount", None),
+                "cached_content_token_count": getattr(meta, "cached_content_token_count", None)
+                or getattr(meta, "cachedContentTokenCount", None),
+            }
+            usage.update({k: v for k, v in candidates.items() if v is not None})
+        if not usage and isinstance(response, dict):
+            md = response.get("usage_metadata") or response.get("usageMetadata") or {}
+            if isinstance(md, dict):
+                for key in (
+                    "prompt_token_count",
+                    "candidates_token_count",
+                    "total_token_count",
+                    "thoughts_token_count",
+                    "cached_content_token_count",
+                ):
+                    if md.get(key) is not None:
+                        usage[key] = md.get(key)
+        return usage
 
     def _get_safe_schema(self, model_class) -> dict:
         """Limpia el esquema de Pydantic para que Gemini no tire error 400.
@@ -152,6 +185,7 @@ class GeminiClient:
                     contents=contents,
                     config=generation_config,
                 )
+                self.last_response_usage = self._extract_usage(response)
                 return response.text or "{}"
             except Exception as e:
                 last_error = str(e)
@@ -200,6 +234,7 @@ class GeminiClient:
                     contents=contents,
                     config=generation_config,
                 )
+                self.last_response_usage = self._extract_usage(response)
                 return response.text or "{}"
             except Exception as e:
                 last_error = str(e)

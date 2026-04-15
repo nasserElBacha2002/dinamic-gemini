@@ -90,6 +90,7 @@ def build_hybrid_report(
             "internal_code": e.internal_code,
             "product_label_quantity": e.product_label_quantity,
             "product_label_bbox": e.product_label_bbox,
+            "extent_bbox": e.extent_bbox,
             "has_boxes": e.has_boxes,
             "confidence": e.confidence,
             "count_status": e.count_status,

@@ -51,6 +51,8 @@ class AnalysisResult:
     provider_name: str
     provider_metadata: Optional[Dict[str, Any]] = None
     prompt_composition: Optional[Dict[str, Any]] = None
+    #: Provider-agnostic usage+pricing+computed-cost snapshot for one analysis call.
+    llm_cost_snapshot: Optional[Dict[str, Any]] = None
 
 
 class AnalysisProvider(Protocol):

@@ -38,11 +38,11 @@ from src.validation.global_analysis_schema import validate_global_analysis_struc
 
 logger = logging.getLogger(__name__)
 
-# NOTE: Hybrid OpenAI prompt bodies (``hybrid_profiles``) still encourage filling numbers and
-# bounding boxes. ``normalize_llm_response`` (``entity_normalizer``) deliberately does **not**
-# promote OpenAI ``quantity`` / ``bbox`` into ``product_label_quantity`` / ``product_label_bbox``
-# because those fields are often semantically ambiguous (e.g. one pallet vs label-read qty).
-# Align prompts in a follow-up so the model returns canonical keys and null when unreadable.
+# NOTE: Hybrid OpenAI prompts still encourage ``quantity`` / ``bbox``. ``normalize_llm_response``
+# maps a **strictly positive** ``quantity`` (or qty aliases) into ``product_label_quantity`` when
+# the canonical field is unset, and copies lone ``bbox`` into optional ``extent_bbox`` (not
+# ``product_label_bbox``) so PALLET rows persist for UNKNOWN-SKU jobs. Prefer canonical v2.1 keys
+# from the model when possible.
 
 _JSON_OBJECT_SUFFIX = (
     "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
@@ -150,6 +150,33 @@ def _image_to_data_url(obj: Any, max_side: int) -> str:
     return _pil_to_jpeg_data_url(obj, max_side)
 
 
+def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
+    """Best-effort ``CompletionUsage`` extraction for ``normalize_usage`` (nested details included)."""
+    u = getattr(completion, "usage", None)
+    if u is None:
+        return {}
+    model_dump = getattr(u, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(exclude_none=True)
+    out: Dict[str, Any] = {}
+    for key in (
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "prompt_tokens_details",
+        "completion_tokens_details",
+    ):
+        val = getattr(u, key, None)
+        if val is None:
+            continue
+        nested_dump = getattr(val, "model_dump", None)
+        if callable(nested_dump):
+            out[key] = nested_dump(exclude_none=True)
+        else:
+            out[key] = val
+    return out
+
+
 class OpenAiSdkAdapter:
     """OpenAI Chat Completions (vision) + json_object; maps failures to ``LLMProviderError``."""
 
@@ -168,6 +195,7 @@ class OpenAiSdkAdapter:
             )
 
         meta = request.metadata or {}
+        prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
         job_model = (meta.get(v.model_metadata_key) or "").strip()
         default_m = (getattr(settings, v.settings_model_attr, "") or v.default_model_if_settings_empty).strip()
         effective_model = job_model or default_m
@@ -323,13 +351,7 @@ class OpenAiSdkAdapter:
                 details={"provider": prov},
             ) from e
 
-        usage: Dict[str, Any] = {}
-        if completion.usage:
-            usage = {
-                "prompt_tokens": completion.usage.prompt_tokens,
-                "completion_tokens": completion.usage.completion_tokens,
-                "total_tokens": completion.usage.total_tokens,
-            }
+        usage = _openai_completion_usage_dict(completion)
 
         return LLMResponse(
             provider=prov,

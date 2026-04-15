@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from src.llm.errors import LLMProviderError
 from src.llm.normalization.entity_normalizer import normalize_llm_response
 from src.pipeline.ports.analysis_provider import AnalysisProvider, AnalysisResult
 from src.pipeline.stages.frame_acquisition_stage import AcquiredFrames
@@ -27,6 +28,8 @@ class AnalysisStageResult:
     provider_metadata: Optional[Dict[str, Any]] = None
     # Phase 6: pass-through of AnalysisResult.prompt_composition for run_metadata persistence.
     prompt_composition: Optional[Dict[str, Any]] = None
+    # Phase 9: pass-through of provider-agnostic usage+pricing snapshot for run_metadata persistence.
+    llm_cost_snapshot: Optional[Dict[str, Any]] = None
 
 
 class AnalysisStage:
@@ -42,22 +45,43 @@ class AnalysisStage:
         Raises:
             LLMProviderError (from provider): When the provider fails (caller maps to exit code 1).
         """
-        result: AnalysisResult = self._analysis_provider.analyze(
-            context,
-            data.frames_nd,
-            data.frame_paths,
-            data.frame_refs,
-            data.metadata,
-        )
+        try:
+            result: AnalysisResult = self._analysis_provider.analyze(
+                context,
+                data.frames_nd,
+                data.frame_paths,
+                data.frame_refs,
+                data.metadata,
+            )
+        except LLMProviderError as e:
+            log = getattr(context, "logger", None)
+            if log is not None:
+                d = dict(e.details) if e.details else {}
+                log.warning(
+                    "analysis_stage analyze_failed job_id=%s code=%s message=%s "
+                    "provider_details_keys=%s text_preview=%r",
+                    context.job_id,
+                    e.code,
+                    (e.message or str(e))[:400],
+                    sorted(d.keys()),
+                    (d.get("text_preview") or d.get("parse_failure") or "")[:240],
+                )
+            raise
+
         parsed = normalize_llm_response(result.parsed_json, result.provider_name)
         log = getattr(context, "logger", None)
-        if log is not None and log.isEnabledFor(logging.DEBUG):
+        if log is not None:
             ents = parsed.get("entities")
-            if isinstance(ents, list):
+            n_ent = len(ents) if isinstance(ents, list) else 0
+            log.info(
+                "analysis_stage ok job_id=%s provider=%s normalized_entities=%d",
+                context.job_id,
+                result.provider_name,
+                n_ent,
+            )
+            if log.isEnabledFor(logging.DEBUG) and isinstance(ents, list):
                 with_plq = sum(
-                    1
-                    for e in ents
-                    if isinstance(e, dict) and e.get("product_label_quantity") is not None
+                    1 for e in ents if isinstance(e, dict) and e.get("product_label_quantity") is not None
                 )
                 log.debug(
                     "analysis_stage post_normalize: provider=%s entities=%d product_label_quantity_set=%d",
@@ -70,4 +94,5 @@ class AnalysisStage:
             provider_name=result.provider_name,
             provider_metadata=result.provider_metadata,
             prompt_composition=result.prompt_composition,
+            llm_cost_snapshot=result.llm_cost_snapshot,
         )

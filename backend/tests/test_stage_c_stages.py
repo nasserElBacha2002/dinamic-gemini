@@ -23,6 +23,7 @@ from src.pipeline.stages.analysis_stage import AnalysisStage, AnalysisStageResul
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage, ResolvedEntities
 from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageInput, ReportingResult
 from src.pipeline.stages.input_preparation_stage import PreparedInput
+from src.pipeline.run_metadata import RUN_METADATA_KEY_LLM_COST_SNAPSHOT
 from src.jobs.models import JobInput
 from src.frames.types import FramesBundle
 from tests.support.llm_executor_harness import HARNESS_RESPONSE_PROVIDER
@@ -161,6 +162,7 @@ def test_analysis_stage_delegates_to_provider() -> None:
         parsed_json={"total_entities_detected": 0, "entities": []},
         provider_name=HARNESS_RESPONSE_PROVIDER,
         provider_metadata=None,
+        llm_cost_snapshot={"capture_status": "estimated"},
     )
 
     stage = AnalysisStage(mock_provider)
@@ -173,6 +175,7 @@ def test_analysis_stage_delegates_to_provider() -> None:
         EXTRACTION_CONTRACT_VERSION_KEY: EXTRACTION_CONTRACT_VERSION_VALUE,
     }
     assert result.provider_name == HARNESS_RESPONSE_PROVIDER
+    assert result.llm_cost_snapshot == {"capture_status": "estimated"}
     mock_provider.analyze.assert_called_once()
     call_kw = mock_provider.analyze.call_args
     assert call_kw[0][0] is context
@@ -269,3 +272,110 @@ def test_orchestrator_returns_1_on_stage_failure() -> None:
     assert call_args[0] == "Stage failure: %s (job_id=%s): %s"
     assert call_args[1] == "InputPreparationStage"
     assert call_args[2] == "j1"
+
+
+def test_pipeline_success_persists_llm_cost_snapshot_from_analysis_stage(tmp_path: Path) -> None:
+    """Pipeline success path carries llm_cost_snapshot into run_metadata."""
+    from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+
+    pipeline = HybridInventoryPipeline()
+    logger = MagicMock()
+    settings = MagicMock(debug_save_frames=False, debug_run_metadata=False, hybrid_prompt="global_v21")
+    job_input = JobInput(video_path="/dummy/v.mp4", mode="hybrid", input_type="video")
+    prepared = PreparedInput(job_id="j1", input_type="video", job_input=job_input)
+    acquired = AcquiredFrames(
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[tmp_path / "f0.jpg"],
+        metadata={"frame_indices": [0]},
+        frame_refs=["f0"],
+    )
+    analysis_stage_result = AnalysisStageResult(
+        parsed_json={"total_entities_detected": 0, "entities": []},
+        provider_name=HARNESS_RESPONSE_PROVIDER,
+        provider_metadata=None,
+        prompt_composition={"prompt_hash": "abc"},
+        llm_cost_snapshot={"capture_status": "estimated"},
+    )
+    resolved = ResolvedEntities(entities=[])
+
+    with (
+        patch.object(pipeline, "_input_stage") as mock_input,
+        patch.object(pipeline, "_frame_acquisition_stage") as mock_frames,
+        patch.object(pipeline, "_analysis_stage") as mock_analysis,
+        patch.object(pipeline, "_entity_resolution_stage") as mock_resolve,
+        patch.object(pipeline, "_evidence_stage") as mock_evidence,
+        patch.object(pipeline, "_reporting_stage") as mock_reporting,
+    ):
+        mock_input.run.return_value = prepared
+        mock_frames.run.return_value = acquired
+        mock_analysis.run.return_value = analysis_stage_result
+        mock_resolve.run.return_value = resolved
+        mock_evidence.run.return_value = None
+        mock_reporting.run.return_value = ReportingResult(report_path=tmp_path / "hybrid_report.json", report={})
+        result = pipeline._run_hybrid(
+            "/dummy/v.mp4",
+            settings=settings,
+            video_id="j1",
+            output_path=tmp_path,
+            run_id="r1",
+            logger=logger,
+            job_input=job_input,
+        )
+
+    assert result.exit_code == 0
+    assert result.run_metadata is not None
+    assert result.run_metadata[RUN_METADATA_KEY_LLM_COST_SNAPSHOT] == {"capture_status": "estimated"}
+
+
+def test_pipeline_success_tolerates_analysis_result_without_llm_cost_snapshot_attr(tmp_path: Path) -> None:
+    """Legacy/mocked AnalysisStage outputs without llm_cost_snapshot must not crash finalization."""
+    from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+
+    class LegacyAnalysisStageResult:
+        def __init__(self) -> None:
+            self.parsed_json = {"total_entities_detected": 0, "entities": []}
+            self.provider_name = HARNESS_RESPONSE_PROVIDER
+            self.provider_metadata = None
+            self.prompt_composition = {"prompt_hash": "abc"}
+            # Intentionally no llm_cost_snapshot attribute.
+
+    pipeline = HybridInventoryPipeline()
+    logger = MagicMock()
+    settings = MagicMock(debug_save_frames=False, debug_run_metadata=False, hybrid_prompt="global_v21")
+    job_input = JobInput(video_path="/dummy/v.mp4", mode="hybrid", input_type="video")
+    prepared = PreparedInput(job_id="j1", input_type="video", job_input=job_input)
+    acquired = AcquiredFrames(
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        frame_paths=[tmp_path / "f0.jpg"],
+        metadata={"frame_indices": [0]},
+        frame_refs=["f0"],
+    )
+    resolved = ResolvedEntities(entities=[])
+
+    with (
+        patch.object(pipeline, "_input_stage") as mock_input,
+        patch.object(pipeline, "_frame_acquisition_stage") as mock_frames,
+        patch.object(pipeline, "_analysis_stage") as mock_analysis,
+        patch.object(pipeline, "_entity_resolution_stage") as mock_resolve,
+        patch.object(pipeline, "_evidence_stage") as mock_evidence,
+        patch.object(pipeline, "_reporting_stage") as mock_reporting,
+    ):
+        mock_input.run.return_value = prepared
+        mock_frames.run.return_value = acquired
+        mock_analysis.run.return_value = LegacyAnalysisStageResult()
+        mock_resolve.run.return_value = resolved
+        mock_evidence.run.return_value = None
+        mock_reporting.run.return_value = ReportingResult(report_path=tmp_path / "hybrid_report.json", report={})
+        result = pipeline._run_hybrid(
+            "/dummy/v.mp4",
+            settings=settings,
+            video_id="j1",
+            output_path=tmp_path,
+            run_id="r1",
+            logger=logger,
+            job_input=job_input,
+        )
+
+    assert result.exit_code == 0
+    assert result.run_metadata is not None
+    assert RUN_METADATA_KEY_LLM_COST_SNAPSHOT not in result.run_metadata

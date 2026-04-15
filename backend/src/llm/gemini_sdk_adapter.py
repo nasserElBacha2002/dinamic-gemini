@@ -128,5 +128,5 @@ class GeminiSdkAdapter:
             latency_ms=None,
             parsed_json=data,
             raw_text=None,
-            usage=None,
+            usage=dict(client.last_response_usage or {}),
         )

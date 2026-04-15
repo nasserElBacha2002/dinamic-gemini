@@ -11,7 +11,10 @@ from anthropic import APIStatusError
 
 from src.llm.anthropic_sdk_adapter import (
     AnthropicSdkAdapter,
+    _coerce_claude_response_text_to_json_string,
     _extract_json_text,
+    _extract_text_and_block_meta_from_anthropic_message,
+    _first_balanced_json_object,
     classify_anthropic_messages_api_error,
 )
 from src.llm.errors import LLMProviderError
@@ -57,6 +60,41 @@ def test_anthropic_sdk_adapter_not_configured_without_api_key() -> None:
     with pytest.raises(LLMProviderError) as ei:
         adapter.execute(req, s)
     assert ei.value.code == "NOT_CONFIGURED"
+
+
+def test_anthropic_sdk_adapter_accepts_prose_prefix_before_json_object() -> None:
+    """End-to-end: assistant text with leading prose must still parse via balanced-object fallback."""
+    adapter = AnthropicSdkAdapter()
+    settings = _settings_claude()
+    ok_json = (
+        "Here is the JSON you asked for.\n"
+        '{"total_entities_detected": 0, "entities": []}\n'
+        "End of output."
+    )
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = ok_json
+    mock_message = MagicMock()
+    mock_message.content = [text_block]
+    mock_message.usage = None
+
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=[],
+        prompt="p",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+
+    with patch("anthropic.Anthropic") as client_cls:
+        client_inst = MagicMock()
+        client_inst.messages.create.return_value = mock_message
+        client_cls.return_value = client_inst
+        out = adapter.execute(req, settings)
+    assert out.parsed_json["total_entities_detected"] == 0
+    assert out.parsed_json["entities"] == []
 
 
 def test_anthropic_sdk_adapter_uses_job_model_from_metadata() -> None:
@@ -125,6 +163,34 @@ def test_anthropic_sdk_adapter_maps_schema_invalid() -> None:
         assert ei.value.code == "SCHEMA_INVALID"
 
 
+def test_anthropic_sdk_adapter_empty_text_blocks_yield_invalid_json() -> None:
+    adapter = AnthropicSdkAdapter()
+    settings = _settings_claude()
+    t1 = MagicMock()
+    t1.type = "thinking"
+    t1.text = "internal"
+    mock_message = MagicMock()
+    mock_message.content = [t1]
+    mock_message.usage = None
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=[],
+        prompt="p",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with patch("anthropic.Anthropic") as client_cls:
+        client_inst = MagicMock()
+        client_inst.messages.create.return_value = mock_message
+        client_cls.return_value = client_inst
+        with pytest.raises(LLMProviderError) as ei:
+            adapter.execute(req, settings)
+    assert ei.value.code == "INVALID_JSON"
+    assert ei.value.details.get("reason") == "empty_extracted_text"
+
+
 def test_anthropic_sdk_adapter_maps_invalid_json() -> None:
     adapter = AnthropicSdkAdapter()
     settings = _settings_claude()
@@ -159,6 +225,75 @@ def test_extract_json_text_strips_markdown_fence_claude() -> None:
     t = _extract_json_text(raw)
     assert '"entities"' in t
     assert not t.startswith("```")
+
+
+def test_first_balanced_json_object_finds_inner_object() -> None:
+    s = 'Here is the result:\n{"total_entities_detected": 0, "entities": []}\nThanks.'
+    got = _first_balanced_json_object(s)
+    assert got == '{"total_entities_detected": 0, "entities": []}'
+
+
+def test_coerce_claude_plain_json() -> None:
+    raw = '{"total_entities_detected": 0, "entities": []}'
+    out = _coerce_claude_response_text_to_json_string(
+        raw, model="claude-test", extraction_meta={"block_count": 1, "block_types": "text"}
+    )
+    assert '"entities"' in out
+
+
+def test_coerce_claude_json_wrapped_in_markdown_fence() -> None:
+    raw = '```json\n{"total_entities_detected": 0, "entities": []}\n```'
+    out = _coerce_claude_response_text_to_json_string(
+        raw, model="claude-test", extraction_meta={"block_count": 1, "block_types": "text"}
+    )
+    assert out.strip().startswith("{")
+
+
+def test_coerce_claude_explanatory_prefix_before_json() -> None:
+    raw = 'Sure — output below.\n{"total_entities_detected": 1, "entities": [{"entity_type": "PALLET", "model_entity_id": "a", "confidence": 0.5, "has_boxes": false}]}'
+    out = _coerce_claude_response_text_to_json_string(
+        raw, model="claude-test", extraction_meta={"block_count": 1, "block_types": "text"}
+    )
+    assert '"model_entity_id"' in out
+
+
+def test_coerce_claude_empty_text_raises_invalid_json() -> None:
+    with pytest.raises(LLMProviderError) as ei:
+        _coerce_claude_response_text_to_json_string(
+            "   \n\t  ", model="claude-test", extraction_meta={"block_count": 0, "block_types": ""}
+        )
+    assert ei.value.code == "INVALID_JSON"
+    assert ei.value.details.get("reason") == "empty_extracted_text"
+
+
+def test_extract_text_concatenates_only_text_blocks() -> None:
+    t1 = MagicMock()
+    t1.type = "thinking"
+    t1.text = "should be ignored"
+    t2 = MagicMock()
+    t2.type = "text"
+    t2.text = '{"total_entities_detected": 0, "entities": []}'
+    t3 = MagicMock()
+    t3.type = "tool_use"
+    t3.text = "ignored"
+    msg = MagicMock()
+    msg.content = [t1, t2, t3]
+    text, meta = _extract_text_and_block_meta_from_anthropic_message(msg)
+    assert "total_entities_detected" in text
+    assert "should be ignored" not in text
+    assert meta["block_count"] == 3
+    assert "thinking" in meta["block_types"] and "text" in meta["block_types"]
+
+
+def test_extract_text_supports_dict_content_blocks() -> None:
+    msg = MagicMock()
+    msg.content = [
+        {"type": "thinking", "thinking": "x"},
+        {"type": "text", "text": '{"a": 1}'},
+    ]
+    text, meta = _extract_text_and_block_meta_from_anthropic_message(msg)
+    assert text == '{"a": 1}'
+    assert meta["block_types"] == "thinking,text"
 
 
 def test_classify_529_overloaded_error_maps_provider_overloaded() -> None:

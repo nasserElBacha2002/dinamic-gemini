@@ -417,6 +417,22 @@ class Settings(BaseModel):
         default_factory=lambda: (os.getenv("LLM_PROVIDER", "gemini") or "gemini").strip().lower(),
         description="Default pipeline provider: gemini, openai, claude, or deepseek. Env: LLM_PROVIDER.",
     )
+    llm_pricing_catalog_json: str = Field(
+        default_factory=lambda: (os.getenv("LLM_PRICING_CATALOG_JSON", "") or "").strip(),
+        description=(
+            "JSON catalog for provider/model pricing snapshots used to compute call cost. "
+            "Shape: {\"version\": \"...\", \"currency\": \"USD\", \"entries\": [{\"provider\": \"openai\", "
+            "\"model\": \"gpt-4o\", \"input_cost_per_million\": 5, \"output_cost_per_million\": 15, ...}]}. "
+            "Env: LLM_PRICING_CATALOG_JSON."
+        ),
+    )
+    llm_pricing_catalog_version: str = Field(
+        default_factory=lambda: (os.getenv("LLM_PRICING_CATALOG_VERSION", "") or "").strip(),
+        description=(
+            "Optional pricing catalog version label persisted into llm_cost_snapshot.pricing_snapshot. "
+            "Env: LLM_PRICING_CATALOG_VERSION."
+        ),
+    )
     openai_api_key: str = Field(
         default_factory=lambda: os.getenv("OPENAI_API_KEY", ""),
         description="OpenAI API key (used when llm_provider=openai). Env: OPENAI_API_KEY.",

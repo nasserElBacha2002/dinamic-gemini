@@ -198,6 +198,7 @@ def parse_entities(data: Dict[str, Any], job_id: str = "") -> List[Entity]:
                 internal_code=_safe_str(e.get("internal_code")),
                 product_label_quantity=qty,
                 product_label_bbox=_safe_bbox(e.get("product_label_bbox")),
+                extent_bbox=_safe_bbox(e.get("extent_bbox")),
                 has_boxes=bool(e.get("has_boxes", False)),
                 confidence=confidence,
                 pallet_id=None,

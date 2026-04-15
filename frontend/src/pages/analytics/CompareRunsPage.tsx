@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -20,6 +21,7 @@ import {
   TableHead,
   TableRow,
   Typography,
+  Tooltip,
 } from '@mui/material';
 import { PageHeader } from '../../components/shell';
 import CompareRunJobPickers from '../../components/compare/CompareRunJobPickers';
@@ -29,6 +31,109 @@ import { ApiError } from '../../api/types';
 import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { useAppSnackbar } from '../../components/ui';
 import { pathToAislePositions } from '../../utils/resultRoutes';
+
+function userFacingCaptureNote(note: string, t: TFunction): string {
+  if (note === 'provider_usage_missing') {
+    return t(
+      'compare.llm_cost_note.provider_usage_missing',
+      'The provider did not return token usage, so cost cannot be estimated.'
+    );
+  }
+  if (note === 'pricing_entry_missing') {
+    return t(
+      'compare.llm_cost_note.pricing_entry_missing',
+      'No pricing rule matched this model in the catalog, so totals are not computed.'
+    );
+  }
+  if (note === 'pricing_present_but_no_billable_dimensions') {
+    return t(
+      'compare.llm_cost_note.pricing_present_but_no_billable_dimensions',
+      'Pricing is configured but does not cover the usage dimensions reported for this run.'
+    );
+  }
+  if (note.startsWith('billable_dimension_not_priced:')) {
+    const dimension = note.slice('billable_dimension_not_priced:'.length);
+    return t('compare.llm_cost_note.billable_dimension_not_priced', {
+      dimension,
+      defaultValue: `Reported usage includes ${dimension}, which is not priced in the catalog.`,
+    });
+  }
+  if (note.startsWith('usage_dimension_ambiguous:')) {
+    const dimension = note.slice('usage_dimension_ambiguous:'.length);
+    return t('compare.llm_cost_note.usage_dimension_ambiguous', {
+      dimension,
+      defaultValue: `Token accounting is ambiguous for ${dimension}; the total may be approximate.`,
+    });
+  }
+  return note;
+}
+
+function formatCostDisplay(
+  run: {
+    model_name?: string | null;
+    llm_cost_snapshot?: {
+      billing_currency?: string | null;
+      pricing_available?: boolean | null;
+      model?: string | null;
+      computed_cost?: {
+        total_cost?: string | null;
+        currency?: string | null;
+        total_cost_unavailable_reason?: string | null;
+      };
+      capture_status?: string;
+      capture_notes?: string[];
+    } | null;
+  },
+  t: TFunction
+): {
+  value: string;
+  details: string | null;
+} {
+  const snap = run.llm_cost_snapshot;
+  if (!snap) {
+    return {
+      value: t('compare.llm_cost_display.no_snapshot', 'Cost snapshot unavailable'),
+      details: null,
+    };
+  }
+  const total = snap.computed_cost?.total_cost?.trim();
+  const currency = snap.computed_cost?.currency?.trim() || snap.billing_currency?.trim();
+  const statusKey = snap.capture_status ?? 'unavailable';
+  const statusLabel = t(`compare.llm_cost_status.${statusKey}`, {
+    defaultValue:
+      statusKey === 'exact'
+        ? 'Exact (usage fully priced)'
+        : statusKey === 'estimated'
+          ? 'Estimated'
+          : 'Unavailable',
+  });
+  const notes = Array.isArray(snap.capture_notes) ? snap.capture_notes : [];
+  const noteText = notes.map((n) => userFacingCaptureNote(n, t)).filter(Boolean);
+  const machineReason = snap.computed_cost?.total_cost_unavailable_reason?.trim();
+  const details = [statusLabel, ...noteText].join(' · ');
+  if (!total) {
+    let value: string;
+    if (notes.includes('pricing_entry_missing') || machineReason === 'pricing_entry_missing') {
+      value = t('compare.llm_cost_display.no_pricing_configured', 'No pricing configured');
+    } else if (notes.includes('provider_usage_missing') || machineReason === 'provider_usage_missing') {
+      value = t('compare.llm_cost_display.usage_not_reported', 'Usage not reported');
+    } else {
+      value = t('compare.llm_cost_display.not_computed', 'Not computed');
+    }
+    const modelLabel = (run.model_name || snap.model || '').trim();
+    const showDetails =
+      noteText.length > 0 ||
+      statusKey !== 'unavailable' ||
+      Boolean(machineReason) ||
+      Boolean(modelLabel);
+    const detailsWithModel =
+      modelLabel && !total
+        ? `${details}${details ? ' · ' : ''}${t('compare.llm_cost_display.model_in_tooltip', 'Model: {{model}}', { model: modelLabel })}`
+        : details;
+    return { value, details: showDetails ? detailsWithModel : null };
+  }
+  return { value: `${total} ${currency || ''}`.trim(), details };
+}
 
 export default function CompareRunsPage() {
   const { t } = useTranslation();
@@ -310,6 +415,7 @@ export default function CompareRunsPage() {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             {(['run_a', 'run_b'] as const).map((side) => {
               const r = compareQuery.data![side];
+              const cost = formatCostDisplay(r, t);
               return (
                 <Paper key={side} sx={{ p: 2, flex: '1 1 320px' }} variant="outlined">
                   <Typography variant="subtitle2" color="text.secondary">
@@ -342,6 +448,18 @@ export default function CompareRunsPage() {
                       <TableRow>
                         <TableCell>{t('compare.metric_needs_review')}</TableCell>
                         <TableCell align="right">{r.metrics.needs_review_count}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>{t('compare.metric_total_cost', 'Total cost')}</TableCell>
+                        <TableCell align="right">
+                          {cost.details ? (
+                            <Tooltip title={cost.details}>
+                              <span>{cost.value}</span>
+                            </Tooltip>
+                          ) : (
+                            cost.value
+                          )}
+                        </TableCell>
                       </TableRow>
                     </TableBody>
                   </Table>

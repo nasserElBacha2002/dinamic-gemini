@@ -38,6 +38,26 @@ const hoisted = vi.hoisted(() => {
         unknown_internal_code_count: 0,
         needs_review_count: 1,
       },
+      llm_cost_snapshot: {
+        provider: 'openai',
+        model: 'gpt-4o',
+        pricing_available: true,
+        billing_currency: 'USD',
+        usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+        pricing_snapshot: {
+          pricing_source: 'settings.llm_pricing_catalog_json',
+          pricing_version: 'catalog-v1',
+          billing_currency: 'USD',
+        },
+        computed_cost: {
+          subtotal_input: '0.00050000',
+          subtotal_output: '0.00075000',
+          total_cost: '0.00125000',
+          currency: 'USD',
+        },
+        capture_status: 'exact',
+        capture_notes: [],
+      },
     },
     run_b: {
       job_id: 'job-b',
@@ -53,6 +73,25 @@ const hoisted = vi.hoisted(() => {
         total_quantity: 22,
         unknown_internal_code_count: 1,
         needs_review_count: 0,
+      },
+      llm_cost_snapshot: {
+        provider: 'claude',
+        model: 'claude-sonnet-4',
+        pricing_available: false,
+        billing_currency: 'USD',
+        usage: { input_tokens: 100, output_tokens: 50 },
+        pricing_snapshot: {
+          pricing_source: 'settings.llm_pricing_catalog_json',
+          pricing_version: 'catalog-v1',
+          billing_currency: 'USD',
+        },
+        computed_cost: {
+          total_cost: null,
+          currency: 'USD',
+          total_cost_unavailable_reason: 'pricing_entry_missing',
+        },
+        capture_status: 'estimated',
+        capture_notes: ['pricing_entry_missing'],
       },
     },
     diff_summary: {
@@ -152,6 +191,84 @@ describe('CompareRunsPage', () => {
     expect(screen.getByText(/Only in B:/i)).toBeInTheDocument();
     expect(screen.getByText('job-a')).toBeInTheDocument();
     expect(screen.getByText('job-b')).toBeInTheDocument();
+  });
+
+  it('renders total LLM cost and no-pricing fallback for run B', () => {
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
+    expect(screen.getByText('0.00125000 USD')).toBeInTheDocument();
+    expect(screen.getByText('No pricing configured')).toBeInTheDocument();
+  });
+
+  it('shows operator-friendly tooltip text for cost details', async () => {
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
+    const cells = screen.getAllByText('No pricing configured');
+    fireEvent.mouseOver(cells[0]);
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent(/pricing/i);
+    expect(tip).toHaveTextContent(/mdl2/i);
+  });
+
+  it('shows usage not reported when provider usage is missing', async () => {
+    const savedB = { ...hoisted.comparePayload.run_b };
+    hoisted.comparePayload.run_b = {
+      ...savedB,
+      llm_cost_snapshot: {
+        provider: 'openai',
+        model: 'mdl2',
+        pricing_available: true,
+        billing_currency: 'USD',
+        usage: {},
+        pricing_snapshot: null,
+        computed_cost: {
+          total_cost: null,
+          currency: 'USD',
+          total_cost_unavailable_reason: 'provider_usage_missing',
+        },
+        capture_status: 'unavailable',
+        capture_notes: ['provider_usage_missing'],
+      },
+    };
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
+    expect(screen.getByText('Usage not reported')).toBeInTheDocument();
+    fireEvent.mouseOver(screen.getByText('Usage not reported'));
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent(/token usage/i);
+    expect(tip).toHaveTextContent(/mdl2/i);
+    hoisted.comparePayload.run_b = savedB;
+  });
+
+  it('shows not computed for other null-cost cases with model in tooltip', async () => {
+    const savedB = { ...hoisted.comparePayload.run_b };
+    hoisted.comparePayload.run_b = {
+      ...savedB,
+      model_name: 'custom-model',
+      llm_cost_snapshot: {
+        provider: 'openai',
+        model: 'custom-model',
+        pricing_available: true,
+        billing_currency: 'USD',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        pricing_snapshot: {
+          pricing_source: 'settings.llm_pricing_catalog_json',
+          pricing_version: 'catalog-v1',
+          billing_currency: 'USD',
+        },
+        computed_cost: {
+          total_cost: null,
+          currency: 'USD',
+          total_cost_unavailable_reason: 'cost_not_computed',
+        },
+        capture_status: 'unavailable',
+        capture_notes: [],
+      },
+    };
+    renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
+    expect(screen.getByText('Not computed')).toBeInTheDocument();
+    fireEvent.mouseOver(screen.getByText('Not computed'));
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent(/Model:/i);
+    expect(tip).toHaveTextContent(/custom-model/i);
+    hoisted.comparePayload.run_b = savedB;
   });
 
   it('shows an honest cap warning when raw fetch hit the server cap', () => {
