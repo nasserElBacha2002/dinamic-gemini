@@ -70,7 +70,6 @@ export default function InventoriesList() {
     setCreateOpen(false);
     setCreateError(null);
     showSnackbar(t('inventory.created_snackbar', { name: created.name }), 'success');
-    void refetch();
     if (created.id) navigate(`/inventories/${created.id}`);
   };
 

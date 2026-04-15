@@ -488,11 +488,7 @@ export default function AislePositionsPage() {
         aisleId,
         jobId: visibleJobId ?? null,
       });
-      const [, , refreshedMergeResults] = await Promise.all([
-        refetch(),
-        aislesQuery.refetch(),
-        mergeResultsQuery.refetch(),
-      ]);
+      const [, refreshedMergeResults] = await Promise.all([aislesQuery.refetch(), mergeResultsQuery.refetch()]);
       setLastMergeResponse(result);
       setLastMergeSummary(summarizeMergeResults(refreshedMergeResults.data?.results));
       showSnackbar(
@@ -503,7 +499,7 @@ export default function AislePositionsPage() {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       showSnackbar(resolveApiErrorMessage(err, 'errors.merge_failed'), 'error');
     }
-  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, refetch, showSnackbar, t, visibleJobId]);
+  }, [aisleId, aislesQuery, inventoryId, mergeMutation, mergeResultsQuery, showSnackbar, t, visibleJobId]);
 
   if (!inventoryId || !aisleId) {
     return (
@@ -838,8 +834,6 @@ export default function AislePositionsPage() {
               await promoteMutation.mutateAsync(promoteJobId);
               setPromoteDialogOpen(false);
               showSnackbar(t('aisle.operational_updated_snackbar'), 'success');
-              void refetch();
-              void aisleJobsQuery.refetch();
             } catch (e) {
               const err = e instanceof ApiError ? e : new ApiError(String(e));
               showSnackbar(resolveApiErrorMessage(err, 'errors.promotion_failed'), 'error');
