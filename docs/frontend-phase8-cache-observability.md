@@ -84,10 +84,10 @@ Emitted from `mutationCachePatch.ts` after `patchCreateAisleIntoAislesLists` / `
 
 ### `mutation_invalidations`
 
-Emitted from `useMutations.ts` for:
+Emitted from `useMutations.ts` after success for:
 
 - `useCreateAisle`
-- `useStartAisleProcessing`
+- `useStartAisleProcessing` (aisles, detail, aisle jobs, positions — matches invalidation set in hook)
 - `useRunAisleMerge`
 - `usePromoteAisleOperationalJob`
 

@@ -2,6 +2,8 @@
 
 This note summarizes the current frontend data-update model after optimization Phases 0 through 9.
 
+> **Filename:** `frontend-cache-update-architecture-phase0-7.md` is historical; this document is the **canonical** architecture note for phases **0–9**. Prefer linking here over older phase-only notes where they conflict.
+
 ## System shape
 
 - **Query identity:** all high-traffic list/detail queries use `queryKeys` + canonicalized params.

@@ -18,13 +18,15 @@ Phase 8 made cache/mutation behavior **observable**. Phase 9 makes the system **
 
 ### Script: `npm run check:cache` (from `frontend/`)
 
+**CI:** `.github/workflows/frontend-validate.yml` runs `npm run check:cache`, `typecheck`, and `test` on pushes/PRs that touch `frontend/**`.
+
 Runs `node scripts/check-cache-conventions.mjs`:
 
 - Fails if any file under `src/` (except `api/queryKeys.ts`) contains **`'merge-results'`** as a string (prevents duplicate key roots outside the factory file). HTTP paths in `client.ts` use `merge-results` inside template literals without quotes — they do not match.
 - Fails on **`queryKey: [...queryKeys.inventories.aisles(`** manual spread (use `aislesListTable`).
 - Fails on **`invalidateQueries({ queryKey: ['`** literal-root invalidation.
 
-**CI:** add `npm run check:cache` next to `npm run typecheck` / tests in your pipeline when ready.
+The merge-results scan uses source text with **`//` line comments** and **`/* */` blocks** stripped first, so prose comments are less likely to false-positive.
 
 ## 3. Runtime guardrails (development)
 

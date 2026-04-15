@@ -19,9 +19,10 @@ import { recordReviewActionCacheObs } from '../dev/cacheMutationObservability';
  * Post-success cache behavior for `useSubmitReviewAction`.
  *
  * - **`reviewQueue`** / **`aisleResults`**: wired from `QuickReviewDrawer` based on operator route.
- * - **`detail`**: implemented and unit-tested for a future **position-detail-only** entry point (narrower
- *   invalidation than `aisleResults`, e.g. no merge-results churn). Not used in production yet — add a
- *   call site when product requires it; do not wire speculatively.
+ * - **`detail`**: **Reserved — not used in production.** Implemented + unit-tested for a future
+ *   position-detail-only entry (narrower invalidation than `aisleResults`, e.g. no merge-results churn).
+ *   `QuickReviewDrawer` only passes `reviewQueue` | `aisleResults` | `undefined`. Wire `detail` only when
+ *   product adds a route that needs this contract; otherwise leave `undefined` / `aisleResults`.
  */
 export type ReviewMutationStrategy = 'reviewQueue' | 'aisleResults' | 'detail';
 

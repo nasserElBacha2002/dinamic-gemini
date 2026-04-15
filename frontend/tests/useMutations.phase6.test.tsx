@@ -27,7 +27,7 @@ describe('Phase 6 mutation cache behavior', () => {
       updated_at: '2024-01-01T00:00:00Z',
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const aislesKey = [...queryKeys.inventories.aisles('inv-1'), { page: 1, page_size: 200 }] as const;
+    const aislesKey = queryKeys.inventories.aislesListTable('inv-1');
     qc.setQueryData(aislesKey, {
       items: [
         {

@@ -13,10 +13,12 @@
 
 Implemented in `frontend/src/hooks/useMutations.ts` / `reviewActionCachePatch.ts`:
 
-- `reviewQueue` — production (`QuickReviewDrawer` from review queue).
-- `aisleResults` — production (`QuickReviewDrawer` from aisle results).
-- `detail` — **reserved / test-only**: narrower invalidation than `aisleResults` (no merge-results churn). Implemented and covered by unit tests; **no production call site** until product adds an explicit detail-only route.
-- `undefined` (default fallback = Phase 3 behavior)
+- `reviewQueue` — **production** (`QuickReviewDrawer` when `returnTo === 'review_queue'`).
+- `aisleResults` — **production** (`QuickReviewDrawer` when `returnTo === 'aisle_results'`).
+- `detail` — **explicitly reserved, not production today.** Narrower invalidation than `aisleResults` (no merge-results invalidation in strategy path). Exists for tests and **future** wiring only; **do not treat as active** in operator flows until a call site passes `strategy: 'detail'`.
+- `undefined` — **production fallback** when strategy omitted: Phase 3–compatible broad invalidation (safe default).
+
+**Phase 4 DoD (strict):** context-sensitive behavior is **fully met** for queue + aisle results; `detail` is an **opt-in extension point**, not an incomplete production branch.
 
 ## Invalidation behavior by strategy
 

@@ -21,6 +21,18 @@ const AISLES_MANUAL_SPREAD = /queryKey:\s*\[\s*\.\.\.\s*queryKeys\.inventories\.
 /** v3 merge-results key segment must only appear in `queryKeys` (HTTP paths may still say merge-results). */
 const MERGE_RESULTS_SEGMENT = /['"]merge-results['"]/;
 
+/** Strip line comments and slash-star block comments before scanning for quoted merge-results segment. */
+function sourceForMergeResultsScan(text) {
+  const noBlocks = text.replace(/\/\*[\s\S]*?\*\//g, '\n');
+  return noBlocks
+    .split('\n')
+    .map((line) => {
+      const i = line.indexOf('//');
+      return i === -1 ? line : line.slice(0, i);
+    })
+    .join('\n');
+}
+
 /** Invalidate with a literal array root (bypasses factories). */
 const INVALIDATE_LITERAL_KEY = /invalidateQueries\s*\(\s*\{\s*queryKey:\s*\[\s*(['"])/;
 
@@ -48,7 +60,7 @@ function checkFile(absPath) {
         `${rel}: use queryKeys.inventories.aislesListTable(inventoryId) instead of queryKey: [...queryKeys.inventories.aisles(...), params]`
       );
     }
-    if (MERGE_RESULTS_SEGMENT.test(text)) {
+    if (MERGE_RESULTS_SEGMENT.test(sourceForMergeResultsScan(text))) {
       issues.push(
         `${rel}: 'merge-results' key segment must only appear in api/queryKeys.ts — use queryKeys.inventories.mergeResults*`
       );

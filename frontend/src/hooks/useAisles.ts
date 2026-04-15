@@ -1,5 +1,9 @@
 /**
  * TanStack Query hooks for inventory metrics and aisles.
+ *
+ * **Query keys (Phase 2 / 7):** `useAislesList` uses `queryKeys.inventories.aislesListTable` and
+ * `useAisleJobsList` uses `queryKeys.inventories.aisleJobsList` — same shapes Phase 6 patch helpers expect.
+ * Analytics and other domains use their own `queryKeys` trees; they are not required to share list canonicalizers.
  */
 
 import { useQuery } from '@tanstack/react-query';

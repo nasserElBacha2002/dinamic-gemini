@@ -75,6 +75,10 @@ export function useStartAisleProcessing(inventoryId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
+      recordMutationInvalidationsObs({
+        flow: 'useStartAisleProcessing',
+        labels: ['inventories.aisles', 'inventories.detail', 'aisleJobs', 'positions'],
+      });
     },
   });
 }
@@ -85,7 +89,7 @@ export function useCancelAisleJob(inventoryId: string) {
     mutationFn: ({ aisleId, jobId }: { aisleId: string; jobId: string }) =>
       cancelAisleJob(inventoryId, aisleId, jobId),
     onSuccess: (_, vars) => {
-      // Aisle list + jobs + positions can show job status; keep aligned after cancel.
+      // Job cancel affects run list, per-aisle positions slice, and job-scoped detail — all can be visible in UI.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, vars.aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
@@ -101,6 +105,7 @@ export function useRetryAisleJob(inventoryId: string) {
     mutationFn: ({ aisleId, jobId }: { aisleId: string; jobId: string }) =>
       retryAisleJob(inventoryId, aisleId, jobId),
     onSuccess: (_, vars) => {
+      // Same surface as cancel: operators see jobs list, positions, and job detail after retry.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, vars.aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
