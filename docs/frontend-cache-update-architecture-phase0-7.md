@@ -11,7 +11,7 @@ This note summarizes the current frontend data-update model after optimization P
   - conservative local cache patching when state is known
   - fallback invalidation when patching is uncertain or cache is absent
 - **Manual merge (`useRunAisleMerge`):** positions are invalidated in the mutation; merge-results are refreshed from `AislePositionsPage` via **one** `fetchQuery` after success (no overlapping invalidate + UI `refetch` for that resource).
-- **Review actions:** strategy-driven (`reviewQueue` / `aisleResults` / `detail` / fallback) with shared orchestration.
+- **Review actions:** strategy-driven (`reviewQueue` / `aisleResults` / reserved `detail` / fallback) with shared orchestration.
 
 ## What each phase established
 

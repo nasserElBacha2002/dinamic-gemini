@@ -11,7 +11,7 @@ Use this for PRs that touch **TanStack Query**, **`queryKeys`**, **canonicalizat
 - [ ] **Context-sensitive reviews** — `useSubmitReviewAction` call sites that know the surface (queue vs aisle results) pass **`strategy`** so Phase 4 + 5 behavior applies.
 - [ ] **Merge / refresh** — No pairing **`invalidateQueries` + redundant `refetch()`** for the same resource on one user action (Phase 1).
 - [ ] **Patching** — `setQueryData` only for known-safe fields; if unsure, **invalidate** instead of guessing nested server state.
-- [ ] **Static check** — Run `npm run check:cache` (from `frontend/`) and fix reported issues. PRs touching `frontend/**` run this in **GitHub Actions** (`frontend-validate` workflow).
+- [ ] **Static check** — Run `npm run check:cache` (from `frontend/`) and fix reported issues. PRs touching `frontend/**` run this in **GitHub Actions** (`frontend-validate` workflow: `check:cache`, `typecheck`, `test:ci`).
 - [ ] **Observability (dev)** — With Phase 8 tools, spot-check `window.__DINAMIC_CACHE_OBS__?.getRecent()` after exercising the changed flow; confirm guardrails are quiet unless you expect cold-cache fallbacks.
 
 ## If you add a new high-traffic mutation

@@ -77,7 +77,7 @@ export function useStartAisleProcessing(inventoryId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
       recordMutationInvalidationsObs({
         flow: 'useStartAisleProcessing',
-        labels: ['inventories.aisles', 'inventories.detail', 'aisleJobs', 'positions'],
+        labels: ['inventories.aisles', 'inventories.detail', 'inventories.aisleJobs', 'inventories.positions'],
       });
     },
   });
@@ -95,6 +95,10 @@ export function useCancelAisleJob(inventoryId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
       // Job-scoped detail (log / summary) must drop stale state for the cancelled job.
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
+      recordMutationInvalidationsObs({
+        flow: 'useCancelAisleJob',
+        labels: ['inventories.aisles', 'inventories.aisleJobs', 'inventories.positions', 'inventories.jobDetail'],
+      });
     },
   });
 }
@@ -111,6 +115,10 @@ export function useRetryAisleJob(inventoryId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, vars.aisleId) });
       // Job-scoped detail must reflect the restarted run (same boundary as cancel).
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.jobDetail(inventoryId, vars.aisleId, vars.jobId) });
+      recordMutationInvalidationsObs({
+        flow: 'useRetryAisleJob',
+        labels: ['inventories.aisles', 'inventories.aisleJobs', 'inventories.positions', 'inventories.jobDetail'],
+      });
     },
   });
 }
@@ -135,7 +143,7 @@ export function useRunAisleMerge(inventoryId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
       recordMutationInvalidationsObs({
         flow: 'useRunAisleMerge',
-        labels: ['positions'],
+        labels: ['inventories.positions'],
       });
     },
   });
@@ -221,10 +229,10 @@ export function usePromoteAisleOperationalJob(inventoryId: string, aisleId: stri
       recordMutationInvalidationsObs({
         flow: 'usePromoteAisleOperationalJob',
         labels: [
-          ...(!patched ? ['aisleJobs(invalidate)'] : []),
-          'positions',
+          ...(!patched ? ['inventories.aisleJobs(invalidate)'] : []),
+          'inventories.positions',
           'inventories.aisles',
-          'benchmarkCompareInventory',
+          'inventories.benchmarkCompareInventory',
         ],
       });
     },

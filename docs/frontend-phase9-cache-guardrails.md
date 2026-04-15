@@ -18,7 +18,7 @@ Phase 8 made cache/mutation behavior **observable**. Phase 9 makes the system **
 
 ### Script: `npm run check:cache` (from `frontend/`)
 
-**CI:** `.github/workflows/frontend-validate.yml` runs `npm run check:cache`, `typecheck`, and `test` on pushes/PRs that touch `frontend/**`.
+**CI:** `.github/workflows/frontend-validate.yml` runs `npm run check:cache`, `typecheck`, and `npm run test:ci` on pushes/PRs that touch `frontend/**`.
 
 Runs `node scripts/check-cache-conventions.mjs`:
 

@@ -201,6 +201,7 @@ export default function InventoryDetail() {
               // Run id in inventory UI === job id in v3 observability API (unchanged contract).
               initialSelectedJobId={observabilityDialog.initialSelectedRunId}
               onClose={() => setObservabilityDialog(null)}
+              onAislesInvalidate={() => aislesQuery.refetch()}
             />
           ) : null}
         </>

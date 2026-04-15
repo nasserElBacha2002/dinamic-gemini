@@ -9,16 +9,18 @@
 
 **Follow-up:** Phase 5 adds targeted `setQueryData` / `removeQueries` on top of these strategies (see `docs/frontend-phase5-cache-patching.md`).
 
-## Strategy model
+## Strategy reference (single source of truth)
 
-Implemented in `frontend/src/hooks/useMutations.ts` / `reviewActionCachePatch.ts`:
-
-- `reviewQueue` — **production** (`QuickReviewDrawer` when `returnTo === 'review_queue'`).
-- `aisleResults` — **production** (`QuickReviewDrawer` when `returnTo === 'aisle_results'`).
-- `detail` — **explicitly reserved, not production today.** Narrower invalidation than `aisleResults` (no merge-results invalidation in strategy path). Exists for tests and **future** wiring only; **do not treat as active** in operator flows until a call site passes `strategy: 'detail'`.
-- `undefined` — **production fallback** when strategy omitted: Phase 3–compatible broad invalidation (safe default).
+| Strategy | Production? | Notes |
+|----------|----------------|-------|
+| `reviewQueue` | Yes | `QuickReviewDrawer` when `returnTo === 'review_queue'`. |
+| `aisleResults` | Yes | `QuickReviewDrawer` when `returnTo === 'aisle_results'`. |
+| `detail` | **No — reserved** | Implemented and tested; **not** passed from production UI. Narrower invalidation than `aisleResults` (no merge-results on the strategy path). Use only when a future call site opts in. |
+| `undefined` (omitted) | Yes — **fallback** | Phase 3–compatible broad invalidation when no strategy is passed. |
 
 **Phase 4 DoD (strict):** context-sensitive behavior is **fully met** for queue + aisle results; `detail` is an **opt-in extension point**, not an incomplete production branch.
+
+Implemented in `frontend/src/hooks/useMutations.ts` and `reviewActionCachePatch.ts`.
 
 ## Invalidation behavior by strategy
 
@@ -44,7 +46,7 @@ Implemented in `frontend/src/hooks/useMutations.ts` / `reviewActionCachePatch.ts
   - review queue
   - aisles
 
-### `detail`
+### `detail` (reserved)
 
 - Invalidates:
   - `positionDetail(inventoryId, aisleId, positionId)`
@@ -65,11 +67,7 @@ Implemented in `frontend/src/hooks/useMutations.ts` / `reviewActionCachePatch.ts
 
 ## Call-site changes
 
-- `QuickReviewDrawer` now derives strategy from `context.returnTo`:
-  - `review_queue` -> `reviewQueue`
-  - `aisle_results` -> `aisleResults`
-
-This covers required high-impact contexts used by `ReviewQueuePage` and `AislePositionsPage`.
+`QuickReviewDrawer` maps `context.returnTo` to `reviewQueue` / `aisleResults` as in the table above. No production path passes `detail`.
 
 ## Phase 5+ deferred
 

@@ -2,6 +2,14 @@
 /**
  * Phase 9 — lightweight static checks for TanStack Query cache conventions (no ESLint plugin).
  * Run: node scripts/check-cache-conventions.mjs (from frontend/)
+ *
+ * Limitations (intentional — no full parser):
+ * - Walks TypeScript sources under `frontend/src` only; tests and scripts are out of scope.
+ * - Rules are regex-based: they can miss issues or overlap real code in edge cases.
+ * - Comment stripping before the `merge-results` segment check is line-based: a `//` inside a
+ *   string literal (e.g. URLs) or odd quoting can theoretically truncate a line incorrectly.
+ *   Goal is only to drop obvious line comments and slash-star block comments so merge-results in comments
+ *   does not false-positive.
  */
 
 import fs from 'node:fs';

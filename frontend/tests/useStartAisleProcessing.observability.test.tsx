@@ -45,6 +45,11 @@ describe('useStartAisleProcessing observability (Phase 8 closure)', () => {
     expect(inv).toHaveLength(1);
     const row = inv[0] as { flow: string; labels: string[] };
     expect(row.flow).toBe('useStartAisleProcessing');
-    expect(row.labels).toEqual(['inventories.aisles', 'inventories.detail', 'aisleJobs', 'positions']);
+    expect(row.labels).toEqual([
+      'inventories.aisles',
+      'inventories.detail',
+      'inventories.aisleJobs',
+      'inventories.positions',
+    ]);
   });
 });

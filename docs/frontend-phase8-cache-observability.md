@@ -6,7 +6,7 @@ After Phases 0–7, cache behavior (canonical keys, narrowed invalidation, strat
 
 - See whether review actions used **patch hits** vs **fallback invalidations** vs **direct** invalidations (e.g. merge after aisle results).
 - See **non-review** patch outcomes (`create_aisle`, `promote_operational_job`).
-- See **mutation-level invalidation labels** for high-traffic hooks (`useCreateAisle`, `useStartAisleProcessing`, `useRunAisleMerge`, `usePromoteAisleOperationalJob`).
+- See **mutation-level invalidation labels** for high-traffic hooks (`useCreateAisle`, `useStartAisleProcessing`, `useCancelAisleJob`, `useRetryAisleJob`, `useRunAisleMerge`, `usePromoteAisleOperationalJob`).
 - See **explicit `fetchQuery`** refresh for merge-results (single driver vs duplicate invalidate+refetch).
 
 This is **not** product analytics, not a telemetry vendor, and not a guarantee of network-level tracing.
@@ -87,11 +87,11 @@ Emitted from `mutationCachePatch.ts` after `patchCreateAisleIntoAislesLists` / `
 Emitted from `useMutations.ts` after success for:
 
 - `useCreateAisle`
-- `useStartAisleProcessing` (aisles, detail, aisle jobs, positions — matches invalidation set in hook)
+- `useStartAisleProcessing` / `useCancelAisleJob` / `useRetryAisleJob` (labels match each hook’s `invalidateQueries` set)
 - `useRunAisleMerge`
 - `usePromoteAisleOperationalJob`
 
-- **`labels`**: human-readable domain list (not raw query keys) to estimate fan-out.
+- **`labels`**: human-readable domain list aligned with `queryKeys.inventories.*` factory names (dotted paths such as `inventories.positions`, `inventories.aisleJobs`), not raw query keys — to estimate fan-out and compare across flows.
 
 ### `explicit_refresh`
 
@@ -110,7 +110,7 @@ Emitted from `AislePositionsPage` after merge success **`fetchQuery`** for merge
 ## Instrumented flows (minimum set)
 
 1. Review action (queue / aisle / detail / default) — `review_action_cache`
-2. Merge — `mutation_invalidations` (`positions`) + `explicit_refresh` (`merge_merge_results`)
+2. Merge — `mutation_invalidations` (`inventories.positions`) + `explicit_refresh` (`merge_merge_results`)
 3. Promote — `non_review_patch` + `mutation_invalidations`
 4. Create aisle — `non_review_patch` + `mutation_invalidations`
 5. Start aisle processing — `mutation_invalidations`

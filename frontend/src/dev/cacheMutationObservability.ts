@@ -72,11 +72,18 @@ export type NonReviewPatchObsEvent = {
   note?: string;
 };
 
+/**
+ * Mutation-level invalidation summary. `labels` mirror `queryKeys.inventories` factory names
+ * as dotted paths (`inventories.positions`, `inventories.aisleJobs`, …), plus optional
+ * `(invalidate)` when a patch path skipped a list invalidation.
+ */
 export type MutationInvalidationsObsEvent = {
   kind: 'mutation_invalidations';
   flow:
     | 'useCreateAisle'
     | 'useStartAisleProcessing'
+    | 'useCancelAisleJob'
+    | 'useRetryAisleJob'
     | 'useRunAisleMerge'
     | 'usePromoteAisleOperationalJob';
   labels: string[];
