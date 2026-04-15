@@ -5,21 +5,17 @@
 import { useQuery } from '@tanstack/react-query';
 import type { InventoriesListQuery } from '../api/client';
 import { getInventories, getInventory, getInventoryVisualReferences } from '../api/client';
-import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import { queryKeys } from '../api/queryKeys';
+import { canonicalizeInventoriesListQuery, inventoriesListKeyPart } from '../api/queryParamCanonicalization';
 
 /**
  * Paginated / sortable inventories table (GET /api/v3/inventories).
  * Pass `listQuery` for server-driven page, page_size, sort_by, sort_dir, search, status.
  */
 export function useInventoriesList(listQuery?: InventoriesListQuery) {
-  const q: InventoriesListQuery = {
-    page: 1,
-    page_size: DEFAULT_LIST_PAGE_SIZE,
-    ...listQuery,
-  };
+  const q = canonicalizeInventoriesListQuery(listQuery);
   return useQuery({
-    queryKey: [...queryKeys.inventories.list(), q] as const,
+    queryKey: queryKeys.inventories.listWithParams(inventoriesListKeyPart(q)),
     queryFn: () => getInventories(q),
   });
 }

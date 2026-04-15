@@ -157,11 +157,11 @@ describe('usePositions run context (Phase 3)', () => {
     await waitFor(() => expect(rRep.current.isSuccess).toBe(true));
 
     expect(client.getPositionDetail).toHaveBeenCalledWith('inv-1', 'aisle-1', 'pos-1', {
-      jobId: undefined,
+      jobId: null,
       exactPosition: true,
     });
     expect(client.getPositionDetail).toHaveBeenCalledWith('inv-1', 'aisle-1', 'pos-1', {
-      jobId: undefined,
+      jobId: null,
       exactPosition: false,
     });
   });
