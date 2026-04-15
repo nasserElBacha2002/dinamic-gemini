@@ -201,6 +201,9 @@ export function useSubmitReviewAction(
         queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
       });
 
+      // Review Queue screen (`ReviewQueuePage`) loads rows via `useReviewQueue` only; the drawer uses
+      // `positionDetail`. Nothing on that route subscribes to aisle `positions`, merge-results, or `aisles`,
+      // so invalidating those would only add redundant traffic after a review action.
       if (strategy === 'reviewQueue') {
         queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
         return;
@@ -216,6 +219,8 @@ export function useSubmitReviewAction(
         return;
       }
 
+      // Detail flows often sit beside a parent positions list (same aisle); refreshing that list keeps row
+      // summaries and counts aligned with the reviewed position without touching merge/review-queue domains.
       if (strategy === 'detail') {
         queryClient.invalidateQueries({
           queryKey: queryKeys.inventories.positions(inventoryId, aisleId),

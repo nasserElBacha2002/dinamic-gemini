@@ -28,6 +28,8 @@ Implemented in `frontend/src/hooks/useMutations.ts`:
   - merge-results
   - aisles
 
+**Rationale (review queue context):** `ReviewQueuePage` consumes the global review-queue list (`useReviewQueue`) and the drawer loads position detail only. That screen does not mount aisle positions, merge-results, or inventory aisles queries, so those invalidations were dropped for this strategy to avoid redundant refetches (see comment in `useSubmitReviewAction`).
+
 ### `aisleResults`
 
 - Invalidates:
