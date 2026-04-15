@@ -2,6 +2,9 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import type { Aisle, AisleJobsListResponse } from '../api/types';
 import { queryKeys } from '../api/queryKeys';
 
+const DEFAULT_AISLES_LIST_PAGE = 1;
+const DEFAULT_AISLES_LIST_PAGE_SIZE = 200;
+
 type AislesListLike = {
   items: Aisle[];
   page: number;
@@ -12,14 +15,15 @@ type AislesListLike = {
 
 function isDefaultAislesListQueryKey(queryKey: QueryKey, inventoryId: string): boolean {
   if (!Array.isArray(queryKey) || queryKey.length < 5) return false;
-  if (queryKey[0] !== 'v3' || queryKey[1] !== 'inventories' || queryKey[2] !== 'aisles') return false;
-  if (queryKey[3] !== inventoryId) return false;
+  const prefix = queryKeys.inventories.aisles(inventoryId);
+  if (queryKey[0] !== prefix[0] || queryKey[1] !== prefix[1] || queryKey[2] !== prefix[2]) return false;
+  if (queryKey[3] !== prefix[3]) return false;
   const params = queryKey[4];
   if (!params || typeof params !== 'object') return false;
   const page = (params as { page?: unknown }).page;
   const pageSize = (params as { page_size?: unknown }).page_size;
   const keys = Object.keys(params as object);
-  return keys.length === 2 && page === 1 && pageSize === 200;
+  return keys.length === 2 && page === DEFAULT_AISLES_LIST_PAGE && pageSize === DEFAULT_AISLES_LIST_PAGE_SIZE;
 }
 
 /**

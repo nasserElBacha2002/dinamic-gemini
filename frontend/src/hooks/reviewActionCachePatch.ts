@@ -14,6 +14,8 @@ import type {
 } from '../api/types/responses';
 import { queryKeys } from '../api/queryKeys';
 
+export type ReviewMutationStrategy = 'reviewQueue' | 'aisleResults' | 'detail';
+
 /**
  * Compare fields this module may change. Used to detect true no-ops so we do not treat
  * "new object, same semantics" as a successful patch (which would suppress invalidation incorrectly).
@@ -278,6 +280,17 @@ export type ReviewCachePatchFlags = {
   invalidatePositionsList: boolean;
 };
 
+function invalidatePositionDetail(
+  queryClient: QueryClient,
+  inventoryId: string,
+  aisleId: string,
+  positionId: string
+) {
+  queryClient.invalidateQueries({
+    queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
+  });
+}
+
 /**
  * Apply cache patches for `reviewQueue` strategy; narrow invalidation when patches hit cached data.
  */
@@ -336,4 +349,97 @@ export function patchCachesForDetailStrategy(
     invalidatePositionDetail: !detailPatched,
     invalidatePositionsList: !listPatched,
   };
+}
+
+type ApplySubmitReviewActionCacheEffectsParams = {
+  queryClient: QueryClient;
+  inventoryId: string;
+  aisleId: string;
+  positionId: string;
+  body: ReviewActionRequest;
+  strategy?: ReviewMutationStrategy;
+};
+
+/**
+ * Centralized strategy orchestration for review-action post-success behavior.
+ * Keeps mutation hook lean and guarantees one convention for:
+ * - conservative patching
+ * - conditional fallback invalidation
+ * - explicit domain invalidation boundaries per strategy
+ */
+export function applySubmitReviewActionCacheEffects({
+  queryClient,
+  inventoryId,
+  aisleId,
+  positionId,
+  body,
+  strategy,
+}: ApplySubmitReviewActionCacheEffectsParams): void {
+  // Review Queue screen (`ReviewQueuePage`) loads rows via `useReviewQueue` only; the drawer uses
+  // `positionDetail`. Nothing on that route subscribes to aisle `positions`, merge-results, or `aisles`,
+  // so invalidating those would only add redundant traffic after a review action.
+  if (strategy === 'reviewQueue') {
+    const flags = patchCachesForReviewQueueStrategy(
+      queryClient,
+      inventoryId,
+      aisleId,
+      positionId,
+      body
+    );
+    if (flags.invalidatePositionDetail) {
+      invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
+    }
+    if (flags.invalidateReviewQueue) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
+    }
+    return;
+  }
+
+  if (strategy === 'aisleResults') {
+    const flags = patchCachesForAisleResultsStrategy(
+      queryClient,
+      inventoryId,
+      aisleId,
+      positionId,
+      body
+    );
+    if (flags.invalidatePositionDetail) {
+      invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
+    }
+    if (flags.invalidatePositionsList) {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
+      });
+    }
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId),
+    });
+    return;
+  }
+
+  // Detail flows often sit beside a parent positions list (same aisle); refreshing that list keeps row
+  // summaries and counts aligned with the reviewed position without touching merge/review-queue domains.
+  if (strategy === 'detail') {
+    const flags = patchCachesForDetailStrategy(queryClient, inventoryId, aisleId, positionId, body);
+    if (flags.invalidatePositionDetail) {
+      invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
+    }
+    if (flags.invalidatePositionsList) {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
+      });
+    }
+    return;
+  }
+
+  // Default behavior (Phase 3 compatibility) for call sites that do not pass a strategy.
+  invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
+  queryClient.invalidateQueries({
+    queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId),
+  });
+  queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
 }

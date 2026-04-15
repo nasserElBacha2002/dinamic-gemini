@@ -20,9 +20,8 @@ import {
 import type { CreateInventoryRequest, CreateAisleRequest, ReviewActionRequest } from '../api/types';
 import { queryKeys } from '../api/queryKeys';
 import {
-  patchCachesForAisleResultsStrategy,
-  patchCachesForDetailStrategy,
-  patchCachesForReviewQueueStrategy,
+  applySubmitReviewActionCacheEffects,
+  type ReviewMutationStrategy,
 } from './reviewActionCachePatch';
 import { patchCreateAisleIntoAislesLists, patchPromoteOperationalJobInAisleJobs } from './mutationCachePatch';
 
@@ -103,7 +102,6 @@ export function useRetryAisleJob(inventoryId: string) {
 }
 
 export type RunAisleMergeVariables = { aisleId: string; jobId: string | null };
-export type ReviewMutationStrategy = 'reviewQueue' | 'aisleResults' | 'detail';
 export interface ReviewMutationOptions {
   strategy?: ReviewMutationStrategy;
 }
@@ -213,87 +211,14 @@ export function useSubmitReviewAction(
     mutationFn: (body: ReviewActionRequest) =>
       submitReviewAction(inventoryId, aisleId, positionId, body),
     onSuccess: (_data, body) => {
-      // Review Queue screen (`ReviewQueuePage`) loads rows via `useReviewQueue` only; the drawer uses
-      // `positionDetail`. Nothing on that route subscribes to aisle `positions`, merge-results, or `aisles`,
-      // so invalidating those would only add redundant traffic after a review action.
-      if (strategy === 'reviewQueue') {
-        const flags = patchCachesForReviewQueueStrategy(
-          queryClient,
-          inventoryId,
-          aisleId,
-          positionId,
-          body
-        );
-        if (flags.invalidatePositionDetail) {
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
-          });
-        }
-        if (flags.invalidateReviewQueue) {
-          queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
-        }
-        return;
-      }
-
-      if (strategy === 'aisleResults') {
-        const flags = patchCachesForAisleResultsStrategy(
-          queryClient,
-          inventoryId,
-          aisleId,
-          positionId,
-          body
-        );
-        if (flags.invalidatePositionDetail) {
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
-          });
-        }
-        if (flags.invalidatePositionsList) {
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
-          });
-        }
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId),
-        });
-        return;
-      }
-
-      // Detail flows often sit beside a parent positions list (same aisle); refreshing that list keeps row
-      // summaries and counts aligned with the reviewed position without touching merge/review-queue domains.
-      if (strategy === 'detail') {
-        const flags = patchCachesForDetailStrategy(
-          queryClient,
-          inventoryId,
-          aisleId,
-          positionId,
-          body
-        );
-        if (flags.invalidatePositionDetail) {
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
-          });
-        }
-        if (flags.invalidatePositionsList) {
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
-          });
-        }
-        return;
-      }
-
-      // Default behavior (Phase 3 compatibility) for call sites that do not pass a strategy.
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId),
+      applySubmitReviewActionCacheEffects({
+        queryClient,
+        inventoryId,
+        aisleId,
+        positionId,
+        body,
+        strategy,
       });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId),
-      });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
     },
   });
 }
