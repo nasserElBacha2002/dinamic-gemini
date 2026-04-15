@@ -208,6 +208,16 @@ export function mapPositionDetailToResultDetail(
     position.traceability?.status ?? position.traceability_status
   );
 
+  const rowJob =
+    position.job_id != null && String(position.job_id).trim() !== ''
+      ? String(position.job_id).trim()
+      : data.run_context?.job_id != null && String(data.run_context.job_id).trim() !== ''
+        ? String(data.run_context.job_id).trim()
+        : data.run_context?.resolved_job_id != null &&
+            String(data.run_context.resolved_job_id).trim() !== ''
+          ? String(data.run_context.resolved_job_id).trim()
+          : null;
+
   return {
     id: position.id,
     sku,
@@ -244,5 +254,6 @@ export function mapPositionDetailToResultDetail(
         position.traceability?.primary_evidence_id ?? position.primary_evidence_id ?? undefined,
       rawStatus: position.status ?? undefined,
     },
+    storageJobId: rowJob,
   };
 }

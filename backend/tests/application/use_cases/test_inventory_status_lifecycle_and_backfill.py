@@ -111,7 +111,7 @@ def test_inventory_aggregate_lifecycle_through_completed() -> None:
         clock,
         review_sync,
     )
-    confirm_uc.execute(inv.id, aisle.id, position.id)
+    confirm_uc.execute(inv.id, aisle.id, position.id, None)
 
     assert aisle_repo.get_by_id(aisle.id) is not None
     assert aisle_repo.get_by_id(aisle.id).status == AisleStatus.COMPLETED

@@ -18,11 +18,12 @@ from src.application.ports.repositories import (
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.use_cases.review_validation import (
-    load_aisle_and_ensure_review_mutable,
+    ensure_position_not_deleted,
+    ensure_review_job_matches_position,
     resolve_position,
     resolve_product_for_position,
     resolve_single_product_for_position,
-    ensure_position_not_deleted,
+    storage_job_id_for_review_audit,
 )
 from src.domain.positions.entities import PositionReviewResolution, PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
@@ -52,6 +53,7 @@ class UpdateProductQuantityUseCase:
         inventory_id: str,
         aisle_id: str,
         position_id: str,
+        job_id: str | None,
         product_id: str,
         corrected_quantity: int,
     ) -> None:
@@ -64,7 +66,7 @@ class UpdateProductQuantityUseCase:
             position_id,
         )
         ensure_position_not_deleted(position)
-        load_aisle_and_ensure_review_mutable(self._aisle_repo, aisle_id, position)
+        ensure_review_job_matches_position(job_id, position)
         pid = (product_id or "").strip()
         if pid:
             product = resolve_product_for_position(
@@ -113,6 +115,7 @@ class UpdateProductQuantityUseCase:
                 "review_resolution": PositionReviewResolution.QTY_CORRECTED.value,
             },
             created_at=now,
+            job_id=storage_job_id_for_review_audit(position),
         )
         self._review_repo.save(review)
         self._aisle_review_sync.after_review_mutation(inventory_id, aisle_id)

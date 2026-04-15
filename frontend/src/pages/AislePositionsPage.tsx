@@ -355,12 +355,6 @@ export default function AislePositionsPage() {
     return m;
   }, [positions]);
 
-  const reviewReadOnly = Boolean(
-    isTestInventory &&
-      operationalJobId &&
-      visibleJobId &&
-      operationalJobId !== visibleJobId
-  );
   const compareOperationalShortcut =
     Boolean(
       isTestInventory &&
@@ -384,7 +378,6 @@ export default function AislePositionsPage() {
         returnTo: 'aisle_results',
         filter,
         jobId: visibleJobId ?? undefined,
-        reviewReadOnly,
         exactPositionDetail: true,
       });
     },
@@ -397,7 +390,6 @@ export default function AislePositionsPage() {
       sortedForTable,
       filter,
       visibleJobId,
-      reviewReadOnly,
       t,
     ]
   );
@@ -419,7 +411,6 @@ export default function AislePositionsPage() {
       returnTo: 'aisle_results',
       filter: p.filter ?? filter,
       jobId: p.jobId,
-      reviewReadOnly,
       exactPositionDetail: p.exactPositionDetail ?? true,
     });
     navigate(location.pathname, { replace: true, state: {} });
@@ -432,7 +423,6 @@ export default function AislePositionsPage() {
     aisle,
     filter,
     navigate,
-    reviewReadOnly,
   ]);
 
   const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
@@ -450,13 +440,9 @@ export default function AislePositionsPage() {
     [mergeResultsQuery.data?.results]
   );
   const mergeButtonVisible = Boolean(inventoryId && aisleId && hasResults);
-  const mergeButtonDisabled =
-    mergeMutation.isPending || mergeCandidates.groupCount === 0 || reviewReadOnly;
-  const mergeDisabledReason = reviewReadOnly
-    ? t('positions.merge_unavailable')
-    : mergeCandidates.groupCount === 0
-      ? t('positions.merge_no_skus')
-      : '';
+  const mergeButtonDisabled = mergeMutation.isPending || mergeCandidates.groupCount === 0;
+  const mergeDisabledReason =
+    mergeCandidates.groupCount === 0 ? t('positions.merge_no_skus') : '';
   const mergeFeedback = useMemo(() => {
     if (lastMergeResponse != null) {
       if (lastMergeResponse.product_records_updated > 0) {
@@ -630,17 +616,6 @@ export default function AislePositionsPage() {
           </Box>
         }
       />
-
-      {reviewReadOnly ? (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          {t('positions.benchmark_readonly_info', {
-            jobPrefix:
-              operationalJobId != null && operationalJobId.length > 0
-                ? `${operationalJobId.slice(0, 10)}…`
-                : t('common.em_dash'),
-          })}
-        </Alert>
-      ) : null}
 
       {isTestInventory &&
       (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)) ? (

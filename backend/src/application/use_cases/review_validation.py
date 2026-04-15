@@ -2,10 +2,13 @@
 Shared validation helpers for review use cases — v3.0 Épica 8.
 
 Resolve inventory/aisle/position (and optionally product) with consistent error semantics.
-Use cases call these to avoid duplicating the same validation flow.
+Run-scoped reviews: ``job_id`` on the request must match ``positions.job_id`` when the row is
+run-scoped; legacy rows require no job id. ``aisles.operational_job_id`` is not used for authorization.
 """
 
 from __future__ import annotations
+
+from typing import Optional
 
 from src.application.errors import (
     AisleNotFoundError,
@@ -13,7 +16,6 @@ from src.application.errors import (
     PositionDeletedError,
     PositionNotFoundError,
     ProductNotFoundError,
-    ReviewMutationNotAllowedError,
 )
 from src.application.ports.repositories import (
     AisleRepository,
@@ -21,7 +23,6 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
 )
-from src.domain.aisle.entities import Aisle
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 
@@ -32,6 +33,40 @@ def ensure_position_not_deleted(position: Position) -> None:
         raise PositionDeletedError(
             f"Position {position.id} is already deleted; review actions are not allowed on deleted positions"
         )
+
+
+def _normalize_job_id_param(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s if s else None
+
+
+def _storage_job_id_on_position(position: Position) -> Optional[str]:
+    """Effective job id on the position row: ``None`` = legacy ``job_id IS NULL``."""
+    return _normalize_job_id_param(position.job_id)
+
+
+def ensure_review_job_matches_position(request_job_id: Optional[str], position: Position) -> None:
+    """Ensure POST ``job_id`` matches the storage row (run-scoped vs legacy).
+
+    Rules:
+    - Legacy row (``position.job_id`` unset): ``request_job_id`` must be omitted/empty (no claim of a run).
+    - Run-scoped row: ``request_job_id`` is required and must equal ``position.job_id``.
+
+    Raises:
+        ValueError: semantic mismatch (HTTP 422 from route layer).
+    """
+    req = _normalize_job_id_param(request_job_id)
+    row = _storage_job_id_on_position(position)
+    if row is None:
+        if req is not None:
+            raise ValueError("job_id must be omitted for legacy positions (storage job_id IS NULL)")
+        return
+    if req is None:
+        raise ValueError("job_id is required for run-scoped positions")
+    if req != row:
+        raise ValueError("job_id does not match the position's storage job_id")
 
 
 def resolve_position(
@@ -61,33 +96,6 @@ def resolve_position(
             f"Position {position_id} does not belong to aisle {aisle_id}"
         )
     return position
-
-
-def ensure_position_review_mutable_for_aisle(aisle: Aisle, position: Position) -> None:
-    """Allow mutations only on the operational slice: legacy null-null or ``job_id == operational_job_id``."""
-    operational = aisle.operational_job_id
-    row_job = position.job_id
-    if operational is None:
-        if row_job is not None:
-            raise ReviewMutationNotAllowedError(
-                "Review edits apply only to legacy positions (job_id IS NULL) for this aisle"
-            )
-        return
-    if row_job != operational:
-        raise ReviewMutationNotAllowedError(
-            "Review edits apply only to positions from the aisle operational job"
-        )
-
-
-def load_aisle_and_ensure_review_mutable(
-    aisle_repo: AisleRepository,
-    aisle_id: str,
-    position: Position,
-) -> None:
-    aisle = aisle_repo.get_by_id(aisle_id)
-    if aisle is None:
-        raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
-    ensure_position_review_mutable_for_aisle(aisle, position)
 
 
 def resolve_product_for_position(
@@ -123,3 +131,8 @@ def resolve_single_product_for_position(
             f"Ambiguous product for position {position_id}: multiple products exist"
         )
     return products[0]
+
+
+def storage_job_id_for_review_audit(position: Position) -> Optional[str]:
+    """Persist the run id on ``review_actions`` (null for legacy rows)."""
+    return _storage_job_id_on_position(position)

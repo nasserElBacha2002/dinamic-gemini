@@ -132,6 +132,26 @@ export default function QuickReviewDrawer({
     [context, activePositionId]
   );
 
+  const storageJobIdForReview = useMemo(() => {
+    const fromContext = context?.jobId;
+    if (fromContext != null && String(fromContext).trim() !== '') {
+      return String(fromContext).trim();
+    }
+    const fromResult = result?.storageJobId;
+    if (fromResult != null && String(fromResult).trim() !== '') {
+      return String(fromResult).trim();
+    }
+    return null;
+  }, [context?.jobId, result?.storageJobId]);
+
+  const withReviewJobId = useCallback(
+    (body: ReviewActionRequest): ReviewActionRequest => ({
+      ...body,
+      job_id: storageJobIdForReview,
+    }),
+    [storageJobIdForReview]
+  );
+
   /**
    * Single path to the review mutation: one `mutateAsync` per user intent.
    * Guards against overlapping calls (double-click, strict-replay edge cases).
@@ -144,7 +164,7 @@ export default function QuickReviewDrawer({
       reviewMutationInFlightRef.current = true;
       setActionError(null);
       try {
-        await reviewMutation.mutateAsync(body);
+        await reviewMutation.mutateAsync(withReviewJobId(body));
         if (options?.successMessage) {
           showSnackbar(options.successMessage, 'success');
         }
@@ -155,7 +175,7 @@ export default function QuickReviewDrawer({
         reviewMutationInFlightRef.current = false;
       }
     },
-    [reviewMutation, showSnackbar]
+    [reviewMutation, showSnackbar, withReviewJobId]
   );
 
   const handleConfirm = useCallback(() => {
@@ -212,7 +232,7 @@ export default function QuickReviewDrawer({
     setInvalidConfirmError(null);
     setInvalidConfirmLoading(true);
     try {
-      await reviewMutation.mutateAsync({ action_type: 'delete_position' });
+      await reviewMutation.mutateAsync(withReviewJobId({ action_type: 'delete_position' }));
       showSnackbar(t('review.mark_invalid_success'), 'success');
       setInvalidConfirmOpen(false);
       onClose(); // Automatically close after invalidation
@@ -223,7 +243,7 @@ export default function QuickReviewDrawer({
       reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);
     }
-  }, [reviewMutation, showSnackbar, t]);
+  }, [reviewMutation, showSnackbar, t, withReviewJobId]);
 
   const handleNavigateToResult = useCallback((resultId: string) => {
     setActivePositionId(resultId);
@@ -335,7 +355,7 @@ export default function QuickReviewDrawer({
                     <ResultReviewActions
                       result={result}
                       actionLoading={actionLoading}
-                      readOnly={Boolean(context?.reviewReadOnly)}
+                      readOnly={false}
                       onConfirm={handleConfirm}
                       onUpdateQuantity={handleUpdateQuantity}
                       onUpdateSku={handleUpdateSku}

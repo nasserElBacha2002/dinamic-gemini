@@ -299,6 +299,7 @@ class ReviewActionResponse(BaseModel):
     created_at: datetime
     user_id: Optional[str] = None
     comment: Optional[str] = None
+    job_id: Optional[str] = Field(None, description="Run id for this review (null = legacy position).")
 
 
 class PositionDetailResponse(BaseModel):
@@ -334,10 +335,17 @@ ReviewActionTypeLiteral = Literal[
 
 class ReviewActionRequest(BaseModel):
     """Request body for POST .../positions/{position_id}/reviews. Fields required depend on action_type.
-    user_id and comment are reserved for future use (not used in Épica 8)."""
+    user_id and comment are reserved for future use (not used in Épica 8).
+
+    ``job_id``: required when the position row is run-scoped (``positions.job_id`` set); must match
+    that value. Omit or null for legacy rows (``job_id IS NULL``)."""
     action_type: ReviewActionTypeLiteral
     product_id: Optional[str] = None
     corrected_quantity: Optional[int] = None
     sku: Optional[str] = None
     description: Optional[str] = None
     position_code: Optional[str] = None
+    job_id: Optional[str] = Field(
+        None,
+        description="Inventory job id for this review; required for run-scoped positions, omitted for legacy.",
+    )

@@ -150,7 +150,7 @@ def test_update_sku_sets_sku_description_and_creates_audit() -> None:
         clock=clock,
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
-    use_case.execute("inv-1", "aisle-1", "pos-1", "prod-1", "NEW-SKU", "New description")
+    use_case.execute("inv-1", "aisle-1", "pos-1", None, "prod-1", "NEW-SKU", "New description")
 
     updated_product = product_repo.get_by_id("prod-1")
     assert updated_product is not None
@@ -194,7 +194,7 @@ def test_update_sku_empty_sku_raises() -> None:
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
     with pytest.raises(ValueError, match="sku"):
-        use_case.execute("inv-1", "aisle-1", "pos-1", "prod-1", "  ", None)
+        use_case.execute("inv-1", "aisle-1", "pos-1", None, "prod-1", "  ", None)
 
 
 def test_update_sku_product_not_in_position_raises() -> None:
@@ -225,4 +225,4 @@ def test_update_sku_product_not_in_position_raises() -> None:
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, clock),
     )
     with pytest.raises(ProductNotFoundError):
-        use_case.execute("inv-1", "aisle-1", "pos-1", "prod-1", "NEW", None)
+        use_case.execute("inv-1", "aisle-1", "pos-1", None, "prod-1", "NEW", None)

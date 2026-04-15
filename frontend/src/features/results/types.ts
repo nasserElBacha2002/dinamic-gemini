@@ -110,4 +110,6 @@ export interface ResultDetail {
     primaryEvidenceId?: string | null;
     rawStatus?: string | null;
   };
+  /** Storage run id for POST .../reviews ``job_id`` (null = legacy row). */
+  storageJobId?: string | null;
 }
