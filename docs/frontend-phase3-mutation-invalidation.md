@@ -58,7 +58,20 @@
 
 ## `useStartAisleProcessing`
 
-- **Removed** `inventory.detail` invalidation: starting a job updates aisle/job/positions-related state; the inventory header payload from GET detail is unchanged.
+- **Phase 3.1 correction:** `inventory.detail` invalidation was restored.
+- Why: `InventoryDetailHeader` renders `inventory.status` from `useInventoryDetail(...)`; starting a job can change visible inventory status/summary context, so keeping header freshness is safer.
+
+## Phase 3.1 verification follow-up
+
+- Replaced hardcoded review queue invalidation key `['reviewQueue']` with `queryKeys.reviewQueue.all`.
+- Re-checked removal of `inventory.detail` invalidation:
+  - **Kept removed** for `useSubmitReviewAction` and `usePromoteAisleOperationalJob`.
+  - **Restored** for `useStartAisleProcessing` due to visible header dependency on `inventory.status`.
+- Re-checked removal of `aisle-jobs` invalidation from `useSubmitReviewAction`:
+  - **Kept removed**; review actions mutate positions/review state, not job rows/contracts.
+- Re-checked benchmark compare scope:
+  - `queryKeys.inventories.benchmarkCompareInventory(inventoryId)` correctly targets keys shaped as
+    `['v3','inventories','benchmark-compare', inventoryId, ...]` used by `useAisleBenchmarkCompare`.
 
 ## Deferred
 

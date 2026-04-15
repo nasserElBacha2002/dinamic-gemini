@@ -58,6 +58,7 @@ export function useStartAisleProcessing(inventoryId: string) {
     onSuccess: (_, vars) => {
       const { aisleId } = vars;
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisleJobs(inventoryId, aisleId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
     },
@@ -203,7 +204,7 @@ export function useSubmitReviewAction(inventoryId: string, aisleId: string, posi
         queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId],
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: ['reviewQueue'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
     },
   });
 }
