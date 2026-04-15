@@ -18,6 +18,14 @@ from src.pipeline.ports.analysis_provider import AnalysisProvider, AnalysisResul
 from src.pipeline.stages.frame_acquisition_stage import AcquiredFrames
 from src.pipeline.context.run_context import RunContext
 
+_OPENAI_CANONICAL_ENTITY_KEYS: tuple[str, ...] = (
+    "source_image_id",
+    "position_barcode",
+    "internal_code",
+    "product_label_quantity",
+    "product_label_bbox",
+)
+
 
 @dataclass
 class AnalysisStageResult:
@@ -89,6 +97,24 @@ class AnalysisStage:
                     len(ents),
                     with_plq,
                 )
+                provider_norm = (result.provider_name or "").strip().lower()
+                if provider_norm == "openai":
+                    after_presence: Dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
+                    for e in ents:
+                        if not isinstance(e, dict):
+                            continue
+                        for key in _OPENAI_CANONICAL_ENTITY_KEYS:
+                            val = e.get(key)
+                            if val is None:
+                                continue
+                            if isinstance(val, str) and not val.strip():
+                                continue
+                            after_presence[key] += 1
+                    log.debug(
+                        "analysis_stage openai_canonical_key_presence_after_normalize entities=%d presence=%s",
+                        len(ents),
+                        after_presence,
+                    )
         return AnalysisStageResult(
             parsed_json=parsed,
             provider_name=result.provider_name,

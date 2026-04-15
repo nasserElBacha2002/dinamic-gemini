@@ -108,6 +108,39 @@ def test_openai_sdk_adapter_includes_context_images_and_instruction() -> None:
         assert len(imgs) == 2
 
 
+def test_openai_sdk_adapter_prompt_contract_requires_canonical_label_fields() -> None:
+    adapter = OpenAiSdkAdapter()
+    settings = _settings_openai()
+    ok_json = '{"total_entities_detected": 0, "entities": []}'
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content=ok_json))]
+    mock_completion.usage = None
+
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=[],
+        prompt="Analyze aisle entities.",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+
+    with patch("src.llm.openai_sdk_adapter.OpenAI") as client_cls:
+        client_inst = MagicMock()
+        client_inst.chat.completions.create.return_value = mock_completion
+        client_cls.return_value = client_inst
+        adapter.execute(req, settings)
+        content = client_inst.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+        text = content[0]["text"]
+        assert "internal_code" in text
+        assert "position_barcode" in text
+        assert "product_label_quantity" in text
+        assert "product_label_bbox" in text
+        assert "source_image_id" in text
+        assert "Do not omit canonical keys" in text
+
+
 def test_openai_sdk_adapter_maps_schema_invalid() -> None:
     adapter = OpenAiSdkAdapter()
     settings = _settings_openai()

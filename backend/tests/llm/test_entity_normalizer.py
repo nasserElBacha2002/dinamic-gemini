@@ -444,6 +444,112 @@ def test_openai_canonical_payload_preserved_no_overwrite() -> None:
     assert "quantity" not in e and "bbox" not in e
 
 
+def test_openai_maps_product_label_to_internal_code_conservatively() -> None:
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "source_image_id": "img-1",
+                "product_label": "SKU-123_45",
+            }
+        ],
+    }
+    out = normalize_llm_response(copy.deepcopy(inp), "openai")
+    assert out["entities"][0]["internal_code"] == "SKU-123_45"
+
+
+def test_openai_does_not_override_existing_internal_code_from_product_label() -> None:
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "source_image_id": "img-1",
+                "internal_code": "KEEP-ME",
+                "product_label": "SKU-NEW",
+            }
+        ],
+    }
+    out = normalize_llm_response(copy.deepcopy(inp), "openai")
+    assert out["entities"][0]["internal_code"] == "KEEP-ME"
+
+
+def test_openai_does_not_map_invalid_product_label_to_internal_code() -> None:
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "source_image_id": "img-1",
+                "product_label": "NOT VALID WITH SPACES",
+            }
+        ],
+    }
+    out = normalize_llm_response(copy.deepcopy(inp), "openai")
+    assert out["entities"][0]["internal_code"] is None
+
+
+def test_openai_normalize_parse_preserves_internal_code_and_canonical_fields() -> None:
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "source_image_id": "img-1",
+                "product_label": "SKU123",
+                "quantity": 8,
+                "bbox": [0.1, 0.1, 0.8, 0.9],
+                "product_label_bbox": [0.2, 0.2, 0.4, 0.4],
+                "position_barcode": "POS-777",
+            }
+        ],
+    }
+    normalized = normalize_llm_response(copy.deepcopy(inp), "openai")
+    validate_global_analysis_structure_v21(normalized)
+    entities = parse_entities(normalized, job_id="job-openai-int")
+    assert len(entities) == 1
+    ent = entities[0]
+    assert ent.internal_code == "SKU123"
+    assert ent.position_barcode == "POS-777"
+    assert ent.product_label_quantity == 8
+    assert ent.product_label_bbox == [0.2, 0.2, 0.4, 0.4]
+    assert ent.source_image_id == "img-1"
+
+
+def test_openai_quantity_only_response_does_not_create_fake_internal_code() -> None:
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "source_image_id": "img-1",
+                "quantity": 6,
+            }
+        ],
+    }
+    normalized = normalize_llm_response(copy.deepcopy(inp), "openai")
+    validate_global_analysis_structure_v21(normalized)
+    entities = parse_entities(normalized, job_id="job-openai-qty")
+    assert entities[0].internal_code is None
+    assert entities[0].product_label_quantity == 6
+
+
 def test_claude_audit_payload_via_anthropic_provider_string() -> None:
     out = normalize_llm_response(copy.deepcopy(CLAUDE_AUDIT_PAYLOAD), "Anthropic")
     assert out["entities"][0]["internal_code"] == "1428706"
