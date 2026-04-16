@@ -102,7 +102,6 @@ from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, List
 from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
     ResolveAisleJobForInventoryReadUseCase,
 )
-from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job
 from src.application.use_cases.promote_aisle_operational_job import (
     PromoteAisleOperationalJobCommand,
@@ -192,13 +191,13 @@ def _aggregate_aisle_execution_log_payload(
     )
 
 
-def _load_job_and_aisle_for_inventory_job_route(
+def _load_job_for_inventory_job_route(
     resolve_uc: ResolveAisleJobForInventoryReadUseCase,
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-) -> Tuple[Job, Aisle]:
-    """Map application errors to the same HTTP 404 details as the pre–Phase 6 inline routes."""
+) -> Job:
+    """Resolve job id in inventory/aisle scope; map errors to the same HTTP 404 details as pre–Phase 6 routes."""
     try:
         return resolve_uc.execute(inventory_id, aisle_id, job_id)
     except JobNotFoundError:
@@ -499,9 +498,7 @@ def get_aisle_job_detail(
     ),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> JobSummary:
-    job, _aisle = _load_job_and_aisle_for_inventory_job_route(
-        resolve_uc, inventory_id, aisle_id, job_id
-    )
+    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
     job = stale_reconciler.reconcile(job)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -522,9 +519,7 @@ def get_job_execution_log(
     artifact_storage=Depends(get_artifact_storage),
 ) -> ExecutionLogResponse:
     """Structured execution log for this job row; JSONL may cite other ``payload.job_id`` values (envelope + derived fields)."""
-    job, _aisle = _load_job_and_aisle_for_inventory_job_route(
-        resolve_uc, inventory_id, aisle_id, job_id
-    )
+    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
     try:
         raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
     except StoredArtifactAccessError as e:
@@ -558,9 +553,7 @@ def get_job_execution_log_txt(
     artifact_storage=Depends(get_artifact_storage),
 ) -> Response:
     """Plain-text execution log for download (same artifact as JSON execution-log)."""
-    job, _aisle = _load_job_and_aisle_for_inventory_job_route(
-        resolve_uc, inventory_id, aisle_id, job_id
-    )
+    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
     try:
         raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
     except StoredArtifactAccessError as e:
@@ -599,9 +592,7 @@ def get_job_hybrid_report(
     artifact_storage=Depends(get_artifact_storage),
 ) -> dict[str, Any]:
     """Return pipeline hybrid_report.json (dict) from durable artifact metadata or legacy disk."""
-    job, _aisle = _load_job_and_aisle_for_inventory_job_route(
-        resolve_uc, inventory_id, aisle_id, job_id
-    )
+    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
     try:
         return load_hybrid_report_json_for_api(job, artifact_store=artifact_storage)
     except StoredArtifactAccessError as e:

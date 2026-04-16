@@ -22,7 +22,7 @@ from src.infrastructure.repositories.memory_job_repository import MemoryJobRepos
 UTC = timezone.utc
 
 
-def test_resolve_returns_job_and_aisle_when_valid() -> None:
+def test_resolve_returns_job_when_valid() -> None:
     now = datetime(2026, 2, 1, 12, 0, 0, tzinfo=UTC)
     job_repo = MemoryJobRepository()
     aisle_repo = MemoryAisleRepository()
@@ -40,9 +40,8 @@ def test_resolve_returns_job_and_aisle_when_valid() -> None:
     )
     job_repo.save(job)
 
-    got_job, got_aisle = uc.execute("inv-1", "aisle-1", "job-1")
+    got_job = uc.execute("inv-1", "aisle-1", "job-1")
     assert got_job.id == "job-1"
-    assert got_aisle.id == "aisle-1"
 
 
 def test_resolve_raises_when_job_missing() -> None:

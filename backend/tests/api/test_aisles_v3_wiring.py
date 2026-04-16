@@ -1431,7 +1431,7 @@ def test_execution_log_job_not_found_returns_404() -> None:
             "/api/v3/inventories/inv-el404/aisles/aisle-el404/jobs/nonexistent-job-id/execution-log",
         )
         assert log_resp.status_code == 404
-        assert "not found" in log_resp.json().get("detail", "").lower()
+        assert log_resp.json()["detail"] == "Job not found"
     finally:
         app.dependency_overrides.clear()
 
@@ -1467,7 +1467,10 @@ def test_execution_log_job_wrong_aisle_returns_404() -> None:
             "/api/v3/inventories/inv-ela/aisles/aisle-ela/jobs/job-other-aisle/execution-log",
         )
         assert log_resp.status_code == 404
-        assert "not found" in log_resp.json().get("detail", "").lower() or "not belong" in log_resp.json().get("detail", "").lower()
+        assert (
+            log_resp.json()["detail"]
+            == "Job not found or does not belong to this aisle"
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -1503,7 +1506,124 @@ def test_execution_log_aisle_wrong_inventory_returns_404() -> None:
             "/api/v3/inventories/wrong-inventory-id/aisles/aisle-eli/jobs/job-eli/execution-log",
         )
         assert log_resp.status_code == 404
-        assert "not found" in log_resp.json().get("detail", "").lower() or "not belong" in log_resp.json().get("detail", "").lower()
+        assert (
+            log_resp.json()["detail"]
+            == "Aisle not found or does not belong to this inventory"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_phase6_inventory_job_read_routes_job_missing_same_404_detail() -> None:
+    """HTTP regression: all Phase 6 job read paths share resolve + identical 404 detail for missing job."""
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+    inv = Inventory("inv-p6-miss", "P6 miss", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-p6-miss", "inv-p6-miss", "P6M", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        base = "/api/v3/inventories/inv-p6-miss/aisles/aisle-p6-miss/jobs/ghost-job-id"
+        for path in (
+            base,
+            f"{base}/execution-log",
+            f"{base}/execution-log.txt",
+            f"{base}/hybrid-report",
+        ):
+            r = c.get(path)
+            assert r.status_code == 404, path
+            assert r.json()["detail"] == "Job not found", path
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_phase6_inventory_job_read_routes_job_wrong_target_same_404_detail() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+    inv = Inventory("inv-p6-wt", "P6 wt", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-p6-wt", "inv-p6-wt", "P6WT", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+    job = Job(
+        id="job-p6-wt",
+        target_type="aisle",
+        target_id="other-aisle",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        base = "/api/v3/inventories/inv-p6-wt/aisles/aisle-p6-wt/jobs/job-p6-wt"
+        detail = "Job not found or does not belong to this aisle"
+        for path in (
+            base,
+            f"{base}/execution-log",
+            f"{base}/execution-log.txt",
+            f"{base}/hybrid-report",
+        ):
+            r = c.get(path)
+            assert r.status_code == 404, path
+            assert r.json()["detail"] == detail, path
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_phase6_inventory_job_read_routes_wrong_inventory_same_404_detail() -> None:
+    now = datetime.now(timezone.utc)
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository()
+    inv = Inventory("inv-p6-wi", "P6 wi", InventoryStatus.DRAFT, now, now)
+    inv_repo.save(inv)
+    aisle = Aisle("aisle-p6-wi", "inv-p6-wi", "P6WI", AisleStatus.CREATED, now, now)
+    aisle_repo.save(aisle)
+    job = Job(
+        id="job-p6-wi",
+        target_type="aisle",
+        target_id="aisle-p6-wi",
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
+        created_at=now,
+        updated_at=now,
+    )
+    job_repo.save(job)
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    app.dependency_overrides[get_job_repo] = lambda: job_repo
+    try:
+        c = TestClient(app)
+        base_wrong_inv = (
+            "/api/v3/inventories/wrong-inv-id/aisles/aisle-p6-wi/jobs/job-p6-wi"
+        )
+        detail = "Aisle not found or does not belong to this inventory"
+        for path in (
+            base_wrong_inv,
+            f"{base_wrong_inv}/execution-log",
+            f"{base_wrong_inv}/execution-log.txt",
+            f"{base_wrong_inv}/hybrid-report",
+        ):
+            r = c.get(path)
+            assert r.status_code == 404, path
+            assert r.json()["detail"] == detail, path
     finally:
         app.dependency_overrides.clear()
 
