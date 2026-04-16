@@ -44,7 +44,7 @@ class RunAisleMergeUseCase:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
-        aisle = require_aisle_scoped_to_inventory(
+        require_aisle_scoped_to_inventory(
             self._aisle_repo,
             inventory_id=command.inventory_id,
             aisle_id=command.aisle_id,

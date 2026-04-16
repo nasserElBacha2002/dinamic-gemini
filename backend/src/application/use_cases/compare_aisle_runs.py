@@ -95,7 +95,7 @@ class CompareAisleRunsUseCase:
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
         require_test_inventory_for_experimental_features(inv)
-        aisle = require_aisle_scoped_to_inventory(
+        require_aisle_scoped_to_inventory(
             self._aisle_repo,
             inventory_id=command.inventory_id,
             aisle_id=command.aisle_id,
