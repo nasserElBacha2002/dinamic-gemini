@@ -4,8 +4,8 @@ Phase 1 — Test-only ``LlmGlobalAnalysisExecutor`` harness (multi-provider migr
 This module lives under ``tests/`` only. It is **not** a registered pipeline provider and must
 never be imported from ``src/``.
 
-**Injection:** Patch ``resolve_llm_executor_for_context`` where the hybrid analysis strategy
-imports it (see ``patch_hybrid_resolve_llm_executor``), or patch
+**Injection:** Patch ``resolve_llm_executor_for_context`` on
+``src.pipeline.services.pipeline_provider_resolver`` (see ``patch_hybrid_resolve_llm_executor``), or patch
 ``src.pipeline.providers.registry.resolve_llm_executor`` for tests that call the registry
 directly. After patching the registry, call ``registry.resolve_llm_executor`` on the **module**
 (``from src.pipeline.providers import registry as reg``) — do not ``from registry import
@@ -136,7 +136,7 @@ def patch_hybrid_resolve_llm_executor(
         return executor, resolved_provider_key
 
     monkeypatch.setattr(
-        "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
+        "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
         _fake_resolve,
     )
 

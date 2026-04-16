@@ -2,7 +2,8 @@
 Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–5).
 
 Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
-call to ``LlmGlobalAnalysisExecutor`` from ``providers.registry`` (Gemini, OpenAI, Claude, DeepSeek).
+call to ``LlmGlobalAnalysisExecutor`` resolved by :mod:`src.pipeline.services.pipeline_provider_resolver`
+(Gemini, OpenAI, Claude, DeepSeek).
 """
 
 from __future__ import annotations
@@ -24,7 +25,13 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
     ProviderCapabilities,
 )
-from src.pipeline.providers.registry import resolve_llm_executor_for_context
+from src.pipeline.services.pipeline_provider_resolver import PipelineProviderResolver
+from src.pipeline.services.provider_analysis_result_normalization import (
+    build_analysis_result_from_llm_response,
+)
+from src.pipeline.services.provider_llm_request_metadata import (
+    apply_job_model_name_to_llm_request_metadata,
+)
 from src.pipeline.services.analysis_visual_reference_prep import (
     build_primary_evidence_attachments,
     prepare_visual_reference_inputs,
@@ -37,7 +44,6 @@ from src.llm.prompt_composer.prompt_traceability import (
     prompt_composition_summary_for_execution_log,
     sha256_utf8,
 )
-from src.llm.costing import build_llm_cost_snapshot
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_with_traceability,
     resolve_analysis_context_for_run,
@@ -87,7 +93,12 @@ class HybridGlobalAnalysisStrategy:
         settings = context.settings
         job_id = context.job_id
         pipeline_provider_name: Optional[str] = getattr(context, "pipeline_provider_name", None)
-        executor, resolved_key = resolve_llm_executor_for_context(pipeline_provider_name, settings)
+        resolved_exec = PipelineProviderResolver.resolve_for_run(
+            pipeline_provider_name=pipeline_provider_name,
+            settings=settings,
+        )
+        executor = resolved_exec.executor
+        resolved_key = resolved_exec.normalized_provider_key
 
         prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(context)
 
@@ -117,20 +128,11 @@ class HybridGlobalAnalysisStrategy:
         req_meta: Dict[str, Any] = {**metadata, "run_dir": str(context.run_dir)}
         jm = getattr(context, "job_model_name", None)
         rk = (resolved_key or "").strip().lower()
-        model_for_meta: Optional[str] = str(jm).strip() if jm and str(jm).strip() else None
-        # Per-vendor model keys on the LLM request are a historical compatibility pattern (each
-        # executor reads its own key). Claude follows the same pattern for consistency. A future
-        # phase may converge on a single provider-neutral metadata field without changing adapters'
-        # outward behavior in one shot. Pre-Phase 10: ``llm_identity`` + ``prompt_parity_mode`` on
-        # the request mirror ``prompt_composition`` for comparison tooling.
-        if jm and str(jm).strip() and rk == "gemini":
-            req_meta["gemini_model_name"] = str(jm).strip()
-        if jm and str(jm).strip() and rk == "openai":
-            req_meta["openai_model_name"] = str(jm).strip()
-        if jm and str(jm).strip() and rk == "claude":
-            req_meta["claude_model_name"] = str(jm).strip()
-        if jm and str(jm).strip() and rk == "deepseek":
-            req_meta["deepseek_model_name"] = str(jm).strip()
+        model_for_meta = apply_job_model_name_to_llm_request_metadata(
+            resolved_provider_key=rk,
+            job_model_name=jm,
+            metadata=req_meta,
+        )
 
         # Phase 6: linear propagation — one dict after execution-layer merge is the source of truth
         # for LLMRequest, AnalysisResult, run_metadata, and (redacted) execution_log summary.
@@ -227,23 +229,20 @@ class HybridGlobalAnalysisStrategy:
                     payload={"provider": response.provider},
                 )
             consumed = self.get_capabilities().supports_visual_reference_context and consumed_count > 0
-            llm_cost_snapshot = build_llm_cost_snapshot(
-                provider=response.provider,
-                model=response.model,
-                raw_usage=response.usage,
-                settings=settings,
-            )
-            return AnalysisResult(
-                parsed_json=response.parsed_json,
-                provider_name=response.provider,
+            return build_analysis_result_from_llm_response(
+                response=response,
+                prompt_composition=prompt_composition,
+                visual_references_available=visual_references_available,
+                visual_references_consumed=consumed,
+                visual_reference_count=consumed_count,
+                visual_reference_ids=resolved_reference_ids,
                 provider_metadata=_provider_metadata(
                     visual_references_available=visual_references_available,
                     visual_references_consumed=consumed,
                     visual_reference_count=consumed_count,
                     visual_reference_ids=resolved_reference_ids,
                 ),
-                prompt_composition=prompt_composition,
-                llm_cost_snapshot=llm_cost_snapshot,
+                settings=settings,
             )
         except Exception as e:
             if exec_log:

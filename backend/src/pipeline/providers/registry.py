@@ -1,6 +1,10 @@
 """
 Analysis provider registry — resolves ``LlmGlobalAnalysisExecutor`` by logical provider name (Phase 4).
 
+Phase 3: job-level provider key normalization + ``resolve_llm_executor_for_context`` live in
+``src.pipeline.services.pipeline_provider_resolver``; this module re-exports the latter for backward
+compatibility.
+
 Resolution rules
 ----------------
 * ``provider_name`` on the job (``RunContext.pipeline_provider_name``) wins when set.
@@ -28,7 +32,6 @@ from typing import Any, Final, Optional
 
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor
-from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.providers.definitions import registered_pipeline_provider_keys_from_definitions
 
 
@@ -80,9 +83,16 @@ def resolve_llm_executor_for_context(
     pipeline_provider_name: Optional[str],
     settings: Any,
 ) -> tuple[LlmGlobalAnalysisExecutor, str]:
-    """Resolve executor and the normalized key (for logging)."""
-    key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
-    return resolve_llm_executor(key, settings), key
+    """Resolve executor and the normalized key (for logging).
+
+    Phase 3: canonical implementation lives in :mod:`src.pipeline.services.pipeline_provider_resolver`;
+    this indirection preserves the historical import path ``registry.resolve_llm_executor_for_context``.
+    """
+    from src.pipeline.services.pipeline_provider_resolver import (
+        resolve_llm_executor_for_context as resolve_for_context,
+    )
+
+    return resolve_for_context(pipeline_provider_name, settings)
 
 
 def default_analysis_provider() -> AnalysisProvider:

@@ -446,7 +446,7 @@ def test_openai_job_model_name_passed_in_llm_request_metadata(tmp_path: Path) ->
     )
 
     with patch(
-        "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
+        "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
         return_value=(mock_executor, "openai"),
     ):
         provider = HybridGlobalAnalysisStrategy()
