@@ -3,10 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import pytest
+
 from src.application.errors import (
     AisleNotFoundError,
     InventoryNotFoundError,
-    MergeJobScopeAmbiguousError,
+    JobDoesNotBelongToAisleError,
+    JobNotFoundError,
 )
 from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsResult
 from src.application.use_cases.run_aisle_merge import (
@@ -15,7 +18,7 @@ from src.application.use_cases.run_aisle_merge import (
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
-from src.domain.labels.entities import RawLabel
+from src.domain.jobs.entities import Job, JobStatus
 
 
 @dataclass
@@ -34,6 +37,16 @@ class _AisleRepo:
         return self.aisle if self.aisle and self.aisle.id == aisle_id else None
 
 
+@dataclass
+class _JobRepo:
+    """Minimal stub: only ``get_by_id`` is used by ``RunAisleMergeUseCase``."""
+
+    jobs: dict[str, Job] = field(default_factory=dict)
+
+    def get_by_id(self, job_id: str):
+        return self.jobs.get(job_id)
+
+
 class _StubRecomputeUseCase:
     def __init__(self) -> None:
         self.last_command = None
@@ -46,19 +59,6 @@ class _StubRecomputeUseCase:
             final_count=1,
             product_records_updated=1,
         )
-
-
-@dataclass
-class _StubRawLabelRepo:
-    labels: list[RawLabel] = field(default_factory=list)
-
-    def save_many(self, labels):  # pragma: no cover - merge does not write
-        pass
-
-    def list_for_scope(self, inventory_id: str, aisle_id: str, *, job_id: str = "all"):
-        assert inventory_id == "inv-1" and aisle_id == "aisle-1"
-        assert job_id == "all"
-        return list(self.labels)
 
 
 def _aisle_inv(now: datetime) -> tuple[Inventory, Aisle]:
@@ -80,40 +80,37 @@ def _aisle_inv(now: datetime) -> tuple[Inventory, Aisle]:
     return inventory, aisle
 
 
-def _raw(now: datetime, job_id: str | None, rid: str = "r1") -> RawLabel:
-    return RawLabel(
-        id=rid,
-        inventory_id="inv-1",
-        aisle_id="aisle-1",
-        position_id="p1",
-        evidence_id="e1",
-        group_key="g1",
-        provider="p",
-        source_type="hybrid_report",
-        source_reference="ref",
-        sku_raw="S",
-        sku_candidate="S",
-        product_name_raw="N",
-        detected_text="S",
-        confidence=0.9,
-        metadata={},
+def _process_aisle_job(now: datetime, job_id: str, *, aisle_id: str = "aisle-1") -> Job:
+    return Job(
+        id=job_id,
+        target_type="aisle",
+        target_id=aisle_id,
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
         created_at=now,
-        job_id=job_id,
+        updated_at=now,
     )
 
 
-def test_run_aisle_merge_uses_authoritative_apply_mode_and_legacy_scope_when_empty() -> None:
+def test_run_aisle_merge_legacy_job_id_delegates_with_legacy_null_scope() -> None:
     now = datetime.now(timezone.utc)
     inventory, aisle = _aisle_inv(now)
     recompute = _StubRecomputeUseCase()
     use_case = RunAisleMergeUseCase(
         inventory_repo=_InventoryRepo(inventory),
         aisle_repo=_AisleRepo(aisle),
-        raw_label_repo=_StubRawLabelRepo(labels=[]),
+        job_repo=_JobRepo(),
         recompute_use_case=recompute,
     )
 
-    result = use_case.execute(RunAisleMergeCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+    result = use_case.execute(
+        RunAisleMergeCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            job_id="legacy",
+        )
+    )
 
     assert result.product_records_updated == 1
     assert recompute.last_command is not None
@@ -123,90 +120,129 @@ def test_run_aisle_merge_uses_authoritative_apply_mode_and_legacy_scope_when_emp
     assert recompute.last_command.job_scope == "legacy_null"
 
 
-def test_run_aisle_merge_scopes_to_single_job_when_only_that_job_present() -> None:
+def test_run_aisle_merge_legacy_is_case_insensitive() -> None:
     now = datetime.now(timezone.utc)
     inventory, aisle = _aisle_inv(now)
     recompute = _StubRecomputeUseCase()
     use_case = RunAisleMergeUseCase(
         inventory_repo=_InventoryRepo(inventory),
         aisle_repo=_AisleRepo(aisle),
-        raw_label_repo=_StubRawLabelRepo(labels=[_raw(now, "job-a")]),
+        job_repo=_JobRepo(),
         recompute_use_case=recompute,
     )
-    use_case.execute(RunAisleMergeCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+    use_case.execute(
+        RunAisleMergeCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            job_id="LEGACY",
+        )
+    )
+    assert recompute.last_command.job_scope == "legacy_null"
+
+
+def test_run_aisle_merge_non_legacy_loads_job_and_passes_job_id_scope() -> None:
+    now = datetime.now(timezone.utc)
+    inventory, aisle = _aisle_inv(now)
+    recompute = _StubRecomputeUseCase()
+    job = _process_aisle_job(now, "job-a")
+    use_case = RunAisleMergeUseCase(
+        inventory_repo=_InventoryRepo(inventory),
+        aisle_repo=_AisleRepo(aisle),
+        job_repo=_JobRepo(jobs={"job-a": job}),
+        recompute_use_case=recompute,
+    )
+    use_case.execute(
+        RunAisleMergeCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            job_id="job-a",
+        )
+    )
     assert recompute.last_command.job_scope == "job-a"
 
 
-def test_run_aisle_merge_ambiguous_when_multiple_jobs() -> None:
-    now = datetime.now(timezone.utc)
-    inventory, aisle = _aisle_inv(now)
-    use_case = RunAisleMergeUseCase(
-        inventory_repo=_InventoryRepo(inventory),
-        aisle_repo=_AisleRepo(aisle),
-        raw_label_repo=_StubRawLabelRepo(
-            labels=[_raw(now, "j1", "r1"), _raw(now, "j2", "r2")]
-        ),
-        recompute_use_case=_StubRecomputeUseCase(),
-    )
-    try:
-        use_case.execute(RunAisleMergeCommand(inventory_id="inv-1", aisle_id="aisle-1"))
-        assert False, "expected MergeJobScopeAmbiguousError"
-    except MergeJobScopeAmbiguousError:
-        pass
-
-
-def test_run_aisle_merge_explicit_job_id_allows_multi_job_aisle() -> None:
+def test_run_aisle_merge_explicit_job_id_selects_that_job_when_multiple_exist() -> None:
     now = datetime.now(timezone.utc)
     inventory, aisle = _aisle_inv(now)
     recompute = _StubRecomputeUseCase()
     use_case = RunAisleMergeUseCase(
         inventory_repo=_InventoryRepo(inventory),
         aisle_repo=_AisleRepo(aisle),
-        raw_label_repo=_StubRawLabelRepo(
-            labels=[_raw(now, "j1", "r1"), _raw(now, "j2", "r2")]
+        job_repo=_JobRepo(
+            jobs={
+                "j1": _process_aisle_job(now, "j1"),
+                "j2": _process_aisle_job(now, "j2"),
+            }
         ),
         recompute_use_case=recompute,
     )
     use_case.execute(
-        RunAisleMergeCommand(inventory_id="inv-1", aisle_id="aisle-1", job_id="j2")
+        RunAisleMergeCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            job_id="j2",
+        )
     )
     assert recompute.last_command.job_scope == "j2"
 
 
-def test_run_aisle_merge_ambiguous_mixed_legacy_and_job_scoped() -> None:
+def test_run_aisle_merge_raises_job_not_found() -> None:
     now = datetime.now(timezone.utc)
     inventory, aisle = _aisle_inv(now)
     use_case = RunAisleMergeUseCase(
         inventory_repo=_InventoryRepo(inventory),
         aisle_repo=_AisleRepo(aisle),
-        raw_label_repo=_StubRawLabelRepo(
-            labels=[_raw(now, None, "r0"), _raw(now, "j1", "r1")]
-        ),
+        job_repo=_JobRepo(jobs={}),
         recompute_use_case=_StubRecomputeUseCase(),
     )
-    try:
-        use_case.execute(RunAisleMergeCommand(inventory_id="inv-1", aisle_id="aisle-1"))
-        assert False, "expected MergeJobScopeAmbiguousError"
-    except MergeJobScopeAmbiguousError:
-        pass
+    with pytest.raises(JobNotFoundError):
+        use_case.execute(
+            RunAisleMergeCommand(
+                inventory_id="inv-1",
+                aisle_id="aisle-1",
+                job_id="missing-job",
+            )
+        )
+
+
+def test_run_aisle_merge_raises_job_does_not_belong_to_aisle() -> None:
+    now = datetime.now(timezone.utc)
+    inventory, aisle = _aisle_inv(now)
+    other_aisle_job = _process_aisle_job(now, "job-x", aisle_id="other-aisle")
+    use_case = RunAisleMergeUseCase(
+        inventory_repo=_InventoryRepo(inventory),
+        aisle_repo=_AisleRepo(aisle),
+        job_repo=_JobRepo(jobs={"job-x": other_aisle_job}),
+        recompute_use_case=_StubRecomputeUseCase(),
+    )
+    with pytest.raises(JobDoesNotBelongToAisleError):
+        use_case.execute(
+            RunAisleMergeCommand(
+                inventory_id="inv-1",
+                aisle_id="aisle-1",
+                job_id="job-x",
+            )
+        )
 
 
 def test_run_aisle_merge_raises_for_missing_inventory() -> None:
     use_case = RunAisleMergeUseCase(
         inventory_repo=_InventoryRepo(None),
         aisle_repo=_AisleRepo(None),
-        raw_label_repo=_StubRawLabelRepo(),
+        job_repo=_JobRepo(),
         recompute_use_case=_StubRecomputeUseCase(),
     )
+    with pytest.raises(InventoryNotFoundError):
+        use_case.execute(
+            RunAisleMergeCommand(
+                inventory_id="inv-1",
+                aisle_id="aisle-1",
+                job_id="legacy",
+            )
+        )
 
-    try:
-        use_case.execute(RunAisleMergeCommand(inventory_id="inv-1", aisle_id="aisle-1"))
-        assert False, "expected InventoryNotFoundError"
-    except InventoryNotFoundError:
-        pass
 
-
-def test_run_aisle_merge_raises_for_wrong_aisle_inventory() -> None:
+def test_run_aisle_merge_raises_for_aisle_not_in_inventory() -> None:
     now = datetime.now(timezone.utc)
     inventory = Inventory(
         id="inv-1",
@@ -226,12 +262,33 @@ def test_run_aisle_merge_raises_for_wrong_aisle_inventory() -> None:
     use_case = RunAisleMergeUseCase(
         inventory_repo=_InventoryRepo(inventory),
         aisle_repo=_AisleRepo(aisle),
-        raw_label_repo=_StubRawLabelRepo(),
+        job_repo=_JobRepo(),
         recompute_use_case=_StubRecomputeUseCase(),
     )
+    with pytest.raises(AisleNotFoundError):
+        use_case.execute(
+            RunAisleMergeCommand(
+                inventory_id="inv-1",
+                aisle_id="aisle-1",
+                job_id="legacy",
+            )
+        )
 
-    try:
-        use_case.execute(RunAisleMergeCommand(inventory_id="inv-1", aisle_id="aisle-1"))
-        assert False, "expected AisleNotFoundError"
-    except AisleNotFoundError:
-        pass
+
+def test_run_aisle_merge_raises_value_error_when_job_id_blank() -> None:
+    now = datetime.now(timezone.utc)
+    inventory, aisle = _aisle_inv(now)
+    use_case = RunAisleMergeUseCase(
+        inventory_repo=_InventoryRepo(inventory),
+        aisle_repo=_AisleRepo(aisle),
+        job_repo=_JobRepo(),
+        recompute_use_case=_StubRecomputeUseCase(),
+    )
+    with pytest.raises(ValueError, match="job_id is required"):
+        use_case.execute(
+            RunAisleMergeCommand(
+                inventory_id="inv-1",
+                aisle_id="aisle-1",
+                job_id="   ",
+            )
+        )
