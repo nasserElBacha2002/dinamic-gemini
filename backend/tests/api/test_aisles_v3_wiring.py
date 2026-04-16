@@ -137,6 +137,15 @@ def test_post_aisle_empty_code_returns_422() -> None:
     assert response.status_code == 422
 
 
+def test_post_aisle_process_inventory_not_found_returns_404() -> None:
+    """Phase 9: process route delegates inventory existence to use case."""
+    response = client.post(
+        "/api/v3/inventories/nonexistent-inventory-id-phase9/aisles/any-aisle-id/process",
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Inventory not found"
+
+
 def test_post_aisle_process_returns_202_and_job_id() -> None:
     create_resp = client.post("/api/v3/inventories", json={"name": "For Process"})
     assert create_resp.status_code == 201

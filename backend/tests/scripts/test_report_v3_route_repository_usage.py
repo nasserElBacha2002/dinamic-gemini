@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 
 
-def test_report_v3_route_repository_usage_exits_zero_with_expected_baseline() -> None:
-    """Baseline: exactly one v3 route-level repo injection (aisles POST process). Update when that changes."""
+def test_report_v3_route_repository_usage_exits_zero_with_no_route_repo_injections() -> None:
+    """Phase 9: v3 route handlers no longer use Depends(get_*_repo); script should report none."""
     backend = Path(__file__).resolve().parents[2]
     script = backend / "scripts" / "report_v3_route_repository_usage.py"
     proc = subprocess.run(
@@ -20,7 +20,6 @@ def test_report_v3_route_repository_usage_exits_zero_with_expected_baseline() ->
     )
     assert proc.returncode == 0, proc.stderr
     out = proc.stdout
-    assert "aisles.py" in out
-    assert "get_inventory_repo" in out
-    assert "start_aisle_processing" in out
-    assert "POST /{inventory_id}/aisles/{aisle_id}/process" in out
+    assert (
+        "(no Depends(get_*_repo) matches — v3 routes are clean at this layer.)" in out
+    )

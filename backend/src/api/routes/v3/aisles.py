@@ -17,7 +17,6 @@ from src.api.dependencies import (
     get_cancel_aisle_job_use_case,
     get_retry_aisle_job_use_case,
     get_get_aisle_merge_results_use_case,
-    get_inventory_repo,
     get_list_aisle_jobs_use_case,
     get_resolve_aisle_job_for_inventory_read_use_case,
     get_run_aisle_merge_use_case,
@@ -62,7 +61,6 @@ from src.api.schemas.processing_schemas import (
     ProcessAisleRequest,
     ProcessAisleResponse,
 )
-from src.application.ports.repositories import InventoryRepository
 from src.application.errors import (
     AisleNotFoundError,
     ActiveJobExistsError,
@@ -78,8 +76,6 @@ from src.application.errors import (
     BenchmarkRequiresTestInventoryError,
     UnknownProcessingProviderError,
 )
-from src.application.services.process_aisle_execution_resolution import resolve_process_aisle_execution_keys
-from src.config import load_settings
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
@@ -290,35 +286,17 @@ def start_aisle_processing(
     aisle_id: str,
     payload: ProcessAisleRequest | None = Body(None),
     use_case: StartAisleProcessingUseCase = Depends(get_start_aisle_processing_use_case),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> ProcessAisleResponse:
     try:
-        inv = inventory_repo.get_by_id(inventory_id)
-        if inv is None:
-            raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
         body = payload or ProcessAisleRequest()
-        settings = load_settings()
-        pipeline_key, model_name, prompt_key = resolve_process_aisle_execution_keys(
-            inv,
-            requested_provider_name=body.provider_name,
-            requested_model_name=body.model_name,
-            requested_prompt_key=body.prompt_key,
-            settings=settings,
-        )
-        logger.info(
-            "aisle.process_requested inventory_id=%s aisle_id=%s processing_mode=%s provider=%s",
-            inventory_id,
-            aisle_id,
-            inv.processing_mode.value,
-            pipeline_key,
-        )
         job_id = use_case.execute(
             StartAisleProcessingCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
-                pipeline_provider_key=pipeline_key,
-                model_name=model_name,
-                prompt_key=prompt_key,
+                resolve_execution_keys=True,
+                requested_provider_name=body.provider_name,
+                requested_model_name=body.model_name,
+                requested_prompt_key=body.prompt_key,
             )
         )
         return ProcessAisleResponse(job_id=job_id)
