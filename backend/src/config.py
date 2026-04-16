@@ -1024,6 +1024,25 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("ENGINE_VERSION", "v2.0"),
         description="Engine version identifier for job records.",
     )
+    # Phase 14.1 — Legacy Stage-8 SQL (`jobs` / `pallet_results` / `job_events`) soft freeze (optional).
+    legacy_stage8_sql_writes_disabled: bool = Field(
+        default_factory=lambda: os.getenv("LEGACY_STAGE8_SQL_WRITES_DISABLED", "").strip().lower()
+        in ("1", "true", "yes"),
+        description=(
+            "When true, block INSERT/UPDATE-style operations in ``src.database.repository`` for legacy "
+            "Stage-8 tables; reads still run. Default false (unset) preserves historical behavior. "
+            "Env: LEGACY_STAGE8_SQL_WRITES_DISABLED."
+        ),
+    )
+    legacy_stage8_sql_bridge_disabled: bool = Field(
+        default_factory=lambda: os.getenv("LEGACY_STAGE8_SQL_BRIDGE_DISABLED", "").strip().lower()
+        in ("1", "true", "yes"),
+        description=(
+            "When true, ``job_store._db_repos()`` returns None (no legacy SQL repo materialization); "
+            "FS and in-memory queue fallbacks apply. Stronger than ``legacy_stage8_sql_writes_disabled``. "
+            "Default false. Env: LEGACY_STAGE8_SQL_BRIDGE_DISABLED."
+        ),
+    )
     debug_save_frames: bool = Field(
         default_factory=lambda: os.getenv("DEBUG_SAVE_FRAMES", "false").lower()
         in ("true", "1", "yes"),

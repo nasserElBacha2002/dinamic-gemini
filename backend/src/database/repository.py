@@ -10,9 +10,25 @@ from typing import Any, Dict, List, Optional
 from typing_extensions import TypedDict
 
 from src.database.sqlserver import SqlServerClient, now_utc
-from src.legacy.persistence_observability import log_stage8_sql_access
+from src.legacy.persistence_observability import (
+    log_legacy_sql_write_blocked,
+    log_stage8_sql_access,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _legacy_stage8_writes_blocked(operation: str, table: str, **identifiers: Any) -> bool:
+    """Phase 14.1 — if True, skip mutating SQL (caller returns early)."""
+    try:
+        from src.config import load_settings
+
+        if not load_settings().legacy_stage8_sql_writes_disabled:
+            return False
+    except Exception:
+        return False
+    log_legacy_sql_write_blocked(operation=operation, table=table, identifiers=identifiers or None)
+    return True
 
 
 class JobRecordDict(TypedDict, total=False):
@@ -81,6 +97,10 @@ class JobsRepository:
         input_manifest_path: Optional[str] = None,
         photos_dir: Optional[str] = None,
     ) -> None:
+        if _legacy_stage8_writes_blocked(
+            "create_job", "jobs", job_id=job_id, input_type=input_type
+        ):
+            return
         log_stage8_sql_access(
             repository_class="JobsRepository",
             operation="create_job",
@@ -122,6 +142,10 @@ class JobsRepository:
         progress_stage: Optional[str] = None,
         progress_percent: Optional[int] = None,
     ) -> None:
+        if _legacy_stage8_writes_blocked(
+            "update_job_status", "jobs", job_id=job_id, status=status
+        ):
+            return
         log_stage8_sql_access(
             repository_class="JobsRepository",
             operation="update_job_status",
@@ -138,6 +162,10 @@ class JobsRepository:
             )
 
     def update_job_progress(self, job_id: str, stage: str, percent: int) -> None:
+        if _legacy_stage8_writes_blocked(
+            "update_job_progress", "jobs", job_id=job_id, stage=stage, percent=percent
+        ):
+            return
         log_stage8_sql_access(
             repository_class="JobsRepository",
             operation="update_job_progress",
@@ -173,6 +201,8 @@ class JobsRepository:
         gemini_calls: Optional[int] = None,
         prompt_version: Optional[str] = None,
     ) -> None:
+        if _legacy_stage8_writes_blocked("set_job_outputs", "jobs", job_id=job_id):
+            return
         log_stage8_sql_access(
             repository_class="JobsRepository",
             operation="set_job_outputs",
@@ -218,6 +248,10 @@ class JobsRepository:
             )
 
     def set_job_error(self, job_id: str, error_code: str, error_message: str) -> None:
+        if _legacy_stage8_writes_blocked(
+            "set_job_error", "jobs", job_id=job_id, error_code=error_code
+        ):
+            return
         log_stage8_sql_access(
             repository_class="JobsRepository",
             operation="set_job_error",
@@ -351,6 +385,8 @@ class JobsRepository:
         Returns:
             JobRecordDict for the claimed job, or None when no queued jobs exist.
         """
+        if _legacy_stage8_writes_blocked("claim_next_queued_job", "jobs"):
+            return None
         claimed_job_id: Optional[str] = None
         with self._client.cursor() as cur:
             cur.execute(
@@ -410,6 +446,10 @@ class PalletResultsRepository:
     def insert_pallet_results(self, job_id: str, pallets: List[Any]) -> None:
         """Bulk insert. Each item: one entity result with pallet_id, internal_code, quantity/final_quantity, source, confidence, fallback_used, optional estimated_visible_boxes, source_image_id, traceability_status (Epic 3.1.B)."""
         if not pallets:
+            return
+        if _legacy_stage8_writes_blocked(
+            "insert_pallet_results", "pallet_results", job_id=job_id, batch_size=len(pallets)
+        ):
             return
         log_stage8_sql_access(
             repository_class="PalletResultsRepository",
@@ -492,6 +532,10 @@ class JobEventsRepository:
         self._client = client
 
     def insert_event(self, job_id: str, event_type: str, payload_dict: Optional[Dict[str, Any]] = None) -> None:
+        if _legacy_stage8_writes_blocked(
+            "insert_event", "job_events", job_id=job_id, event_type=event_type
+        ):
+            return
         log_stage8_sql_access(
             repository_class="JobEventsRepository",
             operation="insert_event",

@@ -25,6 +25,7 @@ from typing import Any, Mapping, Optional
 _LOG = logging.getLogger("dinamic.legacy_sql")
 
 _LEGACY_SQL_REPOS_MATERIALIZED = False
+_LEGACY_SQL_BRIDGE_BYPASS_LOGGED = False
 
 _SKIP_MODULE_PREFIXES: tuple[str, ...] = (
     "src.legacy.persistence_observability",
@@ -93,6 +94,46 @@ def reset_legacy_sql_repositories_materialization_flag() -> None:
     """Reset the once-per-process materialization flag (unit tests only)."""
     global _LEGACY_SQL_REPOS_MATERIALIZED
     _LEGACY_SQL_REPOS_MATERIALIZED = False
+
+
+def log_legacy_sql_bridge_bypassed_once_per_process(*, reason: str) -> None:
+    """Emit once per process when ``job_store._db_repos()`` skips SQL repos (Phase 14.1 bridge disable)."""
+    global _LEGACY_SQL_BRIDGE_BYPASS_LOGGED
+    if _LEGACY_SQL_BRIDGE_BYPASS_LOGGED:
+        return
+    _LEGACY_SQL_BRIDGE_BYPASS_LOGGED = True
+    _LOG.info(
+        "legacy_sql_bridge_bypassed_once_per_process phase=14.1 reason=%s",
+        reason,
+    )
+
+
+def reset_legacy_sql_bridge_bypassed_flag_for_tests() -> None:
+    """Reset bridge-bypass log flag (unit tests only)."""
+    global _LEGACY_SQL_BRIDGE_BYPASS_LOGGED
+    _LEGACY_SQL_BRIDGE_BYPASS_LOGGED = False
+
+
+def log_legacy_sql_write_blocked(
+    *,
+    operation: str,
+    table: str,
+    identifiers: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """Phase 14.1 — a mutating legacy SQL operation was skipped (writes-disabled flag)."""
+    parts: list[str] = []
+    if identifiers:
+        for k, v in identifiers.items():
+            if v is None:
+                continue
+            parts.append(f"{k}={_truncate(v)}")
+    id_blob = " ".join(parts) if parts else "-"
+    _LOG.info(
+        "legacy_sql_write_blocked phase=14.1 operation=%s table=%s identifiers=%s",
+        operation,
+        table,
+        id_blob,
+    )
 
 
 def log_stage8_sql_access(

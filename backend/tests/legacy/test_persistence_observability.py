@@ -9,6 +9,7 @@ import pytest
 from src.legacy.persistence_observability import (
     classify_stage8_access_path_kind,
     log_legacy_sql_repositories_materialized_once_per_process,
+    reset_legacy_sql_bridge_bypassed_flag_for_tests,
     reset_legacy_sql_repositories_materialization_flag,
 )
 
@@ -31,6 +32,7 @@ def test_classify_unknown_module() -> None:
 
 def test_legacy_sql_repositories_materialized_logs_once_per_process(caplog: pytest.LogCaptureFixture) -> None:
     reset_legacy_sql_repositories_materialization_flag()
+    reset_legacy_sql_bridge_bypassed_flag_for_tests()
     caplog.set_level(logging.INFO, logger="dinamic.legacy_sql")
     log_legacy_sql_repositories_materialized_once_per_process(source="test")
     log_legacy_sql_repositories_materialized_once_per_process(source="test_again")
@@ -43,3 +45,4 @@ def test_legacy_sql_repositories_materialized_logs_once_per_process(caplog: pyte
     assert len(materialized) == 1
     assert "source=test" in materialized[0].getMessage()
     reset_legacy_sql_repositories_materialization_flag()
+    reset_legacy_sql_bridge_bypassed_flag_for_tests()
