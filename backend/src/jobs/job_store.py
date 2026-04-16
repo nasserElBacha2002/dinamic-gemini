@@ -30,7 +30,12 @@ def _db_repos() -> Optional[Tuple[Any, Any, Any]]:
             return None
         from src.database.sqlserver import SqlServerClient
         from src.database.repository import JobsRepository, PalletResultsRepository, JobEventsRepository
+        from src.legacy.persistence_observability import (
+            log_legacy_sql_repositories_materialized_once_per_process,
+        )
+
         client = SqlServerClient(settings.require_sqlserver_connection_string())
+        log_legacy_sql_repositories_materialized_once_per_process(source="job_store._db_repos")
         return (
             JobsRepository(client),
             PalletResultsRepository(client),

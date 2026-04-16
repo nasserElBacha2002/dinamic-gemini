@@ -2,6 +2,18 @@
 Structured, low-volume logging for legacy Stage-8 SQL repositories.
 
 Logger name ``dinamic.legacy_sql`` is stable for log routing / filtering in staging and prod.
+
+Phase 12.5 — Operational signals
+---------------------------------
+* ``legacy_sql_access`` (existing): one INFO line per repository operation (``jobs``,
+  ``pallet_results``, ``job_events``), including ``path_kind`` (typically ``legacy_jobs`` when
+  called from ``src.jobs.*``).
+* ``legacy_sql_repositories_materialized_once_per_process`` (new): emitted **once** when
+  ``job_store._db_repos()`` successfully constructs SQL repository instances for this process.
+  Count these in aggregate to confirm whether any runtime still arms the legacy bridge.
+
+Compare volume of ``legacy_sql_access`` (table=jobs|pallet_results|job_events) against v3
+``inventory_jobs`` application logs/metrics separately; this module does not log v3 SQL.
 """
 
 from __future__ import annotations
@@ -11,6 +23,8 @@ import logging
 from typing import Any, Mapping, Optional
 
 _LOG = logging.getLogger("dinamic.legacy_sql")
+
+_LEGACY_SQL_REPOS_MATERIALIZED = False
 
 _SKIP_MODULE_PREFIXES: tuple[str, ...] = (
     "src.legacy.persistence_observability",
@@ -57,6 +71,28 @@ def _resolve_caller_module(max_frames: int = 16) -> tuple[Optional[str], Optiona
         func = frame_info.function
         return name, func
     return None, None
+
+
+def log_legacy_sql_repositories_materialized_once_per_process(*, source: str) -> None:
+    """Emit a single INFO per process when legacy ``JobsRepository`` trio is first constructed.
+
+    Low noise: does not fire on each SQL call (those use ``log_stage8_sql_access``).
+    """
+    global _LEGACY_SQL_REPOS_MATERIALIZED
+    if _LEGACY_SQL_REPOS_MATERIALIZED:
+        return
+    _LEGACY_SQL_REPOS_MATERIALIZED = True
+    _LOG.info(
+        "legacy_sql_repositories_materialized_once_per_process source=%s "
+        "tables=jobs,pallet_results,job_events bridge=job_store_sql",
+        source,
+    )
+
+
+def reset_legacy_sql_repositories_materialization_flag() -> None:
+    """Reset the once-per-process materialization flag (unit tests only)."""
+    global _LEGACY_SQL_REPOS_MATERIALIZED
+    _LEGACY_SQL_REPOS_MATERIALIZED = False
 
 
 def log_stage8_sql_access(
