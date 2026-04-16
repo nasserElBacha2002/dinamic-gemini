@@ -31,4 +31,6 @@ def test_build_analysis_result_from_llm_response_maps_fields() -> None:
     assert out.parsed_json["total_entities_detected"] == 0
     assert out.prompt_composition == pc
     assert out.provider_metadata == pm
+    assert out.prompt_composition is pc
+    assert out.provider_metadata is pm
     assert out.llm_cost_snapshot is not None

@@ -28,3 +28,15 @@ def test_apply_job_model_name_empty_returns_none_and_does_not_mutate() -> None:
     ) is None
     assert "gemini_model_name" not in meta
     assert meta == {"existing": 1}
+
+
+def test_apply_job_model_name_unknown_provider_key_returns_model_without_metadata_mutation() -> None:
+    """Unregistered logical keys still expose the job model for composition but skip legacy keys."""
+    meta: dict = {}
+    out = apply_job_model_name_to_llm_request_metadata(
+        resolved_provider_key="future_vendor",
+        job_model_name="some-model",
+        metadata=meta,
+    )
+    assert out == "some-model"
+    assert meta == {}

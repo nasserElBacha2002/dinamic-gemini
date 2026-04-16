@@ -1,13 +1,17 @@
 """
-Phase 3 — normalize ``LLMResponse`` into :class:`~src.pipeline.ports.analysis_provider.AnalysisResult`.
+Phase 3 / 5 — normalize ``LLMResponse`` into :class:`~src.pipeline.ports.analysis_provider.AnalysisResult`.
 
-Keeps provider-specific parsing inside adapters; the hybrid strategy only maps the neutral
-``LLMResponse`` contract into the pipeline's ``AnalysisResult`` shape.
+Provider-specific parsing stays inside LLM adapters; this helper only maps the neutral
+``LLMResponse`` contract into the pipeline ``AnalysisResult`` shape and attaches pricing snapshot.
+
+**Ownership:** ``provider_metadata`` and ``prompt_composition`` are built entirely by callers;
+this function does not merge or default them (keeps a single place of truth for visual-reference
+metadata and prompt traceability).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Mapping
 
 from src.llm.costing import build_llm_cost_snapshot
 from src.llm.types import LLMResponse
@@ -17,17 +21,19 @@ from src.pipeline.ports.analysis_provider import AnalysisResult
 def build_analysis_result_from_llm_response(
     *,
     response: LLMResponse,
-    prompt_composition: Dict[str, Any],
-    provider_metadata: Dict[str, Any],
+    prompt_composition: Mapping[str, Any],
+    provider_metadata: Mapping[str, Any],
     settings: Any,
 ) -> AnalysisResult:
-    """Build ``AnalysisResult`` from a successful ``LLMResponse`` (post-adapter normalization).
+    """
+    Build ``AnalysisResult`` from a successful ``LLMResponse`` (post-adapter normalization).
 
-    Visual-reference availability/consumption is carried only on ``provider_metadata`` (the same
-    mapping attached to ``AnalysisResult`` and downstream run metadata). Callers must pass the
-    fully built metadata dict — do not duplicate those fields as separate arguments here.
-    ``settings`` is ``Any`` for the same reason as :func:`resolve_llm_executor_for_context`
-    (pricing snapshot accepts app settings or test doubles).
+    ``prompt_composition`` and ``provider_metadata`` are typed as :class:`~typing.Mapping` to signal
+    the helper does not mutate them; call sites pass ``dict`` instances, which are stored on
+    ``AnalysisResult`` by reference (unchanged from pre–Phase 5 behavior).
+
+    ``settings`` remains ``Any`` (same contract as :func:`resolve_llm_executor_for_context`): pricing
+    snapshot construction accepts app settings or lightweight test doubles.
     """
     llm_cost_snapshot = build_llm_cost_snapshot(
         provider=response.provider,

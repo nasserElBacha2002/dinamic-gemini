@@ -1,5 +1,5 @@
 """
-Phase 3 — explicit pipeline provider resolution boundary.
+Phase 3 / 5 — explicit pipeline provider resolution boundary.
 
 Centralizes how a worker run chooses the logical LLM vendor (Gemini, OpenAI, Claude, DeepSeek)
 and the corresponding :class:`~src.pipeline.ports.llm_execution.LlmGlobalAnalysisExecutor`.
@@ -14,6 +14,10 @@ module to inject offline executors).
 Adapter registration (which class implements ``gemini`` / ``openai`` / …) remains in
 :mod:`src.pipeline.providers.registry` — this module only composes **job-level provider choice**
 + settings into an executor instance.
+
+**Phase 5 note:** :func:`resolve_llm_executor_for_context` keeps ``settings: Any`` so tests and the
+LLM harness can pass duck-typed objects; only :func:`~src.pipeline.provider_keys.normalize_pipeline_provider_key`
+and adapter ``execute(..., settings)`` consume it.
 """
 
 from __future__ import annotations

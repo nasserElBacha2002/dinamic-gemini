@@ -10,7 +10,8 @@ monkeypatch targets). This module **delegates** to that implementation so existi
 **Guidance for new code:** import and call
 ``src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context`` (or
 :class:`~src.pipeline.services.pipeline_provider_resolver.PipelineProviderResolver`) directly.
-Use ``registry.resolve_llm_executor_for_context`` only when maintaining older call sites.
+``registry.resolve_llm_executor_for_context`` remains a thin delegate for legacy imports only
+(Phase 5 — no second resolution implementation).
 
 Resolution rules
 ----------------
