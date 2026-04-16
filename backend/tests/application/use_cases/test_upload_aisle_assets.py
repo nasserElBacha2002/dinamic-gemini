@@ -373,3 +373,18 @@ def test_list_aisle_assets_raises_when_aisle_not_found() -> None:
 
     with pytest.raises(AisleNotFoundError):
         use_case.execute("inv1", "nonexistent")
+
+
+def test_list_aisle_assets_get_validated_aisle_matches_execute_rules() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.ASSETS_UPLOADED, now, now)
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    asset_repo = StubAssetRepo()
+    uc = ListAisleAssetsUseCase(aisle_repo=aisle_repo, asset_repo=asset_repo)
+    got = uc.get_validated_aisle("inv1", "a1")
+    assert got.id == "a1"
+    assert got.inventory_id == "inv1"
+
+    with pytest.raises(AisleNotFoundError):
+        uc.get_validated_aisle("wrong-inv", "a1")
