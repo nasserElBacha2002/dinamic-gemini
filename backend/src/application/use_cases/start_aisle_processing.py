@@ -6,17 +6,21 @@ aisle does not belong to the given inventory, or an active job already exists fo
 
 Phase 9: when ``resolve_execution_keys`` is true (HTTP entry), loads inventory and resolves
 provider/model/prompt via ``resolve_process_aisle_execution_keys`` before launch.
+
+Phase 10: execution-key materialization and aisle scope checks are factored into small helpers
+for readability; behavior is unchanged.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
-from src.application.errors import AisleNotFoundError, ActiveJobExistsError, InventoryNotFoundError
+from src.application.errors import ActiveJobExistsError, InventoryNotFoundError
 from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.process_aisle_execution_resolution import (
@@ -43,6 +47,41 @@ class StartAisleProcessingCommand:
     prompt_key: str = "global_v21"
 
 
+def _materialize_execution_keys_for_start(
+    inventory_repo: InventoryRepository,
+    command: StartAisleProcessingCommand,
+) -> Tuple[str, Optional[str], str]:
+    """Resolve provider/model/prompt for a start-process command (Phase 9/10).
+
+    When ``command.resolve_execution_keys`` is false, returns the command's pre-set keys.
+    """
+    if not command.resolve_execution_keys:
+        return (
+            command.pipeline_provider_key,
+            command.model_name,
+            command.prompt_key,
+        )
+    inv = inventory_repo.get_by_id(command.inventory_id)
+    if inv is None:
+        raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
+    settings = load_settings()
+    pipeline_key, model_name, prompt_key = resolve_process_aisle_execution_keys(
+        inv,
+        requested_provider_name=command.requested_provider_name,
+        requested_model_name=command.requested_model_name,
+        requested_prompt_key=command.requested_prompt_key,
+        settings=settings,
+    )
+    logger.info(
+        "aisle.process_requested inventory_id=%s aisle_id=%s processing_mode=%s provider=%s",
+        command.inventory_id,
+        command.aisle_id,
+        inv.processing_mode.value,
+        pipeline_key,
+    )
+    return pipeline_key, model_name, prompt_key
+
+
 class StartAisleProcessingUseCase:
     def __init__(
         self,
@@ -59,37 +98,16 @@ class StartAisleProcessingUseCase:
         self._stale_reconciler = stale_reconciler
 
     def execute(self, command: StartAisleProcessingCommand) -> str:
-        if command.resolve_execution_keys:
-            inv = self._inventory_repo.get_by_id(command.inventory_id)
-            if inv is None:
-                raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
-            settings = load_settings()
-            pipeline_key, model_name, prompt_key = resolve_process_aisle_execution_keys(
-                inv,
-                requested_provider_name=command.requested_provider_name,
-                requested_model_name=command.requested_model_name,
-                requested_prompt_key=command.requested_prompt_key,
-                settings=settings,
-            )
-            logger.info(
-                "aisle.process_requested inventory_id=%s aisle_id=%s processing_mode=%s provider=%s",
-                command.inventory_id,
-                command.aisle_id,
-                inv.processing_mode.value,
-                pipeline_key,
-            )
-        else:
-            pipeline_key = command.pipeline_provider_key
-            model_name = command.model_name
-            prompt_key = command.prompt_key
-
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None:
-            raise AisleNotFoundError(f"Aisle not found: {command.aisle_id}")
-        if aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
+        pipeline_key, model_name, prompt_key = _materialize_execution_keys_for_start(
+            self._inventory_repo,
+            command,
+        )
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="strict",
+        )
 
         latest = self._stale_reconciler.reconcile(
             self._job_repo.get_latest_by_target("aisle", command.aisle_id)
