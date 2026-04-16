@@ -506,15 +506,13 @@ class PathsOutputSettings(BaseModel):
     @field_validator("output_dir")
     @classmethod
     def validate_output_dir(cls, v: str) -> str:
+        """Strip, drop trailing slashes, expand ``~``; relative paths stay relative (no ``resolve()``)."""
         if not v or not isinstance(v, str):
-            return str(Path("output").resolve())
+            return "output"
         s = v.strip().rstrip("/\\")
         if not s:
-            return str(Path("output").resolve())
-        p = Path(s).expanduser()
-        if not p.is_absolute():
-            p = p.resolve()
-        return str(p)
+            return "output"
+        return str(Path(s).expanduser())
 
 
 class ApiRuntimeSettings(BaseModel):

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _sqlserver_effective_cs(settings: object) -> str:
-    """Support AppSettings (property) and plain test doubles that only expose ``sqlserver_connection_string``."""
+    """Compatibility shim: real :class:`~src.config.AppSettings` exposes ``sqlserver_effective_connection_string`` as a property; some tests use ``types.SimpleNamespace`` with only ``sqlserver_connection_string`` set."""
     eff = getattr(settings, "sqlserver_effective_connection_string", None)
     if eff is not None:
         return str(eff).strip()

@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional, TypeVar
 
+from src.application.ports.analytics_repository import AnalyticsRepository
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
@@ -28,9 +30,13 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
     SourceAssetRepository,
 )
-from src.application.ports.services import MetricsCalculator
+from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
+from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
+from src.database.sqlserver import SqlServerClient
 
 logger = logging.getLogger(__name__)
+
+_RepoT = TypeVar("_RepoT")
 
 _container: Optional["AppContainer"] = None
 
@@ -56,7 +62,7 @@ class AppContainer:
 
     def __init__(self, settings: "AppSettings") -> None:
         self._settings = settings
-        self._v3_sql_client: Any = None
+        self._v3_sql_client: Optional[SqlServerClient] = None
         self._inventory_repo: Optional[InventoryRepository] = None
         self._aisle_repo: Optional[AisleRepository] = None
         self._job_repo: Optional[JobRepository] = None
@@ -70,9 +76,9 @@ class AppContainer:
         self._raw_label_repo: Optional[RawLabelRepository] = None
         self._normalized_label_repo: Optional[NormalizedLabelRepository] = None
         self._final_count_repo: Optional[FinalCountRepository] = None
-        self._artifact_storage: Any = None
-        self._worker_launch_service: Any = None
-        self._analytics_repo: Any = None
+        self._artifact_storage: Optional[ArtifactStorage] = None
+        self._worker_launch_service: Optional[WorkerLaunchService] = None
+        self._analytics_repo: Optional[AnalyticsRepository] = None
 
     @property
     def settings(self) -> "AppSettings":
@@ -88,243 +94,246 @@ class AppContainer:
             getattr(self._settings, "sqlserver_enabled", False) and self._settings.sqlserver_effective_connection_string
         )
 
-    def _get_v3_sql_client(self) -> Any:
+    def _get_v3_sql_client(self) -> SqlServerClient:
         if self._v3_sql_client is not None:
             return self._v3_sql_client
-        from src.database.sqlserver import SqlServerClient
-
         client = SqlServerClient(self._settings.require_sqlserver_connection_string())
         with client.cursor() as cur:
             cur.execute("SELECT 1")
         self._v3_sql_client = client
         return self._v3_sql_client
 
+    def _build_sql_repository_or_memory(
+        self,
+        *,
+        backend_info_name: str,
+        sql_error_subject: str,
+        build_sql: Callable[[SqlServerClient], _RepoT],
+        build_memory: Callable[[], _RepoT],
+    ) -> _RepoT:
+        """Shared v3 pattern: SQL when enabled and connectable, else memory (with env-controlled fallback)."""
+        if not self._v3_db_enabled():
+            return build_memory()
+        try:
+            client = self._get_v3_sql_client()
+            repo = build_sql(client)
+            logger.info("v3 %s: using SQL backend", backend_info_name)
+            return repo
+        except Exception as e:
+            if not self._v3_allow_in_memory_fallback():
+                logger.error(
+                    "v3 SQL %s init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s",
+                    sql_error_subject,
+                    e,
+                )
+                raise
+            logger.warning(
+                "v3 SQL %s init failed, falling back to in-memory: %s",
+                sql_error_subject,
+                e,
+            )
+            return build_memory()
+
     def get_inventory_repo(self) -> InventoryRepository:
         if self._inventory_repo is not None:
             return self._inventory_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 
-                self._inventory_repo = SqlInventoryRepository(client)
-                logger.info("v3 InventoryRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+        def _sql(client: SqlServerClient) -> InventoryRepository:
+            from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 
-                self._inventory_repo = MemoryInventoryRepository()
-        else:
+            return SqlInventoryRepository(client)
+
+        def _memory() -> InventoryRepository:
             from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 
-            self._inventory_repo = MemoryInventoryRepository()
+            return MemoryInventoryRepository()
+
+        self._inventory_repo = self._build_sql_repository_or_memory(
+            backend_info_name="InventoryRepository",
+            sql_error_subject="repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._inventory_repo
 
     def get_aisle_repo(self) -> AisleRepository:
         if self._aisle_repo is not None:
             return self._aisle_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
 
-                self._aisle_repo = SqlAisleRepository(client)
-                logger.info("v3 AisleRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL aisle repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL aisle repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+        def _sql(client: SqlServerClient) -> AisleRepository:
+            from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
 
-                self._aisle_repo = MemoryAisleRepository()
-        else:
+            return SqlAisleRepository(client)
+
+        def _memory() -> AisleRepository:
             from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 
-            self._aisle_repo = MemoryAisleRepository()
+            return MemoryAisleRepository()
+
+        self._aisle_repo = self._build_sql_repository_or_memory(
+            backend_info_name="AisleRepository",
+            sql_error_subject="aisle repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._aisle_repo
 
     def get_job_repo(self) -> JobRepository:
         if self._job_repo is not None:
             return self._job_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_job_repository import SqlJobRepository
 
-                self._job_repo = SqlJobRepository(client)
-                logger.info("v3 JobRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL job repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL job repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+        def _sql(client: SqlServerClient) -> JobRepository:
+            from src.infrastructure.repositories.sql_job_repository import SqlJobRepository
 
-                self._job_repo = MemoryJobRepository()
-        else:
+            return SqlJobRepository(client)
+
+        def _memory() -> JobRepository:
             from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 
-            self._job_repo = MemoryJobRepository()
+            return MemoryJobRepository()
+
+        self._job_repo = self._build_sql_repository_or_memory(
+            backend_info_name="JobRepository",
+            sql_error_subject="job repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._job_repo
 
     def get_source_asset_repo(self) -> SourceAssetRepository:
         if self._asset_repo is not None:
             return self._asset_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_source_asset_repository import SqlSourceAssetRepository
 
-                self._asset_repo = SqlSourceAssetRepository(client)
-                logger.info("v3 SourceAssetRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL source_asset repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL source_asset repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+        def _sql(client: SqlServerClient) -> SourceAssetRepository:
+            from src.infrastructure.repositories.sql_source_asset_repository import SqlSourceAssetRepository
 
-                self._asset_repo = MemorySourceAssetRepository()
-        else:
+            return SqlSourceAssetRepository(client)
+
+        def _memory() -> SourceAssetRepository:
             from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
 
-            self._asset_repo = MemorySourceAssetRepository()
+            return MemorySourceAssetRepository()
+
+        self._asset_repo = self._build_sql_repository_or_memory(
+            backend_info_name="SourceAssetRepository",
+            sql_error_subject="source_asset repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._asset_repo
 
     def get_inventory_visual_reference_repo(self) -> InventoryVisualReferenceRepository:
         if self._visual_reference_repo is not None:
             return self._visual_reference_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_inventory_visual_reference_repository import (
-                    SqlInventoryVisualReferenceRepository,
-                )
 
-                self._visual_reference_repo = SqlInventoryVisualReferenceRepository(client)
-                logger.info("v3 InventoryVisualReferenceRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error(
-                        "v3 SQL inventory_visual_reference repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s",
-                        e,
-                    )
-                    raise
-                logger.warning(
-                    "v3 SQL inventory_visual_reference repo init failed, falling back to in-memory: %s",
-                    e,
-                )
-                from src.infrastructure.repositories.memory_inventory_visual_reference_repository import (
-                    MemoryInventoryVisualReferenceRepository,
-                )
+        def _sql(client: SqlServerClient) -> InventoryVisualReferenceRepository:
+            from src.infrastructure.repositories.sql_inventory_visual_reference_repository import (
+                SqlInventoryVisualReferenceRepository,
+            )
 
-                self._visual_reference_repo = MemoryInventoryVisualReferenceRepository()
-        else:
+            return SqlInventoryVisualReferenceRepository(client)
+
+        def _memory() -> InventoryVisualReferenceRepository:
             from src.infrastructure.repositories.memory_inventory_visual_reference_repository import (
                 MemoryInventoryVisualReferenceRepository,
             )
 
-            self._visual_reference_repo = MemoryInventoryVisualReferenceRepository()
+            return MemoryInventoryVisualReferenceRepository()
+
+        self._visual_reference_repo = self._build_sql_repository_or_memory(
+            backend_info_name="InventoryVisualReferenceRepository",
+            sql_error_subject="inventory_visual_reference repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._visual_reference_repo
 
     def get_position_repo(self) -> PositionRepository:
         if self._position_repo is not None:
             return self._position_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
 
-                self._position_repo = SqlPositionRepository(client)
-                logger.info("v3 PositionRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL position repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL position repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+        def _sql(client: SqlServerClient) -> PositionRepository:
+            from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
 
-                self._position_repo = MemoryPositionRepository()
-        else:
+            return SqlPositionRepository(client)
+
+        def _memory() -> PositionRepository:
             from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 
-            self._position_repo = MemoryPositionRepository()
+            return MemoryPositionRepository()
+
+        self._position_repo = self._build_sql_repository_or_memory(
+            backend_info_name="PositionRepository",
+            sql_error_subject="position repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._position_repo
 
     def get_product_record_repo(self) -> ProductRecordRepository:
         if self._product_record_repo is not None:
             return self._product_record_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_product_record_repository import SqlProductRecordRepository
 
-                self._product_record_repo = SqlProductRecordRepository(client)
-                logger.info("v3 ProductRecordRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL product_record repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL product_record repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+        def _sql(client: SqlServerClient) -> ProductRecordRepository:
+            from src.infrastructure.repositories.sql_product_record_repository import SqlProductRecordRepository
 
-                self._product_record_repo = MemoryProductRecordRepository()
-        else:
+            return SqlProductRecordRepository(client)
+
+        def _memory() -> ProductRecordRepository:
             from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
 
-            self._product_record_repo = MemoryProductRecordRepository()
+            return MemoryProductRecordRepository()
+
+        self._product_record_repo = self._build_sql_repository_or_memory(
+            backend_info_name="ProductRecordRepository",
+            sql_error_subject="product_record repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._product_record_repo
 
     def get_evidence_repo(self) -> EvidenceRepository:
         if self._evidence_repo is not None:
             return self._evidence_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
 
-                self._evidence_repo = SqlEvidenceRepository(client)
-                logger.info("v3 EvidenceRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL evidence repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL evidence repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
+        def _sql(client: SqlServerClient) -> EvidenceRepository:
+            from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
 
-                self._evidence_repo = MemoryEvidenceRepository()
-        else:
+            return SqlEvidenceRepository(client)
+
+        def _memory() -> EvidenceRepository:
             from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 
-            self._evidence_repo = MemoryEvidenceRepository()
+            return MemoryEvidenceRepository()
+
+        self._evidence_repo = self._build_sql_repository_or_memory(
+            backend_info_name="EvidenceRepository",
+            sql_error_subject="evidence repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._evidence_repo
 
     def get_review_action_repo(self) -> ReviewActionRepository:
         if self._review_action_repo is not None:
             return self._review_action_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_review_action_repository import SqlReviewActionRepository
 
-                self._review_action_repo = SqlReviewActionRepository(client)
-                logger.info("v3 ReviewActionRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL review_action repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL review_action repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+        def _sql(client: SqlServerClient) -> ReviewActionRepository:
+            from src.infrastructure.repositories.sql_review_action_repository import SqlReviewActionRepository
 
-                self._review_action_repo = MemoryReviewActionRepository()
-        else:
+            return SqlReviewActionRepository(client)
+
+        def _memory() -> ReviewActionRepository:
             from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
 
-            self._review_action_repo = MemoryReviewActionRepository()
+            return MemoryReviewActionRepository()
+
+        self._review_action_repo = self._build_sql_repository_or_memory(
+            backend_info_name="ReviewActionRepository",
+            sql_error_subject="review_action repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._review_action_repo
 
     def get_metrics_calculator(self) -> MetricsCalculator:
@@ -343,7 +352,7 @@ class AppContainer:
 
         return UtcClock()
 
-    def get_artifact_storage(self) -> Any:
+    def get_artifact_storage(self) -> ArtifactStorage:
         """Configured artifact storage (local or S3) — canonical accessor for API + worker."""
         if self._artifact_storage is not None:
             return self._artifact_storage
@@ -382,7 +391,7 @@ class AppContainer:
         )
         return self._artifact_storage
 
-    def get_worker_launch_service(self) -> Any:
+    def get_worker_launch_service(self) -> WorkerLaunchService:
         if self._worker_launch_service is not None:
             return self._worker_launch_service
         from src.infrastructure.services.on_demand_worker_launch_service import OnDemandWorkerLaunchService
@@ -393,101 +402,81 @@ class AppContainer:
     def get_raw_label_repo(self) -> RawLabelRepository:
         if self._raw_label_repo is not None:
             return self._raw_label_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
 
-                self._raw_label_repo = SqlRawLabelRepository(client)
-                logger.info("v3 RawLabelRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL raw_label repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL raw_label repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+        def _sql(client: SqlServerClient) -> RawLabelRepository:
+            from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
 
-                self._raw_label_repo = MemoryRawLabelRepository()
-        else:
+            return SqlRawLabelRepository(client)
+
+        def _memory() -> RawLabelRepository:
             from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
 
-            self._raw_label_repo = MemoryRawLabelRepository()
+            return MemoryRawLabelRepository()
+
+        self._raw_label_repo = self._build_sql_repository_or_memory(
+            backend_info_name="RawLabelRepository",
+            sql_error_subject="raw_label repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._raw_label_repo
 
     def get_normalized_label_repo(self) -> NormalizedLabelRepository:
         if self._normalized_label_repo is not None:
             return self._normalized_label_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_normalized_label_repository import SqlNormalizedLabelRepository
 
-                self._normalized_label_repo = SqlNormalizedLabelRepository(client)
-                logger.info("v3 NormalizedLabelRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL normalized_label repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL normalized_label repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
+        def _sql(client: SqlServerClient) -> NormalizedLabelRepository:
+            from src.infrastructure.repositories.sql_normalized_label_repository import SqlNormalizedLabelRepository
 
-                self._normalized_label_repo = MemoryNormalizedLabelRepository()
-        else:
+            return SqlNormalizedLabelRepository(client)
+
+        def _memory() -> NormalizedLabelRepository:
             from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
 
-            self._normalized_label_repo = MemoryNormalizedLabelRepository()
+            return MemoryNormalizedLabelRepository()
+
+        self._normalized_label_repo = self._build_sql_repository_or_memory(
+            backend_info_name="NormalizedLabelRepository",
+            sql_error_subject="normalized_label repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._normalized_label_repo
 
     def get_final_count_repo(self) -> FinalCountRepository:
         if self._final_count_repo is not None:
             return self._final_count_repo
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
 
-                self._final_count_repo = SqlFinalCountRepository(client)
-                logger.info("v3 FinalCountRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL final_count repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL final_count repo init failed, falling back to in-memory: %s", e)
-                from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
+        def _sql(client: SqlServerClient) -> FinalCountRepository:
+            from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
 
-                self._final_count_repo = MemoryFinalCountRepository()
-        else:
+            return SqlFinalCountRepository(client)
+
+        def _memory() -> FinalCountRepository:
             from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
 
-            self._final_count_repo = MemoryFinalCountRepository()
+            return MemoryFinalCountRepository()
+
+        self._final_count_repo = self._build_sql_repository_or_memory(
+            backend_info_name="FinalCountRepository",
+            sql_error_subject="final_count repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._final_count_repo
 
-    def get_analytics_repo(self) -> Any:
+    def get_analytics_repo(self) -> AnalyticsRepository:
         if self._analytics_repo is not None:
             return self._analytics_repo
+
         from src.infrastructure.repositories.memory_analytics_repository import MemoryAnalyticsRepository
         from src.infrastructure.repositories.sql_analytics_repository import SqlAnalyticsRepository
 
-        if self._v3_db_enabled():
-            try:
-                client = self._get_v3_sql_client()
-                self._analytics_repo = SqlAnalyticsRepository(client)
-                logger.info("v3 AnalyticsRepository: using SQL backend")
-            except Exception as e:
-                if not self._v3_allow_in_memory_fallback():
-                    logger.error("v3 SQL analytics repo init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s", e)
-                    raise
-                logger.warning("v3 SQL analytics repo init failed, falling back to in-memory: %s", e)
-                self._analytics_repo = MemoryAnalyticsRepository(
-                    self.get_inventory_repo(),
-                    self.get_aisle_repo(),
-                    self.get_position_repo(),
-                    self.get_product_record_repo(),
-                    self.get_review_action_repo(),
-                    self.get_job_repo(),
-                )
-        else:
-            self._analytics_repo = MemoryAnalyticsRepository(
+        def _sql(client: SqlServerClient) -> AnalyticsRepository:
+            return SqlAnalyticsRepository(client)
+
+        def _memory() -> AnalyticsRepository:
+            return MemoryAnalyticsRepository(
                 self.get_inventory_repo(),
                 self.get_aisle_repo(),
                 self.get_position_repo(),
@@ -495,12 +484,18 @@ class AppContainer:
                 self.get_review_action_repo(),
                 self.get_job_repo(),
             )
+
+        self._analytics_repo = self._build_sql_repository_or_memory(
+            backend_info_name="AnalyticsRepository",
+            sql_error_subject="analytics repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
         return self._analytics_repo
 
-    def get_recompute_consolidated_counts_use_case(self) -> Any:
+    def get_recompute_consolidated_counts_use_case(self) -> RecomputeConsolidatedCountsUseCase:
         from src.application.services.final_count_builder import FinalCountBuilder
         from src.application.services.label_normalization import LabelNormalizationService
-        from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
         from src.domain.labels.merge import MergeRuleEngine
 
         return RecomputeConsolidatedCountsUseCase(

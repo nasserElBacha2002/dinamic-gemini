@@ -115,7 +115,16 @@ class AppSettings(
         return output_path
 
 
-# Historical type name — identical to AppSettings (flat field access preserved).
+# ---------------------------------------------------------------------------
+# Backward-compatible type alias (Phase 1 migration bridge)
+#
+# ``Settings`` is **not** a distinct model: it is the same class object as
+# ``AppSettings``. Existing imports (`from src.config import Settings`) and
+# annotations keep working while call sites migrate.
+#
+# **New code** should prefer ``AppSettings`` for clarity. This alias remains until
+# a later phase retires it after bulk import updates.
+# ---------------------------------------------------------------------------
 Settings = AppSettings
 
 _settings: Optional[AppSettings] = None

@@ -215,15 +215,21 @@ def test_debug_save_frames_boolean():
 # Tests de output_dir
 # ----------------------------
 def test_output_dir_normalization():
-    """Test que output_dir se normaliza correctamente."""
-    # Path relativo
+    """Relative output_dir stays relative; ``~`` is expanded (typically absolute under the user home)."""
     settings = Settings(output_dir="test_output")
-    assert Path(settings.output_dir).is_absolute()
-    
-    # Path con ~
+    assert settings.output_dir == "test_output"
+    assert not Path(settings.output_dir).is_absolute()
+
     settings = Settings(output_dir="~/test_output")
     assert "~" not in settings.output_dir
-    assert Path(settings.output_dir).is_absolute()
+    assert Path(settings.output_dir).expanduser() == Path(settings.output_dir)
+
+
+def test_output_dir_strips_and_default_output():
+    with patch.dict(os.environ, {}, clear=True):
+        assert Settings(output_dir="  my_out/ ").output_dir == "my_out"
+        assert Settings(output_dir="").output_dir == "output"
+        assert Settings(output_dir="   ").output_dir == "output"
 
 
 def test_ensure_output_dir():
