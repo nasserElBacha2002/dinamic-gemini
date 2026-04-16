@@ -261,19 +261,21 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
     )
 
     # We don't actually run the full pipeline in this test; we only assert that
-    # _build_pipeline_input would attach analysis_context to JobInput.metadata.
-    analysis_context = executor._build_analysis_context(aisle)  # type: ignore[attr-defined]
+    # the pipeline runner attaches analysis_context to JobInput.metadata.
+    analysis_context = executor._pipeline_runner.build_analysis_context(aisle)
     (tmp_path / "some" / "path").mkdir(parents=True, exist_ok=True)
     (tmp_path / "some" / "path" / "f.jpg").write_bytes(b"asset")
     (tmp_path / "inventories" / "inv-1" / "visual_references").mkdir(parents=True, exist_ok=True)
     (tmp_path / "inventories" / "inv-1" / "visual_references" / "ref-1.jpg").write_bytes(b"ref")
-    job_input, _ = executor._build_pipeline_input(  # type: ignore[attr-defined]
+    job_input, _ = executor._pipeline_runner.build_pipeline_input(
         [asset],
-        v3_base=tmp_path,
-        job_dir=tmp_path,
-        job_id="job-1",
+        tmp_path,
+        tmp_path,
+        "job-1",
         analysis_context=analysis_context,
         inventory_id="inv-1",
+        run_id="run",
+        legacy_local_read_enabled=True,
     )
 
     assert job_input.metadata is not None

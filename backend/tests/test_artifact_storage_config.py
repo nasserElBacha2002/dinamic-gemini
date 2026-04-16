@@ -10,11 +10,12 @@ import src.config as config_mod
 from src.api import dependencies as deps
 from src.config import Settings, load_settings
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+from src.runtime.app_container import reset_app_container_for_tests
 
 
 def _reset_config_cache() -> None:
     config_mod._settings = None
-    deps._artifact_storage_instance = None
+    reset_app_container_for_tests()
 
 
 def test_settings_require_s3_bucket_when_provider_is_s3() -> None:

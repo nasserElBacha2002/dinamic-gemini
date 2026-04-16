@@ -4,20 +4,20 @@ Phase 1 — Test-only ``LlmGlobalAnalysisExecutor`` harness (multi-provider migr
 This module lives under ``tests/`` only. It is **not** a registered pipeline provider and must
 never be imported from ``src/``.
 
-**Injection:** Patch ``resolve_llm_executor_for_context`` where the hybrid analysis strategy
-imports it (see ``patch_hybrid_resolve_llm_executor``), or patch
-``src.pipeline.providers.registry.resolve_llm_executor`` for tests that call the registry
-directly. After patching the registry, call ``registry.resolve_llm_executor`` on the **module**
-(``from src.pipeline.providers import registry as reg``) — do not ``from registry import
-resolve_llm_executor`` at import time or you will keep a stale function reference.
+**Injection:** Patch ``resolve_llm_executor_for_context`` on
+``src.pipeline.services.pipeline_provider_resolver`` (see ``patch_hybrid_resolve_llm_executor``), or patch
+``src.pipeline.providers.registry.resolve_llm_executor`` on the **registry module object** for tests
+that bypass job-level resolution (``from src.pipeline.providers import registry as reg`` — do not
+``from registry import resolve_llm_executor`` at import time or you will keep a stale reference).
 
 **Phase 2:** Migrate tests that use ``provider_name="fake"`` / ``LLM_PROVIDER=fake`` to this
 boundary instead of the transitional ``FakeProvider``.
 
 **Standard offline pipeline pattern:** ``patch_hybrid_resolve_llm_executor`` +
-``executor_from_json_fixture`` (or a ``TestLLMExecutor``). This patches the name bound in
-``HybridGlobalAnalysisStrategy``, so the resolved logical key matches ``HARNESS_LOGICAL_PROVIDER_KEY``
-instead of following ``settings.llm_provider`` (avoids coupling tests to Gemini).
+``executor_from_json_fixture`` (or a ``TestLLMExecutor``). This patches
+``src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context``, so the
+resolved logical key matches ``HARNESS_LOGICAL_PROVIDER_KEY`` instead of following
+``settings.llm_provider`` (avoids coupling tests to Gemini).
 
 **Registry-only patch:** ``patch_registry_resolve_llm_executor`` is for tests that call
 ``registry.resolve_llm_executor`` directly; full hybrid runs should prefer the hybrid patch above.
@@ -121,7 +121,8 @@ def patch_hybrid_resolve_llm_executor(
     resolved_provider_key: str = HARNESS_LOGICAL_PROVIDER_KEY,
 ) -> None:
     """
-    Patch ``resolve_llm_executor_for_context`` as bound in ``HybridGlobalAnalysisStrategy``.
+    Patch :func:`src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context`
+    (canonical Phase 3 hook used by ``HybridGlobalAnalysisStrategy``).
 
     ``resolved_provider_key`` is the second tuple element (logging / metadata). Default
     ``HARNESS_LOGICAL_PROVIDER_KEY`` keeps tests vendor-agnostic; pass ``\"gemini\"`` or
@@ -136,7 +137,7 @@ def patch_hybrid_resolve_llm_executor(
         return executor, resolved_provider_key
 
     monkeypatch.setattr(
-        "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
+        "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
         _fake_resolve,
     )
 

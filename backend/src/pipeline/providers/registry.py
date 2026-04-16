@@ -1,10 +1,16 @@
 """
-Analysis provider registry — resolves ``LlmGlobalAnalysisExecutor`` by logical provider name (Phase 4).
+Analysis provider registry — resolves ``LlmGlobalAnalysisExecutor`` by logical provider name.
 
-Resolution rules
-----------------
-* ``provider_name`` on the job (``RunContext.pipeline_provider_name``) wins when set.
-* Otherwise ``settings.llm_provider`` is used (CLI / dev / legacy config).
+**Canonical job-level resolution** (job provider + settings → executor + key) lives in
+:mod:`src.pipeline.services.pipeline_provider_resolver` — import
+:func:`~src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context` or
+:class:`~src.pipeline.services.pipeline_provider_resolver.PipelineProviderResolver` from there.
+
+This module owns **adapter registration** only: ``resolve_llm_executor(provider_key, settings)``
+returns the vendor adapter implementing :class:`~src.pipeline.ports.llm_execution.LlmGlobalAnalysisExecutor`.
+
+Resolution rules (for ``resolve_llm_executor``)
+-----------------------------------------------
 * Unknown keys raise ``UnknownPipelineProviderError`` (no silent vendor fallback).
 
 Registered providers
@@ -19,7 +25,7 @@ Generic pipeline code must depend only on ``LlmGlobalAnalysisExecutor``, not on 
 Default analysis strategy
 -------------------------
 ``default_analysis_provider()`` returns ``HybridGlobalAnalysisStrategy`` when the orchestrator is
-constructed without injection. The LLM vendor is chosen at execute time via the registry.
+constructed without injection. The LLM vendor is chosen at execute time via the resolver + registry.
 """
 
 from __future__ import annotations
@@ -28,7 +34,6 @@ from typing import Any, Final, Optional
 
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor
-from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.providers.definitions import registered_pipeline_provider_keys_from_definitions
 
 
@@ -76,21 +81,13 @@ def resolve_llm_executor(provider_key: str, settings: Any) -> LlmGlobalAnalysisE
     )
 
 
-def resolve_llm_executor_for_context(
-    pipeline_provider_name: Optional[str],
-    settings: Any,
-) -> tuple[LlmGlobalAnalysisExecutor, str]:
-    """Resolve executor and the normalized key (for logging)."""
-    key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
-    return resolve_llm_executor(key, settings), key
-
-
 def default_analysis_provider() -> AnalysisProvider:
     """
     Runtime default when ``HybridInventoryPipeline`` is built without an injected ``AnalysisProvider``.
 
     Returns ``HybridGlobalAnalysisStrategy``, which resolves the **executor** from
-    ``RunContext.pipeline_provider_name`` + settings via the registry (Gemini, OpenAI, Claude, DeepSeek).
+    ``RunContext.pipeline_provider_name`` + settings via
+    :mod:`src.pipeline.services.pipeline_provider_resolver` (Gemini, OpenAI, Claude, DeepSeek).
     """
     from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 

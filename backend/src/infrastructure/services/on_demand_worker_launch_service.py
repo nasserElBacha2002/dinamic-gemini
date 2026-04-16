@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 
+from src.application.ports.services import WorkerLaunchService
 from src.config import load_settings
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ WORKER_LAUNCH_LOG_NAME = "worker-launch.log"
 WORKER_STARTUP_GRACE_SEC = 0.2
 
 
-class OnDemandWorkerLaunchService:
+class OnDemandWorkerLaunchService(WorkerLaunchService):
     """Launch a single-job worker process using the current runtime image/interpreter."""
 
     def launch(self, job_id: str) -> str:

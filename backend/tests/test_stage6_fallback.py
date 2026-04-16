@@ -145,7 +145,7 @@ def test_hybrid_one_global_plus_n_fallback_and_final_quantity_updated():
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
         patch(
-            "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
+            "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
             return_value=(mock_executor, "gemini"),
         ),
     ):
@@ -208,7 +208,7 @@ def test_hybrid_high_confidence_no_fallback_calls():
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
         patch(
-            "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
+            "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
             return_value=(mock_executor, "gemini"),
         ),
     ):
@@ -286,7 +286,7 @@ def test_metrics_attempts_increment_and_total_calls_on_fallback_error():
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
         patch(
-            "src.pipeline.adapters.hybrid_global_analysis_strategy.resolve_llm_executor_for_context",
+            "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
             return_value=(mock_executor, "gemini"),
         ),
     ):

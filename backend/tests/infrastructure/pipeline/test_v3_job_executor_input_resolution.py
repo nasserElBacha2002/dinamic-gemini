@@ -26,6 +26,30 @@ from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
 from src.infrastructure.repositories.sql_source_asset_repository import _row_to_asset
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
 
+
+def _runner_build_pipeline_input(
+    ex: V3JobExecutor,
+    assets: list,
+    *,
+    v3_base: Path,
+    job_dir: Path,
+    job_id: str,
+    analysis_context: AnalysisContext,
+    inventory_id: str,
+):
+    """Call runner input builder with the same ``run_id`` segment the executor uses in production."""
+    return ex._pipeline_runner.build_pipeline_input(
+        assets,
+        v3_base,
+        job_dir,
+        job_id,
+        analysis_context=analysis_context,
+        inventory_id=inventory_id,
+        run_id="run",
+        legacy_local_read_enabled=True,
+    )
+
+
 class _Clock(Clock):
     def now(self):
         return datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
@@ -212,7 +236,7 @@ def test_build_pipeline_input_downloads_s3_source_asset_to_temp_workspace(tmp_pa
         storage_bucket="bucket-a",
         storage_key="uploads/aisles/a1/raw/asset-1.jpg",
     )
-    job_input, _ = ex._build_pipeline_input(  # type: ignore[attr-defined]
+    job_input, _ = _runner_build_pipeline_input(ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
@@ -252,7 +276,7 @@ def test_build_pipeline_input_accepts_sql_mapped_source_asset_with_provider_meta
         )
     )
 
-    job_input, _ = ex._build_pipeline_input(  # type: ignore[attr-defined]
+    job_input, _ = _runner_build_pipeline_input(ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
@@ -285,7 +309,7 @@ def test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent(t
         mime_type="image/jpeg",
         uploaded_at=datetime.now(timezone.utc),
     )
-    ex._build_pipeline_input(  # type: ignore[attr-defined]
+    _runner_build_pipeline_input(ex,
         [asset],
         v3_base=legacy_base,
         job_dir=job_dir,
@@ -314,7 +338,7 @@ def test_build_pipeline_input_resolves_local_provider_source_asset_without_bucke
         storage_key="uploads/aisles/a1/raw/asset-local.jpg",
     )
 
-    ex._build_pipeline_input(  # type: ignore[attr-defined]
+    _runner_build_pipeline_input(ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
@@ -371,7 +395,7 @@ def test_build_pipeline_input_resolves_s3_visual_references_to_temp_files(tmp_pa
         ],
         instructions=[],
     )
-    job_input, _ = ex._build_pipeline_input(  # type: ignore[attr-defined]
+    job_input, _ = _runner_build_pipeline_input(ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
@@ -432,7 +456,7 @@ def test_build_pipeline_input_resolves_local_provider_visual_reference_without_b
         instructions=[],
     )
 
-    job_input, _ = ex._build_pipeline_input(  # type: ignore[attr-defined]
+    job_input, _ = _runner_build_pipeline_input(ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
@@ -464,7 +488,7 @@ def test_build_pipeline_input_missing_s3_object_fails_with_clear_error(tmp_path:
         storage_key="uploads/aisles/a1/raw/asset-4.jpg",
     )
     with pytest.raises(RuntimeError) as exc:
-        ex._build_pipeline_input(  # type: ignore[attr-defined]
+        _runner_build_pipeline_input(ex,
             [asset],
             v3_base=tmp_path / "v3_uploads",
             job_dir=job_dir,
@@ -495,7 +519,7 @@ def test_build_pipeline_input_fails_when_source_asset_bucket_mismatch(tmp_path: 
         storage_key="uploads/aisles/a1/raw/asset-5.jpg",
     )
     with pytest.raises(RuntimeError, match="bucket mismatch"):
-        ex._build_pipeline_input(  # type: ignore[attr-defined]
+        _runner_build_pipeline_input(ex,
             [asset],
             v3_base=tmp_path / "v3_uploads",
             job_dir=job_dir,
@@ -546,7 +570,7 @@ def test_build_pipeline_input_fails_when_visual_reference_bucket_missing(tmp_pat
         instructions=[],
     )
     with pytest.raises(RuntimeError, match="storage_bucket is missing"):
-        ex._build_pipeline_input(  # type: ignore[attr-defined]
+        _runner_build_pipeline_input(ex,
             [asset],
             v3_base=tmp_path / "v3_uploads",
             job_dir=job_dir,
@@ -606,7 +630,7 @@ def test_unsupported_mixed_assets_fail_before_visual_reference_download(tmp_path
         ),
     ]
     with pytest.raises(ValueError, match="single video asset"):
-        ex._build_pipeline_input(  # type: ignore[attr-defined]
+        _runner_build_pipeline_input(ex,
             assets,
             v3_base=tmp_path / "v3_uploads",
             job_dir=job_dir,

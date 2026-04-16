@@ -252,9 +252,9 @@ def test_patch_offline_hybrid_json_fixture_applies_executor(monkeypatch: pytest.
     p = tmp_path / "fx.json"
     p.write_text('{"total_entities_detected": 0, "entities": []}', encoding="utf-8")
     patch_offline_hybrid_json_fixture(monkeypatch, p)
-    from src.pipeline.adapters import hybrid_global_analysis_strategy as hmod
+    from src.pipeline.services import pipeline_provider_resolver as ppr
 
-    ex, key = hmod.resolve_llm_executor_for_context(None, MagicMock())
+    ex, key = ppr.resolve_llm_executor_for_context(None, MagicMock())
     assert key == HARNESS_LOGICAL_PROVIDER_KEY
     r = ex.execute(
         LLMRequest(job_id="j", frames=[], frame_refs=[], prompt="p", schema_version="v2.1"),

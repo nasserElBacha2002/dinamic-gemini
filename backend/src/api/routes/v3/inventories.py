@@ -78,7 +78,7 @@ from src.application.use_cases.upload_inventory_visual_references import (
 )
 from src.config import load_settings
 from src.pipeline.providers.definitions import PIPELINE_PROVIDER_SPECS
-from src.pipeline.providers.registry import normalize_pipeline_provider_key
+from src.pipeline.provider_keys import normalize_pipeline_provider_key
 
 from .shared import inventory_list_item_to_response, inventory_to_response
 
