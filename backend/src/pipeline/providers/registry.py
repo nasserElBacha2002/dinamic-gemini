@@ -1,9 +1,16 @@
 """
 Analysis provider registry — resolves ``LlmGlobalAnalysisExecutor`` by logical provider name (Phase 4).
 
-Phase 3: job-level provider key normalization + ``resolve_llm_executor_for_context`` live in
-``src.pipeline.services.pipeline_provider_resolver``; this module re-exports the latter for backward
-compatibility.
+**Compatibility bridge (Phase 3):** ``resolve_llm_executor_for_context`` below is **not** implemented
+here. The canonical implementation lives in
+:mod:`src.pipeline.services.pipeline_provider_resolver` (single place for logic, tests, and
+monkeypatch targets). This module **delegates** to that implementation so existing imports of
+``src.pipeline.providers.registry.resolve_llm_executor_for_context`` keep working.
+
+**Guidance for new code:** import and call
+``src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context`` (or
+:class:`~src.pipeline.services.pipeline_provider_resolver.PipelineProviderResolver`) directly.
+Use ``registry.resolve_llm_executor_for_context`` only when maintaining older call sites.
 
 Resolution rules
 ----------------
@@ -83,10 +90,10 @@ def resolve_llm_executor_for_context(
     pipeline_provider_name: Optional[str],
     settings: Any,
 ) -> tuple[LlmGlobalAnalysisExecutor, str]:
-    """Resolve executor and the normalized key (for logging).
+    """Backward-compatible delegate to :mod:`src.pipeline.services.pipeline_provider_resolver`.
 
-    Phase 3: canonical implementation lives in :mod:`src.pipeline.services.pipeline_provider_resolver`;
-    this indirection preserves the historical import path ``registry.resolve_llm_executor_for_context``.
+    Behavior is identical to calling ``resolve_llm_executor_for_context`` in that module.
+    Prefer importing from the resolver module in new code (see module docstring above).
     """
     from src.pipeline.services.pipeline_provider_resolver import (
         resolve_llm_executor_for_context as resolve_for_context,
@@ -100,7 +107,8 @@ def default_analysis_provider() -> AnalysisProvider:
     Runtime default when ``HybridInventoryPipeline`` is built without an injected ``AnalysisProvider``.
 
     Returns ``HybridGlobalAnalysisStrategy``, which resolves the **executor** from
-    ``RunContext.pipeline_provider_name`` + settings via the registry (Gemini, OpenAI, Claude, DeepSeek).
+    ``RunContext.pipeline_provider_name`` + settings via
+    :mod:`src.pipeline.services.pipeline_provider_resolver` (Gemini, OpenAI, Claude, DeepSeek).
     """
     from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 

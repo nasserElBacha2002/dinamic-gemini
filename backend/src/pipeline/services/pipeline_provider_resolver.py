@@ -10,6 +10,10 @@ this module does not add a parallel giant protocol — see ``LlmGlobalAnalysisEx
 
 ``resolve_llm_executor_for_context`` is the canonical entrypoint (tests patch this symbol on this
 module to inject offline executors).
+
+Adapter registration (which class implements ``gemini`` / ``openai`` / …) remains in
+:mod:`src.pipeline.providers.registry` — this module only composes **job-level provider choice**
++ settings into an executor instance.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from src.pipeline.providers.registry import resolve_llm_executor
 
 @dataclass(frozen=True)
 class ResolvedPipelineExecution:
-    """Normalized outcome of provider + executor resolution for one hybrid run."""
+    """Bundle returned after resolving which ``LlmGlobalAnalysisExecutor`` runs this hybrid call."""
 
     executor: LlmGlobalAnalysisExecutor
     normalized_provider_key: str
@@ -38,13 +42,20 @@ def resolve_llm_executor_for_context(
     Resolve executor and normalized provider key for this run.
 
     Prefer explicit ``pipeline_provider_name`` (job / RunContext). Otherwise ``settings.llm_provider``.
+
+    ``settings`` is typically :class:`~src.config.Settings` (``AppSettings``); typed as ``Any`` because
+    unit tests and the LLM harness pass duck-typed objects (e.g. ``MagicMock``) with the few fields read here.
     """
     key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
     return resolve_llm_executor(key, settings), key
 
 
 class PipelineProviderResolver:
-    """Small façade over :func:`resolve_llm_executor_for_context` for typed call sites."""
+    """Thin façade: typed entrypoints over :func:`resolve_llm_executor_for_context`.
+
+    Not a second registry — no new provider keys or adapter wiring here. Callers that only need
+    the logical key can use :meth:`effective_provider_key`; full runs use :meth:`resolve_for_run`.
+    """
 
     @staticmethod
     def resolve_for_run(
@@ -52,6 +63,7 @@ class PipelineProviderResolver:
         pipeline_provider_name: Optional[str],
         settings: Any,
     ) -> ResolvedPipelineExecution:
+        """Resolve executor + key (see :func:`resolve_llm_executor_for_context` for ``settings`` typing note)."""
         executor, key = resolve_llm_executor_for_context(pipeline_provider_name, settings)
         return ResolvedPipelineExecution(executor=executor, normalized_provider_key=key)
 
@@ -60,5 +72,5 @@ class PipelineProviderResolver:
         pipeline_provider_name: Optional[str],
         settings: Any,
     ) -> str:
-        """Return the normalized logical provider key without constructing an executor."""
+        """Return the normalized logical provider key without instantiating an executor."""
         return normalize_pipeline_provider_key(pipeline_provider_name, settings)

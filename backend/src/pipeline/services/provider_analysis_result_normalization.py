@@ -7,7 +7,7 @@ Keeps provider-specific parsing inside adapters; the hybrid strategy only maps t
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from src.llm.costing import build_llm_cost_snapshot
 from src.llm.types import LLMResponse
@@ -18,14 +18,17 @@ def build_analysis_result_from_llm_response(
     *,
     response: LLMResponse,
     prompt_composition: Dict[str, Any],
-    visual_references_available: bool,
-    visual_references_consumed: bool,
-    visual_reference_count: int,
-    visual_reference_ids: List[str],
     provider_metadata: Dict[str, Any],
     settings: Any,
 ) -> AnalysisResult:
-    """Build ``AnalysisResult`` from a successful ``LLMResponse`` (post-adapter normalization)."""
+    """Build ``AnalysisResult`` from a successful ``LLMResponse`` (post-adapter normalization).
+
+    Visual-reference availability/consumption is carried only on ``provider_metadata`` (the same
+    mapping attached to ``AnalysisResult`` and downstream run metadata). Callers must pass the
+    fully built metadata dict — do not duplicate those fields as separate arguments here.
+    ``settings`` is ``Any`` for the same reason as :func:`resolve_llm_executor_for_context`
+    (pricing snapshot accepts app settings or test doubles).
+    """
     llm_cost_snapshot = build_llm_cost_snapshot(
         provider=response.provider,
         model=response.model,

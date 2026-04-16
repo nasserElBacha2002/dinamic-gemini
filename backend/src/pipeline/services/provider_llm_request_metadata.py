@@ -1,11 +1,13 @@
 """
-Phase 3 — provider-specific *request metadata* mapping for hybrid global analysis.
+Phase 3 — **compatibility** mapping for per-job model name on ``LLMRequest.metadata``.
 
-Historically each ``LlmGlobalAnalysisExecutor`` read a vendor-specific key on ``LLMRequest.metadata``
-(``gemini_model_name``, ``openai_model_name``, etc.). This module centralizes that mapping so
-orchestration / strategy code stays free of ``if provider == ...`` branches.
+``LLMRequest`` is otherwise provider-neutral; adapters still expect **vendor-specific** keys
+(``gemini_model_name``, ``openai_model_name``, ``claude_model_name``, ``deepseek_model_name``).
+This module is the single place that maps ``(resolved_provider_key, job_model_name)`` onto those
+keys so hybrid orchestration does not branch on vendor.
 
-**Deferred:** converging adapters onto a single neutral metadata field (see adapter comments).
+**Intentionally deferred:** one neutral metadata field for all adapters + adapter refactors.
+Until then, request metadata is **not** fully provider-neutral at the ``LLMRequest`` boundary.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ def apply_job_model_name_to_llm_request_metadata(
     metadata: MutableMapping[str, Any],
 ) -> Optional[str]:
     """
-    Mutate ``metadata`` with the per-adapter model key when ``job_model_name`` is set.
+    Compatibility: mutate ``metadata`` with the legacy per-vendor model key when ``job_model_name`` is set.
 
     Returns the stripped model string for prompt composition / traceability, or ``None``.
     """

@@ -232,10 +232,6 @@ class HybridGlobalAnalysisStrategy:
             return build_analysis_result_from_llm_response(
                 response=response,
                 prompt_composition=prompt_composition,
-                visual_references_available=visual_references_available,
-                visual_references_consumed=consumed,
-                visual_reference_count=consumed_count,
-                visual_reference_ids=resolved_reference_ids,
                 provider_metadata=_provider_metadata(
                     visual_references_available=visual_references_available,
                     visual_references_consumed=consumed,

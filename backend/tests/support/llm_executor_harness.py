@@ -15,9 +15,10 @@ resolve_llm_executor`` at import time or you will keep a stale function referenc
 boundary instead of the transitional ``FakeProvider``.
 
 **Standard offline pipeline pattern:** ``patch_hybrid_resolve_llm_executor`` +
-``executor_from_json_fixture`` (or a ``TestLLMExecutor``). This patches the name bound in
-``HybridGlobalAnalysisStrategy``, so the resolved logical key matches ``HARNESS_LOGICAL_PROVIDER_KEY``
-instead of following ``settings.llm_provider`` (avoids coupling tests to Gemini).
+``executor_from_json_fixture`` (or a ``TestLLMExecutor``). This patches
+``src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context``, so the
+resolved logical key matches ``HARNESS_LOGICAL_PROVIDER_KEY`` instead of following
+``settings.llm_provider`` (avoids coupling tests to Gemini).
 
 **Registry-only patch:** ``patch_registry_resolve_llm_executor`` is for tests that call
 ``registry.resolve_llm_executor`` directly; full hybrid runs should prefer the hybrid patch above.
@@ -121,7 +122,8 @@ def patch_hybrid_resolve_llm_executor(
     resolved_provider_key: str = HARNESS_LOGICAL_PROVIDER_KEY,
 ) -> None:
     """
-    Patch ``resolve_llm_executor_for_context`` as bound in ``HybridGlobalAnalysisStrategy``.
+    Patch :func:`src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context`
+    (canonical Phase 3 hook used by ``HybridGlobalAnalysisStrategy``).
 
     ``resolved_provider_key`` is the second tuple element (logging / metadata). Default
     ``HARNESS_LOGICAL_PROVIDER_KEY`` keeps tests vendor-agnostic; pass ``\"gemini\"`` or

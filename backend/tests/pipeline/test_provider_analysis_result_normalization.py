@@ -24,10 +24,6 @@ def test_build_analysis_result_from_llm_response_maps_fields() -> None:
     out = build_analysis_result_from_llm_response(
         response=response,
         prompt_composition=pc,
-        visual_references_available=False,
-        visual_references_consumed=False,
-        visual_reference_count=0,
-        visual_reference_ids=[],
         provider_metadata=pm,
         settings=settings,
     )
