@@ -4,6 +4,10 @@ Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider
 Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
 call to ``LlmGlobalAnalysisExecutor`` resolved by :mod:`src.pipeline.services.pipeline_provider_resolver`
 (Gemini, OpenAI, Claude, DeepSeek).
+
+Phase 4 adds optional multi-provider execution (parallel or sequential fallback) behind explicit
+strategy settings or per-run ``RunContext`` fields; default ``single`` preserves the historical
+one-call behavior.
 """
 
 from __future__ import annotations
@@ -25,7 +29,15 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
     ProviderCapabilities,
 )
+from src.pipeline.services.multi_provider_analysis_execution import (
+    dispatch_multi_provider_analysis,
+)
 from src.pipeline.services.pipeline_provider_resolver import PipelineProviderResolver
+from src.pipeline.services.provider_analysis_execution_config import (
+    STRATEGY_SINGLE,
+    build_ordered_provider_keys,
+    effective_analysis_execution_strategy,
+)
 from src.pipeline.services.provider_analysis_result_normalization import (
     build_analysis_result_from_llm_response,
 )
@@ -91,8 +103,36 @@ class HybridGlobalAnalysisStrategy:
         metadata: Dict[str, Any],
     ) -> AnalysisResult:
         settings = context.settings
-        job_id = context.job_id
-        pipeline_provider_name: Optional[str] = getattr(context, "pipeline_provider_name", None)
+        strategy = effective_analysis_execution_strategy(context, settings)
+        ordered_keys = build_ordered_provider_keys(context, settings)
+
+        if strategy == STRATEGY_SINGLE or len(ordered_keys) <= 1:
+            return self._analyze_once(context, frames_nd, frame_paths, frame_refs, metadata)
+
+        run_logger = getattr(context, "logger", None)
+
+        def analyze_once(rc: RunContext) -> AnalysisResult:
+            return self._analyze_once(rc, frames_nd, frame_paths, frame_refs, metadata)
+
+        return dispatch_multi_provider_analysis(
+            strategy_name=strategy,
+            base_context=context,
+            ordered_provider_keys=ordered_keys,
+            analyze_once=analyze_once,
+            run_logger=run_logger,
+        )
+
+    def _analyze_once(
+        self,
+        run_ctx: RunContext,
+        frames_nd: List[np.ndarray],
+        frame_paths: List[Path],
+        frame_refs: List[str],
+        metadata: Dict[str, Any],
+    ) -> AnalysisResult:
+        settings = run_ctx.settings
+        job_id = run_ctx.job_id
+        pipeline_provider_name: Optional[str] = getattr(run_ctx, "pipeline_provider_name", None)
         resolved_exec = PipelineProviderResolver.resolve_for_run(
             pipeline_provider_name=pipeline_provider_name,
             settings=settings,
@@ -100,9 +140,9 @@ class HybridGlobalAnalysisStrategy:
         executor = resolved_exec.executor
         resolved_key = resolved_exec.normalized_provider_key
 
-        prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(context)
+        prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(run_ctx)
 
-        analysis_context: Optional[AnalysisContext] = resolve_analysis_context_for_run(context)
+        analysis_context: Optional[AnalysisContext] = resolve_analysis_context_for_run(run_ctx)
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
         context_instruction = None
         context_images: Optional[ContextImageSequence] = None
@@ -125,8 +165,8 @@ class HybridGlobalAnalysisStrategy:
                 job_id=job_id,
             )
 
-        req_meta: Dict[str, Any] = {**metadata, "run_dir": str(context.run_dir)}
-        jm = getattr(context, "job_model_name", None)
+        req_meta: Dict[str, Any] = {**metadata, "run_dir": str(run_ctx.run_dir)}
+        jm = getattr(run_ctx, "job_model_name", None)
         rk = (resolved_key or "").strip().lower()
         model_for_meta = apply_job_model_name_to_llm_request_metadata(
             resolved_provider_key=rk,
@@ -163,7 +203,7 @@ class HybridGlobalAnalysisStrategy:
             context_instruction=context_instruction,
             context_images=context_images,
         )
-        run_logger = getattr(context, "logger", None)
+        run_logger = getattr(run_ctx, "logger", None)
         if run_logger is not None:
             pv_raw = prompt_composition.get("prompt_version")
             pv_opt = pv_raw.strip() if isinstance(pv_raw, str) and pv_raw.strip() else None
@@ -183,7 +223,7 @@ class HybridGlobalAnalysisStrategy:
                 fmt += " prompt_version=%s"
                 log_parts.append(pv_opt)
             run_logger.info(fmt, *log_parts)
-        exec_log = getattr(context, "execution_log", None)
+        exec_log = getattr(run_ctx, "execution_log", None)
         # Full prompt strings live on ``prompt_composition`` in request/job metadata (audit).
         # Execution log uses a redacted summary plus hash/len unless debug enables full ``prompt_text``.
         debug_full_prompt = getattr(settings, "debug_log_full_analysis_prompt", None) is True

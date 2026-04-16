@@ -15,6 +15,9 @@ from src.env_settings.parsing import (
     parse_photos_max_single_bytes,
     parse_time_limit_sec,
 )
+from src.env_settings.pipeline_analysis_execution_strings import (
+    validate_pipeline_analysis_strategy_for_settings,
+)
 from src.env_settings.sqlserver_resolution import default_sqlserver_connection_string
 
 class LlmProviderSettings(BaseModel):
@@ -215,6 +218,24 @@ class LlmProviderSettings(BaseModel):
             "image-based hybrid analysis is not supported). Env: PROCESSING_DEEPSEEK_MODELS."
         ),
     )
+    pipeline_analysis_execution_strategy: str = Field(
+        default_factory=lambda: (os.getenv("PIPELINE_ANALYSIS_EXECUTION_STRATEGY", "single") or "single")
+        .strip()
+        .lower(),
+        description=(
+            "Phase 4 — hybrid analysis provider strategy: single (default), multi_parallel, "
+            "multi_sequential, or multi_fallback (alias for multi_sequential). "
+            "Env: PIPELINE_ANALYSIS_EXECUTION_STRATEGY."
+        ),
+    )
+    pipeline_analysis_extra_provider_keys: str = Field(
+        default_factory=lambda: (os.getenv("PIPELINE_ANALYSIS_EXTRA_PROVIDER_KEYS", "") or "").strip(),
+        description=(
+            "Phase 4 — comma-separated extra logical pipeline providers after the job/settings primary "
+            "(e.g. openai,claude). Used when strategy is multi_parallel or multi_sequential. "
+            "Env: PIPELINE_ANALYSIS_EXTRA_PROVIDER_KEYS."
+        ),
+    )
 
     @field_validator("gemini_api_key")
     @classmethod
@@ -230,6 +251,11 @@ class LlmProviderSettings(BaseModel):
         if v not in ("gemini", "openai", "claude", "deepseek"):
             raise ValueError("llm_provider must be one of: gemini, openai, claude, deepseek")
         return v
+
+    @field_validator("pipeline_analysis_execution_strategy")
+    @classmethod
+    def validate_pipeline_analysis_execution_strategy(cls, v: str) -> str:
+        return validate_pipeline_analysis_strategy_for_settings(v)
 
 
 class PipelineVisionSettings(BaseModel):

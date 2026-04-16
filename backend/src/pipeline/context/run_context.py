@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 
 from src.jobs.models import JobInput
 
@@ -69,6 +69,9 @@ class RunContext:
     job_prompt_version: Optional[str] = None
     # Pre-Phase 10: when true, OpenAI hybrid base uses the ``default`` fragment (fair comparison).
     job_prompt_parity_mode: bool = False
+    # Phase 4 — multi-provider analysis execution (optional; unset = use settings defaults).
+    analysis_execution_strategy: Optional[str] = None
+    analysis_extra_provider_keys: Optional[Tuple[str, ...]] = None
 
     def emit_stage_event(
         self,

@@ -23,6 +23,8 @@ PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE = "visual_references_available
 PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED = "visual_references_consumed"
 PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT = "visual_reference_count"
 PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS = "visual_reference_ids"
+# Phase 4 — optional trace when ``multi_parallel`` / ``multi_sequential`` strategies run.
+PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION = "multi_provider_execution"
 
 
 @dataclass
