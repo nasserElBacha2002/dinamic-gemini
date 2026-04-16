@@ -13,7 +13,6 @@ production-like environments to avoid silent use of non-persistent storage.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from fastapi import Depends
 
@@ -30,6 +29,7 @@ from src.application.ports.repositories import (
     SourceAssetRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
+from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
     get_aisle_repo,
     get_analytics_repo,
@@ -110,50 +110,11 @@ from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 
 logger = logging.getLogger(__name__)
-_artifact_storage_instance = None
 
 
 def get_artifact_storage():
-    """Return configured artifact storage adapter (local or S3)."""
-    global _artifact_storage_instance
-    if _artifact_storage_instance is not None:
-        return _artifact_storage_instance
-    from src.config import load_settings
-
-    settings = load_settings()
-    provider = (settings.artifact_storage_provider or "local").strip().lower()
-    if provider == "s3":
-        from src.infrastructure.storage.s3_artifact_storage_adapter import S3ArtifactStorageAdapter
-
-        if not settings.artifact_s3_bucket:
-            raise RuntimeError("ARTIFACT_S3_BUCKET is required when ARTIFACT_STORAGE_PROVIDER=s3")
-        _artifact_storage_instance = S3ArtifactStorageAdapter(
-            bucket=settings.artifact_s3_bucket,
-            region=settings.artifact_s3_region or None,
-            prefix=settings.artifact_s3_prefix,
-            signed_url_ttl_sec=settings.artifact_s3_signed_url_ttl_sec,
-        )
-        logger.info(
-            "Artifact storage configured: provider=s3 bucket=%s region=%s prefix=%s signed_url_ttl_sec=%s legacy_local_read=%s",
-            settings.artifact_s3_bucket,
-            settings.artifact_s3_region or "<default>",
-            settings.artifact_s3_prefix,
-            settings.artifact_s3_signed_url_ttl_sec,
-            settings.artifact_storage_legacy_local_read_enabled,
-        )
-        return _artifact_storage_instance
-
-    from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
-
-    base = Path(settings.output_dir) / "v3_uploads"
-    base.mkdir(parents=True, exist_ok=True)
-    _artifact_storage_instance = V3ArtifactStorageAdapter(base)
-    logger.info(
-        "Artifact storage configured: provider=local base_path=%s legacy_local_read=%s",
-        str(base),
-        settings.artifact_storage_legacy_local_read_enabled,
-    )
-    return _artifact_storage_instance
+    """Return configured artifact storage adapter (local or S3) via the app composition root."""
+    return get_app_container().get_artifact_storage()
 
 
 def get_worker_launch_service_dep() -> WorkerLaunchService:

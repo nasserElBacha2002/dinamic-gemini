@@ -21,11 +21,19 @@ from src.utils.validation import validate_job_id
 logger = logging.getLogger(__name__)
 
 
+def _sqlserver_effective_cs(settings: object) -> str:
+    """Support AppSettings (property) and plain test doubles that only expose ``sqlserver_connection_string``."""
+    eff = getattr(settings, "sqlserver_effective_connection_string", None)
+    if eff is not None:
+        return str(eff).strip()
+    return (getattr(settings, "sqlserver_connection_string", "") or "").strip()
+
+
 def _db_repos() -> Optional[Tuple[Any, Any, Any]]:
     """Return (jobs_repo, pallet_repo, events_repo) when SQL Server enabled and configured; else None."""
     try:
         settings = load_settings()
-        if not getattr(settings, "sqlserver_enabled", False) or not settings.sqlserver_effective_connection_string:
+        if not getattr(settings, "sqlserver_enabled", False) or not _sqlserver_effective_cs(settings):
             return None
         if getattr(settings, "legacy_stage8_sql_bridge_disabled", False):
             from src.legacy.persistence_observability import (
@@ -154,9 +162,7 @@ def claim_next_job(base_path: Path) -> Optional[JobRecord]:
     Local legacy fallback (only when SQL mode is disabled): in-memory queue + get_job().
     """
     settings = load_settings()
-    db_claim_configured = bool(
-        getattr(settings, "sqlserver_enabled", False) and settings.sqlserver_effective_connection_string
-    )
+    db_claim_configured = bool(getattr(settings, "sqlserver_enabled", False) and _sqlserver_effective_cs(settings))
     # Preferred v3 source: inventory_jobs via v3 JobRepository claim.
     try:
         from src.runtime.v3_deps import get_job_repo
