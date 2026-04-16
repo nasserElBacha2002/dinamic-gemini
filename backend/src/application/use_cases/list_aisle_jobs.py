@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from src.application.errors import AisleNotFoundError, InventoryNotFoundError
+from src.application.errors import InventoryNotFoundError
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.domain.jobs.entities import Job
 
@@ -38,11 +39,12 @@ class ListAisleJobsUseCase:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None or aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="merged",
+        )
         jobs = self._job_repo.list_jobs_for_target(
             "aisle", command.aisle_id, limit=command.limit
         )

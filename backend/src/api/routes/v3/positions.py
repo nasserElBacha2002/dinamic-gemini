@@ -9,9 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from src.api.dependencies import (
     get_list_aisle_positions_use_case,
     get_get_position_detail_use_case,
-    get_product_record_repo,
 )
-from src.application.ports.repositories import ProductRecordRepository
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
     PositionDetailResponse,
@@ -27,9 +25,9 @@ from src.application.errors import (
     PositionResultContextMismatchError,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
-from src.application.services.display_primary_product import select_display_primary_product
 from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
+from src.application.services.display_primary_product import select_display_primary_product
 
 from .shared import (
     position_to_summary,
@@ -47,7 +45,6 @@ def list_aisle_positions(
     inventory_id: str,
     aisle_id: str,
     use_case: ListAislePositionsUseCase = Depends(get_list_aisle_positions_use_case),
-    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     status: Optional[str] = Query(None, description="Filter by position status (e.g. detected, reviewed)."),
     needs_review: Optional[bool] = Query(None, description="When set, only positions with this needs_review flag."),
     min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="Minimum confidence (inclusive)."),
@@ -111,9 +108,7 @@ def list_aisle_positions(
         )
         result = use_case.execute(cmd)
         summaries = []
-        for p in result.positions:
-            products = product_record_repo.list_by_position(p.id)
-            primary = select_display_primary_product(products)
+        for p, primary in zip(result.positions, result.primary_products):
             corrected_quantity = (
                 primary.corrected_quantity if primary is not None else None
             )

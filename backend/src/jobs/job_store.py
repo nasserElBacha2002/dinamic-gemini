@@ -1,5 +1,10 @@
 """Stage 7 — Persist and load job records under output/<job_id>/.
 Stage 8 — When SQL Server enabled, DB is source of truth; FS kept for artifacts and optional job.json.
+
+**Legacy SQL bridge:** when SQL Server is enabled, this module instantiates
+``JobsRepository`` / ``PalletResultsRepository`` / ``JobEventsRepository`` from
+``src.database.repository`` (tables ``jobs``, ``pallet_results``, ``job_events``).
+That path is not the v3 ``inventory_jobs`` model; access is logged under logger ``dinamic.legacy_sql``.
 """
 
 import json
@@ -19,13 +24,26 @@ logger = logging.getLogger(__name__)
 def _db_repos() -> Optional[Tuple[Any, Any, Any]]:
     """Return (jobs_repo, pallet_repo, events_repo) when SQL Server enabled and configured; else None."""
     try:
-        from src.config import load_settings
         settings = load_settings()
         if not getattr(settings, "sqlserver_enabled", False) or not settings.sqlserver_effective_connection_string:
             return None
+        if getattr(settings, "legacy_stage8_sql_bridge_disabled", False):
+            from src.legacy.persistence_observability import (
+                log_legacy_sql_bridge_bypassed_once_per_process,
+            )
+
+            log_legacy_sql_bridge_bypassed_once_per_process(
+                reason="LEGACY_STAGE8_SQL_BRIDGE_DISABLED",
+            )
+            return None
         from src.database.sqlserver import SqlServerClient
         from src.database.repository import JobsRepository, PalletResultsRepository, JobEventsRepository
+        from src.legacy.persistence_observability import (
+            log_legacy_sql_repositories_materialized_once_per_process,
+        )
+
         client = SqlServerClient(settings.require_sqlserver_connection_string())
+        log_legacy_sql_repositories_materialized_once_per_process(source="job_store._db_repos")
         return (
             JobsRepository(client),
             PalletResultsRepository(client),

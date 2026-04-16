@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.application.errors import (
-    AisleNotFoundError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     JobPromotionNotAllowedError,
 )
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.inventory_processing_mode import (
     require_test_inventory_for_experimental_features,
 )
@@ -41,11 +41,12 @@ class PromoteAisleOperationalJobUseCase:
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
         require_test_inventory_for_experimental_features(inv)
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None or aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="merged",
+        )
 
         job = self._job_repo.get_by_id(command.job_id)
         if job is None:

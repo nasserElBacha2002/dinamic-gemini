@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 from src.application.ports.repositories import ProductRecordRepository
 from src.database.sqlserver import SqlServerClient
@@ -147,6 +147,27 @@ class SqlProductRecordRepository(ProductRecordRepository):
                 FROM product_records WHERE position_id = ? ORDER BY created_at ASC, id ASC
                 """,
                 (position_id,),
+            )
+            rows = cur.fetchall()
+        return [_row_to_product(row) for row in rows]
+
+    def list_by_position_ids(self, position_ids: Sequence[str]) -> Sequence[ProductRecord]:
+        if not position_ids:
+            return []
+        uniq: List[str] = list(dict.fromkeys(position_ids))
+        if not uniq:
+            return []
+        placeholders = ",".join("?" * len(uniq))
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
+                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status
+                FROM product_records
+                WHERE position_id IN ({placeholders})
+                ORDER BY position_id, created_at ASC, id ASC
+                """,
+                tuple(uniq),
             )
             rows = cur.fetchall()
         return [_row_to_product(row) for row in rows]

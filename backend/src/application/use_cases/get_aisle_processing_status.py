@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from src.application.ports.repositories import AisleRepository, JobRepository
-from src.application.errors import AisleNotFoundError
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job
@@ -39,13 +39,12 @@ class GetAisleProcessingStatusUseCase:
         self._recent_limit = max(1, min(int(recent_jobs_limit), 100))
 
     def execute(self, inventory_id: str, aisle_id: str) -> AisleProcessingStatusResult:
-        aisle = self._aisle_repo.get_by_id(aisle_id)
-        if aisle is None:
-            raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
-        if aisle.inventory_id != inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {aisle_id} does not belong to inventory {inventory_id}"
-            )
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            detail_style="strict",
+        )
 
         latest_job = self._stale_reconciler.reconcile(
             self._job_repo.get_latest_by_target("aisle", aisle_id)

@@ -13,12 +13,28 @@ from src.application.dto.analytics_dto import (
     ManualInterventionBreakdownDTO,
     QualityPatternRowDTO,
 )
+from src.application.errors import AnalyticsScopeValidationError
 from src.application.ports.analytics_repository import AnalyticsRepository
+from src.application.ports.repositories import AisleRepository
+
+
+def validate_analytics_filters_scope(filters: AnalyticsFilters, aisle_repo: AisleRepository) -> None:
+    """Ensure ``aisle_id`` belongs to ``inventory_id`` when both are set (422 semantics at HTTP boundary)."""
+    if filters.aisle_id and filters.inventory_id:
+        aisle = aisle_repo.get_by_id(filters.aisle_id)
+        if aisle is None or aisle.inventory_id != filters.inventory_id:
+            raise AnalyticsScopeValidationError(
+                "aisle_id does not belong to the given inventory_id"
+            )
 
 
 class AnalyticsQueryService:
-    def __init__(self, repo: AnalyticsRepository) -> None:
+    def __init__(self, repo: AnalyticsRepository, aisle_repo: AisleRepository) -> None:
         self._repo = repo
+        self._aisle_repo = aisle_repo
+
+    def validate_scope(self, filters: AnalyticsFilters) -> None:
+        validate_analytics_filters_scope(filters, self._aisle_repo)
 
     def summary(self, filters: AnalyticsFilters) -> AnalyticsSummaryDTO:
         return self._repo.get_summary(filters)

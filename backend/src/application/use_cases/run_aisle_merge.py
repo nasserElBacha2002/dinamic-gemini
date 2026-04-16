@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.application.errors import (
-    AisleNotFoundError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.application.use_cases.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
@@ -44,11 +44,12 @@ class RunAisleMergeUseCase:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None or aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
+        require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="merged",
+        )
         spec = (command.job_id or "").strip()
         if not spec:
             raise ValueError("job_id is required (inventory job id or the literal 'legacy').")

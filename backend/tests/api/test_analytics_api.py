@@ -7,13 +7,16 @@ from fastapi.testclient import TestClient
 from src.api.dependencies import get_aisle_repo, get_analytics_query_service
 from src.api.server import app
 from src.application.dto.analytics_dto import (
+    AnalyticsFilters,
     AnalyticsSummaryDTO,
     InventoryPerformanceRowDTO,
     ManualInterventionBreakdownDTO,
     ManualInterventionCategoryDTO,
 )
+from src.application.services.analytics_query_service import validate_analytics_filters_scope
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
+from src.domain.aisle.entities import Aisle, AisleStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 
 
@@ -22,6 +25,12 @@ def _fake_admin():
 
 
 class _StubAnalyticsService:
+    def __init__(self, aisle_repo=None):
+        self._aisle_repo = aisle_repo or MemoryAisleRepository()
+
+    def validate_scope(self, filters: AnalyticsFilters) -> None:
+        validate_analytics_filters_scope(filters, self._aisle_repo)
+
     def summary(self, _filters):
         return AnalyticsSummaryDTO(
             auto_acceptance_rate=0.6,
@@ -111,8 +120,9 @@ class _StubAnalyticsService:
 
 def test_analytics_summary_response_keeps_legacy_fields_and_adds_phase2_fields():
     app.dependency_overrides[get_current_admin] = _fake_admin
-    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService()
-    app.dependency_overrides[get_aisle_repo] = lambda: MemoryAisleRepository()
+    aisle_repo = MemoryAisleRepository()
+    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(aisle_repo)
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
     try:
         client = TestClient(app)
         response = client.get("/api/v3/analytics/summary")
@@ -137,8 +147,9 @@ def test_analytics_summary_response_keeps_legacy_fields_and_adds_phase2_fields()
 
 def test_analytics_inventory_performance_response_adds_phase2_fields_without_removing_legacy_fields():
     app.dependency_overrides[get_current_admin] = _fake_admin
-    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService()
-    app.dependency_overrides[get_aisle_repo] = lambda: MemoryAisleRepository()
+    aisle_repo = MemoryAisleRepository()
+    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(aisle_repo)
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
     try:
         client = TestClient(app)
         response = client.get("/api/v3/analytics/inventories")
@@ -164,8 +175,9 @@ def test_analytics_inventory_performance_response_adds_phase2_fields_without_rem
 
 def test_manual_intervention_breakdown_exposes_unknown_and_keeps_invalid_explicit():
     app.dependency_overrides[get_current_admin] = _fake_admin
-    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService()
-    app.dependency_overrides[get_aisle_repo] = lambda: MemoryAisleRepository()
+    aisle_repo = MemoryAisleRepository()
+    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(aisle_repo)
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
     try:
         client = TestClient(app)
         response = client.get("/api/v3/analytics/manual-interventions")
@@ -183,3 +195,24 @@ def test_manual_intervention_breakdown_exposes_unknown_and_keeps_invalid_explici
     assert categories["operator_marked_unknown"]["available"] is True
     assert categories["operator_marked_unknown"]["count"] == 1
     assert categories["invalid"]["available"] is False
+
+
+def test_analytics_summary_returns_422_when_aisle_does_not_belong_to_inventory() -> None:
+    """Phase 4: scope validation lives on AnalyticsQueryService; routes map to 422."""
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    now = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
+    aisle_repo = MemoryAisleRepository()
+    aisle_repo.save(Aisle("aisle-x", "inv-other", "A1", AisleStatus.CREATED, now, now))
+    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(aisle_repo)
+    app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+    try:
+        client = TestClient(app)
+        response = client.get(
+            "/api/v3/analytics/summary",
+            params={"inventory_id": "inv-1", "aisle_id": "aisle-x"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "does not belong" in response.json()["detail"].lower()

@@ -142,6 +142,7 @@ def test_openai_normalize_persist_list_detail_job_metadata_and_slice_isolation()
         aisle_repo,
         pos_repo,
         resolver,
+        product_repo,
         positions_aisle_raw_cap=500,
     )
 
@@ -284,6 +285,7 @@ def test_openai_pallet_unknown_sku_quantity_alias_hybrid_persist_list_explicit_j
         aisle_repo,
         pos_repo,
         resolver,
+        product_repo,
         positions_aisle_raw_cap=500,
     )
     listed = list_uc.execute(

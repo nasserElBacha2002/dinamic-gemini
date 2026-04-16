@@ -11,12 +11,20 @@ Phase 2: raw rows are limited to one result context (**explicit** ``job_id`` →
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, DefaultDict, List, Optional, Tuple
 
+from src.application.errors import InventoryNotFoundError
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.contracts import PositionListQuery
-from src.application.ports.repositories import AisleRepository, InventoryRepository, PositionRepository
-from src.application.errors import AisleNotFoundError, InventoryNotFoundError
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    PositionRepository,
+    ProductRecordRepository,
+)
+from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.position_sku_consolidation import (
     canonical_internal_code_lower,
     consolidate_positions_by_sku,
@@ -24,6 +32,7 @@ from src.application.services.position_sku_consolidation import (
 )
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.positions.entities import Position
+from src.domain.products.entities import ProductRecord
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +60,9 @@ class ListAislePositionsCommand:
 @dataclass(frozen=True)
 class ListAislePositionsResult:
     positions: tuple[Position, ...]
+    #: Display-primary product per ``positions`` row (same length and order as ``positions``).
+    #: Invariant: ``len(primary_products) == len(positions)`` (enforced when building results).
+    primary_products: tuple[Optional[ProductRecord], ...]
     total_items: int
     page: int
     page_size: int
@@ -100,6 +112,28 @@ def _photo_review_sort_key(p: Position) -> Tuple[Any, ...]:
     return (seq_v, fn_l, sid_l, pcode, p.id)
 
 
+def _display_primaries_for_page_rows(
+    page_rows: List[Position],
+    product_record_repo: ProductRecordRepository,
+) -> tuple[Optional[ProductRecord], ...]:
+    """Load display-primary products for the paginated slice (one batch query; order matches ``page_rows``)."""
+    if not page_rows:
+        return ()
+    batch = product_record_repo.list_by_position_ids([p.id for p in page_rows])
+    by_position: DefaultDict[str, List[ProductRecord]] = defaultdict(list)
+    for pr in batch:
+        by_position[pr.position_id].append(pr)
+    primaries: List[Optional[ProductRecord]] = []
+    for p in page_rows:
+        primaries.append(select_display_primary_product(by_position.get(p.id, ())))
+    if len(primaries) != len(page_rows):
+        raise RuntimeError(
+            "internal invariant: primary_products length must match positions page length "
+            f"({len(primaries)} != {len(page_rows)})"
+        )
+    return tuple(primaries)
+
+
 class ListAislePositionsUseCase:
     def __init__(
         self,
@@ -107,6 +141,7 @@ class ListAislePositionsUseCase:
         aisle_repo: AisleRepository,
         position_repo: PositionRepository,
         result_context_resolver: ResultContextResolver,
+        product_record_repo: ProductRecordRepository,
         *,
         positions_aisle_raw_cap: int,
     ) -> None:
@@ -114,19 +149,19 @@ class ListAislePositionsUseCase:
         self._aisle_repo = aisle_repo
         self._position_repo = position_repo
         self._resolver = result_context_resolver
+        self._product_record_repo = product_record_repo
         self._raw_cap = max(1, int(positions_aisle_raw_cap))
 
     def execute(self, command: ListAislePositionsCommand) -> ListAislePositionsResult:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None:
-            raise AisleNotFoundError(f"Aisle not found: {command.aisle_id}")
-        if aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="strict",
+        )
 
         ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=command.job_id)
         raw_q = PositionListQuery(
@@ -181,8 +216,11 @@ class ListAislePositionsUseCase:
         start = (page - 1) * page_size
         page_rows = consolidated_sorted[start : start + page_size]
 
+        primaries = _display_primaries_for_page_rows(page_rows, self._product_record_repo)
+
         return ListAislePositionsResult(
             positions=tuple(page_rows),
+            primary_products=primaries,
             total_items=total,
             page=page,
             page_size=page_size,

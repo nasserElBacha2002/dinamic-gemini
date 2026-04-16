@@ -25,7 +25,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import (
-    get_aisle_repo,
     get_artifact_storage,
     get_list_aisle_assets_use_case,
     get_result_context_resolver,
@@ -46,11 +45,21 @@ from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 class StubListAisleAssetsUseCase:
     """Returns a fixed list of assets for testing."""
 
-    def __init__(self, assets: Sequence[SourceAsset]) -> None:
+    def __init__(self, assets: Sequence[SourceAsset], *, aisle: Aisle | None = None) -> None:
         self._assets = list(assets)
+        self._aisle = aisle
 
     def execute(self, inventory_id: str, aisle_id: str) -> Sequence[SourceAsset]:
         return self._assets
+
+    def get_validated_aisle(self, inventory_id: str, aisle_id: str) -> Aisle:
+        from src.application.errors import AisleNotFoundError
+
+        if self._aisle is None:
+            raise AisleNotFoundError("stub: aisle not configured")
+        if self._aisle.id != aisle_id or self._aisle.inventory_id != inventory_id:
+            raise AisleNotFoundError("stub: aisle mismatch")
+        return self._aisle
 
 
 @contextmanager
@@ -78,25 +87,24 @@ def _register_aisle_and_resolver(
     aisle_id: str,
     *,
     operational_job_id: str | None,
-) -> None:
-    """Match GET asset routes: aisle row + ResultContextResolver (operational / legacy / explicit query)."""
+) -> Aisle:
+    """Resolver wiring for GET asset routes; returns the aisle row for HEIC stubs (Phase 5: no route repo)."""
     now = datetime.now(timezone.utc)
-    ar = MemoryAisleRepository()
-    ar.save(
-        Aisle(
-            id=aisle_id,
-            inventory_id=inv_id,
-            code="T",
-            status=AisleStatus.PROCESSED,
-            created_at=now,
-            updated_at=now,
-            operational_job_id=operational_job_id,
-        )
+    aisle_obj = Aisle(
+        id=aisle_id,
+        inventory_id=inv_id,
+        code="T",
+        status=AisleStatus.PROCESSED,
+        created_at=now,
+        updated_at=now,
+        operational_job_id=operational_job_id,
     )
-    app.dependency_overrides[get_aisle_repo] = lambda: ar
+    ar = MemoryAisleRepository()
+    ar.save(aisle_obj)
     app.dependency_overrides[get_result_context_resolver] = lambda: ResultContextResolver(
         MemoryJobRepository(), MemoryPositionRepository()
     )
+    return aisle_obj
 
 
 @pytest.fixture
@@ -154,10 +162,10 @@ def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) 
         mime_type="image/heic",
         uploaded_at=now_upload,
     )
-    stub_assets = StubListAisleAssetsUseCase([asset])
+    aisle_row = _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_id)
+    stub_assets = StubListAisleAssetsUseCase([asset], aisle=aisle_row)
 
     try:
-        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_id)
         app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
@@ -169,7 +177,6 @@ def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) 
             assert resp.headers.get("content-type", "").startswith("image/jpeg")
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_aisle_repo, None)
         app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
@@ -193,10 +200,10 @@ def test_heic_asset_file_returns_404_when_no_normalized_preview(output_dir: Path
         mime_type="image/heic",
         uploaded_at=now_upload,
     )
-    stub_assets = StubListAisleAssetsUseCase([asset])
+    aisle_row = _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=None)
+    stub_assets = StubListAisleAssetsUseCase([asset], aisle=aisle_row)
 
     try:
-        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=None)
         app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
@@ -207,7 +214,6 @@ def test_heic_asset_file_returns_404_when_no_normalized_preview(output_dir: Path
             assert resp.json().get("detail") == "Preview is not available for this image"
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_aisle_repo, None)
         app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
@@ -314,10 +320,10 @@ def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) ->
         mime_type="image/heic",
         uploaded_at=now_upload,
     )
-    stub_assets = StubListAisleAssetsUseCase([asset])
+    aisle_row = _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_id)
+    stub_assets = StubListAisleAssetsUseCase([asset], aisle=aisle_row)
 
     try:
-        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_id)
         app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
@@ -328,7 +334,6 @@ def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) ->
             assert "preview" in (resp.json().get("detail") or "").lower() or "not available" in (resp.json().get("detail") or "").lower()
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_aisle_repo, None)
         app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
@@ -366,10 +371,10 @@ def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_
         mime_type="image/heic",
         uploaded_at=now_upload,
     )
-    stub_assets = StubListAisleAssetsUseCase([asset])
+    aisle_row = _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_id)
+    stub_assets = StubListAisleAssetsUseCase([asset], aisle=aisle_row)
 
     try:
-        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_id)
         app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
@@ -380,7 +385,6 @@ def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_
             assert resp.json().get("detail") == "Preview is not available for this image"
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_aisle_repo, None)
         app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
@@ -426,10 +430,10 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
         mime_type="image/heic",
         uploaded_at=now_upload,
     )
-    stub_assets = StubListAisleAssetsUseCase([asset])
+    aisle_row = _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_b)
+    stub_assets = StubListAisleAssetsUseCase([asset], aisle=aisle_row)
 
     try:
-        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_b)
         app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
@@ -447,7 +451,6 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
             assert resp_with_job.headers.get("content-type", "").startswith("image/jpeg")
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_aisle_repo, None)
         app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
@@ -498,10 +501,10 @@ def test_heic_asset_file_no_fallback_when_explicit_job_has_no_normalized_file(ou
         mime_type="image/heic",
         uploaded_at=now_upload,
     )
-    stub_assets = StubListAisleAssetsUseCase([asset])
+    aisle_row = _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_other)
+    stub_assets = StubListAisleAssetsUseCase([asset], aisle=aisle_row)
 
     try:
-        _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_other)
         app.dependency_overrides[get_list_aisle_assets_use_case] = lambda: stub_assets
         with _patch_local_asset_settings(output_dir):
             client = TestClient(app)
@@ -512,5 +515,4 @@ def test_heic_asset_file_no_fallback_when_explicit_job_has_no_normalized_file(ou
             assert resp.status_code == 404
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
-        app.dependency_overrides.pop(get_aisle_repo, None)
         app.dependency_overrides.pop(get_result_context_resolver, None)

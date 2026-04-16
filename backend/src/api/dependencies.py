@@ -20,16 +20,14 @@ from fastapi import Depends
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
+    EvidenceRepository,
     InventoryRepository,
     InventoryVisualReferenceRepository,
     JobRepository,
-    SourceAssetRepository,
-)
-from src.application.ports.repositories import (
-    EvidenceRepository,
     PositionRepository,
     ProductRecordRepository,
     ReviewActionRepository,
+    SourceAssetRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.runtime.v3_deps import (
@@ -92,6 +90,9 @@ from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
 from src.application.use_cases.list_aisle_jobs import ListAisleJobsUseCase
+from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
+    ResolveAisleJobForInventoryReadUseCase,
+)
 from src.application.use_cases.compare_aisle_runs import CompareAisleRunsUseCase
 from src.application.use_cases.promote_aisle_operational_job import PromoteAisleOperationalJobUseCase
 from src.application.use_cases.export_aisle_benchmark import (
@@ -352,12 +353,14 @@ def get_aisle_job_launch_service(
 
 
 def get_start_aisle_processing_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
     launch_service: AisleJobLaunchService = Depends(get_aisle_job_launch_service),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
+        inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
         launch_service=launch_service,
@@ -482,6 +485,7 @@ def get_list_aisle_positions_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
     result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
 ) -> ListAislePositionsUseCase:
     from src.config import load_settings
 
@@ -490,6 +494,7 @@ def get_list_aisle_positions_use_case(
         aisle_repo=aisle_repo,
         position_repo=position_repo,
         result_context_resolver=result_context_resolver,
+        product_record_repo=product_record_repo,
         positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
     )
 
@@ -703,6 +708,13 @@ def get_list_aisle_jobs_use_case(
     )
 
 
+def get_resolve_aisle_job_for_inventory_read_use_case(
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+) -> ResolveAisleJobForInventoryReadUseCase:
+    return ResolveAisleJobForInventoryReadUseCase(job_repo=job_repo, aisle_repo=aisle_repo)
+
+
 def get_compare_aisle_runs_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
@@ -759,5 +771,6 @@ def get_export_aisle_benchmark_compare_csv_use_case(
 
 def get_analytics_query_service(
     repo=Depends(get_analytics_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
 ) -> AnalyticsQueryService:
-    return AnalyticsQueryService(repo)
+    return AnalyticsQueryService(repo, aisle_repo)

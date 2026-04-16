@@ -11,12 +11,12 @@ from __future__ import annotations
 from typing import Optional
 
 from src.application.errors import (
-    AisleNotFoundError,
     InventoryNotFoundError,
     PositionDeletedError,
     PositionNotFoundError,
     ProductNotFoundError,
 )
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
@@ -81,13 +81,12 @@ def resolve_position(
     inv = inventory_repo.get_by_id(inventory_id)
     if inv is None:
         raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
-    aisle = aisle_repo.get_by_id(aisle_id)
-    if aisle is None:
-        raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
-    if aisle.inventory_id != inventory_id:
-        raise AisleNotFoundError(
-            f"Aisle {aisle_id} does not belong to inventory {inventory_id}"
-        )
+    aisle = require_aisle_scoped_to_inventory(
+        aisle_repo,
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
+        detail_style="strict",
+    )
     position = position_repo.get_by_id(position_id)
     if position is None:
         raise PositionNotFoundError(f"Position not found: {position_id}")

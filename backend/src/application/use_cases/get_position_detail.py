@@ -14,7 +14,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
-from src.application.errors import AisleNotFoundError, PositionResultContextMismatchError
+from src.application.errors import PositionResultContextMismatchError
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import (
     AisleRepository,
@@ -161,9 +162,12 @@ class GetPositionDetailUseCase:
             aisle_id,
             position_id,
         )
-        aisle = self._aisle_repo.get_by_id(aisle_id)
-        if aisle is None:
-            raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            detail_style="strict",
+        )
         ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=explicit_job_id)
         if ctx.job_id_for_slice != position.job_id:
             raise PositionResultContextMismatchError(

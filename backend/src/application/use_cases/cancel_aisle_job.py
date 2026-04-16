@@ -15,7 +15,10 @@ from dataclasses import dataclass
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, JobRepository
-from src.application.errors import AisleNotFoundError
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
+from src.application.services.process_aisle_job_for_aisle import (
+    require_process_aisle_job_for_aisle,
+)
 from src.domain.jobs.entities import Job, JobStatus
 
 
@@ -48,24 +51,18 @@ class CancelAisleJobUseCase:
         - If job is already CANCEL_REQUESTED: no-op (idempotent).
         - If job is terminal (SUCCEEDED / FAILED / CANCELED / TIMED_OUT): raise ValueError.
         """
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None or aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
+        require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="merged",
+        )
 
-        job = self._job_repo.get_by_id(command.job_id)
-        if job is None:
-            # Surface as 404 at the API layer.
-            raise AisleNotFoundError(
-                f"Job {command.job_id} not found for aisle {command.aisle_id}"
-            )
-        if job.target_type != "aisle" or job.target_id != command.aisle_id:
-            raise AisleNotFoundError(
-                f"Job {command.job_id} does not belong to aisle {command.aisle_id}"
-            )
-        if job.job_type != "process_aisle":
-            raise ValueError(f"Job {command.job_id} is not a process_aisle job")
+        job = require_process_aisle_job_for_aisle(
+            self._job_repo,
+            job_id=command.job_id,
+            aisle_id=command.aisle_id,
+        )
 
         status = job.status
         if status in (

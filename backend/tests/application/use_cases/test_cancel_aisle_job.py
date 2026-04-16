@@ -258,6 +258,37 @@ def test_cancel_cancel_requested_idempotent() -> None:
     assert updated.status == JobStatus.CANCEL_REQUESTED
 
 
+def test_cancel_non_process_aisle_job_raises_value_error_with_stable_message() -> None:
+    now = datetime(2025, 3, 10, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle("aisle-1", "inv-1", "R01", AisleStatus.CREATED, now, now)
+    job = Job(
+        id="job-1",
+        target_type="aisle",
+        target_id="aisle-1",
+        job_type="export_inventory",
+        status=JobStatus.QUEUED,
+        payload_json={},
+        created_at=now,
+        updated_at=now,
+    )
+    aisle_repo = InMemoryAisleRepo([aisle])
+    job_repo = InMemoryJobRepo()
+    job_repo.save(job)
+    clock = FixedClock(now)
+    use_case = CancelAisleJobUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        clock=clock,
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"^Job job-1 is not a process_aisle job$",
+    ):
+        use_case.execute(
+            CancelAisleJobCommand(inventory_id="inv-1", aisle_id="aisle-1", job_id="job-1")
+        )
+
+
 def test_cancel_when_job_missing_raises_aisle_not_found() -> None:
     """When the job is not in the repo, use case raises AisleNotFoundError so the API can return 404 (job/aisle not found)."""
     now = datetime(2025, 3, 10, 12, 0, 0, tzinfo=timezone.utc)
@@ -271,7 +302,10 @@ def test_cancel_when_job_missing_raises_aisle_not_found() -> None:
         job_repo=job_repo,
         clock=clock,
     )
-    with pytest.raises(AisleNotFoundError):
+    with pytest.raises(
+        AisleNotFoundError,
+        match=r"^Job nonexistent not found for aisle aisle-1$",
+    ):
         use_case.execute(
             CancelAisleJobCommand(
                 inventory_id="inv-1", aisle_id="aisle-1", job_id="nonexistent"

@@ -445,6 +445,39 @@ def test_retry_launch_failure_marks_new_retry_job_failed_only() -> None:
     assert job_repo.get_by_id("job-failed").status == JobStatus.FAILED
 
 
+def test_retry_non_process_aisle_job_raises_value_error_with_stable_message() -> None:
+    now, inv_repo, aisle_repo, job_repo, clock = _base_context()
+    job_repo.save(
+        Job(
+            id="job-wrong-type",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="export_inventory",
+            status=JobStatus.FAILED,
+            payload_json={"aisle_id": "aisle-1"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    use_case = RetryAisleJobUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=StubWorkerLaunchService(),
+            clock=clock,
+            reconciler=InventoryStatusReconciler(inv_repo, aisle_repo, clock),
+        ),
+        stale_reconciler=make_stale_reconciler(job_repo, clock),
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"^Job job-wrong-type is not a process_aisle job$",
+    ):
+        use_case.execute(RetryAisleJobCommand("inv-1", "aisle-1", "job-wrong-type"))
+
+
 def test_retry_job_not_found_raises_not_found() -> None:
     _, inv_repo, aisle_repo, job_repo, clock = _base_context()
     use_case = RetryAisleJobUseCase(
@@ -460,5 +493,8 @@ def test_retry_job_not_found_raises_not_found() -> None:
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
 
-    with pytest.raises(AisleNotFoundError):
+    with pytest.raises(
+        AisleNotFoundError,
+        match=r"^Job missing-job not found for aisle aisle-1$",
+    ):
         use_case.execute(RetryAisleJobCommand("inv-1", "aisle-1", "missing-job"))

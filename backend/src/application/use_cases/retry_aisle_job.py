@@ -3,10 +3,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from src.application.errors import AisleNotFoundError, ActiveJobExistsError
+from src.application.errors import ActiveJobExistsError
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
+from src.application.services.process_aisle_job_for_aisle import (
+    require_process_aisle_job_for_aisle,
+)
 from src.domain.jobs.entities import Job, JobStatus
 
 logger = logging.getLogger(__name__)
@@ -23,6 +27,34 @@ NON_RETRYABLE_JOB_STATUSES = (
     JobStatus.CANCEL_REQUESTED,
     JobStatus.SUCCEEDED,
 )
+
+
+def _assert_job_retryable(original_job: Job, job_id: str) -> None:
+    if original_job.status not in RETRYABLE_JOB_STATUSES:
+        raise ValueError(
+            f"Cannot retry job {job_id} with status {original_job.status.value!r}"
+        )
+
+
+def _assert_may_retry_as_latest_terminal_attempt(
+    *,
+    stale_reconciler: JobStaleReconciler,
+    job_repo: JobRepository,
+    aisle_id: str,
+    original_job: Job,
+    job_id: str,
+) -> None:
+    latest = stale_reconciler.reconcile(
+        job_repo.get_latest_by_target("aisle", aisle_id)
+    )
+    if latest is not None and latest.status in NON_RETRYABLE_JOB_STATUSES:
+        raise ActiveJobExistsError(
+            f"Aisle {aisle_id} already has an active job (status={latest.status.value})"
+        )
+    if latest is not None and latest.id != original_job.id:
+        raise ValueError(
+            f"Cannot retry job {job_id}: latest retryable terminal attempt is {latest.id}"
+        )
 
 
 @dataclass
@@ -46,38 +78,26 @@ class RetryAisleJobUseCase:
         self._stale_reconciler = stale_reconciler
 
     def execute(self, command: RetryAisleJobCommand) -> Job:
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None or aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
-
-        original_job = self._job_repo.get_by_id(command.job_id)
-        if original_job is None:
-            raise AisleNotFoundError(f"Job {command.job_id} not found for aisle {command.aisle_id}")
-        if original_job.target_type != "aisle" or original_job.target_id != command.aisle_id:
-            raise AisleNotFoundError(
-                f"Job {command.job_id} does not belong to aisle {command.aisle_id}"
-            )
-        if original_job.job_type != "process_aisle":
-            raise ValueError(f"Job {command.job_id} is not a process_aisle job")
-
-        if original_job.status not in RETRYABLE_JOB_STATUSES:
-            raise ValueError(
-                f"Cannot retry job {command.job_id} with status {original_job.status.value!r}"
-            )
-
-        latest = self._stale_reconciler.reconcile(
-            self._job_repo.get_latest_by_target("aisle", command.aisle_id)
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="merged",
         )
-        if latest is not None and latest.status in NON_RETRYABLE_JOB_STATUSES:
-            raise ActiveJobExistsError(
-                f"Aisle {command.aisle_id} already has an active job (status={latest.status.value})"
-            )
-        if latest is not None and latest.id != original_job.id:
-            raise ValueError(
-                f"Cannot retry job {command.job_id}: latest retryable terminal attempt is {latest.id}"
-            )
+
+        original_job = require_process_aisle_job_for_aisle(
+            self._job_repo,
+            job_id=command.job_id,
+            aisle_id=command.aisle_id,
+        )
+        _assert_job_retryable(original_job, command.job_id)
+        _assert_may_retry_as_latest_terminal_attempt(
+            stale_reconciler=self._stale_reconciler,
+            job_repo=self._job_repo,
+            aisle_id=command.aisle_id,
+            original_job=original_job,
+            job_id=command.job_id,
+        )
 
         payload = dict(original_job.payload_json or {})
         retry_job = self._launch_service.create_and_launch_attempt(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
+from typing import Sequence
 
 from src.application.use_cases.list_aisle_positions import (
     ListAislePositionsCommand,
@@ -12,11 +13,30 @@ from src.application.use_cases.list_aisle_positions import (
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
+from src.domain.products.entities import ProductRecord
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+
+
+class CountingProductRepo(MemoryProductRecordRepository):
+    """Tracks repository calls — Phase 3 list path must batch-load products."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.list_by_position_calls = 0
+        self.list_by_position_ids_calls = 0
+
+    def list_by_position(self, position_id: str) -> Sequence[ProductRecord]:
+        self.list_by_position_calls += 1
+        return super().list_by_position(position_id)
+
+    def list_by_position_ids(self, position_ids: Sequence[str]) -> Sequence[ProductRecord]:
+        self.list_by_position_ids_calls += 1
+        return super().list_by_position_ids(position_ids)
 
 
 def _repos():
@@ -62,6 +82,7 @@ def test_list_aisle_positions_filters_by_needs_review() -> None:
         aisle_repo,
         pos_repo,
         ResultContextResolver(MemoryJobRepository()),
+        MemoryProductRecordRepository(),
         positions_aisle_raw_cap=500,
     )
     result = uc.execute(
@@ -76,6 +97,8 @@ def test_list_aisle_positions_filters_by_needs_review() -> None:
     assert len(result.positions) == 1
     assert result.positions[0].id == "p1"
     assert result.positions[0].needs_review is True
+    assert len(result.primary_products) == 1
+    assert result.primary_products[0] is None
 
 
 def test_list_aisle_positions_default_pagination_matches_explicit() -> None:
@@ -85,6 +108,7 @@ def test_list_aisle_positions_default_pagination_matches_explicit() -> None:
         aisle_repo,
         pos_repo,
         ResultContextResolver(MemoryJobRepository()),
+        MemoryProductRecordRepository(),
         positions_aisle_raw_cap=500,
     )
     explicit = uc.execute(
@@ -138,6 +162,7 @@ def test_list_aisle_positions_photo_sequence_is_stable_and_contiguous_by_photo()
         aisle_repo,
         pos_repo,
         ResultContextResolver(MemoryJobRepository()),
+        MemoryProductRecordRepository(),
         positions_aisle_raw_cap=500,
     )
     cmd = ListAislePositionsCommand(
@@ -203,6 +228,7 @@ def test_list_aisle_positions_photo_sequence_overrides_consolidate_by_sku() -> N
         aisle_repo,
         pos_repo,
         ResultContextResolver(MemoryJobRepository()),
+        MemoryProductRecordRepository(),
         positions_aisle_raw_cap=500,
     )
     merged = uc.execute(
@@ -228,3 +254,94 @@ def test_list_aisle_positions_photo_sequence_overrides_consolidate_by_sku() -> N
     assert len(merged.positions) == 1
     assert len(photo.positions) == 2
     assert [p.id for p in photo.positions] == ["x1", "x2"]
+
+
+def test_list_aisle_positions_primary_products_align_with_positions() -> None:
+    """Phase 2: primary product selection lives in the use case (same display-primary rule as routes)."""
+    inv_repo, aisle_repo, pos_repo, now = _repos()
+    product_repo = MemoryProductRecordRepository()
+    product_repo.save(
+        ProductRecord(
+            id="pr-1",
+            position_id="p1",
+            sku="ROW-SKU",
+            description="",
+            detected_quantity=9,
+            corrected_quantity=3,
+            confidence=0.9,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        ResultContextResolver(MemoryJobRepository()),
+        product_repo,
+        positions_aisle_raw_cap=500,
+    )
+    result = uc.execute(
+        ListAislePositionsCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            needs_review=True,
+            page=1,
+            page_size=50,
+        )
+    )
+    assert len(result.positions) == len(result.primary_products) == 1
+    prim = result.primary_products[0]
+    assert prim is not None
+    assert prim.sku == "ROW-SKU"
+    assert prim.corrected_quantity == 3
+
+
+def test_list_aisle_positions_uses_single_batch_product_query_per_page() -> None:
+    """Phase 3: one list_by_position_ids call for the page, not N list_by_position."""
+    inv_repo, aisle_repo, pos_repo, now = _repos()
+    product_repo = CountingProductRepo()
+    product_repo.save(
+        ProductRecord(
+            id="pr-a",
+            position_id="p1",
+            sku="A",
+            description="",
+            detected_quantity=1,
+            confidence=0.9,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    product_repo.save(
+        ProductRecord(
+            id="pr-b",
+            position_id="p2",
+            sku="B",
+            description="",
+            detected_quantity=2,
+            confidence=0.9,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        ResultContextResolver(MemoryJobRepository()),
+        product_repo,
+        positions_aisle_raw_cap=500,
+    )
+    result = uc.execute(
+        ListAislePositionsCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            page=1,
+            page_size=50,
+        )
+    )
+    assert len(result.positions) == 2
+    assert len(result.primary_products) == 2
+    assert product_repo.list_by_position_ids_calls == 1
+    assert product_repo.list_by_position_calls == 0

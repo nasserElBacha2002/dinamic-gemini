@@ -1,4 +1,8 @@
-"""Stage 8 — Repository layer for jobs, pallet_results, job_events."""
+"""Stage 8 — Legacy SQL repository layer for ``jobs``, ``pallet_results``, ``job_events``.
+
+This module is **not** the v3 operational persistence path (``inventory_jobs``, ``positions``, …).
+Structured access logs use logger ``dinamic.legacy_sql`` (see ``src/legacy/persistence_observability.py``).
+"""
 
 import json
 import logging
@@ -6,8 +10,25 @@ from typing import Any, Dict, List, Optional
 from typing_extensions import TypedDict
 
 from src.database.sqlserver import SqlServerClient, now_utc
+from src.legacy.persistence_observability import (
+    log_legacy_sql_write_blocked,
+    log_stage8_sql_access,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _legacy_stage8_writes_blocked(operation: str, table: str, **identifiers: Any) -> bool:
+    """Phase 14.1 — if True, skip mutating SQL (caller returns early)."""
+    try:
+        from src.config import load_settings
+
+        if not load_settings().legacy_stage8_sql_writes_disabled:
+            return False
+    except Exception:
+        return False
+    log_legacy_sql_write_blocked(operation=operation, table=table, identifiers=identifiers or None)
+    return True
 
 
 class JobRecordDict(TypedDict, total=False):
@@ -76,6 +97,16 @@ class JobsRepository:
         input_manifest_path: Optional[str] = None,
         photos_dir: Optional[str] = None,
     ) -> None:
+        if _legacy_stage8_writes_blocked(
+            "create_job", "jobs", job_id=job_id, input_type=input_type
+        ):
+            return
+        log_stage8_sql_access(
+            repository_class="JobsRepository",
+            operation="create_job",
+            table="jobs",
+            identifiers={"job_id": job_id, "input_type": input_type},
+        )
         now = now_utc()
         meta_str = _serialize_metadata(metadata)
         with self._client.cursor() as cur:
@@ -111,6 +142,16 @@ class JobsRepository:
         progress_stage: Optional[str] = None,
         progress_percent: Optional[int] = None,
     ) -> None:
+        if _legacy_stage8_writes_blocked(
+            "update_job_status", "jobs", job_id=job_id, status=status
+        ):
+            return
+        log_stage8_sql_access(
+            repository_class="JobsRepository",
+            operation="update_job_status",
+            table="jobs",
+            identifiers={"job_id": job_id, "status": status, "progress_stage": progress_stage},
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -121,6 +162,16 @@ class JobsRepository:
             )
 
     def update_job_progress(self, job_id: str, stage: str, percent: int) -> None:
+        if _legacy_stage8_writes_blocked(
+            "update_job_progress", "jobs", job_id=job_id, stage=stage, percent=percent
+        ):
+            return
+        log_stage8_sql_access(
+            repository_class="JobsRepository",
+            operation="update_job_progress",
+            table="jobs",
+            identifiers={"job_id": job_id, "stage": stage, "percent": percent},
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 "UPDATE jobs SET updated_at = ?, progress_stage = ?, progress_percent = ? WHERE id = ?",
@@ -150,6 +201,14 @@ class JobsRepository:
         gemini_calls: Optional[int] = None,
         prompt_version: Optional[str] = None,
     ) -> None:
+        if _legacy_stage8_writes_blocked("set_job_outputs", "jobs", job_id=job_id):
+            return
+        log_stage8_sql_access(
+            repository_class="JobsRepository",
+            operation="set_job_outputs",
+            table="jobs",
+            identifiers={"job_id": job_id},
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -189,6 +248,16 @@ class JobsRepository:
             )
 
     def set_job_error(self, job_id: str, error_code: str, error_message: str) -> None:
+        if _legacy_stage8_writes_blocked(
+            "set_job_error", "jobs", job_id=job_id, error_code=error_code
+        ):
+            return
+        log_stage8_sql_access(
+            repository_class="JobsRepository",
+            operation="set_job_error",
+            table="jobs",
+            identifiers={"job_id": job_id, "error_code": error_code},
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -198,8 +267,15 @@ class JobsRepository:
                 (now_utc(), "failed", error_code, error_message, job_id),
             )
 
-    def get_job(self, job_id: str) -> Optional[JobRecordDict]:
+    def get_job(self, job_id: str, *, _emit_access_log: bool = True) -> Optional[JobRecordDict]:
         """Return job as dict compatible with JobRecord (input, status, progress, output, error, created_at, updated_at)."""
+        if _emit_access_log:
+            log_stage8_sql_access(
+                repository_class="JobsRepository",
+                operation="get_job",
+                table="jobs",
+                identifiers={"job_id": job_id},
+            )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -309,6 +385,8 @@ class JobsRepository:
         Returns:
             JobRecordDict for the claimed job, or None when no queued jobs exist.
         """
+        if _legacy_stage8_writes_blocked("claim_next_queued_job", "jobs"):
+            return None
         claimed_job_id: Optional[str] = None
         with self._client.cursor() as cur:
             cur.execute(
@@ -337,8 +415,20 @@ class JobsRepository:
                 if raw_id is not None:
                     claimed_job_id = str(raw_id)
         if not claimed_job_id:
+            log_stage8_sql_access(
+                repository_class="JobsRepository",
+                operation="claim_next_queued_job",
+                table="jobs",
+                identifiers={"claimed": False},
+            )
             return None
-        return self.get_job(claimed_job_id)
+        log_stage8_sql_access(
+            repository_class="JobsRepository",
+            operation="claim_next_queued_job",
+            table="jobs",
+            identifiers={"claimed": True, "job_id": claimed_job_id},
+        )
+        return self.get_job(claimed_job_id, _emit_access_log=False)
 
 
 class PalletResultsRepository:
@@ -357,6 +447,16 @@ class PalletResultsRepository:
         """Bulk insert. Each item: one entity result with pallet_id, internal_code, quantity/final_quantity, source, confidence, fallback_used, optional estimated_visible_boxes, source_image_id, traceability_status (Epic 3.1.B)."""
         if not pallets:
             return
+        if _legacy_stage8_writes_blocked(
+            "insert_pallet_results", "pallet_results", job_id=job_id, batch_size=len(pallets)
+        ):
+            return
+        log_stage8_sql_access(
+            repository_class="PalletResultsRepository",
+            operation="insert_pallet_results",
+            table="pallet_results",
+            identifiers={"job_id": job_id, "batch_size": len(pallets)},
+        )
         now = now_utc()
         with self._client.cursor() as cur:
             for p in pallets:
@@ -393,6 +493,12 @@ class PalletResultsRepository:
                 )
 
     def get_pallet_results(self, job_id: str) -> List[Dict[str, Any]]:
+        log_stage8_sql_access(
+            repository_class="PalletResultsRepository",
+            operation="get_pallet_results",
+            table="pallet_results",
+            identifiers={"job_id": job_id},
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -426,6 +532,16 @@ class JobEventsRepository:
         self._client = client
 
     def insert_event(self, job_id: str, event_type: str, payload_dict: Optional[Dict[str, Any]] = None) -> None:
+        if _legacy_stage8_writes_blocked(
+            "insert_event", "job_events", job_id=job_id, event_type=event_type
+        ):
+            return
+        log_stage8_sql_access(
+            repository_class="JobEventsRepository",
+            operation="insert_event",
+            table="job_events",
+            identifiers={"job_id": job_id, "event_type": event_type, "has_payload": payload_dict is not None},
+        )
         payload = json.dumps(payload_dict, ensure_ascii=False) if payload_dict else None
         with self._client.cursor() as cur:
             cur.execute(
@@ -434,6 +550,12 @@ class JobEventsRepository:
             )
 
     def get_events(self, job_id: str) -> List[Dict[str, Any]]:
+        log_stage8_sql_access(
+            repository_class="JobEventsRepository",
+            operation="get_events",
+            table="job_events",
+            identifiers={"job_id": job_id},
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 "SELECT id, job_id, [timestamp], event_type, payload FROM job_events WHERE job_id = ? ORDER BY [timestamp]",

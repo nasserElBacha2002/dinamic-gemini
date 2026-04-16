@@ -26,3 +26,9 @@ class MemoryProductRecordRepository(ProductRecordRepository):
             for p in self._store.values()
             if p.position_id == position_id
         ]
+
+    def list_by_position_ids(self, position_ids: Sequence[str]) -> Sequence[ProductRecord]:
+        wanted = frozenset(position_ids)
+        if not wanted:
+            return []
+        return [p for p in self._store.values() if p.position_id in wanted]

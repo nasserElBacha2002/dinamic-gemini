@@ -1,14 +1,15 @@
 """
 Cross-inventory review queue — primarily ``needs_review`` positions, narrowable by filters (Sprint 1.4 / 4.2).
 
-Uses existing repositories only (batch ``list_by_aisles``). Suitable for small/medium
-deployments; very large multi-inventory installs may need a dedicated SQL path later.
+Uses ``list_by_aisles`` for positions, then one ``list_by_position_ids`` for all those positions
+before filtering (acceptable for current scale; huge installs may need a dedicated SQL path).
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import timezone
-from typing import Dict, List, Optional, Tuple
+from typing import DefaultDict, Dict, List, Optional, Tuple
 
 from src.application.ports.contracts import (
     ReviewQueueListRow,
@@ -186,10 +187,14 @@ class ListReviewQueueUseCase:
         aisle_ids = [a.id for _, a in scope]
         by_aisle_id = {a.id: (inv, a) for inv, a in scope}
         positions = list(self._position_repo.list_by_aisles(aisle_ids))
-        primary_by_position: Dict[str, Optional[ProductRecord]] = {
-            p.id: select_display_primary_product(self._product_record_repo.list_by_position(p.id))
-            for p in positions
-        }
+        primary_by_position: Dict[str, Optional[ProductRecord]] = {}
+        if positions:
+            batch = self._product_record_repo.list_by_position_ids([p.id for p in positions])
+            by_pid: DefaultDict[str, List[ProductRecord]] = defaultdict(list)
+            for pr in batch:
+                by_pid[pr.position_id].append(pr)
+            for p in positions:
+                primary_by_position[p.id] = select_display_primary_product(by_pid.get(p.id, ()))
         pending = [p for p in positions if p.needs_review]
         pending = [p for p in pending if _row_matches_query(p, q, primary_by_position.get(p.id))]
 
@@ -202,6 +207,7 @@ class ListReviewQueueUseCase:
                     inventory_id=inv.id,
                     inventory_name=inv.name,
                     aisle_code=aisle.code,
+                    primary_product=primary_by_position.get(p.id),
                 )
             )
 

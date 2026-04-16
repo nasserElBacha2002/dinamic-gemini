@@ -144,6 +144,19 @@ class ProductRecordRepository(ABC):
     def list_by_position(self, position_id: str) -> Sequence[ProductRecord]:
         ...
 
+    def list_by_position_ids(self, position_ids: Sequence[str]) -> Sequence[ProductRecord]:
+        """Product rows for any ``position_id`` in ``position_ids`` (empty → empty).
+
+        Default: one ``list_by_position`` per **distinct** id (legacy-compatible). SQL/memory
+        implementations override with a single batch query / scan.
+        """
+        if not position_ids:
+            return []
+        out: List[ProductRecord] = []
+        for pid in dict.fromkeys(position_ids):
+            out.extend(self.list_by_position(pid))
+        return out
+
 
 class EvidenceRepository(ABC):
     @abstractmethod
