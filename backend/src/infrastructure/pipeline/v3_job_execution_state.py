@@ -30,7 +30,14 @@ logger = logging.getLogger(__name__)
 
 
 class V3JobExecutionStateService:
-    """Mutates Job + Aisle domain state and inventory reconciliation for worker execution."""
+    """Mutates Job + Aisle domain state and inventory reconciliation for worker execution.
+
+    Cooperative cancellation helpers (:meth:`raise_if_cancellation_requested`, :meth:`cancel_job_and_aisle`)
+    intentionally emit structured events via :class:`~src.pipeline.execution_log.ExecutionLogWriter`
+    before mutating persisted state. That couples lifecycle gates to execution observability in one
+    callsite (historical worker behavior); splitting observability behind a dedicated port is deferred
+    beyond Phase 2.
+    """
 
     def __init__(
         self,
@@ -206,6 +213,11 @@ class V3JobExecutionStateService:
         exec_log: ExecutionLogWriter | None = None,
         cancel_event_emitted: Optional[Dict[str, bool]] = None,
     ) -> None:
+        """Cancel the job and mark the aisle as failed-with-CANCELED, optionally logging ``job.canceled``.
+
+        ``exec_log`` is optional so the same persistence path works without a writer; when present,
+        ``job.canceled`` is emitted once per terminal cancel (mirrors pre–Phase 2 executor behavior).
+        """
         now = self._clock.now()
         current_job = self._job_repo.get_by_id(job_id)
         if exec_log is not None:
@@ -249,6 +261,11 @@ class V3JobExecutionStateService:
         reason: str,
         cancel_event_emitted: Dict[str, bool],
     ) -> None:
+        """If the job is ``CANCEL_REQUESTED``, emit cancel events to ``exec_log`` then raise.
+
+        Logging precedes :exc:`~src.pipeline.errors.PipelineCancellationRequestedError` so the
+        worker trace shows ``cancel_requested`` / ``cancel_detected`` at the checkpoint that fired.
+        """
         current_job = self._job_repo.get_by_id(job_id)
         if current_job is None or current_job.status != JobStatus.CANCEL_REQUESTED:
             return

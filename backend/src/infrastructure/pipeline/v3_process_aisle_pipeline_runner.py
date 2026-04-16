@@ -11,12 +11,13 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 from src.application.ports.repositories import InventoryVisualReferenceRepository
+from src.config import Settings
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
 from src.domain.aisle.entities import Aisle
-from src.domain.assets.entities import SourceAssetType
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
@@ -34,6 +35,10 @@ from src.pipeline.run_metadata import build_visual_reference_context
 from src.infrastructure.pipeline.input_artifact_resolver import WorkerInputArtifactResolver
 
 logger = logging.getLogger(__name__)
+
+# Callback shapes passed through to :meth:`HybridInventoryPipeline.process_video` (unchanged contract).
+ExecutionObserver = Callable[[str, Optional[str], str, Optional[Dict[str, Any]]], None]
+CancellationCheckpoint = Callable[[str, Optional[str], str], None]
 
 
 def visual_reference_failure_metadata(
@@ -99,7 +104,8 @@ class V3ProcessAislePipelineRunner:
         self,
         *,
         inventory_visual_reference_repo: InventoryVisualReferenceRepository,
-        artifact_store: Any,
+        # Runtime accepts ArtifactStore adapters and lightweight test doubles (not always ArtifactStore ABC).
+        artifact_store: Any | None,
         context_builder: AisleAnalysisContextBuilder,
     ) -> None:
         self._inventory_visual_reference_repo = inventory_visual_reference_repo
@@ -118,7 +124,7 @@ class V3ProcessAislePipelineRunner:
 
     def build_pipeline_input(
         self,
-        assets: list,
+        assets: Sequence[SourceAsset],
         v3_base: Path,
         job_dir: Path,
         job_id: str,
@@ -217,17 +223,17 @@ class V3ProcessAislePipelineRunner:
         job_id: str,
         base_path: Path,
         run_id: str,
-        settings: Any,
+        settings: Settings,
         job_input: JobInput,
         analysis_context: AnalysisContext,
         log: logging.Logger,
-        execution_observer: Any,
-        cancellation_checkpoint: Any,
+        execution_observer: ExecutionObserver,
+        cancellation_checkpoint: CancellationCheckpoint,
         pipeline_provider_name: Optional[str],
         job_model_name: Optional[str],
         job_prompt_key: Optional[str],
         job_prompt_version: Optional[str],
-        job_prompt_parity_mode: Optional[str],
+        job_prompt_parity_mode: bool,
     ) -> PipelineRunResult:
         """Invoke ``process_video`` (hybrid mode) with the same arguments the executor used."""
         return pipeline.process_video(

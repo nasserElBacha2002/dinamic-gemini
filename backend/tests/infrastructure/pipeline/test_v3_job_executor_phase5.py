@@ -239,7 +239,7 @@ class FixedClock(Clock):
 
 
 def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
-    """Backward compatibility: _mark_success without run_metadata sets report_path and default empty visual_reference_context."""
+    """Backward compatibility: mark_success without run_metadata sets report_path and default empty visual_reference_context."""
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_repo = InMemoryJobRepo()
     job = Job(
@@ -279,7 +279,7 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
         raw_label_repo=noop,
     )
     report_path = Path("/tmp/run/hybrid_report.json")
-    executor._mark_success("j1", aisle, report_path, run_metadata=None)
+    executor._state.mark_success("j1", aisle, report_path, run_metadata=None)
 
     updated = job_repo.get_by_id("j1")
     assert updated is not None
@@ -291,7 +291,7 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
 
 
 def test_mark_success_clears_stale_aisle_error_fields_after_previous_failure() -> None:
-    """After _fail_job_and_aisle, a later successful run must not leave PROCESSING_FAILED on the aisle."""
+    """After fail_job_and_aisle, a later successful run must not leave PROCESSING_FAILED on the aisle."""
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_repo = InMemoryJobRepo()
     job_repo.save(
@@ -332,7 +332,7 @@ def test_mark_success_clears_stale_aisle_error_fields_after_previous_failure() -
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._mark_success("j-retry-ok", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    executor._state.mark_success("j-retry-ok", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
     updated_aisle = aisle_repo.get_by_id("aisle-1")
     assert updated_aisle is not None
     assert updated_aisle.status == AisleStatus.PROCESSED
@@ -392,7 +392,7 @@ def test_mark_success_sets_operational_job_id_for_production_inventory() -> None
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._mark_success("j-prod-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    executor._state.mark_success("j-prod-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
     saved = aisle_repo.get_by_id("aisle-1")
     assert saved is not None
     assert saved.operational_job_id == "j-prod-1"
@@ -450,7 +450,7 @@ def test_mark_success_overwrites_operational_job_id_on_subsequent_production_run
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._mark_success("j-second", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    executor._state.mark_success("j-second", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
     assert aisle_repo.get_by_id("aisle-1") is not None
     assert aisle_repo.get_by_id("aisle-1").operational_job_id == "j-second"
 
@@ -506,7 +506,7 @@ def test_mark_success_does_not_set_operational_job_id_for_test_inventory() -> No
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._mark_success("j-test-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    executor._state.mark_success("j-test-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
     saved = aisle_repo.get_by_id("aisle-1")
     assert saved is not None
     assert saved.operational_job_id is None
@@ -563,7 +563,7 @@ def test_failed_job_does_not_update_operational_job_id() -> None:
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._fail_job_and_aisle("j-fail-1", aisle, "boom")
+    executor._state.fail_job_and_aisle("j-fail-1", aisle, "boom")
     saved = aisle_repo.get_by_id("aisle-1")
     assert saved is not None
     assert saved.status == AisleStatus.FAILED
@@ -609,7 +609,7 @@ def test_mark_running_transitions_starting_job_to_running() -> None:
         raw_label_repo=noop,
     )
 
-    executor._mark_running("job-running", aisle, now)
+    executor._state.mark_running("job-running", aisle, now)
 
     updated = job_repo.get_by_id("job-running")
     assert updated is not None
@@ -654,13 +654,13 @@ def test_update_runtime_status_only_resets_step_started_at_when_stage_or_substep
     )
 
     clock.set_now(later)
-    executor._update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_open")
+    executor._state.update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_open")
     unchanged = job_repo.get_by_id("job-steps")
     assert unchanged is not None
     assert unchanged.current_step_started_at == now
 
     clock.set_now(much_later)
-    executor._update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_decode")
+    executor._state.update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_decode")
     changed = job_repo.get_by_id("job-steps")
     assert changed is not None
     assert changed.current_step_started_at == much_later
@@ -698,7 +698,7 @@ def test_heartbeat_reads_job_once_and_updates_timestamp() -> None:
         raw_label_repo=noop,
     )
 
-    updated = executor._heartbeat("job-heartbeat")
+    updated = executor._state.heartbeat("job-heartbeat")
 
     assert updated is not None
     assert job_repo.get_calls == 1
@@ -749,7 +749,7 @@ def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
         "prompt_key": "global_v21",
     }
     report_path = Path("/tmp/run/hybrid_report.json")
-    executor._mark_success("j-attribution", aisle, report_path, run_metadata=run_metadata)
+    executor._state.mark_success("j-attribution", aisle, report_path, run_metadata=run_metadata)
 
     updated = job_repo.get_by_id("j-attribution")
     assert updated is not None
@@ -815,7 +815,7 @@ def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
         "prompt_key": "global_v21",
     }
     report_path = Path("/tmp/run/hybrid_report.json")
-    executor._mark_success("j2", aisle, report_path, run_metadata=run_metadata)
+    executor._state.mark_success("j2", aisle, report_path, run_metadata=run_metadata)
 
     updated = job_repo.get_by_id("j2")
     assert updated is not None
@@ -908,7 +908,7 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
         instructions=["Use references as context."],
     )
 
-    with patch.object(executor, "_build_analysis_context", return_value=failing_context):
+    with patch.object(executor._pipeline_runner, "build_analysis_context", return_value=failing_context):
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
             mock_settings.return_value.output_dir = str(base_path)
             handled = executor.execute(base_path, job_id)
@@ -1029,7 +1029,7 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
             captured["analysis_context"] = kwargs.get("analysis_context")
             return PipelineRunResult(exit_code=1, run_metadata=None)
 
-    with patch.object(executor, "_build_analysis_context", return_value=unresolved_context):
+    with patch.object(executor._pipeline_runner, "build_analysis_context", return_value=unresolved_context):
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
             mock_settings.return_value.output_dir = str(base_path)
             with patch("src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline", return_value=FakePipeline()):
@@ -1120,7 +1120,7 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         inventory_visual_reference_repo=reference_repo,
         raw_label_repo=NoopRepo(),
     )
-    executor._mark_success("job-a", aisle, Path("/tmp/run-a/hybrid_report.json"), run_metadata=run_metadata_a)
+    executor._state.mark_success("job-a", aisle, Path("/tmp/run-a/hybrid_report.json"), run_metadata=run_metadata_a)
 
     delete_use_case.execute("inv-1", refs_a[0].id)
     refs_b = upload_use_case.execute(
@@ -1148,7 +1148,7 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         updated_at=now,
     )
     job_repo.save(job_b)
-    executor._mark_success("job-b", aisle, Path("/tmp/run-b/hybrid_report.json"), run_metadata=run_metadata_b)
+    executor._state.mark_success("job-b", aisle, Path("/tmp/run-b/hybrid_report.json"), run_metadata=run_metadata_b)
 
     stored_job_a = job_repo.get_by_id("job-a")
     stored_job_b = job_repo.get_by_id("job-b")
@@ -1250,8 +1250,8 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
                     exit_code=0, run_metadata=None
                 )
                 with patch.object(
-                    executor,
-                    "_build_analysis_context",
+                    executor._pipeline_runner,
+                    "build_analysis_context",
                     return_value=AnalysisContext(
                         primary_evidence=[],
                         visual_references=[],
@@ -1359,8 +1359,8 @@ def test_execute_rejects_running_status_reentry() -> None:
                     exit_code=0, run_metadata=None
                 )
                 with patch.object(
-                    executor,
-                    "_build_analysis_context",
+                    executor._pipeline_runner,
+                    "build_analysis_context",
                     return_value=AnalysisContext(
                         primary_evidence=[],
                         visual_references=[],
@@ -1464,8 +1464,8 @@ def test_execute_cooperatively_cancels_when_cancel_requested_detected(tmp_path: 
             ) as mock_pipeline_cls:
                 mock_pipeline_cls.return_value.process_video.side_effect = process_video_side_effect
                 with patch.object(
-                    executor,
-                    "_build_analysis_context",
+                    executor._pipeline_runner,
+                    "build_analysis_context",
                     return_value=AnalysisContext(
                         primary_evidence=[],
                         visual_references=[],
@@ -1607,8 +1607,8 @@ def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
                         exit_code=0, run_metadata=None
                     )
                     with patch.object(
-                        executor,
-                        "_build_analysis_context",
+                        executor._pipeline_runner,
+                        "build_analysis_context",
                         return_value=AnalysisContext(
                             primary_evidence=[],
                             visual_references=[],
@@ -1720,8 +1720,8 @@ def test_execute_durable_upload_failure_after_persist_partial_finalization_expli
                         exit_code=0, run_metadata=None
                     )
                     with patch.object(
-                        executor,
-                        "_build_analysis_context",
+                        executor._pipeline_runner,
+                        "build_analysis_context",
                         return_value=AnalysisContext(
                             primary_evidence=[],
                             visual_references=[],
@@ -1817,8 +1817,8 @@ def test_execute_rejects_mixed_video_and_photo_assets() -> None:
     with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
         mock_settings.return_value.output_dir = str(base_path)
         with patch.object(
-            executor,
-            "_build_analysis_context",
+            executor._pipeline_runner,
+            "build_analysis_context",
             return_value=AnalysisContext(
                 primary_evidence=[],
                 visual_references=[],

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import publish_worker_durable_artifacts
 from src.infrastructure.storage.artifact_store import ArtifactStore
