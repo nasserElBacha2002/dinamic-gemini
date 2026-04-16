@@ -14,8 +14,8 @@ from src.pipeline.providers.registry import (
     UnknownPipelineProviderError,
     registered_pipeline_provider_keys,
     resolve_llm_executor,
-    resolve_llm_executor_for_context,
 )
+from src.pipeline.services.pipeline_provider_resolver import resolve_llm_executor_for_context
 
 
 def test_resolve_gemini_returns_sdk_adapter() -> None:

@@ -6,10 +6,9 @@ never be imported from ``src/``.
 
 **Injection:** Patch ``resolve_llm_executor_for_context`` on
 ``src.pipeline.services.pipeline_provider_resolver`` (see ``patch_hybrid_resolve_llm_executor``), or patch
-``src.pipeline.providers.registry.resolve_llm_executor`` for tests that call the registry
-directly. After patching the registry, call ``registry.resolve_llm_executor`` on the **module**
-(``from src.pipeline.providers import registry as reg``) — do not ``from registry import
-resolve_llm_executor`` at import time or you will keep a stale function reference.
+``src.pipeline.providers.registry.resolve_llm_executor`` on the **registry module object** for tests
+that bypass job-level resolution (``from src.pipeline.providers import registry as reg`` — do not
+``from registry import resolve_llm_executor`` at import time or you will keep a stale reference).
 
 **Phase 2:** Migrate tests that use ``provider_name="fake"`` / ``LLM_PROVIDER=fake`` to this
 boundary instead of the transitional ``FakeProvider``.

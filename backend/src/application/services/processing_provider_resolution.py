@@ -22,7 +22,7 @@ from src.pipeline.providers.definitions import (
     pipeline_provider_spec,
     registered_pipeline_provider_keys_from_definitions,
 )
-from src.pipeline.providers.registry import normalize_pipeline_provider_key
+from src.pipeline.provider_keys import normalize_pipeline_provider_key
 
 
 def resolve_start_processing_request(

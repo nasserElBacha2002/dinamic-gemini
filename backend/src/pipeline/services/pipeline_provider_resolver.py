@@ -1,5 +1,5 @@
 """
-Phase 3 / 5 — explicit pipeline provider resolution boundary.
+Phase 3 / 8 — explicit pipeline provider resolution boundary.
 
 Centralizes how a worker run chooses the logical LLM vendor (Gemini, OpenAI, Claude, DeepSeek)
 and the corresponding :class:`~src.pipeline.ports.llm_execution.LlmGlobalAnalysisExecutor`.
@@ -8,17 +8,17 @@ and the corresponding :class:`~src.pipeline.ports.llm_execution.LlmGlobalAnalysi
 this module does not add a parallel giant protocol — see ``LlmGlobalAnalysisExecutor`` in
 ``src.pipeline.ports.llm_execution``.
 
-``resolve_llm_executor_for_context`` is the canonical entrypoint (tests patch this symbol on this
-module to inject offline executors).
+:func:`resolve_llm_executor_for_context` is the **only** implementation of job-level provider choice
++ executor resolution (tests patch this symbol on this module to inject offline executors).
 
 Adapter registration (which class implements ``gemini`` / ``openai`` / …) remains in
-:mod:`src.pipeline.providers.registry` — this module only composes **job-level provider choice**
-+ settings into an executor instance.
+:mod:`src.pipeline.providers.registry` — this module delegates to ``registry.resolve_llm_executor``
+after normalizing the logical key.
 
-**Phase 5 / 7 note:** :func:`resolve_llm_executor_for_context` keeps ``settings: Any`` so tests and
-the LLM harness can pass duck-typed objects. ``normalize_pipeline_provider_key`` reads only
+**Typing note:** :func:`resolve_llm_executor_for_context` keeps ``settings: Any`` so tests and the
+LLM harness can pass duck-typed objects. ``normalize_pipeline_provider_key`` reads only
 ``llm_provider``; each adapter’s ``execute`` may read a wider slice of real ``AppSettings`` fields
-(pricing, API keys), so a narrow Protocol here would be misleading rather than helpful.
+(pricing, API keys), so a narrow Protocol on this boundary would be misleading rather than helpful.
 """
 
 from __future__ import annotations

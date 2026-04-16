@@ -1,22 +1,16 @@
 """
-Analysis provider registry — resolves ``LlmGlobalAnalysisExecutor`` by logical provider name (Phase 4).
+Analysis provider registry — resolves ``LlmGlobalAnalysisExecutor`` by logical provider name.
 
-**Compatibility bridge (Phase 3):** ``resolve_llm_executor_for_context`` below is **not** implemented
-here. The canonical implementation lives in
-:mod:`src.pipeline.services.pipeline_provider_resolver` (single place for logic, tests, and
-monkeypatch targets). This module **delegates** to that implementation so existing imports of
-``src.pipeline.providers.registry.resolve_llm_executor_for_context`` keep working.
+**Canonical job-level resolution** (job provider + settings → executor + key) lives in
+:mod:`src.pipeline.services.pipeline_provider_resolver` — import
+:func:`~src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context` or
+:class:`~src.pipeline.services.pipeline_provider_resolver.PipelineProviderResolver` from there.
 
-**Guidance for new code:** import and call
-``src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context`` (or
-:class:`~src.pipeline.services.pipeline_provider_resolver.PipelineProviderResolver`) directly.
-``registry.resolve_llm_executor_for_context`` remains a thin delegate for legacy imports only
-(Phase 5 — no second resolution implementation).
+This module owns **adapter registration** only: ``resolve_llm_executor(provider_key, settings)``
+returns the vendor adapter implementing :class:`~src.pipeline.ports.llm_execution.LlmGlobalAnalysisExecutor`.
 
-Resolution rules
-----------------
-* ``provider_name`` on the job (``RunContext.pipeline_provider_name``) wins when set.
-* Otherwise ``settings.llm_provider`` is used (CLI / dev / legacy config).
+Resolution rules (for ``resolve_llm_executor``)
+-----------------------------------------------
 * Unknown keys raise ``UnknownPipelineProviderError`` (no silent vendor fallback).
 
 Registered providers
@@ -31,7 +25,7 @@ Generic pipeline code must depend only on ``LlmGlobalAnalysisExecutor``, not on 
 Default analysis strategy
 -------------------------
 ``default_analysis_provider()`` returns ``HybridGlobalAnalysisStrategy`` when the orchestrator is
-constructed without injection. The LLM vendor is chosen at execute time via the registry.
+constructed without injection. The LLM vendor is chosen at execute time via the resolver + registry.
 """
 
 from __future__ import annotations
@@ -85,22 +79,6 @@ def resolve_llm_executor(provider_key: str, settings: Any) -> LlmGlobalAnalysisE
     raise UnknownPipelineProviderError(
         f"Unknown pipeline provider {provider_key!r}. Known: {sorted(_KNOWN_KEYS)}"
     )
-
-
-def resolve_llm_executor_for_context(
-    pipeline_provider_name: Optional[str],
-    settings: Any,
-) -> tuple[LlmGlobalAnalysisExecutor, str]:
-    """Backward-compatible delegate to :mod:`src.pipeline.services.pipeline_provider_resolver`.
-
-    Behavior is identical to calling ``resolve_llm_executor_for_context`` in that module.
-    Prefer importing from the resolver module in new code (see module docstring above).
-    """
-    from src.pipeline.services.pipeline_provider_resolver import (
-        resolve_llm_executor_for_context as resolve_for_context,
-    )
-
-    return resolve_for_context(pipeline_provider_name, settings)
 
 
 def default_analysis_provider() -> AnalysisProvider:
