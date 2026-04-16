@@ -118,8 +118,8 @@ def test_post_review_position_not_found_returns_404() -> None:
         app.dependency_overrides.clear()
 
 
-def test_post_review_non_operational_run_succeeds_when_job_id_matches_row() -> None:
-    """Run-scoped position is editable when request job_id matches row (operational pointer irrelevant)."""
+def test_post_review_non_operational_job_returns_204() -> None:
+    """Run-scoped rows are editable without requiring promotion to operational first."""
     client = TestClient(app)
     repos = _seed_repos()
     aisle = repos["aisle_repo"].get_by_id("aisle-review-1")
@@ -161,62 +161,63 @@ def test_post_review_run_scoped_missing_job_id_returns_422() -> None:
             "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
             json={"action_type": "confirm"},
         )
-        assert resp.status_code == 422
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_post_review_run_scoped_job_id_mismatch_returns_422() -> None:
-    client = TestClient(app)
-    repos = _seed_repos()
-    pos = repos["position_repo"].get_by_id("pos-review-1")
-    assert pos is not None
-    repos["position_repo"].save(replace(pos, job_id="job-a"))
-    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
-    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
-    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
-    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
-    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
-    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
-    try:
-        resp = client.post(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
-            json={"action_type": "confirm", "job_id": "job-b"},
-        )
-        assert resp.status_code == 422
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_post_review_run_scoped_whitespace_trimmed_job_id_returns_204() -> None:
-    """Whitespace around request job_id is accepted when it matches the row after trim."""
-    client = TestClient(app)
-    repos = _seed_repos()
-    pos = repos["position_repo"].get_by_id("pos-review-1")
-    assert pos is not None
-    repos["position_repo"].save(replace(pos, job_id="job-trim"))
-    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
-    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
-    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
-    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
-    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
-    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
-    try:
-        resp = client.post(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
-            json={"action_type": "confirm", "job_id": "  job-trim  "},
-        )
         assert resp.status_code == 204
     finally:
         app.dependency_overrides.clear()
 
 
-def test_post_review_delete_run_scoped_missing_job_id_returns_422() -> None:
+def test_post_review_run_scoped_edit_does_not_mutate_legacy_position() -> None:
     client = TestClient(app)
     repos = _seed_repos()
-    pos = repos["position_repo"].get_by_id("pos-review-1")
-    assert pos is not None
-    repos["position_repo"].save(replace(pos, job_id="job-del-scoped"))
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    legacy_position = Position(
+        id="pos-legacy",
+        aisle_id="aisle-review-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.7,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        job_id=None,
+    )
+    legacy_product = ProductRecord(
+        id="prod-legacy",
+        position_id="pos-legacy",
+        sku="SKU-LEGACY",
+        description="Legacy product",
+        detected_quantity=3,
+        corrected_quantity=None,
+        confidence=0.8,
+        created_at=now,
+        updated_at=now,
+    )
+    run_position = Position(
+        id="pos-run",
+        aisle_id="aisle-review-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        job_id="job-trial-1",
+    )
+    run_product = ProductRecord(
+        id="prod-run",
+        position_id="pos-run",
+        sku="SKU-RUN",
+        description="Run product",
+        detected_quantity=4,
+        corrected_quantity=None,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
+    )
+    repos["position_repo"].save(legacy_position)
+    repos["product_repo"].save(legacy_product)
+    repos["position_repo"].save(run_position)
+    repos["product_repo"].save(run_product)
     app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
     app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
     app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
@@ -225,29 +226,15 @@ def test_post_review_delete_run_scoped_missing_job_id_returns_422() -> None:
     app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
     try:
         resp = client.post(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
-            json={"action_type": "delete_position"},
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-run/reviews",
+            json={"action_type": "confirm"},
         )
-        assert resp.status_code == 422
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_post_review_legacy_rejects_spurious_job_id_returns_422() -> None:
-    client = TestClient(app)
-    repos = _seed_repos()
-    app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
-    app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
-    app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
-    app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
-    app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
-    app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
-    try:
-        resp = client.post(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
-            json={"action_type": "confirm", "job_id": "any-job"},
-        )
-        assert resp.status_code == 422
+        assert resp.status_code == 204
+        run_after = repos["position_repo"].get_by_id("pos-run")
+        legacy_after = repos["position_repo"].get_by_id("pos-legacy")
+        assert run_after is not None and run_after.status == PositionStatus.REVIEWED
+        assert legacy_after is not None and legacy_after.status == PositionStatus.DETECTED
+        assert legacy_after.needs_review is True
     finally:
         app.dependency_overrides.clear()
 

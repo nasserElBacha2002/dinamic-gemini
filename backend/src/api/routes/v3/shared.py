@@ -39,7 +39,6 @@ from src.application.errors import (
     PositionNotFoundError,
     ProductNotFoundError,
     PositionDeletedError,
-    ReviewMutationNotAllowedError,
 )
 from src.application.use_cases.get_aisle_processing_status import AisleProcessingStatusResult
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
@@ -237,8 +236,6 @@ def review_exception_to_http(e: Exception) -> HTTPException:
         return HTTPException(status_code=404, detail="Product not found or does not belong to this position")
     if isinstance(e, PositionDeletedError):
         return HTTPException(status_code=409, detail=str(e))
-    if isinstance(e, ReviewMutationNotAllowedError):
-        return HTTPException(status_code=403, detail=str(e))
     if isinstance(e, ValueError):
         return HTTPException(status_code=422, detail=str(e))
     raise e
@@ -259,7 +256,6 @@ def handle_confirm(
         PositionNotFoundError,
         ValueError,
         PositionDeletedError,
-        ReviewMutationNotAllowedError,
     ) as e:
         raise review_exception_to_http(e)
 
@@ -289,7 +285,6 @@ def handle_update_quantity(
         ProductNotFoundError,
         ValueError,
         PositionDeletedError,
-        ReviewMutationNotAllowedError,
     ) as e:
         raise review_exception_to_http(e)
 
@@ -321,7 +316,6 @@ def handle_update_sku(
         ProductNotFoundError,
         ValueError,
         PositionDeletedError,
-        ReviewMutationNotAllowedError,
     ) as e:
         raise review_exception_to_http(e)
 
@@ -350,7 +344,6 @@ def handle_update_position_code(
         PositionNotFoundError,
         ValueError,
         PositionDeletedError,
-        ReviewMutationNotAllowedError,
     ) as e:
         raise review_exception_to_http(e)
 
@@ -370,7 +363,6 @@ def handle_mark_unknown(
         PositionNotFoundError,
         ValueError,
         PositionDeletedError,
-        ReviewMutationNotAllowedError,
     ) as e:
         raise review_exception_to_http(e)
 
@@ -390,7 +382,6 @@ def handle_mark_image_mismatch(
         PositionNotFoundError,
         ValueError,
         PositionDeletedError,
-        ReviewMutationNotAllowedError,
     ) as e:
         raise review_exception_to_http(e)
 
@@ -410,7 +401,6 @@ def handle_delete_position(
         PositionNotFoundError,
         ValueError,
         PositionDeletedError,
-        ReviewMutationNotAllowedError,
     ) as e:
         raise review_exception_to_http(e)
 

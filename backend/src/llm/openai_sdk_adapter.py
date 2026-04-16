@@ -10,6 +10,7 @@ HTTP APIs (e.g. DeepSeek) without changing logical ``LLMResponse.provider`` or m
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import logging
@@ -47,9 +48,22 @@ logger = logging.getLogger(__name__)
 _JSON_OBJECT_SUFFIX = (
     "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
     'Root keys: "total_entities_detected" (non-negative integer) and "entities" (array). '
-    "Each entity must follow the v2.1 schema from the instructions above: entity_type "
-    "(PALLET|EMPTY_PALLET|LOOSE_BOXES), model_entity_id (string), confidence (0..1), "
-    "has_boxes (boolean), and optional bbox/quantity fields as specified."
+    "Each entity must include these canonical keys (use null when unknown): "
+    "entity_type, model_entity_id, source_image_id, confidence, has_boxes, "
+    "position_barcode, internal_code, position_label_bbox, product_label_bbox, "
+    "product_label_quantity. If a product label/SKU code is visible, put it in internal_code. "
+    "If a position/location barcode is visible, put it in position_barcode. "
+    "If quantity is explicitly printed on the product label, put it in product_label_quantity. "
+    "If the product-label region is visible, provide product_label_bbox as normalized [x1,y1,x2,y2]. "
+    "Do not guess. Do not omit canonical keys for detected entities. "
+    "Compatibility keys quantity/bbox may appear, but canonical fields are authoritative."
+)
+_OPENAI_CANONICAL_ENTITY_KEYS: tuple[str, ...] = (
+    "source_image_id",
+    "position_barcode",
+    "internal_code",
+    "product_label_quantity",
+    "product_label_bbox",
 )
 
 
@@ -233,6 +247,15 @@ class OpenAiSdkAdapter:
         if request.context_instruction and str(request.context_instruction).strip():
             prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
         prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
+        prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+        prompt_preview = prompt_text[:240].replace("\n", " ")
+        logger.debug(
+            "%s prompt_contract hash=%s preview=%r requested_keys=%s",
+            v.log_label,
+            prompt_hash,
+            prompt_preview,
+            _OPENAI_CANONICAL_ENTITY_KEYS,
+        )
 
         content: List[Dict[str, Any]] = [{"type": "text", "text": prompt_text}]
         ctx_imgs = list(request.context_images) if request.context_images else []
@@ -330,6 +353,27 @@ class OpenAiSdkAdapter:
                 message=f"Invalid JSON: {e}",
                 details={"provider": prov},
             ) from e
+
+        if logger.isEnabledFor(logging.DEBUG):
+            entities_raw = data.get("entities")
+            if isinstance(entities_raw, list):
+                before_presence: Dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
+                for ent in entities_raw:
+                    if not isinstance(ent, dict):
+                        continue
+                    for key in _OPENAI_CANONICAL_ENTITY_KEYS:
+                        val = ent.get(key)
+                        if val is None:
+                            continue
+                        if isinstance(val, str) and not val.strip():
+                            continue
+                        before_presence[key] += 1
+                logger.debug(
+                    "%s canonical_key_presence_before_normalize entities=%d presence=%s",
+                    v.log_label,
+                    len(entities_raw),
+                    before_presence,
+                )
 
         total = data.get("total_entities_detected")
         entities = data.get("entities") or []

@@ -300,7 +300,7 @@ def test_confirm_position_succeeds_when_request_job_matches_run_scoped_row() -> 
     assert updated.status == PositionStatus.REVIEWED
 
 
-def test_confirm_position_non_operational_job_succeeds_when_job_id_matches_row() -> None:
+def test_confirm_position_non_operational_job_is_editable() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
     aisle = Aisle(
@@ -335,14 +335,14 @@ def test_confirm_position_non_operational_job_succeeds_when_job_id_matches_row()
         clock=FixedClock(now),
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
     )
-    use_case.execute("inv-1", "aisle-1", "pos-1", "job-other")
+    use_case.execute("inv-1", "aisle-1", "pos-1")
     updated = position_repo.get_by_id("pos-1")
     assert updated is not None
     assert updated.status == PositionStatus.REVIEWED
 
 
-def test_confirm_position_run_scoped_requires_job_id() -> None:
-    """Run-scoped row rejects missing job_id."""
+def test_confirm_position_legacy_aisle_allows_scoped_row() -> None:
+    """Legacy aisle (no operational_job_id): scoped rows are also editable."""
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
     aisle = Aisle("aisle-1", "inv-1", "A01", AisleStatus.CREATED, now, now)
@@ -369,103 +369,10 @@ def test_confirm_position_run_scoped_requires_job_id() -> None:
         clock=FixedClock(now),
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
     )
-    with pytest.raises(ValueError, match="job_id is required"):
-        use_case.execute("inv-1", "aisle-1", "pos-1", None)
-
-
-def test_confirm_position_run_scoped_rejects_wrong_job_id() -> None:
-    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
-    aisle = Aisle("aisle-1", "inv-1", "A01", AisleStatus.CREATED, now, now)
-    position = Position(
-        id="pos-1",
-        aisle_id="aisle-1",
-        status=PositionStatus.DETECTED,
-        confidence=0.9,
-        needs_review=True,
-        primary_evidence_id=None,
-        created_at=now,
-        updated_at=now,
-        job_id="job-x",
-    )
-    inv_repo = StubInventoryRepo(inv)
-    aisle_repo = StubAisleRepo(aisle)
-    position_repo = StubPositionRepo(position)
-    review_repo = StubReviewRepo()
-    use_case = ConfirmPositionUseCase(
-        inventory_repo=inv_repo,
-        aisle_repo=aisle_repo,
-        position_repo=position_repo,
-        review_repo=review_repo,
-        clock=FixedClock(now),
-        aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
-    )
-    with pytest.raises(ValueError, match="does not match"):
-        use_case.execute("inv-1", "aisle-1", "pos-1", "job-wrong")
-
-
-def test_confirm_position_run_scoped_accepts_whitespace_padded_request_job_id() -> None:
-    """Request job_id is normalized (trim); matches storage row after strip."""
-    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
-    aisle = Aisle("aisle-1", "inv-1", "A01", AisleStatus.CREATED, now, now)
-    position = Position(
-        id="pos-1",
-        aisle_id="aisle-1",
-        status=PositionStatus.DETECTED,
-        confidence=0.9,
-        needs_review=True,
-        primary_evidence_id=None,
-        created_at=now,
-        updated_at=now,
-        job_id="job-x",
-    )
-    inv_repo = StubInventoryRepo(inv)
-    aisle_repo = StubAisleRepo(aisle)
-    position_repo = StubPositionRepo(position)
-    review_repo = StubReviewRepo()
-    use_case = ConfirmPositionUseCase(
-        inventory_repo=inv_repo,
-        aisle_repo=aisle_repo,
-        position_repo=position_repo,
-        review_repo=review_repo,
-        clock=FixedClock(now),
-        aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
-    )
-    use_case.execute("inv-1", "aisle-1", "pos-1", "  job-x  ")
+    use_case.execute("inv-1", "aisle-1", "pos-1")
     updated = position_repo.get_by_id("pos-1")
     assert updated is not None
     assert updated.status == PositionStatus.REVIEWED
-
-
-def test_confirm_position_legacy_rejects_spurious_job_id() -> None:
-    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
-    aisle = Aisle("aisle-1", "inv-1", "A01", AisleStatus.CREATED, now, now)
-    position = Position(
-        id="pos-1",
-        aisle_id="aisle-1",
-        status=PositionStatus.DETECTED,
-        confidence=0.9,
-        needs_review=True,
-        primary_evidence_id=None,
-        created_at=now,
-        updated_at=now,
-    )
-    inv_repo = StubInventoryRepo(inv)
-    aisle_repo = StubAisleRepo(aisle)
-    position_repo = StubPositionRepo(position)
-    review_repo = StubReviewRepo()
-    use_case = ConfirmPositionUseCase(
-        inventory_repo=inv_repo,
-        aisle_repo=aisle_repo,
-        position_repo=position_repo,
-        review_repo=review_repo,
-        clock=FixedClock(now),
-        aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
-    )
-    with pytest.raises(ValueError, match="must be omitted"):
-        use_case.execute("inv-1", "aisle-1", "pos-1", "job-x")
 
 
 def test_confirm_position_marks_aisle_completed_and_reconciles_inventory_when_review_done() -> None:

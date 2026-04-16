@@ -60,8 +60,10 @@ _OPENAI_FAMILY_CONSERVATIVE_ALIASES = frozenset({"openai"})
 _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES = frozenset({"deepseek"})
 _CONSERVATIVE_QTY_PROMOTE_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
 _EXTENT_BBOX_FROM_GENERIC_BBOX_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
+_INTERNAL_CODE_ALIAS_PROMOTE_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
 
 _ALIAS_KEYS: tuple[str, ...] = ("quantity", "qty", "detected_quantity")
+_OPENAI_INTERNAL_CODE_ALIAS_KEYS: tuple[str, ...] = ("product_label", "label", "product_code")
 
 # ``product_label`` → ``internal_code`` only when string looks like a SKU / code (not noisy OCR).
 _INTERNAL_CODE_MAX_LEN = 48
@@ -194,6 +196,29 @@ def _maybe_promote_conservative_quantity_alias(
             break
 
 
+def _maybe_promote_openai_internal_code_alias(
+    entity: Dict[str, Any],
+    provider_family: str,
+    mapped: List[str],
+) -> None:
+    """OpenAI/DeepSeek conservative fallback: map label-like aliases to canonical ``internal_code``."""
+    if provider_family not in _INTERNAL_CODE_ALIAS_PROMOTE_FAMILIES:
+        return
+    if entity.get("internal_code") not in (None, ""):
+        return
+    for alt in _OPENAI_INTERNAL_CODE_ALIAS_KEYS:
+        if alt not in entity:
+            continue
+        candidate = _safe_str(entity.get(alt))
+        if candidate is None:
+            continue
+        if not _is_valid_internal_code(candidate):
+            continue
+        entity["internal_code"] = candidate
+        mapped.append(f"{alt}->internal_code(conservative_openai)")
+        break
+
+
 def _maybe_capture_extent_bbox(
     entity: Dict[str, Any],
     provider_family: str,
@@ -239,6 +264,7 @@ def _normalize_entity(
     if provider_family in _ALIAS_PROMOTE_FAMILIES:
         _promote_quantity_bbox_aliases(out, mapped_accumulator)
     _maybe_promote_conservative_quantity_alias(out, provider_family, mapped_accumulator)
+    _maybe_promote_openai_internal_code_alias(out, provider_family, mapped_accumulator)
     _maybe_capture_extent_bbox(out, provider_family, mapped_accumulator)
     _strip_alias_and_bbox_residuals(out)
 
