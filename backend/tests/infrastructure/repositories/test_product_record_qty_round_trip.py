@@ -122,3 +122,30 @@ def test_product_record_list_by_position_returns_saved_with_qty_fields() -> None
     assert by_position[0].qty_source == "inferred"
     assert by_position[0].qty_parse_status == "zero"
     assert by_position[0].raw_qty == 0
+
+
+def test_memory_list_by_position_ids_matches_union_of_list_by_position() -> None:
+    """Batch port returns the same multiset as per-position reads (Phase 3)."""
+    repo = MemoryProductRecordRepository()
+    now = _now()
+    for pid, sku in (("pos-a", "S-A"), ("pos-b", "S-B"), ("pos-a", "S-A2")):
+        repo.save(
+            ProductRecord(
+                id=f"prod-{pid}-{sku}",
+                position_id=pid,
+                sku=sku,
+                description="",
+                detected_quantity=1,
+                confidence=0.9,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    batch = list(repo.list_by_position_ids(["pos-a", "pos-b"]))
+    union = list(repo.list_by_position("pos-a")) + list(repo.list_by_position("pos-b"))
+    assert {p.id for p in batch} == {p.id for p in union}
+    assert repo.list_by_position_ids(()) == []
+
+
+def test_memory_list_by_position_ids_empty_ids_returns_empty() -> None:
+    assert MemoryProductRecordRepository().list_by_position_ids([]) == []

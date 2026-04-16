@@ -11,8 +11,9 @@ Phase 2: raw rows are limited to one result context (**explicit** ``job_id`` →
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, DefaultDict, List, Optional, Tuple
 
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import (
@@ -58,7 +59,8 @@ class ListAislePositionsCommand:
 @dataclass(frozen=True)
 class ListAislePositionsResult:
     positions: tuple[Position, ...]
-    #: Display-primary product per ``positions`` row (same order); ``None`` when no product rows.
+    #: Display-primary product per ``positions`` row (same length and order as ``positions``).
+    #: Invariant: ``len(primary_products) == len(positions)`` (enforced when building results).
     primary_products: tuple[Optional[ProductRecord], ...]
     total_items: int
     page: int
@@ -192,10 +194,15 @@ class ListAislePositionsUseCase:
         start = (page - 1) * page_size
         page_rows = consolidated_sorted[start : start + page_size]
 
-        primaries: list[Optional[ProductRecord]] = []
-        for p in page_rows:
-            products = list(self._product_record_repo.list_by_position(p.id))
-            primaries.append(select_display_primary_product(products))
+        primaries: List[Optional[ProductRecord]] = []
+        if page_rows:
+            batch = self._product_record_repo.list_by_position_ids([p.id for p in page_rows])
+            by_position: DefaultDict[str, List[ProductRecord]] = defaultdict(list)
+            for pr in batch:
+                by_position[pr.position_id].append(pr)
+            for p in page_rows:
+                primaries.append(select_display_primary_product(by_position.get(p.id, ())))
+        assert len(page_rows) == len(primaries)
 
         return ListAislePositionsResult(
             positions=tuple(page_rows),

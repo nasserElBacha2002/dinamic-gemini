@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Sequence
 
 from src.application.ports.contracts import ReviewQueueQuery
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
@@ -18,12 +19,27 @@ from src.infrastructure.repositories.memory_product_record_repository import Mem
 UTC = timezone.utc
 
 
+class CountingProductRepo(MemoryProductRecordRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.list_by_position_calls = 0
+        self.list_by_position_ids_calls = 0
+
+    def list_by_position(self, position_id: str) -> Sequence[ProductRecord]:
+        self.list_by_position_calls += 1
+        return super().list_by_position(position_id)
+
+    def list_by_position_ids(self, position_ids: Sequence[str]) -> Sequence[ProductRecord]:
+        self.list_by_position_ids_calls += 1
+        return super().list_by_position_ids(position_ids)
+
+
 def test_review_queue_filters_and_pages() -> None:
     now = datetime(2025, 10, 1, 12, 0, 0, tzinfo=UTC)
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
     pos_repo = MemoryPositionRepository()
-    product_repo = MemoryProductRecordRepository()
+    product_repo = CountingProductRepo()
 
     inv_repo.save(Inventory("inv-a", "Alpha", InventoryStatus.DRAFT, now, now))
     inv_repo.save(Inventory("inv-b", "Beta", InventoryStatus.DRAFT, now, now))
@@ -76,6 +92,8 @@ def test_review_queue_filters_and_pages() -> None:
     assert rows[0].inventory_name == "Beta"
     assert rows[0].aisle_code == "B1"
     assert rows[0].primary_product is None
+    assert product_repo.list_by_position_ids_calls == 1
+    assert product_repo.list_by_position_calls == 0
 
 
 def test_review_queue_out_of_range_page_returns_empty_slice() -> None:

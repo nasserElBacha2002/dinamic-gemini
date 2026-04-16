@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
+from typing import Sequence
 
 from src.application.use_cases.list_aisle_positions import (
     ListAislePositionsCommand,
@@ -19,6 +20,23 @@ from src.infrastructure.repositories.memory_inventory_repository import MemoryIn
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+
+
+class CountingProductRepo(MemoryProductRecordRepository):
+    """Tracks repository calls — Phase 3 list path must batch-load products."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.list_by_position_calls = 0
+        self.list_by_position_ids_calls = 0
+
+    def list_by_position(self, position_id: str) -> Sequence[ProductRecord]:
+        self.list_by_position_calls += 1
+        return super().list_by_position(position_id)
+
+    def list_by_position_ids(self, position_ids: Sequence[str]) -> Sequence[ProductRecord]:
+        self.list_by_position_ids_calls += 1
+        return super().list_by_position_ids(position_ids)
 
 
 def _repos():
@@ -277,3 +295,53 @@ def test_list_aisle_positions_primary_products_align_with_positions() -> None:
     assert prim is not None
     assert prim.sku == "ROW-SKU"
     assert prim.corrected_quantity == 3
+
+
+def test_list_aisle_positions_uses_single_batch_product_query_per_page() -> None:
+    """Phase 3: one list_by_position_ids call for the page, not N list_by_position."""
+    inv_repo, aisle_repo, pos_repo, now = _repos()
+    product_repo = CountingProductRepo()
+    product_repo.save(
+        ProductRecord(
+            id="pr-a",
+            position_id="p1",
+            sku="A",
+            description="",
+            detected_quantity=1,
+            confidence=0.9,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    product_repo.save(
+        ProductRecord(
+            id="pr-b",
+            position_id="p2",
+            sku="B",
+            description="",
+            detected_quantity=2,
+            confidence=0.9,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        ResultContextResolver(MemoryJobRepository()),
+        product_repo,
+        positions_aisle_raw_cap=500,
+    )
+    result = uc.execute(
+        ListAislePositionsCommand(
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            page=1,
+            page_size=50,
+        )
+    )
+    assert len(result.positions) == 2
+    assert len(result.primary_products) == 2
+    assert product_repo.list_by_position_ids_calls == 1
+    assert product_repo.list_by_position_calls == 0
