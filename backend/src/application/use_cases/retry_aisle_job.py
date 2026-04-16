@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from src.application.errors import AisleNotFoundError, ActiveJobExistsError
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
@@ -46,11 +47,12 @@ class RetryAisleJobUseCase:
         self._stale_reconciler = stale_reconciler
 
     def execute(self, command: RetryAisleJobCommand) -> Job:
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None or aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="merged",
+        )
 
         original_job = self._job_repo.get_by_id(command.job_id)
         if original_job is None:

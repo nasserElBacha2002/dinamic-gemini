@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
-from src.application.errors import AisleNotFoundError, InventoryNotFoundError
+from src.application.errors import InventoryNotFoundError
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import (
     AisleRepository,
     FinalCountRepository,
@@ -46,11 +47,12 @@ class GetAisleMergeResultsUseCase:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None or aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="merged",
+        )
         ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=command.job_id)
         records = self._final_count_repo.list_for_scope(
             command.inventory_id, command.aisle_id, job_id=ctx.job_id_for_slice

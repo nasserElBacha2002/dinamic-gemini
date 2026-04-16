@@ -21,11 +21,11 @@ from typing import Any, BinaryIO, List, Sequence
 from uuid import uuid4
 
 from src.application.errors import EmptyUploadError, UnsupportedAssetTypeError
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
 from src.application.ports.clock import Clock
-from src.application.errors import AisleNotFoundError
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 
@@ -96,13 +96,12 @@ class UploadAisleAssetsUseCase:
     ) -> List[SourceAsset]:
         if not files:
             raise EmptyUploadError("At least one file is required")
-        aisle = self._aisle_repo.get_by_id(aisle_id)
-        if aisle is None:
-            raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
-        if aisle.inventory_id != inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {aisle_id} does not belong to inventory {inventory_id}"
-            )
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            detail_style="strict",
+        )
         now = self._clock.now()
         created: List[SourceAsset] = []
         written_paths: List[str] = []

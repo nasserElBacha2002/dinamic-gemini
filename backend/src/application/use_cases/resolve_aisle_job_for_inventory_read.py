@@ -7,12 +7,9 @@ so validation stays in the application layer (Phase 6).
 
 from __future__ import annotations
 
-from src.application.errors import (
-    AisleNotFoundError,
-    JobDoesNotBelongToAisleError,
-    JobNotFoundError,
-)
+from src.application.errors import JobDoesNotBelongToAisleError, JobNotFoundError
 from src.application.ports.repositories import AisleRepository, JobRepository
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.domain.jobs.entities import Job
 
 
@@ -29,11 +26,10 @@ class ResolveAisleJobForInventoryReadUseCase:
             raise JobDoesNotBelongToAisleError(
                 f"Job {job_id} is not scoped to aisle {aisle_id}"
             )
-        aisle = self._aisle_repo.get_by_id(aisle_id)
-        if aisle is None:
-            raise AisleNotFoundError(f"Aisle not found: {aisle_id}")
-        if aisle.inventory_id != inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {aisle_id} does not belong to inventory {inventory_id}"
-            )
+        require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            detail_style="strict",
+        )
         return job

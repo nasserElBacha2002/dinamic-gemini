@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from src.application.errors import (
-    AisleNotFoundError,
     BenchmarkCompareJobsMustDifferError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository, PositionRepository
 from src.application.services.inventory_processing_mode import (
@@ -95,11 +95,12 @@ class CompareAisleRunsUseCase:
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
         require_test_inventory_for_experimental_features(inv)
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None or aisle.inventory_id != command.inventory_id:
-            raise AisleNotFoundError(
-                f"Aisle {command.aisle_id} does not belong to inventory {command.inventory_id}"
-            )
+        aisle = require_aisle_scoped_to_inventory(
+            self._aisle_repo,
+            inventory_id=command.inventory_id,
+            aisle_id=command.aisle_id,
+            detail_style="merged",
+        )
 
         self._validate_job(job_a, command.aisle_id)
         self._validate_job(job_b, command.aisle_id)

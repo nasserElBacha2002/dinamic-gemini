@@ -20,16 +20,14 @@ from fastapi import Depends
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
+    EvidenceRepository,
     InventoryRepository,
     InventoryVisualReferenceRepository,
     JobRepository,
-    SourceAssetRepository,
-)
-from src.application.ports.repositories import (
-    EvidenceRepository,
     PositionRepository,
     ProductRecordRepository,
     ReviewActionRepository,
+    SourceAssetRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.runtime.v3_deps import (
