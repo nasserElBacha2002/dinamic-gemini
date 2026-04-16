@@ -10,19 +10,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from src.application.dto.analytics_dto import AnalyticsFilters
 from src.application.errors import (
     AisleNotFoundError,
+    AnalyticsScopeValidationError,
     BenchmarkCompareJobsMustDifferError,
+    BenchmarkRequiresTestInventoryError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
-    BenchmarkRequiresTestInventoryError,
 )
-from src.application.ports.repositories import AisleRepository
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
 from src.auth.dependencies import get_current_admin
 
 from src.api.dependencies import (
-    get_aisle_repo,
     get_analytics_query_service,
     get_compare_aisle_runs_use_case,
 )
@@ -75,20 +74,24 @@ def _filters(
     return AnalyticsFilters(date_from=df, date_to=dt, inventory_id=inv, aisle_id=aid)
 
 
-def _validate_analytics_scope(f: AnalyticsFilters, aisle_repo: AisleRepository) -> None:
-    if f.aisle_id and f.inventory_id:
-        aisle = aisle_repo.get_by_id(f.aisle_id)
-        if aisle is None or aisle.inventory_id != f.inventory_id:
-            raise HTTPException(
-                status_code=422,
-                detail="aisle_id does not belong to the given inventory_id",
-            )
+def _analytics_filters_validated(
+    svc: AnalyticsQueryService,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    inventory_id: Optional[str],
+    aisle_id: Optional[str],
+) -> AnalyticsFilters:
+    f = _filters(date_from, date_to, inventory_id, aisle_id)
+    try:
+        svc.validate_scope(f)
+    except AnalyticsScopeValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return f
 
 
 @router.get("/summary", response_model=AnalyticsSummaryResponse)
 def analytics_summary(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
@@ -108,8 +111,7 @@ def analytics_summary(
     ``invalid`` remains separate and is still derived only from traceability/state metrics, not from
     a dedicated terminal review outcome.
     """
-    f = _filters(date_from, date_to, inventory_id, aisle_id)
-    _validate_analytics_scope(f, aisle_repo)
+    f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     d = svc.summary(f)
     return AnalyticsSummaryResponse(
         auto_acceptance_rate=d.auto_acceptance_rate,
@@ -138,14 +140,12 @@ def analytics_summary(
 @router.get("/trends", response_model=AnalyticsTrendsResponse)
 def analytics_trends(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> AnalyticsTrendsResponse:
-    f = _filters(date_from, date_to, inventory_id, aisle_id)
-    _validate_analytics_scope(f, aisle_repo)
+    f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     t = svc.trends(f)
 
     def map_points(xs):
@@ -169,14 +169,12 @@ def analytics_trends(
 @router.get("/inventories", response_model=InventoryPerformanceListResponse)
 def analytics_inventories(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> InventoryPerformanceListResponse:
-    f = _filters(date_from, date_to, inventory_id, aisle_id)
-    _validate_analytics_scope(f, aisle_repo)
+    f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     rows = svc.inventory_performance(f)
     return InventoryPerformanceListResponse(
         items=[
@@ -210,14 +208,12 @@ def analytics_inventories(
 @router.get("/aisles", response_model=AisleIssueListResponse)
 def analytics_aisles(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> AisleIssueListResponse:
-    f = _filters(date_from, date_to, inventory_id, aisle_id)
-    _validate_analytics_scope(f, aisle_repo)
+    f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     rows = svc.aisle_issues(f)
     return AisleIssueListResponse(
         items=[
@@ -245,14 +241,12 @@ def analytics_aisles(
 @router.get("/quality", response_model=QualityPatternListResponse)
 def analytics_quality(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
     aisle_id: Optional[str] = Query(None),
 ) -> QualityPatternListResponse:
-    f = _filters(date_from, date_to, inventory_id, aisle_id)
-    _validate_analytics_scope(f, aisle_repo)
+    f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     rows = svc.quality_patterns(f)
     return QualityPatternListResponse(
         items=[
@@ -270,7 +264,6 @@ def analytics_quality(
 @router.get("/manual-interventions", response_model=ManualInterventionBreakdownResponse)
 def analytics_manual_interventions(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     inventory_id: Optional[str] = Query(None),
@@ -283,8 +276,7 @@ def analytics_manual_interventions(
     persisted separately from delete_position. Historical rows with ``review_resolution = NULL``
     are not heuristically backfilled into operator-marked unknown.
     """
-    f = _filters(date_from, date_to, inventory_id, aisle_id)
-    _validate_analytics_scope(f, aisle_repo)
+    f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     data = svc.manual_intervention_breakdown(f)
     return ManualInterventionBreakdownResponse(
         reviewed_positions_count=data.reviewed_positions_count,

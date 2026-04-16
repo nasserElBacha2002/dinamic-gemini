@@ -1,8 +1,8 @@
 """
 Cross-inventory review queue — primarily ``needs_review`` positions, narrowable by filters (Sprint 1.4 / 4.2).
 
-Uses existing repositories only (batch ``list_by_aisles``). Suitable for small/medium
-deployments; very large multi-inventory installs may need a dedicated SQL path later.
+Uses ``list_by_aisles`` for positions, then one ``list_by_position_ids`` for all those positions
+before filtering (acceptable for current scale; huge installs may need a dedicated SQL path).
 """
 
 from __future__ import annotations

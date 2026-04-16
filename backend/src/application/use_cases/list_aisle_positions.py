@@ -15,6 +15,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, DefaultDict, List, Optional, Tuple
 
+from src.application.errors import AisleNotFoundError, InventoryNotFoundError
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import (
     AisleRepository,
@@ -23,7 +24,6 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
 )
 from src.application.services.display_primary_product import select_display_primary_product
-from src.application.errors import AisleNotFoundError, InventoryNotFoundError
 from src.application.services.position_sku_consolidation import (
     canonical_internal_code_lower,
     consolidate_positions_by_sku,
@@ -111,6 +111,28 @@ def _photo_review_sort_key(p: Position) -> Tuple[Any, ...]:
     return (seq_v, fn_l, sid_l, pcode, p.id)
 
 
+def _display_primaries_for_page_rows(
+    page_rows: List[Position],
+    product_record_repo: ProductRecordRepository,
+) -> tuple[Optional[ProductRecord], ...]:
+    """Load display-primary products for the paginated slice (one batch query; order matches ``page_rows``)."""
+    if not page_rows:
+        return ()
+    batch = product_record_repo.list_by_position_ids([p.id for p in page_rows])
+    by_position: DefaultDict[str, List[ProductRecord]] = defaultdict(list)
+    for pr in batch:
+        by_position[pr.position_id].append(pr)
+    primaries: List[Optional[ProductRecord]] = []
+    for p in page_rows:
+        primaries.append(select_display_primary_product(by_position.get(p.id, ())))
+    if len(primaries) != len(page_rows):
+        raise RuntimeError(
+            "internal invariant: primary_products length must match positions page length "
+            f"({len(primaries)} != {len(page_rows)})"
+        )
+    return tuple(primaries)
+
+
 class ListAislePositionsUseCase:
     def __init__(
         self,
@@ -194,19 +216,11 @@ class ListAislePositionsUseCase:
         start = (page - 1) * page_size
         page_rows = consolidated_sorted[start : start + page_size]
 
-        primaries: List[Optional[ProductRecord]] = []
-        if page_rows:
-            batch = self._product_record_repo.list_by_position_ids([p.id for p in page_rows])
-            by_position: DefaultDict[str, List[ProductRecord]] = defaultdict(list)
-            for pr in batch:
-                by_position[pr.position_id].append(pr)
-            for p in page_rows:
-                primaries.append(select_display_primary_product(by_position.get(p.id, ())))
-        assert len(page_rows) == len(primaries)
+        primaries = _display_primaries_for_page_rows(page_rows, self._product_record_repo)
 
         return ListAislePositionsResult(
             positions=tuple(page_rows),
-            primary_products=tuple(primaries),
+            primary_products=primaries,
             total_items=total,
             page=page,
             page_size=page_size,

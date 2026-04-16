@@ -109,3 +109,7 @@ class BenchmarkRequiresTestInventoryError(Exception):
 
     def __init__(self, message: str = "This feature is only available for test inventories.") -> None:
         super().__init__(message)
+
+
+class AnalyticsScopeValidationError(Exception):
+    """Raised when analytics filters combine ``inventory_id`` and ``aisle_id`` inconsistently."""

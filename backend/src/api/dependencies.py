@@ -761,5 +761,6 @@ def get_export_aisle_benchmark_compare_csv_use_case(
 
 def get_analytics_query_service(
     repo=Depends(get_analytics_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
 ) -> AnalyticsQueryService:
-    return AnalyticsQueryService(repo)
+    return AnalyticsQueryService(repo, aisle_repo)
