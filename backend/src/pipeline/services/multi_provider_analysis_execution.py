@@ -1,9 +1,13 @@
 """
-Phase 4 — multi-provider analysis execution (parallel, sequential fallback).
+Phase 4 / 6 — multi-provider analysis execution (parallel, sequential fallback).
 
-Invoked from :class:`~src.pipeline.adapters.hybrid_global_analysis_strategy.HybridGlobalAnalysisStrategy`
-after prompt/visual-reference preparation is unchanged; each branch calls the same ``analyze_once``
-with a ``RunContext`` whose ``pipeline_provider_name`` is set for that logical provider.
+**Coordinator role:** this module runs ``analyze_once`` per provider key and attaches execution
+trace metadata to the primary ``AnalysisResult``. It does **not** build prompts or resolve
+executors — that stays in :class:`~src.pipeline.adapters.hybrid_global_analysis_strategy.HybridGlobalAnalysisStrategy`.
+
+Invoked from ``HybridGlobalAnalysisStrategy`` after prompt/visual-reference preparation is unchanged;
+each branch calls the same ``analyze_once`` with a ``RunContext`` whose ``pipeline_provider_name``
+is set for that logical provider.
 
 **``multi_parallel`` error policy:** every provider in ``ordered_provider_keys`` must complete
 successfully. Work is submitted concurrently; results are awaited in **key list order**, and the
@@ -73,6 +77,60 @@ def _run_row_error(provider_key: str, exc: BaseException) -> Dict[str, Any]:
     }
 
 
+def _sequential_skipped_trace_entries(keys: List[str], successful_index: int) -> List[Dict[str, Any]]:
+    """Trace rows for providers not attempted after a sequential fallback success at ``successful_index``."""
+    return [
+        {"provider_key": k2, "status": "skipped", "reason": "prior_provider_succeeded"}
+        for k2 in keys[successful_index + 1 :]
+    ]
+
+
+def _parallel_trace_payload(
+    *,
+    keys: List[str],
+    results_by_key: Dict[str, AnalysisResult],
+) -> Dict[str, Any]:
+    """Assemble the ``multi_provider_execution`` trace for a successful parallel run."""
+    return {
+        "strategy_effective": STRATEGY_MULTI_PARALLEL,
+        "ordered_provider_keys": keys,
+        "primary_provider_key": keys[0],
+        "runs": [_run_row_ok(k, results_by_key[k]) for k in keys],
+    }
+
+
+def _sequential_success_trace_payload(
+    *,
+    keys: List[str],
+    successful_key: str,
+    runs: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Assemble the ``multi_provider_execution`` trace after sequential fallback succeeds."""
+    return {
+        "strategy_effective": STRATEGY_MULTI_SEQUENTIAL,
+        "ordered_provider_keys": keys,
+        "primary_provider_key": successful_key,
+        "runs": runs,
+    }
+
+
+def _collect_parallel_results_by_key(
+    *,
+    base_context: RunContext,
+    keys: List[str],
+    analyze_once: Callable[[RunContext], AnalysisResult],
+) -> Dict[str, AnalysisResult]:
+    """Submit one ``analyze_once`` per key, then await each future in **key order** (all-or-nothing)."""
+    results_by_key: Dict[str, AnalysisResult] = {}
+    with ThreadPoolExecutor(max_workers=len(keys)) as pool:
+        futures_by_key: Dict[str, Future[AnalysisResult]] = {
+            k: pool.submit(analyze_once, replace(base_context, pipeline_provider_name=k)) for k in keys
+        }
+        for k in keys:
+            results_by_key[k] = futures_by_key[k].result()
+    return results_by_key
+
+
 def dispatch_multi_provider_analysis(
     *,
     strategy_name: str,
@@ -133,23 +191,14 @@ def _execute_parallel(
     Results are collected by iterating ``keys`` in order so ``Future.result()`` ordering is explicit
     (first failure in that order propagates; semantics match “all-or-nothing”, not best-of).
     """
-    results_by_key: Dict[str, AnalysisResult] = {}
-
-    with ThreadPoolExecutor(max_workers=len(keys)) as pool:
-        futures_by_key: Dict[str, Future[AnalysisResult]] = {
-            k: pool.submit(analyze_once, replace(base_context, pipeline_provider_name=k)) for k in keys
-        }
-        for k in keys:
-            results_by_key[k] = futures_by_key[k].result()
-
+    results_by_key = _collect_parallel_results_by_key(
+        base_context=base_context,
+        keys=keys,
+        analyze_once=analyze_once,
+    )
     ordered_results = [results_by_key[k] for k in keys]
     primary = select_primary_first_in_order(ordered_results)
-    trace: Dict[str, Any] = {
-        "strategy_effective": STRATEGY_MULTI_PARALLEL,
-        "ordered_provider_keys": keys,
-        "primary_provider_key": keys[0],
-        "runs": [_run_row_ok(k, results_by_key[k]) for k in keys],
-    }
+    trace = _parallel_trace_payload(keys=keys, results_by_key=results_by_key)
     if run_logger is not None:
         run_logger.info(
             "Multi-provider parallel analysis completed primary=%s also_ran=%s",
@@ -183,20 +232,8 @@ def _execute_sequential_fallback(
         try:
             result = analyze_once(ctx)
             runs.append(_run_row_ok(k, result))
-            for k2 in keys[idx + 1 :]:
-                runs.append(
-                    {
-                        "provider_key": k2,
-                        "status": "skipped",
-                        "reason": "prior_provider_succeeded",
-                    }
-                )
-            trace: Dict[str, Any] = {
-                "strategy_effective": STRATEGY_MULTI_SEQUENTIAL,
-                "ordered_provider_keys": keys,
-                "primary_provider_key": k,
-                "runs": runs,
-            }
+            runs.extend(_sequential_skipped_trace_entries(keys, idx))
+            trace = _sequential_success_trace_payload(keys=keys, successful_key=k, runs=runs)
             if run_logger is not None:
                 run_logger.info(
                     "Multi-provider sequential analysis succeeded primary=%s attempted=%s",

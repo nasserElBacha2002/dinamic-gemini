@@ -1,4 +1,4 @@
-"""Phase 4 — multi-provider dispatch (parallel + sequential fallback)."""
+"""Phase 4 / 6 — multi-provider dispatch (parallel + sequential fallback) and trace helpers."""
 
 from __future__ import annotations
 
@@ -268,3 +268,28 @@ def test_hybrid_single_strategy_ignores_extras(monkeypatch: pytest.MonkeyPatch) 
         {"frame_count": 1},
     )
     assert len(resolve_calls) == 1
+
+
+def test_sequential_skipped_trace_entries_matches_fallback_contract() -> None:
+    """Phase 6 — skipped rows after success stay stable for execution-log consumers."""
+    from src.pipeline.services.multi_provider_analysis_execution import _sequential_skipped_trace_entries
+
+    rows = _sequential_skipped_trace_entries(["openai", "claude", "gemini"], successful_index=0)
+    assert rows == [
+        {"provider_key": "claude", "status": "skipped", "reason": "prior_provider_succeeded"},
+        {"provider_key": "gemini", "status": "skipped", "reason": "prior_provider_succeeded"},
+    ]
+    assert _sequential_skipped_trace_entries(["a", "b"], successful_index=1) == []
+
+
+def test_parallel_trace_payload_includes_ordered_runs() -> None:
+    """Phase 6 — parallel trace shape stays keyed to ``ordered_provider_keys`` order."""
+    from src.pipeline.services.multi_provider_analysis_execution import _parallel_trace_payload
+
+    r_openai = AnalysisResult(parsed_json={"x": 1}, provider_name="openai")
+    r_claude = AnalysisResult(parsed_json={"x": 2}, provider_name="claude")
+    by_key = {"openai": r_openai, "claude": r_claude}
+    trace = _parallel_trace_payload(keys=["openai", "claude"], results_by_key=by_key)
+    assert trace["strategy_effective"] == "multi_parallel"
+    assert trace["primary_provider_key"] == "openai"
+    assert [row["provider_key"] for row in trace["runs"]] == ["openai", "claude"]

@@ -1,5 +1,5 @@
 """
-Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–5).
+Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–6).
 
 Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
 call to ``LlmGlobalAnalysisExecutor`` resolved by :mod:`src.pipeline.services.pipeline_provider_resolver`
@@ -8,13 +8,17 @@ call to ``LlmGlobalAnalysisExecutor`` resolved by :mod:`src.pipeline.services.pi
 Phase 4 adds optional multi-provider execution (parallel or sequential fallback) behind explicit
 strategy settings or per-run ``RunContext`` fields; default ``single`` preserves the historical
 one-call behavior.
+
+Phase 6: visual-reference / instruction assembly for the LLM request is isolated in
+:func:`_prepare_hybrid_llm_visual_bundle` so ``_analyze_once`` coordinates resolver + prompt + request
+without owning the full visual-reference branching policy inline.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 
 import numpy as np
 
@@ -64,6 +68,57 @@ from src.pipeline.services.hybrid_analysis_prompt import (
 logger = logging.getLogger(__name__)
 
 
+class _HybridLlmVisualBundle(NamedTuple):
+    """Visual-reference inputs and instruction text assembled before ``LLMRequest`` construction."""
+
+    context_instruction: Optional[str]
+    context_images: Optional[ContextImageSequence]
+    visual_reference_attachments: List[Dict[str, Any]]
+    resolved_reference_ids: List[str]
+    consumed_count: int
+
+
+def _prepare_hybrid_llm_visual_bundle(
+    *,
+    supports_visual_reference_context: bool,
+    analysis_context: Optional[AnalysisContext],
+    job_id: str,
+) -> _HybridLlmVisualBundle:
+    """
+    Resolve optional context instruction and visual-reference attachments for one analysis call.
+
+    Keeps the supports-visual-reference vs attachment-only-for-logging split in one place so
+    :meth:`HybridGlobalAnalysisStrategy._analyze_once` stays a coordinator.
+    """
+    context_instruction: Optional[str] = None
+    context_images: Optional[ContextImageSequence] = None
+    visual_reference_attachments: List[Dict[str, Any]] = []
+    resolved_reference_ids: List[str] = []
+    consumed_count = 0
+    if analysis_context and analysis_context.instructions:
+        context_instruction = "\n".join(analysis_context.instructions).strip() or None
+    if supports_visual_reference_context and analysis_context and analysis_context.visual_references:
+        loaded, visual_reference_attachments, resolved_reference_ids = prepare_visual_reference_inputs(
+            analysis_context,
+            job_id=job_id,
+        )
+        if loaded:
+            context_images = loaded
+            consumed_count = len(loaded)
+    elif analysis_context and analysis_context.visual_references:
+        _, visual_reference_attachments, _ = prepare_visual_reference_inputs(
+            analysis_context,
+            job_id=job_id,
+        )
+    return _HybridLlmVisualBundle(
+        context_instruction=context_instruction,
+        context_images=context_images,
+        visual_reference_attachments=visual_reference_attachments,
+        resolved_reference_ids=resolved_reference_ids,
+        consumed_count=consumed_count,
+    )
+
+
 def _provider_metadata(
     visual_references_available: bool,
     visual_references_consumed: bool,
@@ -81,6 +136,12 @@ def _provider_metadata(
 class HybridGlobalAnalysisStrategy:
     """
     Default pipeline analysis strategy: assembles hybrid context and runs the resolved LLM executor.
+
+    **Coordinator (Phase 6):** ``analyze`` chooses single vs multi-provider dispatch; ``_analyze_once``
+    resolves the executor, composes prompt + ``LLMRequest``, emits structured logs, and maps the
+    response to :class:`~src.pipeline.ports.analysis_provider.AnalysisResult`. Visual-reference
+    branching lives in :func:`_prepare_hybrid_llm_visual_bundle`; multi-provider fan-out lives in
+    :mod:`src.pipeline.services.multi_provider_analysis_execution`.
 
     Executor choice comes from ``RunContext.pipeline_provider_name`` and settings (see registry);
     this class is not tied to a single vendor.
@@ -152,26 +213,16 @@ class HybridGlobalAnalysisStrategy:
 
         analysis_context: Optional[AnalysisContext] = resolve_analysis_context_for_run(run_ctx)
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
-        context_instruction = None
-        context_images: Optional[ContextImageSequence] = None
-        visual_reference_attachments: List[Dict[str, Any]] = []
-        resolved_reference_ids: List[str] = []
-        consumed_count = 0
-        if analysis_context and analysis_context.instructions:
-            context_instruction = "\n".join(analysis_context.instructions).strip() or None
-        if self.get_capabilities().supports_visual_reference_context and analysis_context and analysis_context.visual_references:
-            loaded, visual_reference_attachments, resolved_reference_ids = prepare_visual_reference_inputs(
-                analysis_context,
-                job_id=job_id,
-            )
-            if loaded:
-                context_images = loaded
-                consumed_count = len(loaded)
-        elif analysis_context and analysis_context.visual_references:
-            _, visual_reference_attachments, _ = prepare_visual_reference_inputs(
-                analysis_context,
-                job_id=job_id,
-            )
+        vb = _prepare_hybrid_llm_visual_bundle(
+            supports_visual_reference_context=self.get_capabilities().supports_visual_reference_context,
+            analysis_context=analysis_context,
+            job_id=job_id,
+        )
+        context_instruction = vb.context_instruction
+        context_images = vb.context_images
+        visual_reference_attachments = vb.visual_reference_attachments
+        resolved_reference_ids = vb.resolved_reference_ids
+        consumed_count = vb.consumed_count
 
         req_meta: Dict[str, Any] = {**metadata, "run_dir": str(run_ctx.run_dir)}
         jm = getattr(run_ctx, "job_model_name", None)

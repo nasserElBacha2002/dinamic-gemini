@@ -1,11 +1,14 @@
 """
-Phase 4 — minimal deterministic aggregation of multiple ``AnalysisResult`` values.
+Phase 4 / 6 — minimal deterministic aggregation of multiple ``AnalysisResult`` values.
 
 Selects a primary result for the rest of the pipeline and optionally attaches a trace blob
 to the primary's ``provider_metadata`` (see ``PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION``).
 
 **Primary selection:** order-based only (first entry in the caller-supplied sequence). This phase
 does not rank providers by confidence, cost, or agreement — that would be future evaluation work.
+
+**Scope:** trace attachment and primary pick only — not multi-provider dispatch (see
+:mod:`src.pipeline.services.multi_provider_analysis_execution`).
 """
 
 from __future__ import annotations

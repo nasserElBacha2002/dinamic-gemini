@@ -465,3 +465,36 @@ def test_openai_job_model_name_passed_in_llm_request_metadata(tmp_path: Path) ->
     assert pc.get("resolved_llm_provider_key") == "openai"
     assert pc.get("model_name") == "gpt-4o-mini"
     assert pc.get("prompt_hash") == sha256_utf8(req.prompt)
+
+
+def test_prepare_hybrid_llm_visual_bundle_instructions_only() -> None:
+    """Phase 6 — visual bundle helper keeps instruction assembly separate from LLM request build."""
+    from src.pipeline.adapters.hybrid_global_analysis_strategy import _prepare_hybrid_llm_visual_bundle
+    from src.pipeline.contracts.analysis_context import AnalysisContext
+
+    ctx = AnalysisContext(
+        primary_evidence=[],
+        visual_references=[],
+        instructions=["  a  ", "b"],
+        metadata=None,
+    )
+    vb = _prepare_hybrid_llm_visual_bundle(
+        supports_visual_reference_context=True,
+        analysis_context=ctx,
+        job_id="j1",
+    )
+    assert vb.context_instruction == "a  \nb"
+    assert vb.context_images is None
+    assert vb.consumed_count == 0
+
+
+def test_prepare_hybrid_llm_visual_bundle_no_context() -> None:
+    from src.pipeline.adapters.hybrid_global_analysis_strategy import _prepare_hybrid_llm_visual_bundle
+
+    vb = _prepare_hybrid_llm_visual_bundle(
+        supports_visual_reference_context=True,
+        analysis_context=None,
+        job_id="j1",
+    )
+    assert vb.context_instruction is None
+    assert vb.visual_reference_attachments == []
