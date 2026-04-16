@@ -1,5 +1,10 @@
 """Stage 7 — Persist and load job records under output/<job_id>/.
 Stage 8 — When SQL Server enabled, DB is source of truth; FS kept for artifacts and optional job.json.
+
+**Legacy SQL bridge:** when SQL Server is enabled, this module instantiates
+``JobsRepository`` / ``PalletResultsRepository`` / ``JobEventsRepository`` from
+``src.database.repository`` (tables ``jobs``, ``pallet_results``, ``job_events``).
+That path is not the v3 ``inventory_jobs`` model; access is logged under logger ``dinamic.legacy_sql``.
 """
 
 import json
