@@ -482,6 +482,7 @@ def get_list_aisle_positions_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
     result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
 ) -> ListAislePositionsUseCase:
     from src.config import load_settings
 
@@ -490,6 +491,7 @@ def get_list_aisle_positions_use_case(
         aisle_repo=aisle_repo,
         position_repo=position_repo,
         result_context_resolver=result_context_resolver,
+        product_record_repo=product_record_repo,
         positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
     )
 

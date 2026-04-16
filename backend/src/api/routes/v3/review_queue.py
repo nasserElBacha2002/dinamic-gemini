@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from src.auth.dependencies import get_current_admin
 
-from src.api.dependencies import get_list_review_queue_use_case, get_product_record_repo
+from src.api.dependencies import get_list_review_queue_use_case
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.schemas.review_queue_schemas import (
     ReviewQueueItemResponse,
@@ -16,8 +16,6 @@ from src.api.schemas.review_queue_schemas import (
     ReviewQueueSummaryResponse,
 )
 from src.application.ports.contracts import ReviewQueueQuery
-from src.application.ports.repositories import ProductRecordRepository
-from src.application.services.display_primary_product import select_display_primary_product
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
 
 from .shared import position_to_summary
@@ -39,7 +37,6 @@ def _strip_opt(s: Optional[str]) -> Optional[str]:
 @router.get("/positions", response_model=ReviewQueueListResponse)
 def list_review_queue_positions(
     use_case: ListReviewQueueUseCase = Depends(get_list_review_queue_use_case),
-    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     inventory_id: Optional[str] = Query(None, description="Restrict to aisles in this inventory."),
     aisle_id: Optional[str] = Query(None, description="Restrict to this aisle."),
     min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0),
@@ -88,8 +85,7 @@ def list_review_queue_positions(
     ps = q.page_size
     items: list[ReviewQueueItemResponse] = []
     for row in rows:
-        products = product_record_repo.list_by_position(row.position.id)
-        primary = select_display_primary_product(products)
+        primary = row.primary_product
         corrected_quantity = primary.corrected_quantity if primary is not None else None
         items.append(
             ReviewQueueItemResponse(

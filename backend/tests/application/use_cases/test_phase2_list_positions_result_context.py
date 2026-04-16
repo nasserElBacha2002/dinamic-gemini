@@ -14,6 +14,7 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
 
 
 def test_list_positions_operational_job_excludes_other_runs() -> None:
@@ -95,6 +96,7 @@ def test_list_positions_operational_job_excludes_other_runs() -> None:
         aisle_repo,
         pos_repo,
         ResultContextResolver(job_repo, pos_repo),
+        MemoryProductRecordRepository(),
         positions_aisle_raw_cap=500,
     )
     result = uc.execute(
@@ -149,6 +151,7 @@ def test_list_positions_legacy_null_job_only() -> None:
         aisle_repo,
         pos_repo,
         ResultContextResolver(job_repo, pos_repo),
+        MemoryProductRecordRepository(),
         positions_aisle_raw_cap=500,
     )
     result = uc.execute(
@@ -201,6 +204,7 @@ def test_list_positions_explicit_job_id_returns_job_scoped_when_operational_unse
         aisle_repo,
         pos_repo,
         ResultContextResolver(job_repo, pos_repo),
+        MemoryProductRecordRepository(),
         positions_aisle_raw_cap=500,
     )
     default_result = uc.execute(

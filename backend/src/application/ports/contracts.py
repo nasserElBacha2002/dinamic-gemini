@@ -15,6 +15,7 @@ from typing_extensions import TypedDict
 from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
+from src.domain.products.entities import ProductRecord
 
 
 # --- Analysis (AnalysisProvider.analyze_aisle) ---
@@ -184,3 +185,5 @@ class ReviewQueueListRow:
     inventory_id: str
     inventory_name: str
     aisle_code: str
+    #: Display-primary product for this position (same rule as review queue filters/sort).
+    primary_product: Optional[ProductRecord] = None

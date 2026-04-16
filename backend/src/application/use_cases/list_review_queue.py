@@ -202,6 +202,7 @@ class ListReviewQueueUseCase:
                     inventory_id=inv.id,
                     inventory_name=inv.name,
                     aisle_code=aisle.code,
+                    primary_product=primary_by_position.get(p.id),
                 )
             )
 

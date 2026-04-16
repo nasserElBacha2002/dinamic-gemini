@@ -75,6 +75,7 @@ def test_review_queue_filters_and_pages() -> None:
     assert rows[0].position.id == "p2"
     assert rows[0].inventory_name == "Beta"
     assert rows[0].aisle_code == "B1"
+    assert rows[0].primary_product is None
 
 
 def test_review_queue_out_of_range_page_returns_empty_slice() -> None:
@@ -138,6 +139,9 @@ def test_review_queue_prefers_primary_product_for_sku_and_qty_zero_filter() -> N
     assert len(rows) == 1
     assert rows[0].position.id == "p1"
     assert summary.qty_zero == 1
+    assert rows[0].primary_product is not None
+    assert rows[0].primary_product.sku == "CANON-SKU"
+    assert rows[0].primary_product.corrected_quantity == 0
 
 
 def test_review_queue_keeps_aggregated_snapshot_qty_zero_fallback() -> None:
@@ -186,3 +190,5 @@ def test_review_queue_keeps_aggregated_snapshot_qty_zero_fallback() -> None:
     assert len(rows) == 1
     assert rows[0].position.id == "p1"
     assert summary.qty_zero == 1
+    assert rows[0].primary_product is not None
+    assert rows[0].primary_product.sku == "AGG-SKU"

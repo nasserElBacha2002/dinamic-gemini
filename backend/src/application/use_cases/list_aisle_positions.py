@@ -15,7 +15,13 @@ from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
 from src.application.ports.contracts import PositionListQuery
-from src.application.ports.repositories import AisleRepository, InventoryRepository, PositionRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    PositionRepository,
+    ProductRecordRepository,
+)
+from src.application.services.display_primary_product import select_display_primary_product
 from src.application.errors import AisleNotFoundError, InventoryNotFoundError
 from src.application.services.position_sku_consolidation import (
     canonical_internal_code_lower,
@@ -24,6 +30,7 @@ from src.application.services.position_sku_consolidation import (
 )
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.positions.entities import Position
+from src.domain.products.entities import ProductRecord
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +58,8 @@ class ListAislePositionsCommand:
 @dataclass(frozen=True)
 class ListAislePositionsResult:
     positions: tuple[Position, ...]
+    #: Display-primary product per ``positions`` row (same order); ``None`` when no product rows.
+    primary_products: tuple[Optional[ProductRecord], ...]
     total_items: int
     page: int
     page_size: int
@@ -107,6 +116,7 @@ class ListAislePositionsUseCase:
         aisle_repo: AisleRepository,
         position_repo: PositionRepository,
         result_context_resolver: ResultContextResolver,
+        product_record_repo: ProductRecordRepository,
         *,
         positions_aisle_raw_cap: int,
     ) -> None:
@@ -114,6 +124,7 @@ class ListAislePositionsUseCase:
         self._aisle_repo = aisle_repo
         self._position_repo = position_repo
         self._resolver = result_context_resolver
+        self._product_record_repo = product_record_repo
         self._raw_cap = max(1, int(positions_aisle_raw_cap))
 
     def execute(self, command: ListAislePositionsCommand) -> ListAislePositionsResult:
@@ -181,8 +192,14 @@ class ListAislePositionsUseCase:
         start = (page - 1) * page_size
         page_rows = consolidated_sorted[start : start + page_size]
 
+        primaries: list[Optional[ProductRecord]] = []
+        for p in page_rows:
+            products = list(self._product_record_repo.list_by_position(p.id))
+            primaries.append(select_display_primary_product(products))
+
         return ListAislePositionsResult(
             positions=tuple(page_rows),
+            primary_products=tuple(primaries),
             total_items=total,
             page=page,
             page_size=page_size,
