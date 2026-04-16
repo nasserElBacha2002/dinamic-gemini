@@ -1,5 +1,5 @@
 """
-Phase 4 / 6 — multi-provider analysis execution (parallel, sequential fallback).
+Phase 4 / 6 / 7 — multi-provider analysis execution (parallel, sequential fallback).
 
 **Coordinator role:** this module runs ``analyze_once`` per provider key and attaches execution
 trace metadata to the primary ``AnalysisResult``. It does **not** build prompts or resolve
@@ -25,10 +25,17 @@ from __future__ import annotations
 import logging
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 from src.llm.errors import LLMProviderError
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.contracts.multi_provider_trace_types import (
+    MultiProviderExecutionTrace,
+    MultiProviderRunRow,
+    MultiProviderRunRowError,
+    MultiProviderRunRowOk,
+    MultiProviderRunRowSkipped,
+)
 from src.pipeline.ports.analysis_provider import AnalysisResult
 from src.pipeline.services.provider_analysis_execution_config import (
     STRATEGY_MULTI_PARALLEL,
@@ -50,7 +57,7 @@ def _short_exc_message(exc: BaseException, limit: int = 240) -> str:
     return msg
 
 
-def _run_row_ok(provider_key: str, result: AnalysisResult) -> Dict[str, Any]:
+def _run_row_ok(provider_key: str, result: AnalysisResult) -> MultiProviderRunRowOk:
     return {
         "provider_key": provider_key,
         "status": "ok",
@@ -59,7 +66,7 @@ def _run_row_ok(provider_key: str, result: AnalysisResult) -> Dict[str, Any]:
     }
 
 
-def _run_row_error(provider_key: str, exc: BaseException) -> Dict[str, Any]:
+def _run_row_error(provider_key: str, exc: BaseException) -> MultiProviderRunRowError:
     if isinstance(exc, LLMProviderError):
         return {
             "provider_key": provider_key,
@@ -77,7 +84,7 @@ def _run_row_error(provider_key: str, exc: BaseException) -> Dict[str, Any]:
     }
 
 
-def _sequential_skipped_trace_entries(keys: List[str], successful_index: int) -> List[Dict[str, Any]]:
+def _sequential_skipped_trace_entries(keys: List[str], successful_index: int) -> List[MultiProviderRunRowSkipped]:
     """Trace rows for providers not attempted after a sequential fallback success at ``successful_index``."""
     return [
         {"provider_key": k2, "status": "skipped", "reason": "prior_provider_succeeded"}
@@ -89,13 +96,14 @@ def _parallel_trace_payload(
     *,
     keys: List[str],
     results_by_key: Dict[str, AnalysisResult],
-) -> Dict[str, Any]:
+) -> MultiProviderExecutionTrace:
     """Assemble the ``multi_provider_execution`` trace for a successful parallel run."""
+    runs: list[MultiProviderRunRow] = [_run_row_ok(k, results_by_key[k]) for k in keys]
     return {
         "strategy_effective": STRATEGY_MULTI_PARALLEL,
         "ordered_provider_keys": keys,
         "primary_provider_key": keys[0],
-        "runs": [_run_row_ok(k, results_by_key[k]) for k in keys],
+        "runs": runs,
     }
 
 
@@ -103,8 +111,8 @@ def _sequential_success_trace_payload(
     *,
     keys: List[str],
     successful_key: str,
-    runs: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    runs: List[MultiProviderRunRow],
+) -> MultiProviderExecutionTrace:
     """Assemble the ``multi_provider_execution`` trace after sequential fallback succeeds."""
     return {
         "strategy_effective": STRATEGY_MULTI_SEQUENTIAL,
@@ -225,7 +233,7 @@ def _execute_sequential_fallback(
     This is intentionally **not** “run every provider sequentially and collect all results” (that would
     be a different strategy for a later phase).
     """
-    runs: List[Dict[str, Any]] = []
+    runs: List[MultiProviderRunRow] = []
     last_exc: Optional[BaseException] = None
     for idx, k in enumerate(keys):
         ctx = replace(base_context, pipeline_provider_name=k)

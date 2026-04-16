@@ -1,5 +1,5 @@
 """
-Phase 4 / 6 — explicit multi-provider analysis execution **configuration** (policy inputs only).
+Phase 4 / 6 / 7 — explicit multi-provider analysis execution **configuration** (policy inputs only).
 
 Resolves strategy name and ordered provider keys from ``RunContext`` (per-job) and
 ``LlmProviderSettings`` (defaults). Keeps Phase 3 resolution rules: primary key via
@@ -19,7 +19,6 @@ and :mod:`src.pipeline.services.multi_provider_analysis_execution`.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from src.env_settings.pipeline_analysis_execution_strings import (
     STRATEGY_MULTI_PARALLEL,
@@ -28,13 +27,19 @@ from src.env_settings.pipeline_analysis_execution_strings import (
     normalize_pipeline_analysis_strategy_value,
 )
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.contracts.pipeline_analysis_execution_settings import (
+    SupportsPipelineAnalysisExecutionSettings,
+)
 from src.pipeline.providers.registry import registered_pipeline_provider_keys
 from src.pipeline.services.pipeline_provider_resolver import PipelineProviderResolver
 
 logger = logging.getLogger(__name__)
 
 
-def effective_analysis_execution_strategy(context: RunContext, settings: Any) -> str:
+def effective_analysis_execution_strategy(
+    context: RunContext,
+    settings: SupportsPipelineAnalysisExecutionSettings,
+) -> str:
     """
     Effective strategy string after normalization (e.g. ``multi_fallback`` → ``multi_sequential``).
 
@@ -58,7 +63,10 @@ def _parse_comma_separated_keys(raw: str) -> list[str]:
     return out
 
 
-def effective_extra_provider_keys(context: RunContext, settings: Any) -> list[str]:
+def effective_extra_provider_keys(
+    context: RunContext,
+    settings: SupportsPipelineAnalysisExecutionSettings,
+) -> list[str]:
     """
     Extra providers after the job/settings primary.
 
@@ -73,7 +81,10 @@ def effective_extra_provider_keys(context: RunContext, settings: Any) -> list[st
     return _parse_comma_separated_keys(s)
 
 
-def build_ordered_provider_keys(context: RunContext, settings: Any) -> list[str]:
+def build_ordered_provider_keys(
+    context: RunContext,
+    settings: SupportsPipelineAnalysisExecutionSettings,
+) -> list[str]:
     """
     Return ``[primary, ...extras]`` with deduplication; extras must be registered pipeline keys.
 

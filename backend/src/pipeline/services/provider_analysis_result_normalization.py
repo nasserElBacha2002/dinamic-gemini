@@ -1,5 +1,5 @@
 """
-Phase 3 / 5 — normalize ``LLMResponse`` into :class:`~src.pipeline.ports.analysis_provider.AnalysisResult`.
+Phase 3 / 5 / 7 — normalize ``LLMResponse`` into :class:`~src.pipeline.ports.analysis_provider.AnalysisResult`.
 
 Provider-specific parsing stays inside LLM adapters; this helper only maps the neutral
 ``LLMResponse`` contract into the pipeline ``AnalysisResult`` shape and attaches pricing snapshot.
@@ -32,8 +32,9 @@ def build_analysis_result_from_llm_response(
     the helper does not mutate them; call sites pass ``dict`` instances, which are stored on
     ``AnalysisResult`` by reference (unchanged from pre–Phase 5 behavior).
 
-    ``settings`` remains ``Any`` (same contract as :func:`resolve_llm_executor_for_context`): pricing
-    snapshot construction accepts app settings or lightweight test doubles.
+    ``settings`` remains ``Any`` (same contract as :func:`resolve_llm_executor_for_context` and
+    :func:`~src.llm.costing.build_llm_cost_snapshot`): pricing/catalog code reads many optional
+    fields; narrowing would duplicate costing internals without improving safety here.
     """
     llm_cost_snapshot = build_llm_cost_snapshot(
         provider=response.provider,

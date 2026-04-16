@@ -293,3 +293,17 @@ def test_parallel_trace_payload_includes_ordered_runs() -> None:
     assert trace["strategy_effective"] == "multi_parallel"
     assert trace["primary_provider_key"] == "openai"
     assert [row["provider_key"] for row in trace["runs"]] == ["openai", "claude"]
+
+
+def test_parallel_trace_satisfies_multi_provider_execution_trace_contract() -> None:
+    """Phase 7 — trace dict matches ``MultiProviderExecutionTrace`` (required keys + row statuses)."""
+    from src.pipeline.contracts.multi_provider_trace_types import MultiProviderExecutionTrace
+    from src.pipeline.services.multi_provider_analysis_execution import _parallel_trace_payload
+
+    r_openai = AnalysisResult(parsed_json={}, provider_name="openai")
+    trace: MultiProviderExecutionTrace = _parallel_trace_payload(
+        keys=["openai"],
+        results_by_key={"openai": r_openai},
+    )
+    assert set(trace) >= {"strategy_effective", "ordered_provider_keys", "primary_provider_key", "runs"}
+    assert trace["runs"][0]["status"] == "ok"

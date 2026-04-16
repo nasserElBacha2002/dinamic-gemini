@@ -15,9 +15,10 @@ Adapter registration (which class implements ``gemini`` / ``openai`` / …) rema
 :mod:`src.pipeline.providers.registry` — this module only composes **job-level provider choice**
 + settings into an executor instance.
 
-**Phase 5 note:** :func:`resolve_llm_executor_for_context` keeps ``settings: Any`` so tests and the
-LLM harness can pass duck-typed objects; only :func:`~src.pipeline.provider_keys.normalize_pipeline_provider_key`
-and adapter ``execute(..., settings)`` consume it.
+**Phase 5 / 7 note:** :func:`resolve_llm_executor_for_context` keeps ``settings: Any`` so tests and
+the LLM harness can pass duck-typed objects. ``normalize_pipeline_provider_key`` reads only
+``llm_provider``; each adapter’s ``execute`` may read a wider slice of real ``AppSettings`` fields
+(pricing, API keys), so a narrow Protocol here would be misleading rather than helpful.
 """
 
 from __future__ import annotations

@@ -13,6 +13,9 @@ def normalize_pipeline_provider_key(
     Effective provider key for this run.
 
     Prefer explicit ``provider_name`` (e.g. from inventory job). Otherwise use ``settings.llm_provider``.
+
+    **Phase 7:** ``settings`` stays ``Any`` so callers may pass full ``AppSettings``, partial test
+    doubles, or ``MagicMock``; only ``llm_provider`` is read (via ``getattr`` with a string default).
     """
     raw = (provider_name or "").strip().lower()
     if raw:

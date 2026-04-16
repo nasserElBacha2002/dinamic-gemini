@@ -1,5 +1,5 @@
 """
-Phase 4 / 6 — minimal deterministic aggregation of multiple ``AnalysisResult`` values.
+Phase 4 / 6 / 7 — minimal deterministic aggregation of multiple ``AnalysisResult`` values.
 
 Selects a primary result for the rest of the pipeline and optionally attaches a trace blob
 to the primary's ``provider_metadata`` (see ``PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION``).
@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Dict, Optional, Sequence
 
+from src.pipeline.contracts.multi_provider_trace_types import MultiProviderExecutionTrace
 from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION,
     AnalysisResult,
@@ -50,9 +51,13 @@ def select_primary_first_in_order(results: Sequence[AnalysisResult]) -> Analysis
 def attach_multi_provider_trace(
     primary: AnalysisResult,
     *,
-    trace: Dict[str, Any],
+    trace: MultiProviderExecutionTrace,
 ) -> AnalysisResult:
-    """Shallow-merge trace into ``primary.provider_metadata`` (copy-on-write)."""
+    """Shallow-merge trace into ``primary.provider_metadata`` (copy-on-write).
+
+    ``trace`` follows :class:`~src.pipeline.contracts.multi_provider_trace_types.MultiProviderExecutionTrace`
+    (plain ``dict`` at runtime, JSON-serializable).
+    """
     meta: Dict[str, Any] = dict(primary.provider_metadata or {})
     meta[PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION] = trace
     return replace(primary, provider_metadata=meta)
