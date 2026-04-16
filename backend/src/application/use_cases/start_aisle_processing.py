@@ -27,9 +27,32 @@ from src.application.services.process_aisle_execution_resolution import (
     resolve_process_aisle_execution_keys,
 )
 from src.config import load_settings
-from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.entities import JobStatus
 
 logger = logging.getLogger(__name__)
+
+_START_BLOCKING_JOB_STATUSES = (
+    JobStatus.QUEUED,
+    JobStatus.STARTING,
+    JobStatus.RUNNING,
+    JobStatus.CANCEL_REQUESTED,
+)
+
+
+def _require_no_active_process_job_for_aisle(
+    *,
+    stale_reconciler: JobStaleReconciler,
+    job_repo: JobRepository,
+    aisle_id: str,
+) -> None:
+    """Raise if an aisle-target job is already in a state that blocks a new start."""
+    latest = stale_reconciler.reconcile(
+        job_repo.get_latest_by_target("aisle", aisle_id)
+    )
+    if latest is not None and latest.status in _START_BLOCKING_JOB_STATUSES:
+        raise ActiveJobExistsError(
+            f"Aisle {aisle_id} already has an active job (status={latest.status.value})"
+        )
 
 
 @dataclass
@@ -109,18 +132,11 @@ class StartAisleProcessingUseCase:
             detail_style="strict",
         )
 
-        latest = self._stale_reconciler.reconcile(
-            self._job_repo.get_latest_by_target("aisle", command.aisle_id)
+        _require_no_active_process_job_for_aisle(
+            stale_reconciler=self._stale_reconciler,
+            job_repo=self._job_repo,
+            aisle_id=command.aisle_id,
         )
-        if latest is not None and latest.status in (
-            JobStatus.QUEUED,
-            JobStatus.STARTING,
-            JobStatus.RUNNING,
-            JobStatus.CANCEL_REQUESTED,
-        ):
-            raise ActiveJobExistsError(
-                f"Aisle {command.aisle_id} already has an active job (status={latest.status.value})"
-            )
 
         payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
         job = self._launch_service.create_and_launch_attempt(
