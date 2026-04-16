@@ -92,6 +92,9 @@ from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
 from src.application.use_cases.list_aisle_jobs import ListAisleJobsUseCase
+from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
+    ResolveAisleJobForInventoryReadUseCase,
+)
 from src.application.use_cases.compare_aisle_runs import CompareAisleRunsUseCase
 from src.application.use_cases.promote_aisle_operational_job import PromoteAisleOperationalJobUseCase
 from src.application.use_cases.export_aisle_benchmark import (
@@ -703,6 +706,13 @@ def get_list_aisle_jobs_use_case(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
     )
+
+
+def get_resolve_aisle_job_for_inventory_read_use_case(
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+) -> ResolveAisleJobForInventoryReadUseCase:
+    return ResolveAisleJobForInventoryReadUseCase(job_repo=job_repo, aisle_repo=aisle_repo)
 
 
 def get_compare_aisle_runs_use_case(

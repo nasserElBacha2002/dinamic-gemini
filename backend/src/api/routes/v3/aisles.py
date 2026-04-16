@@ -16,10 +16,10 @@ from src.api.dependencies import (
     get_job_stale_reconciler,
     get_cancel_aisle_job_use_case,
     get_retry_aisle_job_use_case,
-    get_aisle_repo,
     get_get_aisle_merge_results_use_case,
+    get_inventory_repo,
     get_list_aisle_jobs_use_case,
-    get_job_repo,
+    get_resolve_aisle_job_for_inventory_read_use_case,
     get_run_aisle_merge_use_case,
     get_compare_aisle_runs_use_case,
     get_promote_aisle_operational_job_use_case,
@@ -62,7 +62,7 @@ from src.api.schemas.processing_schemas import (
     ProcessAisleRequest,
     ProcessAisleResponse,
 )
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.ports.repositories import InventoryRepository
 from src.application.errors import (
     AisleNotFoundError,
     ActiveJobExistsError,
@@ -99,6 +99,10 @@ from src.application.use_cases.export_aisle_benchmark import (
 )
 from src.application.use_cases.export_inventory_results import ExportAisleResultsCsvUseCase
 from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, ListAisleJobsUseCase
+from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
+    ResolveAisleJobForInventoryReadUseCase,
+)
+from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job
 from src.application.use_cases.promote_aisle_operational_job import (
     PromoteAisleOperationalJobCommand,
@@ -108,7 +112,6 @@ from src.application.use_cases.run_aisle_merge import (
     RunAisleMergeCommand,
     RunAisleMergeUseCase,
 )
-from src.api.dependencies import get_inventory_repo
 from .shared import aisle_to_response, job_to_summary, status_response_from_result
 
 logger = logging.getLogger(__name__)
@@ -187,6 +190,29 @@ def _aggregate_aisle_execution_log_payload(
         jobs=jobs_meta,
         log_sources=log_sources,
     )
+
+
+def _load_job_and_aisle_for_inventory_job_route(
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase,
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+) -> Tuple[Job, Aisle]:
+    """Map application errors to the same HTTP 404 details as the pre–Phase 6 inline routes."""
+    try:
+        return resolve_uc.execute(inventory_id, aisle_id, job_id)
+    except JobNotFoundError:
+        raise HTTPException(status_code=404, detail="Job not found") from None
+    except JobDoesNotBelongToAisleError:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found or does not belong to this aisle",
+        ) from None
+    except AisleNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Aisle not found or does not belong to this inventory",
+        ) from None
 
 
 @router.post("/{inventory_id}/aisles", response_model=AisleResponse, status_code=201)
@@ -468,18 +494,14 @@ def get_aisle_job_detail(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    job_repo: JobRepository = Depends(get_job_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> JobSummary:
-    job = job_repo.get_by_id(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.target_type != "aisle" or job.target_id != aisle_id:
-        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle")
-    aisle = aisle_repo.get_by_id(aisle_id)
-    if aisle is None or aisle.inventory_id != inventory_id:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    job, _aisle = _load_job_and_aisle_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id
+    )
     job = stale_reconciler.reconcile(job)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -494,19 +516,15 @@ def get_job_execution_log(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    job_repo: JobRepository = Depends(get_job_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
     artifact_storage=Depends(get_artifact_storage),
 ) -> ExecutionLogResponse:
     """Structured execution log for this job row; JSONL may cite other ``payload.job_id`` values (envelope + derived fields)."""
-    job = job_repo.get_by_id(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.target_type != "aisle" or job.target_id != aisle_id:
-        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle")
-    aisle = aisle_repo.get_by_id(aisle_id)
-    if aisle is None or aisle.inventory_id != inventory_id:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    job, _aisle = _load_job_and_aisle_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id
+    )
     try:
         raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
     except StoredArtifactAccessError as e:
@@ -534,19 +552,15 @@ def get_job_execution_log_txt(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    job_repo: JobRepository = Depends(get_job_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
     artifact_storage=Depends(get_artifact_storage),
 ) -> Response:
     """Plain-text execution log for download (same artifact as JSON execution-log)."""
-    job = job_repo.get_by_id(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.target_type != "aisle" or job.target_id != aisle_id:
-        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle")
-    aisle = aisle_repo.get_by_id(aisle_id)
-    if aisle is None or aisle.inventory_id != inventory_id:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    job, _aisle = _load_job_and_aisle_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id
+    )
     try:
         raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
     except StoredArtifactAccessError as e:
@@ -579,19 +593,15 @@ def get_job_hybrid_report(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    job_repo: JobRepository = Depends(get_job_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
     artifact_storage=Depends(get_artifact_storage),
 ) -> dict[str, Any]:
     """Return pipeline hybrid_report.json (dict) from durable artifact metadata or legacy disk."""
-    job = job_repo.get_by_id(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.target_type != "aisle" or job.target_id != aisle_id:
-        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle")
-    aisle = aisle_repo.get_by_id(aisle_id)
-    if aisle is None or aisle.inventory_id != inventory_id:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    job, _aisle = _load_job_and_aisle_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id
+    )
     try:
         return load_hybrid_report_json_for_api(job, artifact_store=artifact_storage)
     except StoredArtifactAccessError as e:
