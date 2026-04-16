@@ -3,6 +3,9 @@ Phase 4 — minimal deterministic aggregation of multiple ``AnalysisResult`` val
 
 Selects a primary result for the rest of the pipeline and optionally attaches a trace blob
 to the primary's ``provider_metadata`` (see ``PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION``).
+
+**Primary selection:** order-based only (first entry in the caller-supplied sequence). This phase
+does not rank providers by confidence, cost, or agreement — that would be future evaluation work.
 """
 
 from __future__ import annotations
@@ -30,7 +33,12 @@ def model_label_from_analysis_result(result: AnalysisResult) -> Optional[str]:
 
 
 def select_primary_first_in_order(results: Sequence[AnalysisResult]) -> AnalysisResult:
-    """Deterministic primary: first successful result in caller-defined order."""
+    """
+    Return the first ``AnalysisResult`` in ``results`` (index 0).
+
+    Used after parallel execution where ``results`` is ordered like ``ordered_provider_keys``; the
+    pipeline primary is always the **first key’s** outcome, not a “best” pick across providers.
+    """
     if not results:
         raise ValueError("select_primary_first_in_order requires at least one AnalysisResult")
     return results[0]

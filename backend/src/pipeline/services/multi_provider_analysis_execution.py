@@ -1,9 +1,17 @@
 """
-Phase 4 — multi-provider analysis execution (parallel, sequential / fallback).
+Phase 4 — multi-provider analysis execution (parallel, sequential fallback).
 
 Invoked from :class:`~src.pipeline.adapters.hybrid_global_analysis_strategy.HybridGlobalAnalysisStrategy`
 after prompt/visual-reference preparation is unchanged; each branch calls the same ``analyze_once``
 with a ``RunContext`` whose ``pipeline_provider_name`` is set for that logical provider.
+
+**``multi_parallel`` error policy:** every provider in ``ordered_provider_keys`` must complete
+successfully. Work is submitted concurrently; results are awaited in **key list order**, and the
+first ``Future.result()`` in that sequence that raises propagates and fails the whole run. There is
+no partial-success merge of parsed outputs in this phase.
+
+**``multi_sequential``:** tries keys in order and returns on the first success (fallback). It does
+*not* run every provider for side-by-side comparison; see ``_execute_sequential_fallback``.
 
 Default single-provider runs do not enter this module (fast path preserves Phase 1–3 behavior).
 """
@@ -11,9 +19,9 @@ Default single-provider runs do not enter this module (fast path preserves Phase
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from src.llm.errors import LLMProviderError
 from src.pipeline.context.run_context import RunContext
@@ -78,6 +86,9 @@ def dispatch_multi_provider_analysis(
 
     ``analyze_once`` must perform one full hybrid analysis call for the given context
     (including executor resolution via Phase 3).
+
+    For ``multi_parallel``, the primary result is the outcome for ``ordered_provider_keys[0]``
+    once *all* branches succeed (see module docstring). Selection is order-based, not quality-based.
     """
     keys = list(ordered_provider_keys)
     if len(keys) < 2:
@@ -116,14 +127,20 @@ def _execute_parallel(
     analyze_once: Callable[[RunContext], AnalysisResult],
     run_logger: Optional[logging.Logger],
 ) -> AnalysisResult:
+    """
+    Run all keys concurrently; **all** must succeed or this function raises.
+
+    Results are collected by iterating ``keys`` in order so ``Future.result()`` ordering is explicit
+    (first failure in that order propagates; semantics match “all-or-nothing”, not best-of).
+    """
     results_by_key: Dict[str, AnalysisResult] = {}
 
     with ThreadPoolExecutor(max_workers=len(keys)) as pool:
-        future_to_key = {
-            pool.submit(analyze_once, replace(base_context, pipeline_provider_name=k)): k for k in keys
+        futures_by_key: Dict[str, Future[AnalysisResult]] = {
+            k: pool.submit(analyze_once, replace(base_context, pipeline_provider_name=k)) for k in keys
         }
-        for fut, k in future_to_key.items():
-            results_by_key[k] = fut.result()
+        for k in keys:
+            results_by_key[k] = futures_by_key[k].result()
 
     ordered_results = [results_by_key[k] for k in keys]
     primary = select_primary_first_in_order(ordered_results)
@@ -149,6 +166,16 @@ def _execute_sequential_fallback(
     analyze_once: Callable[[RunContext], AnalysisResult],
     run_logger: Optional[logging.Logger],
 ) -> AnalysisResult:
+    """
+    Sequential **fallback**: try ``keys[0]``, then ``keys[1]``, … until one ``analyze_once`` succeeds.
+
+    On first success, remaining keys are recorded as ``skipped`` in the trace (they are not invoked
+    for comparison). Only :class:`~src.llm.errors.LLMProviderError` is caught between attempts; other
+    exceptions propagate immediately.
+
+    This is intentionally **not** “run every provider sequentially and collect all results” (that would
+    be a different strategy for a later phase).
+    """
     runs: List[Dict[str, Any]] = []
     last_exc: Optional[BaseException] = None
     for idx, k in enumerate(keys):

@@ -223,8 +223,9 @@ class LlmProviderSettings(BaseModel):
         .strip()
         .lower(),
         description=(
-            "Phase 4 — hybrid analysis provider strategy: single (default), multi_parallel, "
-            "multi_sequential, or multi_fallback (alias for multi_sequential). "
+            "Phase 4 — hybrid analysis provider strategy: single (default); multi_parallel "
+            "(all listed providers must succeed); multi_sequential or multi_fallback (alias) "
+            "for sequential fallback (first success only, not full sequential comparison). "
             "Env: PIPELINE_ANALYSIS_EXECUTION_STRATEGY."
         ),
     )

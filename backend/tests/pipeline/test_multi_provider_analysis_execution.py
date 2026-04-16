@@ -93,6 +93,103 @@ def test_parallel_runs_each_provider_key(monkeypatch: pytest.MonkeyPatch) -> Non
     assert trace.get("ordered_provider_keys") == ["openai", "claude"]
 
 
+def test_parallel_all_must_succeed_propagates_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``multi_parallel``: if any branch raises, the dispatch fails (no partial primary result)."""
+
+    def handler(request: LLMRequest, s: object) -> object:
+        comp = (request.metadata or {}).get("prompt_composition") or {}
+        rk = str(comp.get("resolved_llm_provider_key") or "").strip().lower()
+        if rk == "claude":
+            raise LLMProviderError(code="RATE_LIMIT", message="claude down", details={})
+        return llm_response_success(parsed_json={"k": rk}, provider=rk, model="m")
+
+    executor = TestLLMExecutor(handler=handler)
+
+    def fake_resolve(pipeline_provider_name: str | None, settings: object) -> tuple[object, str]:
+        key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
+        return executor, key
+
+    monkeypatch.setattr(
+        "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
+        fake_resolve,
+    )
+
+    settings = _settings_base()
+    base = _ctx(settings=settings, pipeline_provider_name="openai")
+
+    def analyze_once(rc: RunContext) -> AnalysisResult:
+        from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
+
+        return HybridGlobalAnalysisStrategy()._analyze_once(
+            rc,
+            [],
+            [],
+            [],
+            {},
+        )
+
+    with pytest.raises(LLMProviderError, match="claude down"):
+        dispatch_multi_provider_analysis(
+            strategy_name=STRATEGY_MULTI_PARALLEL,
+            base_context=base,
+            ordered_provider_keys=["openai", "claude"],
+            analyze_once=analyze_once,
+            run_logger=base.logger,
+        )
+
+
+def test_sequential_fallback_stops_after_first_success_without_calling_later_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sequential mode is fallback: later keys are skipped once an earlier provider succeeds."""
+    calls: list[str | None] = []
+
+    def handler(request: LLMRequest, s: object) -> object:
+        comp = (request.metadata or {}).get("prompt_composition") or {}
+        rk = str(comp.get("resolved_llm_provider_key") or "").strip().lower()
+        calls.append(rk)
+        return llm_response_success(parsed_json={"ok": True}, provider=rk, model="m")
+
+    executor = TestLLMExecutor(handler=handler)
+
+    def fake_resolve(pipeline_provider_name: str | None, settings: object) -> tuple[object, str]:
+        key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
+        return executor, key
+
+    monkeypatch.setattr(
+        "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
+        fake_resolve,
+    )
+
+    settings = _settings_base()
+    base = _ctx(settings=settings, pipeline_provider_name="openai")
+
+    def analyze_once(rc: RunContext) -> AnalysisResult:
+        from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
+
+        return HybridGlobalAnalysisStrategy()._analyze_once(
+            rc,
+            [],
+            [],
+            [],
+            {},
+        )
+
+    out = dispatch_multi_provider_analysis(
+        strategy_name=STRATEGY_MULTI_SEQUENTIAL,
+        base_context=base,
+        ordered_provider_keys=["openai", "claude", "gemini"],
+        analyze_once=analyze_once,
+        run_logger=base.logger,
+    )
+    assert calls == ["openai"]
+    assert out.provider_name == "openai"
+    trace = (out.provider_metadata or {}).get(PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION) or {}
+    assert trace.get("primary_provider_key") == "openai"
+    runs = trace.get("runs") or []
+    assert any(r.get("status") == "skipped" and r.get("provider_key") == "claude" for r in runs)
+
+
 def test_sequential_uses_second_provider_after_llm_error(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str | None] = []
 

@@ -4,12 +4,19 @@ Phase 4 — explicit multi-provider analysis execution configuration.
 Resolves strategy name and ordered provider keys from ``RunContext`` (per-job) and
 ``LlmProviderSettings`` (defaults). Keeps Phase 3 resolution rules: primary key via
 :class:`~src.pipeline.services.pipeline_provider_resolver.PipelineProviderResolver`.
+
+**Strategy semantics (see also :mod:`src.env_settings.pipeline_analysis_execution_strings`):**
+
+- ``single`` — one provider; extras are ignored by the hybrid strategy fast path.
+- ``multi_parallel`` — all listed providers run concurrently; **all** must succeed.
+- ``multi_sequential`` / ``multi_fallback`` — sequential **fallback** (first success wins), not
+  full sequential multi-result comparison.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Sequence
+from typing import Any
 
 from src.env_settings.pipeline_analysis_execution_strings import (
     STRATEGY_MULTI_PARALLEL,
@@ -25,7 +32,11 @@ logger = logging.getLogger(__name__)
 
 
 def effective_analysis_execution_strategy(context: RunContext, settings: Any) -> str:
-    """Job ``RunContext.analysis_execution_strategy`` overrides settings when set."""
+    """
+    Effective strategy string after normalization (e.g. ``multi_fallback`` → ``multi_sequential``).
+
+    Job ``RunContext.analysis_execution_strategy`` overrides settings when set to a non-empty string.
+    """
     job = getattr(context, "analysis_execution_strategy", None)
     if isinstance(job, str) and job.strip():
         return normalize_pipeline_analysis_strategy_value(job)

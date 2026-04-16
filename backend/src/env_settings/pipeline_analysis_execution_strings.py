@@ -19,7 +19,15 @@ _VALID_STRATEGIES_AFTER_NORMALIZE = frozenset(
 
 
 def normalize_pipeline_analysis_strategy_value(raw: Optional[str]) -> str:
-    """Normalize user/job strategy labels; ``multi_fallback`` is an alias for sequential fallback."""
+    """
+    Normalize user/job strategy labels.
+
+    ``multi_fallback`` is an alias for ``multi_sequential``.
+
+    **Naming note:** ``STRATEGY_MULTI_SEQUENTIAL`` means **sequential fallback** (try providers in
+    order until one succeeds). It does **not** mean “run every provider in sequence and keep all
+    results” for comparison; that would be a different strategy.
+    """
     s = (raw or STRATEGY_SINGLE).strip().lower()
     if s in ("multi_fallback",):
         return STRATEGY_MULTI_SEQUENTIAL

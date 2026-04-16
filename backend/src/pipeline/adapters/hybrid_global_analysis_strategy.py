@@ -102,6 +102,14 @@ class HybridGlobalAnalysisStrategy:
         frame_refs: List[str],
         metadata: Dict[str, Any],
     ) -> AnalysisResult:
+        """
+        Run global analysis. Default ``single`` strategy uses one ``_analyze_once`` on ``context``.
+
+        Multi-provider modes (non-single with 2+ keys) delegate to
+        :func:`~src.pipeline.services.multi_provider_analysis_execution.dispatch_multi_provider_analysis`:
+        parallel requires all branches to succeed; sequential is fallback (first success only).
+        Primary selection for parallel is order-based (first key), not quality-ranked.
+        """
         settings = context.settings
         strategy = effective_analysis_execution_strategy(context, settings)
         ordered_keys = build_ordered_provider_keys(context, settings)
