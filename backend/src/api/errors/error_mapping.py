@@ -189,6 +189,7 @@ from src.api.errors.structured_api_http import (
     AISLE_NOT_FOUND,
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    INTERNAL_SERVER_ERROR,
     INVENTORY_NOT_FOUND,
     JOB_NOT_FOUND,
     JOB_NOT_IN_AISLE_SCOPE,
@@ -201,9 +202,6 @@ from src.api.errors.structured_api_http import (
 from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 
 logger = logging.getLogger(__name__)
-
-# Client-safe message for failures that are not mapped to a business rule.
-_UNHANDLED_REVIEW_DETAIL = "An unexpected error occurred while processing this request."
 
 # --- Phase 3: controlled ``detail`` for structured Category B (known use-case shapes only) ---
 _JOB_NOT_FOUND_CANON = re.compile(r"^Job not found: (.+)$")
@@ -426,6 +424,9 @@ def review_exception_to_http(exc: Exception, **log_context: Any) -> HTTPExceptio
     not in :func:`mapped_http_exception`—see module docstring for why ``ValueError`` is not
     in the shared mapper.
 
+    Unknown failures return :class:`StructuredApiHttpError` with the same ``code`` + generic
+    ``detail`` as :func:`src.api.server.unhandled_exception_handler` (aligned v3 500 contract).
+
     Logs unexpected failures at exception level without echoing internal text to the client.
     Optional ``log_context`` keys (e.g. ``inventory_id``, ``aisle_id``, ``position_id``,
     ``job_id``) are appended to the log message when provided (non-``None`` values only).
@@ -438,4 +439,8 @@ def review_exception_to_http(exc: Exception, **log_context: Any) -> HTTPExceptio
     ctx = {k: v for k, v in log_context.items() if v is not None}
     suffix = (" context=%r" % (ctx,)) if ctx else ""
     logger.exception("Unhandled exception while mapping review error to HTTP%s", suffix)
-    return HTTPException(status_code=500, detail=_UNHANDLED_REVIEW_DETAIL)
+    return StructuredApiHttpError(
+        500,
+        error_code=INTERNAL_SERVER_ERROR,
+        detail="An unexpected error occurred.",
+    )

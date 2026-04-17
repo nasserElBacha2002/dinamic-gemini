@@ -117,10 +117,12 @@ def test_reraise_if_mapped_no_op_for_value_error() -> None:
 
 
 def test_review_exception_unknown_returns_safe_500_detail() -> None:
-    http = review_exception_to_http(RuntimeError("do_not_leak_this"))
+    http = review_exception_to_http(RuntimeError("secret internal text"))
+    assert isinstance(http, StructuredApiHttpError)
     assert http.status_code == 500
-    assert "do_not_leak" not in (http.detail or "")
-    assert http.detail
+    assert http.error_code == INTERNAL_SERVER_ERROR
+    assert http.detail == "An unexpected error occurred."
+    assert "secret" not in http.detail
 
 
 def test_review_value_error_still_422() -> None:
