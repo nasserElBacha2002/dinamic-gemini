@@ -8,6 +8,15 @@ from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_get_inventory_use_case
 from src.api.errors.error_mapping import mapped_http_exception, reraise_if_mapped, review_exception_to_http
+from src.api.errors.structured_api_http import (
+    AISLE_NOT_FOUND,
+    INVENTORY_NOT_FOUND,
+    INTERNAL_SERVER_ERROR,
+    POSITION_NOT_FOUND,
+    PRODUCT_NOT_FOUND,
+    VISUAL_REFERENCE_NOT_FOUND,
+    StructuredApiHttpError,
+)
 from src.api.server import app
 from src.application.errors import (
     AisleNotFoundError,
@@ -27,6 +36,7 @@ def test_mapped_http_exception_job_scope_returns_404() -> None:
     assert http is not None
     assert http.status_code == 404
     assert http.detail == "Job x is not scoped to aisle y"
+    assert not isinstance(http, StructuredApiHttpError)
 
 
 def test_mapped_http_exception_unknown_returns_none() -> None:
@@ -39,9 +49,10 @@ def test_mapped_http_exception_excludes_value_error() -> None:
 
 
 def test_reraise_if_mapped_raises_when_mapped() -> None:
-    with pytest.raises(HTTPException) as excinfo:
+    with pytest.raises(StructuredApiHttpError) as excinfo:
         reraise_if_mapped(InventoryNotFoundError())
     assert excinfo.value.status_code == 404
+    assert excinfo.value.error_code == INVENTORY_NOT_FOUND
 
 
 def test_reraise_if_mapped_no_op_for_value_error() -> None:
@@ -64,24 +75,28 @@ def test_review_value_error_still_422() -> None:
 def test_mapped_inventory_not_found() -> None:
     http = mapped_http_exception(InventoryNotFoundError())
     assert http is not None
+    assert isinstance(http, StructuredApiHttpError)
     assert http.status_code == 404
     assert http.detail == "Inventory not found"
+    assert http.error_code == INVENTORY_NOT_FOUND
 
 
 @pytest.mark.parametrize(
-    "exc,expected_detail",
+    "exc,expected_detail,expected_code",
     [
-        (AisleNotFoundError(), "Aisle not found or does not belong to this inventory"),
-        (PositionNotFoundError(), "Position not found or does not belong to this aisle"),
-        (ProductNotFoundError(), "Product not found or does not belong to this position"),
-        (InventoryVisualReferenceNotFoundError(), "Visual reference not found"),
+        (AisleNotFoundError(), "Aisle not found or does not belong to this inventory", AISLE_NOT_FOUND),
+        (PositionNotFoundError(), "Position not found or does not belong to this aisle", POSITION_NOT_FOUND),
+        (ProductNotFoundError(), "Product not found or does not belong to this position", PRODUCT_NOT_FOUND),
+        (InventoryVisualReferenceNotFoundError(), "Visual reference not found", VISUAL_REFERENCE_NOT_FOUND),
     ],
 )
-def test_mapped_stable_not_found_details(exc: Exception, expected_detail: str) -> None:
+def test_mapped_stable_not_found_details(exc: Exception, expected_detail: str, expected_code: str) -> None:
     http = mapped_http_exception(exc)
     assert http is not None
+    assert isinstance(http, StructuredApiHttpError)
     assert http.status_code == 404
     assert http.detail == expected_detail
+    assert http.error_code == expected_code
 
 
 def test_mapped_stored_artifact_access_passes_curated_detail() -> None:
@@ -90,6 +105,7 @@ def test_mapped_stored_artifact_access_passes_curated_detail() -> None:
     assert http is not None
     assert http.status_code == 404
     assert http.detail == "Stored artifact file not found."
+    assert not isinstance(http, StructuredApiHttpError)
 
 
 def test_server_registers_global_exception_handler() -> None:
@@ -105,7 +121,13 @@ def test_minimal_app_global_handler_hides_internal_message() -> None:
     async def _unhandled(_request, _exc: Exception):
         from fastapi.responses import JSONResponse
 
-        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
+        return JSONResponse(
+            status_code=500,
+            content={
+                "code": INTERNAL_SERVER_ERROR,
+                "detail": "An unexpected error occurred.",
+            },
+        )
 
     @mini.get("/boom")
     def boom():
@@ -116,6 +138,7 @@ def test_minimal_app_global_handler_hides_internal_message() -> None:
     body = r.json()
     assert "secret_token_xyz" not in str(body)
     assert body.get("detail") == "An unexpected error occurred."
+    assert body.get("code") == INTERNAL_SERVER_ERROR
 
 
 def test_job_not_found_mapping_detail_preserved() -> None:
@@ -137,6 +160,28 @@ def test_real_app_global_handler_does_not_echo_internal_error() -> None:
         r = TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/any-id")
         assert r.status_code == 500
         assert "INTERNAL_LEAK" not in r.text
-        assert r.json().get("detail") == "An unexpected error occurred."
+        body = r.json()
+        assert body.get("detail") == "An unexpected error occurred."
+        assert body.get("code") == INTERNAL_SERVER_ERROR
     finally:
         app.dependency_overrides.pop(get_get_inventory_use_case, None)
+
+
+def test_get_inventory_not_found_returns_structured_json() -> None:
+    """Integration: stable not-found through app exception handler."""
+
+    class _MissingInventory:
+        def execute(self, _inventory_id: str):
+            raise InventoryNotFoundError()
+
+    app.dependency_overrides[get_get_inventory_use_case] = lambda: _MissingInventory()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/any-id")
+        assert r.status_code == 404
+        assert r.json() == {"code": INVENTORY_NOT_FOUND, "detail": "Inventory not found"}
+    finally:
+        app.dependency_overrides.pop(get_get_inventory_use_case, None)
+
+
+def test_app_registers_structured_api_http_handler() -> None:
+    assert StructuredApiHttpError in app.exception_handlers

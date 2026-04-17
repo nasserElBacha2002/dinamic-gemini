@@ -19,8 +19,16 @@ Intentional public copy; do not change without an explicit API / client contract
 - ``Product not found or does not belong to this position``
 - ``Visual reference not found``
 
+**Additive ``code`` field (v3 rollout)**  
+For the five not-found rows above, :func:`mapped_http_exception` returns
+:class:`src.api.errors.structured_api_http.StructuredApiHttpError`, which the app serializes
+as ``{"code": "<UPPER_SNAKE_CASE>", "detail": "<unchanged string>"}``. Clients that only
+read ``detail`` remain compatible. Category B/C paths remain plain ``HTTPException`` or
+route-local responses until a later phase.
+
 :class:`StoredArtifactAccessError` is **A-like** in spirit: ``status_code`` and ``detail``
-are set by the artifact layer per failure reason (not raw stack traces).
+are set by the artifact layer per failure reason (not raw stack traces). It remains
+``detail``-only JSON (no ``code`` in this phase).
 
 **Category B — compatibility-preserved ``detail=str(exc)``**  
 Branches below marked *compatibility* keep dynamic text because operators or clients may
@@ -92,6 +100,14 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
+from src.api.errors.structured_api_http import (
+    AISLE_NOT_FOUND,
+    INVENTORY_NOT_FOUND,
+    POSITION_NOT_FOUND,
+    PRODUCT_NOT_FOUND,
+    VISUAL_REFERENCE_NOT_FOUND,
+    StructuredApiHttpError,
+)
 from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 
 logger = logging.getLogger(__name__)
@@ -114,17 +130,37 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
     # StoredArtifactAccessError: Category A (reason-curated detail, not traceback text).
     if isinstance(exc, StoredArtifactAccessError):
         return HTTPException(status_code=exc.status_code, detail=exc.detail)
-    # --- Category A: stable fixed-detail not-found / scope errors ---
+    # --- Category A: stable fixed-detail not-found / scope errors (+ additive error codes) ---
     if isinstance(exc, InventoryNotFoundError):
-        return HTTPException(status_code=404, detail="Inventory not found")
+        return StructuredApiHttpError(
+            404,
+            error_code=INVENTORY_NOT_FOUND,
+            detail="Inventory not found",
+        )
     if isinstance(exc, AisleNotFoundError):
-        return HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+        return StructuredApiHttpError(
+            404,
+            error_code=AISLE_NOT_FOUND,
+            detail="Aisle not found or does not belong to this inventory",
+        )
     if isinstance(exc, PositionNotFoundError):
-        return HTTPException(status_code=404, detail="Position not found or does not belong to this aisle")
+        return StructuredApiHttpError(
+            404,
+            error_code=POSITION_NOT_FOUND,
+            detail="Position not found or does not belong to this aisle",
+        )
     if isinstance(exc, ProductNotFoundError):
-        return HTTPException(status_code=404, detail="Product not found or does not belong to this position")
+        return StructuredApiHttpError(
+            404,
+            error_code=PRODUCT_NOT_FOUND,
+            detail="Product not found or does not belong to this position",
+        )
     if isinstance(exc, InventoryVisualReferenceNotFoundError):
-        return HTTPException(status_code=404, detail="Visual reference not found")
+        return StructuredApiHttpError(
+            404,
+            error_code=VISUAL_REFERENCE_NOT_FOUND,
+            detail="Visual reference not found",
+        )
     # --- Category B (compatibility): dynamic detail=str(exc) ---
     if isinstance(exc, JobNotFoundError):
         return HTTPException(status_code=404, detail=str(exc))

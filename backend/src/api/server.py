@@ -18,6 +18,7 @@ from src.api.routes.v3.analytics_api import router as v3_analytics_router
 from src.api.schema_guard import schema_guard_state
 from src.api.routes.v3.review_queue import router as v3_review_queue_router
 from src.api.routes.v3.admin_ai_config import router as v3_admin_ai_config_router
+from src.api.errors.structured_api_http import INTERNAL_SERVER_ERROR, StructuredApiHttpError
 from src.api.schemas.responses import HealthResponse
 from src.auth.errors import AuthHttpError
 from src.auth.routes import router as auth_router
@@ -86,14 +87,22 @@ async def auth_http_error_handler(_: Request, exc: AuthHttpError):
     return JSONResponse(status_code=exc.status_code, content=exc.to_response_body())
 
 
+@app.exception_handler(StructuredApiHttpError)
+async def structured_api_http_error_handler(_: Request, exc: StructuredApiHttpError) -> JSONResponse:
+    """Emit flat JSON ``code`` + ``detail`` for selected stable v3 errors (additive contract)."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": exc.error_code, "detail": exc.detail},
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Safe 500 for unexpected failures; business rules should map to HTTPException earlier.
 
-    **Error contract:** response body is only the generic ``detail`` string below — never
-    ``str(exc)``, stack traces, or other internal diagnostics (see v3 contract notes in
-    ``src.api.errors.error_mapping``). More specific handlers (e.g. ``HTTPException``,
-    ``RequestValidationError``, ``AuthHttpError``) win via Starlette's MRO lookup.
+    **Error contract:** additive ``code`` + generic ``detail`` — never ``str(exc)``, stack
+    traces, or other internal diagnostics (see ``src.api.errors.error_mapping``). More
+    specific handlers win via Starlette's MRO lookup before this handler.
     """
     logger.exception(
         "Unhandled exception method=%s path=%s",
@@ -102,7 +111,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
     return JSONResponse(
         status_code=500,
-        content={"detail": "An unexpected error occurred."},
+        content={
+            "code": INTERNAL_SERVER_ERROR,
+            "detail": "An unexpected error occurred.",
+        },
     )
 
 

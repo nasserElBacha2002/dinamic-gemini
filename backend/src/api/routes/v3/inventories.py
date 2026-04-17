@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from src.api.errors import reraise_if_mapped
+from src.api.errors.structured_api_http import StructuredApiHttpError, VISUAL_REFERENCE_NOT_FOUND
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     resolve_visual_reference_file_response,
@@ -363,7 +364,11 @@ def get_inventory_visual_reference_file(
         reraise_if_mapped(e)
     ref = next((r for r in refs if r.id == reference_id), None)
     if ref is None:
-        raise HTTPException(status_code=404, detail="Visual reference not found")
+        raise StructuredApiHttpError(
+            404,
+            error_code=VISUAL_REFERENCE_NOT_FOUND,
+            detail="Visual reference not found",
+        )
 
     try:
         return resolve_visual_reference_file_response(ref, artifact_store=artifact_storage)
