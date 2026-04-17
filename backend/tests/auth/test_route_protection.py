@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from passlib.context import CryptContext
 
+import src.config as config_module
 from src.api.server import app
 from src.auth.security import create_access_token
 from src.config import reload_settings
@@ -24,6 +25,8 @@ _STABLE_UNAUTHORIZED = {"error": {"code": "UNAUTHORIZED", "message": "Authentica
 @pytest.fixture(autouse=True)
 def _auth_env(monkeypatch: pytest.MonkeyPatch):
     """Ensure auth env vars are set for route protection tests."""
+    monkeypatch.setattr(config_module, "_load_dotenv_files", lambda for_reload=False: None)
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
     monkeypatch.setenv("ADMIN_USERNAME", "admin")
     monkeypatch.setenv("ADMIN_PASSWORD_HASH", _PWD_CONTEXT.hash("correct-password"))
     monkeypatch.setenv("AUTH_TOKEN_SECRET", "t" * 40)
@@ -105,10 +108,10 @@ def test_v3_list_inventories_valid_token_reaches_handler():
     assert login_r.status_code == 200
     token = login_r.json()["access_token"]
     r = client.get("/api/v3/inventories", headers={"Authorization": f"Bearer {token}"})
-    # Auth passed; handler returns 200 and list (may be empty)
+    # Auth passed; handler returns 200 (legacy list or paginated envelope).
     assert r.status_code == 200
     data = r.json()
-    assert isinstance(data, list)
+    assert isinstance(data, list) or (isinstance(data, dict) and "items" in data)
 
 
 def test_v3_protected_route_contract_no_detail():

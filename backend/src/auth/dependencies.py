@@ -69,13 +69,17 @@ def get_current_admin(
     username = payload.get("username")
     role = payload.get("role")
     sub = payload.get("sub")
+    # Legacy access tokens issued before ``principal_id`` existed: treat as the primary
+    # principal (``AuthUser.id`` == "admin"). New tokens always include ``principal_id``.
+    raw_pid = payload.get("principal_id", "admin")
+    principal_id = raw_pid if isinstance(raw_pid, str) and raw_pid.strip() else "admin"
     if sub != "admin" or not isinstance(username, str) or not isinstance(role, str):
         raise AuthHttpError(
             status_code=status.HTTP_401_UNAUTHORIZED,
             error=AuthError(code="UNAUTHORIZED", message="Authentication required."),
         )
 
-    return AuthUser(id="admin", username=username, role=role)
+    return AuthUser(id=principal_id, username=username, role=role)
 
 
 def require_ai_config_inspection_user(
@@ -85,19 +89,18 @@ def require_ai_config_inspection_user(
     Gate for AI configuration inspection (GET ``/api/v3/admin/ai-config`` and related routes).
 
     Policy (both required):
-    1. Caller passed ``get_current_admin`` — valid admin JWT (any v3 admin username allowed by auth).
-    2. ``AuthUser.username`` is exactly the literal ``\"admin\"`` — the operational inspection principal.
+    1. Caller passed ``get_current_admin`` — valid v3 administrator JWT (Bearer).
+    2. ``AuthUser.id`` is exactly ``\"admin\"`` — the primary env administrator principal only.
 
-    Other admin accounts (e.g. alternate ``AUTH_ADMIN_USERNAME`` values) remain valid for the rest
-    of v3 but receive **403** here so the inspection UI and lazy prompt endpoints stay tied to the
-    fixed operational username.
+    Secondary env principals (e.g. temporary ``Jairo``, ``AuthUser.id == \"jairo\"``) use the same
+    ``role`` for general v3 routes but receive **403** on this inspection-only surface.
     """
-    if admin.username != "admin":
+    if admin.id != "admin":
         raise AuthHttpError(
             status_code=status.HTTP_403_FORBIDDEN,
             error=AuthError(
                 code="FORBIDDEN",
-                message="AI configuration inspection is restricted to the admin username.",
+                message="AI configuration inspection is restricted to the primary administrator principal.",
             ),
         )
     return admin

@@ -1,8 +1,14 @@
 """
 Auth service layer for v3.2.1 minimal administrative authentication.
 
+Provisioning policy (temporary second user):
+- The primary administrator (``ADMIN_USERNAME`` + ``ADMIN_PASSWORD_HASH``) must always be
+  configured for any login to succeed, including the optional env user **Jairo**.
+- ``AUTH_JAIRO_PASSWORD_HASH`` is optional; when absent/empty, Jairo is disabled.
+- This is not multi-user product support: no registration, no DB users, no RBAC.
+
 Phase 2 implements:
-- admin credential validation (single configured admin)
+- admin credential validation (primary env admin + optional temporary \"Jairo\" operator)
 - login response building (token + principal)
 """
 
@@ -20,6 +26,15 @@ from src.auth.errors import AuthHttpError
 from src.auth.schemas import AuthError, AuthUser, LoginRequest, LoginResponse
 from src.auth.security import create_access_token, verify_password
 
+# Temporary second operator (env-provisioned hash only; no registration flow).
+_JAIRO_LOGIN_USERNAME = "Jairo"
+_JAIRO_PRINCIPAL_ID = "jairo"
+
+
+def _primary_admin_credentials_configured(s: AuthSettings) -> bool:
+    """True when primary admin username and password hash are both non-empty (trimmed)."""
+    return bool(s.admin_username and s.admin_password_hash)
+
 
 @dataclass(frozen=True)
 class AuthContext:
@@ -36,7 +51,7 @@ def get_auth_context() -> AuthContext:
 
 @dataclass
 class RefreshTokenRecord:
-    """In-memory refresh token record for the single admin session (v3.2.3.E6).
+    """In-memory refresh token record per authenticated principal (v3.2.3.E6).
 
     This is intentionally simple and process-local; it can be replaced by a
     repository-backed implementation in a later phase without changing the
@@ -68,7 +83,7 @@ def _hash_token(token: str) -> str:
 
 
 def _issue_refresh_token(user_id: str, context: AuthContext) -> tuple[str, RefreshTokenRecord]:
-    """Create and persist a new refresh token for the admin session."""
+    """Create and persist a new refresh token for this principal (user_id = AuthUser.id)."""
     raw = uuid4().hex + uuid4().hex
     token_hash = _hash_token(raw)
     now = _now_utc()
@@ -116,13 +131,30 @@ def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[
     Does not log credentials and does not distinguish which field failed.
     """
     s = context.settings
-    if not s.admin_username or not s.admin_password_hash:
-        # Misconfiguration; treat as invalid credentials at this layer.
-        return None
-    if (command.username or "").strip() != s.admin_username:
-        return None
-    if not verify_password(command.password, s.admin_password_hash):
-        return None
+    submitted_user = (command.username or "").strip()
+    submitted_pw = command.password or ""
+
+    if _primary_admin_credentials_configured(s):
+        if submitted_user == s.admin_username and verify_password(submitted_pw, s.admin_password_hash):
+            return AuthUser(id="admin", username=s.admin_username, role="administrator")
+
+    # Jairo is an add-on only: requires a fully configured primary admin (Policy A).
+    if (
+        _primary_admin_credentials_configured(s)
+        and (s.jairo_password_hash or "").strip()
+        and submitted_user == _JAIRO_LOGIN_USERNAME
+        and verify_password(submitted_pw, s.jairo_password_hash)
+    ):
+        return AuthUser(id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator")
+
+    return None
+
+
+def _auth_user_from_principal_id(principal_id: str, context: AuthContext) -> AuthUser:
+    """Rebuild AuthUser for refresh/logout flows from stored principal id."""
+    s = context.settings
+    if principal_id == _JAIRO_PRINCIPAL_ID:
+        return AuthUser(id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator")
     return AuthUser(id="admin", username=s.admin_username, role="administrator")
 
 
@@ -142,6 +174,7 @@ def build_login_response(user: AuthUser, context: AuthContext) -> LoginResponse:
         "admin",
         username=user.username,
         role=user.role,
+        principal_id=user.id,
         secret=s.token_secret,
         expires_minutes=s.token_expires_minutes,
     )
@@ -189,11 +222,12 @@ def refresh_session(refresh_token: str, context: AuthContext) -> LoginResponse:
     new_refresh_token, new_rec = _issue_refresh_token(rec.user_id, context)
     _revoke_token_record(rec, replaced_by=new_rec)
 
-    user = AuthUser(id="admin", username=s.admin_username, role="administrator")
+    user = _auth_user_from_principal_id(rec.user_id, context)
     access_token = create_access_token(
         "admin",
         username=user.username,
         role=user.role,
+        principal_id=user.id,
         secret=s.token_secret,
         expires_minutes=s.token_expires_minutes,
     )

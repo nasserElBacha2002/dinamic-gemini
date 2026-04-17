@@ -1,4 +1,4 @@
-"""Admin-only read-only AI / provider configuration inspection (username ``admin`` only)."""
+"""Admin-only read-only AI / provider configuration inspection (primary principal ``AuthUser.id`` only)."""
 
 from __future__ import annotations
 

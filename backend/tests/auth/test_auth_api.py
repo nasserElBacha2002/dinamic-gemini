@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from passlib.context import CryptContext
 
+import src.config as config_module
 from src.api.server import app
 from src.auth.security import create_access_token
 from src.config import reload_settings
@@ -18,11 +19,15 @@ def _auth_env(monkeypatch: pytest.MonkeyPatch):
     """
     Ensure auth env vars are present for auth tests.
     """
+    # Avoid repo `.env` overwriting monkeypatched credentials during `reload_settings()`.
+    monkeypatch.setattr(config_module, "_load_dotenv_files", lambda for_reload=False: None)
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
     monkeypatch.setenv("ADMIN_USERNAME", "admin")
     monkeypatch.setenv("ADMIN_PASSWORD_HASH", _PWD_CONTEXT.hash("correct-password"))
     monkeypatch.setenv("AUTH_TOKEN_SECRET", "t" * 40)
     monkeypatch.setenv("AUTH_TOKEN_EXPIRES_MINUTES", "5")
     monkeypatch.setenv("AUTH_REFRESH_TOKEN_EXPIRES_MINUTES", "43200")
+    monkeypatch.delenv("AUTH_JAIRO_PASSWORD_HASH", raising=False)
     reload_settings()
     yield
 
@@ -122,6 +127,7 @@ def test_auth_me_expired_token_unauthorized():
         "admin",
         username="admin",
         role="administrator",
+        principal_id="admin",
         secret=os.environ["AUTH_TOKEN_SECRET"],
         expires_minutes=1,
         now=datetime(2000, 1, 1, tzinfo=timezone.utc),
@@ -129,4 +135,68 @@ def test_auth_me_expired_token_unauthorized():
     r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401
     assert r.json() == {"error": {"code": "UNAUTHORIZED", "message": "Authentication required."}}
+
+
+def test_auth_jairo_login_fails_when_hash_not_configured():
+    client = TestClient(app)
+    r = client.post("/auth/login", json={"username": "Jairo", "password": "any"})
+    assert r.status_code == 401
+    assert r.json() == {"error": {"code": "INVALID_CREDENTIALS", "message": "Invalid credentials."}}
+
+
+def test_auth_jairo_login_success_and_refresh(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AUTH_JAIRO_PASSWORD_HASH", _PWD_CONTEXT.hash("jairo-secret"))
+    reload_settings()
+    client = TestClient(app)
+    login_r = client.post("/auth/login", json={"username": "Jairo", "password": "jairo-secret"})
+    assert login_r.status_code == 200
+    data = login_r.json()
+    assert data["user"]["id"] == "jairo"
+    assert data["user"]["username"] == "Jairo"
+    assert data["user"]["role"] == "administrator"
+    refresh_r = client.post("/auth/refresh", json={"refresh_token": data["refresh_token"]})
+    assert refresh_r.status_code == 200
+    refreshed = refresh_r.json()
+    assert refreshed["user"]["username"] == "Jairo"
+    assert refreshed["user"]["id"] == "jairo"
+
+
+def test_auth_jairo_invalid_password(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AUTH_JAIRO_PASSWORD_HASH", _PWD_CONTEXT.hash("jairo-secret"))
+    reload_settings()
+    client = TestClient(app)
+    r = client.post("/auth/login", json={"username": "Jairo", "password": "wrong"})
+    assert r.status_code == 401
+
+
+def test_auth_jairo_username_case_sensitive(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AUTH_JAIRO_PASSWORD_HASH", _PWD_CONTEXT.hash("jairo-secret"))
+    reload_settings()
+    client = TestClient(app)
+    r = client.post("/auth/login", json={"username": "jairo", "password": "jairo-secret"})
+    assert r.status_code == 401
+
+
+def test_auth_jairo_unknown_username_with_hash_configured(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AUTH_JAIRO_PASSWORD_HASH", _PWD_CONTEXT.hash("jairo-secret"))
+    reload_settings()
+    client = TestClient(app)
+    r = client.post("/auth/login", json={"username": "nobody", "password": "jairo-secret"})
+    assert r.status_code == 401
+
+
+def test_auth_jairo_disabled_when_primary_admin_env_missing(monkeypatch: pytest.MonkeyPatch):
+    """Jairo cannot authenticate without a fully configured primary admin (Policy A)."""
+    monkeypatch.setattr(config_module, "_load_dotenv_files", lambda for_reload=False: None)
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    monkeypatch.delenv("ADMIN_USERNAME", raising=False)
+    monkeypatch.delenv("ADMIN_PASSWORD_HASH", raising=False)
+    monkeypatch.setenv("AUTH_TOKEN_SECRET", "t" * 40)
+    monkeypatch.setenv("AUTH_TOKEN_EXPIRES_MINUTES", "5")
+    monkeypatch.setenv("AUTH_REFRESH_TOKEN_EXPIRES_MINUTES", "43200")
+    monkeypatch.setenv("AUTH_JAIRO_PASSWORD_HASH", _PWD_CONTEXT.hash("solo-jairo"))
+    reload_settings()
+    client = TestClient(app)
+    r = client.post("/auth/login", json={"username": "Jairo", "password": "solo-jairo"})
+    assert r.status_code == 401
 

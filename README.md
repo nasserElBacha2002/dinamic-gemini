@@ -92,9 +92,11 @@ Variables **imprescindibles** según escenario:
 | Escenario | Variables típicas |
 |-----------|-------------------|
 | API + SQL | Cadena ODBC o `SQLSERVER_SERVER` + `SQLSERVER_DATABASE` + `SQLSERVER_UID` + `SQLSERVER_PWD` |
-| Login v3 en UI | `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `AUTH_TOKEN_SECRET` |
+| Login v3 en UI | `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `AUTH_TOKEN_SECRET`; opcional `AUTH_JAIRO_PASSWORD_HASH` (**Jairo**) solo si el admin primario ya está configurado (ver nota abajo) |
 | Pipeline con LLM | Según proveedor: p. ej. `GEMINI_API_KEY` si `LLM_PROVIDER=gemini` |
 | Artefactos en S3 | `ARTIFACT_STORAGE_PROVIDER=s3`, `ARTIFACT_S3_BUCKET`, etc. |
+
+**Usuario temporal por env (Jairo)** — no sustituye multi-usuario ni administración de cuentas: sin registro, sin UI de usuarios, sin modelo de permisos por recurso. El login fijo es exactamente **`Jairo`** (case-sensitive); la clave va solo como **hash** en `AUTH_JAIRO_PASSWORD_HASH` (vacío = desactivado). **Requiere** `ADMIN_USERNAME` y `ADMIN_PASSWORD_HASH` definidos: Jairo es un agregado opcional al admin primario. Ambos comparten el rol JWT `administrator` para la mayoría de v3; la inspección de configuración IA (`GET /api/v3/admin/ai-config`) queda limitada al principal primario (`AuthUser.id` `admin`). Los tokens antiguos sin claim `principal_id` se interpretan como ese principal primario.
 
 ---
 
@@ -210,7 +212,7 @@ En `backend/` existen `Dockerfile`, `Dockerfile.worker` y `docker-compose.yml` p
 
 ## Troubleshooting
 
-- **401 / sin sesión en el frontend:** configurá auth (`ADMIN_*`, `AUTH_TOKEN_SECRET`) y reiniciá API + navegador.
+- **401 / sin sesión en el frontend:** configurá auth (`ADMIN_*`, `AUTH_TOKEN_SECRET`; `AUTH_JAIRO_PASSWORD_HASH` solo con admin primario ya configurado) y reiniciá API + navegador.
 - **503 en `/ready`:** revisá migraciones y `DB_SCHEMA_REQUIRED_VERSION` vs versión aplicada en la base.
 - **403 `X-API-Key`:** la API tiene `API_KEY` definida; enviá el header o vaciá la variable solo en desarrollo local.
 - **ODBC / SQL Server:** ejecutá `python scripts/db_migrate.py config-check` y revisá el JSON de error (sin secretos).
