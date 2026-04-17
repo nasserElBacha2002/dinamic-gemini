@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { ROUTE_HOME, pathToInventoryAnalyticsCompare } from '../../../constants/appRoutes';
 import { ApiError, type Inventory } from '../../../api/types';
 import { exportInventoryResultsCsv } from '../../../api/client';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
@@ -31,7 +32,7 @@ export default function InventoryDetailHeader({
 
   return (
     <PageHeader
-      breadcrumbs={[{ label: t('aisle.breadcrumb_inventories'), to: '/' }]}
+      breadcrumbs={[{ label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME }]}
       title={headerVm.title}
       subtitle={
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
@@ -59,7 +60,7 @@ export default function InventoryDetailHeader({
               variant="outlined"
               size="small"
               data-testid="inventory-header-compare-runs"
-              onClick={() => navigate(`/inventories/${inventoryId}/analytics/compare`)}
+              onClick={() => navigate(pathToInventoryAnalyticsCompare(inventoryId))}
             >
               {t('analytics.compare_runs_link')}
             </Button>

@@ -7,6 +7,7 @@ contracts introduced in Phase 1.
 
 from fastapi import APIRouter, Depends, status
 
+from src.api.constants.route_paths import API_AUTH_ROUTER_PREFIX
 from src.auth.dependencies import get_auth_context_dep, get_current_admin
 from src.auth.errors import AuthHttpError
 from src.auth.schemas import (
@@ -19,7 +20,7 @@ from src.auth.schemas import (
 )
 from src.auth.service import AuthContext, authenticate_admin, build_login_response, refresh_session, logout_session
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix=API_AUTH_ROUTER_PREFIX, tags=["auth"])
 
 
 @router.post(

@@ -22,6 +22,7 @@ import { PageHeader } from '../components/shell';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
 import { useDebouncedSearchInput, useInventoriesList, useCreateInventory } from '../hooks';
 import { DEFAULT_LIST_PAGE_SIZE, TABLE_SERVER_SEARCH_DEBOUNCE_MS } from '../constants/dataTable';
+import { pathToInventory } from '../constants/appRoutes';
 import { INVENTORY_LIST_EMPTY_MESSAGE_KEY, INVENTORY_LIST_EMPTY_TITLE_KEY } from '../constants/uiCopy';
 
 export default function InventoriesList() {
@@ -70,7 +71,7 @@ export default function InventoriesList() {
     setCreateOpen(false);
     setCreateError(null);
     showSnackbar(t('inventory.created_snackbar', { name: created.name }), 'success');
-    if (created.id) navigate(`/inventories/${created.id}`);
+    if (created.id) navigate(pathToInventory(created.id));
   };
 
   const columns = useMemo<DataTableColumn<InventoryListItem>[]>(
@@ -86,7 +87,7 @@ export default function InventoriesList() {
             underline="hover"
             color="text.primary"
             sx={{ fontWeight: 600, textAlign: 'left' }}
-            onClick={() => navigate(`/inventories/${inv.id}`)}
+            onClick={() => navigate(pathToInventory(inv.id))}
           >
             {inv.name}
           </Link>

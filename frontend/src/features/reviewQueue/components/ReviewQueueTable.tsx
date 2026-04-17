@@ -24,7 +24,7 @@ import {
 } from '../../results/utils/reviewStatusDisplay';
 import { visibleTraceabilityToApiStatus } from '../../results/utils/traceabilityDisplay';
 import { formatDate } from '../../../utils/formatDate';
-import { pathToAislePositions } from '../../../utils/resultRoutes';
+import { pathToAislePositions, pathToInventory } from '../../../constants/appRoutes';
 
 export interface ReviewQueueTableProps {
   rows: ReviewQueueItem[];
@@ -163,7 +163,7 @@ export default function ReviewQueueTable({
         cell: (item) => (
           <MuiLink
             component={RouterLink}
-            to={`/inventories/${item.inventory_id}`}
+            to={pathToInventory(item.inventory_id)}
             variant="body2"
             underline="hover"
             color="primary"

@@ -9,6 +9,7 @@ import { ErrorAlert, LoadingBlock, useAppSnackbar } from '../components/ui';
 import AisleObservabilityDialog from '../components/AisleObservabilityDialog';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import { useInventoryDetail, useAislesList, useCreateAisle } from '../hooks';
+import { ROUTE_HOME } from '../constants/appRoutes';
 import { toAisleInventoryTableRows, toInventoryHeaderViewModel } from '../features/inventories/adapters';
 import { useAisleAssetUploadFlow } from '../features/inventories/hooks/useAisleAssetUploadFlow';
 import { useAisleProcessingFlow } from '../features/inventories/hooks/useAisleProcessingFlow';
@@ -100,7 +101,7 @@ export default function InventoryDetail() {
           ) : inventoryError && !inventory ? (
             <>
               <ErrorAlert message={inventoryError} onRetry={() => inventoryQuery.refetch()} />
-              <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
+              <Button sx={{ mt: 2 }} onClick={() => navigate(ROUTE_HOME)}>
                 {t('inventory.back_to_list')}
               </Button>
             </>

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from src.api.dependencies import (
     get_confirm_position_use_case,
@@ -14,6 +14,7 @@ from src.api.dependencies import (
     get_delete_position_use_case,
 )
 from src.api.schemas.position_schemas import ReviewActionRequest
+from src.domain.reviews.entities import ReviewActionType
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
@@ -55,27 +56,28 @@ def submit_review_action(
     delete_uc: DeletePositionUseCase = Depends(get_delete_position_use_case),
 ) -> None:
     """Submit a manual review action (confirm, corrections, mark_unknown, mark_image_mismatch, delete_position)."""
-    if body.action_type == "confirm":
+    # Pydantic validates ``action_type`` as ``ReviewActionType`` (same wire strings as the domain enum).
+    action = body.action_type
+    if action == ReviewActionType.CONFIRM:
         handle_confirm(inventory_id, aisle_id, position_id, body.job_id, confirm_uc)
         return
-    if body.action_type == "mark_unknown":
+    if action == ReviewActionType.MARK_UNKNOWN:
         handle_mark_unknown(inventory_id, aisle_id, position_id, body.job_id, mark_unknown_uc)
         return
-    if body.action_type == "mark_image_mismatch":
+    if action == ReviewActionType.MARK_IMAGE_MISMATCH:
         handle_mark_image_mismatch(
             inventory_id, aisle_id, position_id, body.job_id, mark_image_mismatch_uc
         )
         return
-    if body.action_type == "update_quantity":
+    if action == ReviewActionType.UPDATE_QUANTITY:
         handle_update_quantity(inventory_id, aisle_id, position_id, body, update_quantity_uc)
         return
-    if body.action_type == "update_sku":
+    if action == ReviewActionType.UPDATE_SKU:
         handle_update_sku(inventory_id, aisle_id, position_id, body, update_sku_uc)
         return
-    if body.action_type == "update_position_code":
+    if action == ReviewActionType.UPDATE_POSITION_CODE:
         handle_update_position_code(inventory_id, aisle_id, position_id, body, update_pos_code_uc)
         return
-    if body.action_type == "delete_position":
+    if action == ReviewActionType.DELETE_POSITION:
         handle_delete_position(inventory_id, aisle_id, position_id, body.job_id, delete_uc)
         return
-    raise HTTPException(status_code=422, detail=f"Unknown action_type: {body.action_type!r}")

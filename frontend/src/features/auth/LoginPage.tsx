@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ROUTE_HOME } from '../../constants/appRoutes';
 import { Box, Button, IconButton, InputAdornment, TextField, Typography, Paper, Alert } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
@@ -37,7 +38,7 @@ export default function LoginPage() {
       // Persist both access and refresh tokens so future refresh flows can be implemented.
       setStoredSession(res.access_token, res.refresh_token ?? null);
       login(res.user, res.access_token);
-      navigate('/', { replace: true });
+      navigate(ROUTE_HOME, { replace: true });
     } catch (err) {
       setErrorMessage(getAuthErrorMessage(err));
     } finally {

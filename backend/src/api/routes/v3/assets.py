@@ -11,6 +11,13 @@ from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
+    HTTP_DETAIL_AISLE_NOT_FOUND_SHORT,
+    HTTP_DETAIL_ASSET_NOT_FOUND,
+    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+    HTTP_DETAIL_PREVIEW_NOT_AVAILABLE_FOR_IMAGE,
+)
 from src.api.errors import reraise_if_mapped
 from src.config import load_settings
 from src.api.dependencies import (
@@ -82,7 +89,7 @@ async def upload_aisle_assets(
 ) -> UploadAisleAssetsResponse:
     """Upload one or more assets (photos/videos) to an aisle. Aisle transitions to assets_uploaded."""
     if not files:
-        raise HTTPException(status_code=422, detail="At least one file is required")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
     uploaded: List[UploadedFile] = []
     for u in files:
         if not u.filename and not getattr(u, "content_type", None):
@@ -96,7 +103,7 @@ async def upload_aisle_assets(
             )
         )
     if not uploaded:
-        raise HTTPException(status_code=422, detail="At least one file is required")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
     try:
         created = use_case.execute(inventory_id, aisle_id, uploaded)
         return UploadAisleAssetsResponse(assets=[asset_to_response(a) for a in created])
@@ -152,7 +159,7 @@ def get_aisle_asset_file(
             aisle_id,
             asset_id,
         )
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY)
     asset = next((a for a in assets if a.id == asset_id), None)
     if asset is None:
         failure_reason = AssetFileFailureReason.ASSET_NOT_FOUND
@@ -163,7 +170,7 @@ def get_aisle_asset_file(
             aisle_id,
             asset_id,
         )
-        raise HTTPException(status_code=404, detail="Asset not found")
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_ASSET_NOT_FOUND)
 
     def _asset_is_heic(a: SourceAsset) -> bool:
         mt = (a.mime_type or "").lower()
@@ -181,7 +188,7 @@ def get_aisle_asset_file(
             aisle_row = use_case.get_validated_aisle(inventory_id, aisle_id)
         except AisleNotFoundError:
             failure_reason = AssetFileFailureReason.AISLE_NOT_FOUND
-            raise HTTPException(status_code=404, detail="Aisle not found") from None
+            raise HTTPException(status_code=404, detail=HTTP_DETAIL_AISLE_NOT_FOUND_SHORT) from None
         output_dir = Path(load_settings().output_dir)
         request_job_id = job_id.strip() if job_id and job_id.strip() else None
         logger.debug(
@@ -213,7 +220,7 @@ def get_aisle_asset_file(
         )
         raise HTTPException(
             status_code=404,
-            detail="Preview is not available for this image",
+            detail=HTTP_DETAIL_PREVIEW_NOT_AVAILABLE_FOR_IMAGE,
         )
 
     try:
@@ -254,7 +261,7 @@ def get_aisle_asset_image_display_url(
             aisle_id,
             asset_id,
         )
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY)
     asset = next((a for a in assets if a.id == asset_id), None)
     if asset is None:
         logger.warning(
@@ -263,7 +270,7 @@ def get_aisle_asset_image_display_url(
             aisle_id,
             asset_id,
         )
-        raise HTTPException(status_code=404, detail="Asset not found")
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_ASSET_NOT_FOUND)
 
     def _asset_is_heic(a: SourceAsset) -> bool:
         mt = (a.mime_type or "").lower()
@@ -285,7 +292,7 @@ def get_aisle_asset_image_display_url(
                 aisle_id,
                 asset_id,
             )
-            raise HTTPException(status_code=404, detail="Aisle not found") from None
+            raise HTTPException(status_code=404, detail=HTTP_DETAIL_AISLE_NOT_FOUND_SHORT) from None
         output_dir = Path(load_settings().output_dir)
         request_job_id = job_id.strip() if job_id and job_id.strip() else None
         normalized_path = resolve_normalized_asset_path(
@@ -310,7 +317,7 @@ def get_aisle_asset_image_display_url(
         )
         raise HTTPException(
             status_code=404,
-            detail="Preview is not available for this image",
+            detail=HTTP_DETAIL_PREVIEW_NOT_AVAILABLE_FOR_IMAGE,
         )
 
     try:

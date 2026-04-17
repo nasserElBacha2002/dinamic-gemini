@@ -13,6 +13,11 @@ from typing import Any, NoReturn, Optional, Tuple
 
 from fastapi import HTTPException
 
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_REVIEW_CORRECTED_QUANTITY_REQUIRED_FOR_UPDATE_QUANTITY,
+    HTTP_DETAIL_REVIEW_POSITION_CODE_REQUIRED_FOR_UPDATE_POSITION_CODE,
+    HTTP_DETAIL_REVIEW_SKU_REQUIRED_FOR_UPDATE_SKU,
+)
 from src.api.errors import review_exception_to_http
 from src.utils.validation import validate_relative_path
 
@@ -276,7 +281,7 @@ def handle_update_quantity(
     update_quantity_uc: UpdateProductQuantityUseCase,
 ) -> None:
     if body.corrected_quantity is None:
-        raise HTTPException(status_code=422, detail="corrected_quantity is required for update_quantity")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_REVIEW_CORRECTED_QUANTITY_REQUIRED_FOR_UPDATE_QUANTITY)
     try:
         update_quantity_uc.execute(
             inventory_id,
@@ -312,7 +317,7 @@ def handle_update_sku(
 ) -> None:
     sku = (body.sku or "").strip() if body.sku is not None else ""
     if not sku:
-        raise HTTPException(status_code=422, detail="sku is required for update_sku")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_REVIEW_SKU_REQUIRED_FOR_UPDATE_SKU)
     try:
         update_sku_uc.execute(
             inventory_id,
@@ -349,7 +354,7 @@ def handle_update_position_code(
 ) -> None:
     pos_code = (body.position_code or "").strip()
     if not pos_code:
-        raise HTTPException(status_code=422, detail="position_code is required for update_position_code")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_REVIEW_POSITION_CODE_REQUIRED_FOR_UPDATE_POSITION_CODE)
     try:
         update_pos_code_uc.execute(
             inventory_id,

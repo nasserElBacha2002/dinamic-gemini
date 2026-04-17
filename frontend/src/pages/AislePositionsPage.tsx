@@ -18,6 +18,7 @@ import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
 import { FilterToolbar, SectionCard, TableSearchField, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
+import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../constants/appRoutes';
 import {
   useInventoryDetail,
   useAislesList,
@@ -256,7 +257,7 @@ export default function AislePositionsPage() {
     params.set('aisleId', aisleId);
     params.set('jobAId', a);
     params.set('jobBId', b);
-    navigate(`/inventories/${inventoryId}/analytics/compare?${params.toString()}`);
+    navigate(`${pathToInventoryAnalyticsCompare(inventoryId)}?${params.toString()}`);
   }, [aisleId, inventoryId, jobs, navigate, visibleJobId]);
 
   useEffect(() => {
@@ -507,7 +508,7 @@ export default function AislePositionsPage() {
     return (
       <>
         <Alert severity="warning">{t('positions.missing_inventory_aisle_page')}</Alert>
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
+        <Button sx={{ mt: 2 }} onClick={() => navigate(ROUTE_HOME)}>
           {t('inventory.back_to_list')}
         </Button>
       </>
@@ -515,9 +516,9 @@ export default function AislePositionsPage() {
   }
 
   const breadcrumbs = [
-    { label: t('aisle.breadcrumb_inventories'), to: '/' as const },
+    { label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME },
     ...(inventory
-      ? [{ label: inventory.name, to: `/inventories/${inventoryId}` as const }]
+      ? [{ label: inventory.name, to: pathToInventory(inventoryId) }]
       : []),
     { label: t('positions.breadcrumb_results') },
   ];
@@ -562,7 +563,7 @@ export default function AislePositionsPage() {
                     params.set('aisleId', aisleId!);
                     params.set('jobAId', visibleJobId!);
                     params.set('jobBId', operationalJobId!);
-                    navigate(`/inventories/${inventoryId}/analytics/compare?${params.toString()}`);
+                    navigate(`${pathToInventoryAnalyticsCompare(inventoryId)}?${params.toString()}`);
                   }}
                 >
                   {t('positions.compare_to_operational')}

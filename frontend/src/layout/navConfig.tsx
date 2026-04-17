@@ -1,4 +1,10 @@
 import type { ReactNode } from 'react';
+import {
+  ROUTE_ADMIN_AI_CONFIG,
+  ROUTE_HOME,
+  ROUTE_METRICS,
+  ROUTE_REVIEW_QUEUE,
+} from '../constants/appRoutes';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import AnalyticsOutlinedIcon from '@mui/icons-material/AnalyticsOutlined';
@@ -15,14 +21,14 @@ export interface PrimaryNavItem {
 
 /** Primary sidebar — Inventories (home), Review queue, Metrics. */
 export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
-  { labelKey: 'nav.inventories', to: '/', icon: <Inventory2OutlinedIcon fontSize="small" /> },
-  { labelKey: 'nav.review_queue', to: '/review-queue', icon: <FactCheckOutlinedIcon fontSize="small" /> },
-  { labelKey: 'nav.metrics', to: '/metrics', icon: <AnalyticsOutlinedIcon fontSize="small" /> },
+  { labelKey: 'nav.inventories', to: ROUTE_HOME, icon: <Inventory2OutlinedIcon fontSize="small" /> },
+  { labelKey: 'nav.review_queue', to: ROUTE_REVIEW_QUEUE, icon: <FactCheckOutlinedIcon fontSize="small" /> },
+  { labelKey: 'nav.metrics', to: ROUTE_METRICS, icon: <AnalyticsOutlinedIcon fontSize="small" /> },
 ];
 
 /** Shown only when `user.username === 'admin'` (must match backend gate). */
 export const ADMIN_AI_CONFIG_NAV_ITEM: PrimaryNavItem = {
   labelKey: 'nav.ai_config',
-  to: '/admin/ai-config',
+  to: ROUTE_ADMIN_AI_CONFIG,
   icon: <PsychologyOutlinedIcon fontSize="small" />,
 };

@@ -30,40 +30,25 @@ import { downloadAisleBenchmarkExportCsv } from '../../api/client';
 import { ApiError } from '../../api/types';
 import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { useAppSnackbar } from '../../components/ui';
-import { pathToAislePositions } from '../../utils/resultRoutes';
+import { ROUTE_HOME, pathToAislePositions, pathToInventory } from '../../constants/appRoutes';
 
 function userFacingCaptureNote(note: string, t: TFunction): string {
   if (note === 'provider_usage_missing') {
-    return t(
-      'compare.llm_cost_note.provider_usage_missing',
-      'The provider did not return token usage, so cost cannot be estimated.'
-    );
+    return t('compare.llm_cost_note.provider_usage_missing');
   }
   if (note === 'pricing_entry_missing') {
-    return t(
-      'compare.llm_cost_note.pricing_entry_missing',
-      'No pricing rule matched this model in the catalog, so totals are not computed.'
-    );
+    return t('compare.llm_cost_note.pricing_entry_missing');
   }
   if (note === 'pricing_present_but_no_billable_dimensions') {
-    return t(
-      'compare.llm_cost_note.pricing_present_but_no_billable_dimensions',
-      'Pricing is configured but does not cover the usage dimensions reported for this run.'
-    );
+    return t('compare.llm_cost_note.pricing_present_but_no_billable_dimensions');
   }
   if (note.startsWith('billable_dimension_not_priced:')) {
     const dimension = note.slice('billable_dimension_not_priced:'.length);
-    return t('compare.llm_cost_note.billable_dimension_not_priced', {
-      dimension,
-      defaultValue: `Reported usage includes ${dimension}, which is not priced in the catalog.`,
-    });
+    return t('compare.llm_cost_note.billable_dimension_not_priced', { dimension });
   }
   if (note.startsWith('usage_dimension_ambiguous:')) {
     const dimension = note.slice('usage_dimension_ambiguous:'.length);
-    return t('compare.llm_cost_note.usage_dimension_ambiguous', {
-      dimension,
-      defaultValue: `Token accounting is ambiguous for ${dimension}; the total may be approximate.`,
-    });
+    return t('compare.llm_cost_note.usage_dimension_ambiguous', { dimension });
   }
   return note;
 }
@@ -92,7 +77,7 @@ function formatCostDisplay(
   const snap = run.llm_cost_snapshot;
   if (!snap) {
     return {
-      value: t('compare.llm_cost_display.no_snapshot', 'Cost snapshot unavailable'),
+      value: t('compare.llm_cost_display.no_snapshot'),
       details: null,
     };
   }
@@ -100,12 +85,7 @@ function formatCostDisplay(
   const currency = snap.computed_cost?.currency?.trim() || snap.billing_currency?.trim();
   const statusKey = snap.capture_status ?? 'unavailable';
   const statusLabel = t(`compare.llm_cost_status.${statusKey}`, {
-    defaultValue:
-      statusKey === 'exact'
-        ? 'Exact (usage fully priced)'
-        : statusKey === 'estimated'
-          ? 'Estimated'
-          : 'Unavailable',
+    defaultValue: t('compare.llm_cost_status.unavailable'),
   });
   const notes = Array.isArray(snap.capture_notes) ? snap.capture_notes : [];
   const noteText = notes.map((n) => userFacingCaptureNote(n, t)).filter(Boolean);
@@ -114,11 +94,11 @@ function formatCostDisplay(
   if (!total) {
     let value: string;
     if (notes.includes('pricing_entry_missing') || machineReason === 'pricing_entry_missing') {
-      value = t('compare.llm_cost_display.no_pricing_configured', 'No pricing configured');
+      value = t('compare.llm_cost_display.no_pricing_configured');
     } else if (notes.includes('provider_usage_missing') || machineReason === 'provider_usage_missing') {
-      value = t('compare.llm_cost_display.usage_not_reported', 'Usage not reported');
+      value = t('compare.llm_cost_display.usage_not_reported');
     } else {
-      value = t('compare.llm_cost_display.not_computed', 'Not computed');
+      value = t('compare.llm_cost_display.not_computed');
     }
     const modelLabel = (run.model_name || snap.model || '').trim();
     const showDetails =
@@ -128,7 +108,7 @@ function formatCostDisplay(
       Boolean(modelLabel);
     const detailsWithModel =
       modelLabel && !total
-        ? `${details}${details ? ' · ' : ''}${t('compare.llm_cost_display.model_in_tooltip', 'Model: {{model}}', { model: modelLabel })}`
+        ? `${details}${details ? ' · ' : ''}${t('compare.llm_cost_display.model_in_tooltip', { model: modelLabel })}`
         : details;
     return { value, details: showDetails ? detailsWithModel : null };
   }
@@ -186,7 +166,7 @@ export default function CompareRunsPage() {
     if (!inventoryQuery.isSuccess) return;
     if (!inventory) return;
     if (inventory.processing_mode !== 'test') {
-      navigate(`/inventories/${inventoryId}`, { replace: true });
+      navigate(pathToInventory(inventoryId), { replace: true });
     }
   }, [inventory, inventoryId, inventoryQuery.isSuccess, navigate]);
 
@@ -242,8 +222,8 @@ export default function CompareRunsPage() {
   }
 
   const breadcrumbs = [
-    { label: t('aisle.breadcrumb_inventories'), to: '/' as const },
-    ...(inventory ? [{ label: inventory.name, to: `/inventories/${inventoryId}` as const }] : []),
+    { label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME },
+    ...(inventory ? [{ label: inventory.name, to: pathToInventory(inventoryId) }] : []),
     { label: t('analytics.compare_runs_breadcrumb') },
   ];
 
@@ -256,7 +236,7 @@ export default function CompareRunsPage() {
       : null;
 
   const backHref =
-    aisleId && inventoryId ? pathToAislePositions(inventoryId, aisleId) : `/inventories/${inventoryId}`;
+    aisleId && inventoryId ? pathToAislePositions(inventoryId, aisleId) : pathToInventory(inventoryId);
 
   return (
     <>
@@ -450,7 +430,7 @@ export default function CompareRunsPage() {
                         <TableCell align="right">{r.metrics.needs_review_count}</TableCell>
                       </TableRow>
                       <TableRow>
-                        <TableCell>{t('compare.metric_total_cost', 'Total cost')}</TableCell>
+                        <TableCell>{t('compare.metric_total_cost')}</TableCell>
                         <TableCell align="right">
                           {cost.details ? (
                             <Tooltip title={cost.details}>

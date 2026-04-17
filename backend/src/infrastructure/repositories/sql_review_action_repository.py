@@ -52,7 +52,8 @@ def _parse_json_field(
 
 
 def _row_to_review(row: Any) -> ReviewAction:
-    action_type_raw = getattr(row, "action_type", "confirm") or "confirm"
+    default_wire = ReviewActionType.CONFIRM.value
+    action_type_raw = getattr(row, "action_type", default_wire) or default_wire
     try:
         action_type = ReviewActionType(action_type_raw)
     except ValueError:

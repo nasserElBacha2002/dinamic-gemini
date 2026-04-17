@@ -2,9 +2,13 @@
  * v3 API client — inventories and aisles.
  * Base URL is relative so Vite proxy forwards /api to the backend.
  * Protected requests include Authorization: Bearer <token> from auth storage.
+ *
+ * User-visible fallback copy should use i18n.t keys (see translation.json), not raw English.
  */
 
+import { V3_ADMIN_BASE, V3_ANALYTICS_BASE, V3_INVENTORIES_BASE, V3_REVIEW_QUEUE_BASE } from '../constants/v3ApiPaths';
 import { getStoredToken } from '../features/auth/storage';
+import i18n from '../i18n';
 import type {
   Inventory,
   Aisle,
@@ -76,7 +80,7 @@ function messageFromErrorDetail(
       const msg = (first as ValidationDetailItem).msg!.trim();
       if (msg) return msg;
     }
-    return 'Validation error';
+    return i18n.t('errors.validation_generic');
   }
   return fallback;
 }
@@ -85,7 +89,7 @@ function messageFromErrorDetail(
 function throwApiErrorIfNotOk(response: Response, text: string, data: ApiErrorDetail): never {
   const message = messageFromErrorDetail(
     data.detail,
-    text && text.length < 200 ? text : response.statusText || 'Request failed'
+    text && text.length < 200 ? text : response.statusText || i18n.t('errors.request_failed')
   );
   throw new ApiError(message, response.status, data);
 }
@@ -134,18 +138,18 @@ export async function getInventories(
   listQuery?: InventoriesListQuery
 ): Promise<PaginatedInventoryListResponse> {
   const qs = buildInventoriesListQueryString(listQuery);
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/${qs}`);
+  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${qs}`);
   return handleResponse<PaginatedInventoryListResponse>(response);
 }
 
 export async function getInventory(id: string): Promise<Inventory> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/${id}`);
+  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${id}`);
   return handleResponse<Inventory>(response);
 }
 
 /** Get inventory metrics — Épica 9 (§9.6). Returns 404 if inventory not found. */
 export async function getInventoryMetrics(inventoryId: string): Promise<InventoryMetrics> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/${inventoryId}/metrics`);
+  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/metrics`);
   return handleResponse<InventoryMetrics>(response);
 }
 
@@ -169,7 +173,7 @@ function filenameFromContentDisposition(header: string | null, fallback: string)
  * Uses Content-Disposition filename when present.
  */
 export async function exportInventoryResultsCsv(inventoryId: string): Promise<void> {
-  const path = `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/export?format=csv`;
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/export?format=csv`;
   const response = await protectedFetch(path);
   const fallbackName = `inventory_${inventoryId}_results.csv`;
   if (!response.ok) {
@@ -208,7 +212,7 @@ export async function exportAisleResultsCsv(
   if (jid) {
     params.set('job_id', jid);
   }
-  const path = `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/export?${params}`;
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/export?${params}`;
   const response = await protectedFetch(path);
   const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_results.csv`;
   if (!response.ok) {
@@ -234,7 +238,7 @@ export async function exportAisleResultsCsv(
 }
 
 export async function createInventory(body: CreateInventoryRequest): Promise<Inventory> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/`, {
+  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -249,7 +253,7 @@ export async function uploadInventoryVisualReferences(
   const form = new FormData();
   files.forEach((file) => form.append('files', file));
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references`,
     { method: 'POST', body: form }
   );
   return handleResponse<UploadInventoryVisualReferencesResponse>(response);
@@ -259,7 +263,7 @@ export async function getInventoryVisualReferences(
   inventoryId: string
 ): Promise<InventoryVisualReferenceListResponse> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references`
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references`
   );
   return handleResponse<InventoryVisualReferenceListResponse>(response);
 }
@@ -269,7 +273,7 @@ export async function deleteInventoryVisualReference(
   referenceId: string
 ): Promise<void> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
     { method: 'DELETE' }
   );
   if (!response.ok) {
@@ -292,7 +296,7 @@ export async function replaceInventoryVisualReference(
   const form = new FormData();
   form.append('file', file);
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
     { method: 'PUT', body: form }
   );
   return handleResponse<InventoryVisualReference>(response);
@@ -303,7 +307,7 @@ export async function fetchInventoryVisualReferenceFile(
   referenceId: string
 ): Promise<{ imageSrc: string; revoke: () => void }> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}/file`
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}/file`
   );
   if (!response.ok) {
     const text = await response.text();
@@ -353,7 +357,7 @@ export async function getAisles(
   listQuery?: AislesListQuery
 ): Promise<PaginatedAisleListResponse> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles${buildAislesListQueryString(listQuery)}`
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles${buildAislesListQueryString(listQuery)}`
   );
   return handleResponse<PaginatedAisleListResponse>(response);
 }
@@ -362,7 +366,7 @@ export async function createAisle(
   inventoryId: string,
   body: CreateAisleRequest
 ): Promise<Aisle> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/${inventoryId}/aisles`, {
+  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -371,13 +375,13 @@ export async function createAisle(
 }
 
 export async function getProcessingProviderOptions(): Promise<ProcessingProviderOptionsResponse> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/inventories/processing-provider-options`);
+  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/processing-provider-options`);
   return handleResponse<ProcessingProviderOptionsResponse>(response);
 }
 
 /** GET /api/v3/admin/ai-config — restricted to session user `username === 'admin'`. */
 export async function getAdminAiConfig(): Promise<AdminAiConfigResponse> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/admin/ai-config`);
+  const response = await protectedFetch(`${API_BASE}${V3_ADMIN_BASE}/ai-config`);
   return handleResponse<AdminAiConfigResponse>(response);
 }
 
@@ -393,7 +397,7 @@ export async function getAdminAiComposedPrompt(params: {
     prompt_parity_mode: String(params.prompt_parity_mode),
   });
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/admin/ai-config/composed-prompt?${q.toString()}`
+    `${API_BASE}${V3_ADMIN_BASE}/ai-config/composed-prompt?${q.toString()}`
   );
   return handleResponse<AdminAiComposedPromptResponse>(response);
 }
@@ -417,7 +421,7 @@ export async function startAisleProcessing(
     body.prompt_key = String(pk).trim();
   }
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/process`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/process`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -433,7 +437,7 @@ export async function getAisleStatus(
   aisleId: string
 ): Promise<AisleStatusResponse> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/status`
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/status`
   );
   return handleResponse<AisleStatusResponse>(response);
 }
@@ -449,7 +453,7 @@ export async function runAisleMerge(
   const params = new URLSearchParams();
   params.set('job_id', jobId);
   const qs = params.toString();
-  const url = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge?${qs}`;
+  const url = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/merge?${qs}`;
   const response = await protectedFetch(url, { method: 'POST' });
   return handleResponse<RunMergeResponse>(response);
 }
@@ -465,7 +469,7 @@ export async function getAisleMergeResults(
     params.set('job_id', String(options.jobId).trim());
   }
   const qs = params.toString();
-  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/merge-results${qs ? `?${qs}` : ''}`;
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/merge-results${qs ? `?${qs}` : ''}`;
   const response = await protectedFetch(path);
   return handleResponse<MergeResultsResponse>(response);
 }
@@ -477,7 +481,7 @@ export async function getExecutionLog(
   jobId: string
 ): Promise<ExecutionLogResponse> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/execution-log`
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/execution-log`
   );
   return handleResponse<ExecutionLogResponse>(response);
 }
@@ -488,7 +492,7 @@ export async function getAisleExecutionLog(
   aisleId: string
 ): Promise<AisleExecutionLogResponse> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/execution-log`
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/execution-log`
   );
   return handleResponse<AisleExecutionLogResponse>(response);
 }
@@ -498,14 +502,14 @@ export function getExecutionLogTxtUrl(inventoryId: string, aisleId: string, jobI
   const inv = encodeURIComponent(inventoryId);
   const aisle = encodeURIComponent(aisleId);
   const job = encodeURIComponent(jobId);
-  return `${API_BASE}/api/v3/inventories/${inv}/aisles/${aisle}/jobs/${job}/execution-log.txt`;
+  return `${API_BASE}${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/jobs/${job}/execution-log.txt`;
 }
 
 /** Direct URL for aisle aggregated execution log plain-text download. */
 export function getAisleExecutionLogTxtUrl(inventoryId: string, aisleId: string): string {
   const inv = encodeURIComponent(inventoryId);
   const aisle = encodeURIComponent(aisleId);
-  return `${API_BASE}/api/v3/inventories/${inv}/aisles/${aisle}/execution-log.txt`;
+  return `${API_BASE}${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/execution-log.txt`;
 }
 
 /** Download execution log as UTF-8 text (same artifact as JSON execution-log). */
@@ -575,7 +579,7 @@ export async function getAisleJobDetail(
   jobId: string
 ): Promise<JobSummary> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}`
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}`
   );
   return handleResponse<JobSummary>(response);
 }
@@ -586,7 +590,7 @@ export async function cancelAisleJob(
   jobId: string
 ): Promise<JobSummary> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/cancel`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/cancel`,
     { method: 'POST' }
   );
   return handleResponse<JobSummary>(response);
@@ -598,7 +602,7 @@ export async function retryAisleJob(
   jobId: string
 ): Promise<JobSummary> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/retry`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/retry`,
     { method: 'POST' }
   );
   return handleResponse<JobSummary>(response);
@@ -612,7 +616,7 @@ export async function uploadAisleAssets(
   const form = new FormData();
   files.forEach((file) => form.append('files', file));
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/assets`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/assets`,
     { method: 'POST', body: form }
   );
   return handleResponse<UploadAisleAssetsResponse>(response);
@@ -630,7 +634,7 @@ export function getReferenceImageFileUrl(
   jobId?: string | null
 ): string {
   const base = import.meta.env.VITE_API_BASE_URL ?? '';
-  const path = `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/file`;
+  const path = `${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/file`;
   if (jobId != null && String(jobId).trim() !== '') {
     return `${base}${path}?job_id=${encodeURIComponent(String(jobId).trim())}`;
   }
@@ -648,7 +652,7 @@ export function getReferenceImageDisplayUrl(
   jobId?: string | null
 ): string {
   const base = import.meta.env.VITE_API_BASE_URL ?? '';
-  const path = `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/image-display-url`;
+  const path = `${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/image-display-url`;
   if (jobId != null && String(jobId).trim() !== '') {
     return `${base}${path}?job_id=${encodeURIComponent(String(jobId).trim())}`;
   }
@@ -719,7 +723,7 @@ export async function fetchEvidenceImageDisplay(spec: EvidenceImageLoadSpec): Pr
     try {
       data = (await response.json()) as typeof data;
     } catch {
-      return { ok: false, status: 502, detail: 'Invalid image display URL response' };
+      return { ok: false, status: 502, detail: i18n.t('errors.invalid_image_display_url') };
     }
     const imageUrl =
       typeof data.image_url === 'string' && data.image_url.trim() !== '' ? data.image_url.trim() : null;
@@ -730,7 +734,7 @@ export async function fetchEvidenceImageDisplay(spec: EvidenceImageLoadSpec): Pr
     if (needFetch) {
       return fetchAuthorizedReferenceFileAsBlob(spec);
     }
-    return { ok: false, status: 502, detail: 'Invalid image display URL response' };
+    return { ok: false, status: 502, detail: i18n.t('errors.invalid_image_display_url') };
   } catch {
     return { ok: false, status: 0, detail: undefined };
   }
@@ -803,7 +807,7 @@ export async function listAisleJobs(
     params.set('limit', String(options.limit));
   }
   const qs = params.toString();
-  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/jobs${qs ? `?${qs}` : ''}`;
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs${qs ? `?${qs}` : ''}`;
   const response = await protectedFetch(path);
   return handleResponse<AisleJobsListResponse>(response);
 }
@@ -819,7 +823,7 @@ export async function getAisleBenchmarkCompare(
     job_a_id: jobAId.trim(),
     job_b_id: jobBId.trim(),
   });
-  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/benchmark/compare?${params}`;
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/benchmark/compare?${params}`;
   const response = await protectedFetch(path);
   return handleResponse<AisleBenchmarkCompareResponse>(response);
 }
@@ -830,7 +834,7 @@ export async function promoteAisleOperationalJob(
   jobId: string
 ): Promise<PromoteOperationalJobResponse> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/promote-operational`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/promote-operational`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -856,7 +860,7 @@ export async function downloadAisleBenchmarkExportCsv(
     params.set('job_a_id', options.jobAId.trim());
     params.set('job_b_id', options.jobBId.trim());
   }
-  const path = `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/benchmark/export?${params}`;
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/benchmark/export?${params}`;
   const response = await protectedFetch(path);
   const fallbackName =
     'runJobId' in options
@@ -890,7 +894,7 @@ export async function getAislePositions(
   aisleId: string,
   listQuery?: AislePositionsListQuery
 ): Promise<PositionListResponse> {
-  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions`;
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions`;
   const response = await protectedFetch(`${path}${buildAislePositionsQueryString(listQuery)}`);
   return handleResponse<PositionListResponse>(response);
 }
@@ -954,7 +958,7 @@ export async function getReviewQueuePositions(
   listQuery?: ReviewQueueListQuery
 ): Promise<ReviewQueueListResponse> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/review-queue/positions${buildReviewQueueQueryString(listQuery)}`
+    `${API_BASE}${V3_REVIEW_QUEUE_BASE}/positions${buildReviewQueueQueryString(listQuery)}`
   );
   return handleResponse<ReviewQueueListResponse>(response);
 }
@@ -974,7 +978,7 @@ export async function getPositionDetail(
     params.set('exact_position', 'true');
   }
   const qs = params.toString();
-  const path = `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs ? `?${qs}` : ''}`;
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs ? `?${qs}` : ''}`;
   const response = await protectedFetch(path);
   return handleResponse<PositionDetailResponse>(response);
 }
@@ -987,7 +991,7 @@ export async function submitReviewAction(
   body: ReviewActionRequest
 ): Promise<void> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/inventories/${inventoryId}/aisles/${aisleId}/positions/${positionId}/reviews`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}/reviews`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1034,29 +1038,29 @@ function buildAnalyticsQueryString(q: AnalyticsQueryParams | undefined): string 
 }
 
 export async function getAnalyticsSummary(q?: AnalyticsQueryParams): Promise<AnalyticsSummaryResponse> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/summary${buildAnalyticsQueryString(q)}`);
+  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/summary${buildAnalyticsQueryString(q)}`);
   return handleResponse<AnalyticsSummaryResponse>(response);
 }
 
 export async function getAnalyticsTrends(q?: AnalyticsQueryParams): Promise<AnalyticsTrendsResponse> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/trends${buildAnalyticsQueryString(q)}`);
+  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/trends${buildAnalyticsQueryString(q)}`);
   return handleResponse<AnalyticsTrendsResponse>(response);
 }
 
 export async function getAnalyticsInventoryPerformance(
   q?: AnalyticsQueryParams
 ): Promise<InventoryPerformanceListResponse> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/inventories${buildAnalyticsQueryString(q)}`);
+  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/inventories${buildAnalyticsQueryString(q)}`);
   return handleResponse<InventoryPerformanceListResponse>(response);
 }
 
 export async function getAnalyticsAisleIssues(q?: AnalyticsQueryParams): Promise<AisleIssueListResponse> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/aisles${buildAnalyticsQueryString(q)}`);
+  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/aisles${buildAnalyticsQueryString(q)}`);
   return handleResponse<AisleIssueListResponse>(response);
 }
 
 export async function getAnalyticsQualityPatterns(q?: AnalyticsQueryParams): Promise<QualityPatternListResponse> {
-  const response = await protectedFetch(`${API_BASE}/api/v3/analytics/quality${buildAnalyticsQueryString(q)}`);
+  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/quality${buildAnalyticsQueryString(q)}`);
   return handleResponse<QualityPatternListResponse>(response);
 }
 
@@ -1064,7 +1068,7 @@ export async function getAnalyticsManualInterventions(
   q?: AnalyticsQueryParams
 ): Promise<ManualInterventionBreakdownResponse> {
   const response = await protectedFetch(
-    `${API_BASE}/api/v3/analytics/manual-interventions${buildAnalyticsQueryString(q)}`
+    `${API_BASE}${V3_ANALYTICS_BASE}/manual-interventions${buildAnalyticsQueryString(q)}`
   );
   return handleResponse<ManualInterventionBreakdownResponse>(response);
 }

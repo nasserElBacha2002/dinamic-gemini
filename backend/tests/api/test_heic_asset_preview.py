@@ -31,6 +31,7 @@ from src.api.dependencies import (
 )
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
@@ -87,6 +88,7 @@ def _register_aisle_and_resolver(
     aisle_id: str,
     *,
     operational_job_id: str | None,
+    seed_job_ids: Sequence[str] | None = None,
 ) -> Aisle:
     """Resolver wiring for GET asset routes; returns the aisle row for HEIC stubs (Phase 5: no route repo)."""
     now = datetime.now(timezone.utc)
@@ -101,8 +103,30 @@ def _register_aisle_and_resolver(
     )
     ar = MemoryAisleRepository()
     ar.save(aisle_obj)
+    job_repo = MemoryJobRepository()
+    job_ids: list[str] = []
+    if operational_job_id and str(operational_job_id).strip():
+        job_ids.append(str(operational_job_id).strip())
+    if seed_job_ids:
+        for jid in seed_job_ids:
+            s = str(jid).strip()
+            if s and s not in job_ids:
+                job_ids.append(s)
+    for jid in job_ids:
+        job_repo.save(
+            Job(
+                id=jid,
+                target_type="aisle",
+                target_id=aisle_id,
+                job_type="process_aisle",
+                status=JobStatus.SUCCEEDED,
+                payload_json={},
+                created_at=now,
+                updated_at=now,
+            )
+        )
     app.dependency_overrides[get_result_context_resolver] = lambda: ResultContextResolver(
-        MemoryJobRepository(), MemoryPositionRepository()
+        job_repo, MemoryPositionRepository()
     )
     return aisle_obj
 
@@ -430,7 +454,9 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
         mime_type="image/heic",
         uploaded_at=now_upload,
     )
-    aisle_row = _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_b)
+    aisle_row = _register_aisle_and_resolver(
+        inv_id, aisle_id, operational_job_id=job_b, seed_job_ids=(job_a,)
+    )
     stub_assets = StubListAisleAssetsUseCase([asset], aisle=aisle_row)
 
     try:
@@ -501,7 +527,9 @@ def test_heic_asset_file_no_fallback_when_explicit_job_has_no_normalized_file(ou
         mime_type="image/heic",
         uploaded_at=now_upload,
     )
-    aisle_row = _register_aisle_and_resolver(inv_id, aisle_id, operational_job_id=job_other)
+    aisle_row = _register_aisle_and_resolver(
+        inv_id, aisle_id, operational_job_id=job_other, seed_job_ids=(job_bad,)
+    )
     stub_assets = StubListAisleAssetsUseCase([asset], aisle=aisle_row)
 
     try:

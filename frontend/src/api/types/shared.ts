@@ -70,6 +70,17 @@ export const REVIEW_ACTION_TYPES = [
 ] as const;
 export type ReviewActionType = (typeof REVIEW_ACTION_TYPES)[number];
 
+/** Named wire strings for POST .../reviews payloads — must match ``REVIEW_ACTION_TYPES``. */
+export const REVIEW_ACTION_WIRE = {
+  CONFIRM: 'confirm',
+  UPDATE_QUANTITY: 'update_quantity',
+  UPDATE_SKU: 'update_sku',
+  UPDATE_POSITION_CODE: 'update_position_code',
+  MARK_UNKNOWN: 'mark_unknown',
+  MARK_IMAGE_MISMATCH: 'mark_image_mismatch',
+  DELETE_POSITION: 'delete_position',
+} as const satisfies Record<string, ReviewActionType>;
+
 /** Epic 3.1.B — Traceability status values from backend (GET /jobs/{job_id}/entities, position summary).
  * Use this type for API params, response fields, and legacy entity/position views.
  * For the visible Result model (uppercase), use features/results types. */
