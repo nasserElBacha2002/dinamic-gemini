@@ -69,13 +69,15 @@ def get_current_admin(
     username = payload.get("username")
     role = payload.get("role")
     sub = payload.get("sub")
+    raw_pid = payload.get("principal_id", "admin")
+    principal_id = raw_pid if isinstance(raw_pid, str) and raw_pid.strip() else "admin"
     if sub != "admin" or not isinstance(username, str) or not isinstance(role, str):
         raise AuthHttpError(
             status_code=status.HTTP_401_UNAUTHORIZED,
             error=AuthError(code="UNAUTHORIZED", message="Authentication required."),
         )
 
-    return AuthUser(id="admin", username=username, role=role)
+    return AuthUser(id=principal_id, username=username, role=role)
 
 
 def require_ai_config_inspection_user(
@@ -88,7 +90,7 @@ def require_ai_config_inspection_user(
     1. Caller passed ``get_current_admin`` — valid admin JWT (any v3 admin username allowed by auth).
     2. ``AuthUser.username`` is exactly the literal ``\"admin\"`` — the operational inspection principal.
 
-    Other admin accounts (e.g. alternate ``AUTH_ADMIN_USERNAME`` values) remain valid for the rest
+    Other authenticated principals (e.g. temporary env user ``Jairo``) remain valid for the rest
     of v3 but receive **403** here so the inspection UI and lazy prompt endpoints stay tied to the
     fixed operational username.
     """

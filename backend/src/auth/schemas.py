@@ -19,7 +19,10 @@ class LoginRequest(BaseModel):
 class AuthUser(BaseModel):
     """Minimal authenticated admin principal returned to the frontend."""
 
-    id: str = Field(..., description="Stable identifier for the administrator (e.g. 'admin').")
+    id: str = Field(
+        ...,
+        description="Stable principal id for sessions (e.g. 'admin', 'jairo'); distinct from JWT sub.",
+    )
     username: str = Field(..., description="Administrator username.")
     role: str = Field(default="administrator", description="Fixed role name for v3.2.1.")
 

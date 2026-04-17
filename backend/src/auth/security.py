@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
+from uuid import uuid4
 
 import jwt
 from passlib.context import CryptContext
@@ -43,6 +44,7 @@ def create_access_token(
     *,
     username: str,
     role: str,
+    principal_id: str = "admin",
     secret: str,
     expires_minutes: int,
     now: datetime | None = None,
@@ -51,7 +53,8 @@ def create_access_token(
     Create a signed access token for the authenticated administrator.
 
     Token claims (minimal):
-    - sub: principal id (e.g. "admin")
+    - sub: JWT subject (v3 admin category; fixed \"admin\" for compatibility)
+    - principal_id: stable session principal (e.g. \"admin\", \"jairo\") for refresh isolation
     - username, role
     - iat, exp (UTC seconds)
     """
@@ -59,6 +62,8 @@ def create_access_token(
         raise ValueError("auth token secret is missing")
     if expires_minutes < 1:
         raise ValueError("expires_minutes must be >= 1")
+    if not (principal_id or "").strip():
+        raise ValueError("principal_id must be non-empty")
 
     now_dt = now or datetime.now(timezone.utc)
     if now_dt.tzinfo is None:
@@ -70,8 +75,10 @@ def create_access_token(
 
     payload: Dict[str, Any] = {
         "sub": subject,
+        "principal_id": principal_id,
         "username": username,
         "role": role,
+        "jti": str(uuid4()),
         "iat": iat,
         "exp": exp,
     }

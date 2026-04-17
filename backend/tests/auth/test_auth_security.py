@@ -29,6 +29,7 @@ def test_token_roundtrip_and_expiration():
     )
     payload = decode_access_token(token, secret=secret)
     assert payload["sub"] == "admin"
+    assert payload["principal_id"] == "admin"
     assert payload["username"] == "admin"
     assert payload["role"] == "administrator"
 

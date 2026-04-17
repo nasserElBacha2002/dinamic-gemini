@@ -15,6 +15,7 @@ class AuthSettings:
 
     admin_username: str
     admin_password_hash: str
+    jairo_password_hash: str
     token_secret: str
     token_expires_minutes: int
     refresh_token_expires_minutes: int
@@ -32,6 +33,7 @@ def get_auth_settings(settings: Settings | None = None) -> AuthSettings:
     return AuthSettings(
         admin_username=s.admin_username,
         admin_password_hash=s.admin_password_hash,
+        jairo_password_hash=s.auth_jairo_password_hash,
         token_secret=s.auth_token_secret,
         token_expires_minutes=s.auth_token_expires_minutes,
         refresh_token_expires_minutes=s.auth_refresh_token_expires_minutes,

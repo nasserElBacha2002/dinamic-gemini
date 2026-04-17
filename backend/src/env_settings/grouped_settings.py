@@ -819,6 +819,13 @@ class AuthSettings(BaseModel):
         default_factory=lambda: (os.getenv("ADMIN_PASSWORD_HASH", "") or "").strip(),
         description="Password hash for administrator (no plaintext). Env: ADMIN_PASSWORD_HASH.",
     )
+    auth_jairo_password_hash: str = Field(
+        default_factory=lambda: (os.getenv("AUTH_JAIRO_PASSWORD_HASH", "") or "").strip(),
+        description=(
+            "Temporary optional second operator: fixed login username 'Jairo' (no self-registration). "
+            "Passlib/bcrypt hash only; when empty, Jairo is disabled. Env: AUTH_JAIRO_PASSWORD_HASH."
+        ),
+    )
     auth_token_secret: str = Field(
         default_factory=lambda: (os.getenv("AUTH_TOKEN_SECRET", "") or "").strip(),
         description="Secret key used to sign auth tokens. Env: AUTH_TOKEN_SECRET.",

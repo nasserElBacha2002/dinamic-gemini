@@ -92,7 +92,7 @@ Variables **imprescindibles** según escenario:
 | Escenario | Variables típicas |
 |-----------|-------------------|
 | API + SQL | Cadena ODBC o `SQLSERVER_SERVER` + `SQLSERVER_DATABASE` + `SQLSERVER_UID` + `SQLSERVER_PWD` |
-| Login v3 en UI | `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `AUTH_TOKEN_SECRET` |
+| Login v3 en UI | `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `AUTH_TOKEN_SECRET` (opcional temporal: `AUTH_JAIRO_PASSWORD_HASH` para el usuario fijo **Jairo**, sin registro) |
 | Pipeline con LLM | Según proveedor: p. ej. `GEMINI_API_KEY` si `LLM_PROVIDER=gemini` |
 | Artefactos en S3 | `ARTIFACT_STORAGE_PROVIDER=s3`, `ARTIFACT_S3_BUCKET`, etc. |
 
@@ -210,7 +210,7 @@ En `backend/` existen `Dockerfile`, `Dockerfile.worker` y `docker-compose.yml` p
 
 ## Troubleshooting
 
-- **401 / sin sesión en el frontend:** configurá auth (`ADMIN_*`, `AUTH_TOKEN_SECRET`) y reiniciá API + navegador.
+- **401 / sin sesión en el frontend:** configurá auth (`ADMIN_*`, `AUTH_TOKEN_SECRET`, y si aplica `AUTH_JAIRO_PASSWORD_HASH` para Jairo) y reiniciá API + navegador.
 - **503 en `/ready`:** revisá migraciones y `DB_SCHEMA_REQUIRED_VERSION` vs versión aplicada en la base.
 - **403 `X-API-Key`:** la API tiene `API_KEY` definida; enviá el header o vaciá la variable solo en desarrollo local.
 - **ODBC / SQL Server:** ejecutá `python scripts/db_migrate.py config-check` y revisá el JSON de error (sin secretos).
