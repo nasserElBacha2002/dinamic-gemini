@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography, Stack } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { ApiError } from '../../../api/types';
-import type { ReviewActionRequest } from '../../../api/types';
+import { REVIEW_ACTION_WIRE, type ReviewActionRequest } from '../../../api/types';
 import { useResultDetail, getResultNavigationContext } from '../../results';
 import { useSubmitReviewAction } from '../../../hooks';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
@@ -177,13 +177,16 @@ export default function QuickReviewDrawer({
   );
 
   const handleConfirm = useCallback(() => {
-    void executeReviewAction({ action_type: 'confirm' }, { successMessage: t('review.snackbar_confirmed') });
+    void executeReviewAction(
+      { action_type: REVIEW_ACTION_WIRE.CONFIRM },
+      { successMessage: t('review.snackbar_confirmed') }
+    );
   }, [executeReviewAction, t]);
 
   const handleUpdateQuantity = useCallback(
     (corrected_quantity: number) => {
       void executeReviewAction(
-        { action_type: 'update_quantity', corrected_quantity },
+        { action_type: REVIEW_ACTION_WIRE.UPDATE_QUANTITY, corrected_quantity },
         { successMessage: t('review.snackbar_qty_updated') }
       );
     },
@@ -193,7 +196,7 @@ export default function QuickReviewDrawer({
   const handleUpdateSku = useCallback(
     (sku: string) => {
       void executeReviewAction(
-        { action_type: 'update_sku', sku },
+        { action_type: REVIEW_ACTION_WIRE.UPDATE_SKU, sku },
         { successMessage: t('review.snackbar_sku_updated') }
       );
     },
@@ -203,7 +206,7 @@ export default function QuickReviewDrawer({
   const handleUpdatePositionCode = useCallback(
     (position_code: string) => {
       void executeReviewAction(
-        { action_type: 'update_position_code', position_code },
+        { action_type: REVIEW_ACTION_WIRE.UPDATE_POSITION_CODE, position_code },
         { successMessage: t('review.snackbar_position_updated') }
       );
     },
@@ -212,7 +215,7 @@ export default function QuickReviewDrawer({
 
   const handleMarkImageMismatch = useCallback(() => {
     void executeReviewAction(
-      { action_type: 'mark_image_mismatch' },
+      { action_type: REVIEW_ACTION_WIRE.MARK_IMAGE_MISMATCH },
       { successMessage: t('review.snackbar_image_mismatch') }
     );
   }, [executeReviewAction, t]);
@@ -230,7 +233,7 @@ export default function QuickReviewDrawer({
     setInvalidConfirmError(null);
     setInvalidConfirmLoading(true);
     try {
-      await reviewMutation.mutateAsync(withReviewJobId({ action_type: 'delete_position' }));
+      await reviewMutation.mutateAsync(withReviewJobId({ action_type: REVIEW_ACTION_WIRE.DELETE_POSITION }));
       showSnackbar(t('review.mark_invalid_success'), 'success');
       setInvalidConfirmOpen(false);
       onClose(); // Automatically close after invalidation

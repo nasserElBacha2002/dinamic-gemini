@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
+import { ROUTE_LOGIN } from '../../constants/appRoutes';
 import { useAuth } from './store';
 
 /**
@@ -21,7 +22,7 @@ export default function RequireUsernameAdmin({ children }: { children: ReactNode
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={ROUTE_LOGIN} replace />;
   }
 
   if (user.username !== 'admin') {

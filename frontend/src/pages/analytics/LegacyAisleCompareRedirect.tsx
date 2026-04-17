@@ -3,6 +3,7 @@
  */
 
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
+import { ROUTE_HOME, pathToInventoryAnalyticsCompare } from '../../constants/appRoutes';
 
 export default function LegacyAisleCompareRedirect() {
   const { inventoryId, aisleId } = useParams<{ inventoryId: string; aisleId: string }>();
@@ -11,7 +12,7 @@ export default function LegacyAisleCompareRedirect() {
   const jobBId = searchParams.get('jobBId')?.trim() || '';
 
   if (!inventoryId || !aisleId) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={ROUTE_HOME} replace />;
   }
 
   const next = new URLSearchParams();
@@ -19,5 +20,7 @@ export default function LegacyAisleCompareRedirect() {
   if (jobAId) next.set('jobAId', jobAId);
   if (jobBId) next.set('jobBId', jobBId);
 
-  return <Navigate to={`/inventories/${inventoryId}/analytics/compare?${next.toString()}`} replace />;
+  return (
+    <Navigate to={`${pathToInventoryAnalyticsCompare(inventoryId)}?${next.toString()}`} replace />
+  );
 }

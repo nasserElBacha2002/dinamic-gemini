@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, CircularProgress } from '@mui/material';
+import { ROUTE_HOME, ROUTE_REVIEW_QUEUE, pathToAislePositions } from '../constants/appRoutes';
 import { parseResultDetailNavigationState } from '../features/results';
 import { useInventoryDetail, useAislesList } from '../hooks';
 
@@ -36,7 +37,7 @@ export default function PositionDetailPage() {
     redirected.current = true;
 
     if (navState?.returnTo === 'review_queue') {
-      navigate('/review-queue', {
+      navigate(ROUTE_REVIEW_QUEUE, {
         replace: true,
         state: {
           openReviewDrawer: {
@@ -55,7 +56,7 @@ export default function PositionDetailPage() {
     }
 
     const q = jobIdFromQuery ? `?jobId=${encodeURIComponent(jobIdFromQuery)}` : '';
-    navigate(`/inventories/${inventoryId}/aisles/${aisleId}/positions${q}`, {
+    navigate(`${pathToAislePositions(inventoryId, aisleId)}${q}`, {
       replace: true,
       state: {
         openReviewDrawer: {
@@ -85,7 +86,7 @@ export default function PositionDetailPage() {
     return (
       <>
         <Alert severity="warning">{t('positions.missing_params')}</Alert>
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
+        <Button sx={{ mt: 2 }} onClick={() => navigate(ROUTE_HOME)}>
           {t('inventory.back_to_list')}
         </Button>
       </>

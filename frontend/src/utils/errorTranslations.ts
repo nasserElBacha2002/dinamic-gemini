@@ -1,6 +1,10 @@
 /**
  * Maps stable backend / API error codes and common English detail strings to i18n keys.
  * Components should not branch on English text — only on keys returned here.
+ *
+ * Ownership: human-facing copy lives in frontend i18n locale JSON; this file only maps stable
+ * wire code / detail fragments to translation keys. Backend API wire literals live in
+ * backend/src/api/constants/error_wire.py and must never be imported from the frontend.
  */
 
 const AUTH_CODE_TO_KEY: Record<string, string> = {

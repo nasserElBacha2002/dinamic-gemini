@@ -9,6 +9,7 @@ import type {
   LoginResponseDto,
   AuthErrorResponseDto,
 } from './types';
+import { AUTH_LOGIN_PATH, AUTH_ME_PATH } from '../../constants/authApiPaths';
 import i18n from '../../i18n';
 import { authErrorCodeToTranslationKey, backendDetailToTranslationKey } from '../../utils/errorTranslations';
 
@@ -52,7 +53,7 @@ async function handleAuthResponse<T>(response: Response): Promise<T> {
     throw new Error(
       typeof (data as { detail?: string })?.detail === 'string'
         ? (data as { detail: string }).detail
-        : response.statusText || 'Request failed',
+        : response.statusText || i18n.t('errors.request_failed'),
     );
   }
 
@@ -60,7 +61,7 @@ async function handleAuthResponse<T>(response: Response): Promise<T> {
 }
 
 export async function login(payload: LoginRequestDto): Promise<LoginResponseDto> {
-  const response = await fetch(`${API_BASE}/auth/login`, {
+  const response = await fetch(`${API_BASE}${AUTH_LOGIN_PATH}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -73,7 +74,7 @@ export async function login(payload: LoginRequestDto): Promise<LoginResponseDto>
  * Call with the stored token; backend returns 401 if invalid/expired.
  */
 export async function getCurrentUser(token: string): Promise<AuthUser> {
-  const response = await fetch(`${API_BASE}/auth/me`, {
+  const response = await fetch(`${API_BASE}${AUTH_ME_PATH}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return handleAuthResponse<AuthUser>(response);

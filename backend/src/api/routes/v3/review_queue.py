@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
+from src.api.constants.route_paths import API_V3_REVIEW_QUEUE_ROUTER_PREFIX
 from src.auth.dependencies import get_current_admin
 
 from src.api.dependencies import get_list_review_queue_use_case
@@ -21,7 +22,7 @@ from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
 from .shared import position_to_summary
 
 router = APIRouter(
-    prefix="/api/v3/review-queue",
+    prefix=API_V3_REVIEW_QUEUE_ROUTER_PREFIX,
     tags=["review-queue-v3"],
     dependencies=[Depends(get_current_admin)],
 )

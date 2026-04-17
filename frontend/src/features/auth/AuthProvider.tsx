@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { AUTH_LOGOUT_PATH } from '../../constants/authApiPaths';
+import { ROUTE_LOGIN } from '../../constants/appRoutes';
 import { getCurrentUser } from './api';
 import { getStoredSession, setStoredSession, clearStoredSession } from './storage';
 import { AuthContext, AuthContextValue, createInitialAuthState } from './store';
@@ -56,7 +58,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             (headers as Record<string, string>)['Authorization'] = `Bearer ${accessToken}`;
           }
           // Fire-and-forget backend logout; always clear local session afterwards.
-          fetch(`${apiBase}/auth/logout`, {
+          fetch(`${apiBase}${AUTH_LOGOUT_PATH}`, {
             method: 'POST',
             headers,
             body,
@@ -68,7 +70,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         clearStoredSession();
         setState(createInitialAuthState(true));
         if (typeof window !== 'undefined') {
-          window.location.assign('/login');
+          window.location.assign(ROUTE_LOGIN);
         }
       },
     }),

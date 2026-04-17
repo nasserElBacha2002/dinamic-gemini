@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { fetchEvidenceImageDisplay, type EvidenceImageLoadSpec } from '../../../api/client';
+import i18n from '../../../i18n';
 
 export type EvidenceImageErrorKind =
   | 'not_found'
@@ -32,14 +33,14 @@ function kindFromResponse(status: number, detail?: string): EvidenceImageErrorKi
 function messageForKind(kind: EvidenceImageErrorKind, _detail?: string): string {
   switch (kind) {
     case 'not_found':
-      return 'Source image is no longer available.';
+      return i18n.t('results.evidence_image_load.source_unavailable');
     case 'forbidden':
-      return 'You do not have permission to load this image.';
+      return i18n.t('results.evidence_image_load.forbidden');
     case 'heic_preview_unavailable':
-      return 'Preview is not available for this image.';
+      return i18n.t('results.evidence_image_load.preview_unavailable');
     case 'network':
     default:
-      return 'Image could not be loaded.';
+      return i18n.t('results.evidence_image_load.network_error');
   }
 }
 

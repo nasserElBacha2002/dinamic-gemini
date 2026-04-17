@@ -6,12 +6,13 @@ dependency; auth failures return the stable AuthHttpError contract.
 
 from fastapi import APIRouter, Depends
 
+from src.api.constants.route_paths import API_V3_INVENTORIES_ROUTER_PREFIX
 from src.auth.dependencies import get_current_admin
 
 from . import inventories, aisles, assets, positions, reviews
 
 router = APIRouter(
-    prefix="/api/v3/inventories",
+    prefix=API_V3_INVENTORIES_ROUTER_PREFIX,
     tags=["inventories-v3"],
     dependencies=[Depends(get_current_admin)],
 )

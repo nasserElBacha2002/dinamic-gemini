@@ -1,7 +1,6 @@
 /**
- * Centralized path builders for Result-centric routes (Epic 3–5).
+ * Re-exports path builders for result-centric navigation (Epic 3–5).
+ * Canonical definitions live in ``constants/appRoutes.ts``.
  */
 
-export function pathToAislePositions(inventoryId: string, aisleId: string): string {
-  return `/inventories/${inventoryId}/aisles/${aisleId}/positions`;
-}
+export { pathToAislePositions } from '../constants/appRoutes';

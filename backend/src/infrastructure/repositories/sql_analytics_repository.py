@@ -36,6 +36,18 @@ from src.application.services.analytics_aggregation_core import (
     SummaryMetricInputs,
 )
 from src.database.sqlserver import SqlServerClient
+from src.domain.reviews.sql_literals import (
+    SQL_EQ_CONFIRM,
+    SQL_EQ_DELETE_POSITION,
+    SQL_EQ_MARK_IMAGE_MISMATCH,
+    SQL_EQ_MARK_UNKNOWN,
+    SQL_EQ_UPDATE_QUANTITY,
+    SQL_EQ_UPDATE_SKU,
+    SQL_IN_CORRECTION_ACTIONS,
+    SQL_IN_MANUAL_QUALITY_FILTER_ACTIONS,
+    SQL_IN_REVIEWED_POSITIONS_ACTIONS,
+    SQL_IN_SETTLING_ACTIONS,
+)
 
 
 def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -208,15 +220,15 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         sql_reviews = f"""
             SELECT
               COUNT(*) AS reviewed_positions,
-              SUM(CASE WHEN t.latest_action_type IN (N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS manually_corrected_positions,
-              SUM(CASE WHEN t.latest_action_type = N'confirm' THEN 1 ELSE 0 END) AS auto_accepted_positions,
-              SUM(CASE WHEN t.latest_action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknown_positions,
+              SUM(CASE WHEN t.latest_action_type IN ({SQL_IN_CORRECTION_ACTIONS}) THEN 1 ELSE 0 END) AS manually_corrected_positions,
+              SUM(CASE WHEN t.latest_action_type = {SQL_EQ_CONFIRM} THEN 1 ELSE 0 END) AS auto_accepted_positions,
+              SUM(CASE WHEN t.latest_action_type = {SQL_EQ_MARK_UNKNOWN} THEN 1 ELSE 0 END) AS unknown_positions,
               SUM(t.settling_actions) AS settling_actions
             FROM (
               SELECT
                 ra.position_id AS position_id,
                 MAX(CASE WHEN ra.rn = 1 THEN ra.action_type END) AS latest_action_type,
-                SUM(CASE WHEN ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown') THEN 1 ELSE 0 END) AS settling_actions
+                SUM(CASE WHEN ra.action_type IN ({SQL_IN_SETTLING_ACTIONS}) THEN 1 ELSE 0 END) AS settling_actions
               FROM (
                 SELECT
                   ra.position_id,
@@ -232,7 +244,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 INNER JOIN aisles a ON a.id = p.aisle_id
                 INNER JOIN inventories i ON i.id = a.inventory_id
                 WHERE {where_ra}
-                  AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown')
+                  AND ra.action_type IN ({SQL_IN_SETTLING_ACTIONS})
               ) ra
               GROUP BY ra.position_id
             ) t
@@ -381,9 +393,9 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         sql_daily_reviews = f"""
             SELECT
               CONVERT(date, ra.created_at) AS d,
-              SUM(CASE WHEN ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown') THEN 1 ELSE 0 END) AS settling,
-              SUM(CASE WHEN ra.action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknowns,
-              SUM(CASE WHEN ra.action_type IN (N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS corrections
+              SUM(CASE WHEN ra.action_type IN ({SQL_IN_SETTLING_ACTIONS}) THEN 1 ELSE 0 END) AS settling,
+              SUM(CASE WHEN ra.action_type = {SQL_EQ_MARK_UNKNOWN} THEN 1 ELSE 0 END) AS unknowns,
+              SUM(CASE WHEN ra.action_type IN ({SQL_IN_CORRECTION_ACTIONS}) THEN 1 ELSE 0 END) AS corrections
             FROM review_actions ra
             INNER JOIN positions p ON p.id = ra.position_id
             INNER JOIN aisles a ON a.id = p.aisle_id
@@ -593,9 +605,9 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         sql = f"""
             SELECT
               COUNT(*) AS reviewed_positions,
-              SUM(CASE WHEN t.latest_action_type = N'confirm' THEN 1 ELSE 0 END) AS auto_accepted_positions,
-              SUM(CASE WHEN t.latest_action_type IN (N'update_quantity', N'update_sku') THEN 1 ELSE 0 END) AS manually_corrected_positions,
-              SUM(CASE WHEN t.latest_action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknown_positions
+              SUM(CASE WHEN t.latest_action_type = {SQL_EQ_CONFIRM} THEN 1 ELSE 0 END) AS auto_accepted_positions,
+              SUM(CASE WHEN t.latest_action_type IN ({SQL_IN_CORRECTION_ACTIONS}) THEN 1 ELSE 0 END) AS manually_corrected_positions,
+              SUM(CASE WHEN t.latest_action_type = {SQL_EQ_MARK_UNKNOWN} THEN 1 ELSE 0 END) AS unknown_positions
             FROM (
               SELECT
                 ra.position_id AS position_id,
@@ -613,7 +625,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 INNER JOIN aisles a ON a.id = p.aisle_id
                 INNER JOIN inventories i ON i.id = a.inventory_id
                 WHERE {where_ra}
-                  AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown')
+                  AND ra.action_type IN ({SQL_IN_SETTLING_ACTIONS})
               ) ra
               GROUP BY ra.position_id
             ) t
@@ -838,17 +850,17 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               INNER JOIN aisles a ON a.id = p.aisle_id
               INNER JOIN inventories i ON i.id = a.inventory_id
               WHERE {where_sql}
-                AND ra.action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown', N'mark_image_mismatch', N'delete_position')
+                AND ra.action_type IN ({SQL_IN_MANUAL_QUALITY_FILTER_ACTIONS})
             )
             SELECT
               SUM(CASE WHEN rn = 1 THEN 1 ELSE 0 END) AS intervention_positions_count,
-              SUM(CASE WHEN rn = 1 AND action_type = N'confirm' THEN 1 ELSE 0 END) AS confirmed_count,
-              SUM(CASE WHEN rn = 1 AND action_type = N'update_quantity' THEN 1 ELSE 0 END) AS qty_corrected_count,
-              SUM(CASE WHEN rn = 1 AND action_type = N'update_sku' THEN 1 ELSE 0 END) AS sku_corrected_count,
-              SUM(CASE WHEN rn = 1 AND action_type = N'mark_unknown' THEN 1 ELSE 0 END) AS unknown_count,
-              SUM(CASE WHEN rn = 1 AND action_type = N'mark_image_mismatch' THEN 1 ELSE 0 END) AS image_mismatch_count,
-              SUM(CASE WHEN rn = 1 AND action_type = N'delete_position' THEN 1 ELSE 0 END) AS deleted_count,
-              COUNT(DISTINCT CASE WHEN action_type IN (N'confirm', N'update_quantity', N'update_sku', N'mark_unknown', N'mark_image_mismatch') THEN position_id END) AS reviewed_positions_count
+              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_CONFIRM} THEN 1 ELSE 0 END) AS confirmed_count,
+              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_UPDATE_QUANTITY} THEN 1 ELSE 0 END) AS qty_corrected_count,
+              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_UPDATE_SKU} THEN 1 ELSE 0 END) AS sku_corrected_count,
+              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_MARK_UNKNOWN} THEN 1 ELSE 0 END) AS unknown_count,
+              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_MARK_IMAGE_MISMATCH} THEN 1 ELSE 0 END) AS image_mismatch_count,
+              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_DELETE_POSITION} THEN 1 ELSE 0 END) AS deleted_count,
+              COUNT(DISTINCT CASE WHEN action_type IN ({SQL_IN_REVIEWED_POSITIONS_ACTIONS}) THEN position_id END) AS reviewed_positions_count
             FROM scoped_actions
         """
         with self._client.cursor() as cur:

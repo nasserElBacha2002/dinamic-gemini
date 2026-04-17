@@ -24,7 +24,7 @@ function messageFromValidationItem(item: ValidationErrorItem): string {
   if (typeof item.msg === 'string' && item.msg.trim()) {
     return item.msg;
   }
-  return 'Validation error';
+  return i18n.t('errors.validation_generic');
 }
 
 /**
@@ -41,7 +41,7 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
       const first = detail[0];
       return first && typeof first === 'object'
         ? messageFromValidationItem(first as ValidationErrorItem)
-        : 'Validation error';
+        : i18n.t('errors.validation_generic');
     }
     return error.message || fallback;
   }

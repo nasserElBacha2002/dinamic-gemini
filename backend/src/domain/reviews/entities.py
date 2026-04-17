@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 
 
 class ReviewActionType(str, Enum):
+    """Wire/API values; SQL ``N'…'`` lists for analytics live in ``sql_literals``."""
     CONFIRM = "confirm"
     UPDATE_QUANTITY = "update_quantity"
     UPDATE_SKU = "update_sku"

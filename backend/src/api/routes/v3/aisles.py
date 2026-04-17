@@ -8,6 +8,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
+    HTTP_DETAIL_EXPORT_PROVIDE_EXACTLY_ONE_OF_RUN_OR_COMPARE_JOBS,
+    HTTP_DETAIL_JOB_NOT_FOUND,
+    HTTP_DETAIL_JOB_NOT_IN_AISLE_CATEGORY_C,
+    HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY,
+    HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
+)
 from src.api.errors import reraise_if_mapped
 from src.api.dependencies import (
     get_artifact_storage,
@@ -198,16 +206,16 @@ def _load_job_for_inventory_job_route(
     try:
         return resolve_uc.execute(inventory_id, aisle_id, job_id)
     except JobNotFoundError:
-        raise HTTPException(status_code=404, detail="Job not found") from None
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND) from None
     except JobDoesNotBelongToAisleError:
         raise HTTPException(
             status_code=404,
-            detail="Job not found or does not belong to this aisle",
+            detail=HTTP_DETAIL_JOB_NOT_IN_AISLE_CATEGORY_C,
         ) from None
     except AisleNotFoundError:
         raise HTTPException(
             status_code=404,
-            detail="Aisle not found or does not belong to this inventory",
+            detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
         ) from None
 
 
@@ -417,7 +425,7 @@ def cancel_aisle_job(
         )
         return job_to_summary(job)
     except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle/inventory")
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY)
     except ValueError as e:
         # Terminal or invalid state for cancellation.
         raise HTTPException(status_code=409, detail=str(e))
@@ -444,7 +452,7 @@ def retry_aisle_job(
         )
         return job_to_summary(job)
     except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Job not found or does not belong to this aisle/inventory")
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY)
     except (ActiveJobExistsError, ValueError) as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -465,7 +473,7 @@ def get_aisle_job_detail(
     job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
     job = stale_reconciler.reconcile(job)
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
     return job_to_summary(job)
 
 
@@ -680,7 +688,7 @@ def export_aisle_results_csv(
     scoped to one aisle and accepts an optional ``job_id`` to match the run visible in Aisle Results.
     """
     if (export_format or "").strip().lower() != "csv":
-        raise HTTPException(status_code=422, detail="Only format=csv is supported")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED)
     try:
         body = use_case.execute_csv(
             inventory_id,
@@ -774,13 +782,13 @@ def export_aisle_benchmark(
 ) -> Response:
     """Benchmark-only CSV (extra columns). Operational aisle export: ``GET …/aisles/{aisle_id}/export``."""
     if (export_format or "").strip().lower() != "csv":
-        raise HTTPException(status_code=422, detail="Only format=csv is supported")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED)
     has_run = bool(run_job_id and str(run_job_id).strip())
     has_pair = bool(job_a_id and str(job_a_id).strip() and job_b_id and str(job_b_id).strip())
     if has_run == has_pair:
         raise HTTPException(
             status_code=422,
-            detail="Provide exactly one of: run_job_id (single-run export) or both job_a_id and job_b_id (compare export).",
+            detail=HTTP_DETAIL_EXPORT_PROVIDE_EXACTLY_ONE_OF_RUN_OR_COMPARE_JOBS,
         )
     try:
         if has_run:

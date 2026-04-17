@@ -18,6 +18,10 @@ from src.api.routes.v3.analytics_api import router as v3_analytics_router
 from src.api.schema_guard import schema_guard_state
 from src.api.routes.v3.review_queue import router as v3_review_queue_router
 from src.api.routes.v3.admin_ai_config import router as v3_admin_ai_config_router
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_API_KEY_INVALID_OR_MISSING,
+    HTTP_DETAIL_UNEXPECTED_ERROR,
+)
 from src.api.errors.structured_api_http import INTERNAL_SERVER_ERROR, StructuredApiHttpError
 from src.api.schemas.responses import HealthResponse
 from src.auth.errors import AuthHttpError
@@ -122,7 +126,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         status_code=500,
         content={
             "code": INTERNAL_SERVER_ERROR,
-            "detail": "An unexpected error occurred.",
+            "detail": HTTP_DETAIL_UNEXPECTED_ERROR,
         },
     )
 
@@ -137,7 +141,7 @@ async def api_key_middleware(request: Request, call_next):
         return await call_next(request)
     key = request.headers.get("X-API-Key")
     if key != settings.api_key:
-        return JSONResponse(status_code=403, content={"detail": "Invalid or missing API key"})
+        return JSONResponse(status_code=403, content={"detail": HTTP_DETAIL_API_KEY_INVALID_OR_MISSING})
     return await call_next(request)
 
 

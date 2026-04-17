@@ -27,6 +27,7 @@ import {
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useMemo } from 'react';
+import { ROUTE_HOME, ROUTE_INVENTORIES_ROOT } from '../constants/appRoutes';
 import { useAuth } from '../features/auth';
 import {
   ADMIN_AI_CONFIG_NAV_ITEM,
@@ -39,8 +40,12 @@ import UserMenu from '../components/shell/UserMenu';
 import AppMain from '../components/shell/AppMain';
 
 function pathMatchesNav(to: string, pathname: string): boolean {
-  if (to === '/') {
-    return pathname === '/' || pathname === '/inventories' || pathname.startsWith('/inventories/');
+  if (to === ROUTE_HOME) {
+    return (
+      pathname === ROUTE_HOME ||
+      pathname === ROUTE_INVENTORIES_ROOT ||
+      pathname.startsWith(`${ROUTE_INVENTORIES_ROOT}/`)
+    );
   }
   return pathname === to || pathname.startsWith(`${to}/`);
 }

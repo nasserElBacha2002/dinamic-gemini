@@ -13,6 +13,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+    HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+    HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
+    HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
+)
 from src.api.errors import reraise_if_mapped
 from src.api.errors.structured_api_http import StructuredApiHttpError, VISUAL_REFERENCE_NOT_FOUND
 from src.api.services.v3_stored_artifact_access import (
@@ -86,7 +92,7 @@ router = APIRouter()
 async def _to_uploaded_visual_reference_files(files: List[UploadFile]) -> List[UploadedVisualReferenceFile]:
     """Convert request files to use-case DTOs. Fails clearly on invalid or malformed input."""
     if not files:
-        raise HTTPException(status_code=422, detail="At least one file is required")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
     result: List[UploadedVisualReferenceFile] = []
     for i, u in enumerate(files):
         has_name = bool(u.filename and u.filename.strip())
@@ -99,7 +105,7 @@ async def _to_uploaded_visual_reference_files(files: List[UploadFile]) -> List[U
         content = await u.read()
         size = len(content)
         if size <= 0:
-            raise HTTPException(status_code=422, detail="Empty or zero-byte files are not allowed")
+            raise HTTPException(status_code=422, detail=HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED)
         result.append(
             UploadedVisualReferenceFile(
                 original_filename=(u.filename or "file").strip(),
@@ -109,7 +115,7 @@ async def _to_uploaded_visual_reference_files(files: List[UploadFile]) -> List[U
             )
         )
     if not result:
-        raise HTTPException(status_code=422, detail="At least one file is required")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
     return result
 
 
@@ -210,7 +216,7 @@ def export_inventory_results(
 ) -> Response:
     """Download consolidated inventory results as CSV (one row per reviewable position after SKU consolidation)."""
     if (export_format or "").strip().lower() != "csv":
-        raise HTTPException(status_code=422, detail="Only format=csv is supported")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED)
     try:
         body = use_case.execute_csv(inventory_id, technical=technical)
     except Exception as e:
@@ -368,7 +374,7 @@ def get_inventory_visual_reference_file(
         raise StructuredApiHttpError(
             404,
             error_code=VISUAL_REFERENCE_NOT_FOUND,
-            detail="Visual reference not found",
+            detail=HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
         )
 
     try:

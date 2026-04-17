@@ -7,6 +7,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from src.api.constants.error_wire import HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO
+from src.api.constants.route_paths import API_V3_ANALYTICS_ROUTER_PREFIX
 from src.application.dto.analytics_dto import AnalyticsFilters
 from src.api.errors import mapped_http_exception
 from src.application.services.analytics_query_service import AnalyticsQueryService
@@ -33,7 +35,7 @@ from src.api.schemas.analytics_schemas import (
 )
 
 router = APIRouter(
-    prefix="/api/v3/analytics",
+    prefix=API_V3_ANALYTICS_ROUTER_PREFIX,
     tags=["analytics-v3"],
     dependencies=[Depends(get_current_admin)],
 )
@@ -50,7 +52,7 @@ def _range_to_datetimes(
     if date_to is not None:
         dt = datetime.combine(date_to, time(23, 59, 59, 999999), tzinfo=timezone.utc)
     if df is not None and dt is not None and df > dt:
-        raise HTTPException(status_code=422, detail="date_from must be on or before date_to")
+        raise HTTPException(status_code=422, detail=HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO)
     return df, dt
 
 

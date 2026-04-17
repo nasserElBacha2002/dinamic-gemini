@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.schemas.listing_schemas import PageMeta
+from src.domain.reviews.entities import ReviewActionType
 
 _QtySourcePublic = Literal[
     "detected",
@@ -322,24 +323,13 @@ class PositionDetailResponse(BaseModel):
     )
 
 
-ReviewActionTypeLiteral = Literal[
-    "confirm",
-    "update_quantity",
-    "update_sku",
-    "update_position_code",
-    "mark_unknown",
-    "mark_image_mismatch",
-    "delete_position",
-]
-
-
 class ReviewActionRequest(BaseModel):
     """Request body for POST .../positions/{position_id}/reviews. Fields required depend on action_type.
     user_id and comment are reserved for future use (not used in Épica 8).
 
     ``job_id``: required when the position row is run-scoped (``positions.job_id`` set); must match
     that value. Omit or null for legacy rows (``job_id IS NULL``)."""
-    action_type: ReviewActionTypeLiteral
+    action_type: ReviewActionType
     product_id: Optional[str] = None
     corrected_quantity: Optional[int] = None
     sku: Optional[str] = None

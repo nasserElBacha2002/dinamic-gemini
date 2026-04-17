@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
+import { ROUTE_HOME, ROUTE_LOGIN, ROUTE_PATH } from './constants/appRoutes';
 import { useAuth } from './features/auth';
 import LoginPage from './features/auth/LoginPage';
 import AppShell from './layout/AppShell';
@@ -56,29 +57,29 @@ function App() {
   if (!initialized) {
     return <AuthLoading />;
   }
-  if (!user && location.pathname !== '/login') {
-    return <Navigate to="/login" replace />;
+  if (!user && location.pathname !== ROUTE_LOGIN) {
+    return <Navigate to={ROUTE_LOGIN} replace />;
   }
-  if (user && location.pathname === '/login') {
-    return <Navigate to="/" replace />;
+  if (user && location.pathname === ROUTE_LOGIN) {
+    return <Navigate to={ROUTE_HOME} replace />;
   }
 
   return (
     <Routes>
-      <Route path="/login" element={loginEl} />
-      <Route path="/" element={shellEl}>
+      <Route path={ROUTE_LOGIN} element={loginEl} />
+      <Route path={ROUTE_HOME} element={shellEl}>
         <Route index element={listEl} />
-        <Route path="inventories" element={listEl} />
-        <Route path="review-queue" element={reviewQueueEl} />
-        <Route path="metrics" element={metricsEl} />
-        <Route path="admin/ai-config" element={adminAiConfigEl} />
-        <Route path="dashboard" element={<Navigate to="/" replace />} />
-        <Route path="settings" element={<Navigate to="/" replace />} />
-        <Route path="inventories/:inventoryId" element={detailEl} />
-        <Route path="inventories/:inventoryId/aisles/:aisleId/positions" element={positionsEl} />
-        <Route path="inventories/:inventoryId/analytics/compare" element={compareRunsEl} />
-        <Route path="inventories/:inventoryId/aisles/:aisleId/compare" element={legacyCompareRedirectEl} />
-        <Route path="inventories/:inventoryId/aisles/:aisleId/positions/:positionId" element={positionDetailEl} />
+        <Route path={ROUTE_PATH.inventories} element={listEl} />
+        <Route path={ROUTE_PATH.reviewQueue} element={reviewQueueEl} />
+        <Route path={ROUTE_PATH.metrics} element={metricsEl} />
+        <Route path={ROUTE_PATH.adminAiConfig} element={adminAiConfigEl} />
+        <Route path={ROUTE_PATH.dashboard} element={<Navigate to={ROUTE_HOME} replace />} />
+        <Route path={ROUTE_PATH.settings} element={<Navigate to={ROUTE_HOME} replace />} />
+        <Route path={ROUTE_PATH.inventoryDetail} element={detailEl} />
+        <Route path={ROUTE_PATH.aislePositions} element={positionsEl} />
+        <Route path={ROUTE_PATH.analyticsCompare} element={compareRunsEl} />
+        <Route path={ROUTE_PATH.legacyAisleCompare} element={legacyCompareRedirectEl} />
+        <Route path={ROUTE_PATH.positionDetail} element={positionDetailEl} />
       </Route>
     </Routes>
   );

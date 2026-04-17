@@ -6,6 +6,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import type { ReviewActionRequest } from '../api/types/requests';
+import { REVIEW_ACTION_WIRE } from '../api/types/shared';
 import type {
   PositionDetailResponse,
   PositionListResponse,
@@ -54,14 +55,14 @@ export function applyReviewActionToPositionSummary(
 ): PositionSummary {
   let next: PositionSummary;
   switch (body.action_type) {
-    case 'confirm':
+    case REVIEW_ACTION_WIRE.CONFIRM:
       next = {
         ...position,
         needs_review: false,
         review_resolution: 'confirmed',
       };
       break;
-    case 'update_quantity': {
+    case REVIEW_ACTION_WIRE.UPDATE_QUANTITY: {
       const q = body.corrected_quantity;
       if (typeof q !== 'number' || !Number.isFinite(q)) return position;
       next = {
@@ -73,7 +74,7 @@ export function applyReviewActionToPositionSummary(
       };
       break;
     }
-    case 'update_sku': {
+    case REVIEW_ACTION_WIRE.UPDATE_SKU: {
       const sku = body.sku?.trim() ?? '';
       if (!sku) return position;
       next = {
@@ -85,7 +86,7 @@ export function applyReviewActionToPositionSummary(
       };
       break;
     }
-    case 'update_position_code': {
+    case REVIEW_ACTION_WIRE.UPDATE_POSITION_CODE: {
       const code = body.position_code?.trim() ?? '';
       if (!code) return position;
       next = {
@@ -96,21 +97,21 @@ export function applyReviewActionToPositionSummary(
       };
       break;
     }
-    case 'mark_unknown':
+    case REVIEW_ACTION_WIRE.MARK_UNKNOWN:
       next = {
         ...position,
         needs_review: false,
         review_resolution: 'unknown',
       };
       break;
-    case 'mark_image_mismatch':
+    case REVIEW_ACTION_WIRE.MARK_IMAGE_MISMATCH:
       next = {
         ...position,
         needs_review: false,
         review_resolution: 'image_mismatch',
       };
       break;
-    case 'delete_position':
+    case REVIEW_ACTION_WIRE.DELETE_POSITION:
       next = {
         ...position,
         status: 'deleted',
@@ -138,10 +139,10 @@ function transformReviewQueueList(
   if (idx === -1) return old;
 
   const removeRow =
-    body.action_type === 'delete_position' ||
-    body.action_type === 'confirm' ||
-    body.action_type === 'mark_unknown' ||
-    body.action_type === 'mark_image_mismatch';
+    body.action_type === REVIEW_ACTION_WIRE.DELETE_POSITION ||
+    body.action_type === REVIEW_ACTION_WIRE.CONFIRM ||
+    body.action_type === REVIEW_ACTION_WIRE.MARK_UNKNOWN ||
+    body.action_type === REVIEW_ACTION_WIRE.MARK_IMAGE_MISMATCH;
 
   if (removeRow) {
     const items = old.items.filter((it) => it.position.id !== positionId);
@@ -180,7 +181,7 @@ function transformPositionList(
   const idx = old.positions.findIndex((p) => p.id === positionId);
   if (idx === -1) return old;
 
-  if (body.action_type === 'delete_position') {
+  if (body.action_type === REVIEW_ACTION_WIRE.DELETE_POSITION) {
     const positions = old.positions.filter((p) => p.id !== positionId);
     const removed = old.positions.length - positions.length;
     if (removed === 0) return old;
@@ -232,7 +233,7 @@ function patchPositionDetailQueries(
 ): boolean {
   const detailKey = queryKeys.inventories.positionDetail(inventoryId, aisleId, positionId);
 
-  if (body.action_type === 'delete_position') {
+  if (body.action_type === REVIEW_ACTION_WIRE.DELETE_POSITION) {
     const hadCachedDetail = queryClient
       .getQueryCache()
       .findAll({ queryKey: detailKey })

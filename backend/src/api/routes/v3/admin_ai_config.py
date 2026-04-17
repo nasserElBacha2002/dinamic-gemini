@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from src.api.constants.error_wire import HTTP_DETAIL_ADMIN_AI_UNKNOWN_PROMPT_PROFILE_COMBINATION
+from src.api.constants.route_paths import API_V3_ADMIN_ROUTER_PREFIX
 from src.application.services.admin_ai_config_inspection import (
     build_admin_ai_config_payload,
     compose_prompt_variant_for_inspection,
@@ -13,7 +15,7 @@ from src.api.schemas.admin_ai_config_schemas import AdminAiComposedPromptRespons
 from src.config import load_settings
 
 router = APIRouter(
-    prefix="/api/v3/admin",
+    prefix=API_V3_ADMIN_ROUTER_PREFIX,
     tags=["admin-v3"],
     dependencies=[Depends(require_ai_config_inspection_user)],
 )
@@ -41,6 +43,6 @@ def get_admin_ai_config_composed_prompt(
     if raw is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unknown prompt profile, provider, or parity combination for inspection.",
+            detail=HTTP_DETAIL_ADMIN_AI_UNKNOWN_PROMPT_PROFILE_COMBINATION,
         )
     return AdminAiComposedPromptResponse.model_validate(raw)

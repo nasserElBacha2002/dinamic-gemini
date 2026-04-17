@@ -6,18 +6,19 @@
 import { Box, Typography, List, ListItem, ListItemText } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { REVIEW_ACTION_WIRE } from '../../../../api/types';
 import type { ReviewHistoryItem } from '../../types';
 import { formatDate } from '../../../../utils/formatDate';
 
 function getActionLabel(action: string, t: TFunction): string {
   switch (action) {
-    case 'confirm':
+    case REVIEW_ACTION_WIRE.CONFIRM:
       return t('review_history.action_confirm');
-    case 'update_quantity':
+    case REVIEW_ACTION_WIRE.UPDATE_QUANTITY:
       return t('review_history.action_update_quantity');
-    case 'update_sku':
+    case REVIEW_ACTION_WIRE.UPDATE_SKU:
       return t('review_history.action_update_sku');
-    case 'delete_position':
+    case REVIEW_ACTION_WIRE.DELETE_POSITION:
       return t('review_history.action_delete_position');
     default:
       return action;
@@ -35,13 +36,13 @@ function getChangeSummary(item: ReviewHistoryItem, t: TFunction): string | null 
     typeof after === 'object';
 
   switch (item.action) {
-    case 'confirm': {
+    case REVIEW_ACTION_WIRE.CONFIRM: {
       if (hasPayload && after.status != null && before.status != null) {
         return t('review_history.summary_status', { before: String(before.status), after: String(after.status) });
       }
       return t('review_history.summary_confirmed');
     }
-    case 'update_quantity': {
+    case REVIEW_ACTION_WIRE.UPDATE_QUANTITY: {
       if (!hasPayload) return null;
       const b = before.corrected_quantity;
       const a = after.corrected_quantity;
@@ -49,7 +50,7 @@ function getChangeSummary(item: ReviewHistoryItem, t: TFunction): string | null 
       if (a != null) return t('review_history.summary_quantity_set', { value: a });
       return null;
     }
-    case 'update_sku': {
+    case REVIEW_ACTION_WIRE.UPDATE_SKU: {
       if (!hasPayload) return null;
       const b = before.sku;
       const a = after.sku;
@@ -57,7 +58,7 @@ function getChangeSummary(item: ReviewHistoryItem, t: TFunction): string | null 
       if (a != null) return t('review_history.summary_sku_set', { value: String(a) });
       return null;
     }
-    case 'delete_position': {
+    case REVIEW_ACTION_WIRE.DELETE_POSITION: {
       if (hasPayload && after.status != null && before.status != null) {
         return t('review_history.summary_status', { before: String(before.status), after: String(after.status) });
       }

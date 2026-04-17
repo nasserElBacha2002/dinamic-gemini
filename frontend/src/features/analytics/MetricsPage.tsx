@@ -7,6 +7,11 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
+  pathToAislePositions,
+  pathToInventory,
+  pathToInventoryAnalyticsCompare,
+} from '../../constants/appRoutes';
+import {
   Alert,
   Chip,
   Box,
@@ -237,7 +242,7 @@ export default function MetricsPage() {
   const selectedAisle = aisles.find((aisle) => aisle.id === aisleId) ?? null;
   const compareRunsHref =
     Boolean(inventoryId && selectedInventory && selectedInventory.processing_mode === 'test')
-      ? `/inventories/${inventoryId}/analytics/compare`
+      ? pathToInventoryAnalyticsCompare(inventoryId)
       : null;
   const compareRunsDisabledReason = compareRunsHref
     ? ''
@@ -449,7 +454,7 @@ export default function MetricsPage() {
         cell: (r) => (
           <Typography
             component={RouterLink}
-            to={`/inventories/${r.inventory_id}`}
+            to={pathToInventory(r.inventory_id)}
             variant="body2"
             fontWeight={600}
             color="primary"
@@ -552,7 +557,7 @@ export default function MetricsPage() {
         cell: (r) => (
           <Typography
             component={RouterLink}
-            to={`/inventories/${r.inventory_id}/aisles/${r.aisle_id}/positions`}
+            to={pathToAislePositions(r.inventory_id, r.aisle_id)}
             variant="body2"
             fontWeight={600}
             color="primary"

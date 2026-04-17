@@ -184,6 +184,17 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
+    HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
+    HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    HTTP_DETAIL_INVENTORY_NOT_FOUND,
+    HTTP_DETAIL_JOB_NOT_FOUND,
+    HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
+    HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
+    HTTP_DETAIL_UNEXPECTED_ERROR,
+    HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
+)
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
     AISLE_NOT_FOUND,
@@ -211,11 +222,6 @@ _ACTIVE_JOB_EXISTS = re.compile(r"^Aisle (.+?) already has an active job \(statu
 _JOB_PROMOTE_TYPE = re.compile(r"^Only process_aisle jobs can be promoted \(got (.+)\)$")
 _JOB_PROMOTE_STATUS = re.compile(r"^Only succeeded jobs can be promoted \(status=(.+)\)$")
 
-# Single canonical copy from use cases (do not drift from ``compare_aisle_runs`` / ``analytics_query_service``).
-_BENCHMARK_COMPARE_JOBS_MUST_DIFFER_DETAIL = "job_a_id and job_b_id must be different benchmark runs"
-_ANALYTICS_SCOPE_VALIDATION_DETAIL = "aisle_id does not belong to the given inventory_id"
-
-
 def _normalized_job_not_found_detail(exc: JobNotFoundError) -> str:
     """Phase 3 ``JobNotFoundError`` → HTTP ``detail`` (mapper-only; Category C routes unchanged).
 
@@ -228,8 +234,8 @@ def _normalized_job_not_found_detail(exc: JobNotFoundError) -> str:
     raw = str(exc).strip()
     m = _JOB_NOT_FOUND_CANON.match(raw)
     if m:
-        return f"Job not found: {m.group(1)}"
-    return "Job not found"
+        return f"{HTTP_DETAIL_JOB_NOT_FOUND}: {m.group(1)}"
+    return HTTP_DETAIL_JOB_NOT_FOUND
 
 
 def _normalized_job_does_not_belong_detail(exc: JobDoesNotBelongToAisleError) -> str:
@@ -296,31 +302,31 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
         return StructuredApiHttpError(
             404,
             error_code=INVENTORY_NOT_FOUND,
-            detail="Inventory not found",
+            detail=HTTP_DETAIL_INVENTORY_NOT_FOUND,
         )
     if isinstance(exc, AisleNotFoundError):
         return StructuredApiHttpError(
             404,
             error_code=AISLE_NOT_FOUND,
-            detail="Aisle not found or does not belong to this inventory",
+            detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
         )
     if isinstance(exc, PositionNotFoundError):
         return StructuredApiHttpError(
             404,
             error_code=POSITION_NOT_FOUND,
-            detail="Position not found or does not belong to this aisle",
+            detail=HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
         )
     if isinstance(exc, ProductNotFoundError):
         return StructuredApiHttpError(
             404,
             error_code=PRODUCT_NOT_FOUND,
-            detail="Product not found or does not belong to this position",
+            detail=HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
         )
     if isinstance(exc, InventoryVisualReferenceNotFoundError):
         return StructuredApiHttpError(
             404,
             error_code=VISUAL_REFERENCE_NOT_FOUND,
-            detail="Visual reference not found",
+            detail=HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
         )
     # --- Category B (Phase 2–3): structured + controlled ``detail`` templates ---
     # ``JobNotFoundError``: canonical ``Job not found: <id>`` preserved; anything else → ``Job not found``.
@@ -375,7 +381,7 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
         return StructuredApiHttpError(
             status_code=422,
             error_code=BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
-            detail=_BENCHMARK_COMPARE_JOBS_MUST_DIFFER_DETAIL,
+            detail=HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
         )
     if isinstance(exc, MergeJobScopeAmbiguousError):
         return HTTPException(status_code=422, detail=str(exc))
@@ -383,7 +389,7 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
         return StructuredApiHttpError(
             status_code=422,
             error_code=ANALYTICS_SCOPE_VALIDATION_FAILED,
-            detail=_ANALYTICS_SCOPE_VALIDATION_DETAIL,
+            detail=HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
         )
     if isinstance(exc, UnsupportedAssetTypeError):
         return HTTPException(status_code=400, detail=str(exc))
@@ -442,5 +448,5 @@ def review_exception_to_http(exc: Exception, **log_context: Any) -> HTTPExceptio
     return StructuredApiHttpError(
         500,
         error_code=INTERNAL_SERVER_ERROR,
-        detail="An unexpected error occurred.",
+        detail=HTTP_DETAIL_UNEXPECTED_ERROR,
     )
