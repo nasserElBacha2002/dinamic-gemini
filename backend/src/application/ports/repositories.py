@@ -78,6 +78,10 @@ class SourceAssetRepository(ABC):
         ...
 
     @abstractmethod
+    def delete_by_id(self, asset_id: str) -> bool:
+        """Delete the row by primary key. Returns True if a row was removed."""
+
+    @abstractmethod
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         ...
 

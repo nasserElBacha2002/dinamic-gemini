@@ -575,9 +575,9 @@ describe('AislePositionsPage (Aisle Results)', () => {
       inventoryDetailState.data.processing_mode = 'test';
     });
 
-    it('shows benchmark read-only alert and disables merge on a non-operational slice', () => {
-      resultSummariesState.results = repeatedSkuResults;
-      resultSummariesState.positions = repeatedSkuPositions;
+    it('shows uploaded-files action and disables merge when no repeated SKUs (benchmark run selected)', () => {
+      resultSummariesState.results = mockResults;
+      resultSummariesState.positions = mockPositions;
       resultSummariesState.resultJobId = 'job-bench';
       aisleJobsListState.data = {
         operational_job_id: 'job-op',
@@ -597,7 +597,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
         ],
       };
       renderPage();
-      expect(screen.getByText(/Benchmark \/ non-operational slice/i)).toBeTruthy();
+      expect(screen.getByTestId('aisle-source-assets-manage-open')).toBeTruthy();
       const mergeBtn = screen.getByRole('button', { name: /merge repeated labels/i });
       expect(mergeBtn.getAttribute('disabled')).not.toBeNull();
     });

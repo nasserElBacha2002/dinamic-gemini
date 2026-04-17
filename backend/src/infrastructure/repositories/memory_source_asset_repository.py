@@ -23,6 +23,12 @@ class MemorySourceAssetRepository(SourceAssetRepository):
     def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
         return self._store.get(asset_id)
 
+    def delete_by_id(self, asset_id: str) -> bool:
+        if asset_id in self._store:
+            del self._store[asset_id]
+            return True
+        return False
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         assets = [a for a in self._store.values() if a.aisle_id == aisle_id]
         return sorted(assets, key=lambda a: a.uploaded_at)

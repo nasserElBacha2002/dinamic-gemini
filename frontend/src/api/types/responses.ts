@@ -495,6 +495,8 @@ export interface SourceAssetSummary {
   storage_path: string;
   mime_type: string;
   uploaded_at: string;
+  /** Present when storage metadata captured the size (bytes). */
+  file_size_bytes?: number | null;
 }
 
 /** Response for POST .../aisles/{aisle_id}/assets. */

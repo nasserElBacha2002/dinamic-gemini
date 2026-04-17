@@ -22,6 +22,7 @@ from src.api.errors import reraise_if_mapped
 from src.config import load_settings
 from src.api.dependencies import (
     get_artifact_storage,
+    get_delete_aisle_source_asset_use_case,
     get_list_aisle_assets_use_case,
     get_upload_aisle_assets_use_case,
     get_result_context_resolver,
@@ -38,6 +39,7 @@ from src.api.schemas.asset_schemas import (
 )
 from src.application.errors import AisleNotFoundError
 from src.application.services.result_context_resolver import ResultContextResolver
+from src.application.use_cases.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
 from src.domain.assets.entities import SourceAsset
@@ -332,3 +334,22 @@ def get_aisle_asset_image_display_url(
         reraise_if_mapped(e, cause=e)
 
     return _source_asset_image_display_response(image_url=image_url, need_fetch=need_fetch)
+
+
+@router.delete(
+    "/{inventory_id}/aisles/{aisle_id}/assets/{asset_id}",
+    status_code=204,
+    response_model=None,
+)
+def delete_aisle_source_asset(
+    inventory_id: str,
+    aisle_id: str,
+    asset_id: str,
+    use_case: DeleteAisleSourceAssetUseCase = Depends(get_delete_aisle_source_asset_use_case),
+) -> None:
+    """Remove one uploaded source asset for the aisle (DB row + stored object best-effort)."""
+    try:
+        use_case.execute(inventory_id, aisle_id, asset_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise

@@ -18,6 +18,7 @@ import type {
   ApiErrorDetail,
   ProcessAisleResponse,
   UploadAisleAssetsResponse,
+  SourceAssetSummary,
   UploadInventoryVisualReferencesResponse,
   InventoryVisualReferenceListResponse,
   InventoryVisualReference,
@@ -620,6 +621,35 @@ export async function uploadAisleAssets(
     { method: 'POST', body: form }
   );
   return handleResponse<UploadAisleAssetsResponse>(response);
+}
+
+export async function listAisleAssets(inventoryId: string, aisleId: string): Promise<SourceAssetSummary[]> {
+  const response = await protectedFetch(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets`
+  );
+  return handleResponse<SourceAssetSummary[]>(response);
+}
+
+export async function deleteAisleSourceAsset(
+  inventoryId: string,
+  aisleId: string,
+  assetId: string
+): Promise<void> {
+  const response = await protectedFetch(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}`,
+    { method: 'DELETE' }
+  );
+  if (response.status === 204) {
+    return;
+  }
+  const text = await response.text();
+  let data: ApiErrorDetail;
+  try {
+    data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+  } catch {
+    data = {};
+  }
+  throwApiErrorIfNotOk(response, text, data);
 }
 
 /**

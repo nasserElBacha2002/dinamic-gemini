@@ -160,6 +160,7 @@ from fastapi import HTTPException
 from src.application.errors import (
     ActiveJobExistsError,
     AisleNotFoundError,
+    AisleSourceAssetMutationBlockedError,
     AnalyticsScopeValidationError,
     BenchmarkCompareJobsMustDifferError,
     BenchmarkRequiresTestInventoryError,
@@ -180,11 +181,13 @@ from src.application.errors import (
     ProcessingProviderNotConfiguredError,
     ProductNotFoundError,
     ReviewMutationNotAllowedError,
+    SourceAssetNotFoundForAisleError,
     UnknownProcessingProviderError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
 from src.api.constants.error_wire import (
+    HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION,
     HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
     HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
     HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
@@ -194,10 +197,13 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
     HTTP_DETAIL_UNEXPECTED_ERROR,
     HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
+    HTTP_DETAIL_ASSET_NOT_FOUND,
 )
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
     AISLE_NOT_FOUND,
+    AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
+    ASSET_NOT_FOUND,
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
     INTERNAL_SERVER_ERROR,
@@ -328,6 +334,12 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             error_code=VISUAL_REFERENCE_NOT_FOUND,
             detail=HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
         )
+    if isinstance(exc, SourceAssetNotFoundForAisleError):
+        return StructuredApiHttpError(
+            404,
+            error_code=ASSET_NOT_FOUND,
+            detail=HTTP_DETAIL_ASSET_NOT_FOUND,
+        )
     # --- Category B (Phase 2–3): structured + controlled ``detail`` templates ---
     # ``JobNotFoundError``: canonical ``Job not found: <id>`` preserved; anything else → ``Job not found``.
     # See ``_normalized_job_not_found_detail`` (same rule as module docstring).
@@ -354,6 +366,12 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=409,
             error_code=ACTIVE_JOB_EXISTS,
             detail=_normalized_active_job_exists_detail(exc),
+        )
+    if isinstance(exc, AisleSourceAssetMutationBlockedError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
+            detail=HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION,
         )
     if isinstance(exc, BenchmarkRequiresTestInventoryError):
         return HTTPException(status_code=409, detail=str(exc))

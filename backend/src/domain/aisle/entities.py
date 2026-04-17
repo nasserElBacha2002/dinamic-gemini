@@ -43,6 +43,17 @@ class Aisle:
         self.status = AisleStatus.ASSETS_UPLOADED
         self.updated_at = now
 
+    def revert_to_created_when_no_source_assets_remain(self, now: datetime) -> bool:
+        """If the aisle was only marked as having uploads, revert to ``created`` when the last asset is removed.
+
+        Returns True when ``status`` and ``updated_at`` were changed and the row should be persisted.
+        """
+        if self.status != AisleStatus.ASSETS_UPLOADED:
+            return False
+        self.status = AisleStatus.CREATED
+        self.updated_at = now
+        return True
+
     def mark_queued(self, now: datetime) -> None:
         self.status = AisleStatus.QUEUED
         self.updated_at = now

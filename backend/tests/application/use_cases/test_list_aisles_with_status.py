@@ -185,6 +185,9 @@ class StubSourceAssetRepo(SourceAssetRepository):
     def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
         return None
 
+    def delete_by_id(self, asset_id: str) -> bool:
+        return False
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return []
 

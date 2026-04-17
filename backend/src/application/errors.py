@@ -32,6 +32,14 @@ class EmptyUploadError(Exception):
     """Raised when no files are provided for an aisle asset upload."""
 
 
+class SourceAssetNotFoundForAisleError(Exception):
+    """Raised when a source asset id is unknown or does not belong to the scoped aisle."""
+
+
+class AisleSourceAssetMutationBlockedError(Exception):
+    """Raised when aisle source assets cannot be changed while an active processing job exists."""
+
+
 class ZeroByteFileError(Exception):
     """Raised when an uploaded file has size zero or negative (empty file not allowed)."""
 
