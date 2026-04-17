@@ -161,6 +161,11 @@ class SqlSourceAssetRepository(SourceAssetRepository):
             return None
         return _row_to_asset(row)
 
+    def delete_by_id(self, asset_id: str) -> bool:
+        with self._client.cursor() as cur:
+            cur.execute("DELETE FROM source_assets WHERE id = ?", (asset_id,))
+            return cur.rowcount > 0
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         with self._client.cursor() as cur:
             cur.execute(

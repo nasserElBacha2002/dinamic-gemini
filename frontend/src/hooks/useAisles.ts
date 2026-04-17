@@ -15,6 +15,7 @@ import {
   getAisleJobDetail,
   getProcessingProviderOptions,
   listAisleJobs,
+  listAisleAssets,
   getAisleBenchmarkCompare,
   type AislesListQuery,
 } from '../api/client';
@@ -114,6 +115,20 @@ export function useAisleJobsList(
 }
 
 /** Phase 6 — benchmark compare for explicit job pair (read-only analytics payload). */
+/** Uploaded source assets (photos/videos) for one aisle — lazy until drawer opens. */
+export function useAisleSourceAssets(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.inventories.aisleSourceAssets(inventoryId ?? '', aisleId ?? ''),
+    queryFn: () => listAisleAssets(inventoryId!, aisleId!),
+    enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useAisleBenchmarkCompare(
   inventoryId: string | undefined,
   aisleId: string | undefined,

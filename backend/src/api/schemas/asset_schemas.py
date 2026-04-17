@@ -19,6 +19,10 @@ class SourceAssetResponse(BaseModel):
     storage_path: str
     mime_type: str
     uploaded_at: datetime
+    file_size_bytes: Optional[int] = Field(
+        default=None,
+        description="Byte size when known from storage metadata (may be null for legacy rows).",
+    )
 
 
 class UploadAisleAssetsResponse(BaseModel):

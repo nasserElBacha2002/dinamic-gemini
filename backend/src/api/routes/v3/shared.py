@@ -600,6 +600,7 @@ def asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
         storage_path=asset.storage_path,
         mime_type=asset.mime_type,
         uploaded_at=asset.uploaded_at,
+        file_size_bytes=asset.file_size_bytes,
     )
 
 

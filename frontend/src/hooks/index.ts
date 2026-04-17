@@ -10,6 +10,7 @@ export {
   useAisleJobDetail,
   useAisleJobsList,
   useAisleBenchmarkCompare,
+  useAisleSourceAssets,
 } from './useAisles';
 export {
   useAislePositions,
@@ -27,6 +28,7 @@ export {
   useRunAisleMerge,
   useUploadAisleAssets,
   useUploadAisleAssetsFlex,
+  useDeleteAisleSourceAsset,
   useUploadInventoryVisualReferences,
   useDeleteInventoryVisualReference,
   useReplaceInventoryVisualReference,

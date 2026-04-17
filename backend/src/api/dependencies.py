@@ -58,6 +58,7 @@ from src.application.use_cases.get_aisle_processing_status import GetAisleProces
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
+from src.application.use_cases.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
@@ -390,6 +391,24 @@ def get_list_aisle_assets_use_case(
     return ListAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
+    )
+
+
+def get_delete_aisle_source_asset_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    artifact_storage=Depends(get_artifact_storage),
+    clock: Clock = Depends(get_clock),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+) -> DeleteAisleSourceAssetUseCase:
+    return DeleteAisleSourceAssetUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        job_repo=job_repo,
+        artifact_storage=artifact_storage,
+        clock=clock,
+        status_reconciler=status_reconciler,
     )
 
 

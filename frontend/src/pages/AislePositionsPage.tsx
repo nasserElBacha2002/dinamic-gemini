@@ -8,6 +8,7 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import { exportAisleResultsCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
@@ -47,6 +48,7 @@ import {
   AisleRunSelector,
 } from '../features/results/components';
 import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
+import AisleSourceAssetsManageModule from '../features/inventories/components/AisleSourceAssetsManageModule';
 
 /** List query: photo-grouped order, no SKU merge — matches operator photo-review expectations. */
 const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = {
@@ -534,6 +536,27 @@ export default function AislePositionsPage() {
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'))}
         actions={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
+            <AisleSourceAssetsManageModule
+              inventoryId={inventoryId}
+              aisleId={aisleId}
+              inventoryLabel={inventory?.name ?? t('common.em_dash')}
+              jobIdForPreview={pickedRunJobId}
+              inventoryReady={Boolean(inventoryQuery.data)}
+            >
+              {({ openSourceAssets }) => (
+                <Tooltip title={t('aisle_source_assets.action_tooltip')}>
+                  <Button
+                    data-testid="aisle-source-assets-manage-open"
+                    size="small"
+                    variant="outlined"
+                    startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
+                    onClick={openSourceAssets}
+                  >
+                    {t('aisle_source_assets.action_label')}
+                  </Button>
+                </Tooltip>
+              )}
+            </AisleSourceAssetsManageModule>
             {mergeButtonVisible ? (
               <Tooltip title={mergeDisabledReason} disableHoverListener={!mergeDisabledReason}>
                 <span>

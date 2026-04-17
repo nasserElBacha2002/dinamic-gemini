@@ -51,6 +51,9 @@ export const queryKeys = {
     /** GET .../aisles/{aisle}/jobs (run list for selector). */
     aisleJobs: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle-jobs', aisleId] as const,
+    /** Source assets (uploaded photos/videos) for one aisle. */
+    aisleSourceAssets: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'source-assets', aisleId] as const,
     /** Run selector list (`listAisleJobs`); `limit` is part of cache identity. */
     aisleJobsList: (inventoryId: string, aisleId: string, limit: number) =>
       [...queryKeys.inventories.aisleJobs(inventoryId, aisleId), limit] as const,

@@ -11,6 +11,7 @@ import {
   retryAisleJob,
   runAisleMerge,
   uploadAisleAssets,
+  deleteAisleSourceAsset,
   uploadInventoryVisualReferences,
   deleteInventoryVisualReference,
   replaceInventoryVisualReference,
@@ -155,6 +156,9 @@ export function useUploadAisleAssets(inventoryId: string, aisleId: string) {
     mutationFn: (files: File[]) => uploadAisleAssets(inventoryId, aisleId, files),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.aisleSourceAssets(inventoryId, aisleId),
+      });
     },
   });
 }
@@ -165,8 +169,24 @@ export function useUploadAisleAssetsFlex(inventoryId: string) {
   return useMutation({
     mutationFn: ({ aisleId, files }: { aisleId: string; files: File[] }) =>
       uploadAisleAssets(inventoryId, aisleId, files),
+    onSuccess: (_, { aisleId }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.aisleSourceAssets(inventoryId, aisleId),
+      });
+    },
+  });
+}
+
+export function useDeleteAisleSourceAsset(inventoryId: string, aisleId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (assetId: string) => deleteAisleSourceAsset(inventoryId, aisleId, assetId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.aisleSourceAssets(inventoryId, aisleId),
+      });
     },
   });
 }
