@@ -15,6 +15,27 @@ export function authErrorCodeToTranslationKey(code: string): string | null {
   return k ?? null;
 }
 
+/** v3 inventory API structured ``code`` → i18n (prefer over English ``detail`` matching). */
+const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
+  INVENTORY_NOT_FOUND: 'errors.not_found',
+  AISLE_NOT_FOUND: 'errors.not_found',
+  POSITION_NOT_FOUND: 'errors.not_found',
+  PRODUCT_NOT_FOUND: 'errors.not_found',
+  VISUAL_REFERENCE_NOT_FOUND: 'errors.not_found',
+  JOB_NOT_FOUND: 'errors.not_found',
+  JOB_NOT_IN_AISLE_SCOPE: 'errors.not_found',
+  ACTIVE_JOB_EXISTS: 'errors.generic',
+  JOB_PROMOTION_NOT_ALLOWED: 'errors.promotion_failed',
+  BENCHMARK_COMPARE_JOBS_MUST_DIFFER: 'errors.load_compare',
+  ANALYTICS_SCOPE_VALIDATION_FAILED: 'errors.validation_generic',
+  INTERNAL_SERVER_ERROR: 'errors.unexpected',
+};
+
+export function v3StructuredErrorCodeToTranslationKey(code: string): string | null {
+  const k = V3_STRUCTURED_CODE_TO_KEY[code.trim()];
+  return k ?? null;
+}
+
 const DETAIL_TO_KEY: [RegExp, string][] = [
   [/^invalid credentials\.?$/i, 'errors.auth.invalid_credentials'],
   [/^validation error$/i, 'errors.validation_generic'],

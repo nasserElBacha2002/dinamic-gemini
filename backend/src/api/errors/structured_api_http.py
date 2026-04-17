@@ -1,4 +1,4 @@
-"""Structured v3 client errors: additive ``code`` + unchanged ``detail`` (HTTP body).
+"""Structured v3 client errors: additive ``code`` + controlled human-facing ``detail`` (HTTP body).
 
 Registered on the FastAPI app via :func:`src.api.server.structured_api_http_error_handler`.
 
@@ -42,14 +42,26 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-# Machine-readable codes (uppercase snake_case). Add new values only with API compatibility review.
+# ---------------------------------------------------------------------------
+# Stable error ``code`` catalog (v3 JSON body: ``{"code", "detail"}``)
+# ---------------------------------------------------------------------------
+# Rules: UPPER_SNAKE_CASE; one business concept per constant; prefer domain nouns over
+# transport words (avoid ``HTTP_404``). Add a constant only when :func:`mapped_http_exception`
+# or a route intentionally raises :class:`StructuredApiHttpError` — then add contract tests.
+# Do not fork near-duplicates: extend an existing code only with an explicit API note.
+#
+# Catalog groups (for maintainers; not an enum wire contract):
+#   Not-found (Category A): INVENTORY_*, AISLE_*, POSITION_*, PRODUCT_*, VISUAL_REFERENCE_*.
+#   Jobs / scope / conflict (structured Category B): JOB_*, ACTIVE_JOB_*, JOB_PROMOTION_*.
+#   Analytics / benchmark: BENCHMARK_COMPARE_*, ANALYTICS_SCOPE_*.
+#   Infrastructure: INTERNAL_SERVER_ERROR (global unhandled path).
+
 INVENTORY_NOT_FOUND = "INVENTORY_NOT_FOUND"
 AISLE_NOT_FOUND = "AISLE_NOT_FOUND"
 POSITION_NOT_FOUND = "POSITION_NOT_FOUND"
 PRODUCT_NOT_FOUND = "PRODUCT_NOT_FOUND"
 VISUAL_REFERENCE_NOT_FOUND = "VISUAL_REFERENCE_NOT_FOUND"
 INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
-# Selected Category B — structured ``code`` + vetted ``detail`` templates (see ``error_mapping``).
 JOB_NOT_FOUND = "JOB_NOT_FOUND"
 JOB_NOT_IN_AISLE_SCOPE = "JOB_NOT_IN_AISLE_SCOPE"
 ACTIVE_JOB_EXISTS = "ACTIVE_JOB_EXISTS"

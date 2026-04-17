@@ -277,6 +277,61 @@ def test_mapped_job_promotion_not_allowed_non_canonical_detail_is_generic() -> N
     assert http.detail == "This job cannot be promoted to operational"
 
 
+@pytest.mark.parametrize(
+    "exc,status,expected_code,expected_detail",
+    [
+        (InventoryNotFoundError(), 404, INVENTORY_NOT_FOUND, "Inventory not found"),
+        (AisleNotFoundError(), 404, AISLE_NOT_FOUND, "Aisle not found or does not belong to this inventory"),
+        (PositionNotFoundError(), 404, POSITION_NOT_FOUND, "Position not found or does not belong to this aisle"),
+        (ProductNotFoundError(), 404, PRODUCT_NOT_FOUND, "Product not found or does not belong to this position"),
+        (InventoryVisualReferenceNotFoundError(), 404, VISUAL_REFERENCE_NOT_FOUND, "Visual reference not found"),
+        (JobNotFoundError("Job not found: z1"), 404, JOB_NOT_FOUND, "Job not found: z1"),
+        (
+            JobDoesNotBelongToAisleError("Job zz does not belong to aisle aa"),
+            404,
+            JOB_NOT_IN_AISLE_SCOPE,
+            "Job zz is not scoped to aisle aa",
+        ),
+        (
+            ActiveJobExistsError("Aisle A1 already has an active job (status=RUNNING)"),
+            409,
+            ACTIVE_JOB_EXISTS,
+            "Aisle A1 already has an active job (status=RUNNING)",
+        ),
+        (
+            JobPromotionNotAllowedError("Only process_aisle jobs can be promoted (got other)"),
+            409,
+            JOB_PROMOTION_NOT_ALLOWED,
+            "Only process_aisle jobs can be promoted (got other)",
+        ),
+        (
+            BenchmarkCompareJobsMustDifferError("ignored"),
+            422,
+            BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+            "job_a_id and job_b_id must be different benchmark runs",
+        ),
+        (
+            AnalyticsScopeValidationError("ignored"),
+            422,
+            ANALYTICS_SCOPE_VALIDATION_FAILED,
+            "aisle_id does not belong to the given inventory_id",
+        ),
+    ],
+)
+def test_final_v3_structured_mapper_contract_matrix(
+    exc: Exception,
+    status: int,
+    expected_code: str,
+    expected_detail: str,
+) -> None:
+    """Lock the full set of mapper-produced structured v3 errors (status, ``code``, ``detail``)."""
+    http = mapped_http_exception(exc)
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.status_code == status
+    assert http.error_code == expected_code
+    assert http.detail == expected_detail
+
+
 def test_real_app_global_handler_does_not_echo_internal_error() -> None:
     """App-level 500 must match server contract (no raw exception text in JSON)."""
 
@@ -308,6 +363,28 @@ def test_get_inventory_not_found_returns_structured_json() -> None:
         r = TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/any-id")
         assert r.status_code == 404
         assert r.json() == {"code": INVENTORY_NOT_FOUND, "detail": "Inventory not found"}
+    finally:
+        app.dependency_overrides.pop(get_get_inventory_use_case, None)
+
+
+def test_structured_api_error_logs_stable_code_at_info(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Observability: ``src.api.server`` logs stable ``error_code`` for structured v3 errors."""
+
+    class _MissingInventory:
+        def execute(self, _inventory_id: str):
+            raise InventoryNotFoundError()
+
+    app.dependency_overrides[get_get_inventory_use_case] = lambda: _MissingInventory()
+    try:
+        import logging
+
+        caplog.set_level(logging.INFO, logger="src.api.server")
+        TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/any-id")
+        joined = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "v3_structured_api_error" in joined
+        assert INVENTORY_NOT_FOUND in joined
     finally:
         app.dependency_overrides.pop(get_get_inventory_use_case, None)
 

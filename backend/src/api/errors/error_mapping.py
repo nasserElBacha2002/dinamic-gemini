@@ -101,6 +101,44 @@ Broad builtins (e.g. ``ValueError``)
 ``ValueError`` is **not** mapped here: different routes use 400 / 422 / 409 for the same
 Python type. Routes and :func:`review_exception_to_http` keep explicit handling.
 
+--------------------------------------------------------------------
+Final v3 target contract (operating model)
+--------------------------------------------------------------------
+
+**Structured (default for mapped business rules in this module):** responses use
+``{"code": "<STABLE_CODE>", "detail": "<controlled human text>"}`` via
+:class:`src.api.errors.structured_api_http.StructuredApiHttpError` and the app handler.
+``code`` is the machine identifier; ``detail`` is for display — clients must not parse
+``detail`` for branching logic.
+
+**Intentionally legacy (narrow, documented):**
+
+1. **FastAPI / Pydantic validation** — ``{"detail": [<field errors>]}`` (framework-native).
+2. **Auth** — ``{"error": {"code", "message"}}`` (separate product contract).
+3. **Category C** — selected aisle job-read helpers: fixed ``detail`` only, no ``code`` (Phase 6
+   regression / disclosure policy); see ``aisles._load_job_for_inventory_job_route``.
+4. **``StoredArtifactAccessError``** — ``detail``-only via plain ``HTTPException`` (artifact
+   layer owns copy; structuring deferred).
+5. **Remaining mapper branches** still on ``HTTPException`` + ``str(exc)`` — see *Deferred
+   structuring* below.
+
+**Observability:** structured responses log ``error_code`` + path at INFO in
+:func:`src.api.server.structured_api_http_error_handler`; unexpected failures use
+``logger.exception`` in the global 500 handler.
+
+**Deferred structuring (explicit backlog):** map to ``StructuredApiHttpError`` only after
+templates + tests per type: ``PositionResultContextMismatchError``, ``PositionDeletedError``,
+``DuplicateAisleCodeError``, ``BenchmarkRequiresTestInventoryError``, ``ReviewMutationNotAllowedError``,
+``EmptyUploadError``, ``ZeroByteFileError``, ``UnknownProcessingProviderError``,
+``InvalidProcessingModelError``, ``InvalidProcessingPromptKeyError``,
+``ProcessingProviderNotConfiguredError``, ``MergeJobScopeAmbiguousError``,
+``UnsupportedAssetTypeError``, ``MaxInventoryVisualReferencesExceededError``,
+``StoredArtifactAccessError``. Broad ``ValueError`` stays route-local.
+
+**When adding a new route:** prefer ``reraise_if_mapped`` for domain exceptions already in this
+module; do not invent new English ``detail`` strings when a ``code`` + existing template applies;
+never expose raw ``str(exc)`` on new paths.
+
 **When to add a new type to** :func:`mapped_http_exception`
 
 - Add a **narrow, domain-specific** exception class when **multiple routes** already map

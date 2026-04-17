@@ -3,6 +3,8 @@
  */
 
 export interface ApiErrorDetail {
+  /** v3 structured business errors — prefer for branching over parsing ``detail``. */
+  code?: string;
   detail?: string | unknown;
 }
 

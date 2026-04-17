@@ -88,8 +88,17 @@ async def auth_http_error_handler(_: Request, exc: AuthHttpError):
 
 
 @app.exception_handler(StructuredApiHttpError)
-async def structured_api_http_error_handler(_: Request, exc: StructuredApiHttpError) -> JSONResponse:
-    """Emit flat JSON ``code`` + ``detail`` for Category A, selected Category B, and direct raises."""
+async def structured_api_http_error_handler(request: Request, exc: StructuredApiHttpError) -> JSONResponse:
+    """Emit flat JSON ``code`` + ``detail`` for Category A, selected Category B, and direct raises.
+
+    Logs at INFO with stable ``error_code`` for operations dashboards (no PII in ``detail`` here).
+    """
+    logger.info(
+        "v3_structured_api_error status=%s code=%s path=%s",
+        exc.status_code,
+        exc.error_code,
+        request.url.path,
+    )
     return JSONResponse(
         status_code=exc.status_code,
         content={"code": exc.error_code, "detail": exc.detail},
