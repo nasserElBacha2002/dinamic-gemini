@@ -34,7 +34,7 @@ HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED = "Only format=csv is supported"
 HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED = "At least one file is required"
 HTTP_DETAIL_ASSET_NOT_FOUND = "Asset not found"
 HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION = (
-    "Cannot modify aisle source assets while a job is queued, starting, or running for this aisle"
+    "Cannot modify aisle source assets while a job is queued, starting, running, or cancel requested for this aisle"
 )
 HTTP_DETAIL_AISLE_NOT_FOUND_SHORT = "Aisle not found"
 HTTP_DETAIL_PREVIEW_NOT_AVAILABLE_FOR_IMAGE = "Preview is not available for this image"

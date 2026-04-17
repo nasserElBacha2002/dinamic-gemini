@@ -62,6 +62,8 @@ export interface ManagedImageAssetsDrawerProps {
   isDeleting?: boolean;
   deleteError?: string | null;
   previewErrorMessageKey?: string;
+  /** When this returns a non-empty string, preview is skipped and the message is shown (e.g. video in image-only viewer). */
+  previewBlockedMessage?: (item: ManagedImageAssetItem) => string | null;
   formatDeleteConfirm: (fileName: string) => string;
 }
 
@@ -88,6 +90,7 @@ export default function ManagedImageAssetsDrawer({
   isDeleting = false,
   deleteError,
   previewErrorMessageKey = 'errors.preview_reference_failed',
+  previewBlockedMessage,
   formatDeleteConfirm,
 }: ManagedImageAssetsDrawerProps) {
   const { t } = useTranslation();
@@ -108,6 +111,7 @@ export default function ManagedImageAssetsDrawer({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      previewRequestIdRef.current += 1;
       if (previewRevokeRef.current) {
         previewRevokeRef.current();
         previewRevokeRef.current = null;
@@ -129,9 +133,19 @@ export default function ManagedImageAssetsDrawer({
 
   useEffect(() => {
     if (!open) {
-      clearPreview();
+      previewRequestIdRef.current += 1;
+      if (previewRevokeRef.current) {
+        previewRevokeRef.current();
+        previewRevokeRef.current = null;
+      }
+      setPreviewTarget(null);
+      setPreviewSrc(null);
+      setPreviewLoading(false);
+      setPreviewError(null);
+      setDeleteTarget(null);
+      setReplaceTarget(null);
+      setReplacingAssetId(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- clearPreview stable enough for open-only
   }, [open]);
 
   const handleUploadClick = () => {
@@ -181,6 +195,19 @@ export default function ManagedImageAssetsDrawer({
   };
 
   const handlePreview = async (item: ManagedImageAssetItem) => {
+    const blocked = previewBlockedMessage?.(item)?.trim();
+    if (blocked) {
+      previewRequestIdRef.current += 1;
+      if (previewRevokeRef.current) {
+        previewRevokeRef.current();
+        previewRevokeRef.current = null;
+      }
+      setPreviewTarget(item);
+      setPreviewSrc(null);
+      setPreviewLoading(false);
+      setPreviewError(blocked);
+      return;
+    }
     clearPreview();
     const requestId = previewRequestIdRef.current;
     setPreviewTarget(item);

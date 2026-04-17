@@ -145,7 +145,12 @@ export default function AisleSourceAssetsManageModule({
             ? resolveApiErrorMessage(uploadMutation.error, 'errors.upload_aisle_source_assets')
             : null
         }
-        uploadAccept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska"
+        uploadAccept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif"
+        previewBlockedMessage={(item) =>
+          item.mime_type.toLowerCase().startsWith('video/')
+            ? t('errors.preview_aisle_video_not_supported')
+            : null
+        }
         onDelete={(id) => deleteMutation.mutateAsync(id)}
         isDeleting={deleteMutation.isPending}
         deleteError={
