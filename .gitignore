@@ -56,6 +56,9 @@ output/
 !tsconfig.json
 !tsconfig.node.json
 !frontend/vercel.json
+!frontend/src/i18n/locales/en/translation.json
+!frontend/src/i18n/locales/es/translation.json
+!frontend/scripts/i18n.overrides.en.json
 
 # Data files (videos de prueba, etc.)
 data/
