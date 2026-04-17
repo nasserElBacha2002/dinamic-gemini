@@ -24,14 +24,18 @@ Intentional public copy; do not change without an explicit API / client contract
 for:
 
 - **Category A:** the five stable not-found rows above (fixed ``detail`` strings).
-- **Category B (Phase 2–3 subset):** ``JobNotFoundError``, ``JobDoesNotBelongToAisleError``,
-  ``ActiveJobExistsError``, ``JobPromotionNotAllowedError`` — **Phase 3:** public ``detail`` is
+- **Category B (structured subset):** ``JobNotFoundError``, ``JobDoesNotBelongToAisleError``,
+  ``ActiveJobExistsError``, ``JobPromotionNotAllowedError``, ``BenchmarkCompareJobsMustDifferError``,
+  ``AnalyticsScopeValidationError`` — **Phase 3:** public ``detail`` is
   built from **vetted templates** in this module (see ``_normalized_*`` helpers). In particular,
   ``JobNotFoundError``: if ``str(exc)`` matches the canonical ``Job not found: <id>`` pattern, that
   controlled detail (including the id) is preserved; **any other** message shape collapses to the
   stable generic ``Job not found`` so arbitrary free-form ``str(exc)`` is not part of the HTTP
-  contract. Other structured Category B types keep regex-backed templates where matched; see each
-  helper for its non-matching fallback (some still echo ``str(exc)`` until use cases converge).
+  contract. ``BenchmarkCompareJobsMustDifferError`` / ``AnalyticsScopeValidationError`` use one
+  fixed public ``detail`` each (aligned with their use cases). Other structured job/conflict types
+  use regex-backed templates where matched; see each helper for non-matching fallback (all
+  current ``JobDoesNotBelongToAisleError`` raise sites match the two vetted patterns; unknown
+  shapes collapse to a stable generic — see ``_normalized_job_does_not_belong_detail``).
 
 The app serializes structured errors as
 ``{"code": "<UPPER_SNAKE_CASE>", "detail": "<string>"}``.
@@ -145,6 +149,8 @@ from src.application.errors import (
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
     AISLE_NOT_FOUND,
+    ANALYTICS_SCOPE_VALIDATION_FAILED,
+    BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
     INVENTORY_NOT_FOUND,
     JOB_NOT_FOUND,
     JOB_NOT_IN_AISLE_SCOPE,
@@ -169,6 +175,10 @@ _ACTIVE_JOB_EXISTS = re.compile(r"^Aisle (.+?) already has an active job \(statu
 _JOB_PROMOTE_TYPE = re.compile(r"^Only process_aisle jobs can be promoted \(got (.+)\)$")
 _JOB_PROMOTE_STATUS = re.compile(r"^Only succeeded jobs can be promoted \(status=(.+)\)$")
 
+# Single canonical copy from use cases (do not drift from ``compare_aisle_runs`` / ``analytics_query_service``).
+_BENCHMARK_COMPARE_JOBS_MUST_DIFFER_DETAIL = "job_a_id and job_b_id must be different benchmark runs"
+_ANALYTICS_SCOPE_VALIDATION_DETAIL = "aisle_id does not belong to the given inventory_id"
+
 
 def _normalized_job_not_found_detail(exc: JobNotFoundError) -> str:
     """Phase 3 ``JobNotFoundError`` → HTTP ``detail`` (mapper-only; Category C routes unchanged).
@@ -187,7 +197,21 @@ def _normalized_job_not_found_detail(exc: JobNotFoundError) -> str:
 
 
 def _normalized_job_does_not_belong_detail(exc: JobDoesNotBelongToAisleError) -> str:
-    """Unify legacy phrasing to one public template (IDs preserved)."""
+    """``JobDoesNotBelongToAisleError`` → HTTP ``detail`` (mapper path only; Category C unchanged).
+
+    **Known patterns (all current raise sites in ``application/`` match one of these):**
+
+    1. ``Job <job_id> is not scoped to aisle <aisle_id>`` — resolve / compare / export / promote.
+    2. ``Job <job_id> does not belong to aisle <aisle_id>`` — result context resolver, merge
+       recompute (legacy wording).
+
+    Both normalize to the same public template: ``Job <job_id> is not scoped to aisle <aisle_id>``.
+
+    **Unknown / free-form:** if ``str(exc)`` matches neither pattern (tests or future code), return
+    the stable generic ``"Job is not scoped to this aisle"`` — same policy as other structured
+    Category B fallbacks: never echo arbitrary ``str(exc)``; clients use ``JOB_NOT_IN_AISLE_SCOPE``
+    for branching and may use ``detail`` when it includes ids.
+    """
     raw = str(exc).strip()
     m = _JOB_SCOPE_NOT_SCOPED.match(raw)
     if m:
@@ -195,7 +219,7 @@ def _normalized_job_does_not_belong_detail(exc: JobDoesNotBelongToAisleError) ->
     m = _JOB_SCOPE_DOES_NOT_BELONG.match(raw)
     if m:
         return f"Job {m.group(1)} is not scoped to aisle {m.group(2)}"
-    return raw
+    return "Job is not scoped to this aisle"
 
 
 def _normalized_active_job_exists_detail(exc: ActiveJobExistsError) -> str:
@@ -203,7 +227,7 @@ def _normalized_active_job_exists_detail(exc: ActiveJobExistsError) -> str:
     m = _ACTIVE_JOB_EXISTS.match(raw)
     if m:
         return f"Aisle {m.group(1)} already has an active job (status={m.group(2)})"
-    return raw
+    return "An active job already exists for this aisle"
 
 
 def _normalized_job_promotion_not_allowed_detail(exc: JobPromotionNotAllowedError) -> str:
@@ -214,7 +238,7 @@ def _normalized_job_promotion_not_allowed_detail(exc: JobPromotionNotAllowedErro
     m = _JOB_PROMOTE_STATUS.match(raw)
     if m:
         return f"Only succeeded jobs can be promoted (status={m.group(1)})"
-    return raw
+    return "This job cannot be promoted to operational"
 
 
 def mapped_http_exception(exc: BaseException) -> HTTPException | None:
@@ -312,11 +336,19 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
     if isinstance(exc, ProcessingProviderNotConfiguredError):
         return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, BenchmarkCompareJobsMustDifferError):
-        return HTTPException(status_code=422, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+            detail=_BENCHMARK_COMPARE_JOBS_MUST_DIFFER_DETAIL,
+        )
     if isinstance(exc, MergeJobScopeAmbiguousError):
         return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, AnalyticsScopeValidationError):
-        return HTTPException(status_code=422, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=ANALYTICS_SCOPE_VALIDATION_FAILED,
+            detail=_ANALYTICS_SCOPE_VALIDATION_DETAIL,
+        )
     if isinstance(exc, UnsupportedAssetTypeError):
         return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, MaxInventoryVisualReferencesExceededError):

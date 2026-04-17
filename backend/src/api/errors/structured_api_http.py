@@ -28,6 +28,8 @@ legacy ``{"detail": ...}`` or other shapes. For ``JOB_NOT_FOUND`` specifically: 
 ``Job not found: <id>`` is kept when the raised message matches the vetted pattern; any other
 ``JobNotFoundError`` message maps to the generic ``Job not found`` (see
 :func:`src.api.errors.error_mapping._normalized_job_not_found_detail`).
+``BENCHMARK_COMPARE_JOBS_MUST_DIFFER`` and ``ANALYTICS_SCOPE_VALIDATION_FAILED`` use single
+canonical ``detail`` strings aligned with their sole use-case emitters (not ``str(exc)``).
 
 **Transition:** for structured errors, ``code`` is the stable machine identifier; ``detail`` is
 the human-facing string (fixed for Category A, templated for structured Category B). New
@@ -47,11 +49,13 @@ POSITION_NOT_FOUND = "POSITION_NOT_FOUND"
 PRODUCT_NOT_FOUND = "PRODUCT_NOT_FOUND"
 VISUAL_REFERENCE_NOT_FOUND = "VISUAL_REFERENCE_NOT_FOUND"
 INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
-# Phase 2 — selected Category B (detail remains str(exc); code is additive).
+# Selected Category B — structured ``code`` + vetted ``detail`` templates (see ``error_mapping``).
 JOB_NOT_FOUND = "JOB_NOT_FOUND"
 JOB_NOT_IN_AISLE_SCOPE = "JOB_NOT_IN_AISLE_SCOPE"
 ACTIVE_JOB_EXISTS = "ACTIVE_JOB_EXISTS"
 JOB_PROMOTION_NOT_ALLOWED = "JOB_PROMOTION_NOT_ALLOWED"
+BENCHMARK_COMPARE_JOBS_MUST_DIFFER = "BENCHMARK_COMPARE_JOBS_MUST_DIFFER"
+ANALYTICS_SCOPE_VALIDATION_FAILED = "ANALYTICS_SCOPE_VALIDATION_FAILED"
 
 
 class StructuredApiHttpError(HTTPException):

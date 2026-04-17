@@ -20,6 +20,8 @@ from src.api.errors.error_mapping import mapped_http_exception, reraise_if_mappe
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
     AISLE_NOT_FOUND,
+    ANALYTICS_SCOPE_VALIDATION_FAILED,
+    BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
     INVENTORY_NOT_FOUND,
     INTERNAL_SERVER_ERROR,
     JOB_NOT_FOUND,
@@ -34,6 +36,8 @@ from src.api.server import app
 from src.application.errors import (
     ActiveJobExistsError,
     AisleNotFoundError,
+    AnalyticsScopeValidationError,
+    BenchmarkCompareJobsMustDifferError,
     InventoryNotFoundError,
     InventoryVisualReferenceNotFoundError,
     JobDoesNotBelongToAisleError,
@@ -61,6 +65,35 @@ def test_mapped_job_does_not_belong_preserves_not_scoped_phrase() -> None:
     http = mapped_http_exception(exc)
     assert http is not None
     assert http.detail == "Job j1 is not scoped to aisle aisle-1"
+
+
+def test_mapped_job_does_not_belong_non_canonical_message_maps_to_stable_generic_detail() -> None:
+    """Unparseable ``JobDoesNotBelongToAisleError`` → stable generic (no raw ``str(exc)``)."""
+    http = mapped_http_exception(JobDoesNotBelongToAisleError("legacy ad-hoc scope message"))
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.error_code == JOB_NOT_IN_AISLE_SCOPE
+    assert http.detail == "Job is not scoped to this aisle"
+
+
+def test_integration_benchmark_compare_job_not_in_aisle_scope_returns_structured_json() -> None:
+    """Route + handler: ``JobDoesNotBelongToAisleError`` via ``reraise_if_mapped`` (known pattern)."""
+
+    class _CompareScope:
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            raise JobDoesNotBelongToAisleError("Job j-bad is not scoped to aisle aisle-1")
+
+    app.dependency_overrides[get_compare_aisle_runs_use_case] = lambda: _CompareScope()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/api/v3/inventories/inv-1/aisles/aisle-1/benchmark/compare",
+            params={"job_a_id": "ja", "job_b_id": "jb"},
+        )
+        assert r.status_code == 404
+        body = r.json()
+        assert body.get("code") == JOB_NOT_IN_AISLE_SCOPE
+        assert body.get("detail") == "Job j-bad is not scoped to aisle aisle-1"
+    finally:
+        app.dependency_overrides.pop(get_compare_aisle_runs_use_case, None)
 
 
 def test_mapped_http_exception_unknown_returns_none() -> None:
@@ -212,6 +245,36 @@ def test_mapped_merge_scope_ambiguous_stays_legacy_detail_only() -> None:
     assert http.status_code == 422
     assert http.detail == "merge scope ambiguous"
     assert not isinstance(http, StructuredApiHttpError)
+
+
+def test_mapped_benchmark_compare_jobs_must_differ_is_structured() -> None:
+    http = mapped_http_exception(BenchmarkCompareJobsMustDifferError("ignored body"))
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.status_code == 422
+    assert http.error_code == BENCHMARK_COMPARE_JOBS_MUST_DIFFER
+    assert http.detail == "job_a_id and job_b_id must be different benchmark runs"
+
+
+def test_mapped_analytics_scope_validation_is_structured() -> None:
+    http = mapped_http_exception(AnalyticsScopeValidationError("ignored"))
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.status_code == 422
+    assert http.error_code == ANALYTICS_SCOPE_VALIDATION_FAILED
+    assert http.detail == "aisle_id does not belong to the given inventory_id"
+
+
+def test_mapped_active_job_exists_non_canonical_detail_is_generic() -> None:
+    http = mapped_http_exception(ActiveJobExistsError("unexpected ad-hoc copy"))
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.error_code == ACTIVE_JOB_EXISTS
+    assert http.detail == "An active job already exists for this aisle"
+
+
+def test_mapped_job_promotion_not_allowed_non_canonical_detail_is_generic() -> None:
+    http = mapped_http_exception(JobPromotionNotAllowedError("unexpected ad-hoc"))
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.error_code == JOB_PROMOTION_NOT_ALLOWED
+    assert http.detail == "This job cannot be promoted to operational"
 
 
 def test_real_app_global_handler_does_not_echo_internal_error() -> None:
