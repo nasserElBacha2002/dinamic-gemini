@@ -83,6 +83,26 @@ def _seed() -> None:
                 },
             )
         )
+    aisle_repo.save(
+        Aisle("aisle-b6-other", "inv-b6", "B", AisleStatus.PROCESSED, now, now, operational_job_id=None)
+    )
+    job_repo.save(
+        Job(
+            id="j-other-aisle",
+            target_type="aisle",
+            target_id="aisle-b6-other",
+            job_type="process_aisle",
+            status=JobStatus.SUCCEEDED,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+            provider_name="openai",
+            model_name="gpt",
+            prompt_key="global_v21",
+            prompt_version="pv1",
+            result_json={},
+        )
+    )
     pos_repo.save(
         Position(
             id="pb6-a",
@@ -227,5 +247,21 @@ def test_analytics_benchmark_compare_alias() -> None:
         )
         assert r.status_code == 200
         assert r.json()["read_only"] is True
+    finally:
+        _clear()
+
+
+def test_analytics_benchmark_compare_wrong_aisle_job_is_404() -> None:
+    """JobDoesNotBelongToAisleError must align with inventory/positions routes (404, not 422)."""
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.get(
+            "/api/v3/analytics/benchmark/inventories/inv-b6/aisles/aisle-b6/compare",
+            params={"job_a_id": "j1", "job_b_id": "j-other-aisle"},
+        )
+        assert r.status_code == 404
+        detail = (r.json().get("detail") or "").lower()
+        assert "not scoped" in detail or "aisle" in detail
     finally:
         _clear()

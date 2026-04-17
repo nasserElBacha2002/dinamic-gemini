@@ -13,6 +13,7 @@ from typing import Any, Optional, Tuple
 
 from fastapi import HTTPException
 
+from src.api.errors import review_exception_to_http
 from src.utils.validation import validate_relative_path
 
 from src.api.schemas.aisle_schemas import AisleResponse, AisleJobSummary
@@ -222,23 +223,6 @@ def resolve_normalized_asset_path(
             job_key,
         )
     return path
-
-
-def review_exception_to_http(e: Exception) -> HTTPException:
-    """Map application exceptions from review use cases to HTTP responses."""
-    if isinstance(e, InventoryNotFoundError):
-        return HTTPException(status_code=404, detail="Inventory not found")
-    if isinstance(e, AisleNotFoundError):
-        return HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    if isinstance(e, PositionNotFoundError):
-        return HTTPException(status_code=404, detail="Position not found or does not belong to this aisle")
-    if isinstance(e, ProductNotFoundError):
-        return HTTPException(status_code=404, detail="Product not found or does not belong to this position")
-    if isinstance(e, PositionDeletedError):
-        return HTTPException(status_code=409, detail=str(e))
-    if isinstance(e, ValueError):
-        return HTTPException(status_code=422, detail=str(e))
-    raise e
 
 
 def handle_confirm(

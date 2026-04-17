@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
 from src.api.dependencies import (
     get_list_aisle_positions_use_case,
@@ -16,18 +16,12 @@ from src.api.schemas.position_schemas import (
     PositionListResponse,
     PositionRunContextResponse,
 )
-from src.application.errors import (
-    AisleNotFoundError,
-    InventoryNotFoundError,
-    JobDoesNotBelongToAisleError,
-    JobNotFoundError,
-    PositionNotFoundError,
-    PositionResultContextMismatchError,
-)
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.services.display_primary_product import select_display_primary_product
+
+from src.api.errors import mapped_http_exception
 
 from .shared import (
     position_to_summary,
@@ -130,14 +124,11 @@ def list_aisle_positions(
             result_job_id=result.resolved_job_id,
             result_context_source=result.result_context_source,
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        mapped = mapped_http_exception(e)
+        if mapped is not None:
+            raise mapped
+        raise
 
 
 @router.get(
@@ -211,17 +202,10 @@ def get_position_detail(
                 prompt_version=rc.prompt_version,
             ),
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except PositionNotFoundError:
-        raise HTTPException(status_code=404, detail="Position not found or does not belong to this aisle")
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except PositionResultContextMismatchError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        mapped = mapped_http_exception(e)
+        if mapped is not None:
+            raise mapped
+        raise
 
 

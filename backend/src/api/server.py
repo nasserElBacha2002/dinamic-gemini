@@ -86,6 +86,20 @@ async def auth_http_error_handler(_: Request, exc: AuthHttpError):
     return JSONResponse(status_code=exc.status_code, content=exc.to_response_body())
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Safe 500 for unexpected failures; business rules should map to HTTPException earlier."""
+    logger.exception(
+        "Unhandled exception method=%s path=%s",
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred."},
+    )
+
+
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
     """Require X-API-Key header if settings.api_key is set."""

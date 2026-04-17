@@ -161,7 +161,8 @@ def test_post_review_run_scoped_missing_job_id_returns_422() -> None:
             "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1/reviews",
             json={"action_type": "confirm"},
         )
-        assert resp.status_code == 204
+        assert resp.status_code == 422
+        assert "job_id" in (resp.json().get("detail") or "").lower()
     finally:
         app.dependency_overrides.clear()
 
@@ -229,7 +230,14 @@ def test_post_review_run_scoped_edit_does_not_mutate_legacy_position() -> None:
             "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-run/reviews",
             json={"action_type": "confirm"},
         )
-        assert resp.status_code == 204
+        assert resp.status_code == 422
+        assert "job_id" in (resp.json().get("detail") or "").lower()
+
+        resp_ok = client.post(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-run/reviews",
+            json={"action_type": "confirm", "job_id": "job-trial-1"},
+        )
+        assert resp_ok.status_code == 204
         run_after = repos["position_repo"].get_by_id("pos-run")
         legacy_after = repos["position_repo"].get_by_id("pos-legacy")
         assert run_after is not None and run_after.status == PositionStatus.REVIEWED
