@@ -88,7 +88,13 @@ async def auth_http_error_handler(_: Request, exc: AuthHttpError):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Safe 500 for unexpected failures; business rules should map to HTTPException earlier."""
+    """Safe 500 for unexpected failures; business rules should map to HTTPException earlier.
+
+    **Error contract:** response body is only the generic ``detail`` string below — never
+    ``str(exc)``, stack traces, or other internal diagnostics (see v3 contract notes in
+    ``src.api.errors.error_mapping``). More specific handlers (e.g. ``HTTPException``,
+    ``RequestValidationError``, ``AuthHttpError``) win via Starlette's MRO lookup.
+    """
     logger.exception(
         "Unhandled exception method=%s path=%s",
         request.method,

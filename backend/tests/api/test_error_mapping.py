@@ -6,13 +6,19 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from src.api.dependencies import get_get_inventory_use_case
 from src.api.errors.error_mapping import mapped_http_exception, reraise_if_mapped, review_exception_to_http
 from src.api.server import app
 from src.application.errors import (
+    AisleNotFoundError,
     InventoryNotFoundError,
+    InventoryVisualReferenceNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
+    PositionNotFoundError,
+    ProductNotFoundError,
 )
+from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 
 
 def test_mapped_http_exception_job_scope_returns_404() -> None:
@@ -62,6 +68,30 @@ def test_mapped_inventory_not_found() -> None:
     assert http.detail == "Inventory not found"
 
 
+@pytest.mark.parametrize(
+    "exc,expected_detail",
+    [
+        (AisleNotFoundError(), "Aisle not found or does not belong to this inventory"),
+        (PositionNotFoundError(), "Position not found or does not belong to this aisle"),
+        (ProductNotFoundError(), "Product not found or does not belong to this position"),
+        (InventoryVisualReferenceNotFoundError(), "Visual reference not found"),
+    ],
+)
+def test_mapped_stable_not_found_details(exc: Exception, expected_detail: str) -> None:
+    http = mapped_http_exception(exc)
+    assert http is not None
+    assert http.status_code == 404
+    assert http.detail == expected_detail
+
+
+def test_mapped_stored_artifact_access_passes_curated_detail() -> None:
+    exc = StoredArtifactAccessError(404, "Stored artifact file not found.", "local_file_missing")
+    http = mapped_http_exception(exc)
+    assert http is not None
+    assert http.status_code == 404
+    assert http.detail == "Stored artifact file not found."
+
+
 def test_server_registers_global_exception_handler() -> None:
     assert Exception in app.exception_handlers
 
@@ -93,3 +123,20 @@ def test_job_not_found_mapping_detail_preserved() -> None:
     assert http is not None
     assert http.status_code == 404
     assert http.detail == "Job not found: j-missing"
+
+
+def test_real_app_global_handler_does_not_echo_internal_error() -> None:
+    """App-level 500 must match server contract (no raw exception text in JSON)."""
+
+    class _BadInventoryUseCase:
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("INTERNAL_LEAK_TOKEN_123")
+
+    app.dependency_overrides[get_get_inventory_use_case] = lambda: _BadInventoryUseCase()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/any-id")
+        assert r.status_code == 500
+        assert "INTERNAL_LEAK" not in r.text
+        assert r.json().get("detail") == "An unexpected error occurred."
+    finally:
+        app.dependency_overrides.pop(get_get_inventory_use_case, None)

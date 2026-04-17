@@ -1,32 +1,61 @@
 """Central mapping from application-layer exceptions to :class:`fastapi.HTTPException`.
 
-Routes should prefer :func:`mapped_http_exception` for known errors and re-raise unmapped
-exceptions so the global handler can produce a safe 500 response.
+Routes should prefer :func:`mapped_http_exception` / :func:`reraise_if_mapped` for known
+errors and re-raise unmapped exceptions so the global handler can produce a safe 500 response.
 
-**Intentionally out of scope for** :func:`mapped_http_exception` **— broad** ``ValueError``
+--------------------------------------------------------------------
+v3 API error **response contract** (normative for this package)
+--------------------------------------------------------------------
 
-``ValueError`` is **not** mapped here on purpose. Different routes attach different HTTP
-semantics to the same failure shape (400 vs 422 vs 409). Centralizing ``ValueError`` in
-this module would invite wrong status codes or accidental contract drift. Routes (and
-review-specific helpers such as :func:`review_exception_to_http`) keep explicit handling
-for validation-style ``ValueError`` where the contract is already defined.
+Wire format stays FastAPI’s usual ``{"detail": ...}`` unless a dedicated exception handler
+returns a different body (e.g. :class:`src.auth.errors.AuthHttpError`).
+
+**Category A — stable fixed ``detail`` (preferred for *new* mappings)**  
+Intentional public copy; do not change without an explicit API / client contract note:
+
+- ``Inventory not found``
+- ``Aisle not found or does not belong to this inventory``
+- ``Position not found or does not belong to this aisle``
+- ``Product not found or does not belong to this position``
+- ``Visual reference not found``
+
+:class:`StoredArtifactAccessError` is **A-like** in spirit: ``status_code`` and ``detail``
+are set by the artifact layer per failure reason (not raw stack traces).
+
+**Category B — compatibility-preserved ``detail=str(exc)``**  
+Branches below marked *compatibility* keep dynamic text because operators or clients may
+already depend on message wording or specifics. **Do not extend** ``str(exc)`` to new
+exception types without a compatibility review; for new features prefer **Category A**
+fixed strings unless product explicitly needs dynamic copy.
+
+**Category C — route-local ``HTTPException`` only**  
+Some routes **must not** use the mapper alone when a **different** fixed string is required
+for regression tests, UX, or reduced information disclosure (e.g. Phase 6 job read helpers
+that return ``"Job not found"`` without echoing the underlying ``JobNotFoundError`` message).
+Keep those translations in the route (or a small helper) and document *why* in that helper.
+
+**Equivalence**  
+Equivalent inventory/aisle/position/analytics flows should rely on the same mapper branch
+for the same exception class. If two endpoints diverge, treat it as a bug **unless** one
+side is intentionally **Category C**.
+
+**Unexpected failures**  
+Never return arbitrary internal ``str(exc)`` for unhandled errors; use
+:func:`src.api.server.unhandled_exception_handler` or a fixed safe ``detail`` (see
+:func:`review_exception_to_http` for review POST).
+
+--------------------------------------------------------------------
+Broad builtins (e.g. ``ValueError``)
+--------------------------------------------------------------------
+
+``ValueError`` is **not** mapped here: different routes use 400 / 422 / 409 for the same
+Python type. Routes and :func:`review_exception_to_http` keep explicit handling.
 
 **When to add a new type to** :func:`mapped_http_exception`
 
-- Add a **narrow, domain-specific** exception class (typically from
-  ``src.application.errors`` or a dedicated API error like ``StoredArtifactAccessError``)
-  when **multiple routes** already map it the same way, or you are introducing a new
-  cross-cutting error that should stay consistent everywhere.
-- Keep **route-local** ``HTTPException`` translation when semantics are one-off, depend on
-  request shape, or differ by verb/path.
-- Preserve existing response **status + detail** contracts unless the team intentionally
-  changes API behavior; do not "improve" messages in the mapper without a compatibility plan.
-- For **unexpected** failures, never surface raw internal trace or arbitrary ``str(exc)`` to
-  clients; use the global handler or a fixed safe ``detail`` string.
-
-**``str(exc)`` in this module:** several branches keep ``detail=str(exc)`` **only** because
-existing clients already rely on that dynamic text. **New** mappings should prefer stable,
-operator-safe fixed strings unless a route already depends on message-level detail.
+- Add a **narrow, domain-specific** exception class when **multiple routes** already map
+  it the same way, or a new cross-cutting error must stay consistent.
+- Preserve **status + detail** contracts unless the team intentionally changes API behavior.
 """
 
 from __future__ import annotations
@@ -82,8 +111,10 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
     detail for value-level validation differ by endpoint and must stay explicit at the route
     or use-case boundary.
     """
+    # StoredArtifactAccessError: Category A (reason-curated detail, not traceback text).
     if isinstance(exc, StoredArtifactAccessError):
         return HTTPException(status_code=exc.status_code, detail=exc.detail)
+    # --- Category A: stable fixed-detail not-found / scope errors ---
     if isinstance(exc, InventoryNotFoundError):
         return HTTPException(status_code=404, detail="Inventory not found")
     if isinstance(exc, AisleNotFoundError):
@@ -94,7 +125,7 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
         return HTTPException(status_code=404, detail="Product not found or does not belong to this position")
     if isinstance(exc, InventoryVisualReferenceNotFoundError):
         return HTTPException(status_code=404, detail="Visual reference not found")
-    # --- detail=str(exc): preserved for backward compatibility with existing API clients ---
+    # --- Category B (compatibility): dynamic detail=str(exc) ---
     if isinstance(exc, JobNotFoundError):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, JobDoesNotBelongToAisleError):
