@@ -822,8 +822,10 @@ class AuthSettings(BaseModel):
     auth_jairo_password_hash: str = Field(
         default_factory=lambda: (os.getenv("AUTH_JAIRO_PASSWORD_HASH", "") or "").strip(),
         description=(
-            "Temporary optional second operator: fixed login username 'Jairo' (no self-registration). "
-            "Passlib/bcrypt hash only; when empty, Jairo is disabled. Env: AUTH_JAIRO_PASSWORD_HASH."
+            "Temporary optional second operator (NOT multi-user product support): fixed login "
+            "username 'Jairo', case-sensitive, passlib/bcrypt hash only (empty/absent = disabled). "
+            "Requires ADMIN_USERNAME and ADMIN_PASSWORD_HASH to both be set — Jairo cannot replace "
+            "the primary admin. Env: AUTH_JAIRO_PASSWORD_HASH."
         ),
     )
     auth_token_secret: str = Field(

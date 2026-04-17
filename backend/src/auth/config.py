@@ -11,6 +11,9 @@ class AuthSettings:
     This is a thin projection over the global Settings model so the auth layer
     has a focused view of the fields it needs. Phase 1 only defines structure;
     enforcement and validation happen in later phases.
+
+    ``jairo_password_hash``: optional temporary second operator; empty string means disabled.
+    Jairo login is only evaluated when the primary admin credential pair is configured.
     """
 
     admin_username: str
@@ -24,6 +27,9 @@ class AuthSettings:
 def get_auth_settings(settings: Settings | None = None) -> AuthSettings:
     """
     Return auth settings snapshot based on global Settings.
+
+    Jairo (``jairo_password_hash``) is optional; empty means disabled and requires
+    a configured primary admin pair (see ``authenticate_admin`` in ``auth.service``).
 
     In Phase 1 this does not enforce presence/validity; later phases should add
     stricter validation before enabling auth in non-dev environments.

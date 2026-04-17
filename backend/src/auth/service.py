@@ -1,6 +1,12 @@
 """
 Auth service layer for v3.2.1 minimal administrative authentication.
 
+Provisioning policy (temporary second user):
+- The primary administrator (``ADMIN_USERNAME`` + ``ADMIN_PASSWORD_HASH``) must always be
+  configured for any login to succeed, including the optional env user **Jairo**.
+- ``AUTH_JAIRO_PASSWORD_HASH`` is optional; when absent/empty, Jairo is disabled.
+- This is not multi-user product support: no registration, no DB users, no RBAC.
+
 Phase 2 implements:
 - admin credential validation (primary env admin + optional temporary \"Jairo\" operator)
 - login response building (token + principal)
@@ -23,6 +29,11 @@ from src.auth.security import create_access_token, verify_password
 # Temporary second operator (env-provisioned hash only; no registration flow).
 _JAIRO_LOGIN_USERNAME = "Jairo"
 _JAIRO_PRINCIPAL_ID = "jairo"
+
+
+def _primary_admin_credentials_configured(s: AuthSettings) -> bool:
+    """True when primary admin username and password hash are both non-empty (trimmed)."""
+    return bool(s.admin_username and s.admin_password_hash)
 
 
 @dataclass(frozen=True)
@@ -123,13 +134,18 @@ def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[
     submitted_user = (command.username or "").strip()
     submitted_pw = command.password or ""
 
-    if s.admin_username and s.admin_password_hash:
+    if _primary_admin_credentials_configured(s):
         if submitted_user == s.admin_username and verify_password(submitted_pw, s.admin_password_hash):
             return AuthUser(id="admin", username=s.admin_username, role="administrator")
 
-    if s.jairo_password_hash and submitted_user == _JAIRO_LOGIN_USERNAME:
-        if verify_password(submitted_pw, s.jairo_password_hash):
-            return AuthUser(id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator")
+    # Jairo is an add-on only: requires a fully configured primary admin (Policy A).
+    if (
+        _primary_admin_credentials_configured(s)
+        and (s.jairo_password_hash or "").strip()
+        and submitted_user == _JAIRO_LOGIN_USERNAME
+        and verify_password(submitted_pw, s.jairo_password_hash)
+    ):
+        return AuthUser(id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator")
 
     return None
 

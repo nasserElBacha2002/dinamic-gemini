@@ -50,13 +50,21 @@ def create_access_token(
     now: datetime | None = None,
 ) -> str:
     """
-    Create a signed access token for the authenticated administrator.
+    Create a signed access token for an authenticated v3 administrator session.
 
-    Token claims (minimal):
-    - sub: JWT subject (v3 admin category; fixed \"admin\" for compatibility)
-    - principal_id: stable session principal (e.g. \"admin\", \"jairo\") for refresh isolation
-    - username, role
-    - iat, exp (UTC seconds)
+    JWT claim contract (do not conflate ``sub`` with the human login identity):
+
+    - **sub** — Fixed JWT subject / route category for compatibility with existing guards
+      (callers pass ``\"admin\"``; it is *not* the secondary principal id).
+    - **principal_id** — Stable authenticated principal (matches ``AuthUser.id``), e.g.
+      ``\"admin\"`` (primary) or ``\"jairo\"`` (temporary env user).
+    - **username** — Visible login name from env (primary) or fixed ``\"Jairo\"``.
+    - **role** — Role claim (v3 minimal auth: shared ``administrator`` for both principals).
+    - **jti** — Unique token id so successive issuances are not byte-identical in the same second.
+    - **iat**, **exp** — UTC epoch seconds.
+
+    Callers that decode tokens must treat a missing **principal_id** as the primary principal
+    (see ``get_current_admin``) for backward compatibility with legacy tokens.
     """
     if not secret or not isinstance(secret, str):
         raise ValueError("auth token secret is missing")
@@ -91,6 +99,9 @@ def create_access_token(
 def decode_access_token(token: str, *, secret: str) -> Dict[str, Any]:
     """
     Decode and validate a previously issued access token.
+
+    ``principal_id`` is not a required JWT claim: legacy tokens omit it; callers
+    (e.g. ``get_current_admin``) supply the primary-principal default.
 
     Raises jwt exceptions for invalid/expired tokens; callers should map to
     AuthErrorResponse contract.

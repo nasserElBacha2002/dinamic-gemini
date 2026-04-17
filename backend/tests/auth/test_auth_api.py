@@ -185,8 +185,8 @@ def test_auth_jairo_unknown_username_with_hash_configured(monkeypatch: pytest.Mo
     assert r.status_code == 401
 
 
-def test_auth_jairo_works_when_primary_admin_env_missing(monkeypatch: pytest.MonkeyPatch):
-    """Jairo-only provisioning: no ADMIN_* required when only the temporary operator is configured."""
+def test_auth_jairo_disabled_when_primary_admin_env_missing(monkeypatch: pytest.MonkeyPatch):
+    """Jairo cannot authenticate without a fully configured primary admin (Policy A)."""
     monkeypatch.setattr(config_module, "_load_dotenv_files", lambda for_reload=False: None)
     monkeypatch.setenv("SQLSERVER_ENABLED", "false")
     monkeypatch.delenv("ADMIN_USERNAME", raising=False)
@@ -197,8 +197,6 @@ def test_auth_jairo_works_when_primary_admin_env_missing(monkeypatch: pytest.Mon
     monkeypatch.setenv("AUTH_JAIRO_PASSWORD_HASH", _PWD_CONTEXT.hash("solo-jairo"))
     reload_settings()
     client = TestClient(app)
-    ok = client.post("/auth/login", json={"username": "Jairo", "password": "solo-jairo"})
-    assert ok.status_code == 200
-    bad = client.post("/auth/login", json={"username": "admin", "password": "solo-jairo"})
-    assert bad.status_code == 401
+    r = client.post("/auth/login", json={"username": "Jairo", "password": "solo-jairo"})
+    assert r.status_code == 401
 
