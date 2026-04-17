@@ -165,7 +165,8 @@ def test_minimal_app_global_handler_hides_internal_message() -> None:
     assert body.get("code") == INTERNAL_SERVER_ERROR
 
 
-def test_job_not_found_mapping_detail_preserved() -> None:
+def test_job_not_found_canonical_shape_preserves_id_in_detail() -> None:
+    """Canonical ``Job not found: <id>`` → same controlled ``detail`` (Phase 3 mapper rule)."""
     http = mapped_http_exception(JobNotFoundError("Job not found: j-missing"))
     assert http is not None
     assert http.status_code == 404
@@ -175,7 +176,7 @@ def test_job_not_found_mapping_detail_preserved() -> None:
 
 
 def test_job_not_found_non_canonical_message_maps_to_stable_detail() -> None:
-    """Unknown ``JobNotFoundError`` shapes fall back to generic copy (no arbitrary ``str(exc)``)."""
+    """Non-canonical ``JobNotFoundError`` message → stable generic ``detail`` (not ``str(exc)``)."""
     http = mapped_http_exception(JobNotFoundError("legacy ad-hoc message"))
     assert http is not None
     assert http.detail == "Job not found"
@@ -378,7 +379,7 @@ def test_promote_operational_job_not_allowed_returns_structured_json() -> None:
 
 
 def test_integration_category_b_job_not_found_client_reads_detail_only() -> None:
-    """Real HTTP: consumers that only read ``detail`` still work (structured Category B)."""
+    """Real HTTP: canonical ``Job not found: …`` through compare route; detail-only clients OK."""
 
     class _CompareFails:
         def execute(self, *_args: object, **_kwargs: object) -> None:

@@ -24,7 +24,10 @@ Category B mapper branches, Category C route-local errors, etc.)::
 ``detail`` is a **controlled template** from known use-case message shapes, not raw arbitrary
 ``str(exc)`` when patterns match), the global unhandled 500, plus any route that raises
 :class:`StructuredApiHttpError` directly. Most mapper branches and all Category C routes remain
-legacy ``{"detail": ...}`` or other shapes.
+legacy ``{"detail": ...}`` or other shapes. For ``JOB_NOT_FOUND`` specifically: canonical
+``Job not found: <id>`` is kept when the raised message matches the vetted pattern; any other
+``JobNotFoundError`` message maps to the generic ``Job not found`` (see
+:func:`src.api.errors.error_mapping._normalized_job_not_found_detail`).
 
 **Transition:** for structured errors, ``code`` is the stable machine identifier; ``detail`` is
 the human-facing string (fixed for Category A, templated for structured Category B). New

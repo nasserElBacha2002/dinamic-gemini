@@ -26,9 +26,12 @@ for:
 - **Category A:** the five stable not-found rows above (fixed ``detail`` strings).
 - **Category B (Phase 2–3 subset):** ``JobNotFoundError``, ``JobDoesNotBelongToAisleError``,
   ``ActiveJobExistsError``, ``JobPromotionNotAllowedError`` — **Phase 3:** public ``detail`` is
-  a **controlled template** derived from known use-case shapes (IDs / status preserved). The
-  mapper does **not** expose arbitrary ``str(exc)`` for these types when the message matches a
-  documented pattern; unknown shapes fall back to ``str(exc)`` until use cases are normalized.
+  built from **vetted templates** in this module (see ``_normalized_*`` helpers). In particular,
+  ``JobNotFoundError``: if ``str(exc)`` matches the canonical ``Job not found: <id>`` pattern, that
+  controlled detail (including the id) is preserved; **any other** message shape collapses to the
+  stable generic ``Job not found`` so arbitrary free-form ``str(exc)`` is not part of the HTTP
+  contract. Other structured Category B types keep regex-backed templates where matched; see each
+  helper for its non-matching fallback (some still echo ``str(exc)`` until use cases converge).
 
 The app serializes structured errors as
 ``{"code": "<UPPER_SNAKE_CASE>", "detail": "<string>"}``.
@@ -168,6 +171,14 @@ _JOB_PROMOTE_STATUS = re.compile(r"^Only succeeded jobs can be promoted \(status
 
 
 def _normalized_job_not_found_detail(exc: JobNotFoundError) -> str:
+    """Phase 3 ``JobNotFoundError`` → HTTP ``detail`` (mapper-only; Category C routes unchanged).
+
+    - **Canonical:** ``str(exc)`` matches ``^Job not found: (.+)$`` (use-case convention). The
+      public detail stays ``Job not found: <id>`` — controlled dynamic segment, not arbitrary text.
+    - **Non-canonical / free-form:** any other ``str(exc)`` collapses to the stable generic
+      ``Job not found``. Intentional: ``code`` carries the machine case; ``detail`` must not echo
+      unvetted exception copy.
+    """
     raw = str(exc).strip()
     m = _JOB_NOT_FOUND_CANON.match(raw)
     if m:
@@ -252,6 +263,8 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             detail="Visual reference not found",
         )
     # --- Category B (Phase 2–3): structured + controlled ``detail`` templates ---
+    # ``JobNotFoundError``: canonical ``Job not found: <id>`` preserved; anything else → ``Job not found``.
+    # See ``_normalized_job_not_found_detail`` (same rule as module docstring).
     if isinstance(exc, JobNotFoundError):
         return StructuredApiHttpError(
             status_code=404,
