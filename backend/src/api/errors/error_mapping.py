@@ -20,34 +20,48 @@ Intentional public copy; do not change without an explicit API / client contract
 - ``Visual reference not found``
 
 **Additive ``code`` field (v3 rollout — partial, not universal)**  
-For the **five** Category A not-found rows above only, :func:`mapped_http_exception` returns
-:class:`src.api.errors.structured_api_http.StructuredApiHttpError`, which the app serializes
-as ``{"code": "<UPPER_SNAKE_CASE>", "detail": "<unchanged string>"}``.
+:func:`mapped_http_exception` returns :class:`src.api.errors.structured_api_http.StructuredApiHttpError`
+for:
 
-**Mixed responses across the API:** the same status code (e.g. 404) may return **structured**
-JSON for those five types when raised through the mapper, but **legacy** ``{"detail": ...}``
-for other failures (jobs, artifacts, route-local Phase 6 job messages, validation, etc.).
-This is intentional. **Never infer** client behavior from status code alone; do not assume
-``code`` is always present.
+- **Category A:** the five stable not-found rows above (fixed ``detail`` strings).
+- **Category B (Phase 2 subset only):** ``JobNotFoundError``, ``JobDoesNotBelongToAisleError``,
+  ``ActiveJobExistsError``, ``JobPromotionNotAllowedError`` — **``detail`` remains**
+  ``str(exc)`` exactly as before (dynamic copy unchanged); only ``code`` is added.
 
-Clients that only read ``detail`` remain compatible. Category B/C paths remain plain
-``HTTPException`` or route-local responses until a later phase.
+The app serializes structured errors as
+``{"code": "<UPPER_SNAKE_CASE>", "detail": "<string>"}``.
+
+**Mixed responses across the API:** the same status code (e.g. 404) may return structured JSON
+for mapper-covered types above, but **legacy** ``{"detail": ...}`` for other failures (artifacts,
+most remaining Category B branches, route-local Phase 6 job messages, validation, etc.).
+**Never infer** client behavior from status code alone; do not assume ``code`` is always present.
+
+Clients that only read ``detail`` remain compatible. Category C paths and **unselected**
+Category B branches stay plain ``HTTPException`` until a later phase.
 
 :class:`StoredArtifactAccessError` is **A-like** in spirit: ``status_code`` and ``detail``
 are set by the artifact layer per failure reason (not raw stack traces). It remains
 ``detail``-only JSON (no ``code`` in this phase).
 
 **Category B — compatibility-preserved ``detail=str(exc)``**  
-Branches below marked *compatibility* keep dynamic text because operators or clients may
-already depend on message wording or specifics. **Do not extend** ``str(exc)`` to new
-exception types without a compatibility review; for new features prefer **Category A**
-fixed strings unless product explicitly needs dynamic copy.
+Most branches keep plain ``HTTPException`` with dynamic text. A **small Phase 2 subset** also
+returns :class:`src.api.errors.structured_api_http.StructuredApiHttpError` with the **same**
+``detail=str(exc)`` as before — additive ``code`` only; do not normalize messages here
+(Phase 3+). **Do not extend** structured Category B without the same bar: clear semantics,
+multi-route use, and explicit API review.
 
 **Category C — route-local ``HTTPException`` only**  
 Some routes **must not** use the mapper alone when a **different** fixed string is required
 for regression tests, UX, or reduced information disclosure (e.g. Phase 6 job read helpers
 that return ``"Job not found"`` without echoing the underlying ``JobNotFoundError`` message).
 Keep those translations in the route (or a small helper) and document *why* in that helper.
+
+**Known dual-shape (same ``detail`` string, different JSON):**  
+``src.api.routes.v3.aisles._load_job_for_inventory_job_route`` catches ``AisleNotFoundError`` and
+raises plain ``HTTPException`` with the **same** fixed ``detail`` as the Category A aisle branch,
+but **without** ``code`` — intentional Category C behavior for job-scoped reads (see that
+helper's docstring). Do not “fix” by routing through :func:`reraise_if_mapped` without an
+explicit API contract change.
 
 **Equivalence**  
 Equivalent inventory/aisle/position/analytics flows should rely on the same mapper branch
@@ -108,8 +122,12 @@ from src.application.errors import (
     ZeroByteFileError,
 )
 from src.api.errors.structured_api_http import (
+    ACTIVE_JOB_EXISTS,
     AISLE_NOT_FOUND,
     INVENTORY_NOT_FOUND,
+    JOB_NOT_FOUND,
+    JOB_NOT_IN_AISLE_SCOPE,
+    JOB_PROMOTION_NOT_ALLOWED,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
     VISUAL_REFERENCE_NOT_FOUND,
@@ -168,11 +186,19 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             error_code=VISUAL_REFERENCE_NOT_FOUND,
             detail="Visual reference not found",
         )
-    # --- Category B (compatibility): dynamic detail=str(exc) ---
+    # --- Category B (Phase 2): dynamic detail=str(exc) + additive machine code ---
     if isinstance(exc, JobNotFoundError):
-        return HTTPException(status_code=404, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=404,
+            error_code=JOB_NOT_FOUND,
+            detail=str(exc),
+        )
     if isinstance(exc, JobDoesNotBelongToAisleError):
-        return HTTPException(status_code=404, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=404,
+            error_code=JOB_NOT_IN_AISLE_SCOPE,
+            detail=str(exc),
+        )
     if isinstance(exc, PositionResultContextMismatchError):
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, PositionDeletedError):
@@ -180,11 +206,19 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
     if isinstance(exc, DuplicateAisleCodeError):
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, ActiveJobExistsError):
-        return HTTPException(status_code=409, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=ACTIVE_JOB_EXISTS,
+            detail=str(exc),
+        )
     if isinstance(exc, BenchmarkRequiresTestInventoryError):
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, JobPromotionNotAllowedError):
-        return HTTPException(status_code=409, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=JOB_PROMOTION_NOT_ALLOWED,
+            detail=str(exc),
+        )
     if isinstance(exc, ReviewMutationNotAllowedError):
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, EmptyUploadError):
@@ -216,8 +250,9 @@ def reraise_if_mapped(exc: BaseException, *, cause: BaseException | None = None)
     """If ``exc`` is covered by :func:`mapped_http_exception`, raise the mapped exception.
 
     The raised value is always a :class:`fastapi.HTTPException` **subclass** — either
-    plain :class:`fastapi.HTTPException` (Category B and similar) or
-    :class:`src.api.errors.structured_api_http.StructuredApiHttpError` (Category A subset).
+    plain :class:`fastapi.HTTPException` (unstructured mapper branches, Category C, etc.) or
+    :class:`src.api.errors.structured_api_http.StructuredApiHttpError` (Category A, selected
+    Category B job/conflict types — see module docstring).
     Call sites and ``pytest.raises(HTTPException)`` remain valid because
     ``StructuredApiHttpError`` extends ``HTTPException``; use
     ``pytest.raises(StructuredApiHttpError)`` when asserting ``error_code``.

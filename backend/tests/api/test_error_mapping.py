@@ -6,12 +6,24 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_get_inventory_use_case
+from src.api.dependencies import (
+    get_get_aisle_processing_status_use_case,
+    get_get_inventory_use_case,
+    get_get_position_detail_use_case,
+    get_list_inventory_visual_references_use_case,
+    get_promote_aisle_operational_job_use_case,
+    get_resolve_aisle_job_for_inventory_read_use_case,
+    get_start_aisle_processing_use_case,
+)
 from src.api.errors.error_mapping import mapped_http_exception, reraise_if_mapped, review_exception_to_http
 from src.api.errors.structured_api_http import (
+    ACTIVE_JOB_EXISTS,
     AISLE_NOT_FOUND,
     INVENTORY_NOT_FOUND,
     INTERNAL_SERVER_ERROR,
+    JOB_NOT_FOUND,
+    JOB_NOT_IN_AISLE_SCOPE,
+    JOB_PROMOTION_NOT_ALLOWED,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
     VISUAL_REFERENCE_NOT_FOUND,
@@ -19,11 +31,14 @@ from src.api.errors.structured_api_http import (
 )
 from src.api.server import app
 from src.application.errors import (
+    ActiveJobExistsError,
     AisleNotFoundError,
     InventoryNotFoundError,
     InventoryVisualReferenceNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
+    JobPromotionNotAllowedError,
+    MergeJobScopeAmbiguousError,
     PositionNotFoundError,
     ProductNotFoundError,
 )
@@ -36,7 +51,8 @@ def test_mapped_http_exception_job_scope_returns_404() -> None:
     assert http is not None
     assert http.status_code == 404
     assert http.detail == "Job x is not scoped to aisle y"
-    assert not isinstance(http, StructuredApiHttpError)
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.error_code == JOB_NOT_IN_AISLE_SCOPE
 
 
 def test_mapped_http_exception_unknown_returns_none() -> None:
@@ -146,6 +162,39 @@ def test_job_not_found_mapping_detail_preserved() -> None:
     assert http is not None
     assert http.status_code == 404
     assert http.detail == "Job not found: j-missing"
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.error_code == JOB_NOT_FOUND
+
+
+@pytest.mark.parametrize(
+    "exc,expected_code,status",
+    [
+        (ActiveJobExistsError("Aisle a already has an active job (status=QUEUED)"), ACTIVE_JOB_EXISTS, 409),
+        (
+            JobPromotionNotAllowedError("Only succeeded jobs can be promoted (status=FAILED)"),
+            JOB_PROMOTION_NOT_ALLOWED,
+            409,
+        ),
+    ],
+)
+def test_mapped_category_b_conflict_structured_preserves_detail(
+    exc: Exception, expected_code: str, status: int
+) -> None:
+    http = mapped_http_exception(exc)
+    assert http is not None
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.status_code == status
+    assert http.error_code == expected_code
+    assert http.detail == str(exc)
+
+
+def test_mapped_merge_scope_ambiguous_stays_legacy_detail_only() -> None:
+    """Category B branch not yet expanded: plain HTTPException, no ``code`` in JSON."""
+    http = mapped_http_exception(MergeJobScopeAmbiguousError("merge scope ambiguous"))
+    assert http is not None
+    assert http.status_code == 422
+    assert http.detail == "merge scope ambiguous"
+    assert not isinstance(http, StructuredApiHttpError)
 
 
 def test_real_app_global_handler_does_not_echo_internal_error() -> None:
@@ -181,6 +230,161 @@ def test_get_inventory_not_found_returns_structured_json() -> None:
         assert r.json() == {"code": INVENTORY_NOT_FOUND, "detail": "Inventory not found"}
     finally:
         app.dependency_overrides.pop(get_get_inventory_use_case, None)
+
+
+def test_get_aisle_status_aisle_not_found_returns_structured_json() -> None:
+    """Integration: Category A aisle not-found via ``reraise_if_mapped`` on a real v3 route."""
+
+    class _MissingAisle:
+        def execute(self, inventory_id: str, aisle_id: str) -> None:
+            raise AisleNotFoundError()
+
+    app.dependency_overrides[get_get_aisle_processing_status_use_case] = lambda: _MissingAisle()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/inv-1/aisles/aisle-1/status")
+        assert r.status_code == 404
+        assert r.json() == {
+            "code": AISLE_NOT_FOUND,
+            "detail": "Aisle not found or does not belong to this inventory",
+        }
+    finally:
+        app.dependency_overrides.pop(get_get_aisle_processing_status_use_case, None)
+
+
+def test_get_position_detail_position_not_found_returns_structured_json() -> None:
+    """Integration: Category A position not-found through positions detail route."""
+
+    class _MissingPosition:
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            raise PositionNotFoundError()
+
+    app.dependency_overrides[get_get_position_detail_use_case] = lambda: _MissingPosition()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/api/v3/inventories/inv-1/aisles/aisle-1/positions/pos-1"
+        )
+        assert r.status_code == 404
+        assert r.json() == {
+            "code": POSITION_NOT_FOUND,
+            "detail": "Position not found or does not belong to this aisle",
+        }
+    finally:
+        app.dependency_overrides.pop(get_get_position_detail_use_case, None)
+
+
+def test_get_position_detail_product_not_found_returns_structured_json() -> None:
+    """Integration: Category A product not-found through positions detail route."""
+
+    class _MissingProduct:
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            raise ProductNotFoundError()
+
+    app.dependency_overrides[get_get_position_detail_use_case] = lambda: _MissingProduct()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/api/v3/inventories/inv-1/aisles/aisle-1/positions/pos-1"
+        )
+        assert r.status_code == 404
+        assert r.json() == {
+            "code": PRODUCT_NOT_FOUND,
+            "detail": "Product not found or does not belong to this position",
+        }
+    finally:
+        app.dependency_overrides.pop(get_get_position_detail_use_case, None)
+
+
+def test_get_visual_reference_file_unknown_id_returns_structured_json() -> None:
+    """Integration: ``VISUAL_REFERENCE_NOT_FOUND`` when id is absent from list (route + handler)."""
+
+    class _EmptyRefs:
+        def execute(self, inventory_id: str) -> list:
+            return []
+
+    app.dependency_overrides[get_list_inventory_visual_references_use_case] = lambda: _EmptyRefs()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/api/v3/inventories/inv-1/visual-references/missing-ref-id/file"
+        )
+        assert r.status_code == 404
+        assert r.json() == {
+            "code": VISUAL_REFERENCE_NOT_FOUND,
+            "detail": "Visual reference not found",
+        }
+    finally:
+        app.dependency_overrides.pop(get_list_inventory_visual_references_use_case, None)
+
+
+def test_start_aisle_processing_active_job_exists_returns_structured_json() -> None:
+    """Integration: Category B structured — ``detail`` unchanged, ``code`` additive."""
+
+    msg = "Aisle aisle-1 already has an active job (status=QUEUED)"
+
+    class _BlockedStart:
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            raise ActiveJobExistsError(msg)
+
+    app.dependency_overrides[get_start_aisle_processing_use_case] = lambda: _BlockedStart()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).post(
+            "/api/v3/inventories/inv-1/aisles/aisle-1/process",
+            json={},
+        )
+        assert r.status_code == 409
+        body = r.json()
+        assert body["code"] == ACTIVE_JOB_EXISTS
+        assert body["detail"] == msg
+        assert body["detail"]
+    finally:
+        app.dependency_overrides.pop(get_start_aisle_processing_use_case, None)
+
+
+def test_promote_operational_job_not_allowed_returns_structured_json() -> None:
+    """Integration: ``JobPromotionNotAllowedError`` through real route + handler."""
+
+    msg = "Only succeeded jobs can be promoted (status=FAILED)"
+
+    class _BadPromote:
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            raise JobPromotionNotAllowedError(msg)
+
+    app.dependency_overrides[get_promote_aisle_operational_job_use_case] = lambda: _BadPromote()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).post(
+            "/api/v3/inventories/inv-1/aisles/aisle-1/promote-operational",
+            json={"job_id": "job-x"},
+        )
+        assert r.status_code == 409
+        body = r.json()
+        assert body["code"] == JOB_PROMOTION_NOT_ALLOWED
+        assert body["detail"] == msg
+    finally:
+        app.dependency_overrides.pop(get_promote_aisle_operational_job_use_case, None)
+
+
+def test_backward_compat_category_b_clients_read_detail_only() -> None:
+    """Consumers that ignore ``code`` keep working when Category B gains structured bodies."""
+    body = {"code": JOB_NOT_FOUND, "detail": "Job not found: j-99"}
+    assert "Job not found" in body["detail"]
+    assert body["detail"] == "Job not found: j-99"
+
+
+def test_get_aisle_job_detail_job_not_found_is_category_c_detail_only() -> None:
+    """Integration: Phase 6 job-read path stays legacy ``{{\"detail\"}}`` (no ``code``)."""
+
+    class _MissingJob:
+        def execute(self, inventory_id: str, aisle_id: str, job_id: str) -> None:
+            raise JobNotFoundError("Job not found: internal-id-must-not-leak")
+
+    app.dependency_overrides[get_resolve_aisle_job_for_inventory_read_use_case] = lambda: _MissingJob()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/api/v3/inventories/inv-1/aisles/aisle-1/jobs/job-missing"
+        )
+        assert r.status_code == 404
+        assert r.json() == {"detail": "Job not found"}
+        assert "code" not in r.json()
+    finally:
+        app.dependency_overrides.pop(get_resolve_aisle_job_for_inventory_read_use_case, None)
 
 
 def test_app_registers_structured_api_http_handler() -> None:
@@ -234,6 +438,9 @@ def test_reraise_if_mapped_polymorphic_raises_http_exception_subclass() -> None:
         reraise_if_mapped(InventoryNotFoundError())
     m = mapped_http_exception(JobNotFoundError("Job not found: j1"))
     assert m is not None
+    assert isinstance(m, StructuredApiHttpError)
+    assert m.error_code == JOB_NOT_FOUND
     with pytest.raises(HTTPException):
         raise m
-    assert not isinstance(m, StructuredApiHttpError)
+    with pytest.raises(StructuredApiHttpError):
+        raise m

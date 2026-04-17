@@ -89,7 +89,7 @@ async def auth_http_error_handler(_: Request, exc: AuthHttpError):
 
 @app.exception_handler(StructuredApiHttpError)
 async def structured_api_http_error_handler(_: Request, exc: StructuredApiHttpError) -> JSONResponse:
-    """Emit flat JSON ``code`` + ``detail`` for selected stable v3 errors (additive contract)."""
+    """Emit flat JSON ``code`` + ``detail`` for Category A, selected Category B, and direct raises."""
     return JSONResponse(
         status_code=exc.status_code,
         content={"code": exc.error_code, "detail": exc.detail},

@@ -17,11 +17,19 @@ Category B mapper branches, Category C route-local errors, etc.)::
     {"detail": "..."}   # or FastAPI validation ``{"detail": [...]}``
 
 **Do not assume** that all HTTP errors, all 404s, or all mapper-covered errors include
-``code``. Only the **Category A stable not-found** subset in :mod:`src.api.errors.error_mapping`
-(and the global unhandled 500) use structured bodies in this phase. Adding ``code`` elsewhere
-requires an explicit compatibility review.
+``code``. Structured bodies come from :class:`StructuredApiHttpError` only (see
+:mod:`src.api.errors.error_mapping` for which exception types map there).
 
-Broader ``HTTPException`` defaults are unchanged for compatibility.
+**Rollout:** Category A stable not-founds, **selected** Category B job/conflict branches (still
+``detail=str(exc)`` — dynamic copy preserved), the global unhandled 500, plus any route that
+raises :class:`StructuredApiHttpError` directly. Most mapper branches and all Category C routes
+remain legacy ``{"detail": ...}`` or other shapes.
+
+**Transition:** for structured errors, ``code`` is the stable machine identifier; ``detail``
+remains the human-facing string (fixed for Category A, dynamic for expanded Category B). New
+clients should branch on ``code``; existing clients may keep reading ``detail`` only.
+
+Broader plain ``HTTPException`` defaults are unchanged for compatibility.
 """
 
 from __future__ import annotations
@@ -35,6 +43,11 @@ POSITION_NOT_FOUND = "POSITION_NOT_FOUND"
 PRODUCT_NOT_FOUND = "PRODUCT_NOT_FOUND"
 VISUAL_REFERENCE_NOT_FOUND = "VISUAL_REFERENCE_NOT_FOUND"
 INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
+# Phase 2 — selected Category B (detail remains str(exc); code is additive).
+JOB_NOT_FOUND = "JOB_NOT_FOUND"
+JOB_NOT_IN_AISLE_SCOPE = "JOB_NOT_IN_AISLE_SCOPE"
+ACTIVE_JOB_EXISTS = "ACTIVE_JOB_EXISTS"
+JOB_PROMOTION_NOT_ALLOWED = "JOB_PROMOTION_NOT_ALLOWED"
 
 
 class StructuredApiHttpError(HTTPException):
