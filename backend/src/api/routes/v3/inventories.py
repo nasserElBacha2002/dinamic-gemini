@@ -363,6 +363,7 @@ def get_inventory_visual_reference_file(
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
     ref = next((r for r in refs if r.id == reference_id), None)
+    # Same VISUAL_REFERENCE_NOT_FOUND contract as ``InventoryVisualReferenceNotFoundError`` via mapper (DELETE/PUT).
     if ref is None:
         raise StructuredApiHttpError(
             404,

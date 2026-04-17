@@ -1,6 +1,26 @@
 """Structured v3 client errors: additive ``code`` + unchanged ``detail`` (HTTP body).
 
 Registered on the FastAPI app via :func:`src.api.server.structured_api_http_error_handler`.
+
+--------------------------------------------------------------------
+CRITICAL: two coexisting error JSON shapes (partial rollout)
+--------------------------------------------------------------------
+
+**Structured** (only for exceptions raised as :class:`StructuredApiHttpError` and handled
+by ``structured_api_http_error_handler``)::
+
+    {"code": "INVENTORY_NOT_FOUND", "detail": "Inventory not found"}
+
+**Legacy** (default FastAPI / Starlette ``HTTPException`` handler, validation errors, auth,
+Category B mapper branches, Category C route-local errors, etc.)::
+
+    {"detail": "..."}   # or FastAPI validation ``{"detail": [...]}``
+
+**Do not assume** that all HTTP errors, all 404s, or all mapper-covered errors include
+``code``. Only the **Category A stable not-found** subset in :mod:`src.api.errors.error_mapping`
+(and the global unhandled 500) use structured bodies in this phase. Adding ``code`` elsewhere
+requires an explicit compatibility review.
+
 Broader ``HTTPException`` defaults are unchanged for compatibility.
 """
 

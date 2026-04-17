@@ -19,12 +19,19 @@ Intentional public copy; do not change without an explicit API / client contract
 - ``Product not found or does not belong to this position``
 - ``Visual reference not found``
 
-**Additive ``code`` field (v3 rollout)**  
-For the five not-found rows above, :func:`mapped_http_exception` returns
+**Additive ``code`` field (v3 rollout — partial, not universal)**  
+For the **five** Category A not-found rows above only, :func:`mapped_http_exception` returns
 :class:`src.api.errors.structured_api_http.StructuredApiHttpError`, which the app serializes
-as ``{"code": "<UPPER_SNAKE_CASE>", "detail": "<unchanged string>"}``. Clients that only
-read ``detail`` remain compatible. Category B/C paths remain plain ``HTTPException`` or
-route-local responses until a later phase.
+as ``{"code": "<UPPER_SNAKE_CASE>", "detail": "<unchanged string>"}``.
+
+**Mixed responses across the API:** the same status code (e.g. 404) may return **structured**
+JSON for those five types when raised through the mapper, but **legacy** ``{"detail": ...}``
+for other failures (jobs, artifacts, route-local Phase 6 job messages, validation, etc.).
+This is intentional. **Never infer** client behavior from status code alone; do not assume
+``code`` is always present.
+
+Clients that only read ``detail`` remain compatible. Category B/C paths remain plain
+``HTTPException`` or route-local responses until a later phase.
 
 :class:`StoredArtifactAccessError` is **A-like** in spirit: ``status_code`` and ``detail``
 are set by the artifact layer per failure reason (not raw stack traces). It remains
@@ -206,13 +213,20 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
 
 
 def reraise_if_mapped(exc: BaseException, *, cause: BaseException | None = None) -> None:
-    """If ``exc`` is covered by :func:`mapped_http_exception`, raise that ``HTTPException``.
+    """If ``exc`` is covered by :func:`mapped_http_exception`, raise the mapped exception.
+
+    The raised value is always a :class:`fastapi.HTTPException` **subclass** — either
+    plain :class:`fastapi.HTTPException` (Category B and similar) or
+    :class:`src.api.errors.structured_api_http.StructuredApiHttpError` (Category A subset).
+    Call sites and ``pytest.raises(HTTPException)`` remain valid because
+    ``StructuredApiHttpError`` extends ``HTTPException``; use
+    ``pytest.raises(StructuredApiHttpError)`` when asserting ``error_code``.
 
     If there is no mapping, return without raising so the caller can apply route-specific
     rules (for example ``ValueError`` with 422 vs 409) or re-raise the original error.
 
-    When ``cause`` is set, the raised ``HTTPException`` uses ``raise ... from cause`` so
-    exception chaining is preserved in logs.
+    When ``cause`` is set, the raised exception uses ``raise ... from cause`` so exception
+    chaining is preserved in logs.
     """
     m = mapped_http_exception(exc)
     if m is None:

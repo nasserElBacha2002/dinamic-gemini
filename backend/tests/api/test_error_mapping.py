@@ -185,3 +185,55 @@ def test_get_inventory_not_found_returns_structured_json() -> None:
 
 def test_app_registers_structured_api_http_handler() -> None:
     assert StructuredApiHttpError in app.exception_handlers
+
+
+def test_default_http_exception_is_detail_only_no_code_key() -> None:
+    """Legacy shape: Starlette/FastAPI default handler for plain ``HTTPException`` (Category B style)."""
+    mini = FastAPI()
+
+    @mini.get("/legacy")
+    def _legacy():
+        raise HTTPException(status_code=404, detail="Job not found: j-legacy")
+
+    r = TestClient(mini, raise_server_exceptions=False).get("/legacy")
+    assert r.status_code == 404
+    assert r.json() == {"detail": "Job not found: j-legacy"}
+    assert "code" not in r.json()
+
+
+def test_structured_handler_emits_code_and_detail() -> None:
+    """Structured shape: matches production ``structured_api_http_error_handler`` contract."""
+    from fastapi.responses import JSONResponse
+
+    mini = FastAPI()
+
+    @mini.exception_handler(StructuredApiHttpError)
+    async def _structured(_request, exc: StructuredApiHttpError):
+        return JSONResponse(status_code=exc.status_code, content={"code": exc.error_code, "detail": exc.detail})
+
+    @mini.get("/s")
+    def _structured_route():
+        raise StructuredApiHttpError(404, error_code=INVENTORY_NOT_FOUND, detail="Inventory not found")
+
+    r = TestClient(mini, raise_server_exceptions=False).get("/s")
+    assert r.status_code == 404
+    assert r.json() == {"code": INVENTORY_NOT_FOUND, "detail": "Inventory not found"}
+
+
+def test_backward_compat_clients_read_detail_only() -> None:
+    """Clients that only access ``detail`` keep working when ``code`` is additive."""
+    body = {"code": INVENTORY_NOT_FOUND, "detail": "Inventory not found"}
+    assert body["detail"] == "Inventory not found"
+
+
+def test_reraise_if_mapped_polymorphic_raises_http_exception_subclass() -> None:
+    """``reraise_if_mapped`` may raise ``StructuredApiHttpError``; both are ``HTTPException`` subclasses."""
+    with pytest.raises(HTTPException):
+        reraise_if_mapped(InventoryNotFoundError())
+    with pytest.raises(StructuredApiHttpError):
+        reraise_if_mapped(InventoryNotFoundError())
+    m = mapped_http_exception(JobNotFoundError("Job not found: j1"))
+    assert m is not None
+    with pytest.raises(HTTPException):
+        raise m
+    assert not isinstance(m, StructuredApiHttpError)
