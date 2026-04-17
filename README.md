@@ -1,5 +1,6 @@
 # Dinamic Inventory — Plataforma v3 (API + frontend + pipeline)
 
+
 Monorepo para la **plataforma operativa de inventarios v3**: API REST (FastAPI), aplicación web (React + Vite), persistencia en **Microsoft SQL Server**, almacenamiento de **artefactos** (local o S3), jobs de procesamiento (CV + LLM según configuración) y autenticación administrativa para el operador.
 
 El repositorio incluye además un **CLI de pipeline por vídeo** (`python -m src.app`) orientado a ejecución batch; el flujo principal de producto es la **API v3** + **worker de jobs** + **frontend**.
