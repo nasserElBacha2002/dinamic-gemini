@@ -24,9 +24,11 @@ Intentional public copy; do not change without an explicit API / client contract
 for:
 
 - **Category A:** the five stable not-found rows above (fixed ``detail`` strings).
-- **Category B (Phase 2 subset only):** ``JobNotFoundError``, ``JobDoesNotBelongToAisleError``,
-  ``ActiveJobExistsError``, ``JobPromotionNotAllowedError`` — **``detail`` remains**
-  ``str(exc)`` exactly as before (dynamic copy unchanged); only ``code`` is added.
+- **Category B (Phase 2–3 subset):** ``JobNotFoundError``, ``JobDoesNotBelongToAisleError``,
+  ``ActiveJobExistsError``, ``JobPromotionNotAllowedError`` — **Phase 3:** public ``detail`` is
+  a **controlled template** derived from known use-case shapes (IDs / status preserved). The
+  mapper does **not** expose arbitrary ``str(exc)`` for these types when the message matches a
+  documented pattern; unknown shapes fall back to ``str(exc)`` until use cases are normalized.
 
 The app serializes structured errors as
 ``{"code": "<UPPER_SNAKE_CASE>", "detail": "<string>"}``.
@@ -43,12 +45,16 @@ Category B branches stay plain ``HTTPException`` until a later phase.
 are set by the artifact layer per failure reason (not raw stack traces). It remains
 ``detail``-only JSON (no ``code`` in this phase).
 
-**Category B — compatibility-preserved ``detail=str(exc)``**  
-Most branches keep plain ``HTTPException`` with dynamic text. A **small Phase 2 subset** also
-returns :class:`src.api.errors.structured_api_http.StructuredApiHttpError` with the **same**
-``detail=str(exc)`` as before — additive ``code`` only; do not normalize messages here
-(Phase 3+). **Do not extend** structured Category B without the same bar: clear semantics,
-multi-route use, and explicit API review.
+**Category B — structured subset vs legacy branches**  
+Most Category B types remain plain ``HTTPException`` with ``detail=str(exc)``. The **structured
+job/conflict subset** (see above) uses controlled ``detail`` strings built in the mapper
+(Phase 3). **Do not extend** structured Category B without: clear semantics, multi-route use,
+documented templates, tests, and API review.
+
+**``str(exc)`` deprecation (transitional):**  
+Treating raw exception text as the HTTP contract is **legacy**. New domain errors should use
+fixed or templated ``detail`` plus ``code`` (Category A pattern) or a vetted Category B template.
+Remaining mapper branches still use ``str(exc)`` until a later phase migrates them.
 
 **Category C — route-local ``HTTPException`` only**  
 Some routes **must not** use the mapper alone when a **different** fixed string is required
@@ -62,6 +68,14 @@ raises plain ``HTTPException`` with the **same** fixed ``detail`` as the Categor
 but **without** ``code`` — intentional Category C behavior for job-scoped reads (see that
 helper's docstring). Do not “fix” by routing through :func:`reraise_if_mapped` without an
 explicit API contract change.
+
+**Known dual-shape (same *exception class*, different JSON — CRITICAL):**  
+``JobNotFoundError`` (and ``JobDoesNotBelongToAisleError``) raised inside use cases and handled
+via ``except Exception: reraise_if_mapped`` produce **structured** bodies (``code`` + controlled
+``detail``). The **same** Python types caught earlier in ``_load_job_for_inventory_job_route``
+never reach the mapper: that helper translates them into Category C ``HTTPException`` with
+fixed phrases (e.g. ``"Job not found"``) and **no** ``code``. **Mapping path determines wire shape**
+— do not assume one ``JobNotFoundError`` always implies structured JSON.
 
 **Equivalence**  
 Equivalent inventory/aisle/position/analytics flows should rely on the same mapper branch
@@ -85,11 +99,15 @@ Python type. Routes and :func:`review_exception_to_http` keep explicit handling.
 - Add a **narrow, domain-specific** exception class when **multiple routes** already map
   it the same way, or a new cross-cutting error must stay consistent.
 - Preserve **status + detail** contracts unless the team intentionally changes API behavior.
+- Assign a **stable** ``error_code`` constant; define **Category** (A fixed copy / B templated /
+  C route-only); add **tests** for status, ``code``, and ``detail``; document any intentional
+  divergence from other routes handling the same exception class.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from fastapi import HTTPException
@@ -140,6 +158,53 @@ logger = logging.getLogger(__name__)
 # Client-safe message for failures that are not mapped to a business rule.
 _UNHANDLED_REVIEW_DETAIL = "An unexpected error occurred while processing this request."
 
+# --- Phase 3: controlled ``detail`` for structured Category B (known use-case shapes only) ---
+_JOB_NOT_FOUND_CANON = re.compile(r"^Job not found: (.+)$")
+_JOB_SCOPE_NOT_SCOPED = re.compile(r"^Job (.+?) is not scoped to aisle (.+)$")
+_JOB_SCOPE_DOES_NOT_BELONG = re.compile(r"^Job (.+?) does not belong to aisle (.+)$")
+_ACTIVE_JOB_EXISTS = re.compile(r"^Aisle (.+?) already has an active job \(status=(.+)\)$")
+_JOB_PROMOTE_TYPE = re.compile(r"^Only process_aisle jobs can be promoted \(got (.+)\)$")
+_JOB_PROMOTE_STATUS = re.compile(r"^Only succeeded jobs can be promoted \(status=(.+)\)$")
+
+
+def _normalized_job_not_found_detail(exc: JobNotFoundError) -> str:
+    raw = str(exc).strip()
+    m = _JOB_NOT_FOUND_CANON.match(raw)
+    if m:
+        return f"Job not found: {m.group(1)}"
+    return "Job not found"
+
+
+def _normalized_job_does_not_belong_detail(exc: JobDoesNotBelongToAisleError) -> str:
+    """Unify legacy phrasing to one public template (IDs preserved)."""
+    raw = str(exc).strip()
+    m = _JOB_SCOPE_NOT_SCOPED.match(raw)
+    if m:
+        return f"Job {m.group(1)} is not scoped to aisle {m.group(2)}"
+    m = _JOB_SCOPE_DOES_NOT_BELONG.match(raw)
+    if m:
+        return f"Job {m.group(1)} is not scoped to aisle {m.group(2)}"
+    return raw
+
+
+def _normalized_active_job_exists_detail(exc: ActiveJobExistsError) -> str:
+    raw = str(exc).strip()
+    m = _ACTIVE_JOB_EXISTS.match(raw)
+    if m:
+        return f"Aisle {m.group(1)} already has an active job (status={m.group(2)})"
+    return raw
+
+
+def _normalized_job_promotion_not_allowed_detail(exc: JobPromotionNotAllowedError) -> str:
+    raw = str(exc).strip()
+    m = _JOB_PROMOTE_TYPE.match(raw)
+    if m:
+        return f"Only process_aisle jobs can be promoted (got {m.group(1)})"
+    m = _JOB_PROMOTE_STATUS.match(raw)
+    if m:
+        return f"Only succeeded jobs can be promoted (status={m.group(1)})"
+    return raw
+
 
 def mapped_http_exception(exc: BaseException) -> HTTPException | None:
     """Return an ``HTTPException`` for registered errors, or ``None`` if not handled here.
@@ -186,18 +251,18 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             error_code=VISUAL_REFERENCE_NOT_FOUND,
             detail="Visual reference not found",
         )
-    # --- Category B (Phase 2): dynamic detail=str(exc) + additive machine code ---
+    # --- Category B (Phase 2–3): structured + controlled ``detail`` templates ---
     if isinstance(exc, JobNotFoundError):
         return StructuredApiHttpError(
             status_code=404,
             error_code=JOB_NOT_FOUND,
-            detail=str(exc),
+            detail=_normalized_job_not_found_detail(exc),
         )
     if isinstance(exc, JobDoesNotBelongToAisleError):
         return StructuredApiHttpError(
             status_code=404,
             error_code=JOB_NOT_IN_AISLE_SCOPE,
-            detail=str(exc),
+            detail=_normalized_job_does_not_belong_detail(exc),
         )
     if isinstance(exc, PositionResultContextMismatchError):
         return HTTPException(status_code=409, detail=str(exc))
@@ -209,7 +274,7 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
         return StructuredApiHttpError(
             status_code=409,
             error_code=ACTIVE_JOB_EXISTS,
-            detail=str(exc),
+            detail=_normalized_active_job_exists_detail(exc),
         )
     if isinstance(exc, BenchmarkRequiresTestInventoryError):
         return HTTPException(status_code=409, detail=str(exc))
@@ -217,7 +282,7 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
         return StructuredApiHttpError(
             status_code=409,
             error_code=JOB_PROMOTION_NOT_ALLOWED,
-            detail=str(exc),
+            detail=_normalized_job_promotion_not_allowed_detail(exc),
         )
     if isinstance(exc, ReviewMutationNotAllowedError):
         return HTTPException(status_code=409, detail=str(exc))

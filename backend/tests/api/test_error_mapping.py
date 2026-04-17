@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import (
+    get_compare_aisle_runs_use_case,
     get_get_aisle_processing_status_use_case,
     get_get_inventory_use_case,
     get_get_position_detail_use_case,
@@ -46,13 +47,20 @@ from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 
 
 def test_mapped_http_exception_job_scope_returns_404() -> None:
-    exc = JobDoesNotBelongToAisleError("Job x is not scoped to aisle y")
+    exc = JobDoesNotBelongToAisleError("Job x does not belong to aisle y")
     http = mapped_http_exception(exc)
     assert http is not None
     assert http.status_code == 404
     assert http.detail == "Job x is not scoped to aisle y"
     assert isinstance(http, StructuredApiHttpError)
     assert http.error_code == JOB_NOT_IN_AISLE_SCOPE
+
+
+def test_mapped_job_does_not_belong_preserves_not_scoped_phrase() -> None:
+    exc = JobDoesNotBelongToAisleError("Job j1 is not scoped to aisle aisle-1")
+    http = mapped_http_exception(exc)
+    assert http is not None
+    assert http.detail == "Job j1 is not scoped to aisle aisle-1"
 
 
 def test_mapped_http_exception_unknown_returns_none() -> None:
@@ -166,6 +174,14 @@ def test_job_not_found_mapping_detail_preserved() -> None:
     assert http.error_code == JOB_NOT_FOUND
 
 
+def test_job_not_found_non_canonical_message_maps_to_stable_detail() -> None:
+    """Unknown ``JobNotFoundError`` shapes fall back to generic copy (no arbitrary ``str(exc)``)."""
+    http = mapped_http_exception(JobNotFoundError("legacy ad-hoc message"))
+    assert http is not None
+    assert http.detail == "Job not found"
+    assert http.error_code == JOB_NOT_FOUND
+
+
 @pytest.mark.parametrize(
     "exc,expected_code,status",
     [
@@ -185,7 +201,7 @@ def test_mapped_category_b_conflict_structured_preserves_detail(
     assert isinstance(http, StructuredApiHttpError)
     assert http.status_code == status
     assert http.error_code == expected_code
-    assert http.detail == str(exc)
+    assert http.detail == str(exc).strip()
 
 
 def test_mapped_merge_scope_ambiguous_stays_legacy_detail_only() -> None:
@@ -315,7 +331,7 @@ def test_get_visual_reference_file_unknown_id_returns_structured_json() -> None:
 
 
 def test_start_aisle_processing_active_job_exists_returns_structured_json() -> None:
-    """Integration: Category B structured — ``detail`` unchanged, ``code`` additive."""
+    """Integration: Category B structured — controlled ``detail`` + ``code``."""
 
     msg = "Aisle aisle-1 already has an active job (status=QUEUED)"
 
@@ -361,11 +377,27 @@ def test_promote_operational_job_not_allowed_returns_structured_json() -> None:
         app.dependency_overrides.pop(get_promote_aisle_operational_job_use_case, None)
 
 
-def test_backward_compat_category_b_clients_read_detail_only() -> None:
-    """Consumers that ignore ``code`` keep working when Category B gains structured bodies."""
-    body = {"code": JOB_NOT_FOUND, "detail": "Job not found: j-99"}
-    assert "Job not found" in body["detail"]
-    assert body["detail"] == "Job not found: j-99"
+def test_integration_category_b_job_not_found_client_reads_detail_only() -> None:
+    """Real HTTP: consumers that only read ``detail`` still work (structured Category B)."""
+
+    class _CompareFails:
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            raise JobNotFoundError("Job not found: job-compare-missing")
+
+    app.dependency_overrides[get_compare_aisle_runs_use_case] = lambda: _CompareFails()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/api/v3/inventories/inv-1/aisles/aisle-1/benchmark/compare",
+            params={"job_a_id": "ja", "job_b_id": "jb"},
+        )
+        assert r.status_code == 404
+        payload = r.json()
+        assert payload.get("code") == JOB_NOT_FOUND
+        detail_only = payload["detail"]
+        assert detail_only == "Job not found: job-compare-missing"
+        assert "job-compare-missing" in detail_only
+    finally:
+        app.dependency_overrides.pop(get_compare_aisle_runs_use_case, None)
 
 
 def test_get_aisle_job_detail_job_not_found_is_category_c_detail_only() -> None:

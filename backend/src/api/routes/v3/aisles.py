@@ -64,6 +64,7 @@ from src.api.schemas.processing_schemas import (
     ProcessAisleResponse,
 )
 from src.application.errors import (
+    ActiveJobExistsError,
     AisleNotFoundError,
     DuplicateAisleCodeError,
     InventoryNotFoundError,
@@ -191,6 +192,8 @@ def _load_job_for_inventory_job_route(
     are fixed phrases (``Job not found``, ``Job not found or does not belong to this aisle``)
     and differ from ``str(JobNotFoundError)`` / ``str(JobDoesNotBelongToAisleError)`` used
     elsewhere — preserves Phase 6 regression contract in ``test_aisles_v3_wiring``.
+    Same exception classes can yield **structured** JSON when mapped later on other routes;
+    see **Known dual-shape (same exception class)** in :mod:`src.api.errors.error_mapping`.
     """
     try:
         return resolve_uc.execute(inventory_id, aisle_id, job_id)

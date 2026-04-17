@@ -20,13 +20,14 @@ Category B mapper branches, Category C route-local errors, etc.)::
 ``code``. Structured bodies come from :class:`StructuredApiHttpError` only (see
 :mod:`src.api.errors.error_mapping` for which exception types map there).
 
-**Rollout:** Category A stable not-founds, **selected** Category B job/conflict branches (still
-``detail=str(exc)`` — dynamic copy preserved), the global unhandled 500, plus any route that
-raises :class:`StructuredApiHttpError` directly. Most mapper branches and all Category C routes
-remain legacy ``{"detail": ...}`` or other shapes.
+**Rollout:** Category A stable not-founds, **selected** Category B job/conflict branches (Phase 3:
+``detail`` is a **controlled template** from known use-case message shapes, not raw arbitrary
+``str(exc)`` when patterns match), the global unhandled 500, plus any route that raises
+:class:`StructuredApiHttpError` directly. Most mapper branches and all Category C routes remain
+legacy ``{"detail": ...}`` or other shapes.
 
-**Transition:** for structured errors, ``code`` is the stable machine identifier; ``detail``
-remains the human-facing string (fixed for Category A, dynamic for expanded Category B). New
+**Transition:** for structured errors, ``code`` is the stable machine identifier; ``detail`` is
+the human-facing string (fixed for Category A, templated for structured Category B). New
 clients should branch on ``code``; existing clients may keep reading ``detail`` only.
 
 Broader plain ``HTTPException`` defaults are unchanged for compatibility.
