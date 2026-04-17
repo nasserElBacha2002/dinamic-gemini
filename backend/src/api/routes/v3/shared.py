@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, NoReturn, Optional, Tuple
 
 from fastapi import HTTPException
 
@@ -225,6 +225,24 @@ def resolve_normalized_asset_path(
     return path
 
 
+def _raise_review_http_from_route(
+    exc: Exception,
+    *,
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    job_id: str | None = None,
+) -> NoReturn:
+    """Delegate to :func:`review_exception_to_http` with stable routing ids for operations logs."""
+    raise review_exception_to_http(
+        exc,
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
+        position_id=position_id,
+        job_id=job_id,
+    )
+
+
 def handle_confirm(
     inventory_id: str,
     aisle_id: str,
@@ -241,7 +259,13 @@ def handle_confirm(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=job_id,
+        )
 
 
 def handle_update_quantity(
@@ -270,7 +294,13 @@ def handle_update_quantity(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=body.job_id,
+        )
 
 
 def handle_update_sku(
@@ -301,7 +331,13 @@ def handle_update_sku(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=body.job_id,
+        )
 
 
 def handle_update_position_code(
@@ -329,7 +365,13 @@ def handle_update_position_code(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=body.job_id,
+        )
 
 
 def handle_mark_unknown(
@@ -348,7 +390,13 @@ def handle_mark_unknown(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=job_id,
+        )
 
 
 def handle_mark_image_mismatch(
@@ -367,7 +415,13 @@ def handle_mark_image_mismatch(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=job_id,
+        )
 
 
 def handle_delete_position(
@@ -386,7 +440,13 @@ def handle_delete_position(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=job_id,
+        )
 
 
 def _primary_execution_config_from_inventory(inv: Inventory) -> PrimaryExecutionConfigResponse | None:

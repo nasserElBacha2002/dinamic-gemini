@@ -26,6 +26,11 @@ def test_mapped_http_exception_unknown_returns_none() -> None:
     assert mapped_http_exception(RuntimeError("internal")) is None
 
 
+def test_mapped_http_exception_excludes_value_error() -> None:
+    """Broad ValueError stays out of the shared mapper (route-specific status/detail)."""
+    assert mapped_http_exception(ValueError("semantic validation")) is None
+
+
 def test_review_exception_unknown_returns_safe_500_detail() -> None:
     http = review_exception_to_http(RuntimeError("do_not_leak_this"))
     assert http.status_code == 500
