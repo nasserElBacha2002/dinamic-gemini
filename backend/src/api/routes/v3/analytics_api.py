@@ -8,15 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.application.dto.analytics_dto import AnalyticsFilters
-from src.application.errors import (
-    AisleNotFoundError,
-    AnalyticsScopeValidationError,
-    BenchmarkCompareJobsMustDifferError,
-    BenchmarkRequiresTestInventoryError,
-    InventoryNotFoundError,
-    JobDoesNotBelongToAisleError,
-    JobNotFoundError,
-)
+from src.api.errors import mapped_http_exception
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
 from src.auth.dependencies import get_current_admin
@@ -84,8 +76,11 @@ def _analytics_filters_validated(
     f = _filters(date_from, date_to, inventory_id, aisle_id)
     try:
         svc.validate_scope(f)
-    except AnalyticsScopeValidationError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        mapped = mapped_http_exception(e)
+        if mapped is not None:
+            raise mapped
+        raise
     return f
 
 
@@ -321,15 +316,8 @@ def analytics_benchmark_compare_aisle_runs(
             )
         )
         return AisleBenchmarkCompareResponse.model_validate(payload)
-    except BenchmarkCompareJobsMustDifferError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except BenchmarkRequiresTestInventoryError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        mapped = mapped_http_exception(e)
+        if mapped is not None:
+            raise mapped
+        raise

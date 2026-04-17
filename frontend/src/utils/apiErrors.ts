@@ -5,7 +5,7 @@
 
 import i18n from '../i18n';
 import { ApiError } from '../api/types';
-import { backendDetailToTranslationKey } from './errorTranslations';
+import { backendDetailToTranslationKey, v3StructuredErrorCodeToTranslationKey } from './errorTranslations';
 
 /**
  * FastAPI validation error item shape.
@@ -56,6 +56,10 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 
 /** User-facing Spanish message: maps known backend text to i18n; otherwise generic fallback. */
 export function resolveApiErrorMessage(error: unknown, fallbackKey: string): string {
+  if (error instanceof ApiError && typeof error.data?.code === 'string' && error.data.code.trim()) {
+    const byCode = v3StructuredErrorCodeToTranslationKey(error.data.code);
+    if (byCode) return i18n.t(byCode);
+  }
   const raw = getApiErrorMessage(error, '');
   if (!raw.trim()) return i18n.t(fallbackKey);
   const mapped = backendDetailToTranslationKey(raw);

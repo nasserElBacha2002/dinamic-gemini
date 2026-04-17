@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+
+from src.api.errors import reraise_if_mapped
 from src.api.dependencies import (
     get_artifact_storage,
     get_create_aisle_use_case,
@@ -62,19 +64,12 @@ from src.api.schemas.processing_schemas import (
     ProcessAisleResponse,
 )
 from src.application.errors import (
-    AisleNotFoundError,
     ActiveJobExistsError,
-    BenchmarkCompareJobsMustDifferError,
+    AisleNotFoundError,
     DuplicateAisleCodeError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
-    JobPromotionNotAllowedError,
-    InvalidProcessingModelError,
-    InvalidProcessingPromptKeyError,
-    ProcessingProviderNotConfiguredError,
-    BenchmarkRequiresTestInventoryError,
-    UnknownProcessingProviderError,
 )
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
@@ -142,10 +137,8 @@ def _aggregate_aisle_execution_log_payload(
                 limit=_AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
             )
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except (InventoryNotFoundError, AisleNotFoundError) as e:
+        reraise_if_mapped(e)
 
     log_sources: List[Dict[str, Any]] = []
     streams: List[Tuple[str, datetime, List[Dict[str, Any]]]] = []
@@ -193,7 +186,15 @@ def _load_job_for_inventory_job_route(
     aisle_id: str,
     job_id: str,
 ) -> Job:
-    """Resolve job id in inventory/aisle scope; map errors to the same HTTP 404 details as pre–Phase 6 routes."""
+    """Resolve job id in inventory/aisle scope.
+
+    Intentionally **not** delegated to :func:`reraise_if_mapped`: HTTP ``detail`` strings here
+    are fixed phrases (``Job not found``, ``Job not found or does not belong to this aisle``)
+    and differ from ``str(JobNotFoundError)`` / ``str(JobDoesNotBelongToAisleError)`` used
+    elsewhere — preserves Phase 6 regression contract in ``test_aisles_v3_wiring``.
+    Same exception classes can yield **structured** JSON when mapped later on other routes;
+    see **Known dual-shape (same exception class)** in :mod:`src.api.errors.error_mapping`.
+    """
     try:
         return resolve_uc.execute(inventory_id, aisle_id, job_id)
     except JobNotFoundError:
@@ -220,10 +221,8 @@ def create_aisle(
     try:
         aisle = use_case.execute(CreateAisleCommand(inventory_id=inventory_id, code=payload.code))
         return aisle_to_response(aisle)
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except DuplicateAisleCodeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    except (InventoryNotFoundError, DuplicateAisleCodeError) as e:
+        reraise_if_mapped(e)
 
 
 @router.get("/{inventory_id}/aisles", response_model=PaginatedAisleListResponse)
@@ -276,8 +275,8 @@ def list_aisles(
             total_items=total,
             total_pages=compute_total_pages(total, ps),
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
+    except InventoryNotFoundError as e:
+        reraise_if_mapped(e)
 
 
 @router.post("/{inventory_id}/aisles/{aisle_id}/process", response_model=ProcessAisleResponse, status_code=202)
@@ -300,20 +299,9 @@ def start_aisle_processing(
             )
         )
         return ProcessAisleResponse(job_id=job_id)
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except UnknownProcessingProviderError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except InvalidProcessingModelError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except InvalidProcessingPromptKeyError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except ProcessingProviderNotConfiguredError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except ActiveJobExistsError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
 
 
 @router.get("/{inventory_id}/aisles/{aisle_id}/status", response_model=AisleStatusResponse)
@@ -325,8 +313,8 @@ def get_aisle_status(
     try:
         result = use_case.execute(inventory_id, aisle_id)
         return status_response_from_result(result)
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except AisleNotFoundError as e:
+        reraise_if_mapped(e)
 
 
 @router.get(
@@ -351,10 +339,8 @@ def list_aisle_jobs(
                 job_to_summary(j, is_operational=(op is not None and op == j.id)) for j in result.jobs
             ],
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except (InventoryNotFoundError, AisleNotFoundError) as e:
+        reraise_if_mapped(e)
 
 
 @router.get(
@@ -507,7 +493,7 @@ def get_job_execution_log(
             e.reason_code,
             e.detail,
         )
-        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+        reraise_if_mapped(e, cause=e)
     payload = build_enriched_execution_log(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
@@ -541,7 +527,7 @@ def get_job_execution_log_txt(
             e.reason_code,
             e.detail,
         )
-        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+        reraise_if_mapped(e, cause=e)
     body = build_enriched_execution_log(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
@@ -580,7 +566,7 @@ def get_job_hybrid_report(
             e.reason_code,
             e.detail,
         )
-        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+        reraise_if_mapped(e, cause=e)
 
 
 @router.post(
@@ -618,16 +604,11 @@ def run_aisle_merge(
             final_count=result.final_count,
             product_records_updated=result.product_records_updated,
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        reraise_if_mapped(e)
+        if isinstance(e, ValueError):
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        raise
 
 
 @router.get(
@@ -670,14 +651,9 @@ def get_aisle_merge_results(
             result_job_id=merge_result.resolved_job_id,
             result_context_source=merge_result.result_context_source,
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
 
 
 @router.get("/{inventory_id}/aisles/{aisle_id}/export")
@@ -712,14 +688,9 @@ def export_aisle_results_csv(
             job_id=job_id.strip() if job_id and str(job_id).strip() else None,
             technical=technical,
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
     suffix = "technical" if technical else "results"
     fname = f"inventory_{inventory_id}_aisle_{aisle_id}_{suffix}.csv"
     return Response(
@@ -755,18 +726,9 @@ def compare_aisle_benchmark_runs(
             )
         )
         return AisleBenchmarkCompareResponse.model_validate(payload)
-    except BenchmarkCompareJobsMustDifferError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except BenchmarkRequiresTestInventoryError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
 
 
 @router.post(
@@ -789,18 +751,9 @@ def promote_aisle_operational_job(
             )
         )
         return PromoteOperationalJobResponse(aisle_id=aisle_id, operational_job_id=jid)
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except JobPromotionNotAllowedError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
-    except BenchmarkRequiresTestInventoryError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
 
 
 @router.get("/{inventory_id}/aisles/{aisle_id}/benchmark/export")
@@ -852,18 +805,9 @@ def export_aisle_benchmark(
                 f"benchmark_compare_{inventory_id}_{aisle_id}_"
                 f"{str(job_a_id).strip()}_{str(job_b_id).strip()}.csv"
             )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except BenchmarkCompareJobsMustDifferError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except BenchmarkRequiresTestInventoryError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
     return Response(
         content=csv_body.encode("utf-8"),
         media_type="text/csv; charset=utf-8",

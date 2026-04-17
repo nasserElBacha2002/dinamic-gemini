@@ -11,6 +11,7 @@ from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
+from src.api.errors import reraise_if_mapped
 from src.config import load_settings
 from src.api.dependencies import (
     get_artifact_storage,
@@ -28,7 +29,7 @@ from src.api.schemas.asset_schemas import (
     SourceAssetResponse,
     UploadAisleAssetsResponse,
 )
-from src.application.errors import AisleNotFoundError, EmptyUploadError, UnsupportedAssetTypeError
+from src.application.errors import AisleNotFoundError
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
@@ -99,12 +100,9 @@ async def upload_aisle_assets(
     try:
         created = use_case.execute(inventory_id, aisle_id, uploaded)
         return UploadAisleAssetsResponse(assets=[asset_to_response(a) for a in created])
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    except EmptyUploadError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except UnsupportedAssetTypeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
 
 
 @router.get("/{inventory_id}/aisles/{aisle_id}/assets", response_model=List[SourceAssetResponse])
@@ -117,8 +115,8 @@ def list_aisle_assets(
     try:
         assets = use_case.execute(inventory_id, aisle_id)
         return [asset_to_response(a) for a in assets]
-    except AisleNotFoundError:
-        raise HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
+    except AisleNotFoundError as e:
+        reraise_if_mapped(e)
 
 
 @router.get(
@@ -227,7 +225,7 @@ def get_aisle_asset_file(
             asset_id,
             e.detail,
         )
-        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+        reraise_if_mapped(e, cause=e)
 
 
 @router.get(
@@ -324,6 +322,6 @@ def get_aisle_asset_image_display_url(
             asset_id,
             e.detail,
         )
-        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+        reraise_if_mapped(e, cause=e)
 
     return _source_asset_image_display_response(image_url=image_url, need_fetch=need_fetch)

@@ -9,10 +9,11 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, NoReturn, Optional, Tuple
 
 from fastapi import HTTPException
 
+from src.api.errors import review_exception_to_http
 from src.utils.validation import validate_relative_path
 
 from src.api.schemas.aisle_schemas import AisleResponse, AisleJobSummary
@@ -224,21 +225,22 @@ def resolve_normalized_asset_path(
     return path
 
 
-def review_exception_to_http(e: Exception) -> HTTPException:
-    """Map application exceptions from review use cases to HTTP responses."""
-    if isinstance(e, InventoryNotFoundError):
-        return HTTPException(status_code=404, detail="Inventory not found")
-    if isinstance(e, AisleNotFoundError):
-        return HTTPException(status_code=404, detail="Aisle not found or does not belong to this inventory")
-    if isinstance(e, PositionNotFoundError):
-        return HTTPException(status_code=404, detail="Position not found or does not belong to this aisle")
-    if isinstance(e, ProductNotFoundError):
-        return HTTPException(status_code=404, detail="Product not found or does not belong to this position")
-    if isinstance(e, PositionDeletedError):
-        return HTTPException(status_code=409, detail=str(e))
-    if isinstance(e, ValueError):
-        return HTTPException(status_code=422, detail=str(e))
-    raise e
+def _raise_review_http_from_route(
+    exc: Exception,
+    *,
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    job_id: str | None = None,
+) -> NoReturn:
+    """Delegate to :func:`review_exception_to_http` with stable routing ids for operations logs."""
+    raise review_exception_to_http(
+        exc,
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
+        position_id=position_id,
+        job_id=job_id,
+    )
 
 
 def handle_confirm(
@@ -257,7 +259,13 @@ def handle_confirm(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=job_id,
+        )
 
 
 def handle_update_quantity(
@@ -286,7 +294,13 @@ def handle_update_quantity(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=body.job_id,
+        )
 
 
 def handle_update_sku(
@@ -317,7 +331,13 @@ def handle_update_sku(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=body.job_id,
+        )
 
 
 def handle_update_position_code(
@@ -345,7 +365,13 @@ def handle_update_position_code(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=body.job_id,
+        )
 
 
 def handle_mark_unknown(
@@ -364,7 +390,13 @@ def handle_mark_unknown(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=job_id,
+        )
 
 
 def handle_mark_image_mismatch(
@@ -383,7 +415,13 @@ def handle_mark_image_mismatch(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=job_id,
+        )
 
 
 def handle_delete_position(
@@ -402,7 +440,13 @@ def handle_delete_position(
         ValueError,
         PositionDeletedError,
     ) as e:
-        raise review_exception_to_http(e)
+        raise _raise_review_http_from_route(
+            e,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            job_id=job_id,
+        )
 
 
 def _primary_execution_config_from_inventory(inv: Inventory) -> PrimaryExecutionConfigResponse | None:
