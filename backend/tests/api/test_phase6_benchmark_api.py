@@ -265,3 +265,31 @@ def test_analytics_benchmark_compare_wrong_aisle_job_is_404() -> None:
         assert "not scoped" in detail or "aisle" in detail
     finally:
         _clear()
+
+
+def test_inventory_benchmark_compare_wrong_aisle_job_is_404() -> None:
+    """Inventory-scoped benchmark compare must use the same job-scope semantics as analytics."""
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.get(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare",
+            params={"job_a_id": "j1", "job_b_id": "j-other-aisle"},
+        )
+        assert r.status_code == 404
+    finally:
+        _clear()
+
+
+def test_promote_operational_wrong_aisle_job_is_404() -> None:
+    """Job scoped to another aisle must not be promoted; historically some routes used 422 — align to 404."""
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/promote-operational",
+            json={"job_id": "j-other-aisle"},
+        )
+        assert r.status_code == 404
+    finally:
+        _clear()

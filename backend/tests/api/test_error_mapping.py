@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+import pytest
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from src.api.errors.error_mapping import mapped_http_exception, review_exception_to_http
+from src.api.errors.error_mapping import mapped_http_exception, reraise_if_mapped, review_exception_to_http
 from src.api.server import app
 from src.application.errors import (
     InventoryNotFoundError,
@@ -29,6 +30,16 @@ def test_mapped_http_exception_unknown_returns_none() -> None:
 def test_mapped_http_exception_excludes_value_error() -> None:
     """Broad ValueError stays out of the shared mapper (route-specific status/detail)."""
     assert mapped_http_exception(ValueError("semantic validation")) is None
+
+
+def test_reraise_if_mapped_raises_when_mapped() -> None:
+    with pytest.raises(HTTPException) as excinfo:
+        reraise_if_mapped(InventoryNotFoundError())
+    assert excinfo.value.status_code == 404
+
+
+def test_reraise_if_mapped_no_op_for_value_error() -> None:
+    reraise_if_mapped(ValueError("route layer should handle"))
 
 
 def test_review_exception_unknown_returns_safe_500_detail() -> None:

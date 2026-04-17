@@ -13,6 +13,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
+from src.api.errors import reraise_if_mapped
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     resolve_visual_reference_file_response,
@@ -52,14 +53,8 @@ from src.application.services.processing_experiment_catalog import (
 from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
 from src.application.ports.contracts import InventoryTableQuery
 from src.application.errors import (
-    EmptyUploadError,
     InventoryNotFoundError,
     InventoryVisualReferenceNotFoundError,
-    JobDoesNotBelongToAisleError,
-    JobNotFoundError,
-    MaxInventoryVisualReferencesExceededError,
-    UnsupportedAssetTypeError,
-    ZeroByteFileError,
 )
 from src.application.use_cases.manage_inventory_visual_references import (
     DeleteInventoryVisualReferenceUseCase,
@@ -217,12 +212,9 @@ def export_inventory_results(
         raise HTTPException(status_code=422, detail="Only format=csv is supported")
     try:
         body = use_case.execute_csv(inventory_id, technical=technical)
-    except JobNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except JobDoesNotBelongToAisleError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
     suffix = "technical" if technical else "results"
     filename = f"inventory_{inventory_id}_{suffix}.csv"
     return Response(
@@ -241,8 +233,8 @@ def get_inventory(
     try:
         inventory = use_case.execute(inventory_id)
         return inventory_to_response(inventory)
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
+    except InventoryNotFoundError as e:
+        reraise_if_mapped(e)
 
 
 @router.get("/{inventory_id}/metrics", response_model=InventoryMetricsResponse)
@@ -254,8 +246,8 @@ def get_inventory_metrics(
     try:
         metrics = use_case.execute(inventory_id)
         return InventoryMetricsResponse(**metrics)
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
+    except InventoryNotFoundError as e:
+        reraise_if_mapped(e)
 
 
 @router.post(
@@ -285,16 +277,9 @@ async def upload_inventory_visual_references(
                 for ref in created
             ]
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except EmptyUploadError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except ZeroByteFileError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except UnsupportedAssetTypeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except MaxInventoryVisualReferencesExceededError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
 
 
 @router.delete("/{inventory_id}/visual-references/{reference_id}", status_code=204)
@@ -305,10 +290,8 @@ def delete_inventory_visual_reference(
 ) -> Response:
     try:
         use_case.execute(inventory_id, reference_id)
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except InventoryVisualReferenceNotFoundError:
-        raise HTTPException(status_code=404, detail="Visual reference not found")
+    except (InventoryNotFoundError, InventoryVisualReferenceNotFoundError) as e:
+        reraise_if_mapped(e)
     return Response(status_code=204)
 
 
@@ -333,14 +316,9 @@ async def replace_inventory_visual_reference(
             file_size=updated.file_size,
             created_at=updated.created_at,
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
-    except InventoryVisualReferenceNotFoundError:
-        raise HTTPException(status_code=404, detail="Visual reference not found")
-    except ZeroByteFileError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except UnsupportedAssetTypeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
 
 
 @router.get(
@@ -367,8 +345,8 @@ def list_inventory_visual_references(
                 for ref in refs
             ]
         )
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
+    except InventoryNotFoundError as e:
+        reraise_if_mapped(e)
 
 
 @router.get("/{inventory_id}/visual-references/{reference_id}/file")
@@ -381,8 +359,8 @@ def get_inventory_visual_reference_file(
     """Resolve a visual reference file URL/stream for operators and UI."""
     try:
         refs = use_case.execute(inventory_id)
-    except InventoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Inventory not found")
+    except InventoryNotFoundError as e:
+        reraise_if_mapped(e)
     ref = next((r for r in refs if r.id == reference_id), None)
     if ref is None:
         raise HTTPException(status_code=404, detail="Visual reference not found")
@@ -397,4 +375,4 @@ def get_inventory_visual_reference_file(
             e.reason_code,
             e.detail,
         )
-        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+        reraise_if_mapped(e, cause=e)

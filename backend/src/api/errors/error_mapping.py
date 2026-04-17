@@ -138,6 +138,23 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
     return None
 
 
+def reraise_if_mapped(exc: BaseException, *, cause: BaseException | None = None) -> None:
+    """If ``exc`` is covered by :func:`mapped_http_exception`, raise that ``HTTPException``.
+
+    If there is no mapping, return without raising so the caller can apply route-specific
+    rules (for example ``ValueError`` with 422 vs 409) or re-raise the original error.
+
+    When ``cause`` is set, the raised ``HTTPException`` uses ``raise ... from cause`` so
+    exception chaining is preserved in logs.
+    """
+    m = mapped_http_exception(exc)
+    if m is None:
+        return
+    if cause is not None:
+        raise m from cause
+    raise m
+
+
 def review_exception_to_http(exc: Exception, **log_context: Any) -> HTTPException:
     """Map review use-case exceptions to HTTP; unknown errors become a safe 500-shaped response.
 
