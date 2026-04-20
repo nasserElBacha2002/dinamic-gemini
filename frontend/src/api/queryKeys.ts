@@ -60,6 +60,24 @@ export const queryKeys = {
     /** Phase 6 — explicit two-run compare (benchmark analytics payload). */
     benchmarkCompare: (inventoryId: string, aisleId: string, jobAId: string, jobBId: string) =>
       [...queryKeys.inventories.all, 'benchmark-compare', inventoryId, aisleId, jobAId, jobBId] as const,
+    benchmarkCompareMany: (
+      inventoryId: string,
+      aisleId: string,
+      baselineJobId: string,
+      jobIdsOrdered: readonly string[],
+      includeDiffRows: boolean,
+      maxDiffRows?: number
+    ) =>
+      [
+        ...queryKeys.inventories.all,
+        'benchmark-compare-many',
+        inventoryId,
+        aisleId,
+        baselineJobId,
+        [...jobIdsOrdered],
+        includeDiffRows ? 1 : 0,
+        maxDiffRows ?? null,
+      ] as const,
     /** Invalidate all benchmark-compare queries for one inventory (narrower than full `benchmark-compare` prefix). */
     benchmarkCompareInventory: (inventoryId: string) =>
       [...queryKeys.inventories.all, 'benchmark-compare', inventoryId] as const,

@@ -31,6 +31,7 @@ from src.api.dependencies import (
     get_resolve_aisle_job_for_inventory_read_use_case,
     get_run_aisle_merge_use_case,
     get_compare_aisle_runs_use_case,
+    get_compare_many_aisle_runs_use_case,
     get_promote_aisle_operational_job_use_case,
     get_export_aisle_benchmark_run_csv_use_case,
     get_export_aisle_benchmark_compare_csv_use_case,
@@ -50,6 +51,8 @@ from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest
 from src.api.schemas.listing_schemas import PaginatedAisleListResponse, compute_total_pages
 from src.application.ports.contracts import AisleTableQuery
 from src.api.schemas.benchmark_schemas import (
+    AisleBenchmarkCompareManyRequest,
+    AisleBenchmarkCompareManyResponse,
     AisleBenchmarkCompareResponse,
     PromoteOperationalJobRequest,
     PromoteOperationalJobResponse,
@@ -91,6 +94,10 @@ from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
 from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
+from src.application.use_cases.compare_many_aisle_runs import (
+    CompareManyAisleRunsCommand,
+    CompareManyAisleRunsUseCase,
+)
 from src.application.use_cases.export_aisle_benchmark import (
     ExportAisleBenchmarkCompareCsvUseCase,
     ExportAisleBenchmarkRunCommand,
@@ -734,6 +741,38 @@ def compare_aisle_benchmark_runs(
             )
         )
         return AisleBenchmarkCompareResponse.model_validate(payload)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/benchmark/compare-many",
+    response_model=AisleBenchmarkCompareManyResponse,
+)
+def compare_many_aisle_benchmark_runs(
+    inventory_id: str,
+    aisle_id: str,
+    body: AisleBenchmarkCompareManyRequest = Body(...),
+    use_case: CompareManyAisleRunsUseCase = Depends(get_compare_many_aisle_runs_use_case),
+) -> AisleBenchmarkCompareManyResponse:
+    """Phase 1/2 — baseline-centric compare-many for 2-3 explicit benchmark runs.
+
+    TODO(analytics-parity): mirror this endpoint under the analytics alias when scope/risk allows.
+    Deferred intentionally to keep this rollout narrow and low-risk.
+    """
+    try:
+        payload = use_case.execute(
+            CompareManyAisleRunsCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                job_ids=list(body.job_ids),
+                baseline_job_id=body.baseline_job_id,
+                include_diff_rows=bool(body.include_diff_rows),
+                max_diff_rows=body.max_diff_rows,
+            )
+        )
+        return AisleBenchmarkCompareManyResponse.model_validate(payload)
     except Exception as e:
         reraise_if_mapped(e)
         raise

@@ -17,6 +17,7 @@ import {
   listAisleJobs,
   listAisleAssets,
   getAisleBenchmarkCompare,
+  getAisleBenchmarkCompareMany,
   type AislesListQuery,
 } from '../api/client';
 import { queryKeys, DEFAULT_AISLES_LIST_TABLE_QUERY } from '../api/queryKeys';
@@ -144,6 +145,33 @@ export function useAisleBenchmarkCompare(
   return useQuery({
     queryKey: queryKeys.inventories.benchmarkCompare(inv, aisle, a, b),
     queryFn: () => getAisleBenchmarkCompare(inv, aisle, a, b),
+    enabled: paramsReady && (options?.enabled !== false),
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useAisleBenchmarkCompareMany(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  jobIds: string[] | undefined,
+  baselineJobId: string | undefined,
+  options?: { enabled?: boolean; includeDiffRows?: boolean; maxDiffRows?: number }
+) {
+  const inv = (inventoryId ?? '').trim();
+  const aisle = (aisleId ?? '').trim();
+  const ids = (jobIds ?? []).map((v) => v.trim()).filter(Boolean);
+  const baseline = (baselineJobId ?? '').trim();
+  const includeDiffRows = Boolean(options?.includeDiffRows);
+  const paramsReady = Boolean(inv && aisle && baseline && ids.length >= 2 && ids.length <= 3 && ids.includes(baseline));
+  return useQuery({
+    queryKey: queryKeys.inventories.benchmarkCompareMany(inv, aisle, baseline, ids, includeDiffRows, options?.maxDiffRows),
+    queryFn: () =>
+      getAisleBenchmarkCompareMany(inv, aisle, {
+        job_ids: ids,
+        baseline_job_id: baseline,
+        include_diff_rows: includeDiffRows,
+        max_diff_rows: options?.maxDiffRows,
+      }),
     enabled: paramsReady && (options?.enabled !== false),
     refetchOnWindowFocus: false,
   });
