@@ -42,12 +42,10 @@ type AppliedState = {
 function parseJobIds(raw: string | null): string[] {
   if (!raw) return [];
   const out: string[] = [];
-  const seen = new Set<string>();
   for (const token of raw.split(',')) {
     const trimmed = token.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
+    if (!trimmed) continue;
     out.push(trimmed);
-    seen.add(trimmed);
   }
   return out;
 }
@@ -61,15 +59,18 @@ function parseAppliedState(searchParams: URLSearchParams): AppliedState {
 }
 
 function isAppliedStateValid(state: AppliedState): boolean {
+  const hasDuplicates = new Set(state.jobIds).size !== state.jobIds.length;
   return Boolean(
     state.aisleId &&
       state.jobIds.length >= MIN_COMPARE_JOBS &&
       state.jobIds.length <= MAX_COMPARE_JOBS &&
+      !hasDuplicates &&
       state.baseline &&
       state.jobIds.includes(state.baseline)
   );
 }
 
+/** Selection order is meaningful for compare-many; reordering counts as a real change. */
 function sameSelection(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((id, idx) => id === b[idx]);
 }
@@ -86,6 +87,7 @@ function semanticColor(value: number, higherIsWorse: boolean): 'success.main' | 
 }
 
 function buildDraftError(aisleId: string, jobIds: string[], baseline: string, t: (key: string) => string): string | null {
+  if (new Set(jobIds).size !== jobIds.length) return t('compare_many.errors.duplicate_jobs');
   if (!aisleId) return t('compare_many.errors.select_aisle');
   if (jobIds.length < MIN_COMPARE_JOBS) return t('compare_many.errors.pick_two_jobs');
   if (jobIds.length > MAX_COMPARE_JOBS) return t('compare_many.errors.pick_max_three_jobs');
@@ -112,6 +114,10 @@ function hasNoDifferences(comp: BenchmarkCompareManyDiff): boolean {
 function displayJobName(job: JobSummary): string {
   return `${job.id.slice(0, 8)}…`;
 }
+
+export const __testables = {
+  buildDraftError,
+};
 
 export default function CompareManyRunsPage() {
   const { t } = useTranslation();
@@ -144,7 +150,7 @@ export default function CompareManyRunsPage() {
     applied.baseline,
     { enabled: appliedValid, includeDiffRows: false }
   );
-  const diffRowsQuery = useAisleBenchmarkCompareMany(
+  const enrichedCompareManyQuery = useAisleBenchmarkCompareMany(
     inventoryId,
     applied.aisleId || undefined,
     applied.jobIds,
@@ -152,7 +158,8 @@ export default function CompareManyRunsPage() {
     { enabled: appliedValid && Boolean(expandedTargetJobId), includeDiffRows: true }
   );
 
-  const effectiveData = diffRowsQuery.data ?? compareQuery.data;
+  // Expanding one block enriches the full compare-many payload (all comparisons), then each block renders its own slice.
+  const effectiveData = enrichedCompareManyQuery.data ?? compareQuery.data;
   const aisles = aislesQuery.data?.items ?? [];
   const jobs = jobsQuery.data?.jobs ?? [];
   const aisleSelectValue = draftAisleId && aisles.some((aisle) => aisle.id === draftAisleId) ? draftAisleId : '';
@@ -176,6 +183,11 @@ export default function CompareManyRunsPage() {
   }, [applied.aisleId, applied.baseline, applied.jobIds]);
 
   useEffect(() => {
+    // URL correction policy: only baseline is auto-corrected, and only when the rest of applied state is already valid.
+    // Other invalid URL states (duplicate jobs, bad count, missing aisle) are shown as invalid without URL mutation.
+    if (!applied.aisleId) return;
+    if (applied.jobIds.length < MIN_COMPARE_JOBS || applied.jobIds.length > MAX_COMPARE_JOBS) return;
+    if (new Set(applied.jobIds).size !== applied.jobIds.length) return;
     if (!applied.jobIds.length) return;
     if (applied.baseline && applied.jobIds.includes(applied.baseline)) return;
     const nextBaseline = applied.jobIds[0];
@@ -214,11 +226,11 @@ export default function CompareManyRunsPage() {
   });
 
   const compareErrorMessage =
-    (compareQuery.isError || diffRowsQuery.isError) && (compareQuery.error || diffRowsQuery.error)
+    (compareQuery.isError || enrichedCompareManyQuery.isError) && (compareQuery.error || enrichedCompareManyQuery.error)
       ? resolveApiErrorMessage(
-          (compareQuery.error || diffRowsQuery.error) instanceof ApiError
-            ? (compareQuery.error || diffRowsQuery.error)
-            : new ApiError(String(compareQuery.error || diffRowsQuery.error)),
+          (compareQuery.error || enrichedCompareManyQuery.error) instanceof ApiError
+            ? (compareQuery.error || enrichedCompareManyQuery.error)
+            : new ApiError(String(compareQuery.error || enrichedCompareManyQuery.error)),
           'errors.load_compare'
         )
       : null;
@@ -377,6 +389,10 @@ export default function CompareManyRunsPage() {
                 qtyMax: effectiveData.summary.max_total_quantity,
                 reviewMin: effectiveData.summary.min_needs_review,
                 reviewMax: effectiveData.summary.max_needs_review,
+                consolidatedMin: effectiveData.summary.min_consolidated_positions,
+                consolidatedMax: effectiveData.summary.max_consolidated_positions,
+                unknownMin: effectiveData.summary.min_unknown_internal_code_count,
+                unknownMax: effectiveData.summary.max_unknown_internal_code_count,
               })}
             </Typography>
           </Paper>
@@ -397,10 +413,17 @@ export default function CompareManyRunsPage() {
                     <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
                       {job.job_id}
                     </Typography>
-                    {isBaseline ? <Chip size="small" color="primary" label={t('compare_many.baseline_chip')} /> : null}
+                    <Box sx={{ display: 'flex', gap: 0.75 }}>
+                      {isBaseline ? <Chip size="small" color="primary" label={t('compare_many.baseline_chip')} /> : null}
+                      <Chip
+                        size="small"
+                        color={job.status === 'succeeded' ? 'default' : 'warning'}
+                        label={t('compare_many.status_chip', { status: job.status })}
+                      />
+                    </Box>
                   </Box>
                   <Typography variant="caption" color="text.secondary" display="block">
-                    {job.status} · {job.provider_name ?? t('common.em_dash')} · {job.model_name ?? t('common.em_dash')}
+                    {job.provider_name ?? t('common.em_dash')} · {job.model_name ?? t('common.em_dash')}
                   </Typography>
                   <Typography variant="body2" sx={{ mt: 1 }}>
                     {t('compare_many.job_metrics', {
@@ -429,7 +452,7 @@ export default function CompareManyRunsPage() {
 
           {orderedComparisons.map((comp) => {
             const expanded = expandedTargetJobId === comp.target_job_id;
-            const diffRowsLoading = expanded && diffRowsQuery.isFetching && !diffRowsQuery.data;
+            const diffRowsLoading = expanded && enrichedCompareManyQuery.isFetching && !enrichedCompareManyQuery.data;
             const noDifferences = hasNoDifferences(comp);
             return (
               <Paper variant="outlined" sx={{ p: 2 }} key={comp.target_job_id} data-testid="compare-many-comparison-block">

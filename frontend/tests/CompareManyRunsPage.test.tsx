@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material';
 import * as client from '../src/api/client';
-import CompareManyRunsPage from '../src/pages/analytics/CompareManyRunsPage';
+import CompareManyRunsPage, { __testables } from '../src/pages/analytics/CompareManyRunsPage';
 import { AppSnackbarProvider } from '../src/components/ui';
 import theme from '../src/theme';
 import type { AisleBenchmarkCompareManyResponse, Inventory, Aisle, JobSummary } from '../src/api/types';
@@ -235,12 +235,29 @@ describe('CompareManyRunsPage', () => {
     });
   });
 
+  it('shows changes-not-applied indicator when draft differs from applied state', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
+    await waitFor(() => expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1));
+    fireEvent.mouseDown(screen.getByLabelText('Baseline'));
+    fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
+    expect(screen.getByText('Changes not applied')).toBeInTheDocument();
+  });
+
   it('auto-corrects invalid baseline in URL and shows one-shot notice', async () => {
     const { router } = renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-x');
     await waitFor(() => {
       expect(new URLSearchParams(router.state.location.search).get('baseline')).toBe('job-1');
     });
     expect(screen.getByText('Baseline adjusted to match current selection.')).toBeInTheDocument();
+  });
+
+  it('does not rewrite other invalid URL states and does not fetch compare-many', async () => {
+    const { router } = renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3,job-4&baseline=job-1');
+    expect(await screen.findByTestId('compare-many-empty-state')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(client.getAisleBenchmarkCompareMany).not.toHaveBeenCalled();
+    });
+    expect(router.state.location.search).toContain('jobIds=job-1,job-2,job-3,job-4');
   });
 
   it('renders 3-job view with baseline card highlighted and target ordering', async () => {
@@ -253,6 +270,32 @@ describe('CompareManyRunsPage', () => {
     expect(blocks[1]).toHaveTextContent(/job-3/i);
   });
 
+  it('renders status as dedicated chip and keeps provider-model metadata separate', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+    expect(screen.getByText('Status: running')).toBeInTheDocument();
+    expect(screen.getByText(/prov-c · model-c/i)).toBeInTheDocument();
+  });
+
+  it('adjusts draft baseline when selection removes current baseline and applies corrected baseline', async () => {
+    const { router } = renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+
+    fireEvent.mouseDown(screen.getByLabelText('Runs to compare'));
+    fireEvent.click(await screen.findByRole('option', { name: /job-3/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /job-1/i }));
+    fireEvent.keyDown(screen.getByRole('listbox', { name: 'Runs to compare' }), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: /apply comparison/i }));
+
+    await waitFor(() => {
+      const params = new URLSearchParams(router.state.location.search);
+      const jobIds = (params.get('jobIds') ?? '').split(',').filter(Boolean);
+      expect(params.get('baseline')).toBeTruthy();
+      expect(jobIds).toContain(params.get('baseline') as string);
+      expect(params.get('baseline')).not.toBe('job-1');
+    });
+  });
+
   it('keeps diff rows collapsed by default and loads on demand when expanded', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
     await screen.findByTestId('compare-many-results');
@@ -262,6 +305,9 @@ describe('CompareManyRunsPage', () => {
     await waitFor(() => {
       const calls = vi.mocked(client.getAisleBenchmarkCompareMany).mock.calls;
       expect(calls.some((call) => Boolean(call[2].include_diff_rows))).toBe(true);
+      expect(calls.some((call) => Boolean(call[2].include_diff_rows) && call[2].job_ids.join(',') === 'job-1,job-2')).toBe(
+        true
+      );
     });
     expect(await screen.findByTestId('compare-many-diff-rows-panel')).toBeInTheDocument();
   });
@@ -270,5 +316,32 @@ describe('CompareManyRunsPage', () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1&baseline=job-1');
     expect(await screen.findByTestId('compare-many-empty-state')).toBeInTheDocument();
     expect(client.getAisleBenchmarkCompareMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps controls usable when compare-many request errors', async () => {
+    vi.mocked(client.getAisleBenchmarkCompareMany).mockRejectedValueOnce(new Error('boom'));
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByLabelText('Baseline'));
+    fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
+    expect(screen.getByText('Changes not applied')).toBeInTheDocument();
+  });
+
+  it('renders expanded summary fields for consolidated and unknown min/max', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+    expect(screen.getByText(/Consolidated positions min\/max:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Unknown internal code min\/max:/i)).toBeInTheDocument();
+  });
+
+  it('helper validation flags duplicate and baseline-outside-selection drafts', () => {
+    expect(__testables.buildDraftError('aisle-1', ['job-1', 'job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.duplicate_jobs');
+    expect(__testables.buildDraftError('aisle-1', ['job-1', 'job-2'], 'job-3', (k) => k)).toBe(
+      'compare_many.errors.pick_valid_baseline'
+    );
+  });
+
+  it('helper validation flags too-few selections for draft apply', () => {
+    expect(__testables.buildDraftError('aisle-1', ['job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.pick_two_jobs');
   });
 });

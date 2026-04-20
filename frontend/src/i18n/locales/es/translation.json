@@ -375,6 +375,7 @@
     "diff_summary_stats": "Only in baseline: {{onlyBaseline}}, only in target: {{onlyTarget}}, keys in both: {{both}}, quantity changed: {{qty}}, SKU changed: {{sku}}, position changed: {{pos}}.",
     "empty_instruction": "Select one aisle, choose 2-3 runs, set a baseline, and apply comparison.",
     "errors": {
+      "duplicate_jobs": "Selected jobs must be unique.",
       "pick_max_three_jobs": "Select at most 3 jobs.",
       "pick_two_jobs": "Select at least 2 jobs.",
       "pick_valid_baseline": "Select a baseline from selected jobs.",
@@ -391,7 +392,8 @@
     "subtitle": "Compare selected runs against one baseline.",
     "summary_not_ranking": "Summary is quick context only; it is not a ranking or recommendation.",
     "summary_title": "Summary",
-    "summary_values": "Jobs: {{jobs}} · Total quantity min/max: {{qtyMin}} / {{qtyMax}} · Needs review min/max: {{reviewMin}} / {{reviewMax}}",
+    "status_chip": "Status: {{status}}",
+    "summary_values": "Jobs: {{jobs}} · Total quantity min/max: {{qtyMin}} / {{qtyMax}} · Needs review min/max: {{reviewMin}} / {{reviewMax}} · Consolidated positions min/max: {{consolidatedMin}} / {{consolidatedMax}} · Unknown internal code min/max: {{unknownMin}} / {{unknownMax}}",
     "target_non_ideal_status": "Target run status is not succeeded; review results carefully."
   },
   "dialogs": {
