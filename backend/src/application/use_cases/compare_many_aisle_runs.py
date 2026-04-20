@@ -1,4 +1,4 @@
-"""Phase 1 — baseline-centric compare-many for 2-3 explicit aisle runs."""
+"""Phase 1/2 — baseline-centric compare-many for 2-3 explicit aisle runs."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from src.application.services.aisle_inventory_scope import require_aisle_scoped_
 from src.application.services.inventory_processing_mode import require_test_inventory_for_experimental_features
 from src.application.use_cases.benchmark_compare_support import (
     aggregate_metrics,
+    build_compare_diff_rows,
     compute_compare_diff,
     job_metadata_dict,
     load_consolidated_for_job_slice,
@@ -27,6 +28,7 @@ from src.domain.positions.entities import Position
 
 _MIN_JOBS = 2
 _MAX_JOBS = 3
+_DEFAULT_MAX_DIFF_ROWS = 250
 
 
 @dataclass(frozen=True)
@@ -35,13 +37,15 @@ class CompareManyAisleRunsCommand:
     aisle_id: str
     job_ids: list[str]
     baseline_job_id: str
+    include_diff_rows: bool = False
+    max_diff_rows: int | None = None
 
 
 @dataclass(frozen=True)
 class _RunData:
     job: Job
-    raw_count: int
-    raw_load_hit_cap: bool
+    raw_count: int  # number of rows actually used in compare metrics
+    raw_truncated: bool
     signatures: dict[str, Any]
     metrics: Any
 
@@ -63,19 +67,23 @@ class CompareManyAisleRunsUseCase:
         self._raw_cap = max(1, int(positions_aisle_raw_cap))
 
     def _normalize_and_validate_selection(self, command: CompareManyAisleRunsCommand) -> tuple[list[str], str]:
-        job_ids = [str(job_id).strip() for job_id in command.job_ids if str(job_id).strip()]
+        normalized_job_ids = [str(job_id).strip() for job_id in command.job_ids]
         baseline = (command.baseline_job_id or "").strip()
-        if len(job_ids) < _MIN_JOBS:
+        if any(not job_id for job_id in normalized_job_ids):
+            raise BenchmarkCompareManyInvalidSelectionError(
+                "job_ids cannot contain empty or whitespace-only values."
+            )
+        if len(normalized_job_ids) < _MIN_JOBS:
             raise BenchmarkCompareManyInvalidSelectionError("At least 2 job_ids are required.")
-        if len(job_ids) > _MAX_JOBS:
+        if len(normalized_job_ids) > _MAX_JOBS:
             raise BenchmarkCompareManyInvalidSelectionError("At most 3 job_ids are allowed in Phase 1.")
-        if len(set(job_ids)) != len(job_ids):
+        if len(set(normalized_job_ids)) != len(normalized_job_ids):
             raise BenchmarkCompareManyInvalidSelectionError("job_ids must be unique.")
         if not baseline:
             raise BenchmarkCompareManyInvalidSelectionError("baseline_job_id is required.")
-        if baseline not in job_ids:
+        if baseline not in normalized_job_ids:
             raise BenchmarkCompareManyInvalidSelectionError("baseline_job_id must be one of job_ids.")
-        return job_ids, baseline
+        return normalized_job_ids, baseline
 
     def _validate_job(self, job_id: str, aisle_id: str) -> Job:
         job = self._job_repo.get_by_id(job_id)
@@ -83,21 +91,39 @@ class CompareManyAisleRunsUseCase:
             raise JobNotFoundError(f"Job not found: {job_id}")
         if job.target_type != "aisle" or job.target_id != aisle_id:
             raise JobDoesNotBelongToAisleError(f"Job {job_id} is not scoped to aisle {aisle_id}")
+        # Keep parity with existing binary compare: status is not restricted to SUCCEEDED here.
+        # TODO(phase2-policy): confirm product policy for non-succeeded jobs and tighten if required.
         return job
 
     def _fetch_raw(self, aisle_id: str, job_id: str) -> tuple[list[Position], bool]:
+        # Fetch one extra row so truncation is truthful, not inferred.
         q = PositionListQuery(
             page=1,
-            page_size=self._raw_cap,
+            page_size=self._raw_cap + 1,
             sort_by="created_at",
             sort_dir="asc",
             job_id=job_id,
         )
         rows = list(self._position_repo.list_by_aisle_query(aisle_id, q))
-        return rows, len(rows) >= self._raw_cap
+        if len(rows) > self._raw_cap:
+            return rows[: self._raw_cap], True
+        return rows, False
+
+    def _effective_diff_row_cap(self, requested: int | None) -> int:
+        if requested is None:
+            return _DEFAULT_MAX_DIFF_ROWS
+        value = int(requested)
+        if value < 1:
+            raise BenchmarkCompareManyInvalidSelectionError("max_diff_rows must be >= 1.")
+        if value > _DEFAULT_MAX_DIFF_ROWS:
+            raise BenchmarkCompareManyInvalidSelectionError(
+                f"max_diff_rows must be <= {_DEFAULT_MAX_DIFF_ROWS}."
+            )
+        return value
 
     def execute(self, command: CompareManyAisleRunsCommand) -> dict[str, Any]:
         job_ids, baseline_job_id = self._normalize_and_validate_selection(command)
+        diff_row_cap = self._effective_diff_row_cap(command.max_diff_rows)
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
@@ -112,12 +138,12 @@ class CompareManyAisleRunsUseCase:
         run_data: dict[str, _RunData] = {}
         for job_id in job_ids:
             job = self._validate_job(job_id, command.aisle_id)
-            raw_rows, cap_hit = self._fetch_raw(command.aisle_id, job_id)
+            raw_rows, raw_truncated = self._fetch_raw(command.aisle_id, job_id)
             consolidated = load_consolidated_for_job_slice(positions=raw_rows)
             run_data[job_id] = _RunData(
                 job=job,
                 raw_count=len(raw_rows),
-                raw_load_hit_cap=cap_hit,
+                raw_truncated=raw_truncated,
                 signatures=signatures_for_consolidated(consolidated),
                 metrics=aggregate_metrics(consolidated, raw_fetched=len(raw_rows)),
             )
@@ -129,20 +155,39 @@ class CompareManyAisleRunsUseCase:
                 continue
             target = run_data[job_id]
             diff = compute_compare_diff(baseline.signatures, target.signatures)
-            comparisons.append(
-                {
-                    "baseline_job_id": baseline_job_id,
-                    "target_job_id": job_id,
-                    "diff_summary": {
-                        "keys_only_in_a": diff.keys_only_in_a,
-                        "keys_only_in_b": diff.keys_only_in_b,
-                        "keys_in_both": diff.keys_in_both,
-                        "quantity_changed": diff.quantity_changed,
-                        "sku_changed": diff.sku_changed,
-                        "position_code_changed": diff.position_code_changed,
-                    },
-                }
-            )
+            comp_payload: dict[str, Any] = {
+                "baseline_job_id": baseline_job_id,
+                "target_job_id": job_id,
+                "diff_summary": {
+                    "keys_only_in_a": diff.keys_only_in_a,
+                    "keys_only_in_b": diff.keys_only_in_b,
+                    "keys_in_both": diff.keys_in_both,
+                    "quantity_changed": diff.quantity_changed,
+                    "sku_changed": diff.sku_changed,
+                    "position_code_changed": diff.position_code_changed,
+                },
+            }
+            if command.include_diff_rows:
+                rows, rows_truncated = build_compare_diff_rows(
+                    baseline.signatures,
+                    target.signatures,
+                    max_rows=diff_row_cap,
+                )
+                comp_payload["diff_rows"] = [
+                    {
+                        "match_key": r.match_key,
+                        "side": r.side,
+                        "quantity_a": r.quantity_a,
+                        "quantity_b": r.quantity_b,
+                        "sku_a": r.sku_a,
+                        "sku_b": r.sku_b,
+                        "position_code_a": r.position_code_a,
+                        "position_code_b": r.position_code_b,
+                    }
+                    for r in rows
+                ]
+                comp_payload["diff_rows_truncated"] = rows_truncated
+            comparisons.append(comp_payload)
 
         jobs_payload = []
         raw_flags = []
@@ -160,7 +205,7 @@ class CompareManyAisleRunsUseCase:
                     },
                 }
             )
-            raw_flags.append({"job_id": job_id, "truncated": run.raw_load_hit_cap})
+            raw_flags.append({"job_id": job_id, "truncated": run.raw_truncated})
 
         return {
             "inventory_id": command.inventory_id,

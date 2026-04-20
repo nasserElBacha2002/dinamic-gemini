@@ -154,12 +154,28 @@ class AisleBenchmarkCompareManyRequest(BaseModel):
 
     job_ids: List[str] = Field(..., min_length=2, max_length=3)
     baseline_job_id: str = Field(..., min_length=1)
+    include_diff_rows: bool = Field(
+        False,
+        description="Phase 2: include lightweight baseline-vs-target diff rows.",
+    )
+    max_diff_rows: Optional[int] = Field(
+        None,
+        ge=1,
+        le=250,
+        description="Optional per-comparison cap when include_diff_rows=true.",
+    )
+
+
+class BenchmarkCompareRunResponse(BenchmarkRunCompareSideResponse):
+    """Neutral run model for compare-many (kept separate from A/B side naming)."""
 
 
 class BenchmarkCompareManyDiffResponse(BaseModel):
     baseline_job_id: str
     target_job_id: str
     diff_summary: CompareDiffSummaryResponse
+    diff_rows: List[CompareDiffRowResponse] = Field(default_factory=list)
+    diff_rows_truncated: bool = False
 
 
 class BenchmarkCompareManyRawFetchFlagResponse(BaseModel):
@@ -179,6 +195,6 @@ class AisleBenchmarkCompareManyResponse(BaseModel):
     workflow: str
     read_only: bool
     baseline_job_id: str
-    jobs: List[BenchmarkRunCompareSideResponse]
+    jobs: List[BenchmarkCompareRunResponse]
     comparisons: List[BenchmarkCompareManyDiffResponse]
     raw_fetch_truncated: List[BenchmarkCompareManyRawFetchFlagResponse] = Field(default_factory=list)

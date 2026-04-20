@@ -764,6 +764,8 @@ def compare_many_aisle_benchmark_runs(
                 aisle_id=aisle_id,
                 job_ids=[job_id.strip() for job_id in body.job_ids],
                 baseline_job_id=body.baseline_job_id.strip(),
+                include_diff_rows=bool(body.include_diff_rows),
+                max_diff_rows=body.max_diff_rows,
             )
         )
         return AisleBenchmarkCompareManyResponse.model_validate(payload)

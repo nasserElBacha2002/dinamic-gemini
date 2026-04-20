@@ -323,6 +323,8 @@ def test_benchmark_compare_many_happy_path_two_jobs() -> None:
         assert body["baseline_job_id"] == "j1"
         assert [j["job_id"] for j in body["jobs"]] == ["j1", "j2"]
         assert [c["target_job_id"] for c in body["comparisons"]] == ["j2"]
+        assert body["comparisons"][0]["diff_rows"] == []
+        assert body["comparisons"][0]["diff_rows_truncated"] is False
     finally:
         _clear()
 
@@ -352,7 +354,9 @@ def test_benchmark_compare_many_rejects_duplicate_job_ids() -> None:
             json={"job_ids": ["j1", "j1"], "baseline_job_id": "j1"},
         )
         assert r.status_code == 422
-        assert "unique" in (r.json().get("detail") or "").lower()
+        body = r.json()
+        assert body.get("code") == "BENCHMARK_COMPARE_MANY_INVALID_SELECTION"
+        assert "unique" in (body.get("detail") or "").lower()
     finally:
         _clear()
 
@@ -379,7 +383,9 @@ def test_benchmark_compare_many_rejects_baseline_not_in_job_ids() -> None:
             json={"job_ids": ["j1", "j2"], "baseline_job_id": "j3"},
         )
         assert r.status_code == 422
-        assert "must be one of job_ids" in (r.json().get("detail") or "")
+        body = r.json()
+        assert body.get("code") == "BENCHMARK_COMPARE_MANY_INVALID_SELECTION"
+        assert "must be one of job_ids" in (body.get("detail") or "")
     finally:
         _clear()
 
@@ -406,5 +412,104 @@ def test_benchmark_compare_many_rejects_too_many_jobs() -> None:
             json={"job_ids": ["j1", "j2", "j3", "j4"], "baseline_job_id": "j1"},
         )
         assert r.status_code == 422
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_rejects_whitespace_baseline() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1", "j2"], "baseline_job_id": "   "},
+        )
+        assert r.status_code == 422
+        body = r.json()
+        assert body.get("code") == "BENCHMARK_COMPARE_MANY_INVALID_SELECTION"
+        assert "baseline_job_id is required" in (body.get("detail") or "")
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_rejects_whitespace_job_id_entry() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1", " ", "j2"], "baseline_job_id": "j1"},
+        )
+        assert r.status_code == 422
+        body = r.json()
+        assert body.get("code") == "BENCHMARK_COMPARE_MANY_INVALID_SELECTION"
+        assert "whitespace-only" in (body.get("detail") or "")
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_rejects_duplicate_after_trim() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1", " j1 "], "baseline_job_id": "j1"},
+        )
+        assert r.status_code == 422
+        body = r.json()
+        assert body.get("code") == "BENCHMARK_COMPARE_MANY_INVALID_SELECTION"
+        assert "unique" in (body.get("detail") or "").lower()
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_two_job_parity_with_binary_compare() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        ab = c.get(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare",
+            params={"job_a_id": "j1", "job_b_id": "j2"},
+        )
+        many = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1", "j2"], "baseline_job_id": "j1"},
+        )
+        assert ab.status_code == 200
+        assert many.status_code == 200
+        ab_body = ab.json()
+        many_body = many.json()
+        comp = many_body["comparisons"][0]["diff_summary"]
+        assert comp["keys_only_in_a"] == ab_body["diff_summary"]["keys_only_in_a"]
+        assert comp["keys_only_in_b"] == ab_body["diff_summary"]["keys_only_in_b"]
+        assert comp["keys_in_both"] == ab_body["diff_summary"]["keys_in_both"]
+        assert comp["quantity_changed"] == ab_body["diff_summary"]["quantity_changed"]
+        assert comp["sku_changed"] == ab_body["diff_summary"]["sku_changed"]
+        assert comp["position_code_changed"] == ab_body["diff_summary"]["position_code_changed"]
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_include_diff_rows_and_cap() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={
+                "job_ids": ["j1", "j2", "j3"],
+                "baseline_job_id": "j1",
+                "include_diff_rows": True,
+                "max_diff_rows": 1,
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert [j["job_id"] for j in body["jobs"]] == ["j1", "j2", "j3"]
+        assert [c["target_job_id"] for c in body["comparisons"]] == ["j2", "j3"]
+        for comp in body["comparisons"]:
+            assert len(comp["diff_rows"]) <= 1
+            assert "diff_rows_truncated" in comp
     finally:
         _clear()

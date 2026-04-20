@@ -207,6 +207,7 @@ from src.api.errors.structured_api_http import (
     ASSET_NOT_FOUND,
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
     INTERNAL_SERVER_ERROR,
     INVENTORY_NOT_FOUND,
     JOB_NOT_FOUND,
@@ -403,7 +404,11 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             detail=HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
         )
     if isinstance(exc, BenchmarkCompareManyInvalidSelectionError):
-        return HTTPException(status_code=422, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
+            detail=str(exc),
+        )
     if isinstance(exc, MergeJobScopeAmbiguousError):
         return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, AnalyticsScopeValidationError):
