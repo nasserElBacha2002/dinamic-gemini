@@ -123,6 +123,14 @@ def test_compare_many_valid_two_jobs() -> None:
     assert [j["job_id"] for j in out["jobs"]] == ["j1", "j2"]
     assert len(out["comparisons"]) == 1
     assert out["comparisons"][0]["target_job_id"] == "j2"
+    assert out["comparisons"][0]["delta"] == {
+        "total_quantity_diff": 1,
+        "consolidated_positions_diff": 0,
+        "unknown_internal_code_diff": 0,
+        "needs_review_diff": 0,
+    }
+    assert out["summary"]["job_count"] == 2
+    assert out["summary"]["baseline_job_id"] == "j1"
 
 
 def test_compare_many_valid_three_jobs_preserves_order_and_baseline_targets() -> None:
@@ -137,6 +145,14 @@ def test_compare_many_valid_three_jobs_preserves_order_and_baseline_targets() ->
     )
     assert [j["job_id"] for j in out["jobs"]] == ["j3", "j1", "j2"]
     assert [c["target_job_id"] for c in out["comparisons"]] == ["j3", "j2"]
+    assert out["summary"] == {
+        "job_count": 3,
+        "baseline_job_id": "j1",
+        "max_total_quantity": 4,
+        "min_total_quantity": 1,
+        "max_needs_review": 1,
+        "min_needs_review": 0,
+    }
 
 
 def test_compare_many_duplicate_ids_rejected() -> None:
@@ -367,6 +383,8 @@ def test_compare_many_can_include_diff_rows_with_cap() -> None:
         assert "diff_rows" in comp
         assert len(comp["diff_rows"]) <= 1
         assert "diff_rows_truncated" in comp
+        for row in comp["diff_rows"]:
+            assert isinstance(row["has_difference"], bool)
 
 
 def test_compare_many_default_includes_empty_diff_rows_payload() -> None:
@@ -431,3 +449,36 @@ def test_compare_many_allows_non_succeeded_jobs_for_ab_parity() -> None:
         )
     )
     assert [j["job_id"] for j in out["jobs"]] == ["j1", "j2"]
+
+
+def test_compare_many_delta_supports_negative_values() -> None:
+    uc, _ = _seed_base()
+    out = uc.execute(
+        CompareManyAisleRunsCommand(
+            inventory_id="inv1",
+            aisle_id="a1",
+            job_ids=["j2", "j1"],
+            baseline_job_id="j2",
+        )
+    )
+    delta = out["comparisons"][0]["delta"]
+    assert delta["total_quantity_diff"] == -1
+    assert delta["consolidated_positions_diff"] == 0
+    assert delta["unknown_internal_code_diff"] == 0
+    assert delta["needs_review_diff"] == 0
+
+
+def test_compare_many_job_metadata_contains_expected_fields() -> None:
+    uc, _ = _seed_base()
+    out = uc.execute(
+        CompareManyAisleRunsCommand(
+            inventory_id="inv1",
+            aisle_id="a1",
+            job_ids=["j1", "j2"],
+            baseline_job_id="j1",
+        )
+    )
+    run = out["jobs"][0]
+    assert run["status"] == "succeeded"
+    assert run["provider_name"] == "openai"
+    assert run["created_at"]

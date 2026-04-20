@@ -29,6 +29,7 @@ from src.domain.positions.entities import Position
 _MIN_JOBS = 2
 _MAX_JOBS = 3
 _DEFAULT_MAX_DIFF_ROWS = 250
+# TODO(phase4-scale): evaluate raising compare-many max jobs (5+) with payload-size safeguards.
 
 
 @dataclass(frozen=True)
@@ -121,9 +122,16 @@ class CompareManyAisleRunsUseCase:
             )
         return value
 
+    def _resolve_baseline(self, job_ids: list[str], baseline_job_id: str) -> tuple[str, list[str]]:
+        if baseline_job_id not in job_ids:
+            raise BenchmarkCompareManyInvalidSelectionError("baseline_job_id must be one of job_ids.")
+        targets = [job_id for job_id in job_ids if job_id != baseline_job_id]
+        return baseline_job_id, targets
+
     def execute(self, command: CompareManyAisleRunsCommand) -> dict[str, Any]:
         job_ids, baseline_job_id = self._normalize_and_validate_selection(command)
         diff_row_cap = self._effective_diff_row_cap(command.max_diff_rows) if command.include_diff_rows else None
+        baseline_job_id, target_job_ids = self._resolve_baseline(job_ids, baseline_job_id)
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
@@ -150,9 +158,7 @@ class CompareManyAisleRunsUseCase:
 
         baseline = run_data[baseline_job_id]
         comparisons = []
-        for job_id in job_ids:
-            if job_id == baseline_job_id:
-                continue
+        for job_id in target_job_ids:
             target = run_data[job_id]
             diff = compute_compare_diff(baseline.signatures, target.signatures)
             comp_payload: dict[str, Any] = {
@@ -165,6 +171,16 @@ class CompareManyAisleRunsUseCase:
                     "quantity_changed": diff.quantity_changed,
                     "sku_changed": diff.sku_changed,
                     "position_code_changed": diff.position_code_changed,
+                },
+                "delta": {
+                    "total_quantity_diff": target.metrics.total_quantity - baseline.metrics.total_quantity,
+                    "consolidated_positions_diff": (
+                        target.metrics.consolidated_positions - baseline.metrics.consolidated_positions
+                    ),
+                    "unknown_internal_code_diff": (
+                        target.metrics.unknown_internal_code_count - baseline.metrics.unknown_internal_code_count
+                    ),
+                    "needs_review_diff": target.metrics.needs_review_count - baseline.metrics.needs_review_count,
                 },
                 "diff_rows": [],
                 "diff_rows_truncated": False,
@@ -186,6 +202,11 @@ class CompareManyAisleRunsUseCase:
                         "sku_b": r.sku_b,
                         "position_code_a": r.position_code_a,
                         "position_code_b": r.position_code_b,
+                        "has_difference": bool(
+                            (r.quantity_a != r.quantity_b)
+                            or (r.sku_a != r.sku_b)
+                            or (r.position_code_a != r.position_code_b)
+                        ),
                     }
                     for r in rows
                 ]
@@ -210,6 +231,9 @@ class CompareManyAisleRunsUseCase:
             )
             raw_flags.append({"job_id": job_id, "truncated": run.raw_truncated})
 
+        total_quantities = [run_data[job_id].metrics.total_quantity for job_id in job_ids]
+        needs_review_counts = [run_data[job_id].metrics.needs_review_count for job_id in job_ids]
+
         return {
             "inventory_id": command.inventory_id,
             "aisle_id": command.aisle_id,
@@ -218,5 +242,13 @@ class CompareManyAisleRunsUseCase:
             "baseline_job_id": baseline_job_id,
             "jobs": jobs_payload,
             "comparisons": comparisons,
+            "summary": {
+                "job_count": len(job_ids),
+                "baseline_job_id": baseline_job_id,
+                "max_total_quantity": max(total_quantities),
+                "min_total_quantity": min(total_quantities),
+                "max_needs_review": max(needs_review_counts),
+                "min_needs_review": min(needs_review_counts),
+            },
             "raw_fetch_truncated": raw_flags,
         }

@@ -323,8 +323,16 @@ def test_benchmark_compare_many_happy_path_two_jobs() -> None:
         assert body["baseline_job_id"] == "j1"
         assert [j["job_id"] for j in body["jobs"]] == ["j1", "j2"]
         assert [c["target_job_id"] for c in body["comparisons"]] == ["j2"]
+        assert body["comparisons"][0]["delta"] == {
+            "total_quantity_diff": 1,
+            "consolidated_positions_diff": 0,
+            "unknown_internal_code_diff": 0,
+            "needs_review_diff": 0,
+        }
         assert body["comparisons"][0]["diff_rows"] == []
         assert body["comparisons"][0]["diff_rows_truncated"] is False
+        assert body["summary"]["job_count"] == 2
+        assert body["summary"]["baseline_job_id"] == "j1"
     finally:
         _clear()
 
@@ -511,6 +519,8 @@ def test_benchmark_compare_many_include_diff_rows_and_cap() -> None:
         for comp in body["comparisons"]:
             assert len(comp["diff_rows"]) <= 1
             assert "diff_rows_truncated" in comp
+            for row in comp["diff_rows"]:
+                assert "has_difference" in row
     finally:
         _clear()
 

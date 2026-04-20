@@ -115,6 +115,10 @@ class CompareDiffRowResponse(BaseModel):
     position_code_b: Optional[str] = None
 
 
+class CompareManyDiffRowResponse(CompareDiffRowResponse):
+    has_difference: bool = True
+
+
 class RawFetchTruncatedFlags(BaseModel):
     """Per-run signal when the raw row fetch count reached the configured cap (not proof of extra rows)."""
 
@@ -174,7 +178,8 @@ class BenchmarkCompareManyDiffResponse(BaseModel):
     baseline_job_id: str
     target_job_id: str
     diff_summary: CompareDiffSummaryResponse
-    diff_rows: List[CompareDiffRowResponse] = Field(default_factory=list)
+    delta: "BenchmarkCompareManyDeltaResponse"
+    diff_rows: List[CompareManyDiffRowResponse] = Field(default_factory=list)
     diff_rows_truncated: bool = False
 
 
@@ -197,4 +202,21 @@ class AisleBenchmarkCompareManyResponse(BaseModel):
     baseline_job_id: str
     jobs: List[BenchmarkCompareRunResponse]
     comparisons: List[BenchmarkCompareManyDiffResponse]
+    summary: "BenchmarkCompareManySummaryResponse"
     raw_fetch_truncated: List[BenchmarkCompareManyRawFetchFlagResponse] = Field(default_factory=list)
+
+
+class BenchmarkCompareManyDeltaResponse(BaseModel):
+    total_quantity_diff: int
+    consolidated_positions_diff: int
+    unknown_internal_code_diff: int
+    needs_review_diff: int
+
+
+class BenchmarkCompareManySummaryResponse(BaseModel):
+    job_count: int
+    baseline_job_id: str
+    max_total_quantity: int
+    min_total_quantity: int
+    max_needs_review: int
+    min_needs_review: int
