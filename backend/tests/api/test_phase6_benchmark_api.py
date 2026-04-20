@@ -513,3 +513,46 @@ def test_benchmark_compare_many_include_diff_rows_and_cap() -> None:
             assert "diff_rows_truncated" in comp
     finally:
         _clear()
+
+
+def test_benchmark_compare_many_rejects_invalid_max_diff_rows_when_enabled() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={
+                "job_ids": ["j1", "j2"],
+                "baseline_job_id": "j1",
+                "include_diff_rows": True,
+                "max_diff_rows": 251,
+            },
+        )
+        assert r.status_code == 422
+        body = r.json()
+        assert body.get("code") == "BENCHMARK_COMPARE_MANY_INVALID_SELECTION"
+        assert "max_diff_rows must be <= 250" in (body.get("detail") or "")
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_ignores_max_diff_rows_when_diff_rows_disabled() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={
+                "job_ids": ["j1", "j2"],
+                "baseline_job_id": "j1",
+                "include_diff_rows": False,
+                "max_diff_rows": 251,
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        comp = body["comparisons"][0]
+        assert comp["diff_rows"] == []
+        assert comp["diff_rows_truncated"] is False
+    finally:
+        _clear()

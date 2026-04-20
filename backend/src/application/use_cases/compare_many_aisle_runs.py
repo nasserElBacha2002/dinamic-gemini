@@ -76,7 +76,7 @@ class CompareManyAisleRunsUseCase:
         if len(normalized_job_ids) < _MIN_JOBS:
             raise BenchmarkCompareManyInvalidSelectionError("At least 2 job_ids are required.")
         if len(normalized_job_ids) > _MAX_JOBS:
-            raise BenchmarkCompareManyInvalidSelectionError("At most 3 job_ids are allowed in Phase 1.")
+            raise BenchmarkCompareManyInvalidSelectionError("At most 3 job_ids are allowed.")
         if len(set(normalized_job_ids)) != len(normalized_job_ids):
             raise BenchmarkCompareManyInvalidSelectionError("job_ids must be unique.")
         if not baseline:
@@ -123,7 +123,7 @@ class CompareManyAisleRunsUseCase:
 
     def execute(self, command: CompareManyAisleRunsCommand) -> dict[str, Any]:
         job_ids, baseline_job_id = self._normalize_and_validate_selection(command)
-        diff_row_cap = self._effective_diff_row_cap(command.max_diff_rows)
+        diff_row_cap = self._effective_diff_row_cap(command.max_diff_rows) if command.include_diff_rows else None
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
@@ -166,8 +166,11 @@ class CompareManyAisleRunsUseCase:
                     "sku_changed": diff.sku_changed,
                     "position_code_changed": diff.position_code_changed,
                 },
+                "diff_rows": [],
+                "diff_rows_truncated": False,
             }
             if command.include_diff_rows:
+                assert diff_row_cap is not None
                 rows, rows_truncated = build_compare_diff_rows(
                     baseline.signatures,
                     target.signatures,

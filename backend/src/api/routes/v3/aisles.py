@@ -756,14 +756,18 @@ def compare_many_aisle_benchmark_runs(
     body: AisleBenchmarkCompareManyRequest = Body(...),
     use_case: CompareManyAisleRunsUseCase = Depends(get_compare_many_aisle_runs_use_case),
 ) -> AisleBenchmarkCompareManyResponse:
-    """Phase 1 — baseline-centric compare-many for 2-3 explicit benchmark runs."""
+    """Phase 1/2 — baseline-centric compare-many for 2-3 explicit benchmark runs.
+
+    TODO(analytics-parity): mirror this endpoint under the analytics alias when scope/risk allows.
+    Deferred intentionally to keep this rollout narrow and low-risk.
+    """
     try:
         payload = use_case.execute(
             CompareManyAisleRunsCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
-                job_ids=[job_id.strip() for job_id in body.job_ids],
-                baseline_job_id=body.baseline_job_id.strip(),
+                job_ids=list(body.job_ids),
+                baseline_job_id=body.baseline_job_id,
                 include_diff_rows=bool(body.include_diff_rows),
                 max_diff_rows=body.max_diff_rows,
             )

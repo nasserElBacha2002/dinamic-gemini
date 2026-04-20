@@ -369,7 +369,7 @@ def test_compare_many_can_include_diff_rows_with_cap() -> None:
         assert "diff_rows_truncated" in comp
 
 
-def test_compare_many_default_excludes_diff_rows_payload() -> None:
+def test_compare_many_default_includes_empty_diff_rows_payload() -> None:
     uc, _ = _seed_base()
     out = uc.execute(
         CompareManyAisleRunsCommand(
@@ -380,8 +380,8 @@ def test_compare_many_default_excludes_diff_rows_payload() -> None:
         )
     )
     comp = out["comparisons"][0]
-    assert "diff_rows" not in comp
-    assert "diff_rows_truncated" not in comp
+    assert comp["diff_rows"] == []
+    assert comp["diff_rows_truncated"] is False
 
 
 def test_compare_many_rejects_max_diff_rows_above_cap() -> None:
@@ -397,6 +397,23 @@ def test_compare_many_rejects_max_diff_rows_above_cap() -> None:
                 max_diff_rows=251,
             )
         )
+
+
+def test_compare_many_ignores_max_diff_rows_when_include_diff_rows_false() -> None:
+    uc, _ = _seed_base()
+    out = uc.execute(
+        CompareManyAisleRunsCommand(
+            inventory_id="inv1",
+            aisle_id="a1",
+            job_ids=["j1", "j2"],
+            baseline_job_id="j1",
+            include_diff_rows=False,
+            max_diff_rows=999,
+        )
+    )
+    comp = out["comparisons"][0]
+    assert comp["diff_rows"] == []
+    assert comp["diff_rows_truncated"] is False
 
 
 def test_compare_many_allows_non_succeeded_jobs_for_ab_parity() -> None:
