@@ -19,6 +19,7 @@ from src.application.use_cases.benchmark_compare_support import (
     aggregate_metrics,
     build_compare_diff_rows,
     compute_compare_diff,
+    job_execution_duration_seconds,
     job_metadata_dict,
     load_consolidated_for_job_slice,
     signatures_for_consolidated,
@@ -133,7 +134,14 @@ class CompareManyAisleRunsUseCase:
         return baseline_job_id, targets
 
     @staticmethod
-    def _build_delta(baseline_metrics: Any, target_metrics: Any) -> dict[str, int]:
+    def _build_delta(
+        baseline_job: Job,
+        target_job: Job,
+        baseline_metrics: Any,
+        target_metrics: Any,
+    ) -> dict[str, Any]:
+        b_dur = job_execution_duration_seconds(baseline_job)
+        t_dur = job_execution_duration_seconds(target_job)
         return {
             "total_quantity_diff": target_metrics.total_quantity - baseline_metrics.total_quantity,
             "consolidated_positions_diff": (
@@ -143,6 +151,9 @@ class CompareManyAisleRunsUseCase:
                 target_metrics.unknown_internal_code_count - baseline_metrics.unknown_internal_code_count
             ),
             "needs_review_diff": target_metrics.needs_review_count - baseline_metrics.needs_review_count,
+            "execution_time_delta": (
+                None if b_dur is None or t_dur is None else float(t_dur - b_dur)
+            ),
         }
 
     def execute(self, command: CompareManyAisleRunsCommand) -> dict[str, Any]:
@@ -189,7 +200,12 @@ class CompareManyAisleRunsUseCase:
                     "sku_changed": diff.sku_changed,
                     "position_code_changed": diff.position_code_changed,
                 },
-                "delta": self._build_delta(baseline.metrics, target.metrics),
+                "delta": self._build_delta(
+                    baseline.job,
+                    target.job,
+                    baseline.metrics,
+                    target.metrics,
+                ),
                 "diff_rows": [],
                 "diff_rows_truncated": False,
             }
@@ -241,6 +257,15 @@ class CompareManyAisleRunsUseCase:
         consolidated_counts = [run_data[job_id].metrics.consolidated_positions for job_id in job_ids]
         unknown_counts = [run_data[job_id].metrics.unknown_internal_code_count for job_id in job_ids]
 
+        durations = [job_execution_duration_seconds(run_data[jid].job) for jid in job_ids]
+        dvals_non_null = [float(d) for d in durations if d is not None]
+        if len(dvals_non_null) == len(job_ids):
+            min_exec = min(dvals_non_null)
+            max_exec = max(dvals_non_null)
+        else:
+            min_exec = None
+            max_exec = None
+
         return {
             "inventory_id": command.inventory_id,
             "aisle_id": command.aisle_id,
@@ -260,6 +285,8 @@ class CompareManyAisleRunsUseCase:
                 "min_consolidated_positions": min(consolidated_counts),
                 "max_unknown_internal_code_count": max(unknown_counts),
                 "min_unknown_internal_code_count": min(unknown_counts),
+                "min_execution_time_seconds": min_exec,
+                "max_execution_time_seconds": max_exec,
             },
             "raw_fetch_truncated": raw_flags,
         }

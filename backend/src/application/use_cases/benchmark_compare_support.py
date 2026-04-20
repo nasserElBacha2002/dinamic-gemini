@@ -11,8 +11,9 @@ key was derived.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.application.mappers.inventory_export_rows import export_position_code
 from src.application.services.position_sku_consolidation import (
@@ -230,6 +231,38 @@ def build_compare_diff_rows(
     return rows, False
 
 
+def job_execution_duration_seconds(job: Job) -> Optional[float]:
+    """Wall-clock processing duration when both timestamps exist and are coherent."""
+    if job.started_at is None or job.finished_at is None:
+        return None
+    delta = job.finished_at - job.started_at
+    secs = float(delta.total_seconds())
+    if secs < 0:
+        return None
+    return secs
+
+
+def format_execution_duration_human(seconds: float) -> str:
+    """Stable operator-facing duration (wall clock), not locale-aware."""
+    if not math.isfinite(seconds) or seconds < 0:
+        return ""
+    if seconds < 60:
+        text = f"{seconds:.1f}".rstrip("0").rstrip(".")
+        return f"{text}s"
+    total = int(round(seconds))
+    minutes, sec = divmod(total, 60)
+    if sec == 0:
+        return f"{minutes}m"
+    return f"{minutes}m {sec:02d}s"
+
+
+def job_execution_duration_human(job: Job) -> Optional[str]:
+    secs = job_execution_duration_seconds(job)
+    if secs is None:
+        return None
+    return format_execution_duration_human(secs)
+
+
 def job_metadata_dict(job: Job) -> dict[str, object | None]:
     llm_cost_snapshot = None
     if isinstance(job.result_json, dict):
@@ -246,6 +279,8 @@ def job_metadata_dict(job: Job) -> dict[str, object | None]:
         "created_at": job.created_at.isoformat(),
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+        "execution_time_seconds": job_execution_duration_seconds(job),
+        "execution_time_human": job_execution_duration_human(job),
         "llm_cost_snapshot": llm_cost_snapshot,
     }
 

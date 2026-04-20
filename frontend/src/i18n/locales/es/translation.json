@@ -327,6 +327,9 @@
     "diff_summary_note": "Resumen de diferencias entre corrida A y B.",
     "diff_summary_stats": "Solo en A: {{onlyA}}, solo en B: {{onlyB}}, en ambos: {{both}}, cantidad cambiada: {{qty}}, SKU cambiado: {{sku}}, posición cambiada: {{pos}}.",
     "diff_summary_title": "Resumen de diferencias",
+    "execution_lower_is_better": "Menor tiempo de pared es mejor (corrida B − corrida A).",
+    "execution_unavailable": "No disponible",
+    "execution_wall_clock_delta": "Tiempo de pared (corrida B − corrida A): {{value}}",
     "export_csv": "Exportar tabla comparativa",
     "info_benchmark": "Comparación de corridas benchmark en modo lectura.",
     "llm_cost_display": {
@@ -347,6 +350,7 @@
       "unavailable": "No disponible"
     },
     "loading": "Cargando comparación...",
+    "metric_execution_time": "Tiempo de ejecución (pared)",
     "metric_consolidated": "Posiciones consolidadas",
     "metric_needs_review": "Requiere revisión",
     "metric_total_cost": "Costo LLM total",
@@ -360,6 +364,12 @@
     "warning_need_jobs": "Necesitás al menos dos corridas para comparar."
   },
   "compare_many": {
+    "delta_execution_time": "Tiempo de pared (target − baseline): {{value}}",
+    "insight_faster_but_unknown_up": "El target es más rápido ({{time}}) pero aumentaron los códigos internos desconocidos en {{unknown}}.",
+    "insight_slower_but_unknown_down": "El target es más lento ({{time}}) pero bajaron los códigos internos desconocidos en {{unknown}}.",
+    "job_execution_time": "Tiempo de ejecución: {{value}}",
+    "summary_exec_range": "Tiempo de ejecución entre corridas (mín–máx): {{min}} – {{max}}",
+    "summary_exec_unavailable": "Tiempo de ejecución: no todas las corridas tienen inicio/fin (p. ej. aún en ejecución).",
     "apply": "Aplicar comparación",
     "baseline_adjusted_notice": "Se ajustó la baseline para que coincida con la selección actual.",
     "baseline_chip": "Baseline",
@@ -367,7 +377,7 @@
     "baseline_vs_target": "Baseline {{baseline}} vs {{target}}",
     "changes_not_applied": "Hay cambios sin aplicar",
     "delta_consolidated": "Posiciones consolidadas: {{value}}",
-    "delta_legend_body": "El color solo aplica cuando la métrica tiene semántica clara de mejor/peor (requiere revisión y código desconocido).",
+    "delta_legend_body": "El color aplica cuando la métrica tiene semántica clara de mejor/peor (revisión, código desconocido y tiempo de pared: menos tiempo es mejor).",
     "delta_legend_title": "Interpretación de deltas",
     "delta_needs_review": "Requiere revisión: {{value}}",
     "delta_total_qty": "Cantidad total: {{value}}",

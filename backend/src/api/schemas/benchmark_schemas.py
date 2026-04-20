@@ -91,6 +91,10 @@ class BenchmarkRunCompareSideResponse(BaseModel):
     created_at: str
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
+    #: Wall-clock duration ``finished_at - started_at`` when both are present and coherent.
+    execution_time_seconds: Optional[float] = None
+    #: Same duration as compact text (e.g. ``12.4s``, ``1m 02s``); null when duration unknown.
+    execution_time_human: Optional[str] = None
     metrics: RunSliceMetricsResponse
     llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
 
@@ -175,6 +179,8 @@ class BenchmarkCompareManyDeltaResponse(BaseModel):
     consolidated_positions_diff: int
     unknown_internal_code_diff: int
     needs_review_diff: int
+    #: ``target execution_time_seconds - baseline`` when both sides have a duration (seconds).
+    execution_time_delta: Optional[float] = None
 
 
 class BenchmarkCompareManySummaryResponse(BaseModel):
@@ -188,6 +194,9 @@ class BenchmarkCompareManySummaryResponse(BaseModel):
     min_consolidated_positions: int
     max_unknown_internal_code_count: int
     min_unknown_internal_code_count: int
+    #: Min/max duration across selected jobs, only when **every** job has ``execution_time_seconds``.
+    min_execution_time_seconds: Optional[float] = None
+    max_execution_time_seconds: Optional[float] = None
 
 
 class BenchmarkCompareManyDiffResponse(BaseModel):

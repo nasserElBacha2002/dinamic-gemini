@@ -27,6 +27,7 @@ import { PageHeader } from '../../components/shell';
 import CompareRunJobPickers from '../../components/compare/CompareRunJobPickers';
 import { useInventoryDetail, useAisleBenchmarkCompare, useAisleJobsList, useAislesList } from '../../hooks';
 import { downloadAisleBenchmarkExportCsv } from '../../api/client';
+import type { BenchmarkRunCompareSide } from '../../api/types';
 import { ApiError } from '../../api/types';
 import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { useAppSnackbar } from '../../components/ui';
@@ -36,6 +37,7 @@ import {
   pathToInventory,
   pathToInventoryAnalyticsCompareMany,
 } from '../../constants/appRoutes';
+import { formatExecutionDurationHuman, formatSignedDurationHuman } from '../../utils/benchmarkExecutionTime';
 
 function userFacingCaptureNote(note: string, t: TFunction): string {
   if (note === 'provider_usage_missing') {
@@ -118,6 +120,19 @@ function formatCostDisplay(
     return { value, details: showDetails ? detailsWithModel : null };
   }
   return { value: `${total} ${currency || ''}`.trim(), details };
+}
+
+function runExecutionDisplay(
+  run: Pick<BenchmarkRunCompareSide, 'execution_time_human' | 'execution_time_seconds'>,
+  t: TFunction
+): string {
+  if (run.execution_time_human) {
+    return run.execution_time_human;
+  }
+  if (run.execution_time_seconds != null) {
+    return formatExecutionDurationHuman(run.execution_time_seconds);
+  }
+  return t('compare.execution_unavailable');
 }
 
 export default function CompareRunsPage() {
@@ -221,6 +236,14 @@ export default function CompareRunsPage() {
     if (!jobAId || !jobBId) return '';
     return `${jobAId.slice(0, 8)}… vs ${jobBId.slice(0, 8)}…`;
   }, [jobAId, jobBId]);
+
+  const benchmarkWallClockDelta = useMemo(() => {
+    if (!compareQuery.data) return null;
+    const a = compareQuery.data.run_a.execution_time_seconds;
+    const b = compareQuery.data.run_b.execution_time_seconds;
+    if (a == null || b == null) return null;
+    return b - a;
+  }, [compareQuery.data]);
 
   if (!inventoryId) {
     return <Alert severity="warning">{t('compare.missing_inventory')}</Alert>;
@@ -424,6 +447,10 @@ export default function CompareRunsPage() {
                   <Table size="small" sx={{ mt: 1 }}>
                     <TableBody>
                       <TableRow>
+                        <TableCell>{t('compare.metric_execution_time')}</TableCell>
+                        <TableCell align="right">{runExecutionDisplay(r, t)}</TableCell>
+                      </TableRow>
+                      <TableRow>
                         <TableCell>{t('compare.metric_consolidated')}</TableCell>
                         <TableCell align="right">{r.metrics.consolidated_positions}</TableCell>
                       </TableRow>
@@ -457,6 +484,29 @@ export default function CompareRunsPage() {
               );
             })}
           </Box>
+
+          {benchmarkWallClockDelta != null ? (
+            <Paper variant="outlined" sx={{ p: 1.5 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  color:
+                    benchmarkWallClockDelta > 0
+                      ? 'error.main'
+                      : benchmarkWallClockDelta < 0
+                        ? 'success.main'
+                        : 'text.primary',
+                }}
+              >
+                {t('compare.execution_wall_clock_delta', {
+                  value: formatSignedDurationHuman(benchmarkWallClockDelta),
+                })}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                {t('compare.execution_lower_is_better')}
+              </Typography>
+            </Paper>
+          ) : null}
 
           <Paper sx={{ p: 2 }} variant="outlined">
             <Typography variant="subtitle1" gutterBottom>

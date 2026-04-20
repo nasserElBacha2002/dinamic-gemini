@@ -128,6 +128,7 @@ def test_compare_many_valid_two_jobs() -> None:
         "consolidated_positions_diff": 0,
         "unknown_internal_code_diff": 0,
         "needs_review_diff": 0,
+        "execution_time_delta": None,
     }
     assert out["summary"]["job_count"] == 2
     assert out["summary"]["baseline_job_id"] == "j1"
@@ -156,6 +157,8 @@ def test_compare_many_valid_three_jobs_preserves_order_and_baseline_targets() ->
         "min_consolidated_positions": 1,
         "max_unknown_internal_code_count": 0,
         "min_unknown_internal_code_count": 0,
+        "min_execution_time_seconds": None,
+        "max_execution_time_seconds": None,
     }
 
 
@@ -484,6 +487,8 @@ def test_compare_many_job_metadata_contains_expected_fields() -> None:
     assert run["status"] == "succeeded"
     assert run["provider_name"] == "openai"
     assert run["created_at"]
+    assert "execution_time_seconds" in run
+    assert "execution_time_human" in run
 
 
 def test_compare_many_summary_invariants_match_top_level() -> None:

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -29,6 +30,11 @@ import type { BenchmarkCompareManyDiff, JobSummary } from '../../api/types';
 import { ApiError } from '../../api/types';
 import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../../constants/appRoutes';
+import {
+  formatExecutionDurationHuman,
+  formatSignedDurationHuman,
+  wallClockSecondsFromJobTimestamps,
+} from '../../utils/benchmarkExecutionTime';
 
 const MIN_COMPARE_JOBS = 2;
 const MAX_COMPARE_JOBS = 3;
@@ -115,6 +121,40 @@ function displayJobName(job: JobSummary): string {
   return `${job.id.slice(0, 8)}…`;
 }
 
+function compareRunExecutionLabel(
+  run: { execution_time_human?: string | null; execution_time_seconds?: number | null },
+  t: TFunction
+): string {
+  if (run.execution_time_human) {
+    return run.execution_time_human;
+  }
+  if (run.execution_time_seconds != null) {
+    return formatExecutionDurationHuman(run.execution_time_seconds);
+  }
+  return t('compare.execution_unavailable');
+}
+
+function compareManyExecutionInsight(t: TFunction, comp: BenchmarkCompareManyDiff): string | null {
+  const dExec = comp.delta.execution_time_delta;
+  const dUnk = comp.delta.unknown_internal_code_diff;
+  if (dExec == null) {
+    return null;
+  }
+  if (dExec > 0 && dUnk < 0) {
+    return t('compare_many.insight_slower_but_unknown_down', {
+      time: formatSignedDurationHuman(dExec),
+      unknown: String(Math.abs(dUnk)),
+    });
+  }
+  if (dExec < 0 && dUnk > 0) {
+    return t('compare_many.insight_faster_but_unknown_up', {
+      time: formatSignedDurationHuman(dExec),
+      unknown: String(dUnk),
+    });
+  }
+  return null;
+}
+
 export const __testables = {
   buildDraftError,
 };
@@ -162,6 +202,18 @@ export default function CompareManyRunsPage() {
   const effectiveData = enrichedCompareManyQuery.data ?? compareQuery.data;
   const aisles = aislesQuery.data?.items ?? [];
   const jobs = jobsQuery.data?.jobs ?? [];
+  const sortedJobsForPicker = useMemo(() => {
+    const list = [...jobs];
+    list.sort((a, b) => {
+      const da = wallClockSecondsFromJobTimestamps(a.started_at, a.finished_at);
+      const db = wallClockSecondsFromJobTimestamps(b.started_at, b.finished_at);
+      const ra = da ?? Number.POSITIVE_INFINITY;
+      const rb = db ?? Number.POSITIVE_INFINITY;
+      if (ra !== rb) return ra - rb;
+      return b.created_at.localeCompare(a.created_at);
+    });
+    return list;
+  }, [jobs]);
   const aisleSelectValue = draftAisleId && aisles.some((aisle) => aisle.id === draftAisleId) ? draftAisleId : '';
   const baselineSelectValue = draftBaseline && draftJobIds.includes(draftBaseline) ? draftBaseline : '';
   const draftError = buildDraftError(draftAisleId, draftJobIds, draftBaseline, t);
@@ -308,13 +360,13 @@ export default function CompareManyRunsPage() {
               }}
               renderValue={(selected) =>
                 (selected as string[])
-                  .map((id) => jobs.find((job) => job.id === id))
+                  .map((id) => sortedJobsForPicker.find((job) => job.id === id) ?? jobs.find((job) => job.id === id))
                   .filter((job): job is JobSummary => Boolean(job))
                   .map(displayJobName)
                   .join(', ')
               }
             >
-              {jobs.map((job) => (
+              {sortedJobsForPicker.map((job) => (
                 <MenuItem key={job.id} value={job.id} disabled={!draftJobIds.includes(job.id) && draftJobIds.length >= MAX_COMPARE_JOBS}>
                   {displayJobName(job)} · {job.status}
                 </MenuItem>
@@ -395,6 +447,19 @@ export default function CompareManyRunsPage() {
                 unknownMax: effectiveData.summary.max_unknown_internal_code_count,
               })}
             </Typography>
+            {effectiveData.summary.min_execution_time_seconds != null &&
+            effectiveData.summary.max_execution_time_seconds != null ? (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                {t('compare_many.summary_exec_range', {
+                  min: formatExecutionDurationHuman(effectiveData.summary.min_execution_time_seconds),
+                  max: formatExecutionDurationHuman(effectiveData.summary.max_execution_time_seconds),
+                })}
+              </Typography>
+            ) : (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                {t('compare_many.summary_exec_unavailable')}
+              </Typography>
+            )}
           </Paper>
 
           <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' } }}>
@@ -425,6 +490,9 @@ export default function CompareManyRunsPage() {
                   <Typography variant="caption" color="text.secondary" display="block">
                     {job.provider_name ?? t('common.em_dash')} · {job.model_name ?? t('common.em_dash')}
                   </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                    {t('compare_many.job_execution_time', { value: compareRunExecutionLabel(job, t) })}
+                  </Typography>
                   <Typography variant="body2" sx={{ mt: 1 }}>
                     {t('compare_many.job_metrics', {
                       qty: job.metrics.total_quantity,
@@ -454,6 +522,7 @@ export default function CompareManyRunsPage() {
             const expanded = expandedTargetJobId === comp.target_job_id;
             const diffRowsLoading = expanded && enrichedCompareManyQuery.isFetching && !enrichedCompareManyQuery.data;
             const noDifferences = hasNoDifferences(comp);
+            const insightLine = compareManyExecutionInsight(t, comp);
             return (
               <Paper variant="outlined" sx={{ p: 2 }} key={comp.target_job_id} data-testid="compare-many-comparison-block">
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -488,6 +557,13 @@ export default function CompareManyRunsPage() {
                   <Typography>
                     {t('compare_many.delta_consolidated', { value: signedValue(comp.delta.consolidated_positions_diff) })}
                   </Typography>
+                  {comp.delta.execution_time_delta != null ? (
+                    <Typography sx={{ color: semanticColor(comp.delta.execution_time_delta, true) }}>
+                      {t('compare_many.delta_execution_time', {
+                        value: formatSignedDurationHuman(comp.delta.execution_time_delta),
+                      })}
+                    </Typography>
+                  ) : null}
                 </Box>
 
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
@@ -500,6 +576,11 @@ export default function CompareManyRunsPage() {
                     pos: comp.diff_summary.position_code_changed,
                   })}
                 </Typography>
+                {insightLine ? (
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
+                    {insightLine}
+                  </Typography>
+                ) : null}
 
                 {noDifferences ? (
                   <Alert severity="success" sx={{ mt: 1 }}>
