@@ -29,7 +29,11 @@ from src.domain.positions.entities import Position
 _MIN_JOBS = 2
 _MAX_JOBS = 3
 _DEFAULT_MAX_DIFF_ROWS = 250
-# TODO(phase4-scale): evaluate raising compare-many max jobs (5+) with payload-size safeguards.
+# TODO(phase4-scale): evaluate raising compare-many max jobs (5+) with explicit safeguards for:
+# - payload size growth
+# - response readability for operators
+# - diff-row amplification across baseline-target pairs
+# - JSON serialization and frontend rendering costs
 
 
 @dataclass(frozen=True)
@@ -128,6 +132,19 @@ class CompareManyAisleRunsUseCase:
         targets = [job_id for job_id in job_ids if job_id != baseline_job_id]
         return baseline_job_id, targets
 
+    @staticmethod
+    def _build_delta(baseline_metrics: Any, target_metrics: Any) -> dict[str, int]:
+        return {
+            "total_quantity_diff": target_metrics.total_quantity - baseline_metrics.total_quantity,
+            "consolidated_positions_diff": (
+                target_metrics.consolidated_positions - baseline_metrics.consolidated_positions
+            ),
+            "unknown_internal_code_diff": (
+                target_metrics.unknown_internal_code_count - baseline_metrics.unknown_internal_code_count
+            ),
+            "needs_review_diff": target_metrics.needs_review_count - baseline_metrics.needs_review_count,
+        }
+
     def execute(self, command: CompareManyAisleRunsCommand) -> dict[str, Any]:
         job_ids, baseline_job_id = self._normalize_and_validate_selection(command)
         diff_row_cap = self._effective_diff_row_cap(command.max_diff_rows) if command.include_diff_rows else None
@@ -172,16 +189,7 @@ class CompareManyAisleRunsUseCase:
                     "sku_changed": diff.sku_changed,
                     "position_code_changed": diff.position_code_changed,
                 },
-                "delta": {
-                    "total_quantity_diff": target.metrics.total_quantity - baseline.metrics.total_quantity,
-                    "consolidated_positions_diff": (
-                        target.metrics.consolidated_positions - baseline.metrics.consolidated_positions
-                    ),
-                    "unknown_internal_code_diff": (
-                        target.metrics.unknown_internal_code_count - baseline.metrics.unknown_internal_code_count
-                    ),
-                    "needs_review_diff": target.metrics.needs_review_count - baseline.metrics.needs_review_count,
-                },
+                "delta": self._build_delta(baseline.metrics, target.metrics),
                 "diff_rows": [],
                 "diff_rows_truncated": False,
             }
@@ -202,11 +210,6 @@ class CompareManyAisleRunsUseCase:
                         "sku_b": r.sku_b,
                         "position_code_a": r.position_code_a,
                         "position_code_b": r.position_code_b,
-                        "has_difference": bool(
-                            (r.quantity_a != r.quantity_b)
-                            or (r.sku_a != r.sku_b)
-                            or (r.position_code_a != r.position_code_b)
-                        ),
                     }
                     for r in rows
                 ]
@@ -217,6 +220,8 @@ class CompareManyAisleRunsUseCase:
         raw_flags = []
         for job_id in job_ids:
             run = run_data[job_id]
+            # Phase 3 keeps metadata aligned with existing job_metadata_dict fields.
+            # TODO(phase4-metadata): add richer run metadata only when supported without extra data reads.
             jobs_payload.append(
                 {
                     **job_metadata_dict(run.job),
@@ -233,6 +238,8 @@ class CompareManyAisleRunsUseCase:
 
         total_quantities = [run_data[job_id].metrics.total_quantity for job_id in job_ids]
         needs_review_counts = [run_data[job_id].metrics.needs_review_count for job_id in job_ids]
+        consolidated_counts = [run_data[job_id].metrics.consolidated_positions for job_id in job_ids]
+        unknown_counts = [run_data[job_id].metrics.unknown_internal_code_count for job_id in job_ids]
 
         return {
             "inventory_id": command.inventory_id,
@@ -249,6 +256,10 @@ class CompareManyAisleRunsUseCase:
                 "min_total_quantity": min(total_quantities),
                 "max_needs_review": max(needs_review_counts),
                 "min_needs_review": min(needs_review_counts),
+                "max_consolidated_positions": max(consolidated_counts),
+                "min_consolidated_positions": min(consolidated_counts),
+                "max_unknown_internal_code_count": max(unknown_counts),
+                "min_unknown_internal_code_count": min(unknown_counts),
             },
             "raw_fetch_truncated": raw_flags,
         }

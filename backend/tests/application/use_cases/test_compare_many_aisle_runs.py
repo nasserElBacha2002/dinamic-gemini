@@ -152,6 +152,10 @@ def test_compare_many_valid_three_jobs_preserves_order_and_baseline_targets() ->
         "min_total_quantity": 1,
         "max_needs_review": 1,
         "min_needs_review": 0,
+        "max_consolidated_positions": 1,
+        "min_consolidated_positions": 1,
+        "max_unknown_internal_code_count": 0,
+        "min_unknown_internal_code_count": 0,
     }
 
 
@@ -383,8 +387,6 @@ def test_compare_many_can_include_diff_rows_with_cap() -> None:
         assert "diff_rows" in comp
         assert len(comp["diff_rows"]) <= 1
         assert "diff_rows_truncated" in comp
-        for row in comp["diff_rows"]:
-            assert isinstance(row["has_difference"], bool)
 
 
 def test_compare_many_default_includes_empty_diff_rows_payload() -> None:
@@ -482,3 +484,17 @@ def test_compare_many_job_metadata_contains_expected_fields() -> None:
     assert run["status"] == "succeeded"
     assert run["provider_name"] == "openai"
     assert run["created_at"]
+
+
+def test_compare_many_summary_invariants_match_top_level() -> None:
+    uc, _ = _seed_base()
+    out = uc.execute(
+        CompareManyAisleRunsCommand(
+            inventory_id="inv1",
+            aisle_id="a1",
+            job_ids=["j3", "j1", "j2"],
+            baseline_job_id="j1",
+        )
+    )
+    assert out["summary"]["job_count"] == len(out["jobs"])
+    assert out["summary"]["baseline_job_id"] == out["baseline_job_id"]
