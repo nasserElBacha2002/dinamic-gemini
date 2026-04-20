@@ -823,21 +823,54 @@
     "empty_title": "Empty title",
     "review_aria": "Review aria"
   },
+  "nav": {
+    "inventories": "Inventories",
+    "review_queue": "Review queue",
+    "metrics": "Metrics",
+    "ai_config": "AI configuration"
+  },
   "root": {
     "not_found": "Not found"
   },
   "routes": {
-    "admin_ai_config": {
-      "subtitle": "Subtitle",
-      "title": "Title"
+    "inventories": {
+      "title": "Inventories",
+      "subtitle": "Manage inventories and aisle operations"
+    },
+    "inventory_detail": {
+      "title": "Inventory detail",
+      "subtitle": "Review aisles, jobs, and operational status"
+    },
+    "aisle_results": {
+      "title": "Aisle results",
+      "subtitle": "Inspect benchmark runs and consolidated positions"
+    },
+    "analytics_compare": {
+      "title": "Run comparison",
+      "subtitle": "Compare benchmark runs side by side"
+    },
+    "result_review": {
+      "title": "Result review",
+      "subtitle": "Review evidence and apply operator actions"
     },
     "review_queue": {
-      "title": "Title"
+      "title": "Review queue",
+      "subtitle": "Prioritize positions that need manual review"
+    },
+    "metrics": {
+      "title": "Metrics",
+      "subtitle": "Operational performance and quality trends"
+    },
+    "admin_ai_config": {
+      "title": "AI configuration",
+      "subtitle": "Manage providers, prompts, and prompt parity"
     }
   },
   "shell": {
-    "brand": "Brand",
-    "operations": "Operations"
+    "brand": "Dinamic",
+    "operations": "Operations",
+    "default_title": "Dashboard",
+    "default_subtitle": "Inventory operations platform"
   },
   "table": {
     "clear_search_aria": "Clear search aria",

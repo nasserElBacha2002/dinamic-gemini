@@ -823,21 +823,54 @@
     "empty_title": "Empty title",
     "review_aria": "Review aria"
   },
+  "nav": {
+    "inventories": "Inventarios",
+    "review_queue": "Cola de revisión",
+    "metrics": "Métricas",
+    "ai_config": "Configuración de IA"
+  },
   "root": {
     "not_found": "Not found"
   },
   "routes": {
-    "admin_ai_config": {
-      "subtitle": "Subtitle",
-      "title": "Title"
+    "inventories": {
+      "title": "Inventarios",
+      "subtitle": "Gestioná inventarios y operación por pasillos"
+    },
+    "inventory_detail": {
+      "title": "Detalle de inventario",
+      "subtitle": "Revisá pasillos, ejecuciones y estado operativo"
+    },
+    "aisle_results": {
+      "title": "Resultados del pasillo",
+      "subtitle": "Inspeccioná corridas benchmark y posiciones consolidadas"
+    },
+    "analytics_compare": {
+      "title": "Comparación de corridas",
+      "subtitle": "Compará corridas benchmark lado a lado"
+    },
+    "result_review": {
+      "title": "Revisión de resultado",
+      "subtitle": "Revisá evidencia y aplicá acciones operativas"
     },
     "review_queue": {
-      "title": "Title"
+      "title": "Cola de revisión",
+      "subtitle": "Priorizá posiciones que requieren revisión manual"
+    },
+    "metrics": {
+      "title": "Métricas",
+      "subtitle": "Desempeño operativo y tendencias de calidad"
+    },
+    "admin_ai_config": {
+      "title": "Configuración de IA",
+      "subtitle": "Administrá proveedores, prompts y paridad de prompts"
     }
   },
   "shell": {
-    "brand": "Brand",
-    "operations": "Operations"
+    "brand": "Dinamic",
+    "operations": "Operaciones",
+    "default_title": "Panel",
+    "default_subtitle": "Plataforma operativa de inventario"
   },
   "table": {
     "clear_search_aria": "Clear search aria",
