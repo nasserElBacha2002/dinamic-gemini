@@ -25,3 +25,11 @@ export interface ReviewActionRequest {
   /** Required when ``position.job_id`` is set; omit entirely for legacy rows (preferred over null). */
   job_id?: string | null;
 }
+
+/** Request body for POST .../benchmark/compare-many. */
+export interface AisleBenchmarkCompareManyRequest {
+  job_ids: string[];
+  baseline_job_id: string;
+  include_diff_rows?: boolean;
+  max_diff_rows?: number;
+}

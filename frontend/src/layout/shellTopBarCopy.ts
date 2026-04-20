@@ -21,6 +21,7 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
     }
     if (
       matchPath(ROUTE_MATCH.analyticsCompare, pathname) ||
+      matchPath(ROUTE_MATCH.analyticsCompareMany, pathname) ||
       matchPath(ROUTE_MATCH.legacyAisleCompare, pathname)
     ) {
       return { titleKey: 'routes.analytics_compare.title', subtitleKey: 'routes.analytics_compare.subtitle' };

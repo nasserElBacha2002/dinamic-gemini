@@ -95,6 +95,7 @@ from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
     ResolveAisleJobForInventoryReadUseCase,
 )
 from src.application.use_cases.compare_aisle_runs import CompareAisleRunsUseCase
+from src.application.use_cases.compare_many_aisle_runs import CompareManyAisleRunsUseCase
 from src.application.use_cases.promote_aisle_operational_job import PromoteAisleOperationalJobUseCase
 from src.application.use_cases.export_aisle_benchmark import (
     ExportAisleBenchmarkCompareCsvUseCase,
@@ -704,6 +705,23 @@ def get_compare_aisle_runs_use_case(
     from src.config import load_settings
 
     return CompareAisleRunsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=position_repo,
+        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+    )
+
+
+def get_compare_many_aisle_runs_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+) -> CompareManyAisleRunsUseCase:
+    from src.config import load_settings
+
+    return CompareManyAisleRunsUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,

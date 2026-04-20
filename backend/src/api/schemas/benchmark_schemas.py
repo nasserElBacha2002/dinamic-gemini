@@ -1,4 +1,4 @@
-"""Phase 6 — benchmark compare / promote payloads (explicit, read-only compare)."""
+"""Phase 6/7 — benchmark compare / compare-many / promote payloads."""
 
 from __future__ import annotations
 
@@ -147,3 +147,76 @@ class AisleBenchmarkCompareResponse(BaseModel):
     diff_summary: CompareDiffSummaryResponse
     diff_rows: List[CompareDiffRowResponse]
     diff_rows_truncated: bool
+
+
+class AisleBenchmarkCompareManyRequest(BaseModel):
+    """Phase 1 compare-many payload (baseline-centric, constrained to 2-3 job ids)."""
+
+    job_ids: List[str] = Field(..., min_length=2, max_length=3)
+    baseline_job_id: str = Field(..., min_length=1)
+    include_diff_rows: bool = Field(
+        False,
+        description="Phase 2: include lightweight baseline-vs-target diff rows.",
+    )
+    max_diff_rows: Optional[int] = Field(
+        None,
+        ge=1,
+        le=250,
+        description="Optional per-comparison cap when include_diff_rows=true.",
+    )
+
+
+class BenchmarkCompareRunResponse(BenchmarkRunCompareSideResponse):
+    """Neutral run model for compare-many (kept separate from A/B side naming)."""
+
+
+class BenchmarkCompareManyDeltaResponse(BaseModel):
+    total_quantity_diff: int
+    consolidated_positions_diff: int
+    unknown_internal_code_diff: int
+    needs_review_diff: int
+
+
+class BenchmarkCompareManySummaryResponse(BaseModel):
+    job_count: int
+    baseline_job_id: str
+    max_total_quantity: int
+    min_total_quantity: int
+    max_needs_review: int
+    min_needs_review: int
+    max_consolidated_positions: int
+    min_consolidated_positions: int
+    max_unknown_internal_code_count: int
+    min_unknown_internal_code_count: int
+
+
+class BenchmarkCompareManyDiffResponse(BaseModel):
+    baseline_job_id: str
+    target_job_id: str
+    diff_summary: CompareDiffSummaryResponse
+    delta: BenchmarkCompareManyDeltaResponse
+    diff_rows: List[CompareDiffRowResponse] = Field(default_factory=list)
+    diff_rows_truncated: bool = False
+
+
+class BenchmarkCompareManyRawFetchFlagResponse(BaseModel):
+    job_id: str
+    truncated: bool = Field(
+        ...,
+        description=(
+            "True when this run's raw fetch count reached the configured cap; "
+            "totals may be incomplete."
+        ),
+    )
+
+
+class AisleBenchmarkCompareManyResponse(BaseModel):
+    inventory_id: str
+    aisle_id: str
+    workflow: str
+    read_only: bool
+    baseline_job_id: str
+    jobs: List[BenchmarkCompareRunResponse]
+    comparisons: List[BenchmarkCompareManyDiffResponse]
+    summary: BenchmarkCompareManySummaryResponse
+    raw_fetch_truncated: List[BenchmarkCompareManyRawFetchFlagResponse] = Field(default_factory=list)

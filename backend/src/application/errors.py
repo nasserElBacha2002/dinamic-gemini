@@ -119,5 +119,9 @@ class BenchmarkRequiresTestInventoryError(Exception):
         super().__init__(message)
 
 
+class BenchmarkCompareManyInvalidSelectionError(Exception):
+    """Raised when compare-many job selection is invalid (size, uniqueness, baseline membership)."""
+
+
 class AnalyticsScopeValidationError(Exception):
     """Raised when analytics filters combine ``inventory_id`` and ``aisle_id`` inconsistently."""
