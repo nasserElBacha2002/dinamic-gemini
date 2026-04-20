@@ -742,6 +742,13 @@
     "status_menu_deleted": "Status menu deleted",
     "status_menu_detected": "Status menu detected",
     "status_menu_reviewed": "Status menu reviewed",
+    "summary_confidence_value": "{{value}} confidence",
+    "summary_count_origin": "Count origin",
+    "summary_current_quantity": "Current quantity",
+    "summary_last_update": "Last update",
+    "summary_manual_override": "Manual override",
+    "summary_position_code": "Position code",
+    "summary_system_original": "System original",
     "table_column": {
       "evidence": "Evidence",
       "position_code": "Position code",

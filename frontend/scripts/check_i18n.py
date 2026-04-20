@@ -32,6 +32,17 @@ def flatten(tree: dict, prefix: str = "") -> set[str]:
     return out
 
 
+def flatten_values(tree: dict, prefix: str = "") -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key, value in tree.items():
+        dotted = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            out.update(flatten_values(value, dotted))
+        else:
+            out[dotted] = str(value)
+    return out
+
+
 def extract_static_keys() -> set[str]:
     patterns = [
         re.compile(r"""i18n\.t\(\s*['"]([^'"]+)['"]"""),
@@ -62,6 +73,8 @@ def main() -> int:
     es = json.loads(LOCALE_ES.read_text(encoding="utf-8"))
     en_keys = flatten(en)
     es_keys = flatten(es)
+    en_values = flatten_values(en)
+    es_values = flatten_values(es)
     static_keys = extract_static_keys()
     dynamic_keys = extract_layout_dynamic_keys()
     used_keys = static_keys | dynamic_keys
@@ -70,6 +83,21 @@ def main() -> int:
     missing_es = sorted(k for k in used_keys if k not in es_keys)
     only_en = sorted(k for k in en_keys if k not in es_keys)
     only_es = sorted(k for k in es_keys if k not in en_keys)
+    placeholder_re = re.compile(
+        r"""^(?:title|subtitle|label|empty title|empty message|search label|list title|list subtitle|"""
+        r"""created date label|visual refs title|compare runs link|not found|"""
+        r"""column [a-z ]+|kpi [a-z ]+|filter [a-z ]+|placeholder [a-z ]+)$""",
+        re.IGNORECASE,
+    )
+    suspicious_es = []
+    identical_es_en_used = []
+    for key in sorted(used_keys):
+        es_val = es_values.get(key, "")
+        en_val = en_values.get(key, "")
+        if placeholder_re.match(es_val.strip()):
+            suspicious_es.append((key, es_val))
+        if es_val and en_val and es_val == en_val:
+            identical_es_en_used.append((key, es_val))
 
     has_error = False
 
@@ -93,6 +121,20 @@ def main() -> int:
         print("Keys only in es (structure drift):")
         for key in only_es:
             print(f"  - {key}")
+
+    # Non-blocking diagnostics: helps catch regressions where Spanish locale contains placeholders/English text.
+    if suspicious_es:
+        print("Warnings: suspicious placeholder-like values in es:")
+        for key, value in suspicious_es[:60]:
+            print(f"  - {key}: {value}")
+        if len(suspicious_es) > 60:
+            print(f"  ... and {len(suspicious_es) - 60} more")
+    if identical_es_en_used:
+        print("Warnings: used keys with identical en/es values:")
+        for key, value in identical_es_en_used[:60]:
+            print(f"  - {key}: {value}")
+        if len(identical_es_en_used) > 60:
+            print(f"  ... and {len(identical_es_en_used) - 60} more")
 
     if not has_error:
         print("i18n check passed: en/es structures are aligned and all used keys exist.")
