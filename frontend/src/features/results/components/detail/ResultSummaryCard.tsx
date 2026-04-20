@@ -4,6 +4,7 @@
  */
 
 import { Typography, Box } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import type { ResultDetail } from '../../types';
 import { StatusChip, TraceabilityChip } from '../../../../components/ui';
 import { getCountOriginLabel } from '../../utils/countOriginLabel';
@@ -23,6 +24,7 @@ function toNumeric(value: unknown): number | null {
 }
 
 export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
+  const { t } = useTranslation();
   const correctedQtyNum = toNumeric(result.correctedQty);
   const resolvedQtyNum = toNumeric(result.resolvedQty);
   const systemQtyNum = toNumeric(result.systemQty);
@@ -51,21 +53,21 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
         <Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
-            Current quantity
+            {t('results.summary_current_quantity')}
           </Typography>
           <Typography variant="h5" fontWeight={800} sx={{ lineHeight: 1, letterSpacing: -0.5 }}>
             {visibleQtyNum != null ? String(visibleQtyNum) : '—'}
           </Typography>
           {hasManualOverride && (
              <Typography variant="caption" color="primary.main" sx={{ fontWeight: 700, mt: 0.5, display: 'block', fontSize: '0.7rem' }}>
-               Manual override
+               {t('results.summary_manual_override')}
              </Typography>
           )}
         </Box>
         
         <Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
-            Position code
+            {t('results.summary_position_code')}
           </Typography>
           <Typography variant="body1" fontWeight={700}>
             {result.positionCode != null && result.positionCode.trim() !== '' ? result.positionCode : '—'}
@@ -75,7 +77,7 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
         {hasManualOverride && systemQtyNum != null && (
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
-              System original
+              {t('results.summary_system_original')}
             </Typography>
             <Typography variant="body1" fontWeight={600}>{String(systemQtyNum)}</Typography>
           </Box>
@@ -83,7 +85,7 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
 
         <Box sx={{ gridColumn: hasManualOverride ? undefined : 'span 1' }}>
            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
-            Count origin
+            {t('results.summary_count_origin')}
           </Typography>
           <Typography variant="body2" fontWeight={600} color="text.primary">
             {getCountOriginLabel(result)}
@@ -92,7 +94,7 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
 
         <Box>
            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, fontSize: '0.65rem' }}>
-            Last update
+            {t('results.summary_last_update')}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
             {formatDate(result.updatedAt)}
@@ -112,7 +114,7 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
           size="small"
         />
         <StatusChip
-          label={`${confidenceStr} confidence`}
+          label={t('results.summary_confidence_value', { value: confidenceStr })}
           variant="outlined"
           size="small"
         />
