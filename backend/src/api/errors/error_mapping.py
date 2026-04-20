@@ -163,6 +163,7 @@ from src.application.errors import (
     AisleSourceAssetMutationBlockedError,
     AnalyticsScopeValidationError,
     BenchmarkCompareJobsMustDifferError,
+    BenchmarkCompareManyInvalidSelectionError,
     BenchmarkRequiresTestInventoryError,
     DuplicateAisleCodeError,
     EmptyUploadError,
@@ -401,6 +402,8 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             error_code=BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
             detail=HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
         )
+    if isinstance(exc, BenchmarkCompareManyInvalidSelectionError):
+        return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, MergeJobScopeAmbiguousError):
         return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, AnalyticsScopeValidationError):

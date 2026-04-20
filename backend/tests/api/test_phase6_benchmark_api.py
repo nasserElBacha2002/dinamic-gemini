@@ -54,7 +54,7 @@ def _seed() -> None:
     aisle_repo.save(
         Aisle("aisle-b6", "inv-b6", "A", AisleStatus.PROCESSED, now, now, operational_job_id="j1")
     )
-    for jid in ("j1", "j2"):
+    for jid in ("j1", "j2", "j3"):
         job_repo.save(
             Job(
                 id=jid,
@@ -129,6 +129,20 @@ def _seed() -> None:
             updated_at=now,
             detected_summary_json={"internal_code": "S1", "final_quantity": 2},
             job_id="j2",
+        )
+    )
+    pos_repo.save(
+        Position(
+            id="pb6-c",
+            aisle_id="aisle-b6",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=True,
+            primary_evidence_id=None,
+            created_at=now,
+            updated_at=now,
+            detected_summary_json={"internal_code": "S2", "final_quantity": 1},
+            job_id="j3",
         )
     )
 
@@ -291,5 +305,106 @@ def test_promote_operational_wrong_aisle_job_is_404() -> None:
             json={"job_id": "j-other-aisle"},
         )
         assert r.status_code == 404
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_happy_path_two_jobs() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1", "j2"], "baseline_job_id": "j1"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["workflow"] == "benchmark_compare_many"
+        assert body["baseline_job_id"] == "j1"
+        assert [j["job_id"] for j in body["jobs"]] == ["j1", "j2"]
+        assert [c["target_job_id"] for c in body["comparisons"]] == ["j2"]
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_happy_path_three_jobs_preserves_order() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j3", "j1", "j2"], "baseline_job_id": "j1"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert [j["job_id"] for j in body["jobs"]] == ["j3", "j1", "j2"]
+        assert [c["target_job_id"] for c in body["comparisons"]] == ["j3", "j2"]
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_rejects_duplicate_job_ids() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1", "j1"], "baseline_job_id": "j1"},
+        )
+        assert r.status_code == 422
+        assert "unique" in (r.json().get("detail") or "").lower()
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_rejects_too_few_jobs() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1"], "baseline_job_id": "j1"},
+        )
+        assert r.status_code == 422
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_rejects_baseline_not_in_job_ids() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1", "j2"], "baseline_job_id": "j3"},
+        )
+        assert r.status_code == 422
+        assert "must be one of job_ids" in (r.json().get("detail") or "")
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_wrong_aisle_job_is_404() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1", "j-other-aisle"], "baseline_job_id": "j1"},
+        )
+        assert r.status_code == 404
+    finally:
+        _clear()
+
+
+def test_benchmark_compare_many_rejects_too_many_jobs() -> None:
+    _seed()
+    try:
+        c = TestClient(app)
+        r = c.post(
+            "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+            json={"job_ids": ["j1", "j2", "j3", "j4"], "baseline_job_id": "j1"},
+        )
+        assert r.status_code == 422
     finally:
         _clear()

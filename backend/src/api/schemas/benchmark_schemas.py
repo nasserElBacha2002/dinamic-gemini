@@ -1,4 +1,4 @@
-"""Phase 6 — benchmark compare / promote payloads (explicit, read-only compare)."""
+"""Phase 6/7 — benchmark compare / compare-many / promote payloads."""
 
 from __future__ import annotations
 
@@ -147,3 +147,38 @@ class AisleBenchmarkCompareResponse(BaseModel):
     diff_summary: CompareDiffSummaryResponse
     diff_rows: List[CompareDiffRowResponse]
     diff_rows_truncated: bool
+
+
+class AisleBenchmarkCompareManyRequest(BaseModel):
+    """Phase 1 compare-many payload (baseline-centric, constrained to 2-3 job ids)."""
+
+    job_ids: List[str] = Field(..., min_length=2, max_length=3)
+    baseline_job_id: str = Field(..., min_length=1)
+
+
+class BenchmarkCompareManyDiffResponse(BaseModel):
+    baseline_job_id: str
+    target_job_id: str
+    diff_summary: CompareDiffSummaryResponse
+
+
+class BenchmarkCompareManyRawFetchFlagResponse(BaseModel):
+    job_id: str
+    truncated: bool = Field(
+        ...,
+        description=(
+            "True when this run's raw fetch count reached the configured cap; "
+            "totals may be incomplete."
+        ),
+    )
+
+
+class AisleBenchmarkCompareManyResponse(BaseModel):
+    inventory_id: str
+    aisle_id: str
+    workflow: str
+    read_only: bool
+    baseline_job_id: str
+    jobs: List[BenchmarkRunCompareSideResponse]
+    comparisons: List[BenchmarkCompareManyDiffResponse]
+    raw_fetch_truncated: List[BenchmarkCompareManyRawFetchFlagResponse] = Field(default_factory=list)
