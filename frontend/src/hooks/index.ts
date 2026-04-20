@@ -10,6 +10,7 @@ export {
   useAisleJobDetail,
   useAisleJobsList,
   useAisleBenchmarkCompare,
+  useAisleBenchmarkCompareMany,
   useAisleSourceAssets,
 } from './useAisles';
 export {

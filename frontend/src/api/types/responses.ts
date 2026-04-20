@@ -424,6 +424,52 @@ export interface AisleBenchmarkCompareResponse {
   diff_rows_truncated: boolean;
 }
 
+export interface BenchmarkCompareManyDelta {
+  total_quantity_diff: number;
+  consolidated_positions_diff: number;
+  unknown_internal_code_diff: number;
+  needs_review_diff: number;
+}
+
+export interface BenchmarkCompareManySummary {
+  job_count: number;
+  baseline_job_id: string;
+  max_total_quantity: number;
+  min_total_quantity: number;
+  max_needs_review: number;
+  min_needs_review: number;
+  max_consolidated_positions: number;
+  min_consolidated_positions: number;
+  max_unknown_internal_code_count: number;
+  min_unknown_internal_code_count: number;
+}
+
+export interface BenchmarkCompareManyRawFetchFlag {
+  job_id: string;
+  truncated: boolean;
+}
+
+export interface BenchmarkCompareManyDiff {
+  baseline_job_id: string;
+  target_job_id: string;
+  diff_summary: BenchmarkCompareDiffSummary;
+  delta: BenchmarkCompareManyDelta;
+  diff_rows: BenchmarkCompareDiffRow[];
+  diff_rows_truncated: boolean;
+}
+
+export interface AisleBenchmarkCompareManyResponse {
+  inventory_id: string;
+  aisle_id: string;
+  workflow: string;
+  read_only: boolean;
+  baseline_job_id: string;
+  jobs: BenchmarkRunCompareSide[];
+  comparisons: BenchmarkCompareManyDiff[];
+  summary: BenchmarkCompareManySummary;
+  raw_fetch_truncated: BenchmarkCompareManyRawFetchFlag[];
+}
+
 export interface PromoteOperationalJobResponse {
   aisle_id: string;
   operational_job_id: string;

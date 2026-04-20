@@ -43,6 +43,8 @@ import type {
   QualityPatternListResponse,
   ManualInterventionBreakdownResponse,
   AisleBenchmarkCompareResponse,
+  AisleBenchmarkCompareManyRequest,
+  AisleBenchmarkCompareManyResponse,
   PromoteOperationalJobResponse,
   AdminAiComposedPromptResponse,
   AdminAiConfigResponse,
@@ -856,6 +858,31 @@ export async function getAisleBenchmarkCompare(
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/benchmark/compare?${params}`;
   const response = await protectedFetch(path);
   return handleResponse<AisleBenchmarkCompareResponse>(response);
+}
+
+/** Phase compare-many — explicit baseline + 2..3 selected runs. */
+export async function getAisleBenchmarkCompareMany(
+  inventoryId: string,
+  aisleId: string,
+  body: AisleBenchmarkCompareManyRequest
+): Promise<AisleBenchmarkCompareManyResponse> {
+  const payload: AisleBenchmarkCompareManyRequest = {
+    job_ids: body.job_ids.map((jobId) => jobId.trim()),
+    baseline_job_id: body.baseline_job_id.trim(),
+    include_diff_rows: Boolean(body.include_diff_rows),
+  };
+  if (body.max_diff_rows != null) {
+    payload.max_diff_rows = body.max_diff_rows;
+  }
+  const response = await protectedFetch(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/benchmark/compare-many`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+  return handleResponse<AisleBenchmarkCompareManyResponse>(response);
 }
 
 export async function promoteAisleOperationalJob(

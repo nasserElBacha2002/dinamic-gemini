@@ -23,6 +23,7 @@ export const ROUTE_PATH = {
   inventoryDetail: 'inventories/:inventoryId',
   aislePositions: 'inventories/:inventoryId/aisles/:aisleId/positions',
   analyticsCompare: 'inventories/:inventoryId/analytics/compare',
+  analyticsCompareMany: 'inventories/:inventoryId/analytics/compare-many',
   legacyAisleCompare: 'inventories/:inventoryId/aisles/:aisleId/compare',
   positionDetail: 'inventories/:inventoryId/aisles/:aisleId/positions/:positionId',
 } as const;
@@ -35,6 +36,7 @@ export const ROUTE_MATCH = {
   inventoryDetail: `${ROUTE_INVENTORIES_ROOT}/:inventoryId`,
   aislePositions: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/positions`,
   analyticsCompare: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/analytics/compare`,
+  analyticsCompareMany: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/analytics/compare-many`,
   legacyAisleCompare: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/compare`,
   positionDetail: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/positions/:positionId`,
 } as const;
@@ -45,6 +47,10 @@ export function pathToInventory(inventoryId: string): string {
 
 export function pathToInventoryAnalyticsCompare(inventoryId: string): string {
   return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/analytics/compare`;
+}
+
+export function pathToInventoryAnalyticsCompareMany(inventoryId: string): string {
+  return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/analytics/compare-many`;
 }
 
 export function pathToAislePositions(inventoryId: string, aisleId: string): string {

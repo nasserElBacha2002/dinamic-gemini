@@ -30,7 +30,12 @@ import { downloadAisleBenchmarkExportCsv } from '../../api/client';
 import { ApiError } from '../../api/types';
 import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { useAppSnackbar } from '../../components/ui';
-import { ROUTE_HOME, pathToAislePositions, pathToInventory } from '../../constants/appRoutes';
+import {
+  ROUTE_HOME,
+  pathToAislePositions,
+  pathToInventory,
+  pathToInventoryAnalyticsCompareMany,
+} from '../../constants/appRoutes';
 
 function userFacingCaptureNote(note: string, t: TFunction): string {
   if (note === 'provider_usage_missing') {
@@ -247,9 +252,14 @@ export default function CompareRunsPage() {
           suffix: titleSuffix.trim() ? ` ${titleSuffix.trim()}` : '',
         })}
         actions={
-          <Button size="small" variant="outlined" onClick={() => navigate(backHref)}>
-            {aisleId ? t('compare.back_to_results') : t('analytics.back_to_inventory')}
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button size="small" variant="outlined" onClick={() => navigate(pathToInventoryAnalyticsCompareMany(inventoryId))}>
+              {t('compare_many.open_compare_many')}
+            </Button>
+            <Button size="small" variant="outlined" onClick={() => navigate(backHref)}>
+              {aisleId ? t('compare.back_to_results') : t('analytics.back_to_inventory')}
+            </Button>
+          </Box>
         }
       />
 
