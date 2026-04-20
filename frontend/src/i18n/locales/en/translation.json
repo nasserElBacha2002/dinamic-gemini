@@ -327,6 +327,9 @@
     "diff_summary_note": "Diff summary note",
     "diff_summary_stats": "Diff summary stats",
     "diff_summary_title": "Diff summary title",
+    "execution_lower_is_better": "Lower wall time is better (Run B − Run A).",
+    "execution_unavailable": "Unavailable",
+    "execution_wall_clock_delta": "Wall time (Run B − Run A): {{value}}",
     "export_csv": "Export csv",
     "info_benchmark": "Info benchmark",
     "llm_cost_display": {
@@ -347,6 +350,7 @@
       "unavailable": "Unavailable"
     },
     "loading": "Loading",
+    "metric_execution_time": "Execution time (wall)",
     "metric_consolidated": "Metric consolidated",
     "metric_needs_review": "Metric needs review",
     "metric_total_cost": "Metric total cost",
@@ -360,6 +364,12 @@
     "warning_need_jobs": "Warning need jobs"
   },
   "compare_many": {
+    "delta_execution_time": "Wall time (target − baseline): {{value}}",
+    "insight_faster_but_unknown_up": "Target is faster ({{time}}) but unknown internal codes increased by {{unknown}}.",
+    "insight_slower_but_unknown_down": "Target is slower ({{time}}) but unknown internal codes decreased by {{unknown}}.",
+    "job_execution_time": "Execution time: {{value}}",
+    "summary_exec_range": "Execution time across selected runs (min–max): {{min}} – {{max}}",
+    "summary_exec_unavailable": "Execution time: not all runs have start/finish timestamps (e.g. still running).",
     "apply": "Apply comparison",
     "baseline_adjusted_notice": "Baseline adjusted to match current selection.",
     "baseline_chip": "Baseline",
@@ -367,7 +377,7 @@
     "baseline_vs_target": "Baseline {{baseline}} vs {{target}}",
     "changes_not_applied": "Changes not applied",
     "delta_consolidated": "Consolidated positions: {{value}}",
-    "delta_legend_body": "Color indicates better/worse only for needs review and unknown internal code metrics.",
+    "delta_legend_body": "Color indicates better/worse for needs review, unknown internal code, and wall time (lower time is better).",
     "delta_legend_title": "Delta interpretation",
     "delta_needs_review": "Needs review: {{value}}",
     "delta_total_qty": "Total quantity: {{value}}",

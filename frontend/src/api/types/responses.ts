@@ -387,6 +387,10 @@ export interface BenchmarkRunCompareSide {
   created_at: string;
   started_at?: string | null;
   finished_at?: string | null;
+  /** Wall-clock ``finished_at - started_at`` when both timestamps exist and coherent. */
+  execution_time_seconds?: number | null;
+  /** Compact duration (e.g. `12.4s`); null when duration unknown. */
+  execution_time_human?: string | null;
   metrics: BenchmarkRunSliceMetrics;
   llm_cost_snapshot?: LlmCostSnapshot | null;
 }
@@ -429,6 +433,8 @@ export interface BenchmarkCompareManyDelta {
   consolidated_positions_diff: number;
   unknown_internal_code_diff: number;
   needs_review_diff: number;
+  /** Target wall time minus baseline (seconds); null if either duration unknown. */
+  execution_time_delta?: number | null;
 }
 
 export interface BenchmarkCompareManySummary {
@@ -442,6 +448,9 @@ export interface BenchmarkCompareManySummary {
   min_consolidated_positions: number;
   max_unknown_internal_code_count: number;
   min_unknown_internal_code_count: number;
+  /** Present only when every selected job has ``execution_time_seconds``. */
+  min_execution_time_seconds?: number | null;
+  max_execution_time_seconds?: number | null;
 }
 
 export interface BenchmarkCompareManyRawFetchFlag {
