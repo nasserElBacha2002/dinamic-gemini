@@ -25,6 +25,9 @@ HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER = (
     "job_a_id and job_b_id must be different benchmark runs"
 )
 HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED = "aisle_id does not belong to the given inventory_id"
+HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING = (
+    "This aisle has no source assets; upload media before starting processing."
+)
 
 # Mapper normalizer + Category C job-read — generic job-not-found phrase (identical semantics).
 HTTP_DETAIL_JOB_NOT_FOUND = "Job not found"

@@ -318,6 +318,7 @@ def get_aisle_job_launch_service(
 def get_start_aisle_processing_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
     job_repo: JobRepository = Depends(get_job_repo),
     launch_service: AisleJobLaunchService = Depends(get_aisle_job_launch_service),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
@@ -325,6 +326,7 @@ def get_start_aisle_processing_use_case(
     return StartAisleProcessingUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
         job_repo=job_repo,
         launch_service=launch_service,
         stale_reconciler=stale_reconciler,

@@ -32,6 +32,10 @@ class EmptyUploadError(Exception):
     """Raised when no files are provided for an aisle asset upload."""
 
 
+class NoSourceAssetsForAisleProcessingError(Exception):
+    """Raised when aisle processing is requested but the aisle has no persisted SourceAsset rows."""
+
+
 class SourceAssetNotFoundForAisleError(Exception):
     """Raised when a source asset id is unknown or does not belong to the scoped aisle."""
 

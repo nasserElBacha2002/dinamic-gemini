@@ -21,10 +21,12 @@ from src.api.dependencies import (
     get_position_repo,
     get_product_record_repo,
     get_review_action_repo,
+    get_source_asset_repo,
 )
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
@@ -36,9 +38,20 @@ from src.infrastructure.repositories.memory_job_repository import MemoryJobRepos
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
 from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+from src.api.errors.structured_api_http import AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 client = TestClient(app)
+
+
+def _upload_minimal_aisle_asset_for_process(inv_id: str, aisle_id: str) -> None:
+    """process_aisle requires at least one SourceAsset (Sprint 1 preflight)."""
+    r = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets",
+        files=[("files", ("seed.jpg", b"fake_jpeg", "image/jpeg"))],
+    )
+    assert r.status_code == 201, r.text
 
 
 def _fake_admin() -> AuthUser:
@@ -137,6 +150,23 @@ def test_post_aisle_empty_code_returns_422() -> None:
     assert response.status_code == 422
 
 
+def test_post_aisle_process_without_source_assets_returns_422() -> None:
+    """Sprint 1: preflight rejects process when aisle has no SourceAsset rows."""
+    create_resp = client.post("/api/v3/inventories", json={"name": "No Assets Process"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "NA-01"},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+    proc = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
+    assert proc.status_code == 422
+    body = proc.json()
+    assert body.get("code") == AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING
+
+
 def test_post_aisle_process_inventory_not_found_returns_404() -> None:
     """Phase 9: process route delegates inventory existence to use case."""
     response = client.post(
@@ -157,6 +187,7 @@ def test_post_aisle_process_returns_202_and_job_id() -> None:
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
 
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     response = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
     )
@@ -242,6 +273,7 @@ def test_post_process_with_explicit_gemini_provider_persisted_on_status() -> Non
         assert aisle_resp.status_code == 201
         aisle_id = aisle_resp.json()["id"]
 
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
         proc = client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
             json={"provider_name": "gemini"},
@@ -275,6 +307,7 @@ def test_post_process_production_inventory_ignores_request_provider_and_uses_sna
     )
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     proc = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
         json={"provider_name": "openai", "model_name": "gpt-4o"},
@@ -303,6 +336,7 @@ def test_post_process_invalid_model_for_provider_returns_422() -> None:
         )
         assert aisle_resp.status_code == 201
         aisle_id = aisle_resp.json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
         response = client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
             json={"provider_name": "gemini", "model_name": "not-a-valid-model"},
@@ -329,6 +363,7 @@ def test_post_process_unknown_provider_returns_422() -> None:
         assert aisle_resp.status_code == 201
         aisle_id = aisle_resp.json()["id"]
 
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
         response = client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
             json={"provider_name": "not-a-real-provider"},
@@ -362,6 +397,7 @@ def test_post_aisle_process_duplicate_returns_409() -> None:
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
 
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
     response = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
@@ -392,6 +428,7 @@ def test_get_aisle_status_returns_aisle_and_latest_job() -> None:
     assert "latest_job" in data
     assert data["latest_job"] is None
 
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
     response2 = client.get(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status",
@@ -530,6 +567,7 @@ def test_list_aisles_latest_job_includes_created_at() -> None:
     )
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
     list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert list_resp.status_code == 200
@@ -550,6 +588,7 @@ def test_list_and_status_latest_job_created_at_aligned() -> None:
     )
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
     list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     status_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
@@ -575,6 +614,7 @@ def test_cancel_queued_job_returns_202_and_list_and_status_show_canceled() -> No
     )
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     process_resp = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
     )
@@ -617,6 +657,7 @@ def test_cancel_already_canceled_job_returns_409() -> None:
     )
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     process_resp = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
     )
@@ -1050,10 +1091,24 @@ def test_post_process_when_latest_job_running_returns_409() -> None:
     )
     job_repo.save(job)
 
+    block_assets = MemorySourceAssetRepository()
+    block_assets.save(
+        SourceAsset(
+            id="seed-block",
+            aisle_id="aisle-block",
+            type=SourceAssetType.PHOTO,
+            original_filename="s.jpg",
+            storage_path="uploads/seed",
+            mime_type="image/jpeg",
+            uploaded_at=now,
+        )
+    )
+
     app.dependency_overrides[get_current_admin] = _fake_admin
     app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
     app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
     app.dependency_overrides[get_job_repo] = lambda: job_repo
+    app.dependency_overrides[get_source_asset_repo] = lambda: block_assets
     try:
         c = TestClient(app)
         resp = c.post(
@@ -1066,6 +1121,7 @@ def test_post_process_when_latest_job_running_returns_409() -> None:
         app.dependency_overrides.pop(get_inventory_repo, None)
         app.dependency_overrides.pop(get_aisle_repo, None)
         app.dependency_overrides.pop(get_job_repo, None)
+        app.dependency_overrides.pop(get_source_asset_repo, None)
 
 
 def test_post_process_after_terminal_job_creates_new_job() -> None:
@@ -1079,6 +1135,7 @@ def test_post_process_after_terminal_job_creates_new_job() -> None:
     )
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     process1 = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
     )
@@ -1665,6 +1722,7 @@ def test_list_aisles_includes_latest_job_when_present() -> None:
     assert len(aisles) == 1
     assert aisles[0].get("latest_job") is None
 
+    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
     client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
     list_resp2 = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert list_resp2.status_code == 200

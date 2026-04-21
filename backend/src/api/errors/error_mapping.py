@@ -176,6 +176,7 @@ from src.application.errors import (
     JobPromotionNotAllowedError,
     MaxInventoryVisualReferencesExceededError,
     MergeJobScopeAmbiguousError,
+    NoSourceAssetsForAisleProcessingError,
     PositionDeletedError,
     PositionNotFoundError,
     PositionResultContextMismatchError,
@@ -189,6 +190,7 @@ from src.application.errors import (
 )
 from src.api.constants.error_wire import (
     HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION,
+    HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
     HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
     HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
     HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
@@ -205,6 +207,7 @@ from src.api.errors.structured_api_http import (
     AISLE_NOT_FOUND,
     AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
     ASSET_NOT_FOUND,
+    AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
     BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
@@ -416,6 +419,12 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=422,
             error_code=ANALYTICS_SCOPE_VALIDATION_FAILED,
             detail=HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
+        )
+    if isinstance(exc, NoSourceAssetsForAisleProcessingError):
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
+            detail=HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
         )
     if isinstance(exc, UnsupportedAssetTypeError):
         return HTTPException(status_code=400, detail=str(exc))
