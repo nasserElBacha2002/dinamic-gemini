@@ -854,11 +854,24 @@ def get_get_capture_session_detail_use_case(
     )
 
 
+def get_capture_staging_time_metadata_extractor():
+    from src.application.services.capture_staging_time_metadata import PillowCaptureStagingTimeMetadataExtractor
+    from src.config import load_settings
+
+    s = load_settings()
+    return PillowCaptureStagingTimeMetadataExtractor(
+        confidence_exif=s.v3_capture_time_confidence_exif,
+        confidence_mtime=s.v3_capture_time_confidence_mtime,
+        confidence_fallback=s.v3_capture_time_confidence_fallback,
+    )
+
+
 def get_upload_capture_session_staging_items_use_case(
     session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
     item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
     artifact_storage=Depends(get_artifact_storage),
     clock: Clock = Depends(get_clock),
+    time_metadata_extractor=Depends(get_capture_staging_time_metadata_extractor),
 ):
     from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
     from src.config import load_settings
@@ -873,4 +886,44 @@ def get_upload_capture_session_staging_items_use_case(
         staging_prefix=s.v3_capture_staging_storage_prefix,
         max_files_per_upload=s.v3_capture_max_files_per_upload,
         max_upload_bytes=max_bytes,
+        time_metadata_extractor=time_metadata_extractor,
+    )
+
+
+def get_update_capture_session_clock_offset_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.update_capture_session_clock_offset import UpdateCaptureSessionClockOffsetUseCase
+    from src.config import load_settings
+
+    s = load_settings()
+    return UpdateCaptureSessionClockOffsetUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        clock=clock,
+        min_offset_seconds=s.v3_capture_clock_offset_min_seconds,
+        max_offset_seconds=s.v3_capture_clock_offset_max_seconds,
+    )
+
+
+def get_compute_capture_session_assignment_preview_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.compute_capture_session_assignment_preview import (
+        ComputeCaptureSessionAssignmentPreviewUseCase,
+    )
+    from src.config import load_settings
+
+    s = load_settings()
+    return ComputeCaptureSessionAssignmentPreviewUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        position_repo=position_repo,
+        clock=clock,
+        preview_max_positions=s.v3_capture_preview_max_positions,
     )

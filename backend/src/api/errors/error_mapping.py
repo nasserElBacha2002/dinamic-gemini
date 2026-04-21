@@ -166,9 +166,11 @@ from src.application.errors import (
     BenchmarkCompareManyInvalidSelectionError,
     BenchmarkRequiresTestInventoryError,
     CaptureSessionDuplicateItemContentError,
+    CaptureSessionInvalidClockOffsetError,
     CaptureSessionInvalidStateError,
     CaptureSessionNotAcceptingUploadsError,
     CaptureSessionNotFoundError,
+    CaptureSessionPreviewNotAllowedError,
     CaptureSessionStagingFileTooLargeError,
     CaptureSessionStatusFilterInvalidError,
     CaptureSessionUploadBatchTooLargeError,
@@ -233,9 +235,11 @@ from src.api.errors.structured_api_http import (
     UNSUPPORTED_ASSET_TYPE,
     ZERO_BYTE_FILE,
     CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
+    CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
     CAPTURE_SESSION_INVALID_STATE,
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
     CAPTURE_SESSION_NOT_FOUND,
+    CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
     CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
     CAPTURE_SESSION_STATUS_FILTER_INVALID,
     CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
@@ -474,6 +478,18 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=409,
             error_code=OPEN_CAPTURE_SESSION_EXISTS,
             detail=HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
+        )
+    if isinstance(exc, CaptureSessionInvalidClockOffsetError):
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
+            detail=str(exc),
+        )
+    if isinstance(exc, CaptureSessionPreviewNotAllowedError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
+            detail=str(exc),
         )
     if isinstance(exc, CaptureSessionInvalidStateError):
         return StructuredApiHttpError(

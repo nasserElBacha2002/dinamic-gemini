@@ -1,4 +1,4 @@
-"""v3 field capture sessions — Sprint 2 (create/close/cancel/list/detail/staging upload)."""
+"""v3 field capture sessions — Sprint 2 + Sprint 3 (clock offset, assignment preview, time metadata)."""
 
 from __future__ import annotations
 
@@ -12,13 +12,16 @@ from src.api.constants.error_wire import HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED
 from src.api.dependencies import (
     get_cancel_capture_session_use_case,
     get_close_capture_session_use_case,
+    get_compute_capture_session_assignment_preview_use_case,
     get_create_capture_session_use_case,
     get_get_capture_session_detail_use_case,
     get_list_capture_sessions_use_case,
+    get_update_capture_session_clock_offset_use_case,
     get_upload_capture_session_staging_items_use_case,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.capture_schemas import (
+    CaptureSessionClockOffsetUpdateRequest,
     CaptureSessionDetailResponse,
     CaptureSessionResponse,
     PaginatedCaptureSessionListResponse,
@@ -31,9 +34,13 @@ from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import CaptureSessionStatusFilterInvalidError
 from src.application.use_cases.cancel_capture_session import CancelCaptureSessionUseCase
 from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase
+from src.application.use_cases.compute_capture_session_assignment_preview import (
+    ComputeCaptureSessionAssignmentPreviewUseCase,
+)
 from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
 from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
 from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
+from src.application.use_cases.update_capture_session_clock_offset import UpdateCaptureSessionClockOffsetUseCase
 from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
 from src.domain.capture.entities import CaptureSessionStatus
 
@@ -162,6 +169,60 @@ def list_capture_sessions(
         total_items=result.total_items,
         total_pages=total_pages,
         items=[capture_session_to_response(s) for s in result.items],
+    )
+
+
+@router.patch(
+    "/{inventory_id}/aisles/{aisle_id}/capture-sessions/{session_id}/clock-offset",
+    response_model=CaptureSessionDetailResponse,
+)
+def patch_capture_session_clock_offset(
+    inventory_id: str,
+    aisle_id: str,
+    session_id: str,
+    body: CaptureSessionClockOffsetUpdateRequest,
+    use_case: UpdateCaptureSessionClockOffsetUseCase = Depends(get_update_capture_session_clock_offset_use_case),
+    detail_uc: GetCaptureSessionDetailUseCase = Depends(get_get_capture_session_detail_use_case),
+) -> CaptureSessionDetailResponse:
+    try:
+        use_case.execute(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            session_id=session_id,
+            clock_offset_seconds=body.clock_offset_seconds,
+        )
+        detail = detail_uc.execute(inventory_id, session_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return CaptureSessionDetailResponse(
+        session=capture_session_to_response(detail.session),
+        items=[capture_session_item_to_response(i) for i in detail.items],
+    )
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/capture-sessions/{session_id}/preview-assignment",
+    response_model=CaptureSessionDetailResponse,
+)
+def post_capture_session_preview_assignment(
+    inventory_id: str,
+    aisle_id: str,
+    session_id: str,
+    use_case: ComputeCaptureSessionAssignmentPreviewUseCase = Depends(
+        get_compute_capture_session_assignment_preview_use_case
+    ),
+    detail_uc: GetCaptureSessionDetailUseCase = Depends(get_get_capture_session_detail_use_case),
+) -> CaptureSessionDetailResponse:
+    try:
+        use_case.execute(inventory_id=inventory_id, aisle_id=aisle_id, session_id=session_id)
+        detail = detail_uc.execute(inventory_id, session_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return CaptureSessionDetailResponse(
+        session=capture_session_to_response(detail.session),
+        items=[capture_session_item_to_response(i) for i in detail.items],
     )
 
 

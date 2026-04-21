@@ -165,3 +165,11 @@ class CaptureSessionStatusFilterInvalidError(Exception):
 
 class CaptureSessionConfirmLedgerDuplicateError(Exception):
     """Raised when inserting a duplicate (session_id, idempotency_key) into the confirm ledger."""
+
+
+class CaptureSessionInvalidClockOffsetError(Exception):
+    """Raised when ``clock_offset_seconds`` is outside the configured safe range."""
+
+
+class CaptureSessionPreviewNotAllowedError(Exception):
+    """Raised when assignment preview cannot run for the current session state or scope."""

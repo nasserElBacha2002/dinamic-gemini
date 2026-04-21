@@ -84,6 +84,9 @@ def _row_to_item(row) -> CaptureSessionItem:
         last_error_code=(getattr(row, "last_error_code", None) or "").strip() or None,
         last_error_detail=(getattr(row, "last_error_detail", None) or "").strip() or None,
         original_filename=(getattr(row, "original_filename", None) or "").strip() or None,
+        adjusted_capture_time=_ensure_utc(getattr(row, "adjusted_capture_time", None)),
+        assignment_reason=(getattr(row, "assignment_reason", None) or "").strip() or None,
+        preview_target_position_id=(getattr(row, "preview_target_position_id", None) or "").strip() or None,
     )
 
 
@@ -103,7 +106,8 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                 SET session_id = ?, staging_storage_key = ?, content_hash = ?,
                     effective_capture_time = ?, time_source = ?, time_confidence = ?,
                     import_status = ?, assignment_status = ?, linked_source_asset_id = ?,
-                    last_error_code = ?, last_error_detail = ?, updated_at = ?, original_filename = ?
+                    last_error_code = ?, last_error_detail = ?, updated_at = ?, original_filename = ?,
+                    adjusted_capture_time = ?, assignment_reason = ?, preview_target_position_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -120,6 +124,9 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                     item.last_error_detail,
                     updated,
                     item.original_filename,
+                    _ensure_utc(item.adjusted_capture_time),
+                    item.assignment_reason,
+                    item.preview_target_position_id,
                     item.id,
                 ),
             )
@@ -131,8 +138,9 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                             id, session_id, staging_storage_key, content_hash,
                             effective_capture_time, time_source, time_confidence,
                             import_status, assignment_status, linked_source_asset_id,
-                            last_error_code, last_error_detail, updated_at, original_filename
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            last_error_code, last_error_detail, updated_at, original_filename,
+                            adjusted_capture_time, assignment_reason, preview_target_position_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             item.id,
@@ -149,6 +157,9 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                             item.last_error_detail,
                             updated,
                             item.original_filename,
+                            _ensure_utc(item.adjusted_capture_time),
+                            item.assignment_reason,
+                            item.preview_target_position_id,
                         ),
                     )
                 except pyodbc.IntegrityError as exc:
@@ -165,7 +176,8 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                 SELECT id, session_id, staging_storage_key, content_hash,
                        effective_capture_time, time_source, time_confidence,
                        import_status, assignment_status, linked_source_asset_id,
-                       last_error_code, last_error_detail, updated_at, original_filename
+                       last_error_code, last_error_detail, updated_at, original_filename,
+                       adjusted_capture_time, assignment_reason, preview_target_position_id
                 FROM capture_session_items WHERE id = ?
                 """,
                 (item_id,),
@@ -180,7 +192,8 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                 SELECT id, session_id, staging_storage_key, content_hash,
                        effective_capture_time, time_source, time_confidence,
                        import_status, assignment_status, linked_source_asset_id,
-                       last_error_code, last_error_detail, updated_at, original_filename
+                       last_error_code, last_error_detail, updated_at, original_filename,
+                       adjusted_capture_time, assignment_reason, preview_target_position_id
                 FROM capture_session_items
                 WHERE session_id = ?
                 ORDER BY updated_at ASC, id ASC
@@ -197,7 +210,8 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                 SELECT id, session_id, staging_storage_key, content_hash,
                        effective_capture_time, time_source, time_confidence,
                        import_status, assignment_status, linked_source_asset_id,
-                       last_error_code, last_error_detail, updated_at, original_filename
+                       last_error_code, last_error_detail, updated_at, original_filename,
+                       adjusted_capture_time, assignment_reason, preview_target_position_id
                 FROM capture_session_items
                 WHERE session_id = ?
                   AND linked_source_asset_id IS NULL

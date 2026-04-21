@@ -606,6 +606,7 @@ BEGIN
         updated_at DATETIME2 NOT NULL,
         opened_at DATETIME2 NULL,
         closed_at DATETIME2 NULL,
+        clock_offset_seconds INT NOT NULL DEFAULT 0,
         CONSTRAINT FK_capture_sessions_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
         CONSTRAINT FK_capture_sessions_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id)
     );
@@ -668,6 +669,10 @@ BEGIN
         last_error_code VARCHAR(64) NULL,
         last_error_detail NVARCHAR(512) NULL,
         updated_at DATETIME2 NOT NULL,
+        original_filename NVARCHAR(512) NULL,
+        adjusted_capture_time DATETIME2 NULL,
+        assignment_reason NVARCHAR(512) NULL,
+        preview_target_position_id VARCHAR(36) NULL,
         CONSTRAINT FK_capture_session_items_session FOREIGN KEY (session_id) REFERENCES capture_sessions(id) ON DELETE CASCADE,
         CONSTRAINT FK_capture_session_items_source_asset FOREIGN KEY (linked_source_asset_id) REFERENCES source_assets(id)
     );
@@ -694,6 +699,35 @@ IF NOT EXISTS (
     WHERE object_id = OBJECT_ID('capture_session_items') AND name = 'original_filename'
 )
     ALTER TABLE capture_session_items ADD original_filename NVARCHAR(512) NULL;
+GO
+
+-- Sprint 3 — clock offset + preview columns (mirror migrations/versions/0019_capture_session_sprint3_preview.sql).
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_sessions') AND name = 'clock_offset_seconds'
+)
+    ALTER TABLE dbo.capture_sessions ADD clock_offset_seconds INT NOT NULL DEFAULT 0;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_items') AND name = 'adjusted_capture_time'
+)
+    ALTER TABLE dbo.capture_session_items ADD adjusted_capture_time DATETIME2 NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_items') AND name = 'assignment_reason'
+)
+    ALTER TABLE dbo.capture_session_items ADD assignment_reason NVARCHAR(512) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_items') AND name = 'preview_target_position_id'
+)
+    ALTER TABLE dbo.capture_session_items ADD preview_target_position_id VARCHAR(36) NULL;
 GO
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'capture_session_confirmations')

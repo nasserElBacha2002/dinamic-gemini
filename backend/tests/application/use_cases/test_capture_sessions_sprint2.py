@@ -28,13 +28,23 @@ from src.application.use_cases.get_capture_session_detail import GetCaptureSessi
 from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
 from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.domain.capture.entities import CaptureSessionStatus
+from src.domain.capture.entities import CaptureSessionStatus, CaptureTimeSource
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
 from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+
+
+def _pillow_time_extractor():
+    from src.application.services.capture_staging_time_metadata import PillowCaptureStagingTimeMetadataExtractor
+
+    return PillowCaptureStagingTimeMetadataExtractor(
+        confidence_exif=0.85,
+        confidence_mtime=0.55,
+        confidence_fallback=0.35,
+    )
 
 
 class _FixedClock(Clock):
@@ -182,6 +192,7 @@ def test_close_then_reopen_allowed(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
+        time_metadata_extractor=_pillow_time_extractor(),
     ).execute(
         inventory_id=inv_id,
         aisle_id=aisle_id,
@@ -258,6 +269,7 @@ def test_staging_file_too_large(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_files_per_upload=10,
         max_upload_bytes=3,
+        time_metadata_extractor=_pillow_time_extractor(),
     )
     with pytest.raises(CaptureSessionStagingFileTooLargeError):
         upload_uc.execute(
@@ -288,6 +300,7 @@ def test_staging_batch_too_large(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_files_per_upload=1,
         max_upload_bytes=1024,
+        time_metadata_extractor=_pillow_time_extractor(),
     )
     with pytest.raises(CaptureSessionUploadBatchTooLargeError):
         upload_uc.execute(
@@ -322,6 +335,7 @@ def test_upload_creates_item_no_source_asset(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
+        time_metadata_extractor=_pillow_time_extractor(),
     )
     files = [
         UploadedFile(
@@ -335,6 +349,8 @@ def test_upload_creates_item_no_source_asset(tmp_path: Path) -> None:
     assert items[0].staging_storage_key.startswith("capture/staging/")
     assert items[0].content_hash is not None
     assert items[0].linked_source_asset_id is None
+    assert items[0].effective_capture_time is not None
+    assert items[0].time_source == CaptureTimeSource.FALLBACK_CLOCK
     refreshed = session_repo.get_by_id(s.id)
     assert refreshed is not None
     assert refreshed.status == CaptureSessionStatus.IMPORTING
@@ -367,6 +383,7 @@ def test_upload_rejected_after_cancel(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
+        time_metadata_extractor=_pillow_time_extractor(),
     )
     with pytest.raises(CaptureSessionNotAcceptingUploadsError):
         upload_uc.execute(
@@ -404,6 +421,7 @@ def test_upload_duplicate_content_rejected(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
+        time_metadata_extractor=_pillow_time_extractor(),
     )
     body = b"same-bytes"
     upload_uc.execute(

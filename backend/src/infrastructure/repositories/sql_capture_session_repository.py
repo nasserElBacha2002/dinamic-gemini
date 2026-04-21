@@ -48,6 +48,11 @@ def _row_to_session(row) -> CaptureSession:
     updated = _ensure_utc(getattr(row, "updated_at", None))
     if created is None or updated is None:
         raise ValueError(f"capture_sessions row {sid!r} missing created_at/updated_at")
+    off_raw = getattr(row, "clock_offset_seconds", 0)
+    try:
+        clock_off = int(off_raw) if off_raw is not None else 0
+    except (TypeError, ValueError):
+        clock_off = 0
     return CaptureSession(
         id=sid,
         inventory_id=getattr(row, "inventory_id", "") or "",
@@ -57,6 +62,7 @@ def _row_to_session(row) -> CaptureSession:
         updated_at=updated,
         opened_at=_ensure_utc(getattr(row, "opened_at", None)),
         closed_at=_ensure_utc(getattr(row, "closed_at", None)),
+        clock_offset_seconds=clock_off,
     )
 
 
@@ -76,7 +82,7 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
                 """
                 UPDATE capture_sessions
                 SET inventory_id = ?, aisle_id = ?, status = ?, created_at = ?, updated_at = ?,
-                    opened_at = ?, closed_at = ?
+                    opened_at = ?, closed_at = ?, clock_offset_seconds = ?
                 WHERE id = ?
                 """,
                 (
@@ -87,6 +93,7 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
                     updated,
                     opened,
                     closed,
+                    int(session.clock_offset_seconds),
                     session.id,
                 ),
             )
@@ -95,8 +102,9 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
                     cur.execute(
                         """
                         INSERT INTO capture_sessions (
-                            id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at,
+                            clock_offset_seconds
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             session.id,
@@ -107,6 +115,7 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
                             updated,
                             opened,
                             closed,
+                            int(session.clock_offset_seconds),
                         ),
                     )
                 except pyodbc.IntegrityError as exc:
@@ -120,7 +129,8 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at
+                SELECT id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at,
+                       clock_offset_seconds
                 FROM capture_sessions WHERE id = ?
                 """,
                 (session_id,),
@@ -132,7 +142,8 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at
+                SELECT id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at,
+                       clock_offset_seconds
                 FROM capture_sessions WHERE id = ? AND inventory_id = ?
                 """,
                 (session_id, inventory_id),
@@ -187,7 +198,8 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
         where_sql = " AND ".join(where_parts)
         count_sql = f"SELECT COUNT(1) AS c FROM capture_sessions WHERE {where_sql}"
         list_sql = f"""
-            SELECT id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at
+            SELECT id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at,
+                   clock_offset_seconds
             FROM capture_sessions
             WHERE {where_sql}
             ORDER BY created_at DESC, id DESC

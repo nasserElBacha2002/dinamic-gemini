@@ -20,6 +20,7 @@ class CaptureSessionResponse(BaseModel):
     updated_at: datetime
     opened_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
+    clock_offset_seconds: int = 0
 
 
 class CaptureSessionItemResponse(BaseModel):
@@ -29,6 +30,12 @@ class CaptureSessionItemResponse(BaseModel):
     import_status: str
     assignment_status: str
     content_hash: Optional[str] = None
+    effective_capture_time: Optional[datetime] = None
+    time_source: Optional[str] = None
+    time_confidence: Optional[float] = None
+    adjusted_capture_time: Optional[datetime] = None
+    assignment_reason: Optional[str] = None
+    preview_target_position_id: Optional[str] = None
     linked_source_asset_id: Optional[str] = None
     last_error_code: Optional[str] = None
     last_error_detail: Optional[str] = None
@@ -49,6 +56,12 @@ class UploadCaptureSessionItemsResponse(BaseModel):
     items: List[CaptureSessionItemResponse] = Field(default_factory=list)
 
 
+class CaptureSessionClockOffsetUpdateRequest(BaseModel):
+    """Sprint 3 — session-level offset applied at preview (``effective`` + offset → ``adjusted``)."""
+
+    clock_offset_seconds: int
+
+
 def capture_session_to_response(s: CaptureSession) -> CaptureSessionResponse:
     return CaptureSessionResponse(
         id=s.id,
@@ -59,6 +72,7 @@ def capture_session_to_response(s: CaptureSession) -> CaptureSessionResponse:
         updated_at=s.updated_at,
         opened_at=s.opened_at,
         closed_at=s.closed_at,
+        clock_offset_seconds=int(s.clock_offset_seconds),
     )
 
 
@@ -70,6 +84,12 @@ def capture_session_item_to_response(i: CaptureSessionItem) -> CaptureSessionIte
         import_status=i.import_status.value,
         assignment_status=i.assignment_status.value,
         content_hash=i.content_hash,
+        effective_capture_time=i.effective_capture_time,
+        time_source=i.time_source.value if i.time_source else None,
+        time_confidence=i.time_confidence,
+        adjusted_capture_time=i.adjusted_capture_time,
+        assignment_reason=i.assignment_reason,
+        preview_target_position_id=i.preview_target_position_id,
         linked_source_asset_id=i.linked_source_asset_id,
         last_error_code=i.last_error_code,
         last_error_detail=i.last_error_detail,

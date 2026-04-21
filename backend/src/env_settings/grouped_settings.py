@@ -733,6 +733,42 @@ class LimitsAndSchemaSettings(BaseModel):
         le=200,
         description="Max files per POST .../capture-sessions/{id}/items staging upload. Env: V3_CAPTURE_MAX_FILES_PER_UPLOAD.",
     )
+    v3_capture_clock_offset_min_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_CLOCK_OFFSET_MIN_SECONDS", "-86400")),
+        ge=-864000,
+        le=0,
+        description="Min session clock offset seconds (Sprint 3). Env: V3_CAPTURE_CLOCK_OFFSET_MIN_SECONDS.",
+    )
+    v3_capture_clock_offset_max_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_CLOCK_OFFSET_MAX_SECONDS", "86400")),
+        ge=0,
+        le=864000,
+        description="Max session clock offset seconds (Sprint 3). Env: V3_CAPTURE_CLOCK_OFFSET_MAX_SECONDS.",
+    )
+    v3_capture_preview_max_positions: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_PREVIEW_MAX_POSITIONS", "10000")),
+        ge=1,
+        le=50000,
+        description="Max positions loaded for capture assignment preview per aisle. Env: V3_CAPTURE_PREVIEW_MAX_POSITIONS.",
+    )
+    v3_capture_time_confidence_exif: float = Field(
+        default_factory=lambda: float(os.getenv("V3_CAPTURE_TIME_CONFIDENCE_EXIF", "0.85")),
+        ge=0.0,
+        le=1.0,
+        description="Confidence when time is taken from EXIF (Sprint 3). Env: V3_CAPTURE_TIME_CONFIDENCE_EXIF.",
+    )
+    v3_capture_time_confidence_mtime: float = Field(
+        default_factory=lambda: float(os.getenv("V3_CAPTURE_TIME_CONFIDENCE_MTIME", "0.55")),
+        ge=0.0,
+        le=1.0,
+        description="Confidence when time is taken from file mtime (Sprint 3). Env: V3_CAPTURE_TIME_CONFIDENCE_MTIME.",
+    )
+    v3_capture_time_confidence_fallback: float = Field(
+        default_factory=lambda: float(os.getenv("V3_CAPTURE_TIME_CONFIDENCE_FALLBACK", "0.35")),
+        ge=0.0,
+        le=1.0,
+        description="Confidence when time falls back to ingest clock (Sprint 3). Env: V3_CAPTURE_TIME_CONFIDENCE_FALLBACK.",
+    )
 
 
 class PhotosInputSettings(BaseModel):

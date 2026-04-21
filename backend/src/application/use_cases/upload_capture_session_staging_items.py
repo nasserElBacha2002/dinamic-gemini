@@ -20,6 +20,7 @@ from src.application.errors import (
     ZeroByteFileError,
 )
 from src.application.ports.capture_repositories import CaptureSessionItemRepository, CaptureSessionRepository
+from src.application.ports.capture_staging_time import CaptureStagingTimeMetadataExtractor
 from src.application.ports.clock import Clock
 from src.application.ports.services import ArtifactStorage
 from src.application.services.aisle_source_asset_materializer import validate_staging_media_upload_file
@@ -67,6 +68,7 @@ class UploadCaptureSessionStagingItemsUseCase:
         staging_prefix: str,
         max_files_per_upload: int,
         max_upload_bytes: int,
+        time_metadata_extractor: CaptureStagingTimeMetadataExtractor,
     ) -> None:
         self._session_repo = session_repo
         self._item_repo = item_repo
@@ -75,6 +77,7 @@ class UploadCaptureSessionStagingItemsUseCase:
         self._staging_prefix = _normalize_prefix(staging_prefix)
         self._max_files = max(1, int(max_files_per_upload))
         self._max_upload_bytes = max(1, int(max_upload_bytes))
+        self._time_extractor = time_metadata_extractor
 
     def execute(
         self,
@@ -151,6 +154,12 @@ class UploadCaptureSessionStagingItemsUseCase:
                 self._item_repo.save(err_item)
                 created.append(err_item)
                 continue
+            extracted = self._time_extractor.extract(
+                raw_bytes=raw,
+                media_content_type=uf.content_type or "application/octet-stream",
+                ingest_clock=now,
+                source_mtime_utc=uf.last_modified_at,
+            )
             item = CaptureSessionItem(
                 id=item_id,
                 session_id=session_id,
@@ -159,6 +168,9 @@ class UploadCaptureSessionStagingItemsUseCase:
                 assignment_status=CaptureSessionItemAssignmentStatus.PENDING,
                 updated_at=now,
                 content_hash=digest,
+                effective_capture_time=extracted.effective_capture_time,
+                time_source=extracted.time_source,
+                time_confidence=extracted.time_confidence,
                 original_filename=uf.original_filename or None,
             )
             try:

@@ -59,6 +59,8 @@ class CaptureSession:
     updated_at: datetime
     opened_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
+    #: Seconds added to each item's ``effective_capture_time`` for preview ordering (Sprint 3).
+    clock_offset_seconds: int = 0
 
 
 @dataclass
@@ -77,6 +79,12 @@ class CaptureSessionItem:
     last_error_code: Optional[str] = None
     last_error_detail: Optional[str] = None
     original_filename: Optional[str] = None
+    #: ``effective_capture_time`` + session offset at last preview (UTC); null until preview.
+    adjusted_capture_time: Optional[datetime] = None
+    #: Human-readable deterministic preview outcome (Sprint 3).
+    assignment_reason: Optional[str] = None
+    #: Aisle ``positions.id`` when preview proposes a unique slot; null otherwise.
+    preview_target_position_id: Optional[str] = None
 
 
 @dataclass
