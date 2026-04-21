@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from io import BytesIO
 from typing import List, Optional
@@ -29,6 +28,7 @@ from src.api.schemas.capture_schemas import (
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.dto.uploaded_file import UploadedFile
+from src.application.errors import CaptureSessionStatusFilterInvalidError
 from src.application.use_cases.cancel_capture_session import CancelCaptureSessionUseCase
 from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase
 from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
@@ -37,24 +37,27 @@ from src.application.use_cases.list_capture_sessions import ListCaptureSessionsU
 from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
 from src.domain.capture.entities import CaptureSessionStatus
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 
 def _parse_status_filter(raw: Optional[str]) -> Optional[List[CaptureSessionStatus]]:
-    if not raw or not raw.strip():
+    """Strict comma-separated ``CaptureSessionStatus`` values; rejects unknown or empty segments (422)."""
+    if raw is None or not raw.strip():
         return None
     out: List[CaptureSessionStatus] = []
     for part in raw.split(","):
         p = part.strip().lower()
         if not p:
-            continue
+            raise CaptureSessionStatusFilterInvalidError(
+                "status query parameter contains an empty segment between commas"
+            )
         try:
             out.append(CaptureSessionStatus(p))
-        except ValueError:
-            logger.debug("Ignoring unknown capture session status filter: %r", part)
-    return out or None
+        except ValueError as exc:
+            raise CaptureSessionStatusFilterInvalidError(
+                f"Unknown capture session status in status filter: {part.strip()!r}"
+            ) from exc
+    return out
 
 
 @router.post(
@@ -139,10 +142,11 @@ def list_capture_sessions(
     use_case: ListCaptureSessionsUseCase = Depends(get_list_capture_sessions_use_case),
 ) -> PaginatedCaptureSessionListResponse:
     try:
+        statuses = _parse_status_filter(status)
         result = use_case.execute(
             inventory_id,
             aisle_id=aisle_id,
-            statuses=_parse_status_filter(status),
+            statuses=statuses,
             created_from=created_from,
             created_to=created_to,
             page=page,
@@ -193,6 +197,12 @@ async def upload_capture_session_staging_items(
     files: List[UploadFile] = File(...),
     use_case: UploadCaptureSessionStagingItemsUseCase = Depends(get_upload_capture_session_staging_items_use_case),
 ) -> UploadCaptureSessionItemsResponse:
+    """Stage files for a capture session.
+
+    Same buffering pattern as ``upload_aisle_assets``: each ``UploadFile`` is read fully into
+    memory before invoking the use case (``BytesIO`` per file). Low-risk for typical capture
+    batch sizes; very large files still hit ``max_upload_size_mb`` in the use case.
+    """
     if not files:
         raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
     uploaded: List[UploadedFile] = []

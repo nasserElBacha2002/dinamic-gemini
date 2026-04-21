@@ -11,7 +11,9 @@ from src.api.dependencies import get_artifact_storage
 from src.api.server import app
 from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
+    CAPTURE_SESSION_INVALID_STATE,
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    CAPTURE_SESSION_STATUS_FILTER_INVALID,
     OPEN_CAPTURE_SESSION_EXISTS,
 )
 from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
@@ -140,9 +142,44 @@ def test_duplicate_upload_content_409(memory_capture: None) -> None:
 def test_close_session_success(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
     sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    up = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/items",
+        files=[("files", ("x.jpg", b"data", "image/jpeg"))],
+    )
+    assert up.status_code == 201, up.text
     r = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/close",
     )
     assert r.status_code == 200
     assert r.json()["session"]["status"] == "ready_for_review"
     assert r.json()["session"]["closed_at"] is not None
+
+
+def test_close_empty_draft_returns_409(memory_capture: None) -> None:
+    inv_id, aisle_id = _create_inv_aisle()
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    r = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/close")
+    assert r.status_code == 409
+    assert r.json()["code"] == CAPTURE_SESSION_INVALID_STATE
+
+
+def test_list_invalid_status_filter_returns_422(memory_capture: None) -> None:
+    inv_id, _ = _create_inv_aisle()
+    r = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions?status=not_a_real_status")
+    assert r.status_code == 422
+    assert r.json()["code"] == CAPTURE_SESSION_STATUS_FILTER_INVALID
+
+
+def test_list_status_filter_empty_segment_returns_422(memory_capture: None) -> None:
+    inv_id, _ = _create_inv_aisle()
+    r = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions?status=draft,")
+    assert r.status_code == 422
+    assert r.json()["code"] == CAPTURE_SESSION_STATUS_FILTER_INVALID
+
+
+def test_list_valid_status_filter_ok(memory_capture: None) -> None:
+    inv_id, aisle_id = _create_inv_aisle()
+    client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions")
+    r = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions?status=draft")
+    assert r.status_code == 200
+    assert r.json()["total_items"] == 1

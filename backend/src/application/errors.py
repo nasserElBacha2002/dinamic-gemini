@@ -157,3 +157,7 @@ class CaptureSessionUploadBatchTooLargeError(Exception):
 
 class CaptureSessionStagingFileTooLargeError(Exception):
     """Raised when a single staging upload exceeds the configured max upload size."""
+
+
+class CaptureSessionStatusFilterInvalidError(Exception):
+    """Raised when GET .../capture-sessions ``status`` query contains unknown or empty tokens."""

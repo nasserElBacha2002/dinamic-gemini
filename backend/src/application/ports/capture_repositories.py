@@ -14,6 +14,7 @@ from src.domain.capture.entities import (
     CaptureSession,
     CaptureSessionConfirmationLedgerEntry,
     CaptureSessionItem,
+    CaptureSessionItemImportStatus,
     CaptureSessionStatus,
 )
 
@@ -70,6 +71,12 @@ class CaptureSessionItemRepository(ABC):
     @abstractmethod
     def has_item_with_content_hash(self, session_id: str, content_hash: str) -> bool:
         """True if any item in the session already records this non-empty content hash."""
+
+    @abstractmethod
+    def count_items_with_import_status(
+        self, session_id: str, import_status: CaptureSessionItemImportStatus
+    ) -> int:
+        """Count items for a session with the given import status (bounded COUNT query)."""
 
 
 class CaptureSessionConfirmIdempotencyRepository(ABC):

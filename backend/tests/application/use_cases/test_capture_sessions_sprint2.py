@@ -11,10 +11,12 @@ import pytest
 
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import (
+    CaptureSessionDuplicateItemContentError,
     CaptureSessionInvalidStateError,
     CaptureSessionNotAcceptingUploadsError,
     CaptureSessionNotFoundError,
-    CaptureSessionDuplicateItemContentError,
+    CaptureSessionStagingFileTooLargeError,
+    CaptureSessionUploadBatchTooLargeError,
     InventoryNotFoundError,
     OpenCaptureSessionExistsError,
 )
@@ -147,9 +149,10 @@ def test_create_respects_open_session_cap() -> None:
         create_uc.execute(inv_id, aisle_id)
 
 
-def test_close_then_reopen_allowed() -> None:
+def test_close_then_reopen_allowed(tmp_path: Path) -> None:
     inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
     session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
     clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
     create_uc = CreateCaptureSessionUseCase(
         inventory_repo=inv_repo,
@@ -159,7 +162,22 @@ def test_close_then_reopen_allowed() -> None:
         max_open_sessions_per_aisle=1,
     )
     s = create_uc.execute(inv_id, aisle_id)
-    close_uc = CloseCaptureSessionUseCase(session_repo=session_repo, clock=clock)
+    store = V3ArtifactStorageAdapter(tmp_path)
+    UploadCaptureSessionStagingItemsUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=store,
+        clock=clock,
+        staging_prefix="capture/staging",
+        max_files_per_upload=10,
+        max_upload_bytes=1024 * 1024,
+    ).execute(
+        inventory_id=inv_id,
+        aisle_id=aisle_id,
+        session_id=s.id,
+        files=[UploadedFile("a.jpg", BytesIO(b"x"), "image/jpeg")],
+    )
+    close_uc = CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock)
     closed = close_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id)
     assert closed.status == CaptureSessionStatus.READY_FOR_REVIEW
     assert closed.closed_at is not None
@@ -187,8 +205,88 @@ def test_close_rejects_cancelled(tmp_path: Path) -> None:
         clock=clock,
     ).execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id)
     with pytest.raises(CaptureSessionInvalidStateError):
-        CloseCaptureSessionUseCase(session_repo=session_repo, clock=clock).execute(
+        CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock).execute(
             inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id
+        )
+
+
+def test_close_draft_without_imported_items_rejected() -> None:
+    inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
+    session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
+    clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
+    s = CreateCaptureSessionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=3,
+    ).execute(inv_id, aisle_id)
+    close_uc = CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock)
+    with pytest.raises(CaptureSessionInvalidStateError):
+        close_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id)
+
+
+def test_staging_file_too_large(tmp_path: Path) -> None:
+    inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
+    session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
+    clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
+    s = CreateCaptureSessionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=3,
+    ).execute(inv_id, aisle_id)
+    upload_uc = UploadCaptureSessionStagingItemsUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=V3ArtifactStorageAdapter(tmp_path),
+        clock=clock,
+        staging_prefix="capture/staging",
+        max_files_per_upload=10,
+        max_upload_bytes=3,
+    )
+    with pytest.raises(CaptureSessionStagingFileTooLargeError):
+        upload_uc.execute(
+            inventory_id=inv_id,
+            aisle_id=aisle_id,
+            session_id=s.id,
+            files=[UploadedFile("a.jpg", BytesIO(b"abcd"), "image/jpeg")],
+        )
+
+
+def test_staging_batch_too_large(tmp_path: Path) -> None:
+    inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
+    session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
+    clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
+    s = CreateCaptureSessionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=3,
+    ).execute(inv_id, aisle_id)
+    upload_uc = UploadCaptureSessionStagingItemsUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=V3ArtifactStorageAdapter(tmp_path),
+        clock=clock,
+        staging_prefix="capture/staging",
+        max_files_per_upload=1,
+        max_upload_bytes=1024,
+    )
+    with pytest.raises(CaptureSessionUploadBatchTooLargeError):
+        upload_uc.execute(
+            inventory_id=inv_id,
+            aisle_id=aisle_id,
+            session_id=s.id,
+            files=[
+                UploadedFile("a.jpg", BytesIO(b"a"), "image/jpeg"),
+                UploadedFile("b.jpg", BytesIO(b"b"), "image/jpeg"),
+            ],
         )
 
 

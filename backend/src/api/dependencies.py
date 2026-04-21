@@ -800,11 +800,12 @@ def get_create_capture_session_use_case(
 
 def get_close_capture_session_use_case(
     session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
     clock: Clock = Depends(get_clock),
 ):
     from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase
 
-    return CloseCaptureSessionUseCase(session_repo=session_repo, clock=clock)
+    return CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock)
 
 
 def get_cancel_capture_session_use_case(

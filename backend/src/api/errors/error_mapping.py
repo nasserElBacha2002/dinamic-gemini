@@ -170,6 +170,7 @@ from src.application.errors import (
     CaptureSessionNotAcceptingUploadsError,
     CaptureSessionNotFoundError,
     CaptureSessionStagingFileTooLargeError,
+    CaptureSessionStatusFilterInvalidError,
     CaptureSessionUploadBatchTooLargeError,
     DuplicateAisleCodeError,
     EmptyUploadError,
@@ -203,6 +204,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
     HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
     HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
+    HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
     HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE,
     HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
     HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
@@ -230,6 +232,7 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
     CAPTURE_SESSION_NOT_FOUND,
     CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
+    CAPTURE_SESSION_STATUS_FILTER_INVALID,
     CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
     INTERNAL_SERVER_ERROR,
     INVENTORY_NOT_FOUND,
@@ -488,6 +491,12 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=422,
             error_code=CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
             detail=HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
+        )
+    if isinstance(exc, CaptureSessionStatusFilterInvalidError):
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=CAPTURE_SESSION_STATUS_FILTER_INVALID,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
         )
     if isinstance(exc, UnsupportedAssetTypeError):
         return HTTPException(status_code=400, detail=str(exc))

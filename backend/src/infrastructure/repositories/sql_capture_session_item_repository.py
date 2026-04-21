@@ -6,6 +6,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
+import pyodbc
+
+from src.application.errors import CaptureSessionDuplicateItemContentError
 from src.application.ports.capture_repositories import CaptureSessionItemRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.capture.entities import (
@@ -51,6 +54,14 @@ def _time_source_from_row(raw: object) -> Optional[CaptureTimeSource]:
         return CaptureTimeSource(str(raw).strip().lower())
     except ValueError:
         return None
+
+
+def _is_session_content_hash_unique_violation(exc: pyodbc.IntegrityError) -> bool:
+    """Detect duplicate (session_id, content_hash) insert on filtered unique index."""
+    msg = str(exc).lower()
+    return "uq_capture_session_items_session_content_hash" in msg or (
+        "unique" in msg and "capture_session_items" in msg and "content_hash" in msg
+    )
 
 
 def _row_to_item(row) -> CaptureSessionItem:
@@ -113,32 +124,39 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                 ),
             )
             if cur.rowcount == 0:
-                cur.execute(
-                    """
-                    INSERT INTO capture_session_items (
-                        id, session_id, staging_storage_key, content_hash,
-                        effective_capture_time, time_source, time_confidence,
-                        import_status, assignment_status, linked_source_asset_id,
-                        last_error_code, last_error_detail, updated_at, original_filename
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        item.id,
-                        item.session_id,
-                        item.staging_storage_key,
-                        item.content_hash,
-                        eff,
-                        item.time_source.value if item.time_source else None,
-                        item.time_confidence,
-                        item.import_status.value,
-                        item.assignment_status.value,
-                        item.linked_source_asset_id,
-                        item.last_error_code,
-                        item.last_error_detail,
-                        updated,
-                        item.original_filename,
-                    ),
-                )
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO capture_session_items (
+                            id, session_id, staging_storage_key, content_hash,
+                            effective_capture_time, time_source, time_confidence,
+                            import_status, assignment_status, linked_source_asset_id,
+                            last_error_code, last_error_detail, updated_at, original_filename
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            item.id,
+                            item.session_id,
+                            item.staging_storage_key,
+                            item.content_hash,
+                            eff,
+                            item.time_source.value if item.time_source else None,
+                            item.time_confidence,
+                            item.import_status.value,
+                            item.assignment_status.value,
+                            item.linked_source_asset_id,
+                            item.last_error_code,
+                            item.last_error_detail,
+                            updated,
+                            item.original_filename,
+                        ),
+                    )
+                except pyodbc.IntegrityError as exc:
+                    if _is_session_content_hash_unique_violation(exc):
+                        raise CaptureSessionDuplicateItemContentError(
+                            "Duplicate file content in this capture session"
+                        ) from exc
+                    raise
 
     def get_by_id(self, item_id: str) -> Optional[CaptureSessionItem]:
         with self._client.cursor() as cur:
@@ -204,3 +222,18 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                 (session_id, h),
             )
             return cur.fetchone() is not None
+
+    def count_items_with_import_status(
+        self, session_id: str, import_status: CaptureSessionItemImportStatus
+    ) -> int:
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(1) AS c
+                FROM capture_session_items
+                WHERE session_id = ? AND import_status = ?
+                """,
+                (session_id, import_status.value),
+            )
+            row = cur.fetchone()
+        return int(getattr(row, "c", row[0]) if row else 0)

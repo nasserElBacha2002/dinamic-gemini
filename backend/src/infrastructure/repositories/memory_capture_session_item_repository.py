@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Dict, Optional, Sequence
 
+from src.application.errors import CaptureSessionDuplicateItemContentError
 from src.application.ports.capture_repositories import CaptureSessionItemRepository
-from src.domain.capture.entities import CaptureSessionItem
+from src.domain.capture.entities import CaptureSessionItem, CaptureSessionItemImportStatus
 
 
 class MemoryCaptureSessionItemRepository(CaptureSessionItemRepository):
@@ -13,6 +14,17 @@ class MemoryCaptureSessionItemRepository(CaptureSessionItemRepository):
         self._store: Dict[str, CaptureSessionItem] = {}
 
     def save(self, item: CaptureSessionItem) -> None:
+        h = (item.content_hash or "").strip()
+        if h:
+            for other in self._store.values():
+                if (
+                    other.session_id == item.session_id
+                    and (other.content_hash or "").strip() == h
+                    and other.id != item.id
+                ):
+                    raise CaptureSessionDuplicateItemContentError(
+                        "Duplicate file content in this capture session"
+                    )
         self._store[item.id] = item
 
     def get_by_id(self, item_id: str) -> Optional[CaptureSessionItem]:
@@ -42,4 +54,13 @@ class MemoryCaptureSessionItemRepository(CaptureSessionItemRepository):
             return False
         return any(
             i.session_id == session_id and (i.content_hash or "").strip() == h for i in self._store.values()
+        )
+
+    def count_items_with_import_status(
+        self, session_id: str, import_status: CaptureSessionItemImportStatus
+    ) -> int:
+        return sum(
+            1
+            for i in self._store.values()
+            if i.session_id == session_id and i.import_status == import_status
         )

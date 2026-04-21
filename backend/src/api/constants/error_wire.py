@@ -90,3 +90,6 @@ HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS = (
 HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT = "Duplicate file content in this capture session"
 HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE = "Too many files in this staging upload request"
 HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE = "File exceeds maximum upload size for staging uploads"
+HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID = (
+    "One or more values in the status query parameter are not valid capture session statuses."
+)

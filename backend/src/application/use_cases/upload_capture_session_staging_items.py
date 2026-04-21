@@ -9,8 +9,6 @@ from io import BytesIO
 from typing import List, Sequence
 from uuid import uuid4
 
-import pyodbc
-
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import (
     CaptureSessionDuplicateItemContentError,
@@ -165,21 +163,18 @@ class UploadCaptureSessionStagingItemsUseCase:
             )
             try:
                 self._item_repo.save(item)
-            except Exception as exc:
-                if isinstance(exc, pyodbc.IntegrityError) or _is_unique_constraint_violation(exc):
-                    logger.warning(
-                        "capture staging upload: duplicate content_hash session_id=%s key=%s: %s",
-                        session_id,
-                        rel_key,
-                        exc,
-                    )
-                    try:
-                        self._artifact_storage.delete_file(rel_key)
-                    except Exception as cleanup_e:  # noqa: BLE001
-                        logger.warning("capture staging upload: rollback delete failed key=%s: %s", rel_key, cleanup_e)
-                    raise CaptureSessionDuplicateItemContentError(
-                        "Duplicate file content in this capture session"
-                    ) from exc
+            except CaptureSessionDuplicateItemContentError:
+                logger.warning(
+                    "capture staging upload: duplicate content_hash session_id=%s key=%s",
+                    session_id,
+                    rel_key,
+                )
+                try:
+                    self._artifact_storage.delete_file(rel_key)
+                except Exception as cleanup_e:  # noqa: BLE001
+                    logger.warning("capture staging upload: rollback delete failed key=%s: %s", rel_key, cleanup_e)
+                raise
+            except Exception:
                 try:
                     self._artifact_storage.delete_file(rel_key)
                 except Exception as cleanup_e:  # noqa: BLE001
@@ -210,12 +205,3 @@ class UploadCaptureSessionStagingItemsUseCase:
         if session_dirty:
             self._session_repo.save(session)
         return created
-
-
-def _is_unique_constraint_violation(exc: BaseException) -> bool:
-    if isinstance(exc, pyodbc.IntegrityError):
-        return True
-    state = getattr(exc, "args", None)
-    if state and str(state[0]) == "23000":
-        return True
-    return "UNIQUE KEY" in str(exc).upper() or "unique constraint" in str(exc).lower()
