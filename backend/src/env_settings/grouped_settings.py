@@ -699,6 +699,40 @@ class LimitsAndSchemaSettings(BaseModel):
         default_factory=lambda: (os.getenv("DEPLOYMENT_ID") or "").strip() or None,
         description="Deployment identifier used to annotate migration history. Env: DEPLOYMENT_ID.",
     )
+    v3_capture_max_open_sessions_per_aisle: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_OPEN_SESSIONS_PER_AISLE", "1")),
+        ge=1,
+        le=20,
+        description=(
+            "v3 capture: max concurrent open (non-terminal, unclosed) sessions per aisle. "
+            "Env: V3_CAPTURE_MAX_OPEN_SESSIONS_PER_AISLE (default 1)."
+        ),
+    )
+    v3_capture_session_list_default_page_size: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_SESSION_LIST_DEFAULT_PAGE_SIZE", "25")),
+        ge=1,
+        le=500,
+        description="Default page size for GET .../capture-sessions. Env: V3_CAPTURE_SESSION_LIST_DEFAULT_PAGE_SIZE.",
+    )
+    v3_capture_session_list_max_page_size: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_SESSION_LIST_MAX_PAGE_SIZE", "200")),
+        ge=1,
+        le=1000,
+        description="Max page size for GET .../capture-sessions. Env: V3_CAPTURE_SESSION_LIST_MAX_PAGE_SIZE.",
+    )
+    v3_capture_staging_storage_prefix: str = Field(
+        default_factory=lambda: (os.getenv("V3_CAPTURE_STAGING_STORAGE_PREFIX", "capture/staging") or "capture/staging").strip(),
+        description=(
+            "Relative prefix under artifact storage for capture staging blobs (not aisle SourceAsset paths). "
+            "Env: V3_CAPTURE_STAGING_STORAGE_PREFIX."
+        ),
+    )
+    v3_capture_max_files_per_upload: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_FILES_PER_UPLOAD", "50")),
+        ge=1,
+        le=200,
+        description="Max files per POST .../capture-sessions/{id}/items staging upload. Env: V3_CAPTURE_MAX_FILES_PER_UPLOAD.",
+    )
 
 
 class PhotosInputSettings(BaseModel):

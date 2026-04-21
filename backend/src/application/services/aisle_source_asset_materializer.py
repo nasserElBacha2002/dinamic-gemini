@@ -58,6 +58,12 @@ def _validate_filename_matches_type(filename: str, asset_type: SourceAssetType) 
         )
 
 
+def validate_staging_media_upload_file(uploaded: UploadedFile) -> None:
+    """Apply the same image/video content-type rules as aisle SourceAsset uploads without persisting assets."""
+    asset_type = _detect_asset_type(uploaded.content_type)
+    _validate_filename_matches_type(uploaded.original_filename, asset_type)
+
+
 class AisleSourceAssetMaterializer:
     def __init__(
         self,

@@ -7,6 +7,7 @@ SQL implementations land in a later sprint; use cases must depend only on these 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Optional, Sequence
 
 from src.domain.capture.entities import (
@@ -27,15 +28,26 @@ class CaptureSessionRepository(ABC):
         ...
 
     @abstractmethod
+    def get_by_id_for_inventory(self, session_id: str, inventory_id: str) -> Optional[CaptureSession]:
+        """Return the session only when it belongs to the given inventory."""
+
+    @abstractmethod
+    def count_open_sessions_for_aisle(self, inventory_id: str, aisle_id: str) -> int:
+        """Count non-terminal sessions that are still open (``closed_at`` is null)."""
+
+    @abstractmethod
     def list_by_inventory(
         self,
         inventory_id: str,
         *,
         aisle_id: Optional[str] = None,
         statuses: Optional[Sequence[CaptureSessionStatus]] = None,
-        limit: int = 200,
-    ) -> Sequence[CaptureSession]:
-        """List sessions for an inventory, optionally filtered by aisle and/or status."""
+        created_from: Optional[datetime] = None,
+        created_to: Optional[datetime] = None,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> tuple[Sequence[CaptureSession], int]:
+        """List sessions for an inventory with filters and pagination; returns (page rows, total count)."""
 
 
 class CaptureSessionItemRepository(ABC):
@@ -50,6 +62,14 @@ class CaptureSessionItemRepository(ABC):
     @abstractmethod
     def list_by_session(self, session_id: str) -> Sequence[CaptureSessionItem]:
         ...
+
+    @abstractmethod
+    def list_staging_cleanup_candidates(self, session_id: str) -> Sequence[CaptureSessionItem]:
+        """Items that may still have staging bytes: no linked SourceAsset, non-empty staging key."""
+
+    @abstractmethod
+    def has_item_with_content_hash(self, session_id: str, content_hash: str) -> bool:
+        """True if any item in the session already records this non-empty content hash."""
 
 
 class CaptureSessionConfirmIdempotencyRepository(ABC):

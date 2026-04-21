@@ -76,6 +76,7 @@ class CaptureSessionItem:
     linked_source_asset_id: Optional[str] = None
     last_error_code: Optional[str] = None
     last_error_detail: Optional[str] = None
+    original_filename: Optional[str] = None
 
 
 @dataclass

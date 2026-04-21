@@ -165,6 +165,12 @@ from src.application.errors import (
     BenchmarkCompareJobsMustDifferError,
     BenchmarkCompareManyInvalidSelectionError,
     BenchmarkRequiresTestInventoryError,
+    CaptureSessionDuplicateItemContentError,
+    CaptureSessionInvalidStateError,
+    CaptureSessionNotAcceptingUploadsError,
+    CaptureSessionNotFoundError,
+    CaptureSessionStagingFileTooLargeError,
+    CaptureSessionUploadBatchTooLargeError,
     DuplicateAisleCodeError,
     EmptyUploadError,
     InventoryNotFoundError,
@@ -177,6 +183,7 @@ from src.application.errors import (
     MaxInventoryVisualReferencesExceededError,
     MergeJobScopeAmbiguousError,
     NoSourceAssetsForAisleProcessingError,
+    OpenCaptureSessionExistsError,
     PositionDeletedError,
     PositionNotFoundError,
     PositionResultContextMismatchError,
@@ -194,8 +201,15 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
     HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
     HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
+    HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
+    HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE,
+    HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
+    HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
     HTTP_DETAIL_INVENTORY_NOT_FOUND,
     HTTP_DETAIL_JOB_NOT_FOUND,
+    HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
     HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
     HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
     HTTP_DETAIL_UNEXPECTED_ERROR,
@@ -211,11 +225,18 @@ from src.api.errors.structured_api_http import (
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
     BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
+    CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
+    CAPTURE_SESSION_INVALID_STATE,
+    CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    CAPTURE_SESSION_NOT_FOUND,
+    CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
+    CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
     INTERNAL_SERVER_ERROR,
     INVENTORY_NOT_FOUND,
     JOB_NOT_FOUND,
     JOB_NOT_IN_AISLE_SCOPE,
     JOB_PROMOTION_NOT_ALLOWED,
+    OPEN_CAPTURE_SESSION_EXISTS,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
     VISUAL_REFERENCE_NOT_FOUND,
@@ -425,6 +446,48 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=422,
             error_code=ANALYTICS_SCOPE_VALIDATION_FAILED,
             detail=HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
+        )
+    if isinstance(exc, CaptureSessionNotFoundError):
+        return StructuredApiHttpError(
+            status_code=404,
+            error_code=CAPTURE_SESSION_NOT_FOUND,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
+        )
+    if isinstance(exc, OpenCaptureSessionExistsError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=OPEN_CAPTURE_SESSION_EXISTS,
+            detail=HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
+        )
+    if isinstance(exc, CaptureSessionInvalidStateError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=CAPTURE_SESSION_INVALID_STATE,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE,
+        )
+    if isinstance(exc, CaptureSessionNotAcceptingUploadsError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+        )
+    if isinstance(exc, CaptureSessionDuplicateItemContentError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
+        )
+    if isinstance(exc, CaptureSessionUploadBatchTooLargeError):
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+        )
+    if isinstance(exc, CaptureSessionStagingFileTooLargeError):
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
         )
     if isinstance(exc, UnsupportedAssetTypeError):
         return HTTPException(status_code=400, detail=str(exc))

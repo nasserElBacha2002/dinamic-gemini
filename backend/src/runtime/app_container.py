@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional, TypeVar
 
 from src.application.ports.analytics_repository import AnalyticsRepository
+from src.application.ports.capture_repositories import CaptureSessionItemRepository, CaptureSessionRepository
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
@@ -79,6 +80,8 @@ class AppContainer:
         self._artifact_storage: Optional[ArtifactStorage] = None
         self._worker_launch_service: Optional[WorkerLaunchService] = None
         self._analytics_repo: Optional[AnalyticsRepository] = None
+        self._capture_session_repo: Optional[CaptureSessionRepository] = None
+        self._capture_session_item_repo: Optional[CaptureSessionItemRepository] = None
 
     @property
     def settings(self) -> "AppSettings":
@@ -492,6 +495,50 @@ class AppContainer:
             build_memory=_memory,
         )
         return self._analytics_repo
+
+    def get_capture_session_repo(self) -> CaptureSessionRepository:
+        if self._capture_session_repo is not None:
+            return self._capture_session_repo
+
+        from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+        from src.infrastructure.repositories.sql_capture_session_repository import SqlCaptureSessionRepository
+
+        def _sql(client: SqlServerClient) -> CaptureSessionRepository:
+            return SqlCaptureSessionRepository(client)
+
+        def _memory() -> CaptureSessionRepository:
+            return MemoryCaptureSessionRepository()
+
+        self._capture_session_repo = self._build_sql_repository_or_memory(
+            backend_info_name="CaptureSessionRepository",
+            sql_error_subject="capture_session repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._capture_session_repo
+
+    def get_capture_session_item_repo(self) -> CaptureSessionItemRepository:
+        if self._capture_session_item_repo is not None:
+            return self._capture_session_item_repo
+
+        from src.infrastructure.repositories.memory_capture_session_item_repository import (
+            MemoryCaptureSessionItemRepository,
+        )
+        from src.infrastructure.repositories.sql_capture_session_item_repository import SqlCaptureSessionItemRepository
+
+        def _sql(client: SqlServerClient) -> CaptureSessionItemRepository:
+            return SqlCaptureSessionItemRepository(client)
+
+        def _memory() -> CaptureSessionItemRepository:
+            return MemoryCaptureSessionItemRepository()
+
+        self._capture_session_item_repo = self._build_sql_repository_or_memory(
+            backend_info_name="CaptureSessionItemRepository",
+            sql_error_subject="capture_session_item repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._capture_session_item_repo
 
     def get_recompute_consolidated_counts_use_case(self) -> RecomputeConsolidatedCountsUseCase:
         from src.application.services.final_count_builder import FinalCountBuilder

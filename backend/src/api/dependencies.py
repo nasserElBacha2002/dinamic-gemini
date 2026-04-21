@@ -17,6 +17,7 @@ import logging
 from fastapi import Depends
 
 from src.application.ports.clock import Clock
+from src.application.ports.capture_repositories import CaptureSessionItemRepository, CaptureSessionRepository
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
@@ -33,6 +34,8 @@ from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
     get_aisle_repo,
     get_analytics_repo,
+    get_capture_session_item_repo,
+    get_capture_session_repo,
     get_clock,
     get_evidence_repo,
     get_final_count_repo,
@@ -774,3 +777,99 @@ def get_analytics_query_service(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
 ) -> AnalyticsQueryService:
     return AnalyticsQueryService(repo, aisle_repo)
+
+
+def get_create_capture_session_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
+    from src.config import load_settings
+
+    s = load_settings()
+    return CreateCaptureSessionUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=s.v3_capture_max_open_sessions_per_aisle,
+    )
+
+
+def get_close_capture_session_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase
+
+    return CloseCaptureSessionUseCase(session_repo=session_repo, clock=clock)
+
+
+def get_cancel_capture_session_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
+    artifact_storage=Depends(get_artifact_storage),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.cancel_capture_session import CancelCaptureSessionUseCase
+
+    return CancelCaptureSessionUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=artifact_storage,
+        clock=clock,
+    )
+
+
+def get_list_capture_sessions_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+):
+    from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
+    from src.config import load_settings
+
+    s = load_settings()
+    return ListCaptureSessionsUseCase(
+        inventory_repo=inventory_repo,
+        session_repo=session_repo,
+        default_page_size=s.v3_capture_session_list_default_page_size,
+        max_page_size=s.v3_capture_session_list_max_page_size,
+    )
+
+
+def get_get_capture_session_detail_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
+):
+    from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
+
+    return GetCaptureSessionDetailUseCase(
+        inventory_repo=inventory_repo,
+        session_repo=session_repo,
+        item_repo=item_repo,
+    )
+
+
+def get_upload_capture_session_staging_items_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
+    artifact_storage=Depends(get_artifact_storage),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
+    from src.config import load_settings
+
+    s = load_settings()
+    max_bytes = int(s.max_upload_size_mb) * 1024 * 1024
+    return UploadCaptureSessionStagingItemsUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=artifact_storage,
+        clock=clock,
+        staging_prefix=s.v3_capture_staging_storage_prefix,
+        max_files_per_upload=s.v3_capture_max_files_per_upload,
+        max_upload_bytes=max_bytes,
+    )

@@ -77,3 +77,16 @@ HTTP_DETAIL_REVIEW_UNKNOWN_ACTION_TYPE_PREFIX = "Unknown action_type: "
 
 # API key middleware (``server.api_key_middleware``) — plain 403 JSON ``detail``.
 HTTP_DETAIL_API_KEY_INVALID_OR_MISSING = "Invalid or missing API key"
+
+# Field capture sessions (v3 inventories) — Sprint 2 structured subset.
+HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND = "Capture session not found"
+HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS = (
+    "An open capture session already exists for this aisle; close or cancel it first."
+)
+HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE = "Capture session is not in a valid state for this operation"
+HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS = (
+    "This capture session does not accept new staging uploads"
+)
+HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT = "Duplicate file content in this capture session"
+HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE = "Too many files in this staging upload request"
+HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE = "File exceeds maximum upload size for staging uploads"

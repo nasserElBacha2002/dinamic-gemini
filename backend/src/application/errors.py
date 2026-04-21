@@ -129,3 +129,31 @@ class BenchmarkCompareManyInvalidSelectionError(Exception):
 
 class AnalyticsScopeValidationError(Exception):
     """Raised when analytics filters combine ``inventory_id`` and ``aisle_id`` inconsistently."""
+
+
+class CaptureSessionNotFoundError(Exception):
+    """Raised when a capture session is missing or not scoped to the requested inventory/aisle."""
+
+
+class OpenCaptureSessionExistsError(Exception):
+    """Raised when creating a session would exceed the allowed number of open sessions for the aisle."""
+
+
+class CaptureSessionInvalidStateError(Exception):
+    """Raised when a session lifecycle transition is not allowed for the current status."""
+
+
+class CaptureSessionNotAcceptingUploadsError(Exception):
+    """Raised when staging uploads are blocked (terminal state, cancelled, or closed session)."""
+
+
+class CaptureSessionDuplicateItemContentError(Exception):
+    """Raised when the same content hash is already registered for this session (unique index)."""
+
+
+class CaptureSessionUploadBatchTooLargeError(Exception):
+    """Raised when the number of files in one staging upload exceeds the configured cap."""
+
+
+class CaptureSessionStagingFileTooLargeError(Exception):
+    """Raised when a single staging upload exceeds the configured max upload size."""
