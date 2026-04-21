@@ -9,7 +9,11 @@ and worker bootstrap without duplicating construction logic.
 from __future__ import annotations
 
 from src.application.ports.clock import Clock
-from src.application.ports.capture_repositories import CaptureSessionItemRepository, CaptureSessionRepository
+from src.application.ports.capture_repositories import (
+    CaptureSessionConfirmIdempotencyRepository,
+    CaptureSessionItemRepository,
+    CaptureSessionRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
@@ -103,6 +107,10 @@ def get_capture_session_repo() -> CaptureSessionRepository:
 
 def get_capture_session_item_repo() -> CaptureSessionItemRepository:
     return get_app_container().get_capture_session_item_repo()
+
+
+def get_capture_session_confirm_repo() -> CaptureSessionConfirmIdempotencyRepository:
+    return get_app_container().get_capture_session_confirm_repo()
 
 
 def get_recompute_consolidated_counts_use_case():

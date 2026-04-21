@@ -55,7 +55,7 @@ def _seed_inv_aisle() -> tuple[MemoryInventoryRepository, MemoryAisleRepository,
         Inventory(
             id=inv_id,
             name="Inv",
-            status=InventoryStatus.CREATED,
+            status=InventoryStatus.DRAFT,
             created_at=now,
             updated_at=now,
         )
@@ -118,6 +118,17 @@ def test_create_fails_when_inventory_missing() -> None:
 
 def test_create_fails_when_aisle_wrong_inventory() -> None:
     inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
+    other_inv_id = str(uuid4())
+    now = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo.save(
+        Inventory(
+            id=other_inv_id,
+            name="Other inv",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+    )
     session_repo = MemoryCaptureSessionRepository()
     clock = _FixedClock(datetime.now(timezone.utc))
     create_uc = CreateCaptureSessionUseCase(
@@ -130,7 +141,7 @@ def test_create_fails_when_aisle_wrong_inventory() -> None:
     from src.application.errors import AisleNotFoundError
 
     with pytest.raises(AisleNotFoundError):
-        create_uc.execute(str(uuid4()), aisle_id)
+        create_uc.execute(other_inv_id, aisle_id)
 
 
 def test_create_respects_open_session_cap() -> None:
@@ -416,6 +427,17 @@ def test_upload_duplicate_content_rejected(tmp_path: Path) -> None:
 
 def test_get_detail_not_found_wrong_inventory() -> None:
     inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
+    other_inv_id = str(uuid4())
+    now = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo.save(
+        Inventory(
+            id=other_inv_id,
+            name="Other inv",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+    )
     session_repo = MemoryCaptureSessionRepository()
     item_repo = MemoryCaptureSessionItemRepository()
     clock = _FixedClock(datetime.now(timezone.utc))
@@ -432,4 +454,4 @@ def test_get_detail_not_found_wrong_inventory() -> None:
         item_repo=item_repo,
     )
     with pytest.raises(CaptureSessionNotFoundError):
-        detail_uc.execute(str(uuid4()), s.id)
+        detail_uc.execute(other_inv_id, s.id)

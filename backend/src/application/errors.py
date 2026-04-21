@@ -161,3 +161,7 @@ class CaptureSessionStagingFileTooLargeError(Exception):
 
 class CaptureSessionStatusFilterInvalidError(Exception):
     """Raised when GET .../capture-sessions ``status`` query contains unknown or empty tokens."""
+
+
+class CaptureSessionConfirmLedgerDuplicateError(Exception):
+    """Raised when inserting a duplicate (session_id, idempotency_key) into the confirm ledger."""

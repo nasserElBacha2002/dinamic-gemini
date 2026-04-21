@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, Optional, Sequence
 
+from src.application.errors import OpenCaptureSessionExistsError
 from src.application.ports.capture_repositories import CaptureSessionRepository
 from src.domain.capture.entities import CaptureSession, CaptureSessionStatus
 
@@ -21,7 +22,27 @@ class MemoryCaptureSessionRepository(CaptureSessionRepository):
     def __init__(self) -> None:
         self._store: Dict[str, CaptureSession] = {}
 
+    @staticmethod
+    def _is_open_for_unique_policy(s: CaptureSession) -> bool:
+        if s.closed_at is not None:
+            return False
+        if s.status in _TERMINAL_OPEN_BLOCK:
+            return False
+        return True
+
     def save(self, session: CaptureSession) -> None:
+        if self._is_open_for_unique_policy(session):
+            for other in self._store.values():
+                if other.id == session.id:
+                    continue
+                if (
+                    other.inventory_id == session.inventory_id
+                    and other.aisle_id == session.aisle_id
+                    and self._is_open_for_unique_policy(other)
+                ):
+                    raise OpenCaptureSessionExistsError(
+                        "An open capture session already exists for this aisle; close or cancel it first."
+                    )
         self._store[session.id] = session
 
     def get_by_id(self, session_id: str) -> Optional[CaptureSession]:

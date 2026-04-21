@@ -6,6 +6,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
+import pyodbc
+
+from src.application.errors import OpenCaptureSessionExistsError
 from src.application.ports.capture_repositories import CaptureSessionRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.capture.entities import CaptureSession, CaptureSessionStatus
@@ -13,6 +16,13 @@ from src.domain.capture.entities import CaptureSession, CaptureSessionStatus
 logger = logging.getLogger(__name__)
 
 _OPEN_STATUS_EXCLUSION = ("cancelled", "failed", "confirmed")
+
+
+def _is_one_open_per_aisle_unique_violation(exc: pyodbc.IntegrityError) -> bool:
+    msg = str(exc).lower()
+    return "uq_capture_sessions_one_open_per_aisle" in msg or (
+        "capture_sessions" in msg and "duplicate" in msg and "inventory_id" in msg
+    )
 
 
 def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -81,23 +91,30 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
                 ),
             )
             if cur.rowcount == 0:
-                cur.execute(
-                    """
-                    INSERT INTO capture_sessions (
-                        id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        session.id,
-                        session.inventory_id,
-                        session.aisle_id,
-                        session.status.value,
-                        created,
-                        updated,
-                        opened,
-                        closed,
-                    ),
-                )
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO capture_sessions (
+                            id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            session.id,
+                            session.inventory_id,
+                            session.aisle_id,
+                            session.status.value,
+                            created,
+                            updated,
+                            opened,
+                            closed,
+                        ),
+                    )
+                except pyodbc.IntegrityError as exc:
+                    if _is_one_open_per_aisle_unique_violation(exc):
+                        raise OpenCaptureSessionExistsError(
+                            "An open capture session already exists for this aisle; close or cancel it first."
+                        ) from exc
+                    raise
 
     def get_by_id(self, session_id: str) -> Optional[CaptureSession]:
         with self._client.cursor() as cur:

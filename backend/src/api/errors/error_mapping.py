@@ -202,6 +202,8 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
     HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
     HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+    HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
     HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
     HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
     HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
@@ -227,6 +229,9 @@ from src.api.errors.structured_api_http import (
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
     BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
+    EMPTY_UPLOAD,
+    UNSUPPORTED_ASSET_TYPE,
+    ZERO_BYTE_FILE,
     CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
     CAPTURE_SESSION_INVALID_STATE,
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
@@ -419,9 +424,17 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
     if isinstance(exc, ReviewMutationNotAllowedError):
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, EmptyUploadError):
-        return HTTPException(status_code=422, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=EMPTY_UPLOAD,
+            detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+        )
     if isinstance(exc, ZeroByteFileError):
-        return HTTPException(status_code=422, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=ZERO_BYTE_FILE,
+            detail=HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+        )
     if isinstance(exc, UnknownProcessingProviderError):
         return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, InvalidProcessingModelError):
@@ -499,7 +512,11 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             detail=HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
         )
     if isinstance(exc, UnsupportedAssetTypeError):
-        return HTTPException(status_code=400, detail=str(exc))
+        return StructuredApiHttpError(
+            status_code=400,
+            error_code=UNSUPPORTED_ASSET_TYPE,
+            detail=str(exc),
+        )
     if isinstance(exc, MaxInventoryVisualReferencesExceededError):
         return HTTPException(status_code=400, detail=str(exc))
     return None

@@ -17,13 +17,18 @@ from src.api.dependencies import (
     get_start_aisle_processing_use_case,
 )
 from src.api.errors.error_mapping import mapped_http_exception, reraise_if_mapped, review_exception_to_http
-from src.api.constants.error_wire import HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
+    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+    HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+)
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
     AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
     AISLE_NOT_FOUND,
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    EMPTY_UPLOAD,
     INVENTORY_NOT_FOUND,
     INTERNAL_SERVER_ERROR,
     JOB_NOT_FOUND,
@@ -31,7 +36,9 @@ from src.api.errors.structured_api_http import (
     JOB_PROMOTION_NOT_ALLOWED,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
+    UNSUPPORTED_ASSET_TYPE,
     VISUAL_REFERENCE_NOT_FOUND,
+    ZERO_BYTE_FILE,
     StructuredApiHttpError,
 )
 from src.api.server import app
@@ -40,6 +47,7 @@ from src.application.errors import (
     AisleNotFoundError,
     AnalyticsScopeValidationError,
     BenchmarkCompareJobsMustDifferError,
+    EmptyUploadError,
     InventoryNotFoundError,
     InventoryVisualReferenceNotFoundError,
     JobDoesNotBelongToAisleError,
@@ -49,6 +57,8 @@ from src.application.errors import (
     NoSourceAssetsForAisleProcessingError,
     PositionNotFoundError,
     ProductNotFoundError,
+    UnsupportedAssetTypeError,
+    ZeroByteFileError,
 )
 from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 
@@ -336,6 +346,24 @@ def test_mapped_job_promotion_not_allowed_non_canonical_detail_is_generic() -> N
             422,
             ANALYTICS_SCOPE_VALIDATION_FAILED,
             "aisle_id does not belong to the given inventory_id",
+        ),
+        (
+            EmptyUploadError("ignored raw message"),
+            422,
+            EMPTY_UPLOAD,
+            HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+        ),
+        (
+            ZeroByteFileError("ignored raw message"),
+            422,
+            ZERO_BYTE_FILE,
+            HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+        ),
+        (
+            UnsupportedAssetTypeError("image/bmp is not a supported asset type"),
+            400,
+            UNSUPPORTED_ASSET_TYPE,
+            "image/bmp is not a supported asset type",
         ),
     ],
 )
