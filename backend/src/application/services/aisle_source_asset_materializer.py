@@ -70,7 +70,6 @@ class AisleSourceAssetMaterializer:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
         self._artifact_storage = artifact_storage
-        self._clock = clock
         self._status_reconciler = status_reconciler
 
     def persist_uploaded_file_as_source_asset(

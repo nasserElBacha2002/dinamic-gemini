@@ -150,8 +150,8 @@ def test_post_aisle_empty_code_returns_422() -> None:
     assert response.status_code == 422
 
 
-def test_post_aisle_process_without_source_assets_returns_422() -> None:
-    """Sprint 1: preflight rejects process when aisle has no SourceAsset rows."""
+def test_post_aisle_process_without_source_assets_returns_409() -> None:
+    """Sprint 1: preflight rejects process when aisle has no SourceAsset rows (409 = state conflict)."""
     create_resp = client.post("/api/v3/inventories", json={"name": "No Assets Process"})
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
@@ -162,7 +162,7 @@ def test_post_aisle_process_without_source_assets_returns_422() -> None:
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
     proc = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
-    assert proc.status_code == 422
+    assert proc.status_code == 409
     body = proc.json()
     assert body.get("code") == AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING
 

@@ -639,6 +639,7 @@ BEGIN
 END;
 GO
 
+-- Filtered unique: duplicate (session_id, content_hash) disallowed when hash present; NULL hash allowed multiple times.
 IF NOT EXISTS (
     SELECT * FROM sys.indexes
     WHERE name = 'UQ_capture_session_items_session_content_hash'

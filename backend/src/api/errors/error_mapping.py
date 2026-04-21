@@ -372,6 +372,12 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             error_code=ACTIVE_JOB_EXISTS,
             detail=_normalized_active_job_exists_detail(exc),
         )
+    if isinstance(exc, NoSourceAssetsForAisleProcessingError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
+            detail=HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
+        )
     if isinstance(exc, AisleSourceAssetMutationBlockedError):
         return StructuredApiHttpError(
             status_code=409,
@@ -419,12 +425,6 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=422,
             error_code=ANALYTICS_SCOPE_VALIDATION_FAILED,
             detail=HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
-        )
-    if isinstance(exc, NoSourceAssetsForAisleProcessingError):
-        return StructuredApiHttpError(
-            status_code=422,
-            error_code=AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
-            detail=HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
         )
     if isinstance(exc, UnsupportedAssetTypeError):
         return HTTPException(status_code=400, detail=str(exc))

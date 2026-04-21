@@ -84,6 +84,7 @@ class UploadAisleAssetsUseCase:
                 )
                 written_paths.append(delete_key)
                 created.append(asset)
+            # One aisle mark + reconcile per upload batch (not per file); matches pre-refactor semantics.
             self._materializer.finalize_aisle_after_source_assets_changed(
                 aisle=aisle,
                 inventory_id=inventory_id,

@@ -17,8 +17,10 @@ from src.api.dependencies import (
     get_start_aisle_processing_use_case,
 )
 from src.api.errors.error_mapping import mapped_http_exception, reraise_if_mapped, review_exception_to_http
+from src.api.constants.error_wire import HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
+    AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
     AISLE_NOT_FOUND,
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
@@ -44,6 +46,7 @@ from src.application.errors import (
     JobNotFoundError,
     JobPromotionNotAllowedError,
     MergeJobScopeAmbiguousError,
+    NoSourceAssetsForAisleProcessingError,
     PositionNotFoundError,
     ProductNotFoundError,
 )
@@ -272,6 +275,16 @@ def test_mapped_active_job_exists_non_canonical_detail_is_generic() -> None:
     assert http.detail == "An active job already exists for this aisle"
 
 
+def test_mapped_no_source_assets_for_processing_is_structured_409() -> None:
+    http = mapped_http_exception(
+        NoSourceAssetsForAisleProcessingError("No source assets for aisle x; upload media before processing.")
+    )
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.status_code == 409
+    assert http.error_code == AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING
+    assert http.detail == HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING
+
+
 def test_mapped_job_promotion_not_allowed_non_canonical_detail_is_generic() -> None:
     http = mapped_http_exception(JobPromotionNotAllowedError("unexpected ad-hoc"))
     assert isinstance(http, StructuredApiHttpError)
@@ -299,6 +312,12 @@ def test_mapped_job_promotion_not_allowed_non_canonical_detail_is_generic() -> N
             409,
             ACTIVE_JOB_EXISTS,
             "Aisle A1 already has an active job (status=RUNNING)",
+        ),
+        (
+            NoSourceAssetsForAisleProcessingError("ignored message shape"),
+            409,
+            AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
+            HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
         ),
         (
             JobPromotionNotAllowedError("Only process_aisle jobs can be promoted (got other)"),

@@ -25,9 +25,6 @@ HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER = (
     "job_a_id and job_b_id must be different benchmark runs"
 )
 HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED = "aisle_id does not belong to the given inventory_id"
-HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING = (
-    "This aisle has no source assets; upload media before starting processing."
-)
 
 # Mapper normalizer + Category C job-read — generic job-not-found phrase (identical semantics).
 HTTP_DETAIL_JOB_NOT_FOUND = "Job not found"
@@ -38,6 +35,10 @@ HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED = "At least one file is required"
 HTTP_DETAIL_ASSET_NOT_FOUND = "Asset not found"
 HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION = (
     "Cannot modify aisle source assets while a job is queued, starting, running, or cancel requested for this aisle"
+)
+# Structured Category B — 409 ``detail`` (aisle/process cannot proceed with current persisted state).
+HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING = (
+    "This aisle has no source assets; upload media before starting processing."
 )
 HTTP_DETAIL_AISLE_NOT_FOUND_SHORT = "Aisle not found"
 HTTP_DETAIL_PREVIEW_NOT_AVAILABLE_FOR_IMAGE = "Preview is not available for this image"

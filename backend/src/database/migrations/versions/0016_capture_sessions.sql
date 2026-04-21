@@ -45,6 +45,8 @@ BEGIN
 END;
 GO
 
+-- Filtered unique index: when ``content_hash`` is set, the same session cannot register two
+-- items with the same hash (duplicate binary identity). Multiple rows with NULL hash are allowed.
 IF NOT EXISTS (
     SELECT * FROM sys.indexes
     WHERE name = 'UQ_capture_session_items_session_content_hash'

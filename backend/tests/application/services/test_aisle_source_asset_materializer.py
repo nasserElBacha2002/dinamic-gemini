@@ -115,7 +115,12 @@ def test_materializer_persist_then_finalize_marks_aisle_and_reconciles() -> None
     assert len(storage._written) == 1
     assert asset_repo.get_by_id(asset.id) is not None
 
+    uf2 = UploadedFile("q.jpg", BytesIO(b"y"), "image/jpeg")
+    asset2, key2 = m.persist_uploaded_file_as_source_asset(aisle_id="a1", uploaded=uf2, now=now)
+    assert asset2.id != asset.id
+    assert len(storage._written) == 2
+
     m.finalize_aisle_after_source_assets_changed(aisle=aisle, inventory_id="inv1", now=now)
     assert aisle.status == AisleStatus.ASSETS_UPLOADED
-    assert len(aisle_repo.saved) >= 1
-    assert key  # rollback key is non-empty string
+    assert len(aisle_repo.saved) == 1
+    assert key and key2
