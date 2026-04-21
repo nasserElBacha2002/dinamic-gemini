@@ -1,4 +1,18 @@
-"""Deterministic capture → position preview (Sprint 3; no SourceAsset)."""
+"""Deterministic capture-session **preview** (Sprint 3; no SourceAsset).
+
+Preview target model
+---------------------
+We use existing aisle-scoped ``Position`` rows (``src.domain.positions.entities``) as the only
+stable “slot” concept already persisted for an aisle (pallet / bay / detected unit — see the
+``Position`` domain docstring). There is **no** separate capture-specific slot table in
+the repo, and we do **not** infer geometry from pixels.
+
+**Important — MVP heuristic (not a domain law):** the mapping does **not** assert that image
+content belongs to a given position. It pairs the *k*-th imported item (after ordering by
+adjusted capture time) with the *k*-th position row (after ordering by ``corrected_position_code``
+then ``id``). That yields a **review seed** for operators and future confirm flows; ``CONFLICT``
+/ ``UNASSIGNED`` outcomes surface ambiguity without materializing assets.
+"""
 
 from __future__ import annotations
 
@@ -44,7 +58,12 @@ def compute_item_preview_outcomes(
     positions: Sequence[Position],
     clock_offset_seconds: int,
 ) -> Dict[str, ItemPreviewOutcome]:
-    """Map item id → preview row for **imported** items only (others left to caller)."""
+    """Map item id → preview row for **imported** items only (others left to caller).
+
+    Uses the **ordinal pairing MVP heuristic** described in the module docstring: ``Position``
+    is the correct *existing* persistence target for “which aisle slot”, not a claim of visual
+    association from the staging file.
+    """
     out: Dict[str, ItemPreviewOutcome] = {}
     eligible = [i for i in items if i.import_status == CaptureSessionItemImportStatus.IMPORTED]
     slots = sorted(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import src.application.services.capture_assignment_preview as capture_assignment_preview
 from src.application.services.capture_assignment_preview import (
     adjusted_effective_time,
     compute_item_preview_outcomes,
@@ -15,6 +16,14 @@ from src.domain.capture.entities import (
     CaptureSessionItemImportStatus,
 )
 from src.domain.positions.entities import Position, PositionStatus
+
+
+def test_preview_module_documents_position_slots_as_mvp_heuristic() -> None:
+    """Lock Sprint 3 intent: preview uses persisted ``Position`` rows as ordinal slots, not optical truth."""
+    doc = capture_assignment_preview.__doc__ or ""
+    assert "Position" in doc
+    assert "MVP heuristic" in doc
+    assert "review seed" in doc
 
 
 def _item(

@@ -31,5 +31,10 @@ class CaptureStagingTimeMetadataExtractor(ABC):
         ingest_clock: datetime,
         source_mtime_utc: Optional[datetime] = None,
     ) -> ExtractedCaptureStagingTime:
-        """``ingest_clock`` must be timezone-aware UTC. ``source_mtime_utc`` optional client/storage mtime."""
+        """``ingest_clock`` must be timezone-aware UTC. ``source_mtime_utc`` optional client/storage mtime.
+
+        ``media_content_type`` is part of the port for **wire stability** and future MIME-aware
+        extraction (e.g. skip non-image branches without changing call sites). Implementations
+        may ignore it when they probe ``raw_bytes`` directly (Sprint 3 Pillow path).
+        """
 

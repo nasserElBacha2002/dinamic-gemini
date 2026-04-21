@@ -12,6 +12,7 @@ from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import (
     CaptureSessionInvalidClockOffsetError,
     CaptureSessionInvalidStateError,
+    CaptureSessionNotFoundError,
     CaptureSessionPreviewNotAllowedError,
 )
 from src.application.ports.clock import Clock
@@ -23,7 +24,14 @@ from src.application.use_cases.compute_capture_session_assignment_preview import
 from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
 from src.application.use_cases.update_capture_session_clock_offset import UpdateCaptureSessionClockOffsetUseCase
 from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
-from src.domain.capture.entities import CaptureSessionItemAssignmentStatus, CaptureSessionStatus
+from src.domain.capture.entities import (
+    CaptureSession,
+    CaptureSessionItem,
+    CaptureSessionItemAssignmentStatus,
+    CaptureSessionItemImportStatus,
+    CaptureSessionStatus,
+    CaptureTimeSource,
+)
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
@@ -254,3 +262,70 @@ def test_clock_offset_blocked_after_cancel(tmp_path) -> None:
     )
     with pytest.raises(CaptureSessionInvalidStateError):
         off_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, clock_offset_seconds=0)
+
+
+def test_memory_repositories_roundtrip_sprint3_session_and_item_fields() -> None:
+    """Memory repos store full domain objects; Sprint 3 columns must survive save/get/list."""
+    now = datetime(2026, 4, 10, 10, 0, 0, tzinfo=timezone.utc)
+    session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
+    session_repo.save(
+        CaptureSession(
+            id="s-s3",
+            inventory_id="inv-s3",
+            aisle_id="aisle-s3",
+            status=CaptureSessionStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+            clock_offset_seconds=-90,
+        )
+    )
+    adj = datetime(2026, 4, 10, 11, 30, 0, tzinfo=timezone.utc)
+    item_repo.save(
+        CaptureSessionItem(
+            id="it-s3",
+            session_id="s-s3",
+            staging_storage_key="blob",
+            import_status=CaptureSessionItemImportStatus.IMPORTED,
+            assignment_status=CaptureSessionItemAssignmentStatus.PROPOSED,
+            updated_at=now,
+            content_hash="h-s3",
+            effective_capture_time=now,
+            time_source=CaptureTimeSource.EXIF,
+            time_confidence=0.88,
+            adjusted_capture_time=adj,
+            assignment_reason="preview: position_id=pos-9",
+            preview_target_position_id="pos-9",
+        )
+    )
+    got_s = session_repo.get_by_id_for_inventory("s-s3", "inv-s3")
+    assert got_s is not None
+    assert got_s.clock_offset_seconds == -90
+    got_i = item_repo.get_by_id("it-s3")
+    assert got_i is not None
+    assert got_i.adjusted_capture_time == adj
+    assert got_i.assignment_reason == "preview: position_id=pos-9"
+    assert got_i.preview_target_position_id == "pos-9"
+    listed = item_repo.list_by_session("s-s3")
+    assert len(listed) == 1
+    assert listed[0].preview_target_position_id == "pos-9"
+
+
+def test_close_capture_session_use_case_dependencies_match_di_shape() -> None:
+    """Constructor is ``session_repo``, ``item_repo``, ``clock`` only (same kwargs as FastAPI DI)."""
+    inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
+    session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
+    clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
+    s = CreateCaptureSessionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=3,
+    ).execute(inv_id, aisle_id)
+    uc = CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock)
+    with pytest.raises(CaptureSessionInvalidStateError, match="no successfully imported items"):
+        uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id)
+    with pytest.raises(CaptureSessionNotFoundError):
+        uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id="missing-session")

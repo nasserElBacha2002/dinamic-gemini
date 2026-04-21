@@ -1,4 +1,8 @@
-"""In-memory CaptureSessionRepository — Sprint 2."""
+"""In-memory CaptureSessionRepository — Sprint 2 + Sprint 3.
+
+Stores full ``CaptureSession`` domain instances by reference (including ``clock_offset_seconds``);
+parity with SQL persistence is by domain shape, not column-level mapping.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Compute deterministic aisle-position assignment preview — Sprint 3 (no SourceAsset)."""
+"""Compute deterministic aisle-position assignment preview — Sprint 3 (no SourceAsset).
+
+Loads aisle ``Position`` rows via :meth:`PositionRepository.list_by_aisle` (default job slice =
+all rows for the aisle) and runs :func:`compute_item_preview_outcomes` — an **explicit MVP
+heuristic** (ordinal pairing by sorted time vs sorted position code), not optical slotting.
+See ``capture_assignment_preview`` module docstring.
+"""
 
 from __future__ import annotations
 

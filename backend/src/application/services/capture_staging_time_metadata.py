@@ -1,4 +1,14 @@
-"""Pillow-based staging time extraction — Sprint 3 (EXIF → optional mtime → ingest clock)."""
+"""Pillow-based staging time extraction — Sprint 3 (EXIF → optional mtime → ingest clock).
+
+EXIF datetime policy (MVP)
+--------------------------
+Standard EXIF date/time strings carry **no timezone**. We do **not** infer camera offset or
+location. For deterministic ordering and persistence, parsed EXIF wall-clock values are
+stored as **timezone-aware UTC** using the same numeric fields (:func:`datetime.replace` with
+``tzinfo=timezone.utc``). That is **not** a claim that the camera was in UTC; it is an explicit
+Sprint 3 limitation documented for auditability. Prefer ``FALLBACK_CLOCK`` / client ``mtime``
+when wall-clock accuracy matters more than embedded EXIF strings.
+"""
 
 from __future__ import annotations
 
@@ -35,6 +45,7 @@ def _parse_exif_datetime_string(raw: str) -> Optional[datetime]:
         return None
     y, mo, d, h, mi, se = (int(x) for x in m.groups())
     try:
+        # Naive EXIF wall clock → UTC-aware **same numbers** (MVP; see module docstring).
         return datetime(y, mo, d, h, mi, se, tzinfo=timezone.utc)
     except ValueError:
         return None
@@ -64,7 +75,11 @@ def _try_exif_datetime(raw_bytes: bytes) -> Optional[datetime]:
 
 
 class PillowCaptureStagingTimeMetadataExtractor(CaptureStagingTimeMetadataExtractor):
-    """Deterministic precedence: parseable EXIF → optional ``source_mtime_utc`` → ``ingest_clock``."""
+    """Deterministic precedence: parseable EXIF → optional ``source_mtime_utc`` → ``ingest_clock``.
+
+    ``media_content_type`` is accepted for port compatibility; this implementation probes
+    ``raw_bytes`` with Pillow regardless of MIME (call sites already validate capture media).
+    """
 
     def __init__(self, *, confidence_exif: float, confidence_mtime: float, confidence_fallback: float) -> None:
         self._c_exif = float(confidence_exif)
@@ -79,6 +94,7 @@ class PillowCaptureStagingTimeMetadataExtractor(CaptureStagingTimeMetadataExtrac
         ingest_clock: datetime,
         source_mtime_utc: Optional[datetime] = None,
     ) -> ExtractedCaptureStagingTime:
+        _ = media_content_type  # Port / future MIME-aware paths; Sprint 3 Pillow probes bytes only.
         ingest = _ensure_utc(ingest_clock)
         exif_dt = _try_exif_datetime(raw_bytes)
         if exif_dt is not None:

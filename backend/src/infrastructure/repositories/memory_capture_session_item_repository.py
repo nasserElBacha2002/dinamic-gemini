@@ -1,4 +1,8 @@
-"""In-memory CaptureSessionItemRepository — Sprint 2."""
+"""In-memory CaptureSessionItemRepository — Sprint 2 + Sprint 3.
+
+Stores full ``CaptureSessionItem`` domain instances by reference (preview fields, time metadata,
+etc.); same object round-trips as SQL row mapping.
+"""
 
 from __future__ import annotations
 

@@ -8,6 +8,7 @@ from io import BytesIO
 import pytest
 from PIL import Image
 
+from src.application.services import capture_staging_time_metadata as staging_time_mod
 from src.application.services.capture_staging_time_metadata import PillowCaptureStagingTimeMetadataExtractor
 from src.domain.capture.entities import CaptureTimeSource
 
@@ -35,6 +36,54 @@ def test_fallback_uses_ingest_clock_when_no_exif_or_mtime() -> None:
     assert out.time_source == CaptureTimeSource.FALLBACK_CLOCK
     assert out.time_confidence == pytest.approx(0.31)
     assert out.effective_capture_time == ingest
+
+
+def test_exif_naive_datetime_string_becomes_utc_aware_same_wall_clock_mvp() -> None:
+    """EXIF strings have no TZ; policy is deterministic UTC tagging (see module docstring), not camera TZ."""
+    doc = staging_time_mod.__doc__ or ""
+    assert "no timezone" in doc.lower()
+    assert "UTC" in doc
+    ext = PillowCaptureStagingTimeMetadataExtractor(
+        confidence_exif=0.9,
+        confidence_mtime=0.55,
+        confidence_fallback=0.31,
+    )
+    img = Image.new("RGB", (2, 2))
+    exif = img.getexif()
+    exif[0x9003] = "2019:07:20 14:05:03"  # DateTimeOriginal; naive wall clock per EXIF spec
+    bio = BytesIO()
+    img.save(bio, format="JPEG", exif=exif, quality=90)
+    ingest = datetime(2026, 6, 1, 15, 0, 0, tzinfo=timezone.utc)
+    out = ext.extract(
+        raw_bytes=bio.getvalue(),
+        media_content_type="image/jpeg",
+        ingest_clock=ingest,
+        source_mtime_utc=None,
+    )
+    assert out.time_source == CaptureTimeSource.EXIF
+    assert out.effective_capture_time == datetime(2019, 7, 20, 14, 5, 3, tzinfo=timezone.utc)
+
+
+def test_exif_branch_does_not_depend_on_media_content_type() -> None:
+    """MIME is on the port for stability; Pillow path still reads EXIF from bytes."""
+    ext = PillowCaptureStagingTimeMetadataExtractor(
+        confidence_exif=0.9,
+        confidence_mtime=0.55,
+        confidence_fallback=0.31,
+    )
+    img = Image.new("RGB", (2, 2))
+    exif = img.getexif()
+    exif[0x9003] = "2020:01:02 03:04:05"
+    bio = BytesIO()
+    img.save(bio, format="JPEG", exif=exif, quality=90)
+    ingest = datetime(2026, 6, 1, 15, 0, 0, tzinfo=timezone.utc)
+    out = ext.extract(
+        raw_bytes=bio.getvalue(),
+        media_content_type="application/octet-stream",
+        ingest_clock=ingest,
+        source_mtime_utc=None,
+    )
+    assert out.time_source == CaptureTimeSource.EXIF
 
 
 def test_mtime_precedence_over_fallback() -> None:
