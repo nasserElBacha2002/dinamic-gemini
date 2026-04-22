@@ -94,11 +94,23 @@ export async function getCaptureSessionDetail(
 
 export async function closeCaptureSession(
   inventoryId: string,
-  aisleId: string,
+  sessionId: string,
+  aisleId?: string
+): Promise<CaptureSessionDetailResponse> {
+  const resolvedAisleId = (aisleId || "").trim();
+  const path = resolvedAisleId
+    ? `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(resolvedAisleId)}/capture-sessions/${encodeURIComponent(sessionId)}/close`
+    : `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/close`;
+  const response = await protectedFetch(path, { method: 'POST' });
+  return handleResponse<CaptureSessionDetailResponse>(response);
+}
+
+export async function cancelCaptureSession(
+  inventoryId: string,
   sessionId: string
 ): Promise<CaptureSessionDetailResponse> {
   const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/capture-sessions/${encodeURIComponent(sessionId)}/close`,
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/cancel`,
     { method: 'POST' }
   );
   return handleResponse<CaptureSessionDetailResponse>(response);
@@ -106,9 +118,9 @@ export async function closeCaptureSession(
 
 export async function uploadCaptureItem(
   inventoryId: string,
-  aisleId: string,
   sessionId: string,
   file: File,
+  aisleId?: string,
   onProgress?: (progressPct: number) => void
 ): Promise<UploadCaptureSessionItemsResponse> {
   const token = getStoredToken();
@@ -116,10 +128,11 @@ export async function uploadCaptureItem(
   form.append('files', file);
   return new Promise<UploadCaptureSessionItemsResponse>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open(
-      'POST',
-      `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/capture-sessions/${encodeURIComponent(sessionId)}/items`
-    );
+    const resolvedAisleId = (aisleId || "").trim();
+    const path = resolvedAisleId
+      ? `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(resolvedAisleId)}/capture-sessions/${encodeURIComponent(sessionId)}/items`
+      : `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/items`;
+    xhr.open('POST', path);
     if (token) {
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     }

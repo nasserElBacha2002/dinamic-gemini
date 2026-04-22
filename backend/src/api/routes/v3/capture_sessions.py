@@ -106,6 +106,28 @@ def create_capture_session(
 
 
 @router.post(
+    "/{inventory_id}/capture-sessions/{session_id}/close",
+    response_model=CaptureSessionDetailResponse,
+)
+def close_capture_session_inventory_scope(
+    inventory_id: str,
+    session_id: str,
+    use_case: CloseCaptureSessionUseCase = Depends(get_close_capture_session_use_case),
+    detail_uc: GetCaptureSessionDetailUseCase = Depends(get_get_capture_session_detail_use_case),
+) -> CaptureSessionDetailResponse:
+    try:
+        use_case.execute(inventory_id=inventory_id, session_id=session_id, aisle_id=None)
+        detail = detail_uc.execute(inventory_id, session_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return CaptureSessionDetailResponse(
+        session=capture_session_to_response(detail.session),
+        items=[capture_session_item_to_response(i) for i in detail.items],
+    )
+
+
+@router.post(
     "/{inventory_id}/aisles/{aisle_id}/capture-sessions/{session_id}/close",
     response_model=CaptureSessionDetailResponse,
 )
@@ -118,6 +140,28 @@ def close_capture_session(
 ) -> CaptureSessionDetailResponse:
     try:
         use_case.execute(inventory_id=inventory_id, aisle_id=aisle_id, session_id=session_id)
+        detail = detail_uc.execute(inventory_id, session_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return CaptureSessionDetailResponse(
+        session=capture_session_to_response(detail.session),
+        items=[capture_session_item_to_response(i) for i in detail.items],
+    )
+
+
+@router.post(
+    "/{inventory_id}/capture-sessions/{session_id}/cancel",
+    response_model=CaptureSessionDetailResponse,
+)
+def cancel_capture_session_inventory_scope(
+    inventory_id: str,
+    session_id: str,
+    use_case: CancelCaptureSessionUseCase = Depends(get_cancel_capture_session_use_case),
+    detail_uc: GetCaptureSessionDetailUseCase = Depends(get_get_capture_session_detail_use_case),
+) -> CaptureSessionDetailResponse:
+    try:
+        use_case.execute(inventory_id=inventory_id, session_id=session_id, aisle_id=None)
         detail = detail_uc.execute(inventory_id, session_id)
     except Exception as e:
         reraise_if_mapped(e)
@@ -294,6 +338,40 @@ def get_capture_session_detail(
         session=capture_session_to_response(detail.session),
         items=[capture_session_item_to_response(i) for i in detail.items],
     )
+
+
+@router.post(
+    "/{inventory_id}/capture-sessions/{session_id}/items",
+    response_model=UploadCaptureSessionItemsResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_capture_session_staging_items_inventory_scope(
+    inventory_id: str,
+    session_id: str,
+    files: List[UploadFile] = File(...),
+    use_case: UploadCaptureSessionStagingItemsUseCase = Depends(get_upload_capture_session_staging_items_use_case),
+) -> UploadCaptureSessionItemsResponse:
+    uploaded: List[UploadedFile] = []
+    for u in files:
+        content = await u.read()
+        uploaded.append(
+            UploadedFile(
+                original_filename=u.filename or "file",
+                file_obj=BytesIO(content),
+                content_type=u.content_type or "application/octet-stream",
+            )
+        )
+    try:
+        items = use_case.execute(
+            inventory_id=inventory_id,
+            aisle_id=None,
+            session_id=session_id,
+            files=uploaded,
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return UploadCaptureSessionItemsResponse(items=[capture_session_item_to_response(i) for i in items])
 
 
 @router.post(

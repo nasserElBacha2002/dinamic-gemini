@@ -3,6 +3,7 @@ import { getAisles } from '../../../api/client';
 import { queryKeys } from '../../../api/queryKeys';
 import { getInventories } from '../../../api/client';
 import {
+  cancelCaptureSession,
   closeCaptureSession,
   createCaptureSession,
   getCaptureSessionDetail,
@@ -55,8 +56,23 @@ export function useCreateCaptureSession() {
 export function useCloseCaptureSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ inventoryId, aisleId, sessionId }: { inventoryId: string; aisleId: string; sessionId: string }) =>
-      closeCaptureSession(inventoryId, aisleId, sessionId),
+    mutationFn: ({ inventoryId, sessionId, aisleId }: { inventoryId: string; sessionId: string; aisleId?: string }) =>
+      closeCaptureSession(inventoryId, sessionId, aisleId),
+    onSuccess: (detail) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.all });
+      queryClient.setQueryData(
+        queryKeys.captureSessions.detail(detail.session.inventory_id, detail.session.id),
+        detail
+      );
+    },
+  });
+}
+
+export function useCancelCaptureSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ inventoryId, sessionId }: { inventoryId: string; sessionId: string }) =>
+      cancelCaptureSession(inventoryId, sessionId),
     onSuccess: (detail) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.all });
       queryClient.setQueryData(

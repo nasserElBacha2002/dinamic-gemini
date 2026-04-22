@@ -10,6 +10,7 @@ import { buildSessionsListParams } from '../src/features/ingestionSessions/pages
 
 const mockUseCaptureSessionDetail = vi.fn();
 const mockUseCloseCaptureSession = vi.fn();
+const mockUseCancelCaptureSession = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -18,6 +19,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../src/features/ingestionSessions/hooks/useCaptureSessions', () => ({
   useCaptureSessionDetail: (...args: unknown[]) => mockUseCaptureSessionDetail(...args),
   useCloseCaptureSession: (...args: unknown[]) => mockUseCloseCaptureSession(...args),
+  useCancelCaptureSession: (...args: unknown[]) => mockUseCancelCaptureSession(...args),
 }));
 
 function renderDetail(url: string) {
@@ -36,6 +38,7 @@ function renderDetail(url: string) {
 describe('R2 corrections — ingestion sessions', () => {
   beforeEach(() => {
     mockUseCloseCaptureSession.mockReset();
+    mockUseCancelCaptureSession.mockReset();
     mockUseCaptureSessionDetail.mockReset();
   });
 
@@ -62,8 +65,14 @@ describe('R2 corrections — ingestion sessions', () => {
 
   it('does not require aisleId in URL and closes session using aisle from loaded detail', async () => {
     const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    const cancelMutateAsync = vi.fn().mockResolvedValue(undefined);
     mockUseCloseCaptureSession.mockReturnValue({
       mutateAsync,
+      isPending: false,
+      error: null,
+    });
+    mockUseCancelCaptureSession.mockReturnValue({
+      mutateAsync: cancelMutateAsync,
       isPending: false,
       error: null,
     });
@@ -104,8 +113,63 @@ describe('R2 corrections — ingestion sessions', () => {
 
     expect(mutateAsync).toHaveBeenCalledWith({
       inventoryId: 'inv-1',
-      aisleId: 'aisle-derived',
       sessionId: 'sess-1',
+      aisleId: 'aisle-derived',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'ingestion_sessions.actions.cancel_session' }));
+    expect(cancelMutateAsync).toHaveBeenCalledWith({
+      inventoryId: 'inv-1',
+      sessionId: 'sess-1',
+    });
+  });
+
+  it('allows close for inventory-level session without requiring aisleId', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    mockUseCloseCaptureSession.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+      error: null,
+    });
+    mockUseCancelCaptureSession.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: false,
+      error: null,
+    });
+    mockUseCaptureSessionDetail.mockReturnValue({
+      data: {
+        session: {
+          id: 'sess-inv',
+          inventory_id: 'inv-1',
+          aisle_id: null,
+          status: 'importing',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          opened_at: null,
+          closed_at: null,
+          clock_offset_seconds: 0,
+        },
+        items: [
+          {
+            id: 'item-1',
+            session_id: 'sess-inv',
+            staging_storage_key: 'capture/staging/example.jpg',
+            import_status: 'imported',
+            assignment_status: 'pending',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderDetail('/ingestion-sessions/sess-inv?inventoryId=inv-1');
+    fireEvent.click(screen.getByRole('button', { name: 'ingestion_sessions.actions.close_session' }));
+    expect(mutateAsync).toHaveBeenCalledWith({
+      inventoryId: 'inv-1',
+      sessionId: 'sess-inv',
+      aisleId: undefined,
     });
   });
 });

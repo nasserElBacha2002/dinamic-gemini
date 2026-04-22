@@ -43,9 +43,11 @@ class CloseCaptureSessionUseCase:
         self._item_repo = item_repo
         self._clock = clock
 
-    def execute(self, *, inventory_id: str, aisle_id: str, session_id: str) -> CaptureSession:
+    def execute(self, *, inventory_id: str, session_id: str, aisle_id: str | None = None) -> CaptureSession:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
-        if session is None or session.aisle_id != aisle_id:
+        if session is None:
+            raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
+        if aisle_id is not None and session.aisle_id != aisle_id:
             raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
         if session.status == CaptureSessionStatus.CANCELLED:
             raise CaptureSessionInvalidStateError("Cannot close a cancelled capture session.")

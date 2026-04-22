@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from src.api.dependencies import get_artifact_storage
 from src.api.server import app
 from src.api.errors.structured_api_http import (
+    CAPTURE_SESSION_NOT_FOUND,
     CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
     CAPTURE_SESSION_INVALID_STATE,
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
@@ -91,6 +92,39 @@ def test_create_inventory_level_session_without_aisle(memory_capture: None) -> N
     assert lr.status_code == 200
     assert lr.json()["total_items"] == 1
     assert lr.json()["items"][0]["aisle_id"] is None
+
+
+def test_inventory_level_upload_close_cancel_flow(memory_capture: None) -> None:
+    inv_id, aisle_id = _create_inv_aisle()
+    sid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions").json()["id"]
+    up = client.post(
+        f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/items",
+        files=[("files", ("inv-level.jpg", b"inv-level-bytes", "image/jpeg"))],
+    )
+    assert up.status_code == 201, up.text
+    assert up.json()["items"][0]["import_status"] == "imported"
+
+    close_resp = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close")
+    assert close_resp.status_code == 200, close_resp.text
+    assert close_resp.json()["session"]["status"] == "ready_for_review"
+
+    cancel_resp = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/cancel")
+    assert cancel_resp.status_code == 200, cancel_resp.text
+    assert cancel_resp.json()["session"]["status"] == "cancelled"
+
+    # Legacy aisle-scoped flow remains valid in mixed environment.
+    legacy_sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    legacy_up = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{legacy_sid}/items",
+        files=[("files", ("legacy.jpg", b"legacy-bytes", "image/jpeg"))],
+    )
+    assert legacy_up.status_code == 201, legacy_up.text
+    mixed = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions")
+    assert mixed.status_code == 200
+    assert mixed.json()["total_items"] == 2
+    aisle_values = {row["aisle_id"] for row in mixed.json()["items"]}
+    assert aisle_id in aisle_values
+    assert None in aisle_values
 
 
 def test_open_session_conflict_returns_409(memory_capture: None) -> None:
@@ -196,3 +230,13 @@ def test_list_valid_status_filter_ok(memory_capture: None) -> None:
     r = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions?status=draft")
     assert r.status_code == 200
     assert r.json()["total_items"] == 1
+
+
+def test_inventory_level_preview_path_returns_structured_not_found(memory_capture: None) -> None:
+    inv_id, aisle_id = _create_inv_aisle()
+    sid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions").json()["id"]
+    r = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/preview-assignment"
+    )
+    assert r.status_code == 404
+    assert r.json()["code"] == CAPTURE_SESSION_NOT_FOUND

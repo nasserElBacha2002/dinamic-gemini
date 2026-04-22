@@ -51,8 +51,8 @@ export function useUploadCaptureItems() {
   return useMutation({
     mutationFn: async (vars: {
       inventoryId: string;
-      aisleId: string;
       sessionId: string;
+      aisleId?: string;
       files: File[];
       onQueueUpdate?: (queue: UploadQueueItem[]) => void;
     }): Promise<UploadRunResult> => {
@@ -71,7 +71,7 @@ export function useUploadCaptureItems() {
         entry.error = undefined;
         notify();
         try {
-          await uploadCaptureItem(vars.inventoryId, vars.aisleId, vars.sessionId, entry.file, (pct) => {
+          await uploadCaptureItem(vars.inventoryId, vars.sessionId, entry.file, vars.aisleId, (pct) => {
             entry.progressPct = pct;
             notify();
           });

@@ -914,7 +914,6 @@
       "session_id": "ID",
       "status": "Status",
       "created": "Created",
-      "pending_aisle_binding": "This import session is not yet bound to an aisle. Upload/close actions stay disabled in G1.",
       "import_status": "import_status",
       "effective_capture_time": "effective_capture_time",
       "time_source": "time_source",
@@ -936,6 +935,7 @@
       "new_import_session": "New Import Session",
       "open": "Open",
       "close_session": "Close Session",
+      "cancel_session": "Cancel Session",
       "back_to_sessions": "Back to sessions"
     },
     "empty": {

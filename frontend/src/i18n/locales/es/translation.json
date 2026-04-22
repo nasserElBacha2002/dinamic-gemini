@@ -914,7 +914,6 @@
       "session_id": "ID",
       "status": "Estado",
       "created": "Creada",
-      "pending_aisle_binding": "Esta sesión de importación todavía no está asociada a un pasillo. En G1 se mantienen deshabilitadas las acciones de subir/cerrar.",
       "import_status": "estado_importación",
       "effective_capture_time": "hora_captura_efectiva",
       "time_source": "fuente_hora",
@@ -936,6 +935,7 @@
       "new_import_session": "Nueva sesión de importación",
       "open": "Abrir",
       "close_session": "Cerrar sesión",
+      "cancel_session": "Cancelar sesión",
       "back_to_sessions": "Volver a sesiones"
     },
     "empty": {

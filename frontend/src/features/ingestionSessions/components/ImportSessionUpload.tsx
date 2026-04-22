@@ -22,7 +22,7 @@ import { useUploadCaptureItems } from '../hooks/useUploadCaptureItems';
 
 interface ImportSessionUploadProps {
   inventoryId: string;
-  aisleId: string;
+  aisleId?: string;
   sessionId: string;
   disabled?: boolean;
   onCompleted?: () => void;
@@ -62,8 +62,8 @@ export default function ImportSessionUpload({
     try {
       await uploadMutation.mutateAsync({
         inventoryId,
-        aisleId,
         sessionId,
+        aisleId,
         files,
         onQueueUpdate: setQueue,
       });

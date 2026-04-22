@@ -21,9 +21,11 @@ interface ImportSessionDetailProps {
   detail: CaptureSessionDetailResponse;
   canUpload: boolean;
   canClose: boolean;
-  hasAisleBinding: boolean;
+  canCancel: boolean;
   closing: boolean;
+  cancelling: boolean;
   onCloseSession: () => void;
+  onCancelSession: () => void;
   onRefresh: () => void;
 }
 
@@ -39,9 +41,11 @@ export default function ImportSessionDetail({
   detail,
   canUpload,
   canClose,
-  hasAisleBinding,
+  canCancel,
   closing,
+  cancelling,
   onCloseSession,
+  onCancelSession,
   onRefresh,
 }: ImportSessionDetailProps) {
   const { t } = useTranslation();
@@ -69,21 +73,18 @@ export default function ImportSessionDetail({
         <Button variant="contained" onClick={onCloseSession} disabled={!canClose || closing}>
           {t('ingestion_sessions.actions.close_session')}
         </Button>
+        <Button variant="outlined" color="error" onClick={onCancelSession} disabled={!canCancel || cancelling}>
+          {t('ingestion_sessions.actions.cancel_session')}
+        </Button>
       </Stack>
 
-      {hasAisleBinding ? (
-        <ImportSessionUpload
-          inventoryId={detail.session.inventory_id}
-          aisleId={detail.session.aisle_id as string}
-          sessionId={detail.session.id}
-          disabled={!canUpload}
-          onCompleted={onRefresh}
-        />
-      ) : (
-        <Typography color="text.secondary">
-          {t('ingestion_sessions.detail.pending_aisle_binding')}
-        </Typography>
-      )}
+      <ImportSessionUpload
+        inventoryId={detail.session.inventory_id}
+        aisleId={detail.session.aisle_id ?? undefined}
+        sessionId={detail.session.id}
+        disabled={!canUpload}
+        onCompleted={onRefresh}
+      />
 
       {noItems ? (
         <Typography color="text.secondary">{t('ingestion_sessions.empty.upload_to_begin')}</Typography>

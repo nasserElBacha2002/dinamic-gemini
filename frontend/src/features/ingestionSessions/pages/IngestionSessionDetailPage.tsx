@@ -8,14 +8,15 @@ import { ErrorAlert, SectionCard } from '../../../components/ui';
 import { ROUTE_INGESTION_SESSIONS } from '../../../constants/appRoutes';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import ImportSessionDetail from '../components/ImportSessionDetail';
-import { useCaptureSessionDetail, useCloseCaptureSession } from '../hooks/useCaptureSessions';
+import { useCancelCaptureSession, useCaptureSessionDetail, useCloseCaptureSession } from '../hooks/useCaptureSessions';
 import type { CaptureSessionStatus } from '../../../types/captureSession';
 
 function computeGuards(status: CaptureSessionStatus, hasItems: boolean, closedAt: string | null | undefined) {
   const isClosed = Boolean(closedAt);
   const canUpload = (status === 'draft' || status === 'importing') && !isClosed;
   const canClose = (status === 'draft' || status === 'importing' || status === 'ready_for_review') && hasItems;
-  return { canUpload, canClose };
+  const canCancel = status !== 'cancelled' && status !== 'confirmed';
+  return { canUpload, canClose, canCancel };
 }
 
 export function hasRequiredDetailParams(inventoryId: string, sessionId: string | undefined): boolean {
@@ -33,12 +34,13 @@ export default function IngestionSessionDetailPage() {
     enabled: hasRequiredDetailParams(inventoryId, sessionId),
   });
   const closeMutation = useCloseCaptureSession();
+  const cancelMutation = useCancelCaptureSession();
 
   const errorMessage = useMemo(() => {
-    const err = detailQuery.error || closeMutation.error;
+    const err = detailQuery.error || closeMutation.error || cancelMutation.error;
     if (!err) return null;
     return resolveApiErrorMessage(err, 'errors.request_failed');
-  }, [closeMutation.error, detailQuery.error]);
+  }, [cancelMutation.error, closeMutation.error, detailQuery.error]);
 
   if (!hasRequiredDetailParams(inventoryId, sessionId)) {
     return (
@@ -70,7 +72,6 @@ export default function IngestionSessionDetailPage() {
       <SectionCard title={t('ingestion_sessions.detail.section_title')}>
         {detailQuery.data ? (
           (() => {
-            const hasAisleBinding = Boolean(detailQuery.data.session.aisle_id);
             const guard = computeGuards(
               detailQuery.data.session.status,
               detailQuery.data.items.length > 0,
@@ -83,17 +84,23 @@ export default function IngestionSessionDetailPage() {
               void detailQuery.refetch();
             }}
             onCloseSession={() => {
-              if (!detailQuery.data.session.aisle_id) return;
               void closeMutation.mutateAsync({
                 inventoryId,
-                aisleId: detailQuery.data.session.aisle_id,
+                sessionId: resolvedSessionId,
+                aisleId: detailQuery.data.session.aisle_id ?? undefined,
+              });
+            }}
+            onCancelSession={() => {
+              void cancelMutation.mutateAsync({
+                inventoryId,
                 sessionId: resolvedSessionId,
               });
             }}
             closing={closeMutation.isPending}
-            canUpload={guard.canUpload && hasAisleBinding}
-            canClose={guard.canClose && hasAisleBinding}
-            hasAisleBinding={hasAisleBinding}
+            cancelling={cancelMutation.isPending}
+            canUpload={guard.canUpload}
+            canClose={guard.canClose}
+            canCancel={guard.canCancel}
           />
             );
           })()

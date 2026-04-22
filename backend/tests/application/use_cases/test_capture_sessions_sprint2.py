@@ -133,6 +133,61 @@ def test_create_inventory_level_session_without_aisle() -> None:
     assert s2.aisle_id is None
 
 
+def test_inventory_level_session_upload_close_cancel_flow(tmp_path: Path) -> None:
+    inv_repo, aisle_repo, inv_id, _aisle_id = _seed_inv_aisle()
+    session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
+    clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
+    create_uc = CreateCaptureSessionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=1,
+    )
+    session = create_uc.execute(inv_id)
+    assert session.aisle_id is None
+
+    upload_uc = UploadCaptureSessionStagingItemsUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=V3ArtifactStorageAdapter(tmp_path),
+        clock=clock,
+        staging_prefix="capture/staging",
+        max_files_per_upload=10,
+        max_upload_bytes=1024 * 1024,
+        time_metadata_extractor=_pillow_time_extractor(),
+    )
+    items = upload_uc.execute(
+        inventory_id=inv_id,
+        aisle_id=None,
+        session_id=session.id,
+        files=[UploadedFile("inv-level.jpg", BytesIO(b"abc-inv"), "image/jpeg")],
+    )
+    assert len(items) == 1
+    assert items[0].import_status.value == "imported"
+
+    closed = CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock).execute(
+        inventory_id=inv_id,
+        session_id=session.id,
+        aisle_id=None,
+    )
+    assert closed.status == CaptureSessionStatus.READY_FOR_REVIEW
+    assert closed.closed_at is not None
+
+    cancelled = CancelCaptureSessionUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=V3ArtifactStorageAdapter(tmp_path / "cancel"),
+        clock=clock,
+    ).execute(
+        inventory_id=inv_id,
+        session_id=session.id,
+        aisle_id=None,
+    )
+    assert cancelled.status == CaptureSessionStatus.CANCELLED
+
+
 def test_create_fails_when_inventory_missing() -> None:
     inv_repo, aisle_repo, _inv_id, aisle_id = _seed_inv_aisle()
     session_repo = MemoryCaptureSessionRepository()
