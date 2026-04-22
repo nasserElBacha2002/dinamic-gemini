@@ -168,7 +168,10 @@ from src.application.errors import (
     CaptureSessionDuplicateItemContentError,
     CaptureSessionInvalidClockOffsetError,
     CaptureSessionInvalidStateError,
+    CaptureSessionMaterializationFailedError,
+    CaptureSessionMaterializationNotAllowedError,
     CaptureSessionNotAcceptingUploadsError,
+    CaptureSessionAlreadyMaterializedError,
     CaptureSessionNotFoundError,
     CaptureSessionPreviewNotAllowedError,
     CaptureSessionStagingFileTooLargeError,
@@ -211,6 +214,9 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
     HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE,
     HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+    HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_FAILED,
+    HTTP_DETAIL_CAPTURE_SESSION_ALREADY_MATERIALIZED,
     HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
     HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
     HTTP_DETAIL_INVENTORY_NOT_FOUND,
@@ -240,6 +246,9 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
     CAPTURE_SESSION_NOT_FOUND,
     CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
+    CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+    CAPTURE_SESSION_MATERIALIZATION_FAILED,
+    CAPTURE_SESSION_ALREADY_MATERIALIZED,
     CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
     CAPTURE_SESSION_STATUS_FILTER_INVALID,
     CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
@@ -490,6 +499,24 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=409,
             error_code=CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
             detail=str(exc),
+        )
+    if isinstance(exc, CaptureSessionMaterializationNotAllowedError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+        )
+    if isinstance(exc, CaptureSessionAlreadyMaterializedError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=CAPTURE_SESSION_ALREADY_MATERIALIZED,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_ALREADY_MATERIALIZED,
+        )
+    if isinstance(exc, CaptureSessionMaterializationFailedError):
+        return StructuredApiHttpError(
+            status_code=500,
+            error_code=CAPTURE_SESSION_MATERIALIZATION_FAILED,
+            detail=HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_FAILED,
         )
     if isinstance(exc, CaptureSessionInvalidStateError):
         return StructuredApiHttpError(

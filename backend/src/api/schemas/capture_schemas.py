@@ -62,6 +62,14 @@ class CaptureSessionClockOffsetUpdateRequest(BaseModel):
     clock_offset_seconds: int
 
 
+class CaptureSessionMaterializeRequest(BaseModel):
+    idempotency_key: str = Field(min_length=1, max_length=255)
+
+
+class MaterializeCaptureSessionResponse(CaptureSessionDetailResponse):
+    created_assets_count: int = 0
+
+
 def capture_session_to_response(s: CaptureSession) -> CaptureSessionResponse:
     return CaptureSessionResponse(
         id=s.id,

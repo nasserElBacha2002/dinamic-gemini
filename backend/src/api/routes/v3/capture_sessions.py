@@ -12,6 +12,7 @@ from src.api.constants.error_wire import HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED
 from src.api.dependencies import (
     get_cancel_capture_session_use_case,
     get_close_capture_session_use_case,
+    get_materialize_capture_session_use_case,
     get_compute_capture_session_assignment_preview_use_case,
     get_create_capture_session_use_case,
     get_get_capture_session_detail_use_case,
@@ -23,7 +24,9 @@ from src.api.errors import reraise_if_mapped
 from src.api.schemas.capture_schemas import (
     CaptureSessionClockOffsetUpdateRequest,
     CaptureSessionDetailResponse,
+    CaptureSessionMaterializeRequest,
     CaptureSessionResponse,
+    MaterializeCaptureSessionResponse,
     PaginatedCaptureSessionListResponse,
     UploadCaptureSessionItemsResponse,
     capture_session_item_to_response,
@@ -40,6 +43,7 @@ from src.application.use_cases.compute_capture_session_assignment_preview import
 from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
 from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
 from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
+from src.application.use_cases.materialize_capture_session import MaterializeCaptureSessionUseCase
 from src.application.use_cases.update_capture_session_clock_offset import UpdateCaptureSessionClockOffsetUseCase
 from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
 from src.domain.capture.entities import CaptureSessionStatus
@@ -223,6 +227,36 @@ def post_capture_session_preview_assignment(
     return CaptureSessionDetailResponse(
         session=capture_session_to_response(detail.session),
         items=[capture_session_item_to_response(i) for i in detail.items],
+    )
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/capture-sessions/{session_id}/materialize",
+    response_model=MaterializeCaptureSessionResponse,
+)
+def post_capture_session_materialize(
+    inventory_id: str,
+    aisle_id: str,
+    session_id: str,
+    body: CaptureSessionMaterializeRequest,
+    use_case: MaterializeCaptureSessionUseCase = Depends(get_materialize_capture_session_use_case),
+    detail_uc: GetCaptureSessionDetailUseCase = Depends(get_get_capture_session_detail_use_case),
+) -> MaterializeCaptureSessionResponse:
+    try:
+        out = use_case.execute(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            session_id=session_id,
+            idempotency_key=body.idempotency_key,
+        )
+        detail = detail_uc.execute(inventory_id, session_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return MaterializeCaptureSessionResponse(
+        session=capture_session_to_response(detail.session),
+        items=[capture_session_item_to_response(i) for i in detail.items],
+        created_assets_count=len(out.created_asset_ids),
     )
 
 

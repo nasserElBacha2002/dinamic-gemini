@@ -93,3 +93,12 @@ HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE = "File exceeds maximum upload size f
 HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID = (
     "One or more values in the status query parameter are not valid capture session statuses."
 )
+HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED = (
+    "Capture session materialization is not allowed in the current state."
+)
+HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_FAILED = (
+    "Capture session materialization failed; retry with the same idempotency key."
+)
+HTTP_DETAIL_CAPTURE_SESSION_ALREADY_MATERIALIZED = (
+    "Capture session was already materialized with a different idempotency key."
+)

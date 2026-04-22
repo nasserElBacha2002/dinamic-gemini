@@ -17,7 +17,11 @@ import logging
 from fastapi import Depends
 
 from src.application.ports.clock import Clock
-from src.application.ports.capture_repositories import CaptureSessionItemRepository, CaptureSessionRepository
+from src.application.ports.capture_repositories import (
+    CaptureSessionConfirmIdempotencyRepository,
+    CaptureSessionItemRepository,
+    CaptureSessionRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
@@ -35,6 +39,7 @@ from src.runtime.v3_deps import (
     get_aisle_repo,
     get_analytics_repo,
     get_capture_session_item_repo,
+    get_capture_session_confirm_repo,
     get_capture_session_repo,
     get_clock,
     get_evidence_repo,
@@ -926,4 +931,28 @@ def get_compute_capture_session_assignment_preview_use_case(
         position_repo=position_repo,
         clock=clock,
         preview_max_positions=s.v3_capture_preview_max_positions,
+    )
+
+
+def get_materialize_capture_session_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
+    confirm_repo: CaptureSessionConfirmIdempotencyRepository = Depends(get_capture_session_confirm_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    artifact_storage=Depends(get_artifact_storage),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.materialize_capture_session import MaterializeCaptureSessionUseCase
+
+    return MaterializeCaptureSessionUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        confirm_repo=confirm_repo,
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        artifact_storage=artifact_storage,
+        status_reconciler=status_reconciler,
+        clock=clock,
     )

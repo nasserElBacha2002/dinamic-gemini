@@ -173,3 +173,15 @@ class CaptureSessionInvalidClockOffsetError(Exception):
 
 class CaptureSessionPreviewNotAllowedError(Exception):
     """Raised when assignment preview cannot run for the current session state or scope."""
+
+
+class CaptureSessionMaterializationNotAllowedError(Exception):
+    """Raised when materialization cannot run for the current session state or item set."""
+
+
+class CaptureSessionMaterializationFailedError(Exception):
+    """Raised when materialization fails after entering the operation (storage/persistence/runtime)."""
+
+
+class CaptureSessionAlreadyMaterializedError(Exception):
+    """Raised when a session has already been materialized and a different idempotency key is used."""
