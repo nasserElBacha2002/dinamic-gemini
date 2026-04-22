@@ -16,6 +16,8 @@ import ReviewQueuePage from './pages/ReviewQueuePage';
 import MetricsPage from './pages/MetricsPage';
 import AdminAiConfigPage from './pages/AdminAiConfigPage';
 import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
+import IngestionSessionsPage from './features/ingestionSessions/pages/IngestionSessionsPage';
+import IngestionSessionDetailPage from './features/ingestionSessions/pages/IngestionSessionDetailPage';
 
 /** Minimal full-screen loading while auth bootstrap runs. */
 function AuthLoading() {
@@ -55,6 +57,8 @@ function App() {
     ),
     []
   );
+  const ingestionSessionsEl = useMemo(() => <IngestionSessionsPage />, []);
+  const ingestionSessionDetailEl = useMemo(() => <IngestionSessionDetailPage />, []);
 
   if (!initialized) {
     return <AuthLoading />;
@@ -74,6 +78,8 @@ function App() {
         <Route path={ROUTE_PATH.inventories} element={listEl} />
         <Route path={ROUTE_PATH.reviewQueue} element={reviewQueueEl} />
         <Route path={ROUTE_PATH.metrics} element={metricsEl} />
+        <Route path={ROUTE_PATH.ingestionSessions} element={ingestionSessionsEl} />
+        <Route path={ROUTE_PATH.ingestionSessionDetail} element={ingestionSessionDetailEl} />
         <Route path={ROUTE_PATH.adminAiConfig} element={adminAiConfigEl} />
         <Route path={ROUTE_PATH.dashboard} element={<Navigate to={ROUTE_HOME} replace />} />
         <Route path={ROUTE_PATH.settings} element={<Navigate to={ROUTE_HOME} replace />} />

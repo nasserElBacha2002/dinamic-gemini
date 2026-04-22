@@ -9,6 +9,16 @@ export const DEFAULT_AISLES_LIST_TABLE_QUERY = { page: 1, page_size: 200 } as co
 export const queryKeys = {
   all: ['v3'] as const,
 
+  captureSessions: {
+    all: ['v3', 'capture-sessions'] as const,
+    list: (inventoryId: string, params: Record<string, string | number>) =>
+      [...queryKeys.captureSessions.all, 'list', inventoryId, params] as const,
+    detail: (inventoryId: string, sessionId: string) =>
+      [...queryKeys.captureSessions.all, 'detail', inventoryId, sessionId] as const,
+    items: (inventoryId: string, sessionId: string) =>
+      [...queryKeys.captureSessions.detail(inventoryId, sessionId), 'items'] as const,
+  },
+
   inventories: {
     all: ['v3', 'inventories'] as const,
     list: () => [...queryKeys.inventories.all, 'list'] as const,

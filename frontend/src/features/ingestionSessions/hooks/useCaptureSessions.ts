@@ -1,0 +1,83 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getAisles } from '../../../api/client';
+import { queryKeys } from '../../../api/queryKeys';
+import { getInventories } from '../../../api/client';
+import {
+  closeCaptureSession,
+  createCaptureSession,
+  getCaptureSessionDetail,
+  getCaptureSessions,
+  type CaptureSessionsListQuery,
+} from '../api/captureSessionsApi';
+
+function captureSessionsListKeyPart(params: CaptureSessionsListQuery): Record<string, string | number> {
+  return {
+    aisle_id: params.aisleId?.trim() ?? '',
+    page: params.page ?? 1,
+    page_size: params.pageSize ?? 25,
+    status: params.statusCsv?.trim() ?? '',
+  };
+}
+
+export function useCaptureSessionsList(params: CaptureSessionsListQuery, options?: { enabled?: boolean }) {
+  const keyPart = captureSessionsListKeyPart(params);
+  return useQuery({
+    queryKey: queryKeys.captureSessions.list(params.inventoryId, keyPart),
+    queryFn: () => getCaptureSessions(params),
+    enabled: Boolean(params.inventoryId) && (options?.enabled ?? true),
+  });
+}
+
+export function useCaptureSessionDetail(
+  inventoryId: string | undefined,
+  sessionId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.captureSessions.detail(inventoryId ?? '', sessionId ?? ''),
+    queryFn: () => getCaptureSessionDetail(inventoryId!, sessionId!),
+    enabled: Boolean(inventoryId && sessionId) && (options?.enabled ?? true),
+  });
+}
+
+export function useCreateCaptureSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ inventoryId, aisleId }: { inventoryId: string; aisleId: string }) =>
+      createCaptureSession(inventoryId, aisleId),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(created.inventory_id) });
+    },
+  });
+}
+
+export function useCloseCaptureSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ inventoryId, aisleId, sessionId }: { inventoryId: string; aisleId: string; sessionId: string }) =>
+      closeCaptureSession(inventoryId, aisleId, sessionId),
+    onSuccess: (detail) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.all });
+      queryClient.setQueryData(
+        queryKeys.captureSessions.detail(detail.session.inventory_id, detail.session.id),
+        detail
+      );
+    },
+  });
+}
+
+export function useInventoryOptions() {
+  return useQuery({
+    queryKey: queryKeys.inventories.listWithParams({ page: 1, page_size: 200 }),
+    queryFn: () => getInventories({ page: 1, page_size: 200 }),
+  });
+}
+
+export function useAisleOptions(inventoryId: string | undefined, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.inventories.aislesListTable(inventoryId ?? ''),
+    queryFn: () => getAisles(inventoryId!, { page: 1, page_size: 200 }),
+    enabled: Boolean(inventoryId) && (options?.enabled ?? true),
+  });
+}

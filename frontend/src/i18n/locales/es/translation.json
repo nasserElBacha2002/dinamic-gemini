@@ -842,6 +842,7 @@
   },
   "nav": {
     "inventories": "Inventarios",
+    "ingestion_sessions": "Sesiones de importación",
     "review_queue": "Cola de revisión",
     "metrics": "Métricas",
     "ai_config": "Configuración de IA"
@@ -877,6 +878,10 @@
     "metrics": {
       "title": "Métricas",
       "subtitle": "Desempeño operativo y tendencias de calidad"
+    },
+    "ingestion_sessions": {
+      "title": "Sesiones de importación",
+      "subtitle": "Subí medios y prepará sesiones para preview"
     },
     "admin_ai_config": {
       "title": "Configuración de IA",

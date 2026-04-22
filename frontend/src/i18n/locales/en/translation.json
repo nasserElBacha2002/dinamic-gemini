@@ -842,6 +842,7 @@
   },
   "nav": {
     "inventories": "Inventories",
+    "ingestion_sessions": "Import sessions",
     "review_queue": "Review queue",
     "metrics": "Metrics",
     "ai_config": "AI configuration"
@@ -877,6 +878,10 @@
     "metrics": {
       "title": "Metrics",
       "subtitle": "Operational performance and quality trends"
+    },
+    "ingestion_sessions": {
+      "title": "Import sessions",
+      "subtitle": "Upload media and prepare sessions for preview"
     },
     "admin_ai_config": {
       "title": "AI configuration",
