@@ -11,7 +11,7 @@ Este documento define el mapeo de términos para UX/producto sin renombrar entid
 
 - `CaptureSession` -> **Import Session** (o Ingestion Session)
 - `CaptureSessionItem` -> **Imported Media Item**
-- `Materialization` -> **Confirm Import**
+- `Materialization` -> **Materialize Import**
 - `preview-assignment` -> **Auto Organization Preview**
 - `clock_offset_seconds` -> **Clock Offset Adjustment**
 - `CONFIRMING` -> **Materialized and Locked**
@@ -22,7 +22,13 @@ Este documento define el mapeo de términos para UX/producto sin renombrar entid
 - UI y copy: usar términos producto.
 - QA/UAT: incluir ambos cuando sea necesario para trazabilidad:
   - "Import Session (`CaptureSession`)"
-  - "Confirm Import (`materialize`)"
+  - "Materialize Import (`materialize`)"
+
+## Nota semántica sobre R5
+
+- En R1-R4, **Materialize Import** representa la conversión a `SourceAsset`.
+- La posible confirmación/finalización separada de R5 (si se adopta) debe nombrarse explícitamente
+  como un paso distinto para evitar colisión semántica.
 
 ## Fuera de alcance de R1
 

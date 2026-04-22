@@ -2,6 +2,9 @@
 
 Catálogo de errores estructurados para frontend del módulo de ingesta.
 
+Referencia primaria de endpoint/estado para interpretar estos errores:
+`docs/capture-session-api-contract.md`.
+
 Formato esperado:
 
 ```json

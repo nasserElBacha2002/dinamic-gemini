@@ -10,6 +10,7 @@ Fuente de verdad: rutas en `backend/src/api/routes/v3/capture_sessions.py` + sch
   - `{"code": "<ERROR_CODE>", "detail": "<texto>"}`
 - Fechas en respuesta: ISO-8601 UTC serializada por FastAPI.
 - Entidad técnica: `CaptureSession` (UX: Import Session).
+- Referencia primaria frontend para contratos TS: `frontend/src/types/captureSession.ts`.
 
 ## Modelos de respuesta
 

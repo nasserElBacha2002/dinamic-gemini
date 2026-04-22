@@ -1,7 +1,8 @@
 /**
  * Cross-cutting type modules (planning target taxonomies, status alignment, screen contracts,
- * and capture-session UI contracts).
- * API DTO types remain under api/types.
+ * and capture-session API contract mirrors used by feature code.
+ * Note: `captureSession.ts` is a feature-level export location for UI ergonomics,
+ * but its shapes intentionally mirror backend API DTOs.
  */
 
 export * from './screenTargets';

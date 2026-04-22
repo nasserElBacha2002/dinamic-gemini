@@ -13,6 +13,16 @@ Definición operativa de estados y transiciones del flujo de ingesta.
 - `CANCELLED`
 - `FAILED`
 
+## Estado de adopción para frontend (R1)
+
+- **Activos y primarios en el flujo actual**
+  - `DRAFT`, `IMPORTING`, `READY_FOR_REVIEW`, `ASSIGNMENT_PROPOSED`, `CONFIRMING`
+- **Terminal activo pero no primario para happy path**
+  - `CANCELLED`
+- **Reservados / future-facing (no foco primario UI en R1-R2)**
+  - `CONFIRMED` (semántica dependiente de decisión R5)
+  - `FAILED` (estado de resiliencia/operación, no paso normal de UX)
+
 ## Acciones del módulo
 
 - crear sesión

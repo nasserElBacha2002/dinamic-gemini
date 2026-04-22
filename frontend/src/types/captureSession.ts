@@ -1,6 +1,8 @@
 /**
- * Capture Session contracts for UI (R1).
- * Must stay aligned with backend/src/api/schemas/capture_schemas.py.
+ * Capture Session API contract mirror for UI usage (R1).
+ * This module intentionally lives in frontend/src/types as a feature-facing contract surface,
+ * while remaining 1:1 with backend/src/api/schemas/capture_schemas.py.
+ * Runtime tolerance/parsing should be handled in adapters, not in these contract types.
  */
 
 export type CaptureSessionStatus =
@@ -27,7 +29,7 @@ export interface CaptureSessionResponse {
   id: string;
   inventory_id: string;
   aisle_id: string;
-  status: CaptureSessionStatus | string;
+  status: CaptureSessionStatus;
   created_at: string;
   updated_at: string;
   opened_at?: string | null;
@@ -39,11 +41,11 @@ export interface CaptureSessionItemResponse {
   id: string;
   session_id: string;
   staging_storage_key: string;
-  import_status: CaptureSessionItemImportStatus | string;
-  assignment_status: CaptureSessionItemAssignmentStatus | string;
+  import_status: CaptureSessionItemImportStatus;
+  assignment_status: CaptureSessionItemAssignmentStatus;
   content_hash?: string | null;
   effective_capture_time?: string | null;
-  time_source?: CaptureTimeSource | string | null;
+  time_source?: CaptureTimeSource | null;
   time_confidence?: number | null;
   adjusted_capture_time?: string | null;
   assignment_reason?: string | null;
