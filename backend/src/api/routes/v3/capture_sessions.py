@@ -6,9 +6,8 @@ from datetime import datetime
 from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
-from src.api.constants.error_wire import HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED
 from src.api.dependencies import (
     get_cancel_capture_session_use_case,
     get_close_capture_session_use_case,
@@ -298,8 +297,6 @@ async def upload_capture_session_staging_items(
     memory before invoking the use case (``BytesIO`` per file). Low-risk for typical capture
     batch sizes; very large files still hit ``max_upload_size_mb`` in the use case.
     """
-    if not files:
-        raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
     uploaded: List[UploadedFile] = []
     for u in files:
         content = await u.read()
