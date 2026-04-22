@@ -11,6 +11,8 @@ import pytest
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import (
     CaptureSessionAlreadyMaterializedError,
+    CaptureSessionInvalidIdempotencyKeyError,
+    CaptureSessionMaterializationFailedError,
     CaptureSessionMaterializationNotAllowedError,
 )
 from src.application.ports.clock import Clock
@@ -188,6 +190,13 @@ def test_materialize_success_creates_source_assets_links_items_and_sets_confirmi
     assert items[0].linked_source_asset_id == out.created_asset_ids[0]
     assets = list(ctx["asset_repo"].list_by_aisle(ctx["aisle_id"]))
     assert [a.id for a in assets] == list(out.created_asset_ids)
+    meta = assets[0].metadata_json or {}
+    assert meta["capture_session_id"] == ctx["session_id"]
+    assert meta["capture_session_item_id"] == items[0].id
+    assert meta["time_source"] is not None
+    assert "effective_capture_time" in meta
+    assert "assignment_reason" in meta
+    assert "preview_target_position_id" in meta
 
 
 def test_materialize_same_idempotency_key_replays_without_duplicates(tmp_path) -> None:
@@ -272,4 +281,115 @@ def test_materialize_rejects_when_imported_item_is_not_proposed(tmp_path) -> Non
             aisle_id=ctx["aisle_id"],
             session_id=ctx["session_id"],
             idempotency_key="idem-x",
+        )
+
+
+def test_materialize_failure_rolls_back_links_and_assets(tmp_path) -> None:
+    inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
+    session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
+    pos_repo = MemoryPositionRepository()
+    asset_repo = MemorySourceAssetRepository()
+    confirm_repo = MemoryCaptureSessionConfirmIdempotencyRepository()
+    store = V3ArtifactStorageAdapter(tmp_path)
+    clock = _FixedClock(datetime(2026, 5, 1, 13, 0, 0, tzinfo=timezone.utc))
+    for idx in (1, 2):
+        pos_repo.save(
+            Position(
+                id=f"pos-{idx}",
+                aisle_id=aisle_id,
+                status=PositionStatus.DETECTED,
+                confidence=0.9,
+                needs_review=False,
+                primary_evidence_id=None,
+                created_at=clock.now(),
+                updated_at=clock.now(),
+                corrected_position_code=f"A{idx}",
+            )
+        )
+    session = CreateCaptureSessionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=3,
+    ).execute(inv_id, aisle_id)
+    UploadCaptureSessionStagingItemsUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=store,
+        clock=clock,
+        staging_prefix="capture/staging",
+        max_files_per_upload=10,
+        max_upload_bytes=1024 * 1024,
+        time_metadata_extractor=_pillow_time_extractor(),
+    ).execute(
+        inventory_id=inv_id,
+        aisle_id=aisle_id,
+        session_id=session.id,
+        files=[
+            UploadedFile(
+                "a.jpg",
+                BytesIO(b"roll-1"),
+                "image/jpeg",
+                last_modified_at=datetime(2026, 5, 1, 12, 0, 1, tzinfo=timezone.utc),
+            ),
+            UploadedFile(
+                "b.jpg",
+                BytesIO(b"roll-2"),
+                "image/jpeg",
+                last_modified_at=datetime(2026, 5, 1, 12, 0, 2, tzinfo=timezone.utc),
+            ),
+        ],
+    )
+    CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock).execute(
+        inventory_id=inv_id, aisle_id=aisle_id, session_id=session.id
+    )
+    ComputeCaptureSessionAssignmentPreviewUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        position_repo=pos_repo,
+        clock=clock,
+        preview_max_positions=100,
+    ).execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=session.id)
+    items = list(item_repo.list_by_session(session.id))
+    items[1].staging_storage_key = "capture/staging/missing-object.jpg"
+    item_repo.save(items[1])
+    uc = MaterializeCaptureSessionUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        confirm_repo=confirm_repo,
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        artifact_storage=store,
+        status_reconciler=InventoryStatusReconciler(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+            clock=clock,
+        ),
+        clock=clock,
+    )
+    with pytest.raises(CaptureSessionMaterializationFailedError):
+        uc.execute(
+            inventory_id=inv_id,
+            aisle_id=aisle_id,
+            session_id=session.id,
+            idempotency_key="rollback-1",
+        )
+    assert len(asset_repo.list_by_aisle(aisle_id)) == 0
+    after = list(item_repo.list_by_session(session.id))
+    assert all(i.linked_source_asset_id is None for i in after)
+    sess_after = session_repo.get_by_id(session.id)
+    assert sess_after is not None
+    assert sess_after.status == CaptureSessionStatus.ASSIGNMENT_PROPOSED
+
+
+def test_materialize_missing_idempotency_key_rejected_with_domain_error(tmp_path) -> None:
+    ctx = _prepare_assignment_proposed_session(tmp_path)
+    with pytest.raises(CaptureSessionInvalidIdempotencyKeyError):
+        _materialize_uc(ctx).execute(
+            inventory_id=ctx["inv_id"],
+            aisle_id=ctx["aisle_id"],
+            session_id=ctx["session_id"],
+            idempotency_key="",
         )

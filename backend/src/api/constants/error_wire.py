@@ -102,3 +102,4 @@ HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_FAILED = (
 HTTP_DETAIL_CAPTURE_SESSION_ALREADY_MATERIALIZED = (
     "Capture session was already materialized with a different idempotency key."
 )
+HTTP_DETAIL_CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY = "idempotency_key is required"

@@ -110,7 +110,15 @@ def test_materialize_happy_path_and_retry_same_key(materialize_capture_ctx) -> N
     assert body["session"]["status"] == "confirming"
     assert body["created_assets_count"] == 1
     assert body["items"][0]["linked_source_asset_id"]
-    assert len(materialize_capture_ctx["asset_repo"].list_by_aisle(aisle_id)) == 1
+    assets = list(materialize_capture_ctx["asset_repo"].list_by_aisle(aisle_id))
+    assert len(assets) == 1
+    meta = assets[0].metadata_json or {}
+    assert meta["capture_session_id"] == sid
+    assert meta["capture_session_item_id"] == body["items"][0]["id"]
+    assert "effective_capture_time" in meta
+    assert "time_source" in meta
+    assert "assignment_reason" in meta
+    assert "preview_target_position_id" in meta
     second = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/materialize",
         json={"idempotency_key": "k-1"},

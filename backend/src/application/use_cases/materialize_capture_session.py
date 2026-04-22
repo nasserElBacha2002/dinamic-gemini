@@ -17,6 +17,7 @@ from src.application.errors import (
     CaptureSessionConfirmLedgerDuplicateError,
     CaptureSessionMaterializationFailedError,
     CaptureSessionMaterializationNotAllowedError,
+    CaptureSessionInvalidIdempotencyKeyError,
     CaptureSessionNotFoundError,
 )
 from src.application.ports.capture_repositories import (
@@ -58,6 +59,9 @@ class MaterializeCaptureSessionUseCase:
 
     State gate: only ``ASSIGNMENT_PROPOSED`` can materialize.
     Item gate: only ``IMPORTED`` + ``PROPOSED`` rows are eligible.
+    Phase-4 meaning of ``CONFIRMING``: the session is already materialized to ``SourceAsset``
+    and locked for additional preview/materialization attempts while future phases define
+    final confirmation semantics.
     """
 
     def __init__(
@@ -96,7 +100,7 @@ class MaterializeCaptureSessionUseCase:
     ) -> MaterializeCaptureSessionResult:
         idem = (idempotency_key or "").strip()
         if not idem:
-            raise ValueError("idempotency_key is required")
+            raise CaptureSessionInvalidIdempotencyKeyError("idempotency_key is required")
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None or session.aisle_id != aisle_id:
             raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
@@ -148,8 +152,10 @@ class MaterializeCaptureSessionUseCase:
             detail_style="strict",
         )
         now = self._clock.now()
+        prev_status = session.status
         created_assets: list[SourceAsset] = []
         created_delete_keys: list[str] = []
+        linked_items: list[CaptureSessionItem] = []
         try:
             for item in eligible:
                 uploaded = self._read_staging_item_as_uploaded_file(item)
@@ -157,13 +163,15 @@ class MaterializeCaptureSessionUseCase:
                     aisle_id=aisle_id,
                     uploaded=uploaded,
                     now=now,
-                    metadata_json=None,
+                    metadata_json=self._build_source_asset_metadata(session_id=session_id, item=item),
                 )
                 created_assets.append(asset)
                 created_delete_keys.append(delete_key)
                 item.linked_source_asset_id = asset.id
                 item.updated_at = now
                 self._item_repo.save(item)
+                linked_items.append(item)
+            # Phase 4: CONFIRMING means "materialized + locked", not final business confirmation.
             session.status = CaptureSessionStatus.CONFIRMING
             session.updated_at = now
             self._session_repo.save(session)
@@ -193,7 +201,14 @@ class MaterializeCaptureSessionUseCase:
             ids = tuple((replay.outcome_json or {}).get("created_asset_ids", [])) if replay else ()
             return MaterializeCaptureSessionResult(session=session, created_asset_ids=ids, replayed=True)
         except Exception as exc:
+            self._rollback_item_links(linked_items, now=now)
             self._rollback_created_assets(created_assets, created_delete_keys)
+            session.status = prev_status
+            session.updated_at = now
+            try:
+                self._session_repo.save(session)
+            except Exception:  # noqa: BLE001
+                logger.warning("Materialization rollback failed resetting session status session_id=%s", session_id)
             logger.exception(
                 "Capture materialization failed session_id=%s created_assets=%d",
                 session_id,
@@ -244,3 +259,22 @@ class MaterializeCaptureSessionUseCase:
                 self._artifact_storage.delete_file(key)
             except Exception:  # noqa: BLE001
                 logger.warning("Materialization rollback failed deleting file key=%s", key)
+
+    def _rollback_item_links(self, linked_items: Sequence[CaptureSessionItem], *, now: datetime) -> None:
+        for item in reversed(linked_items):
+            try:
+                item.linked_source_asset_id = None
+                item.updated_at = now
+                self._item_repo.save(item)
+            except Exception:  # noqa: BLE001
+                logger.warning("Materialization rollback failed resetting item link item_id=%s", item.id)
+
+    def _build_source_asset_metadata(self, *, session_id: str, item: CaptureSessionItem) -> dict[str, object]:
+        return {
+            "capture_session_id": session_id,
+            "capture_session_item_id": item.id,
+            "effective_capture_time": item.effective_capture_time.isoformat() if item.effective_capture_time else None,
+            "time_source": item.time_source.value if item.time_source else None,
+            "assignment_reason": item.assignment_reason,
+            "preview_target_position_id": item.preview_target_position_id,
+        }

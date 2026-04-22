@@ -185,3 +185,7 @@ class CaptureSessionMaterializationFailedError(Exception):
 
 class CaptureSessionAlreadyMaterializedError(Exception):
     """Raised when a session has already been materialized and a different idempotency key is used."""
+
+
+class CaptureSessionInvalidIdempotencyKeyError(Exception):
+    """Raised when materialization/confirm idempotency key is missing or invalid."""
