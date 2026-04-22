@@ -12,6 +12,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { formatDate } from '../../../utils/formatDate';
 import type { CaptureSessionDetailResponse, CaptureSessionItemResponse } from '../../../types/captureSession';
 import ImportSessionUpload from './ImportSessionUpload';
@@ -41,21 +42,22 @@ export default function ImportSessionDetail({
   onCloseSession,
   onRefresh,
 }: ImportSessionDetailProps) {
+  const { t } = useTranslation();
   const sortedItems = useMemo(() => sortItemsByEffectiveCaptureTime(detail.items), [detail.items]);
   const noItems = sortedItems.length === 0;
 
   return (
     <Stack spacing={2}>
       <Box>
-        <Typography variant="h6">Import Session</Typography>
+        <Typography variant="h6">{t('ingestion_sessions.detail.title')}</Typography>
         <Typography variant="body2" color="text.secondary">
-          ID: {detail.session.id}
+          {t('ingestion_sessions.detail.session_id')}: {detail.session.id}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Status: {detail.session.status}
+          {t('ingestion_sessions.detail.status')}: {detail.session.status}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Created: {formatDate(detail.session.created_at)}
+          {t('ingestion_sessions.detail.created')}: {formatDate(detail.session.created_at)}
         </Typography>
       </Box>
 
@@ -63,7 +65,7 @@ export default function ImportSessionDetail({
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
         <Button variant="contained" onClick={onCloseSession} disabled={!canClose || closing}>
-          Close Session
+          {t('ingestion_sessions.actions.close_session')}
         </Button>
       </Stack>
 
@@ -76,7 +78,7 @@ export default function ImportSessionDetail({
       />
 
       {noItems ? (
-        <Typography color="text.secondary">Upload images to begin.</Typography>
+        <Typography color="text.secondary">{t('ingestion_sessions.empty.upload_to_begin')}</Typography>
       ) : (
         <List dense>
           {sortedItems.map((item) => (
@@ -91,18 +93,18 @@ export default function ImportSessionDetail({
                 secondary={
                   <Box component="span" sx={{ display: 'block' }}>
                     <Typography variant="caption" color="text.secondary" display="block">
-                      import_status: {item.import_status}
+                      {t('ingestion_sessions.detail.import_status')}: {item.import_status}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" display="block">
-                      effective_capture_time:{' '}
-                      {item.effective_capture_time ? formatDate(item.effective_capture_time) : 'N/A'}
+                      {t('ingestion_sessions.detail.effective_capture_time')}:{' '}
+                      {item.effective_capture_time ? formatDate(item.effective_capture_time) : t('ingestion_sessions.common.not_available')}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" display="block">
-                      time_source: {item.time_source ?? 'N/A'}
+                      {t('ingestion_sessions.detail.time_source')}: {item.time_source ?? t('ingestion_sessions.common.not_available')}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" display="block">
-                      time_confidence:{' '}
-                      {typeof item.time_confidence === 'number' ? item.time_confidence.toFixed(2) : 'N/A'}
+                      {t('ingestion_sessions.detail.time_confidence')}:{' '}
+                      {typeof item.time_confidence === 'number' ? item.time_confidence.toFixed(2) : t('ingestion_sessions.common.not_available')}
                     </Typography>
                   </Box>
                 }

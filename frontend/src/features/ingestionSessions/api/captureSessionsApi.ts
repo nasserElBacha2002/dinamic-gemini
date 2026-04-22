@@ -1,6 +1,7 @@
 import { V3_INVENTORIES_BASE } from '../../../constants/v3ApiPaths';
 import { getStoredToken } from '../../auth/storage';
 import { ApiError } from '../../../api/types';
+import i18n from '../../../i18n';
 import type {
   CaptureSessionDetailResponse,
   CaptureSessionResponse,
@@ -23,7 +24,7 @@ function getErrorMessage(detail: unknown, statusText: string): string {
     const first = detail[0] as { msg?: unknown } | undefined;
     if (typeof first?.msg === 'string' && first.msg.trim()) return first.msg.trim();
   }
-  return statusText || 'Request failed';
+  return statusText || i18n.t('errors.request_failed');
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -123,7 +124,7 @@ export async function uploadCaptureItem(
       onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
     };
     xhr.onerror = () => {
-      reject(new ApiError('Network error while uploading file'));
+      reject(new ApiError(i18n.t('errors.request_failed')));
     };
     xhr.onload = () => {
       let body: Record<string, unknown> = {};

@@ -888,6 +888,67 @@
       "subtitle": "Manage providers, prompts, and prompt parity"
     }
   },
+  "ingestion_sessions": {
+    "page": {
+      "title": "Import Sessions",
+      "subtitle": "Create, upload, and prepare sessions before preview."
+    },
+    "filters": {
+      "title": "Session filters",
+      "inventory": "Inventory",
+      "aisle": "Aisle",
+      "all_aisles": "All aisles"
+    },
+    "list": {
+      "title": "Import Sessions",
+      "column_session_id": "Session ID",
+      "column_aisle_id": "Aisle ID",
+      "column_status": "Status",
+      "column_created": "Created",
+      "column_actions": "Actions"
+    },
+    "detail": {
+      "page_title": "Import Session Detail",
+      "section_title": "Session",
+      "title": "Import Session",
+      "session_id": "ID",
+      "status": "Status",
+      "created": "Created",
+      "import_status": "import_status",
+      "effective_capture_time": "effective_capture_time",
+      "time_source": "time_source",
+      "time_confidence": "time_confidence"
+    },
+    "upload": {
+      "title": "Upload imported media",
+      "subtitle": "Drag and drop files here or select multiple files from your device.",
+      "select_files": "Select files",
+      "error_summary": "Upload completed with errors. Review file-level statuses below.",
+      "status": {
+        "uploaded": "Uploaded",
+        "failed": "Failed",
+        "uploading": "Uploading",
+        "pending": "Pending"
+      }
+    },
+    "actions": {
+      "new_import_session": "New Import Session",
+      "open": "Open",
+      "close_session": "Close Session",
+      "back_to_sessions": "Back to sessions"
+    },
+    "empty": {
+      "title": "No import sessions yet",
+      "message": "Create a new import session to begin ingestion.",
+      "upload_to_begin": "Upload images to begin."
+    },
+    "errors": {
+      "missing_inventory_or_session": "Missing required route parameters: inventoryId and sessionId."
+    },
+    "common": {
+      "not_available": "N/A"
+    }
+  },
   "shell": {
     "brand": "Dinamic",
     "operations": "Operations",

@@ -888,6 +888,67 @@
       "subtitle": "Administrá proveedores, prompts y paridad de prompts"
     }
   },
+  "ingestion_sessions": {
+    "page": {
+      "title": "Sesiones de importación",
+      "subtitle": "Creá, subí y prepará sesiones antes del preview."
+    },
+    "filters": {
+      "title": "Filtros de sesión",
+      "inventory": "Inventario",
+      "aisle": "Pasillo",
+      "all_aisles": "Todos los pasillos"
+    },
+    "list": {
+      "title": "Sesiones de importación",
+      "column_session_id": "ID de sesión",
+      "column_aisle_id": "ID de pasillo",
+      "column_status": "Estado",
+      "column_created": "Creada",
+      "column_actions": "Acciones"
+    },
+    "detail": {
+      "page_title": "Detalle de sesión de importación",
+      "section_title": "Sesión",
+      "title": "Sesión de importación",
+      "session_id": "ID",
+      "status": "Estado",
+      "created": "Creada",
+      "import_status": "estado_importación",
+      "effective_capture_time": "hora_captura_efectiva",
+      "time_source": "fuente_hora",
+      "time_confidence": "confianza_hora"
+    },
+    "upload": {
+      "title": "Subir medios importados",
+      "subtitle": "Arrastrá y soltá archivos aquí o seleccioná múltiples archivos desde tu dispositivo.",
+      "select_files": "Seleccionar archivos",
+      "error_summary": "La carga terminó con errores. Revisá los estados por archivo abajo.",
+      "status": {
+        "uploaded": "Subido",
+        "failed": "Fallido",
+        "uploading": "Subiendo",
+        "pending": "Pendiente"
+      }
+    },
+    "actions": {
+      "new_import_session": "Nueva sesión de importación",
+      "open": "Abrir",
+      "close_session": "Cerrar sesión",
+      "back_to_sessions": "Volver a sesiones"
+    },
+    "empty": {
+      "title": "Todavía no hay sesiones de importación",
+      "message": "Creá una nueva sesión de importación para comenzar.",
+      "upload_to_begin": "Subí imágenes para comenzar."
+    },
+    "errors": {
+      "missing_inventory_or_session": "Faltan parámetros de ruta requeridos: inventoryId y sessionId."
+    },
+    "common": {
+      "not_available": "N/D"
+    }
+  },
   "shell": {
     "brand": "Dinamic",
     "operations": "Operaciones",

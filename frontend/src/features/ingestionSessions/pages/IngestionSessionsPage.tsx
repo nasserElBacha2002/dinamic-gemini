@@ -1,5 +1,6 @@
 import { Button, FormControl, InputLabel, MenuItem, Select, Stack } from '@mui/material';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../../../components/shell';
 import { ErrorAlert, SectionCard } from '../../../components/ui';
@@ -15,7 +16,17 @@ import {
 } from '../hooks/useCaptureSessions';
 import type { DataTableSortDirection } from '../../../components/ui';
 
+export function buildSessionsListParams(inventoryId: string, selectedAisleId: string) {
+  return {
+    inventoryId,
+    aisleId: selectedAisleId.trim() ? selectedAisleId : undefined,
+    page: 1,
+    pageSize: 100,
+  };
+}
+
 export default function IngestionSessionsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const inventoriesQuery = useInventoryOptions();
   const inventoryOptions = inventoriesQuery.data?.items ?? [];
@@ -26,15 +37,10 @@ export default function IngestionSessionsPage() {
   const activeInventoryId = selectedInventoryId || inventoryOptions[0]?.id || '';
   const aislesQuery = useAisleOptions(activeInventoryId, { enabled: Boolean(activeInventoryId) });
   const aisleOptions = aislesQuery.data?.items ?? [];
-  const activeAisleId = selectedAisleId || aisleOptions[0]?.id || '';
+  const createAisleId = selectedAisleId.trim();
 
   const sessionsQuery = useCaptureSessionsList(
-    {
-      inventoryId: activeInventoryId,
-      aisleId: activeAisleId || undefined,
-      page: 1,
-      pageSize: 100,
-    },
+    buildSessionsListParams(activeInventoryId, selectedAisleId),
     { enabled: Boolean(activeInventoryId) }
   );
   const createMutation = useCreateCaptureSession();
@@ -54,22 +60,22 @@ export default function IngestionSessionsPage() {
   return (
     <Stack spacing={2}>
       <PageHeader
-        title="Import Sessions"
-        subtitle="Create, upload, and prepare sessions before preview."
+        title={t('ingestion_sessions.page.title')}
+        subtitle={t('ingestion_sessions.page.subtitle')}
         actions={
           <Button
             variant="contained"
-            disabled={!activeInventoryId || !activeAisleId || createMutation.isPending}
+            disabled={!activeInventoryId || !createAisleId || createMutation.isPending}
             onClick={async () => {
-              if (!activeInventoryId || !activeAisleId) return;
+              if (!activeInventoryId || !createAisleId) return;
               const created = await createMutation.mutateAsync({
                 inventoryId: activeInventoryId,
-                aisleId: activeAisleId,
+                aisleId: createAisleId,
               });
-              navigate(pathToIngestionSessionDetail(created.id, created.inventory_id, created.aisle_id));
+              navigate(pathToIngestionSessionDetail(created.id, created.inventory_id));
             }}
           >
-            New Import Session
+            {t('ingestion_sessions.actions.new_import_session')}
           </Button>
         }
       />
@@ -77,13 +83,13 @@ export default function IngestionSessionsPage() {
       {loadErrorMessage ? <ErrorAlert message={loadErrorMessage} onRetry={() => sessionsQuery.refetch()} /> : null}
       {createErrorMessage ? <ErrorAlert message={createErrorMessage} onClose={() => createMutation.reset()} /> : null}
 
-      <SectionCard title="Session filters">
+      <SectionCard title={t('ingestion_sessions.filters.title')}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
           <FormControl fullWidth>
-            <InputLabel id="ingestion-inventory-label">Inventory</InputLabel>
+            <InputLabel id="ingestion-inventory-label">{t('ingestion_sessions.filters.inventory')}</InputLabel>
             <Select
               labelId="ingestion-inventory-label"
-              label="Inventory"
+              label={t('ingestion_sessions.filters.inventory')}
               value={activeInventoryId}
               onChange={(e) => {
                 const next = String(e.target.value);
@@ -100,13 +106,16 @@ export default function IngestionSessionsPage() {
           </FormControl>
 
           <FormControl fullWidth disabled={!activeInventoryId}>
-            <InputLabel id="ingestion-aisle-label">Aisle</InputLabel>
+            <InputLabel id="ingestion-aisle-label">{t('ingestion_sessions.filters.aisle')}</InputLabel>
             <Select
               labelId="ingestion-aisle-label"
-              label="Aisle"
-              value={activeAisleId}
+              label={t('ingestion_sessions.filters.aisle')}
+              value={selectedAisleId}
               onChange={(e) => setSelectedAisleId(String(e.target.value))}
             >
+              <MenuItem value="">
+                {t('ingestion_sessions.filters.all_aisles')}
+              </MenuItem>
               {aisleOptions.map((aisle) => (
                 <MenuItem key={aisle.id} value={aisle.id}>
                   {aisle.code || aisle.id}
@@ -117,14 +126,14 @@ export default function IngestionSessionsPage() {
         </Stack>
       </SectionCard>
 
-      <SectionCard title="Import Sessions">
+      <SectionCard title={t('ingestion_sessions.list.title')}>
         <ImportSessionList
           sessions={sessionsQuery.data?.items ?? []}
           loading={sessionsQuery.isLoading}
           sortDir={sortDir}
           setSortDir={setSortDir}
           onOpen={(session) =>
-            navigate(pathToIngestionSessionDetail(session.id, session.inventory_id, session.aisle_id))
+            navigate(pathToIngestionSessionDetail(session.id, session.inventory_id))
           }
         />
       </SectionCard>

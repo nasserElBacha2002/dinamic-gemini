@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../api/queryKeys';
+import i18n from '../../../i18n';
 import { uploadCaptureItem } from '../api/captureSessionsApi';
 
 export type UploadItemState = 'pending' | 'uploading' | 'uploaded' | 'failed';
@@ -17,6 +18,8 @@ export interface UploadRunResult {
   uploadedCount: number;
   failedCount: number;
 }
+
+const CAPTURE_ITEM_UPLOAD_MAX_CONCURRENCY = 3;
 
 async function runWithConcurrency<T>(
   workers: Array<() => Promise<T>>,
@@ -77,13 +80,13 @@ export function useUploadCaptureItems() {
           notify();
         } catch (error) {
           entry.state = 'failed';
-          entry.error = error instanceof Error ? error.message : 'Upload failed';
+          entry.error = error instanceof Error ? error.message : i18n.t('errors.request_failed');
           notify();
           throw error;
         }
       });
 
-      await runWithConcurrency(workers, 3);
+      await runWithConcurrency(workers, CAPTURE_ITEM_UPLOAD_MAX_CONCURRENCY);
 
       const uploadedCount = queue.filter((q) => q.state === 'uploaded').length;
       const failedCount = queue.filter((q) => q.state === 'failed').length;

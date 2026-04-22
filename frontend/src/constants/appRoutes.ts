@@ -61,7 +61,7 @@ export function pathToAislePositions(inventoryId: string, aisleId: string): stri
   return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/aisles/${aisleId}/positions`;
 }
 
-export function pathToIngestionSessionDetail(sessionId: string, inventoryId: string, aisleId: string): string {
-  const params = new URLSearchParams({ inventoryId, aisleId });
+export function pathToIngestionSessionDetail(sessionId: string, inventoryId: string): string {
+  const params = new URLSearchParams({ inventoryId });
   return `${ROUTE_INGESTION_SESSIONS}/${encodeURIComponent(sessionId)}?${params.toString()}`;
 }

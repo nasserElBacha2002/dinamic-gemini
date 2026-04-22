@@ -15,6 +15,8 @@ import {
   Typography,
 } from '@mui/material';
 import { useRef, useState } from 'react';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import type { UploadQueueItem } from '../hooks/useUploadCaptureItems';
 import { useUploadCaptureItems } from '../hooks/useUploadCaptureItems';
 
@@ -33,11 +35,11 @@ function statusIcon(row: UploadQueueItem) {
   return <CloudUploadOutlinedIcon color="disabled" fontSize="small" />;
 }
 
-function statusLabel(row: UploadQueueItem): string {
-  if (row.state === 'uploaded') return 'Uploaded';
-  if (row.state === 'failed') return 'Failed';
-  if (row.state === 'uploading') return 'Uploading';
-  return 'Pending';
+function statusLabel(row: UploadQueueItem, t: TFunction): string {
+  if (row.state === 'uploaded') return t('ingestion_sessions.upload.status.uploaded');
+  if (row.state === 'failed') return t('ingestion_sessions.upload.status.failed');
+  if (row.state === 'uploading') return t('ingestion_sessions.upload.status.uploading');
+  return t('ingestion_sessions.upload.status.pending');
 }
 
 export default function ImportSessionUpload({
@@ -47,6 +49,7 @@ export default function ImportSessionUpload({
   disabled = false,
   onCompleted,
 }: ImportSessionUploadProps) {
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -94,10 +97,10 @@ export default function ImportSessionUpload({
         }}
       >
         <Typography variant="subtitle2" gutterBottom>
-          Upload imported media
+          {t('ingestion_sessions.upload.title')}
         </Typography>
         <Typography variant="body2" color="text.secondary" gutterBottom>
-          Drag and drop files here or select multiple files from your device.
+          {t('ingestion_sessions.upload.subtitle')}
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
           <Button
@@ -106,7 +109,7 @@ export default function ImportSessionUpload({
             disabled={!canSelect}
             startIcon={<CloudUploadOutlinedIcon />}
           >
-            Select files
+            {t('ingestion_sessions.upload.select_files')}
           </Button>
         </Box>
         <input
@@ -124,7 +127,7 @@ export default function ImportSessionUpload({
 
       {uploadMutation.isError ? (
         <Alert severity="warning" sx={{ mt: 2 }}>
-          Upload completed with errors. Review file-level statuses below.
+          {t('ingestion_sessions.upload.error_summary')}
         </Alert>
       ) : null}
 
@@ -138,7 +141,7 @@ export default function ImportSessionUpload({
                 secondary={
                   <>
                     <Typography variant="caption" color="text.secondary">
-                      {statusLabel(row)}
+                      {statusLabel(row, t)}
                     </Typography>
                     {row.state === 'uploading' ? <LinearProgress variant="determinate" value={row.progressPct} /> : null}
                     {row.error ? (
