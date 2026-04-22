@@ -43,7 +43,7 @@ export function useCaptureSessionDetail(
 export function useCreateCaptureSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ inventoryId, aisleId }: { inventoryId: string; aisleId: string }) =>
+    mutationFn: ({ inventoryId, aisleId }: { inventoryId: string; aisleId?: string }) =>
       createCaptureSession(inventoryId, aisleId),
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.all });

@@ -56,7 +56,7 @@ def _row_to_session(row) -> CaptureSession:
     return CaptureSession(
         id=sid,
         inventory_id=getattr(row, "inventory_id", "") or "",
-        aisle_id=getattr(row, "aisle_id", "") or "",
+        aisle_id=getattr(row, "aisle_id", None),
         status=_status_from_row(getattr(row, "status", None), sid),
         created_at=created,
         updated_at=updated,

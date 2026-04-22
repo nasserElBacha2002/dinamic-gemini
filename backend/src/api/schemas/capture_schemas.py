@@ -14,7 +14,7 @@ from src.domain.capture.entities import CaptureSession, CaptureSessionItem
 class CaptureSessionResponse(BaseModel):
     id: str
     inventory_id: str
-    aisle_id: str
+    aisle_id: Optional[str] = None
     status: str
     created_at: datetime
     updated_at: datetime

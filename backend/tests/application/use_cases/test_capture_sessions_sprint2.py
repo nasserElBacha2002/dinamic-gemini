@@ -111,6 +111,28 @@ def test_create_session_success_and_list() -> None:
     assert out.items[0].id == s.id
 
 
+def test_create_inventory_level_session_without_aisle() -> None:
+    inv_repo, aisle_repo, inv_id, _aisle_id = _seed_inv_aisle()
+    session_repo = MemoryCaptureSessionRepository()
+    clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
+    create_uc = CreateCaptureSessionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=1,
+    )
+    s = create_uc.execute(inv_id)
+    assert s.inventory_id == inv_id
+    assert s.aisle_id is None
+    assert s.status == CaptureSessionStatus.DRAFT
+
+    # Per-aisle open-session cap does not apply when session has no aisle yet.
+    s2 = create_uc.execute(inv_id)
+    assert s2.id != s.id
+    assert s2.aisle_id is None
+
+
 def test_create_fails_when_inventory_missing() -> None:
     inv_repo, aisle_repo, _inv_id, aisle_id = _seed_inv_aisle()
     session_repo = MemoryCaptureSessionRepository()

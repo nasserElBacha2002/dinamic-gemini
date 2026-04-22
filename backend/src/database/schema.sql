@@ -600,7 +600,7 @@ BEGIN
     CREATE TABLE capture_sessions (
         id VARCHAR(36) NOT NULL PRIMARY KEY,
         inventory_id VARCHAR(36) NOT NULL,
-        aisle_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NULL,
         status VARCHAR(32) NOT NULL,
         created_at DATETIME2 NOT NULL,
         updated_at DATETIME2 NOT NULL,
@@ -631,6 +631,7 @@ BEGIN
             ) AS rn
         FROM dbo.capture_sessions
         WHERE closed_at IS NULL
+          AND aisle_id IS NOT NULL
           AND status <> 'cancelled'
           AND status <> 'failed'
           AND status <> 'confirmed'
@@ -646,10 +647,24 @@ BEGIN
 
     CREATE UNIQUE NONCLUSTERED INDEX UQ_capture_sessions_one_open_per_aisle
         ON dbo.capture_sessions (inventory_id, aisle_id)
-        WHERE closed_at IS NULL
+        WHERE aisle_id IS NOT NULL
+          AND closed_at IS NULL
           AND status <> 'cancelled'
           AND status <> 'failed'
           AND status <> 'confirmed';
+END;
+GO
+
+-- Phase G1 — inventory-level capture sessions (mirror migrations/versions/0020_capture_sessions_inventory_scope.sql).
+IF EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_sessions')
+      AND name = 'aisle_id'
+      AND is_nullable = 0
+)
+BEGIN
+    ALTER TABLE dbo.capture_sessions ALTER COLUMN aisle_id VARCHAR(36) NULL;
 END;
 GO
 

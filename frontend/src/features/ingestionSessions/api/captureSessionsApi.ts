@@ -70,11 +70,15 @@ export async function getCaptureSessions(params: CaptureSessionsListQuery): Prom
   return handleResponse<PaginatedCaptureSessionListResponse>(response);
 }
 
-export async function createCaptureSession(inventoryId: string, aisleId: string): Promise<CaptureSessionResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/capture-sessions`,
-    { method: 'POST' }
-  );
+export async function createCaptureSession(
+  inventoryId: string,
+  aisleId?: string
+): Promise<CaptureSessionResponse> {
+  const resolvedAisleId = (aisleId || "").trim();
+  const path = resolvedAisleId
+    ? `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(resolvedAisleId)}/capture-sessions`
+    : `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions`;
+  const response = await protectedFetch(path, { method: 'POST' });
   return handleResponse<CaptureSessionResponse>(response);
 }
 

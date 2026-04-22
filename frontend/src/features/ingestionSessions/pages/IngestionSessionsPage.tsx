@@ -37,7 +37,6 @@ export default function IngestionSessionsPage() {
   const activeInventoryId = selectedInventoryId || inventoryOptions[0]?.id || '';
   const aislesQuery = useAisleOptions(activeInventoryId, { enabled: Boolean(activeInventoryId) });
   const aisleOptions = aislesQuery.data?.items ?? [];
-  const createAisleId = selectedAisleId.trim();
 
   const sessionsQuery = useCaptureSessionsList(
     buildSessionsListParams(activeInventoryId, selectedAisleId),
@@ -65,12 +64,12 @@ export default function IngestionSessionsPage() {
         actions={
           <Button
             variant="contained"
-            disabled={!activeInventoryId || !createAisleId || createMutation.isPending}
+            disabled={!activeInventoryId || createMutation.isPending}
             onClick={async () => {
-              if (!activeInventoryId || !createAisleId) return;
+              if (!activeInventoryId) return;
               const created = await createMutation.mutateAsync({
                 inventoryId: activeInventoryId,
-                aisleId: createAisleId,
+                aisleId: selectedAisleId.trim() || undefined,
               });
               navigate(pathToIngestionSessionDetail(created.id, created.inventory_id));
             }}

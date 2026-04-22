@@ -80,6 +80,19 @@ def test_create_list_detail_upload_flow(memory_capture: None) -> None:
     assert assets_after.json() == []
 
 
+def test_create_inventory_level_session_without_aisle(memory_capture: None) -> None:
+    inv_id, _aisle_id = _create_inv_aisle()
+    cr = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions")
+    assert cr.status_code == 201, cr.text
+    body = cr.json()
+    assert body["inventory_id"] == inv_id
+    assert body["aisle_id"] is None
+    lr = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions")
+    assert lr.status_code == 200
+    assert lr.json()["total_items"] == 1
+    assert lr.json()["items"][0]["aisle_id"] is None
+
+
 def test_open_session_conflict_returns_409(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
     assert client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").status_code == 201

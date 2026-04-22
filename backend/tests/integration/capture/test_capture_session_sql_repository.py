@@ -152,6 +152,42 @@ def test_sql_capture_session_save_and_get_by_id(
     assert loaded.status == CaptureSessionStatus.DRAFT
 
 
+def test_sql_capture_session_allows_nullable_aisle_id(
+    inv_repo: SqlInventoryRepository,
+    session_repo: SqlCaptureSessionRepository,
+) -> None:
+    suffix = uuid.uuid4().hex[:10]
+    inv_id = f"cap-inv-null-{suffix}"
+    t = now_utc()
+    inv_repo.save(
+        Inventory(
+            id=inv_id,
+            name=f"cap-sql-null-{suffix[:8]}",
+            status=InventoryStatus.DRAFT,
+            created_at=t,
+            updated_at=t,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
+    sid = f"cap-sess-null-{suffix}"
+    session_repo.save(
+        CaptureSession(
+            id=sid,
+            inventory_id=inv_id,
+            aisle_id=None,
+            status=CaptureSessionStatus.DRAFT,
+            created_at=t,
+            updated_at=t,
+            opened_at=t,
+            closed_at=None,
+        )
+    )
+    loaded = session_repo.get_by_id(sid)
+    assert loaded is not None
+    assert loaded.inventory_id == inv_id
+    assert loaded.aisle_id is None
+
+
 def test_sql_open_session_count_and_close(
     inv_repo: SqlInventoryRepository,
     aisle_repo: SqlAisleRepository,

@@ -36,6 +36,9 @@ class MemoryCaptureSessionRepository(CaptureSessionRepository):
 
     def save(self, session: CaptureSession) -> None:
         if self._is_open_for_unique_policy(session):
+            if session.aisle_id is None:
+                self._store[session.id] = session
+                return
             for other in self._store.values():
                 if other.id == session.id:
                     continue

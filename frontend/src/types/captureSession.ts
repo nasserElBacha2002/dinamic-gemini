@@ -28,7 +28,7 @@ export type CaptureTimeSource = 'exif' | 'file_mtime' | 'fallback_clock';
 export interface CaptureSessionResponse {
   id: string;
   inventory_id: string;
-  aisle_id: string;
+  aisle_id: string | null;
   status: CaptureSessionStatus;
   created_at: string;
   updated_at: string;

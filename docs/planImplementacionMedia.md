@@ -1,532 +1,237 @@
+# Plan de implementación del módulo de ingesta de medios
 
+## 1. Resumen ejecutivo
 
-# 📦 PLAN DE IMPLEMENTACIÓN — MÓDULO DE INGESTA DE MEDIOS (VERSIÓN FINAL)
+El plan se actualiza por una corrección de producto: el flujo principal real no es aisle-first, sino ingestión de lote completo post-vuelo con descubrimiento de pasillos a partir de agrupación automática.
 
----
-
-# 1. 🎯 Objetivo del sistema
-
-Construir un módulo que permita:
-
-> **ingestar fotos (principalmente post-vuelo de dron), organizarlas, revisarlas y convertirlas en SourceAssets para el pipeline**
-
-### Casos soportados
-
-* 🟢 **Modo A** → Upload manual
-* 🔵 **Modo B (principal)** → Post-vuelo (descarga → subida)
-* ⚪ **Modo C (futuro)** → Integración directa con dron
-
----
-
-# 2. 🧠 Modelo mental del sistema (simple y clave)
-
-Flujo REAL del usuario:
+La dirección oficial pasa a ser:
 
 ```plaintext
-1. Crear sesión (Import Session)
-2. Subir fotos (muchas)
-3. Ver y ordenar automáticamente (preview)
-4. Ajustar si hace falta
-5. Confirmar → materializar
-6. Pipeline procesa
+inventario -> sesión de importación (nivel inventario) -> upload vuelo completo
+-> agrupación automática -> revisión de grupos -> asignación grupo->pasillo
+-> materialización -> procesamiento por pasillo
 ```
 
-Internamente:
+Esta corrección no invalida el backend construido. La estrategia es preservar la base ya implementada (staging, extracción temporal, idempotencia, materialización, handoff a SourceAsset) y reorientar la orquestación.
+
+## 2. Problema del modelo previo aisle-first
+
+El modelo anterior asumía como camino principal:
 
 ```plaintext
-CaptureSession
- → CaptureSessionItem (staging)
- → preview (determinístico)
- → materialización
- → SourceAsset
+inventario -> pasillo -> sesión -> upload
 ```
 
----
+Limitaciones principales:
 
-# 3. 🚧 Estado actual (lo que YA está hecho)
+- Requiere decidir el pasillo antes de subir el lote, lo cual no coincide con el flujo operativo post-vuelo.
+- Obliga al operador a separar manualmente imágenes por pasillo antes de aprovechar la lógica del sistema.
+- Coloca demasiado pronto decisiones de destino (`aisle_id`) que en la práctica se resuelven tras revisar el lote.
+- Empuja UI y casos de uso hacia carga “por pasillo conocido”, perdiendo el valor central de descubrimiento y organización automática.
 
-Backend:
+Conclusión: el enfoque aisle-first puede existir como camino secundario, pero no debe seguir siendo la ruta de entrega principal.
 
-* ✔ Sessions (CRUD completo)
-* ✔ Upload staging
-* ✔ Time extraction (EXIF / mtime / fallback)
-* ✔ Clock offset
-* ✔ Preview determinístico
-* ✔ Materialización con idempotencia
-* ✔ Invariante: pipeline solo usa `SourceAsset`
+## 3. Valor backend actual a preservar
 
-👉 Conclusión:
+### Keep
 
-> ❗ **NO hay que tocar el backend core**
-> ❗ **El problema es 100% de productización (UI + flujo)**
+Capacidades implementadas y conceptualmente correctas sin conflicto con el nuevo modelo:
 
----
+- Ciclo de vida de sesión (base de orquestación de importación).
+- `CaptureSessionItem` como staging persistente.
+- Extracción temporal determinística (`EXIF`, `mtime`, fallback) y política explícita.
+- `clock_offset_seconds` y consistencia temporal.
+- Spine de materialización a `SourceAsset`.
+- Idempotencia de materialización y rollback seguro.
+- Errores estructurados (`code` + `detail`).
+- Invariante de pipeline: `process_aisle` consume solo `SourceAsset`.
 
-# 4. ⚠️ Principios obligatorios (guardrails)
+### Adapt
 
-Estos NO se pueden romper:
+Capacidades valiosas que deben reescalarse al modelo grouping-first:
 
-* ❌ Nunca procesar desde staging
-* ❌ Nunca duplicar assets (idempotencia obligatoria)
-* ❌ No permitir acciones inválidas por estado
-* ✔ Preview SIEMPRE determinístico
-* ✔ Materialización irreversible (conceptualmente)
+- Scope de sesión: de `inventory_id + aisle_id` a sesión primaria a nivel inventario.
+- Preview actual: reubicarlo como etapa downstream después de asignación grupo->pasillo.
+- Materialización: mantener mecánica técnica, cambiar el disparador/orquestación para operar sobre items ya asignados por grupo.
+- UI R2 ya iniciada: reutilizar componentes de upload/listado/detalle, cambiando semántica y secuencia.
 
----
+### Reconsider
 
-# 5. 🧭 Fases de implementación
+Elementos definidos bajo la suposición aisle-first que no deben seguir como camino principal:
 
----
+- Crear sesión obligatoriamente ligada a un pasillo.
+- UX de “seleccionar pasillo primero, subir después” como flujo por defecto.
+- Lectura de valor centrada en “asignación a posiciones” antes de resolver agrupación y mapping a pasillos.
 
-# 🟣 FASE R1 — Reframing + contratos (rápida pero clave)
+## 4. Modelo conceptual revisado
 
-## Objetivo
+### 4.1 Sesión de importación a nivel inventario
 
-Alinear backend + frontend + producto
+- Unidad principal para un vuelo completo.
+- Puede contener imágenes de múltiples pasillos potenciales.
 
----
+### 4.2 Upload de vuelo completo
 
-## 🎫 Tickets
+- Carga masiva en staging de todos los archivos del vuelo.
+- Trazabilidad por item y feedback por archivo.
 
-### Backend
+### 4.3 Agrupación automática
 
-**B1 — Inventario de endpoints**
+- El sistema genera grupos provisionales (candidatos de pasillo/segmento operativo).
+- La agrupación es previa a cualquier materialización.
 
-* documentar todos los endpoints `/capture-sessions`
+### 4.4 Revisión de grupos
 
-**B2 — Máquina de estados clara**
+- Operador valida grupos y su calidad operativa.
+- En fases posteriores se habilitan acciones avanzadas (merge/split/relabel), no necesarias para el primer corte.
 
-Estados:
+### 4.5 Asignación grupo->pasillo
+
+- Cada grupo se asigna a pasillo existente o crea nuevo pasillo.
+- La decisión de destino queda explícita y auditable antes de materializar.
+
+### 4.6 Materialización consciente de asignación
+
+- Solo items con asignación válida se materializan a `SourceAsset`.
+- Se mantiene idempotencia y rollback seguro.
+
+### 4.7 Handoff a pipeline
+
+- El procesamiento sigue siendo por pasillo.
+- No cambia el contrato: solo `SourceAsset`.
+
+## 5. Roadmap actualizado por fases
+
+## G0 — Alineación y congelamiento de dirección
+
+- **Objetivo:** detener deriva aisle-first y alinear ingeniería/producto/UX en modelo grouping-first.
+- **Backend scope:** documentación de contratos y semántica de transición.
+- **UI scope:** ajuste del roadmap y mensajes para nueva secuencia operativa.
+- **Dependencias:** estado actual R1/R2.
+- **Prioridad:** inmediata.
+
+## G1 — Fundación de sesión a nivel inventario
+
+- **Objetivo:** establecer sesión primaria sin requerir pasillo de entrada.
+- **Backend scope:** endpoints/uc de sesión para scope inventario (manteniendo compatibilidad con flujos existentes durante transición).
+- **UI scope:** crear/listar sesiones de importación por inventario.
+- **Dependencias:** G0.
+- **Prioridad:** inmediata.
+
+## G2 — Workspace de upload de vuelo completo
+
+- **Objetivo:** soportar carga operativa de lotes completos (post-vuelo).
+- **Backend scope:** reutilizar staging actual, validaciones y metadata temporal.
+- **UI scope:** upload masivo robusto, estados por archivo, listado ordenado de items.
+- **Dependencias:** G1.
+- **Prioridad:** inmediata.
+
+## G3 — Motor de agrupación automática
+
+- **Objetivo:** producir grupos provisionales a partir del lote cargado.
+- **Backend scope:** servicio/caso de uso de agrupación + persistencia de membresía por grupo.
+- **UI scope:** visualización inicial de grupos y métricas básicas de agrupación.
+- **Dependencias:** G2.
+- **Prioridad:** inmediata siguiente.
+
+## G4 — Revisión de grupos y asignación a pasillos
+
+- **Objetivo:** permitir decisión operativa de destino por grupo.
+- **Backend scope:** casos de uso para asignar grupo a pasillo existente o crear pasillo desde grupo.
+- **UI scope:** pantalla de revisión/decisión por grupo.
+- **Dependencias:** G3 y APIs de pasillos existentes.
+- **Prioridad:** inmediata siguiente.
+
+## G5 — Materialización con asignación previa
+
+- **Objetivo:** materializar solo grupos/items con destino confirmado.
+- **Backend scope:** reutilizar spine actual de materialización e idempotencia, cambiando orquestación de entrada.
+- **UI scope:** acción de materializar por sesión/grupo y feedback de resultados.
+- **Dependencias:** G4.
+- **Prioridad:** núcleo posterior.
+
+## G6 — Preview a nivel posición en lugar correcto
+
+- **Objetivo:** aplicar preview item->posición luego de conocer el pasillo destino.
+- **Backend scope:** reubicar precondiciones del preview actual.
+- **UI scope:** vista de preview downstream por pasillo asignado.
+- **Dependencias:** G4/G5.
+- **Prioridad:** posterior.
+
+## G7 — Hardening operativo
+
+- **Objetivo:** robustez de operación, soporte y observabilidad.
+- **Backend scope:** métricas, logs, trazabilidad y herramientas de recuperación.
+- **UI scope:** vistas operativas para sesiones/grupos con incidencias.
+- **Dependencias:** G1-G6.
+- **Prioridad:** posterior.
+
+## G8 — Integración directa con dron (track separado)
+
+- **Objetivo:** explorar integración conectada sin bloquear el core post-vuelo.
+- **Backend scope:** diseño de adaptador de ingesta externa.
+- **UI scope:** mínimo para discovery, sin comprometer roadmap principal.
+- **Dependencias:** madurez del core grouping-first.
+- **Prioridad:** futuro separado.
+
+## 6. Implicancias para UI
+
+### 6.1 Qué no debe continuar como ruta principal
+
+- El flujo de UI centrado en “elegir pasillo primero y subir después” no debe guiar la entrega principal.
+
+### 6.2 Qué se puede reutilizar de R2
+
+- Componentes de upload masivo con progreso/errores por archivo.
+- Patrones de guardrails de estado, listas y detalle de sesión.
+- Integración base con query/mutations y manejo de errores estructurados.
+
+### 6.3 Nueva secuencia UI prioritaria
+
+1. Selección/creación de inventario.
+2. Creación de sesión de importación a nivel inventario.
+3. Upload de vuelo completo.
+4. Revisión de lote agrupado.
+5. Asignación de grupos a pasillos (existente/nuevo).
+6. Materialización y handoff a procesamiento por pasillo.
+
+## 7. Implicancias de preview y materialización
+
+### Preview
+
+- El preview determinístico actual no se descarta.
+- Se reposiciona como capacidad downstream (después de asignar grupo->pasillo).
+- Se incorpora una nueva etapa upstream: preview de agrupación/descubrimiento.
+
+### Materialización
+
+- Debe ocurrir solo después de tener asignación de pasillo por grupo.
+- El spine técnico actual se mantiene: idempotencia, rollback, trazabilidad y persistencia en `SourceAsset`.
+- Cambia la orquestación de entrada (items elegibles definidos por grupos asignados).
+
+## 8. Iniciativa futura separada
+
+La integración directa con dron se mantiene como iniciativa separada.
+
+Razones:
+
+- El valor principal inmediato está en post-vuelo + grouping-first.
+- Evita acoplar roadmap core a dependencias de SDK/proveedores.
+- Permite entregar valor operativo antes de resolver integración conectada.
+
+## 9. Recomendación final
+
+Recomendación de ejecución:
+
+1. Detener la evolución del flujo UI aisle-first como ruta principal.
+2. Preservar la base backend ya implementada.
+3. Reorientar la orquestación a sesión de inventario + agrupación + asignación.
+4. Mantener materialización y pipeline sobre `SourceAsset` sin cambios de contrato.
+5. Entregar primero el flujo completo de negocio real:
 
 ```plaintext
-DRAFT
-IMPORTING
-READY_FOR_REVIEW
-ASSIGNMENT_PROPOSED
-CONFIRMING
+inventario -> sesión inventario -> upload vuelo completo -> agrupación
+-> revisión/asignación -> materialización -> procesamiento
 ```
 
-**B3 — Matriz de errores**
-
-* mapear errores → UX
-
----
-
-### Frontend
-
-**F1 — Tipado completo**
-
-* session
-* items
-* preview
-* materialización
-
----
-
-### Producto
-
-**P1 — Naming**
-
-* UI = “Import Session”
-
-**P2 — Flujo oficial**
-
-```plaintext
-IMPORT → PREVIEW → MATERIALIZE
-```
-
----
-
-# 🟢 FASE R2 — Import UI (CRÍTICA)
-
-## Objetivo
-
-👉 Poder subir fotos del dron (muchas)
-
----
-
-## 🎫 Tickets
-
-### Backend
-
-**B1 — Gap check endpoints**
-
-* validar que no falta nada
-
----
-
-### Frontend
-
----
-
-### **F1 — Listado de sesiones**
-
-* tabla de sesiones
-* estado
-* fecha
-* botón “entrar”
-
----
-
-### **F2 — Crear sesión**
-
-* botón crear
-* feedback inmediato
-
----
-
-### **F3 — Upload masivo (MUY IMPORTANTE)**
-
-```diff
-+ drag & drop
-+ multi-file upload
-+ progreso por archivo
-+ errores individuales
-```
-
-👉 pensado para 50–300 fotos
-
----
-
-### **F4 — Detalle de sesión**
-
-Mostrar:
-
-* lista de imágenes
-* estado
-* tiempo detectado
-* confianza
-
----
-
-### **F5 — Orden visual automático**
-
-```diff
-+ ordenar por effective_capture_time
-```
-
----
-
-### **F6 — Guardrails de UI**
-
-```diff
-- no permitir upload si cerrada
-- no permitir preview si no READY_FOR_REVIEW
-```
-
----
-
-### **F7 — Cerrar sesión**
-
-* botón claro
-* cambia estado
-
----
-
-### Producto
-
-**P1 — UX modo dron**
-
-Texto claro:
-
-> “Subí las fotos capturadas por el dron después del vuelo”
-
----
-
-### DoD
-
-* puedo subir 100 fotos sin romper UI
-* puedo verlas ordenadas
-* puedo cerrar sesión
-
----
-
-# 🔵 FASE R3 — Preview (donde aparece el valor)
-
-## Objetivo
-
-👉 entender qué foto corresponde a qué posición
-
----
-
-## 🎫 Tickets
-
-### Backend
-
-**B1 — Validar preview completo**
-
----
-
-### Frontend
-
----
-
-### **F1 — Ejecutar preview**
-
-* botón “Generar preview”
-
----
-
-### **F2 — Agrupación clara**
-
-```plaintext
-PROPOSED
-CONFLICT
-UNASSIGNED
-```
-
----
-
-### **F3 — Vista por tiempo**
-
-```diff
-+ ordenar por adjusted_capture_time
-```
-
----
-
-### **F4 — Control de offset**
-
-* slider / input
-* re-preview
-
----
-
-### **F5 — Trazabilidad**
-
-Mostrar:
-
-* adjusted_capture_time
-* assignment_reason
-* position_id
-
----
-
-### **F6 — Estado no listo**
-
-Mensaje:
-
-> “No hay elementos válidos para materializar”
-
----
-
-### Producto
-
-**P1 — Mensaje clave**
-
-> “Esto es una sugerencia automática basada en orden temporal”
-
----
-
-### DoD
-
-* preview entendible
-* conflictos visibles
-* offset usable
-
----
-
-# 🟡 FASE R4 — Materialización (momento crítico)
-
-## Objetivo
-
-👉 convertir fotos en assets reales
-
----
-
-## 🎫 Tickets
-
-### Backend
-
-**B1 — Validación final endpoint**
-
----
-
-**B2 — Idempotencia**
-
-* misma key → replay
-* distinta → error
-
----
-
-**B3 — Metadata**
-
-Guardar:
-
-```json
-{
-  capture_session_id,
-  capture_session_item_id
-}
-```
-
----
-
-### Frontend
-
----
-
-### **F1 — Botón MATERIALIZAR**
-
-* bloquea doble click
-* muestra loading
-
----
-
-### **F2 — Resultado**
-
-Mostrar:
-
-```plaintext
-✔ 120 assets creados
-✔ sesión materializada
-```
-
----
-
-### **F3 — Idempotencia UX**
-
-* retry seguro
-* mensaje claro
-
----
-
-### **F4 — Estado bloqueado**
-
-```diff
-+ no se puede editar más
-```
-
----
-
-### **F5 — Trazabilidad visual**
-
-```diff
-+ item → SourceAsset creado
-```
-
----
-
-### Producto
-
-**P1 — Definición CONFIRMING**
-
-> “Sesión materializada — lista para procesamiento”
-
----
-
-### DoD
-
-* materialización segura
-* no duplicados
-* feedback claro
-
----
-
-# 🟠 FASE R5 — Confirmación (decisión)
-
-## Opciones
-
-### Opción A (recomendada)
-
-👉 Materialización = fin
-
-### Opción B
-
-👉 Paso extra confirmación
-
----
-
-### Tickets (solo si B)
-
-* endpoint confirm
-* UI confirmación
-* estado final
-
----
-
-# ⚫ FASE R6 — Hardening
-
----
-
-### Backend
-
-* logs
-* métricas
-* debug tools
-
----
-
-### Frontend
-
-* panel admin
-* errores
-* reintentos
-
----
-
-### Producto
-
-* playbook
-* SLA
-
----
-
-# ⚪ FASE R7 — Dron directo (FUTURO)
-
----
-
-Separado completamente.
-
----
-
-# 6. 🎨 UI Roadmap
-
----
-
-### U1 — Import
-
-✔ upload
-✔ listado
-
-### U2 — Preview
-
-✔ agrupación
-✔ offset
-
-### U3 — Materialize
-
-✔ ejecutar
-✔ resultado
-
-### U4 — Confirm (opcional)
-
-### U5 — Admin
-
----
-
-# 7. 🚀 Orden real de ejecución
-
-1. R1 (rápido)
-2. R2 (clave)
-3. R3 (valor real)
-4. R4 (cierre)
-5. R5 (si aplica)
-
----
-
-# 8. 🧠 Resultado final
-
-El sistema queda:
-
-```plaintext
-Drone → fotos → upload → preview → materialize → pipeline
-```
-
-Y lo más importante:
-
-👉 usable en el mundo real
-👉 alineado con tu arquitectura
-👉 sin reescribir nada
-
-
+Esta ruta maximiza reutilización de lo construido y corrige la alineación producto-arquitectura sin reiniciar el proyecto.

@@ -71,6 +71,23 @@ def _parse_status_filter(raw: Optional[str]) -> Optional[List[CaptureSessionStat
 
 
 @router.post(
+    "/{inventory_id}/capture-sessions",
+    response_model=CaptureSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_inventory_capture_session(
+    inventory_id: str,
+    use_case: CreateCaptureSessionUseCase = Depends(get_create_capture_session_use_case),
+) -> CaptureSessionResponse:
+    try:
+        session = use_case.execute(inventory_id=inventory_id, aisle_id=None)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return capture_session_to_response(session)
+
+
+@router.post(
     "/{inventory_id}/aisles/{aisle_id}/capture-sessions",
     response_model=CaptureSessionResponse,
     status_code=status.HTTP_201_CREATED,
@@ -81,7 +98,7 @@ def create_capture_session(
     use_case: CreateCaptureSessionUseCase = Depends(get_create_capture_session_use_case),
 ) -> CaptureSessionResponse:
     try:
-        session = use_case.execute(inventory_id, aisle_id)
+        session = use_case.execute(inventory_id=inventory_id, aisle_id=aisle_id)
     except Exception as e:
         reraise_if_mapped(e)
         raise

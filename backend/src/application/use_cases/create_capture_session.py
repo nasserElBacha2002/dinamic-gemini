@@ -28,25 +28,27 @@ class CreateCaptureSessionUseCase:
         self._clock = clock
         self._max_open = max(1, int(max_open_sessions_per_aisle))
 
-    def execute(self, inventory_id: str, aisle_id: str) -> CaptureSession:
+    def execute(self, inventory_id: str, aisle_id: str | None = None) -> CaptureSession:
         if self._inventory_repo.get_by_id(inventory_id) is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
-        require_aisle_scoped_to_inventory(
-            self._aisle_repo,
-            inventory_id=inventory_id,
-            aisle_id=aisle_id,
-            detail_style="strict",
-        )
-        open_count = self._session_repo.count_open_sessions_for_aisle(inventory_id, aisle_id)
-        if open_count >= self._max_open:
-            raise OpenCaptureSessionExistsError(
-                "An open capture session already exists for this aisle; close or cancel it first."
+        resolved_aisle_id = (aisle_id or "").strip() or None
+        if resolved_aisle_id is not None:
+            require_aisle_scoped_to_inventory(
+                self._aisle_repo,
+                inventory_id=inventory_id,
+                aisle_id=resolved_aisle_id,
+                detail_style="strict",
             )
+            open_count = self._session_repo.count_open_sessions_for_aisle(inventory_id, resolved_aisle_id)
+            if open_count >= self._max_open:
+                raise OpenCaptureSessionExistsError(
+                    "An open capture session already exists for this aisle; close or cancel it first."
+                )
         now = self._clock.now()
         session = CaptureSession(
             id=str(uuid4()),
             inventory_id=inventory_id,
-            aisle_id=aisle_id,
+            aisle_id=resolved_aisle_id,
             status=CaptureSessionStatus.DRAFT,
             created_at=now,
             updated_at=now,

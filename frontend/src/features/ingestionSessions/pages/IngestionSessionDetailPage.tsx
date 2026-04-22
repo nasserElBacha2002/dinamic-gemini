@@ -69,12 +69,21 @@ export default function IngestionSessionDetailPage() {
 
       <SectionCard title={t('ingestion_sessions.detail.section_title')}>
         {detailQuery.data ? (
+          (() => {
+            const hasAisleBinding = Boolean(detailQuery.data.session.aisle_id);
+            const guard = computeGuards(
+              detailQuery.data.session.status,
+              detailQuery.data.items.length > 0,
+              detailQuery.data.session.closed_at
+            );
+            return (
           <ImportSessionDetail
             detail={detailQuery.data}
             onRefresh={() => {
               void detailQuery.refetch();
             }}
             onCloseSession={() => {
+              if (!detailQuery.data.session.aisle_id) return;
               void closeMutation.mutateAsync({
                 inventoryId,
                 aisleId: detailQuery.data.session.aisle_id,
@@ -82,12 +91,12 @@ export default function IngestionSessionDetailPage() {
               });
             }}
             closing={closeMutation.isPending}
-            {...computeGuards(
-              detailQuery.data.session.status,
-              detailQuery.data.items.length > 0,
-              detailQuery.data.session.closed_at
-            )}
+            canUpload={guard.canUpload && hasAisleBinding}
+            canClose={guard.canClose && hasAisleBinding}
+            hasAisleBinding={hasAisleBinding}
           />
+            );
+          })()
         ) : null}
       </SectionCard>
     </Stack>

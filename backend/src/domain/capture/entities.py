@@ -53,7 +53,7 @@ class CaptureSessionItemAssignmentStatus(str, Enum):
 class CaptureSession:
     id: str
     inventory_id: str
-    aisle_id: str
+    aisle_id: Optional[str]
     status: CaptureSessionStatus
     created_at: datetime
     updated_at: datetime
