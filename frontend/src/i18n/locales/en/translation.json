@@ -925,7 +925,15 @@
         "file_mtime": "File modified time",
         "fallback_clock": "Server clock (fallback)"
       },
-      "time_confidence": "Time confidence"
+      "time_confidence": "Time confidence",
+      "grouping_title": "Grouping",
+      "grouping_compute": "Compute groups",
+      "grouping_hint_close": "Close the session to run deterministic temporal grouping.",
+      "grouping_hint_blocked": "Temporal grouping is not available for this session state.",
+      "grouping_loading": "Loading groups…",
+      "grouping_empty": "No groups yet. Run compute after closing the session.",
+      "grouping_row": "Group {{index}} — {{count}} items — {{start}} → {{end}}",
+      "grouping_ungrouped": "{{count}} item(s) are not in any group (excluded by rules or missing capture time)."
     },
     "upload": {
       "title": "Upload imported media",

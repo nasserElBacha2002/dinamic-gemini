@@ -7,16 +7,29 @@ SQL implementations land in a later sprint; use cases must depend only on these 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Sequence
 
 from src.domain.capture.entities import (
     CaptureSession,
     CaptureSessionConfirmationLedgerEntry,
+    CaptureSessionGroup,
     CaptureSessionItem,
     CaptureSessionItemImportStatus,
     CaptureSessionStatus,
 )
+
+
+@dataclass(frozen=True)
+class CaptureSessionGroupSummary:
+    """Aggregated view of a persisted temporal group (G3 API wire shape)."""
+
+    group_id: str
+    group_index: int
+    item_count: int
+    start_time: datetime
+    end_time: datetime
 
 
 class CaptureSessionRepository(ABC):
@@ -77,6 +90,22 @@ class CaptureSessionItemRepository(ABC):
         self, session_id: str, import_status: CaptureSessionItemImportStatus
     ) -> int:
         """Count items for a session with the given import status (bounded COUNT query)."""
+
+
+class CaptureSessionGroupRepository(ABC):
+    """Persisted temporal groups for a capture session (G3)."""
+
+    @abstractmethod
+    def delete_all_for_session(self, session_id: str) -> None:
+        """Remove all groups for the session (items ``group_id`` cleared via FK SET NULL on SQL)."""
+
+    @abstractmethod
+    def insert(self, group: CaptureSessionGroup) -> None:
+        """Insert a single group row (caller assigns ids and indices)."""
+
+    @abstractmethod
+    def list_summaries(self, session_id: str) -> Sequence[CaptureSessionGroupSummary]:
+        """Return group summaries ordered by ``group_index`` (empty if none)."""
 
 
 class CaptureSessionConfirmIdempotencyRepository(ABC):

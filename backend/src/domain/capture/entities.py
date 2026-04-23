@@ -64,6 +64,17 @@ class CaptureSession:
 
 
 @dataclass
+class CaptureSessionGroup:
+    """Temporal segmentation bucket for capture items (G3 — inventory-level, no aisles)."""
+
+    id: str
+    session_id: str
+    group_index: int
+    created_at: datetime
+    algorithm_version: str
+
+
+@dataclass
 class CaptureSessionItem:
     id: str
     session_id: str
@@ -85,6 +96,8 @@ class CaptureSessionItem:
     assignment_reason: Optional[str] = None
     #: Aisle ``positions.id`` when preview proposes a unique slot; null otherwise.
     preview_target_position_id: Optional[str] = None
+    #: G3 temporal group; null until ``ComputeCaptureSessionGroups`` runs (or after clear).
+    group_id: Optional[str] = None
 
 
 @dataclass

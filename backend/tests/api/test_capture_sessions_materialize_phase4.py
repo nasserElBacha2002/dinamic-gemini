@@ -18,6 +18,9 @@ from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_capture_session_confirm_idempotency_repository import (
     MemoryCaptureSessionConfirmIdempotencyRepository,
 )
+from src.infrastructure.repositories.memory_capture_session_group_repository import (
+    MemoryCaptureSessionGroupRepository,
+)
 from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
 from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
@@ -26,6 +29,7 @@ from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactSto
 from src.runtime.app_container import reset_app_container_for_tests
 from src.runtime.v3_deps import (
     get_capture_session_confirm_repo,
+    get_capture_session_group_repo,
     get_capture_session_item_repo,
     get_capture_session_repo,
     get_position_repo,
@@ -40,6 +44,7 @@ def materialize_capture_ctx(tmp_path: Path):
     reset_app_container_for_tests()
     sr = MemoryCaptureSessionRepository()
     ir = MemoryCaptureSessionItemRepository()
+    gr = MemoryCaptureSessionGroupRepository(ir)
     pr = MemoryPositionRepository()
     ar = MemorySourceAssetRepository()
     cr = MemoryCaptureSessionConfirmIdempotencyRepository()
@@ -53,6 +58,7 @@ def materialize_capture_ctx(tmp_path: Path):
     yield {"position_repo": pr, "asset_repo": ar}
     app.dependency_overrides.pop(get_capture_session_repo, None)
     app.dependency_overrides.pop(get_capture_session_item_repo, None)
+    app.dependency_overrides.pop(get_capture_session_group_repo, None)
     app.dependency_overrides.pop(get_position_repo, None)
     app.dependency_overrides.pop(get_source_asset_repo, None)
     app.dependency_overrides.pop(get_capture_session_confirm_repo, None)

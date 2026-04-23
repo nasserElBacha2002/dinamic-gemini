@@ -733,6 +733,15 @@ class LimitsAndSchemaSettings(BaseModel):
         le=200,
         description="Max files per POST .../capture-sessions/{id}/items staging upload. Env: V3_CAPTURE_MAX_FILES_PER_UPLOAD.",
     )
+    v3_capture_grouping_max_gap_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_GROUPING_MAX_GAP_SECONDS", "60")),
+        ge=1,
+        le=86400,
+        description=(
+            "Max seconds between consecutive capture times within one temporal group (G3). "
+            "Env: V3_CAPTURE_GROUPING_MAX_GAP_SECONDS."
+        ),
+    )
     v3_capture_clock_offset_min_seconds: int = Field(
         default_factory=lambda: int(os.getenv("V3_CAPTURE_CLOCK_OFFSET_MIN_SECONDS", "-86400")),
         ge=-864000,

@@ -11,6 +11,7 @@ from __future__ import annotations
 from src.application.ports.clock import Clock
 from src.application.ports.capture_repositories import (
     CaptureSessionConfirmIdempotencyRepository,
+    CaptureSessionGroupRepository,
     CaptureSessionItemRepository,
     CaptureSessionRepository,
 )
@@ -107,6 +108,10 @@ def get_capture_session_repo() -> CaptureSessionRepository:
 
 def get_capture_session_item_repo() -> CaptureSessionItemRepository:
     return get_app_container().get_capture_session_item_repo()
+
+
+def get_capture_session_group_repo() -> CaptureSessionGroupRepository:
+    return get_app_container().get_capture_session_group_repo()
 
 
 def get_capture_session_confirm_repo() -> CaptureSessionConfirmIdempotencyRepository:

@@ -14,12 +14,20 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
 )
 from src.domain.positions.entities import Position, PositionStatus
+from src.infrastructure.repositories.memory_capture_session_group_repository import (
+    MemoryCaptureSessionGroupRepository,
+)
 from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
 from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.runtime.app_container import reset_app_container_for_tests
-from src.runtime.v3_deps import get_capture_session_item_repo, get_capture_session_repo, get_position_repo
+from src.runtime.v3_deps import (
+    get_capture_session_group_repo,
+    get_capture_session_item_repo,
+    get_capture_session_repo,
+    get_position_repo,
+)
 
 client = TestClient(app)
 
@@ -29,15 +37,18 @@ def memory_capture_s3(tmp_path: Path):
     reset_app_container_for_tests()
     sr = MemoryCaptureSessionRepository()
     ir = MemoryCaptureSessionItemRepository()
+    gr = MemoryCaptureSessionGroupRepository(ir)
     pr = MemoryPositionRepository()
     store = V3ArtifactStorageAdapter(tmp_path / "v3_uploads")
     app.dependency_overrides[get_capture_session_repo] = lambda: sr
     app.dependency_overrides[get_capture_session_item_repo] = lambda: ir
+    app.dependency_overrides[get_capture_session_group_repo] = lambda: gr
     app.dependency_overrides[get_position_repo] = lambda: pr
     app.dependency_overrides[get_artifact_storage] = lambda: store
     yield pr
     app.dependency_overrides.pop(get_capture_session_repo, None)
     app.dependency_overrides.pop(get_capture_session_item_repo, None)
+    app.dependency_overrides.pop(get_capture_session_group_repo, None)
     app.dependency_overrides.pop(get_position_repo, None)
     app.dependency_overrides.pop(get_artifact_storage, None)
     reset_app_container_for_tests()

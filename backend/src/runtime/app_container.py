@@ -17,6 +17,7 @@ from typing import Optional, TypeVar
 from src.application.ports.analytics_repository import AnalyticsRepository
 from src.application.ports.capture_repositories import (
     CaptureSessionConfirmIdempotencyRepository,
+    CaptureSessionGroupRepository,
     CaptureSessionItemRepository,
     CaptureSessionRepository,
 )
@@ -87,6 +88,7 @@ class AppContainer:
         self._capture_session_repo: Optional[CaptureSessionRepository] = None
         self._capture_session_item_repo: Optional[CaptureSessionItemRepository] = None
         self._capture_session_confirm_repo: Optional[CaptureSessionConfirmIdempotencyRepository] = None
+        self._capture_session_group_repo: Optional[CaptureSessionGroupRepository] = None
 
     @property
     def settings(self) -> "AppSettings":
@@ -544,6 +546,31 @@ class AppContainer:
             build_memory=_memory,
         )
         return self._capture_session_item_repo
+
+    def get_capture_session_group_repo(self) -> CaptureSessionGroupRepository:
+        if self._capture_session_group_repo is not None:
+            return self._capture_session_group_repo
+
+        from src.infrastructure.repositories.memory_capture_session_group_repository import (
+            MemoryCaptureSessionGroupRepository,
+        )
+        from src.infrastructure.repositories.sql_capture_session_group_repository import (
+            SqlCaptureSessionGroupRepository,
+        )
+
+        def _sql(client: SqlServerClient) -> CaptureSessionGroupRepository:
+            return SqlCaptureSessionGroupRepository(client)
+
+        def _memory() -> CaptureSessionGroupRepository:
+            return MemoryCaptureSessionGroupRepository(self.get_capture_session_item_repo())
+
+        self._capture_session_group_repo = self._build_sql_repository_or_memory(
+            backend_info_name="CaptureSessionGroupRepository",
+            sql_error_subject="capture_session_group repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._capture_session_group_repo
 
     def get_capture_session_confirm_repo(self) -> CaptureSessionConfirmIdempotencyRepository:
         if self._capture_session_confirm_repo is not None:

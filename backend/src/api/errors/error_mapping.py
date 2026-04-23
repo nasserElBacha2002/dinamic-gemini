@@ -166,6 +166,8 @@ from src.application.errors import (
     BenchmarkCompareManyInvalidSelectionError,
     BenchmarkRequiresTestInventoryError,
     CaptureSessionDuplicateItemContentError,
+    CaptureSessionGroupingNotAllowedError,
+    CaptureSessionNoItemsForGroupingError,
     CaptureSessionInvalidClockOffsetError,
     CaptureSessionInvalidIdempotencyKeyError,
     CaptureSessionInvalidStateError,
@@ -215,6 +217,8 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
     HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE,
     HTTP_DETAIL_CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+    HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
     HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
     HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
     HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_FAILED,
@@ -243,6 +247,8 @@ from src.api.errors.structured_api_http import (
     UNSUPPORTED_ASSET_TYPE,
     ZERO_BYTE_FILE,
     CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
+    CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+    CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
     CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
     CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
     CAPTURE_SESSION_INVALID_STATE,
@@ -502,6 +508,18 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=409,
             error_code=CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
             detail=str(exc),
+        )
+    if isinstance(exc, CaptureSessionGroupingNotAllowedError):
+        return StructuredApiHttpError(
+            status_code=409,
+            error_code=CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+            detail=str(exc) or HTTP_DETAIL_CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+        )
+    if isinstance(exc, CaptureSessionNoItemsForGroupingError):
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
+            detail=str(exc) or HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
         )
     if isinstance(exc, CaptureSessionInvalidIdempotencyKeyError):
         return StructuredApiHttpError(

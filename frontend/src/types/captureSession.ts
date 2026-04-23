@@ -54,7 +54,21 @@ export interface CaptureSessionItemResponse {
   last_error_code?: string | null;
   last_error_detail?: string | null;
   original_filename?: string | null;
+  /** G3 temporal group; null until compute-groups runs or after clear. */
+  group_id?: string | null;
   updated_at: string;
+}
+
+export interface CaptureSessionGroupSummaryResponse {
+  group_id: string;
+  group_index: number;
+  item_count: number;
+  start_time: string;
+  end_time: string;
+}
+
+export interface CaptureSessionGroupsListResponse {
+  groups: CaptureSessionGroupSummaryResponse[];
 }
 
 export interface CaptureSessionDetailResponse {

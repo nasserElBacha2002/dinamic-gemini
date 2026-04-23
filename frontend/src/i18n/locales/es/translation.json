@@ -925,7 +925,15 @@
         "file_mtime": "Fecha de modificación del archivo",
         "fallback_clock": "Reloj del servidor (respaldo)"
       },
-      "time_confidence": "Confianza de hora"
+      "time_confidence": "Confianza de hora",
+      "grouping_title": "Agrupación",
+      "grouping_compute": "Calcular grupos",
+      "grouping_hint_close": "Cerrá la sesión para ejecutar la agrupación temporal determinística.",
+      "grouping_hint_blocked": "La agrupación temporal no está disponible para este estado de sesión.",
+      "grouping_loading": "Cargando grupos…",
+      "grouping_empty": "Todavía no hay grupos. Ejecutá el cálculo después de cerrar la sesión.",
+      "grouping_row": "Grupo {{index}} — {{count}} ítems — {{start}} → {{end}}",
+      "grouping_ungrouped": "{{count}} ítem(s) no están en ningún grupo (excluidos por reglas o sin hora de captura)."
     },
     "upload": {
       "title": "Subir medios importados",

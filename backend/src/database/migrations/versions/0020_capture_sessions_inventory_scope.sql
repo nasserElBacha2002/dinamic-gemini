@@ -29,9 +29,12 @@ BEGIN
 END
 GO
 
+-- Filtered indexes cannot use NOT IN / != ; use repeated <> (same as 0018 / schema.sql).
 CREATE UNIQUE NONCLUSTERED INDEX UQ_capture_sessions_one_open_per_aisle
     ON dbo.capture_sessions (inventory_id, aisle_id)
     WHERE aisle_id IS NOT NULL
       AND closed_at IS NULL
-      AND status NOT IN ('cancelled', 'failed', 'confirmed');
+      AND status <> 'cancelled'
+      AND status <> 'failed'
+      AND status <> 'confirmed';
 GO

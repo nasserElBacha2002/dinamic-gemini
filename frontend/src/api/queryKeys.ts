@@ -17,6 +17,8 @@ export const queryKeys = {
       [...queryKeys.captureSessions.all, 'detail', inventoryId, sessionId] as const,
     items: (inventoryId: string, sessionId: string) =>
       [...queryKeys.captureSessions.detail(inventoryId, sessionId), 'items'] as const,
+    groups: (inventoryId: string, sessionId: string) =>
+      [...queryKeys.captureSessions.detail(inventoryId, sessionId), 'groups'] as const,
   },
 
   inventories: {

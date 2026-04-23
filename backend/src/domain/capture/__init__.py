@@ -3,6 +3,7 @@
 from src.domain.capture.entities import (
     CaptureSession,
     CaptureSessionConfirmationLedgerEntry,
+    CaptureSessionGroup,
     CaptureSessionItem,
     CaptureSessionItemAssignmentStatus,
     CaptureSessionItemImportStatus,
@@ -13,6 +14,7 @@ from src.domain.capture.entities import (
 __all__ = [
     "CaptureSession",
     "CaptureSessionConfirmationLedgerEntry",
+    "CaptureSessionGroup",
     "CaptureSessionItem",
     "CaptureSessionItemAssignmentStatus",
     "CaptureSessionItemImportStatus",

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
 from src.api.schemas.listing_schemas import PageMeta
+from src.application.ports.capture_repositories import CaptureSessionGroupSummary
 from src.domain.capture.entities import CaptureSession, CaptureSessionItem
 
 
@@ -40,7 +41,35 @@ class CaptureSessionItemResponse(BaseModel):
     last_error_code: Optional[str] = None
     last_error_detail: Optional[str] = None
     original_filename: Optional[str] = None
+    group_id: Optional[str] = None
     updated_at: datetime
+
+
+class CaptureSessionGroupSummaryResponse(BaseModel):
+    group_id: str
+    group_index: int
+    item_count: int
+    start_time: datetime
+    end_time: datetime
+
+
+class CaptureSessionGroupsListResponse(BaseModel):
+    groups: List[CaptureSessionGroupSummaryResponse] = Field(default_factory=list)
+
+
+def capture_session_groups_to_response(summaries: Sequence[CaptureSessionGroupSummary]) -> CaptureSessionGroupsListResponse:
+    return CaptureSessionGroupsListResponse(
+        groups=[
+            CaptureSessionGroupSummaryResponse(
+                group_id=s.group_id,
+                group_index=s.group_index,
+                item_count=s.item_count,
+                start_time=s.start_time,
+                end_time=s.end_time,
+            )
+            for s in summaries
+        ]
+    )
 
 
 class CaptureSessionDetailResponse(BaseModel):
@@ -110,5 +139,6 @@ def capture_session_item_to_response(i: CaptureSessionItem) -> CaptureSessionIte
         last_error_code=i.last_error_code,
         last_error_detail=i.last_error_detail,
         original_filename=i.original_filename,
+        group_id=i.group_id,
         updated_at=i.updated_at,
     )

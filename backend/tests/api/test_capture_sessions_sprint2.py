@@ -10,17 +10,25 @@ from fastapi.testclient import TestClient
 from src.api.dependencies import get_artifact_storage
 from src.api.server import app
 from src.api.errors.structured_api_http import (
+    CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
     CAPTURE_SESSION_NOT_FOUND,
     CAPTURE_SESSION_INVALID_STATE,
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
     CAPTURE_SESSION_STATUS_FILTER_INVALID,
     OPEN_CAPTURE_SESSION_EXISTS,
 )
+from src.infrastructure.repositories.memory_capture_session_group_repository import (
+    MemoryCaptureSessionGroupRepository,
+)
 from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
 from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.runtime.app_container import reset_app_container_for_tests
-from src.runtime.v3_deps import get_capture_session_item_repo, get_capture_session_repo
+from src.runtime.v3_deps import (
+    get_capture_session_group_repo,
+    get_capture_session_item_repo,
+    get_capture_session_repo,
+)
 
 client = TestClient(app)
 
@@ -30,13 +38,16 @@ def memory_capture(tmp_path: Path):
     reset_app_container_for_tests()
     sr = MemoryCaptureSessionRepository()
     ir = MemoryCaptureSessionItemRepository()
+    gr = MemoryCaptureSessionGroupRepository(ir)
     store = V3ArtifactStorageAdapter(tmp_path / "v3_uploads")
     app.dependency_overrides[get_capture_session_repo] = lambda: sr
     app.dependency_overrides[get_capture_session_item_repo] = lambda: ir
+    app.dependency_overrides[get_capture_session_group_repo] = lambda: gr
     app.dependency_overrides[get_artifact_storage] = lambda: store
     yield
     app.dependency_overrides.pop(get_capture_session_repo, None)
     app.dependency_overrides.pop(get_capture_session_item_repo, None)
+    app.dependency_overrides.pop(get_capture_session_group_repo, None)
     app.dependency_overrides.pop(get_artifact_storage, None)
     reset_app_container_for_tests()
 
@@ -248,3 +259,52 @@ def test_inventory_level_preview_path_returns_structured_not_found(memory_captur
     )
     assert r.status_code == 404
     assert r.json()["code"] == CAPTURE_SESSION_NOT_FOUND
+
+
+def test_compute_groups_before_close_returns_409(memory_capture: None) -> None:
+    inv_id, _aisle_id = _create_inv_aisle()
+    sid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions").json()["id"]
+    up = client.post(
+        f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/items",
+        files=[("files", ("x.jpg", b"bytes-for-grouping", "image/jpeg"))],
+    )
+    assert up.status_code == 201, up.text
+    r = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups")
+    assert r.status_code == 409, r.text
+    assert r.json()["code"] == CAPTURE_SESSION_GROUPING_NOT_ALLOWED
+
+
+def test_compute_groups_after_close_and_list_groups(memory_capture: None) -> None:
+    inv_id, _aisle_id = _create_inv_aisle()
+    sid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions").json()["id"]
+    up = client.post(
+        f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/items",
+        files=[("files", ("a.jpg", b"a-bytes", "image/jpeg"))],
+    )
+    assert up.status_code == 201, up.text
+    assert client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+
+    cg = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups")
+    assert cg.status_code == 200, cg.text
+    body = cg.json()
+    assert "groups" in body
+    assert len(body["groups"]) >= 1
+    g0 = body["groups"][0]
+    assert g0["group_index"] == 1
+    assert g0["item_count"] >= 1
+    assert g0["group_id"]
+    assert g0["start_time"]
+    assert g0["end_time"]
+
+    lg = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/groups")
+    assert lg.status_code == 200, lg.text
+    assert lg.json()["groups"] == body["groups"]
+
+    detail = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}")
+    assert detail.status_code == 200
+    items = detail.json()["items"]
+    assert any(i.get("group_id") == g0["group_id"] for i in items)
+
+    cg2 = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups")
+    assert cg2.status_code == 200, cg2.text
+    assert len(cg2.json()["groups"]) == len(body["groups"])

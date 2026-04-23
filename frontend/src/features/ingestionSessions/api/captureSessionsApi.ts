@@ -4,6 +4,7 @@ import { ApiError } from '../../../api/types';
 import i18n from '../../../i18n';
 import type {
   CaptureSessionDetailResponse,
+  CaptureSessionGroupsListResponse,
   CaptureSessionResponse,
   UploadCaptureSessionItemsResponse,
   PaginatedCaptureSessionListResponse,
@@ -114,6 +115,27 @@ export async function cancelCaptureSession(
     { method: 'POST' }
   );
   return handleResponse<CaptureSessionDetailResponse>(response);
+}
+
+export async function getCaptureSessionGroups(
+  inventoryId: string,
+  sessionId: string
+): Promise<CaptureSessionGroupsListResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups`
+  );
+  return handleResponse<CaptureSessionGroupsListResponse>(response);
+}
+
+export async function computeCaptureSessionGroups(
+  inventoryId: string,
+  sessionId: string
+): Promise<CaptureSessionGroupsListResponse> {
+  const response = await protectedFetch(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/compute-groups`,
+    { method: 'POST' }
+  );
+  return handleResponse<CaptureSessionGroupsListResponse>(response);
 }
 
 /**

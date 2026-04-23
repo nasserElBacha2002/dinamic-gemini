@@ -19,6 +19,7 @@ from fastapi import Depends
 from src.application.ports.clock import Clock
 from src.application.ports.capture_repositories import (
     CaptureSessionConfirmIdempotencyRepository,
+    CaptureSessionGroupRepository,
     CaptureSessionItemRepository,
     CaptureSessionRepository,
 )
@@ -40,6 +41,7 @@ from src.runtime.v3_deps import (
     get_analytics_repo,
     get_capture_session_item_repo,
     get_capture_session_confirm_repo,
+    get_capture_session_group_repo,
     get_capture_session_repo,
     get_clock,
     get_evidence_repo,
@@ -932,6 +934,34 @@ def get_compute_capture_session_assignment_preview_use_case(
         clock=clock,
         preview_max_positions=s.v3_capture_preview_max_positions,
     )
+
+
+def get_compute_capture_session_groups_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
+    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.compute_capture_session_groups import ComputeCaptureSessionGroupsUseCase
+    from src.config import load_settings
+
+    s = load_settings()
+    return ComputeCaptureSessionGroupsUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        group_repo=group_repo,
+        clock=clock,
+        max_time_gap_seconds=s.v3_capture_grouping_max_gap_seconds,
+    )
+
+
+def get_get_capture_session_groups_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
+):
+    from src.application.use_cases.get_capture_session_groups import GetCaptureSessionGroupsUseCase
+
+    return GetCaptureSessionGroupsUseCase(session_repo=session_repo, group_repo=group_repo)
 
 
 def get_materialize_capture_session_use_case(

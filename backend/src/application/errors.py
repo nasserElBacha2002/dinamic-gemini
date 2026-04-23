@@ -189,3 +189,11 @@ class CaptureSessionAlreadyMaterializedError(Exception):
 
 class CaptureSessionInvalidIdempotencyKeyError(Exception):
     """Raised when materialization/confirm idempotency key is missing or invalid."""
+
+
+class CaptureSessionGroupingNotAllowedError(Exception):
+    """Raised when temporal grouping cannot run for the current session (not closed, terminal, etc.)."""
+
+
+class CaptureSessionNoItemsForGroupingError(Exception):
+    """Raised when no imported items with capture timestamps exist to form groups."""

@@ -103,3 +103,9 @@ HTTP_DETAIL_CAPTURE_SESSION_ALREADY_MATERIALIZED = (
     "Capture session was already materialized with a different idempotency key."
 )
 HTTP_DETAIL_CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY = "idempotency_key is required"
+HTTP_DETAIL_CAPTURE_SESSION_GROUPING_NOT_ALLOWED = (
+    "Temporal grouping is not allowed for this capture session in its current state."
+)
+HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING = (
+    "No suitable imported items with capture timestamps are available for temporal grouping."
+)

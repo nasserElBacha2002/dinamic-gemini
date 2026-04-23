@@ -1,5 +1,6 @@
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import {
+  Alert,
   Avatar,
   Box,
   Button,
@@ -14,9 +15,15 @@ import {
 } from '@mui/material';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { formatDate } from '../../../utils/formatDate';
-import type { CaptureSessionDetailResponse, CaptureSessionItemResponse } from '../../../types/captureSession';
+import type {
+  CaptureSessionDetailResponse,
+  CaptureSessionItemResponse,
+  CaptureSessionResponse,
+} from '../../../types/captureSession';
 import ImportSessionUpload from './ImportSessionUpload';
+import { useCaptureSessionGroups, useComputeCaptureSessionGroups } from '../hooks/useCaptureSessions';
 
 interface ImportSessionDetailProps {
   detail: CaptureSessionDetailResponse;
@@ -28,6 +35,11 @@ interface ImportSessionDetailProps {
   onCloseSession: () => void;
   onCancelSession: () => void;
   onRefresh: () => void;
+}
+
+function captureSessionAllowsTemporalGrouping(session: CaptureSessionResponse): boolean {
+  if (!session.closed_at) return false;
+  return !['cancelled', 'failed', 'confirmed'].includes(session.status);
 }
 
 function sortItemsByEffectiveCaptureTime(items: CaptureSessionItemResponse[]): CaptureSessionItemResponse[] {
@@ -69,6 +81,20 @@ export default function ImportSessionDetail({
   const { t } = useTranslation();
   const sortedItems = useMemo(() => sortItemsByEffectiveCaptureTime(detail.items), [detail.items]);
   const noItems = sortedItems.length === 0;
+  const inventoryId = detail.session.inventory_id;
+  const sessionId = detail.session.id;
+  const groupingEnabled = captureSessionAllowsTemporalGrouping(detail.session);
+  const groupsQuery = useCaptureSessionGroups(inventoryId, sessionId, { enabled: groupingEnabled });
+  const computeGroups = useComputeCaptureSessionGroups();
+  const ungroupedCount = useMemo(
+    () => detail.items.filter((i) => i.group_id == null || i.group_id === '').length,
+    [detail.items]
+  );
+  const groupingError = useMemo(() => {
+    const err = groupsQuery.error || computeGroups.error;
+    if (!err) return null;
+    return resolveApiErrorMessage(err, 'errors.request_failed');
+  }, [computeGroups.error, groupsQuery.error]);
 
   return (
     <Stack spacing={2}>
@@ -103,6 +129,63 @@ export default function ImportSessionDetail({
         disabled={!canUpload}
         onCompleted={onRefresh}
       />
+
+      <Divider />
+
+      <Box>
+        <Typography variant="subtitle1" gutterBottom>
+          {t('ingestion_sessions.detail.grouping_title')}
+        </Typography>
+        {!groupingEnabled ? (
+          <Typography variant="body2" color="text.secondary">
+            {['cancelled', 'failed', 'confirmed'].includes(detail.session.status)
+              ? t('ingestion_sessions.detail.grouping_hint_blocked')
+              : t('ingestion_sessions.detail.grouping_hint_close')}
+          </Typography>
+        ) : (
+          <Stack spacing={1}>
+            <Button
+              variant="outlined"
+              disabled={computeGroups.isPending}
+              onClick={() => {
+                void computeGroups.mutateAsync({ inventoryId, sessionId }).then(() => {
+                  onRefresh();
+                });
+              }}
+            >
+              {t('ingestion_sessions.detail.grouping_compute')}
+            </Button>
+            {groupingError ? <Alert severity="error">{groupingError}</Alert> : null}
+            {groupsQuery.isLoading ? (
+              <Typography variant="body2" color="text.secondary">
+                {t('ingestion_sessions.detail.grouping_loading')}
+              </Typography>
+            ) : null}
+            {!groupsQuery.isLoading && (groupsQuery.data?.groups.length ?? 0) === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                {t('ingestion_sessions.detail.grouping_empty')}
+              </Typography>
+            ) : null}
+            {(groupsQuery.data?.groups ?? []).map((g) => (
+              <Typography key={g.group_id} variant="body2">
+                {t('ingestion_sessions.detail.grouping_row', {
+                  index: g.group_index,
+                  count: g.item_count,
+                  start: formatDate(g.start_time),
+                  end: formatDate(g.end_time),
+                })}
+              </Typography>
+            ))}
+            {ungroupedCount > 0 ? (
+              <Typography variant="caption" color="text.secondary" display="block">
+                {t('ingestion_sessions.detail.grouping_ungrouped', { count: ungroupedCount })}
+              </Typography>
+            ) : null}
+          </Stack>
+        )}
+      </Box>
+
+      <Divider />
 
       {noItems ? (
         <Typography color="text.secondary">{t('ingestion_sessions.empty.upload_to_begin')}</Typography>

@@ -5,8 +5,10 @@ import { getInventories } from '../../../api/client';
 import {
   cancelCaptureSession,
   closeCaptureSession,
+  computeCaptureSessionGroups,
   createCaptureSession,
   getCaptureSessionDetail,
+  getCaptureSessionGroups,
   getCaptureSessions,
   type CaptureSessionsListQuery,
 } from '../api/captureSessionsApi';
@@ -38,6 +40,31 @@ export function useCaptureSessionDetail(
     queryKey: queryKeys.captureSessions.detail(inventoryId ?? '', sessionId ?? ''),
     queryFn: () => getCaptureSessionDetail(inventoryId!, sessionId!),
     enabled: Boolean(inventoryId && sessionId) && (options?.enabled ?? true),
+  });
+}
+
+export function useCaptureSessionGroups(
+  inventoryId: string | undefined,
+  sessionId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.captureSessions.groups(inventoryId ?? '', sessionId ?? ''),
+    queryFn: () => getCaptureSessionGroups(inventoryId!, sessionId!),
+    enabled: Boolean(inventoryId && sessionId) && (options?.enabled ?? true),
+  });
+}
+
+export function useComputeCaptureSessionGroups() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ inventoryId, sessionId }: { inventoryId: string; sessionId: string }) =>
+      computeCaptureSessionGroups(inventoryId, sessionId),
+    onSuccess: (data, { inventoryId, sessionId }) => {
+      queryClient.setQueryData(queryKeys.captureSessions.groups(inventoryId, sessionId), data);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.detail(inventoryId, sessionId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.groups(inventoryId, sessionId) });
+    },
   });
 }
 
