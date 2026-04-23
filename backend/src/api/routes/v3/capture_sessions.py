@@ -25,6 +25,7 @@ from src.api.schemas.capture_schemas import (
     CaptureSessionDetailResponse,
     CaptureSessionMaterializeRequest,
     CaptureSessionResponse,
+    CaptureSessionStagingUploadFileError,
     MaterializeCaptureSessionResponse,
     PaginatedCaptureSessionListResponse,
     UploadCaptureSessionItemsResponse,
@@ -362,7 +363,7 @@ async def upload_capture_session_staging_items_inventory_scope(
             )
         )
     try:
-        items = use_case.execute(
+        batch = use_case.execute(
             inventory_id=inventory_id,
             aisle_id=None,
             session_id=session_id,
@@ -371,7 +372,18 @@ async def upload_capture_session_staging_items_inventory_scope(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return UploadCaptureSessionItemsResponse(items=[capture_session_item_to_response(i) for i in items])
+    return UploadCaptureSessionItemsResponse(
+        items=[capture_session_item_to_response(i) for i in batch.items],
+        errors=[
+            CaptureSessionStagingUploadFileError(
+                filename=e.filename,
+                code=e.code,
+                detail=e.detail,
+                file_index=e.file_index,
+            )
+            for e in batch.errors
+        ],
+    )
 
 
 @router.post(
@@ -403,7 +415,7 @@ async def upload_capture_session_staging_items(
             )
         )
     try:
-        items = use_case.execute(
+        batch = use_case.execute(
             inventory_id=inventory_id,
             aisle_id=aisle_id,
             session_id=session_id,
@@ -412,4 +424,15 @@ async def upload_capture_session_staging_items(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return UploadCaptureSessionItemsResponse(items=[capture_session_item_to_response(i) for i in items])
+    return UploadCaptureSessionItemsResponse(
+        items=[capture_session_item_to_response(i) for i in batch.items],
+        errors=[
+            CaptureSessionStagingUploadFileError(
+                filename=e.filename,
+                code=e.code,
+                detail=e.detail,
+                file_index=e.file_index,
+            )
+            for e in batch.errors
+        ],
+    )

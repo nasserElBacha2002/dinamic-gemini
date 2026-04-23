@@ -1,7 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../api/queryKeys';
-import i18n from '../../../i18n';
-import { uploadCaptureItem } from '../api/captureSessionsApi';
+import { resolveApiErrorMessage } from '../../../utils/apiErrors';
+import {
+  CAPTURE_STAGING_MAX_FILES_PER_REQUEST,
+  uploadCaptureSessionStagingFiles,
+} from '../api/captureSessionsApi';
+import type { UploadCaptureSessionItemsResponse } from '../../../types/captureSession';
 
 export type UploadItemState = 'pending' | 'uploading' | 'uploaded' | 'failed';
 
@@ -19,31 +23,45 @@ export interface UploadRunResult {
   failedCount: number;
 }
 
-const CAPTURE_ITEM_UPLOAD_MAX_CONCURRENCY = 3;
-
-async function runWithConcurrency<T>(
-  workers: Array<() => Promise<T>>,
-  maxConcurrent: number
-): Promise<Array<PromiseSettledResult<T>>> {
-  const out: Array<PromiseSettledResult<T>> = new Array(workers.length);
-  let cursor = 0;
-  async function workerLoop(): Promise<void> {
-    while (cursor < workers.length) {
-      const current = cursor;
-      cursor += 1;
-      try {
-        const value = await workers[current]();
-        out[current] = { status: 'fulfilled', value };
-      } catch (reason) {
-        out[current] = { status: 'rejected', reason };
-      }
+/** Maps one staging POST (≤ max files) onto the corresponding slice of the UI queue. Exported for tests. */
+export function applyStagingChunkResult(
+  queue: UploadQueueItem[],
+  offset: number,
+  chunkFiles: File[],
+  result: UploadCaptureSessionItemsResponse
+): void {
+  const errByIdx = new Map(result.errors.map((e) => [e.file_index, e]));
+  let itemCursor = 0;
+  const { items } = result;
+  for (let j = 0; j < chunkFiles.length; j++) {
+    const entry = queue[offset + j];
+    if (!entry) continue;
+    const err = errByIdx.get(j);
+    if (err) {
+      entry.state = 'failed';
+      entry.progressPct = 100;
+      entry.error = `${err.code}: ${err.detail}`;
+      continue;
     }
+    const item = items[itemCursor++];
+    if (!item) {
+      entry.state = 'failed';
+      entry.progressPct = 100;
+      entry.error = 'Missing server item for this file';
+      continue;
+    }
+    if (item.import_status !== 'imported') {
+      entry.state = 'failed';
+      entry.progressPct = 100;
+      const code = item.last_error_code ?? item.import_status;
+      const detail = item.last_error_detail?.trim() ? item.last_error_detail : '';
+      entry.error = detail ? `${code}: ${detail}` : String(code);
+      continue;
+    }
+    entry.state = 'uploaded';
+    entry.progressPct = 100;
+    entry.error = undefined;
   }
-  const pool = Array.from({ length: Math.max(1, Math.min(maxConcurrent, workers.length)) }, () =>
-    workerLoop()
-  );
-  await Promise.all(pool);
-  return out;
 }
 
 export function useUploadCaptureItems() {
@@ -65,28 +83,41 @@ export function useUploadCaptureItems() {
 
       const notify = () => vars.onQueueUpdate?.(queue.map((q) => ({ ...q })));
 
-      const workers = queue.map((entry) => async () => {
-        entry.state = 'uploading';
-        entry.progressPct = 0;
-        entry.error = undefined;
+      const chunkSize = CAPTURE_STAGING_MAX_FILES_PER_REQUEST;
+      for (let offset = 0; offset < queue.length; offset += chunkSize) {
+        const slice = queue.slice(offset, offset + chunkSize);
+        for (const entry of slice) {
+          entry.state = 'uploading';
+          entry.progressPct = 0;
+          entry.error = undefined;
+        }
         notify();
+        const chunkFiles = slice.map((e) => e.file);
         try {
-          await uploadCaptureItem(vars.inventoryId, vars.sessionId, entry.file, vars.aisleId, (pct) => {
-            entry.progressPct = pct;
-            notify();
-          });
-          entry.state = 'uploaded';
-          entry.progressPct = 100;
+          const result = await uploadCaptureSessionStagingFiles(
+            vars.inventoryId,
+            vars.sessionId,
+            chunkFiles,
+            vars.aisleId,
+            (pct) => {
+              for (const entry of slice) {
+                entry.progressPct = pct;
+              }
+              notify();
+            }
+          );
+          applyStagingChunkResult(queue, offset, chunkFiles, result);
           notify();
         } catch (error) {
-          entry.state = 'failed';
-          entry.error = error instanceof Error ? error.message : i18n.t('errors.request_failed');
+          const msg = resolveApiErrorMessage(error, 'errors.request_failed');
+          for (const entry of slice) {
+            entry.state = 'failed';
+            entry.progressPct = 100;
+            entry.error = msg;
+          }
           notify();
-          throw error;
         }
-      });
-
-      await runWithConcurrency(workers, CAPTURE_ITEM_UPLOAD_MAX_CONCURRENCY);
+      }
 
       const uploadedCount = queue.filter((q) => q.state === 'uploaded').length;
       const failedCount = queue.filter((q) => q.state === 'failed').length;

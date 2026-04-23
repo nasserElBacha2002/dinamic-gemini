@@ -915,15 +915,26 @@
       "status": "Estado",
       "created": "Creada",
       "import_status": "estado_importación",
-      "effective_capture_time": "hora_captura_efectiva",
-      "time_source": "fuente_hora",
-      "time_confidence": "confianza_hora"
+      "import_status_imported": "Importado",
+      "import_status_failed": "Importación fallida",
+      "import_status_pending": "Pendiente / en curso",
+      "effective_capture_time": "Hora de captura",
+      "time_source": "Fuente de hora",
+      "time_source_values": {
+        "exif": "EXIF",
+        "file_mtime": "Fecha de modificación del archivo",
+        "fallback_clock": "Reloj del servidor (respaldo)"
+      },
+      "time_confidence": "Confianza de hora"
     },
     "upload": {
       "title": "Subir medios importados",
       "subtitle": "Arrastrá y soltá archivos aquí o seleccioná múltiples archivos desde tu dispositivo.",
       "select_files": "Seleccionar archivos",
       "error_summary": "La carga terminó con errores. Revisá los estados por archivo abajo.",
+      "summary_ok": "{{ok}} archivo(s) subidos correctamente.",
+      "summary_mixed": "{{ok}} archivo(s) subidos correctamente, {{fail}} fallidos.",
+      "summary_all_failed": "Ningún archivo se subió correctamente ({{fail}} fallidos).",
       "status": {
         "uploaded": "Subido",
         "failed": "Fallido",

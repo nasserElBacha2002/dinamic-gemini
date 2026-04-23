@@ -53,25 +53,38 @@ export default function ImportSessionUpload({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [lastSummary, setLastSummary] = useState<{ ok: number; fail: number } | null>(null);
   const uploadMutation = useUploadCaptureItems();
 
   const canSelect = !disabled && !uploadMutation.isPending;
 
   const startUpload = async (files: File[]) => {
     if (!files.length || !canSelect) return;
-    try {
-      await uploadMutation.mutateAsync({
-        inventoryId,
-        sessionId,
-        aisleId,
-        files,
-        onQueueUpdate: setQueue,
-      });
-      onCompleted?.();
-    } catch {
-      // Queue already stores per-file failures; do not crash whole panel.
-    }
+    setLastSummary(null);
+    const result = await uploadMutation.mutateAsync({
+      inventoryId,
+      sessionId,
+      aisleId,
+      files,
+      onQueueUpdate: setQueue,
+    });
+    setLastSummary({ ok: result.uploadedCount, fail: result.failedCount });
+    onCompleted?.();
   };
+
+  const summaryNode =
+    lastSummary != null ? (
+      <Alert
+        severity={lastSummary.fail === 0 ? 'success' : lastSummary.ok === 0 ? 'error' : 'warning'}
+        sx={{ mt: 2 }}
+      >
+        {lastSummary.fail === 0
+          ? t('ingestion_sessions.upload.summary_ok', { ok: lastSummary.ok })
+          : lastSummary.ok === 0
+            ? t('ingestion_sessions.upload.summary_all_failed', { fail: lastSummary.fail })
+            : t('ingestion_sessions.upload.summary_mixed', { ok: lastSummary.ok, fail: lastSummary.fail })}
+      </Alert>
+    ) : null;
 
   return (
     <Box>
@@ -93,7 +106,7 @@ export default function ImportSessionUpload({
           if (!canSelect) return;
           e.preventDefault();
           setDragOver(false);
-          startUpload(Array.from(e.dataTransfer.files));
+          void startUpload(Array.from(e.dataTransfer.files));
         }}
       >
         <Typography variant="subtitle2" gutterBottom>
@@ -130,6 +143,8 @@ export default function ImportSessionUpload({
           {t('ingestion_sessions.upload.error_summary')}
         </Alert>
       ) : null}
+
+      {summaryNode}
 
       {queue.length > 0 ? (
         <List dense sx={{ mt: 1 }}>

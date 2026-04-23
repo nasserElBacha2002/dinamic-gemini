@@ -70,8 +70,16 @@ export interface PaginatedCaptureSessionListResponse {
   items: CaptureSessionResponse[];
 }
 
+export interface CaptureSessionStagingUploadFileError {
+  filename: string;
+  code: string;
+  detail: string;
+  file_index: number;
+}
+
 export interface UploadCaptureSessionItemsResponse {
   items: CaptureSessionItemResponse[];
+  errors: CaptureSessionStagingUploadFileError[];
 }
 
 export interface CaptureSessionClockOffsetUpdateRequest {

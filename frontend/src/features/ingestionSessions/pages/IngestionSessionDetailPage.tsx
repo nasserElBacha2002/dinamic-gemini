@@ -11,10 +11,16 @@ import ImportSessionDetail from '../components/ImportSessionDetail';
 import { useCancelCaptureSession, useCaptureSessionDetail, useCloseCaptureSession } from '../hooks/useCaptureSessions';
 import type { CaptureSessionStatus } from '../../../types/captureSession';
 
-function computeGuards(status: CaptureSessionStatus, hasItems: boolean, closedAt: string | null | undefined) {
+function computeGuards(status: CaptureSessionStatus, itemCount: number, closedAt: string | null | undefined) {
   const isClosed = Boolean(closedAt);
   const canUpload = (status === 'draft' || status === 'importing') && !isClosed;
-  const canClose = (status === 'draft' || status === 'importing' || status === 'ready_for_review') && hasItems;
+  const closeBlockedByState =
+    status === 'cancelled' ||
+    status === 'confirmed' ||
+    status === 'failed' ||
+    status === 'assignment_proposed' ||
+    status === 'confirming';
+  const canClose = itemCount > 0 && !isClosed && !closeBlockedByState;
   const canCancel = status !== 'cancelled' && status !== 'confirmed';
   return { canUpload, canClose, canCancel };
 }
@@ -74,7 +80,7 @@ export default function IngestionSessionDetailPage() {
           (() => {
             const guard = computeGuards(
               detailQuery.data.session.status,
-              detailQuery.data.items.length > 0,
+              detailQuery.data.items.length,
               detailQuery.data.session.closed_at
             );
             return (

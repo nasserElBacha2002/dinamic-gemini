@@ -11,7 +11,6 @@ from src.api.dependencies import get_artifact_storage
 from src.api.server import app
 from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_NOT_FOUND,
-    CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
     CAPTURE_SESSION_INVALID_STATE,
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
     CAPTURE_SESSION_STATUS_FILTER_INVALID,
@@ -72,7 +71,9 @@ def test_create_list_detail_upload_flow(memory_capture: None) -> None:
         files=[("files", ("x.jpg", b"abc", "image/jpeg"))],
     )
     assert up.status_code == 201, up.text
-    items = up.json()["items"]
+    payload = up.json()
+    assert payload["errors"] == []
+    items = payload["items"]
     assert len(items) == 1
     assert items[0]["import_status"] == "imported"
     assert items[0]["staging_storage_key"].startswith("capture/staging/")
@@ -152,7 +153,7 @@ def test_cancel_blocks_upload(memory_capture: None) -> None:
     assert up.json()["code"] == CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS
 
 
-def test_duplicate_files_in_single_request_409(memory_capture: None) -> None:
+def test_duplicate_files_in_single_request_partial_success(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
     sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
     body = b"dup-in-batch"
@@ -163,11 +164,15 @@ def test_duplicate_files_in_single_request_409(memory_capture: None) -> None:
             ("files", ("b.jpg", body, "image/jpeg")),
         ],
     )
-    assert r.status_code == 409
-    assert r.json()["code"] == CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT
+    assert r.status_code == 201, r.text
+    payload = r.json()
+    assert len(payload["items"]) == 1
+    assert len(payload["errors"]) == 1
+    assert payload["errors"][0]["code"] == "CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT"
+    assert payload["errors"][0]["file_index"] == 1
 
 
-def test_duplicate_upload_content_409(memory_capture: None) -> None:
+def test_duplicate_upload_content_returns_per_file_error(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
     sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
     body = b"same-payload"
@@ -182,8 +187,11 @@ def test_duplicate_upload_content_409(memory_capture: None) -> None:
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/items",
         files=[("files", ("b.jpg", body, "image/jpeg"))],
     )
-    assert r2.status_code == 409
-    assert r2.json()["code"] == CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT
+    assert r2.status_code == 201, r2.text
+    body2 = r2.json()
+    assert body2["items"] == []
+    assert len(body2["errors"]) == 1
+    assert body2["errors"][0]["code"] == "CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT"
 
 
 def test_close_session_success(memory_capture: None) -> None:

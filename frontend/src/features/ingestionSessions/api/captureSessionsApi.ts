@@ -116,19 +116,42 @@ export async function cancelCaptureSession(
   return handleResponse<CaptureSessionDetailResponse>(response);
 }
 
-export async function uploadCaptureItem(
+/** Matches backend ``v3_capture_max_files_per_upload`` default (50). */
+export const CAPTURE_STAGING_MAX_FILES_PER_REQUEST = 50;
+
+function parseUploadStagingResponse(body: Record<string, unknown>): UploadCaptureSessionItemsResponse {
+  const items = Array.isArray(body.items) ? (body.items as UploadCaptureSessionItemsResponse['items']) : [];
+  const rawErrors = Array.isArray(body.errors) ? body.errors : [];
+  const errors = rawErrors.map((row) => {
+    const r = row as Record<string, unknown>;
+    return {
+      filename: typeof r.filename === 'string' ? r.filename : 'file',
+      code: typeof r.code === 'string' ? r.code : 'UNKNOWN',
+      detail: typeof r.detail === 'string' ? r.detail : '',
+      file_index: typeof r.file_index === 'number' && Number.isFinite(r.file_index) ? r.file_index : 0,
+    };
+  });
+  return { items, errors };
+}
+
+export async function uploadCaptureSessionStagingFiles(
   inventoryId: string,
   sessionId: string,
-  file: File,
+  files: File[],
   aisleId?: string,
   onProgress?: (progressPct: number) => void
 ): Promise<UploadCaptureSessionItemsResponse> {
+  if (!files.length) {
+    throw new ApiError(i18n.t('errors.request_failed'));
+  }
   const token = getStoredToken();
   const form = new FormData();
-  form.append('files', file);
+  for (const f of files) {
+    form.append('files', f, f.name);
+  }
   return new Promise<UploadCaptureSessionItemsResponse>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const resolvedAisleId = (aisleId || "").trim();
+    const resolvedAisleId = (aisleId || '').trim();
     const path = resolvedAisleId
       ? `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(resolvedAisleId)}/capture-sessions/${encodeURIComponent(sessionId)}/items`
       : `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/items`;
@@ -152,8 +175,7 @@ export async function uploadCaptureItem(
       }
       if (xhr.status >= 200 && xhr.status < 300) {
         onProgress?.(100);
-        const items = Array.isArray(body.items) ? body.items : [];
-        resolve({ items } as UploadCaptureSessionItemsResponse);
+        resolve(parseUploadStagingResponse(body));
         return;
       }
       reject(
@@ -165,5 +187,16 @@ export async function uploadCaptureItem(
     };
     xhr.send(form);
   });
+}
+
+/** @deprecated Prefer ``uploadCaptureSessionStagingFiles`` with a one-element array. */
+export async function uploadCaptureItem(
+  inventoryId: string,
+  sessionId: string,
+  file: File,
+  aisleId?: string,
+  onProgress?: (progressPct: number) => void
+): Promise<UploadCaptureSessionItemsResponse> {
+  return uploadCaptureSessionStagingFiles(inventoryId, sessionId, [file], aisleId, onProgress);
 }
 

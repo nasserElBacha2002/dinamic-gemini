@@ -52,8 +52,16 @@ class PaginatedCaptureSessionListResponse(PageMeta):
     items: List[CaptureSessionResponse]
 
 
+class CaptureSessionStagingUploadFileError(BaseModel):
+    filename: str
+    code: str
+    detail: str
+    file_index: int = Field(ge=0, description="Index into the multipart files list for this request.")
+
+
 class UploadCaptureSessionItemsResponse(BaseModel):
     items: List[CaptureSessionItemResponse] = Field(default_factory=list)
+    errors: List[CaptureSessionStagingUploadFileError] = Field(default_factory=list)
 
 
 class CaptureSessionClockOffsetUpdateRequest(BaseModel):

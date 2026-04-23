@@ -3,6 +3,7 @@ import {
   Avatar,
   Box,
   Button,
+  Chip,
   Divider,
   List,
   ListItem,
@@ -31,10 +32,27 @@ interface ImportSessionDetailProps {
 
 function sortItemsByEffectiveCaptureTime(items: CaptureSessionItemResponse[]): CaptureSessionItemResponse[] {
   return [...items].sort((a, b) => {
-    const t1 = a.effective_capture_time ? new Date(a.effective_capture_time).getTime() : Number.MAX_SAFE_INTEGER;
-    const t2 = b.effective_capture_time ? new Date(b.effective_capture_time).getTime() : Number.MAX_SAFE_INTEGER;
-    return t1 - t2;
+    const t1 = a.effective_capture_time ? new Date(a.effective_capture_time).getTime() : Number.POSITIVE_INFINITY;
+    const t2 = b.effective_capture_time ? new Date(b.effective_capture_time).getTime() : Number.POSITIVE_INFINITY;
+    if (t1 !== t2) return t1 - t2;
+    return a.id.localeCompare(b.id);
   });
+}
+
+function importStatusChip(
+  item: CaptureSessionItemResponse,
+  t: (key: string) => string
+): { label: string; color: 'default' | 'success' | 'error' | 'warning' } {
+  if (item.import_status === 'import_failed') {
+    return { label: t('ingestion_sessions.detail.import_status_failed'), color: 'error' };
+  }
+  if (item.import_status === 'pending_import' || item.import_status === 'importing') {
+    return { label: t('ingestion_sessions.detail.import_status_pending'), color: 'warning' };
+  }
+  if (item.import_status === 'imported') {
+    return { label: t('ingestion_sessions.detail.import_status_imported'), color: 'success' };
+  }
+  return { label: item.import_status, color: 'default' };
 }
 
 export default function ImportSessionDetail({
@@ -90,36 +108,56 @@ export default function ImportSessionDetail({
         <Typography color="text.secondary">{t('ingestion_sessions.empty.upload_to_begin')}</Typography>
       ) : (
         <List dense>
-          {sortedItems.map((item) => (
-            <ListItem key={item.id} divider alignItems="flex-start">
-              <ListItemAvatar>
-                <Avatar variant="rounded">
-                  <ImageOutlinedIcon />
-                </Avatar>
-              </ListItemAvatar>
-              <ListItemText
-                primary={item.original_filename || item.staging_storage_key}
-                secondary={
-                  <Box component="span" sx={{ display: 'block' }}>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      {t('ingestion_sessions.detail.import_status')}: {item.import_status}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      {t('ingestion_sessions.detail.effective_capture_time')}:{' '}
-                      {item.effective_capture_time ? formatDate(item.effective_capture_time) : t('ingestion_sessions.common.not_available')}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      {t('ingestion_sessions.detail.time_source')}: {item.time_source ?? t('ingestion_sessions.common.not_available')}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      {t('ingestion_sessions.detail.time_confidence')}:{' '}
-                      {typeof item.time_confidence === 'number' ? item.time_confidence.toFixed(2) : t('ingestion_sessions.common.not_available')}
-                    </Typography>
-                  </Box>
-                }
-              />
-            </ListItem>
-          ))}
+          {sortedItems.map((item) => {
+            const chip = importStatusChip(item, t);
+            return (
+              <ListItem key={item.id} divider alignItems="flex-start">
+                <ListItemAvatar>
+                  <Avatar variant="rounded">
+                    <ImageOutlinedIcon />
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <Typography component="span" variant="body2">
+                        {item.original_filename || item.staging_storage_key}
+                      </Typography>
+                      <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
+                    </Box>
+                  }
+                  secondary={
+                    <Box component="span" sx={{ display: 'block' }}>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {t('ingestion_sessions.detail.effective_capture_time')}:{' '}
+                        {item.effective_capture_time
+                          ? formatDate(item.effective_capture_time)
+                          : t('ingestion_sessions.common.not_available')}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {t('ingestion_sessions.detail.time_source')}:{' '}
+                        {item.time_source
+                          ? t(`ingestion_sessions.detail.time_source_values.${item.time_source}`)
+                          : t('ingestion_sessions.common.not_available')}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {t('ingestion_sessions.detail.time_confidence')}:{' '}
+                        {typeof item.time_confidence === 'number'
+                          ? item.time_confidence.toFixed(2)
+                          : t('ingestion_sessions.common.not_available')}
+                      </Typography>
+                      {item.import_status === 'import_failed' && (item.last_error_code || item.last_error_detail) ? (
+                        <Typography variant="caption" color="error.main" display="block">
+                          {item.last_error_code ? `${item.last_error_code}: ` : ''}
+                          {item.last_error_detail ?? ''}
+                        </Typography>
+                      ) : null}
+                    </Box>
+                  }
+                />
+              </ListItem>
+            );
+          })}
         </List>
       )}
     </Stack>

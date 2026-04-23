@@ -11,11 +11,9 @@ import pytest
 
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import (
-    CaptureSessionDuplicateItemContentError,
     CaptureSessionInvalidStateError,
     CaptureSessionNotAcceptingUploadsError,
     CaptureSessionNotFoundError,
-    CaptureSessionStagingFileTooLargeError,
     CaptureSessionUploadBatchTooLargeError,
     InventoryNotFoundError,
     OpenCaptureSessionExistsError,
@@ -158,14 +156,15 @@ def test_inventory_level_session_upload_close_cancel_flow(tmp_path: Path) -> Non
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     )
-    items = upload_uc.execute(
+    batch = upload_uc.execute(
         inventory_id=inv_id,
         aisle_id=None,
         session_id=session.id,
         files=[UploadedFile("inv-level.jpg", BytesIO(b"abc-inv"), "image/jpeg")],
     )
-    assert len(items) == 1
-    assert items[0].import_status.value == "imported"
+    assert len(batch.items) == 1
+    assert batch.items[0].import_status.value == "imported"
+    assert batch.errors == ()
 
     closed = CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock).execute(
         inventory_id=inv_id,
@@ -348,13 +347,15 @@ def test_staging_file_too_large(tmp_path: Path) -> None:
         max_upload_bytes=3,
         time_metadata_extractor=_pillow_time_extractor(),
     )
-    with pytest.raises(CaptureSessionStagingFileTooLargeError):
-        upload_uc.execute(
-            inventory_id=inv_id,
-            aisle_id=aisle_id,
-            session_id=s.id,
-            files=[UploadedFile("a.jpg", BytesIO(b"abcd"), "image/jpeg")],
-        )
+    batch = upload_uc.execute(
+        inventory_id=inv_id,
+        aisle_id=aisle_id,
+        session_id=s.id,
+        files=[UploadedFile("a.jpg", BytesIO(b"abcd"), "image/jpeg")],
+    )
+    assert len(batch.items) == 0
+    assert len(batch.errors) == 1
+    assert batch.errors[0].code == "CAPTURE_SESSION_STAGING_FILE_TOO_LARGE"
 
 
 def test_staging_batch_too_large(tmp_path: Path) -> None:
@@ -421,13 +422,14 @@ def test_upload_creates_item_no_source_asset(tmp_path: Path) -> None:
             content_type="image/jpeg",
         )
     ]
-    items = upload_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, files=files)
-    assert len(items) == 1
-    assert items[0].staging_storage_key.startswith("capture/staging/")
-    assert items[0].content_hash is not None
-    assert items[0].linked_source_asset_id is None
-    assert items[0].effective_capture_time is not None
-    assert items[0].time_source == CaptureTimeSource.FALLBACK_CLOCK
+    batch = upload_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, files=files)
+    assert len(batch.items) == 1
+    assert batch.errors == ()
+    assert batch.items[0].staging_storage_key.startswith("capture/staging/")
+    assert batch.items[0].content_hash is not None
+    assert batch.items[0].linked_source_asset_id is None
+    assert batch.items[0].effective_capture_time is not None
+    assert batch.items[0].time_source == CaptureTimeSource.FALLBACK_CLOCK
     refreshed = session_repo.get_by_id(s.id)
     assert refreshed is not None
     assert refreshed.status == CaptureSessionStatus.IMPORTING
@@ -501,7 +503,7 @@ def test_upload_duplicate_content_rejected(tmp_path: Path) -> None:
         time_metadata_extractor=_pillow_time_extractor(),
     )
     body = b"same-bytes"
-    upload_uc.execute(
+    first = upload_uc.execute(
         inventory_id=inv_id,
         aisle_id=aisle_id,
         session_id=s.id,
@@ -509,15 +511,59 @@ def test_upload_duplicate_content_rejected(tmp_path: Path) -> None:
             UploadedFile("1.jpg", BytesIO(body), "image/jpeg"),
         ],
     )
-    with pytest.raises(CaptureSessionDuplicateItemContentError):
-        upload_uc.execute(
-            inventory_id=inv_id,
-            aisle_id=aisle_id,
-            session_id=s.id,
-            files=[
-                UploadedFile("2.jpg", BytesIO(body), "image/jpeg"),
-            ],
-        )
+    assert len(first.errors) == 0
+    second = upload_uc.execute(
+        inventory_id=inv_id,
+        aisle_id=aisle_id,
+        session_id=s.id,
+        files=[
+            UploadedFile("2.jpg", BytesIO(body), "image/jpeg"),
+        ],
+    )
+    assert len(second.items) == 0
+    assert len(second.errors) == 1
+    assert second.errors[0].code == "CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT"
+
+
+def test_upload_mixed_batch_partial_success(tmp_path: Path) -> None:
+    inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
+    session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
+    clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
+    s = CreateCaptureSessionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=3,
+    ).execute(inv_id, aisle_id)
+    upload_uc = UploadCaptureSessionStagingItemsUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=V3ArtifactStorageAdapter(tmp_path),
+        clock=clock,
+        staging_prefix="capture/staging",
+        max_files_per_upload=10,
+        max_upload_bytes=1024 * 1024,
+        time_metadata_extractor=_pillow_time_extractor(),
+    )
+    body = b"unique-for-mixed"
+    batch = upload_uc.execute(
+        inventory_id=inv_id,
+        aisle_id=aisle_id,
+        session_id=s.id,
+        files=[
+            UploadedFile("ok.jpg", BytesIO(body), "image/jpeg"),
+            UploadedFile("empty.jpg", BytesIO(b""), "image/jpeg"),
+            UploadedFile("dup.jpg", BytesIO(body), "image/jpeg"),
+        ],
+    )
+    assert len(batch.items) == 1
+    assert len(batch.errors) == 2
+    assert batch.errors[0].file_index == 1
+    assert batch.errors[0].code == "ZERO_BYTE_FILE"
+    assert batch.errors[1].file_index == 2
+    assert batch.errors[1].code == "CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT"
 
 
 def test_get_detail_not_found_wrong_inventory() -> None:

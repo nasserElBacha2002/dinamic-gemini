@@ -915,15 +915,26 @@
       "status": "Status",
       "created": "Created",
       "import_status": "import_status",
-      "effective_capture_time": "effective_capture_time",
-      "time_source": "time_source",
-      "time_confidence": "time_confidence"
+      "import_status_imported": "Imported",
+      "import_status_failed": "Import failed",
+      "import_status_pending": "Pending / in progress",
+      "effective_capture_time": "Capture time",
+      "time_source": "Time source",
+      "time_source_values": {
+        "exif": "EXIF",
+        "file_mtime": "File modified time",
+        "fallback_clock": "Server clock (fallback)"
+      },
+      "time_confidence": "Time confidence"
     },
     "upload": {
       "title": "Upload imported media",
       "subtitle": "Drag and drop files here or select multiple files from your device.",
       "select_files": "Select files",
       "error_summary": "Upload completed with errors. Review file-level statuses below.",
+      "summary_ok": "{{ok}} file(s) uploaded successfully.",
+      "summary_mixed": "{{ok}} file(s) uploaded successfully, {{fail}} failed.",
+      "summary_all_failed": "No files uploaded successfully ({{fail}} failed).",
       "status": {
         "uploaded": "Uploaded",
         "failed": "Failed",
