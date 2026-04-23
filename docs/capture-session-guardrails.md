@@ -24,7 +24,8 @@ Reglas obligatorias para preservar arquitectura, determinismo e integración con
 - G1 (inventory-level operable): `upload`, `close` y `cancel` se permiten sin `aisle_id`.
 - G1 (fuera de alcance para sesiones sin pasillo): `preview`, `clock-offset` y `materialize` siguen acoplados a sesión aisle-bound y deben responder con error estructurado cuando no aplique.
 - G2 (batch staging): contrato HTTP **201** con `items[]` + `errors[]` por archivo en multipart válido; errores de **toda** la petición siguen siendo HTTP de error. Política de transporte en UI: chunks secuenciales (sin POSTs paralelos por tanda). Ver `docs/capture-session-api-contract.md` (sección 6 y “Política de errores”).
-- G3 (temporal grouping, inventory-level): segmentación por gap de tiempo sobre ítems importados con `effective_capture_time`; no asigna pasillos ni materializa. Contrato y errores: `docs/capture-session-api-contract.md` (sección “Temporal grouping (G3)”).
+- G3 (temporal grouping, inventory-level): segmentación por gap de tiempo sobre ítems importados con `effective_capture_time`; no materializa. Contrato y errores: `docs/capture-session-api-contract.md` (sección “Temporal grouping (G3)”).
+- G4 (group → aisle): vincular cada grupo temporal a un pasillo existente o crear uno nuevo; no materializa ni preview de posiciones. Contrato: `docs/capture-session-api-contract.md` (sección “Group → aisle assignment (G4)”).
 
 ## Reglas de datos y trazabilidad
 

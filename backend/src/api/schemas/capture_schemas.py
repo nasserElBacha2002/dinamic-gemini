@@ -52,6 +52,9 @@ class CaptureSessionGroupSummaryResponse(BaseModel):
     start_time: datetime
     end_time: datetime
     algorithm_version: str
+    assignment_status: str = "unassigned"
+    assigned_aisle_id: Optional[str] = None
+    assigned_at: Optional[datetime] = None
 
 
 class CaptureSessionGroupsListResponse(BaseModel):
@@ -68,10 +71,25 @@ def capture_session_groups_to_response(summaries: Sequence[CaptureSessionGroupSu
                 start_time=s.start_time,
                 end_time=s.end_time,
                 algorithm_version=s.algorithm_version,
+                assignment_status=s.assignment_status,
+                assigned_aisle_id=s.assigned_aisle_id,
+                assigned_at=s.assigned_at,
             )
             for s in summaries
         ]
     )
+
+
+class AssignCaptureSessionGroupToExistingAisleRequest(BaseModel):
+    """G4 — POST .../groups/{group_id}/assign-existing body."""
+
+    aisle_id: str = Field(..., min_length=1, max_length=64)
+
+
+class CreateAisleFromCaptureGroupRequest(BaseModel):
+    """G4 — POST .../groups/{group_id}/create-aisle body (same ``code`` semantics as POST /aisles)."""
+
+    code: str = Field(..., min_length=1, max_length=64)
 
 
 class CaptureSessionDetailResponse(BaseModel):

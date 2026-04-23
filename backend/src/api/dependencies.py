@@ -964,6 +964,42 @@ def get_get_capture_session_groups_use_case(
     return GetCaptureSessionGroupsUseCase(session_repo=session_repo, group_repo=group_repo)
 
 
+def get_assign_capture_session_group_to_existing_aisle_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.assign_capture_session_group_to_existing_aisle import (
+        AssignCaptureSessionGroupToExistingAisleUseCase,
+    )
+
+    return AssignCaptureSessionGroupToExistingAisleUseCase(
+        session_repo=session_repo,
+        group_repo=group_repo,
+        aisle_repo=aisle_repo,
+        clock=clock,
+    )
+
+
+def get_create_aisle_and_assign_capture_session_group_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
+    create_aisle: CreateAisleUseCase = Depends(get_create_aisle_use_case),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.create_aisle_and_assign_capture_session_group import (
+        CreateAisleAndAssignCaptureSessionGroupUseCase,
+    )
+
+    return CreateAisleAndAssignCaptureSessionGroupUseCase(
+        session_repo=session_repo,
+        group_repo=group_repo,
+        create_aisle=create_aisle,
+        clock=clock,
+    )
+
+
 def get_materialize_capture_session_use_case(
     session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
     item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),

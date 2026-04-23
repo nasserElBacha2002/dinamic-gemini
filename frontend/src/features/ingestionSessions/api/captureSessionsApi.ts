@@ -138,6 +138,36 @@ export async function computeCaptureSessionGroups(
   return handleResponse<CaptureSessionGroupsListResponse>(response);
 }
 
+export async function assignCaptureSessionGroupToExistingAisle(
+  inventoryId: string,
+  sessionId: string,
+  groupId: string,
+  aisleId: string
+): Promise<CaptureSessionGroupsListResponse> {
+  const base = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups/${encodeURIComponent(groupId)}/assign-existing`;
+  const response = await protectedFetch(base, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ aisle_id: aisleId }),
+  });
+  return handleResponse<CaptureSessionGroupsListResponse>(response);
+}
+
+export async function createAisleFromCaptureSessionGroup(
+  inventoryId: string,
+  sessionId: string,
+  groupId: string,
+  code: string
+): Promise<CaptureSessionGroupsListResponse> {
+  const base = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups/${encodeURIComponent(groupId)}/create-aisle`;
+  const response = await protectedFetch(base, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  return handleResponse<CaptureSessionGroupsListResponse>(response);
+}
+
 /**
  * Max files per staging POST (matches backend ``v3_capture_max_files_per_upload``, default 50).
  * The ingestion hook sends **multiple sequential** requests of at most this many files

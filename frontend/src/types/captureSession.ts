@@ -59,6 +59,11 @@ export interface CaptureSessionItemResponse {
   updated_at: string;
 }
 
+export type CaptureSessionGroupAssignmentStatusWire =
+  | 'unassigned'
+  | 'assigned_existing'
+  | 'assigned_new';
+
 export interface CaptureSessionGroupSummaryResponse {
   group_id: string;
   group_index: number;
@@ -67,6 +72,9 @@ export interface CaptureSessionGroupSummaryResponse {
   end_time: string;
   /** G3 algorithm tag (e.g. `time_gap_v1`); mirrors persisted `capture_session_groups.algorithm_version`. */
   algorithm_version: string;
+  assignment_status: CaptureSessionGroupAssignmentStatusWire;
+  assigned_aisle_id: string | null;
+  assigned_at: string | null;
 }
 
 export interface CaptureSessionGroupsListResponse {

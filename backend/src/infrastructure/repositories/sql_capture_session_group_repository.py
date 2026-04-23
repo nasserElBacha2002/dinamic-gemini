@@ -1,4 +1,4 @@
-"""SQL Server implementation of CaptureSessionGroupRepository — G3."""
+"""SQL Server implementation of CaptureSessionGroupRepository — G3 + G4."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Optional
 
 from src.application.ports.capture_repositories import CaptureSessionGroupRepository, CaptureSessionGroupSummary
 from src.database.sqlserver import SqlServerClient
-from src.domain.capture.entities import CaptureSessionGroup
+from src.domain.capture.entities import CaptureSessionGroup, CaptureSessionGroupAisleAssignmentStatus
 
 
 def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -18,6 +18,37 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt.replace(tzinfo=timezone.utc)
 
 
+def _parse_assignment_status(raw: object) -> CaptureSessionGroupAisleAssignmentStatus:
+    s = (raw or "unassigned").strip().lower()
+    try:
+        return CaptureSessionGroupAisleAssignmentStatus(s)
+    except ValueError:
+        return CaptureSessionGroupAisleAssignmentStatus.UNASSIGNED
+
+
+def _row_to_group(row: object) -> CaptureSessionGroup:
+    gid = (getattr(row, "id", None) or "").strip()
+    sid = (getattr(row, "session_id", None) or "").strip()
+    created = _ensure_utc(getattr(row, "created_at", None))
+    if created is None:
+        raise ValueError("group.created_at is required")
+    algo = (getattr(row, "algorithm_version", None) or "").strip()
+    assigned_raw = getattr(row, "assigned_aisle_id", None)
+    assigned_aisle = (str(assigned_raw).strip() if assigned_raw is not None else None) or None
+    assigned_at = _ensure_utc(getattr(row, "assigned_at", None))
+    st = _parse_assignment_status(getattr(row, "assignment_status", None))
+    return CaptureSessionGroup(
+        id=gid,
+        session_id=sid,
+        group_index=int(getattr(row, "group_index", 0)),
+        created_at=created,
+        algorithm_version=algo,
+        assigned_aisle_id=assigned_aisle,
+        assignment_status=st,
+        assigned_at=assigned_at,
+    )
+
+
 class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
@@ -26,6 +57,55 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
         with self._client.cursor() as cur:
             cur.execute("DELETE FROM dbo.capture_session_groups WHERE session_id = ?", (session_id,))
 
+    def count_groups_for_session(self, session_id: str) -> int:
+        with self._client.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM dbo.capture_session_groups WHERE session_id = ?",
+                (session_id,),
+            )
+            row = cur.fetchone()
+        return int(getattr(row, "n", 0) or 0) if row is not None else 0
+
+    def get_by_id_and_session(self, group_id: str, session_id: str) -> Optional[CaptureSessionGroup]:
+        gid = (group_id or "").strip()
+        sid = (session_id or "").strip()
+        if not gid or not sid:
+            return None
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, session_id, group_index, created_at, algorithm_version,
+                       assigned_aisle_id, assignment_status, assigned_at
+                FROM dbo.capture_session_groups
+                WHERE id = ? AND session_id = ?
+                """,
+                (gid, sid),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return _row_to_group(row)
+
+    def update(self, group: CaptureSessionGroup) -> None:
+        assigned_at = _ensure_utc(group.assigned_at)
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE dbo.capture_session_groups
+                SET assigned_aisle_id = ?,
+                    assignment_status = ?,
+                    assigned_at = ?
+                WHERE id = ? AND session_id = ?
+                """,
+                (
+                    group.assigned_aisle_id,
+                    group.assignment_status.value,
+                    assigned_at,
+                    group.id,
+                    group.session_id,
+                ),
+            )
+
     def insert(self, group: CaptureSessionGroup) -> None:
         created = _ensure_utc(group.created_at)
         if created is None:
@@ -33,8 +113,11 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
         with self._client.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO dbo.capture_session_groups (id, session_id, group_index, created_at, algorithm_version)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO dbo.capture_session_groups (
+                    id, session_id, group_index, created_at, algorithm_version,
+                    assigned_aisle_id, assignment_status, assigned_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     group.id,
@@ -42,6 +125,9 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                     int(group.group_index),
                     created,
                     group.algorithm_version,
+                    group.assigned_aisle_id,
+                    group.assignment_status.value,
+                    _ensure_utc(group.assigned_at),
                 ),
             )
 
@@ -53,13 +139,18 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                     g.id AS group_id,
                     g.group_index,
                     g.algorithm_version,
+                    g.assigned_aisle_id,
+                    g.assignment_status,
+                    g.assigned_at,
                     COUNT(i.id) AS item_count,
                     MIN(COALESCE(i.adjusted_capture_time, i.effective_capture_time)) AS start_time,
                     MAX(COALESCE(i.adjusted_capture_time, i.effective_capture_time)) AS end_time
                 FROM dbo.capture_session_groups g
                 INNER JOIN dbo.capture_session_items i ON i.group_id = g.id
                 WHERE g.session_id = ?
-                GROUP BY g.id, g.group_index, g.created_at, g.algorithm_version
+                GROUP BY
+                    g.id, g.group_index, g.created_at, g.algorithm_version,
+                    g.assigned_aisle_id, g.assignment_status, g.assigned_at
                 ORDER BY g.group_index ASC
                 """,
                 (session_id,),
@@ -77,6 +168,10 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
             algo = (getattr(row, "algorithm_version", None) or "").strip()
             if not algo:
                 continue
+            assigned_aisle_raw = getattr(row, "assigned_aisle_id", None)
+            assigned_aisle = (str(assigned_aisle_raw).strip() if assigned_aisle_raw is not None else None) or None
+            assigned_at = _ensure_utc(getattr(row, "assigned_at", None))
+            ast = (getattr(row, "assignment_status", None) or "unassigned").strip().lower()
             out.append(
                 CaptureSessionGroupSummary(
                     group_id=gid,
@@ -85,6 +180,9 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                     start_time=st,
                     end_time=en,
                     algorithm_version=algo,
+                    assigned_aisle_id=assigned_aisle,
+                    assignment_status=ast,
+                    assigned_at=assigned_at,
                 )
             )
         return tuple(out)

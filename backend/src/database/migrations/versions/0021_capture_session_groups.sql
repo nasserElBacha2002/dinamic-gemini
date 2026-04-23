@@ -2,6 +2,10 @@
 G3 — temporal grouping for capture session items (inventory-level).
 
 Adds capture_session_groups and optional group_id on items. Filtered-index rules do not apply here.
+
+FK items→groups uses ON DELETE NO ACTION (not SET NULL) to avoid SQL Server error 1785
+(multiple cascade paths: sessions→items CASCADE + sessions→groups CASCADE + items→groups).
+Application clears group_id before deleting groups (ComputeCaptureSessionGroups).
 */
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'capture_session_groups')
@@ -39,6 +43,6 @@ IF NOT EXISTS (
 BEGIN
     ALTER TABLE dbo.capture_session_items
         ADD CONSTRAINT FK_capture_session_items_group
-        FOREIGN KEY (group_id) REFERENCES dbo.capture_session_groups(id) ON DELETE SET NULL;
+        FOREIGN KEY (group_id) REFERENCES dbo.capture_session_groups(id) ON DELETE NO ACTION;
 END;
 GO

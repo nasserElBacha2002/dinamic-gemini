@@ -52,7 +52,7 @@ Fuente de verdad: rutas en `backend/src/api/routes/v3/capture_sessions.py` + sch
 - `session: CaptureSessionResponse`
 - `items: CaptureSessionItemResponse[]`
 
-### CaptureSessionGroupSummaryResponse (G3)
+### CaptureSessionGroupSummaryResponse (G3 + G4)
 
 - `group_id: string`
 - `group_index: number` (1-based, estable por recomputo dentro de la sesión)
@@ -60,6 +60,9 @@ Fuente de verdad: rutas en `backend/src/api/routes/v3/capture_sessions.py` + sch
 - `start_time: string(datetime)` — mínimo de `COALESCE(adjusted_capture_time, effective_capture_time)` entre miembros
 - `end_time: string(datetime)` — máximo de la misma clave
 - `algorithm_version: string` — p. ej. `time_gap_v1` (auditoría / trazabilidad del algoritmo persistido en `capture_session_groups`)
+- `assignment_status: string` — `unassigned` \| `assigned_existing` \| `assigned_new` (G4)
+- `assigned_aisle_id: string | null` — pasillo vinculado al grupo cuando aplica (G4)
+- `assigned_at: string(datetime) | null` — momento de la asignación (G4)
 
 ### CaptureSessionGroupsListResponse (G3)
 
@@ -226,7 +229,7 @@ Dos rutas equivalentes (misma forma de body y de respuesta 201):
 
 ## Temporal grouping (G3)
 
-Agrupación **inventory-level** por segmentación temporal (gap configurable, default 60s vía `v3_capture_grouping_max_gap_seconds`). No crea `SourceAsset`, no materializa y no asigna pasillos.
+Agrupación **inventory-level** por segmentación temporal (gap configurable, default 60s vía `v3_capture_grouping_max_gap_seconds`). No crea `SourceAsset` ni materializa. La **asignación a pasillo por grupo** es G4 (ver más abajo).
 
 ### Endpoints
 
@@ -234,7 +237,7 @@ Agrupación **inventory-level** por segmentación temporal (gap configurable, de
   - **Respuesta 200:** `CaptureSessionGroupsListResponse` (`groups[]` con `algorithm_version` en cada fila).
   - **Precondiciones:** sesión **cerrada** (`closed_at != null`); estado no terminal prohibido para grouping (`cancelled`, `failed`, `confirmed` → error).
   - **Elegibilidad de ítems:** solo `import_status: imported` con `effective_capture_time != null` entran en clusters; el resto permanece con `group_id: null` en detalle de sesión.
-  - **Idempotencia / recomputo:** volver a llamar **borra** grupos previos de esa sesión, limpia `group_id` en ítems y recalcula (mismos índices de grupo 1..N según datos; nuevos `group_id` UUID).
+  - **Idempotencia / recomputo:** volver a llamar **borra** grupos previos de esa sesión, limpia `group_id` en ítems y recalcula (mismos índices de grupo 1..N según datos; nuevos `group_id` UUID). **Se pierden** `assigned_aisle_id` / `assignment_status` / `assigned_at` (G4) porque las filas de grupo se eliminan.
 
 - **GET** `/{inventory_id}/capture-sessions/{session_id}/groups`
   - **Respuesta 200:** misma forma que arriba (lista actualmente persistida).
@@ -251,12 +254,47 @@ Agrupación **inventory-level** por segmentación temporal (gap configurable, de
 ### Política de producto / UI
 
 - Puede haber ítems **sin grupo** después de un compute (no elegibles); deben seguir visibles en el detalle de sesión.
-- La UI mínima de grouping vive hoy en la vista de detalle; en G4 puede extraerse o ampliarse sin cambiar el contrato base de listados.
+- La UI de grouping + asignación vive en la vista de detalle de sesión de importación.
 
-### Follow-up técnico (G4 — sin implementar aquí)
+## Group → aisle assignment (G4)
 
-- El modelo actual expone **summaries** + membresía vía `group_id` en ítems; **asignación grupo → pasillo** u operaciones de merge/split probablemente requieran ampliar el repositorio de grupos (lecturas/escrituras adicionales) y nuevos use cases, sin reemplazar el motor `time_gap_v1` salvo decisión explícita de producto.
-- La UI de grouping es deliberadamente mínima; G4 puede separar mejor el bloque de “operaciones sobre grupos” del layout de detalle.
+Puente operativo: cada grupo temporal puede vincularse a un **pasillo existente** o disparar la **creación de un pasillo nuevo** (mismo contrato de `code` que `POST /aisles`). No materializa (G5) ni preview de posiciones (G6).
+
+### Endpoints
+
+- **POST** `/{inventory_id}/capture-sessions/{session_id}/groups/{group_id}/assign-existing`
+  - **Body JSON:** `{ "aisle_id": "<uuid>" }`
+  - **Respuesta 200:** `CaptureSessionGroupsListResponse` (lista completa actualizada de grupos de la sesión).
+  - **Precondiciones:** sesión cerrada y no terminal (misma política que grouping para `cancelled`/`failed`/`confirmed`); debe existir **al menos un** grupo persistido para la sesión (haber ejecutado `compute-groups` antes).
+  - **Efecto:** `assignment_status = assigned_existing`, `assigned_aisle_id` y `assigned_at` seteados.
+
+- **POST** `/{inventory_id}/capture-sessions/{session_id}/groups/{group_id}/create-aisle`
+  - **Body JSON:** `{ "code": "<string 1..64>" }` — alineado con `CreateAisleRequest` (`code`, no nombre libre).
+  - **Respuesta 200:** `CaptureSessionGroupsListResponse`.
+  - **Efecto:** crea pasillo en el inventario, luego `assignment_status = assigned_new` y vínculo al nuevo `aisle_id`.
+
+### Estados `assignment_status`
+
+| Valor | Significado |
+|-------|-------------|
+| `unassigned` | Grupo calculado; aún sin pasillo operativo. |
+| `assigned_existing` | Vinculado a un pasillo que ya existía en el inventario. |
+| `assigned_new` | Pasillo creado en esta operación y vinculado al grupo. |
+
+### Errores (G4)
+
+| HTTP | `code` | Cuándo |
+|------|--------|--------|
+| 404 | `CAPTURE_SESSION_GROUP_NOT_FOUND` | `group_id` no existe en esa sesión. |
+| 404 | `AISLE_NOT_FOUND_FOR_ASSIGNMENT` | `aisle_id` inexistente o inventario distinto al de la sesión. |
+| 409 | `CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED` | El grupo ya tiene asignación (`assigned_existing` / `assigned_new`). |
+| 409 | `CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED` | Sesión abierta, sin grupos persistidos, o estado terminal incompatible. |
+| 404 | `CAPTURE_SESSION_NOT_FOUND` | Sesión no pertenece al inventario. |
+| 409 | `DUPLICATE_AISLE_CODE` (legacy / según mapper) | `create-aisle` con `code` duplicado en el inventario — mismo comportamiento que creación normal de pasillo. |
+
+### Follow-up (G5)
+
+- Materialización consumirá la relación **grupo → pasillo** preparada aquí; el contrato exacto de G5 queda fuera de este documento hasta implementarse.
 
 ## Nota de invariantes
 

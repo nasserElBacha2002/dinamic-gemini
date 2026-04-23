@@ -3,9 +3,11 @@ import { getAisles } from '../../../api/client';
 import { queryKeys } from '../../../api/queryKeys';
 import { getInventories } from '../../../api/client';
 import {
+  assignCaptureSessionGroupToExistingAisle,
   cancelCaptureSession,
   closeCaptureSession,
   computeCaptureSessionGroups,
+  createAisleFromCaptureSessionGroup,
   createCaptureSession,
   getCaptureSessionDetail,
   getCaptureSessionGroups,
@@ -64,6 +66,52 @@ export function useComputeCaptureSessionGroups() {
       queryClient.setQueryData(queryKeys.captureSessions.groups(inventoryId, sessionId), data);
       void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.detail(inventoryId, sessionId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.groups(inventoryId, sessionId) });
+    },
+  });
+}
+
+export function useAssignCaptureSessionGroupToExistingAisle() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      inventoryId,
+      sessionId,
+      groupId,
+      aisleId,
+    }: {
+      inventoryId: string;
+      sessionId: string;
+      groupId: string;
+      aisleId: string;
+    }) => assignCaptureSessionGroupToExistingAisle(inventoryId, sessionId, groupId, aisleId),
+    onSuccess: (data, { inventoryId, sessionId }) => {
+      queryClient.setQueryData(queryKeys.captureSessions.groups(inventoryId, sessionId), data);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.detail(inventoryId, sessionId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.groups(inventoryId, sessionId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aislesListTable(inventoryId) });
+    },
+  });
+}
+
+export function useCreateAisleFromCaptureSessionGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      inventoryId,
+      sessionId,
+      groupId,
+      code,
+    }: {
+      inventoryId: string;
+      sessionId: string;
+      groupId: string;
+      code: string;
+    }) => createAisleFromCaptureSessionGroup(inventoryId, sessionId, groupId, code),
+    onSuccess: (data, { inventoryId, sessionId }) => {
+      queryClient.setQueryData(queryKeys.captureSessions.groups(inventoryId, sessionId), data);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.detail(inventoryId, sessionId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.groups(inventoryId, sessionId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aislesListTable(inventoryId) });
     },
   });
 }

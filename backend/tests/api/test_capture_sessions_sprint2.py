@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from src.api.dependencies import get_artifact_storage
 from src.api.server import app
 from src.api.errors.structured_api_http import (
+    CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
     CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
     CAPTURE_SESSION_NOT_FOUND,
     CAPTURE_SESSION_INVALID_STATE,
@@ -309,3 +310,80 @@ def test_compute_groups_after_close_and_list_groups(memory_capture: None) -> Non
     cg2 = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups")
     assert cg2.status_code == 200, cg2.text
     assert len(cg2.json()["groups"]) == len(body["groups"])
+
+
+def test_assign_group_to_existing_aisle_then_list(memory_capture: None) -> None:
+    inv_id, aisle_id = _create_inv_aisle()
+    sid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions").json()["id"]
+    assert (
+        client.post(
+            f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/items",
+            files=[("files", ("a.jpg", b"a-bytes", "image/jpeg"))],
+        ).status_code
+        == 201
+    )
+    assert client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+    cg = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups")
+    assert cg.status_code == 200, cg.text
+    gid = cg.json()["groups"][0]["group_id"]
+
+    asg = client.post(
+        f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/groups/{gid}/assign-existing",
+        json={"aisle_id": aisle_id},
+    )
+    assert asg.status_code == 200, asg.text
+    row = asg.json()["groups"][0]
+    assert row["assignment_status"] == "assigned_existing"
+    assert row["assigned_aisle_id"] == aisle_id
+    assert row["assigned_at"]
+
+    lg = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/groups")
+    assert lg.status_code == 200
+    assert lg.json()["groups"][0]["assigned_aisle_id"] == aisle_id
+
+
+def test_assign_group_twice_returns_409(memory_capture: None) -> None:
+    inv_id, aisle_id = _create_inv_aisle()
+    sid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions").json()["id"]
+    assert (
+        client.post(
+            f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/items",
+            files=[("files", ("b.jpg", b"b-bytes", "image/jpeg"))],
+        ).status_code
+        == 201
+    )
+    assert client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+    gid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups").json()["groups"][0][
+        "group_id"
+    ]
+    path = f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/groups/{gid}/assign-existing"
+    assert client.post(path, json={"aisle_id": aisle_id}).status_code == 200
+    r2 = client.post(path, json={"aisle_id": aisle_id})
+    assert r2.status_code == 409
+    assert r2.json()["code"] == CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED
+
+
+def test_create_aisle_from_group_flow(memory_capture: None) -> None:
+    inv_id, _aisle_id = _create_inv_aisle()
+    sid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions").json()["id"]
+    assert (
+        client.post(
+            f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/items",
+            files=[("files", ("c.jpg", b"c-bytes", "image/jpeg"))],
+        ).status_code
+        == 201
+    )
+    assert client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+    gid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups").json()["groups"][0][
+        "group_id"
+    ]
+    r = client.post(
+        f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/groups/{gid}/create-aisle",
+        json={"code": "G4-NEW-AISLE"},
+    )
+    assert r.status_code == 200, r.text
+    row = r.json()["groups"][0]
+    assert row["assignment_status"] == "assigned_new"
+    assert row["assigned_aisle_id"]
+    st = client.get(f"/api/v3/inventories/{inv_id}/aisles/{row['assigned_aisle_id']}/status")
+    assert st.status_code == 200, st.text

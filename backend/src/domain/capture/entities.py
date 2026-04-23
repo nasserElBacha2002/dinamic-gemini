@@ -49,6 +49,14 @@ class CaptureSessionItemAssignmentStatus(str, Enum):
     UNASSIGNED = "unassigned"
 
 
+class CaptureSessionGroupAisleAssignmentStatus(str, Enum):
+    """G4 — which aisle (if any) a temporal group is bound to before materialization."""
+
+    UNASSIGNED = "unassigned"
+    ASSIGNED_EXISTING = "assigned_existing"
+    ASSIGNED_NEW = "assigned_new"
+
+
 @dataclass
 class CaptureSession:
     id: str
@@ -63,7 +71,7 @@ class CaptureSession:
     clock_offset_seconds: int = 0
 
 
-@dataclass
+@dataclass(kw_only=True)
 class CaptureSessionGroup:
     """Temporal segmentation bucket for capture items (G3 — inventory-level, no aisles)."""
 
@@ -72,6 +80,10 @@ class CaptureSessionGroup:
     group_index: int
     created_at: datetime
     algorithm_version: str
+    #: G4 — aisle this group is staged for (materialization in G5); null until assigned.
+    assigned_aisle_id: Optional[str] = None
+    assignment_status: CaptureSessionGroupAisleAssignmentStatus = CaptureSessionGroupAisleAssignmentStatus.UNASSIGNED
+    assigned_at: Optional[datetime] = None
 
 
 @dataclass

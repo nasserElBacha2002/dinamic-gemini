@@ -23,7 +23,7 @@ from src.domain.capture.entities import (
 
 @dataclass(frozen=True)
 class CaptureSessionGroupSummary:
-    """Aggregated view of a persisted temporal group (G3 API wire shape)."""
+    """Aggregated view of a persisted temporal group (G3/G4 API wire shape)."""
 
     group_id: str
     group_index: int
@@ -31,6 +31,9 @@ class CaptureSessionGroupSummary:
     start_time: datetime
     end_time: datetime
     algorithm_version: str
+    assigned_aisle_id: Optional[str] = None
+    assignment_status: str = "unassigned"
+    assigned_at: Optional[datetime] = None
 
 
 class CaptureSessionRepository(ABC):
@@ -98,11 +101,23 @@ class CaptureSessionGroupRepository(ABC):
 
     @abstractmethod
     def delete_all_for_session(self, session_id: str) -> None:
-        """Remove all groups for the session (items ``group_id`` cleared via FK SET NULL on SQL)."""
+        """Remove all groups for the session (G3 recompute clears rows; items ``group_id`` cleared in use case)."""
 
     @abstractmethod
     def insert(self, group: CaptureSessionGroup) -> None:
         """Insert a single group row (caller assigns ids and indices)."""
+
+    @abstractmethod
+    def count_groups_for_session(self, session_id: str) -> int:
+        """Number of persisted group rows for the session (including unassigned)."""
+
+    @abstractmethod
+    def get_by_id_and_session(self, group_id: str, session_id: str) -> Optional[CaptureSessionGroup]:
+        """Return the group when it belongs to the session, else None."""
+
+    @abstractmethod
+    def update(self, group: CaptureSessionGroup) -> None:
+        """Persist assignment and other mutable fields on an existing group row."""
 
     @abstractmethod
     def list_summaries(self, session_id: str) -> Sequence[CaptureSessionGroupSummary]:

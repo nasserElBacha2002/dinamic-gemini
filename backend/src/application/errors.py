@@ -197,3 +197,19 @@ class CaptureSessionGroupingNotAllowedError(Exception):
 
 class CaptureSessionNoItemsForGroupingError(Exception):
     """Raised when no imported items with capture timestamps exist to form groups."""
+
+
+class CaptureSessionGroupNotFoundError(Exception):
+    """Raised when a temporal group id is unknown for the given capture session."""
+
+
+class CaptureSessionGroupAlreadyAssignedError(Exception):
+    """Raised when a group already has an aisle assignment (G4)."""
+
+
+class CaptureSessionGroupAssignmentNotAllowedError(Exception):
+    """Raised when aisle assignment to a group is not allowed for the current session state (G4)."""
+
+
+class AisleNotFoundForAssignmentError(Exception):
+    """Raised when the target aisle does not exist or does not belong to the session's inventory (G4)."""

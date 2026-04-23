@@ -110,3 +110,11 @@ HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING = (
     "Cannot run temporal grouping: either the session has no items, or none are eligible "
     "(requires imported items with effective_capture_time). The response detail states which case applies."
 )
+HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_FOUND = "Capture session group not found for this session."
+HTTP_DETAIL_CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED = "This capture session group is already assigned to an aisle."
+HTTP_DETAIL_CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED = (
+    "Aisle assignment to capture session groups is not allowed in the current session state."
+)
+HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT = (
+    "Aisle not found or does not belong to this inventory; cannot assign the capture session group."
+)

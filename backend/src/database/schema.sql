@@ -761,6 +761,7 @@ END;
 GO
 
 -- G3 — temporal capture groups (mirror migrations/versions/0021_capture_session_groups.sql).
+-- FK items→groups: NO ACTION avoids SQL Server 1785 (multiple cascade paths from capture_sessions).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'capture_session_groups')
 BEGIN
     CREATE TABLE dbo.capture_session_groups (
@@ -796,6 +797,55 @@ IF NOT EXISTS (
 BEGIN
     ALTER TABLE dbo.capture_session_items
         ADD CONSTRAINT FK_capture_session_items_group
-        FOREIGN KEY (group_id) REFERENCES dbo.capture_session_groups(id) ON DELETE SET NULL;
+        FOREIGN KEY (group_id) REFERENCES dbo.capture_session_groups(id) ON DELETE NO ACTION;
+END;
+GO
+
+-- G4 — group → aisle assignment (mirror migrations/versions/0022_capture_session_group_aisle_assignment.sql).
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_groups')
+      AND name = 'assigned_aisle_id'
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_groups ADD assigned_aisle_id VARCHAR(36) NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_groups')
+      AND name = 'assignment_status'
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_groups
+        ADD assignment_status NVARCHAR(32) NOT NULL
+            CONSTRAINT DF_capture_session_groups_assignment_status DEFAULT ('unassigned');
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_groups')
+      AND name = 'assigned_at'
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_groups ADD assigned_at DATETIME2 NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE name = 'FK_capture_session_groups_assigned_aisle'
+      AND parent_object_id = OBJECT_ID('dbo.capture_session_groups')
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_groups
+        ADD CONSTRAINT FK_capture_session_groups_assigned_aisle
+        FOREIGN KEY (assigned_aisle_id) REFERENCES dbo.aisles(id) ON DELETE NO ACTION;
 END;
 GO

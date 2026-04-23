@@ -5,25 +5,41 @@ import {
   Box,
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
+  FormControl,
+  InputLabel,
   List,
   ListItem,
   ListItemAvatar,
   ListItemText,
+  MenuItem,
+  Select,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { formatDate } from '../../../utils/formatDate';
 import type {
   CaptureSessionDetailResponse,
+  CaptureSessionGroupSummaryResponse,
   CaptureSessionItemResponse,
   CaptureSessionResponse,
 } from '../../../types/captureSession';
 import ImportSessionUpload from './ImportSessionUpload';
-import { useCaptureSessionGroups, useComputeCaptureSessionGroups } from '../hooks/useCaptureSessions';
+import {
+  useAssignCaptureSessionGroupToExistingAisle,
+  useAisleOptions,
+  useCaptureSessionGroups,
+  useComputeCaptureSessionGroups,
+  useCreateAisleFromCaptureSessionGroup,
+} from '../hooks/useCaptureSessions';
 
 interface ImportSessionDetailProps {
   detail: CaptureSessionDetailResponse;
@@ -49,6 +65,20 @@ function sortItemsByEffectiveCaptureTime(items: CaptureSessionItemResponse[]): C
     if (t1 !== t2) return t1 - t2;
     return a.id.localeCompare(b.id);
   });
+}
+
+function groupAssignmentChip(
+  g: CaptureSessionGroupSummaryResponse,
+  t: (key: string) => string
+): { label: string; color: 'default' | 'success' | 'warning' } {
+  const st = g.assignment_status ?? 'unassigned';
+  if (st === 'assigned_existing') {
+    return { label: t('ingestion_sessions.detail.grouping_assignment_existing'), color: 'success' };
+  }
+  if (st === 'assigned_new') {
+    return { label: t('ingestion_sessions.detail.grouping_assignment_new'), color: 'success' };
+  }
+  return { label: t('ingestion_sessions.detail.grouping_assignment_unassigned'), color: 'warning' };
 }
 
 function importStatusChip(
@@ -85,16 +115,27 @@ export default function ImportSessionDetail({
   const sessionId = detail.session.id;
   const groupingEnabled = captureSessionAllowsTemporalGrouping(detail.session);
   const groupsQuery = useCaptureSessionGroups(inventoryId, sessionId, { enabled: groupingEnabled });
+  const aislesQuery = useAisleOptions(inventoryId, { enabled: groupingEnabled });
   const computeGroups = useComputeCaptureSessionGroups();
+  const assignGroup = useAssignCaptureSessionGroupToExistingAisle();
+  const createAisleForGroup = useCreateAisleFromCaptureSessionGroup();
+  const [assignGroupId, setAssignGroupId] = useState<string | null>(null);
+  const [createGroupId, setCreateGroupId] = useState<string | null>(null);
+  const [selectedAisleId, setSelectedAisleId] = useState('');
+  const [newAisleCode, setNewAisleCode] = useState('');
   const ungroupedCount = useMemo(
     () => detail.items.filter((i) => i.group_id == null || i.group_id === '').length,
     [detail.items]
   );
   const groupingError = useMemo(() => {
-    const err = groupsQuery.error || computeGroups.error;
+    const err =
+      groupsQuery.error ||
+      computeGroups.error ||
+      assignGroup.error ||
+      createAisleForGroup.error;
     if (!err) return null;
     return resolveApiErrorMessage(err, 'errors.request_failed');
-  }, [computeGroups.error, groupsQuery.error]);
+  }, [assignGroup.error, computeGroups.error, createAisleForGroup.error, groupsQuery.error]);
 
   return (
     <Stack spacing={2}>
@@ -146,7 +187,9 @@ export default function ImportSessionDetail({
           <Stack spacing={1}>
             <Button
               variant="outlined"
-              disabled={computeGroups.isPending}
+              disabled={
+                computeGroups.isPending || assignGroup.isPending || createAisleForGroup.isPending
+              }
               onClick={() => {
                 void computeGroups.mutateAsync({ inventoryId, sessionId }).then(() => {
                   onRefresh();
@@ -166,16 +209,57 @@ export default function ImportSessionDetail({
                 {t('ingestion_sessions.detail.grouping_empty')}
               </Typography>
             ) : null}
-            {(groupsQuery.data?.groups ?? []).map((g) => (
-              <Typography key={g.group_id} variant="body2">
-                {t('ingestion_sessions.detail.grouping_row', {
-                  index: g.group_index,
-                  count: g.item_count,
-                  start: formatDate(g.start_time),
-                  end: formatDate(g.end_time),
-                })}
-              </Typography>
-            ))}
+            {(groupsQuery.data?.groups ?? []).map((g) => {
+                const chip = groupAssignmentChip(g, t);
+                const unassigned = (g.assignment_status ?? 'unassigned') === 'unassigned';
+                return (
+                  <Box
+                    key={g.group_id}
+                    sx={{
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      p: 1,
+                    }}
+                  >
+                    <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" sx={{ mb: 0.5 }}>
+                      <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
+                      {unassigned ? (
+                        <>
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={() => {
+                              setSelectedAisleId('');
+                              setAssignGroupId(g.group_id);
+                            }}
+                          >
+                            {t('ingestion_sessions.detail.grouping_assign_existing')}
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={() => {
+                              setNewAisleCode('');
+                              setCreateGroupId(g.group_id);
+                            }}
+                          >
+                            {t('ingestion_sessions.detail.grouping_create_aisle')}
+                          </Button>
+                        </>
+                      ) : null}
+                    </Stack>
+                    <Typography variant="body2">
+                      {t('ingestion_sessions.detail.grouping_row', {
+                        index: g.group_index,
+                        count: g.item_count,
+                        start: formatDate(g.start_time),
+                        end: formatDate(g.end_time),
+                      })}
+                    </Typography>
+                  </Box>
+                );
+              })}
             {ungroupedCount > 0 ? (
               <Typography variant="caption" color="text.secondary" display="block">
                 {t('ingestion_sessions.detail.grouping_ungrouped', { count: ungroupedCount })}
@@ -184,6 +268,87 @@ export default function ImportSessionDetail({
           </Stack>
         )}
       </Box>
+
+      <Dialog open={assignGroupId != null} onClose={() => setAssignGroupId(null)} fullWidth maxWidth="sm">
+        <DialogTitle>{t('ingestion_sessions.detail.grouping_assign_dialog_title')}</DialogTitle>
+        <DialogContent>
+          <FormControl fullWidth margin="normal" size="small">
+            <InputLabel id="assign-aisle-label">{t('ingestion_sessions.detail.grouping_assign_select_aisle')}</InputLabel>
+            <Select
+              labelId="assign-aisle-label"
+              label={t('ingestion_sessions.detail.grouping_assign_select_aisle')}
+              value={selectedAisleId}
+              onChange={(e) => setSelectedAisleId(e.target.value)}
+            >
+              {(aislesQuery.data?.items ?? []).map((a) => (
+                <MenuItem key={a.id} value={a.id}>
+                  {a.code}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAssignGroupId(null)}>{t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}</Button>
+          <Button
+            variant="contained"
+            disabled={!selectedAisleId.trim() || assignGroup.isPending || !assignGroupId}
+            onClick={() => {
+              if (!assignGroupId) return;
+              void assignGroup
+                .mutateAsync({
+                  inventoryId,
+                  sessionId,
+                  groupId: assignGroupId,
+                  aisleId: selectedAisleId.trim(),
+                })
+                .then(() => {
+                  setAssignGroupId(null);
+                  onRefresh();
+                });
+            }}
+          >
+            {t('ingestion_sessions.detail.grouping_assign_dialog_confirm')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={createGroupId != null} onClose={() => setCreateGroupId(null)} fullWidth maxWidth="sm">
+        <DialogTitle>{t('ingestion_sessions.detail.grouping_create_dialog_title')}</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            margin="normal"
+            size="small"
+            label={t('ingestion_sessions.detail.grouping_create_dialog_code_label')}
+            value={newAisleCode}
+            onChange={(e) => setNewAisleCode(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateGroupId(null)}>{t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}</Button>
+          <Button
+            variant="contained"
+            disabled={!newAisleCode.trim() || createAisleForGroup.isPending || !createGroupId}
+            onClick={() => {
+              if (!createGroupId) return;
+              void createAisleForGroup
+                .mutateAsync({
+                  inventoryId,
+                  sessionId,
+                  groupId: createGroupId,
+                  code: newAisleCode.trim(),
+                })
+                .then(() => {
+                  setCreateGroupId(null);
+                  onRefresh();
+                });
+            }}
+          >
+            {t('ingestion_sessions.detail.grouping_create_dialog_confirm')}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Divider />
 

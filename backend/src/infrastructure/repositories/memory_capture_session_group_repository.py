@@ -1,4 +1,4 @@
-"""In-memory CaptureSessionGroupRepository — G3 tests."""
+"""In-memory CaptureSessionGroupRepository — G3/G4 tests."""
 
 from __future__ import annotations
 
@@ -28,6 +28,21 @@ class MemoryCaptureSessionGroupRepository(CaptureSessionGroupRepository):
         for gid in to_drop:
             self._groups.pop(gid, None)
 
+    def count_groups_for_session(self, session_id: str) -> int:
+        return sum(1 for g in self._groups.values() if g.session_id == session_id)
+
+    def get_by_id_and_session(self, group_id: str, session_id: str) -> CaptureSessionGroup | None:
+        g = self._groups.get((group_id or "").strip())
+        if g is None or g.session_id != session_id:
+            return None
+        return g
+
+    def update(self, group: CaptureSessionGroup) -> None:
+        existing = self._groups.get(group.id)
+        if existing is None or existing.session_id != group.session_id:
+            raise ValueError("Cannot update unknown capture session group")
+        self._groups[group.id] = group
+
     def insert(self, group: CaptureSessionGroup) -> None:
         self._groups[group.id] = group
 
@@ -52,6 +67,9 @@ class MemoryCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                     start_time=min(times),
                     end_time=max(times),
                     algorithm_version=g.algorithm_version,
+                    assigned_aisle_id=g.assigned_aisle_id,
+                    assignment_status=g.assignment_status.value,
+                    assigned_at=g.assigned_at,
                 )
             )
         return tuple(out)

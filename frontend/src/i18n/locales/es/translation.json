@@ -933,7 +933,19 @@
       "grouping_loading": "Cargando grupos…",
       "grouping_empty": "Todavía no hay grupos. Ejecutá el cálculo después de cerrar la sesión.",
       "grouping_row": "Grupo {{index}} — {{count}} ítems — {{start}} → {{end}}",
-      "grouping_ungrouped": "{{count}} ítem(s) no están en ningún grupo (excluidos por reglas o sin hora de captura)."
+      "grouping_ungrouped": "{{count}} ítem(s) no están en ningún grupo (excluidos por reglas o sin hora de captura).",
+      "grouping_assign_existing": "Asignar a pasillo",
+      "grouping_create_aisle": "Crear pasillo",
+      "grouping_assignment_unassigned": "Sin asignar",
+      "grouping_assignment_existing": "Asignado (pasillo existente)",
+      "grouping_assignment_new": "Pasillo nuevo creado",
+      "grouping_assign_dialog_title": "Asignar grupo a pasillo",
+      "grouping_assign_dialog_confirm": "Asignar",
+      "grouping_assign_dialog_cancel": "Cancelar",
+      "grouping_assign_select_aisle": "Elegir pasillo",
+      "grouping_create_dialog_title": "Crear pasillo desde el grupo",
+      "grouping_create_dialog_code_label": "Código de pasillo",
+      "grouping_create_dialog_confirm": "Crear y asignar"
     },
     "upload": {
       "title": "Subir medios importados",

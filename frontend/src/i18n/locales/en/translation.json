@@ -933,7 +933,19 @@
       "grouping_loading": "Loading groups…",
       "grouping_empty": "No groups yet. Run compute after closing the session.",
       "grouping_row": "Group {{index}} — {{count}} items — {{start}} → {{end}}",
-      "grouping_ungrouped": "{{count}} item(s) are not in any group (excluded by rules or missing capture time)."
+      "grouping_ungrouped": "{{count}} item(s) are not in any group (excluded by rules or missing capture time).",
+      "grouping_assign_existing": "Assign to aisle",
+      "grouping_create_aisle": "Create aisle",
+      "grouping_assignment_unassigned": "Unassigned",
+      "grouping_assignment_existing": "Assigned (existing aisle)",
+      "grouping_assignment_new": "New aisle created",
+      "grouping_assign_dialog_title": "Assign group to aisle",
+      "grouping_assign_dialog_confirm": "Assign",
+      "grouping_assign_dialog_cancel": "Cancel",
+      "grouping_assign_select_aisle": "Select aisle",
+      "grouping_create_dialog_title": "Create aisle from group",
+      "grouping_create_dialog_code_label": "Aisle code",
+      "grouping_create_dialog_confirm": "Create and assign"
     },
     "upload": {
       "title": "Upload imported media",

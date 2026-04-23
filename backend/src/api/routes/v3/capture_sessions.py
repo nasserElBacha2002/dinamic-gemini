@@ -9,8 +9,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
 from src.api.dependencies import (
+    get_assign_capture_session_group_to_existing_aisle_use_case,
     get_cancel_capture_session_use_case,
     get_close_capture_session_use_case,
+    get_create_aisle_and_assign_capture_session_group_use_case,
     get_materialize_capture_session_use_case,
     get_compute_capture_session_assignment_preview_use_case,
     get_compute_capture_session_groups_use_case,
@@ -23,7 +25,9 @@ from src.api.dependencies import (
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.capture_schemas import (
+    AssignCaptureSessionGroupToExistingAisleRequest,
     CaptureSessionClockOffsetUpdateRequest,
+    CreateAisleFromCaptureGroupRequest,
     CaptureSessionDetailResponse,
     CaptureSessionGroupsListResponse,
     CaptureSessionMaterializeRequest,
@@ -376,6 +380,60 @@ def list_capture_session_groups_inventory_scope(
 ) -> CaptureSessionGroupsListResponse:
     try:
         summaries = use_case.execute(inventory_id=inventory_id, session_id=session_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return capture_session_groups_to_response(summaries)
+
+
+@router.post(
+    "/{inventory_id}/capture-sessions/{session_id}/groups/{group_id}/assign-existing",
+    response_model=CaptureSessionGroupsListResponse,
+    status_code=status.HTTP_200_OK,
+)
+def assign_capture_session_group_to_existing_aisle_inventory_scope(
+    inventory_id: str,
+    session_id: str,
+    group_id: str,
+    body: AssignCaptureSessionGroupToExistingAisleRequest,
+    use_case: AssignCaptureSessionGroupToExistingAisleUseCase = Depends(
+        get_assign_capture_session_group_to_existing_aisle_use_case
+    ),
+) -> CaptureSessionGroupsListResponse:
+    try:
+        summaries = use_case.execute(
+            inventory_id=inventory_id,
+            session_id=session_id,
+            group_id=group_id,
+            aisle_id=body.aisle_id,
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return capture_session_groups_to_response(summaries)
+
+
+@router.post(
+    "/{inventory_id}/capture-sessions/{session_id}/groups/{group_id}/create-aisle",
+    response_model=CaptureSessionGroupsListResponse,
+    status_code=status.HTTP_200_OK,
+)
+def create_aisle_and_assign_capture_session_group_inventory_scope(
+    inventory_id: str,
+    session_id: str,
+    group_id: str,
+    body: CreateAisleFromCaptureGroupRequest,
+    use_case: CreateAisleAndAssignCaptureSessionGroupUseCase = Depends(
+        get_create_aisle_and_assign_capture_session_group_use_case
+    ),
+) -> CaptureSessionGroupsListResponse:
+    try:
+        summaries = use_case.execute(
+            inventory_id=inventory_id,
+            session_id=session_id,
+            group_id=group_id,
+            aisle_code=body.code,
+        )
     except Exception as e:
         reraise_if_mapped(e)
         raise
