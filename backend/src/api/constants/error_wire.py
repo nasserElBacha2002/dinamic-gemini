@@ -118,3 +118,6 @@ HTTP_DETAIL_CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED = (
 HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT = (
     "Aisle not found or does not belong to this inventory; cannot assign the capture session group."
 )
+HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION = (
+    "This capture session group is not assigned to an aisle; assign it before materialization."
+)

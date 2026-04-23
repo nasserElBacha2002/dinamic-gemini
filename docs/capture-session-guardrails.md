@@ -27,6 +27,7 @@ Reglas obligatorias para preservar arquitectura, determinismo e integración con
 - G3 (temporal grouping, inventory-level): segmentación por gap de tiempo sobre ítems importados con `effective_capture_time`; no materializa. Contrato y errores: `docs/capture-session-api-contract.md` (sección “Temporal grouping (G3)”).
 - G4 (group → aisle): vincular cada grupo temporal a un pasillo existente o crear uno nuevo; no materializa ni preview de posiciones. Contrato: `docs/capture-session-api-contract.md` (sección “Group → aisle assignment (G4)”).
 - G4 / UI: no ejecutar `compute-groups` de nuevo si hay asignaciones sin **confirmación explícita** al usuario (pérdida de `assigned_*`). G4 no incluye reasignación ni undo; estados `assigned_existing` / `assigned_new` son finales hasta evolución de producto.
+- G5 (group materialize): solo grupos **asignados** a pasillo; idempotencia vía `source_assets.capture_session_item_id` (única); no modificar `process_aisle` ni el materialize Phase-4 aisle-bound. Contrato: `docs/capture-session-api-contract.md` (sección “Group materialization (G5)”).
 
 ## Reglas de datos y trazabilidad
 

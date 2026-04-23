@@ -82,6 +82,10 @@ class CaptureSessionItemRepository(ABC):
         ...
 
     @abstractmethod
+    def list_by_session_and_group_id(self, session_id: str, group_id: str) -> Sequence[CaptureSessionItem]:
+        """Items in the session belonging to the given temporal group (``group_id``)."""
+
+    @abstractmethod
     def list_staging_cleanup_candidates(self, session_id: str) -> Sequence[CaptureSessionItem]:
         """Items that may still have staging bytes: no linked SourceAsset, non-empty staging key."""
 

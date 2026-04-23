@@ -295,12 +295,32 @@ Los estados `assigned_existing` y `assigned_new` son **finales dentro de G4**: n
 | 404 | `CAPTURE_SESSION_NOT_FOUND` | Sesión no pertenece al inventario. |
 | 409 | `DUPLICATE_AISLE_CODE` (legacy / según mapper) | `create-aisle` con `code` duplicado en el inventario — mismo comportamiento que creación normal de pasillo. |
 
-### Follow-up (G5)
+## Group materialization (G5)
 
-- Materialización consumirá la relación **grupo → pasillo** preparada aquí; el contrato exacto de G5 queda fuera de este documento hasta implementarse.
+Materialización **inventory-scoped** de ítems de captura agrupados: los `CaptureSessionItem` con `group_id` igual al grupo y `import_status: imported` se copian desde staging a almacenamiento final de pasillo como filas `SourceAsset` en `group.assigned_aisle_id`. Idempotencia por columna **`source_assets.capture_session_item_id`** (única cuando no es null): si ya existe asset para el ítem → se omite la creación y se cuenta como `skipped_assets` (no es error). Reintentos y fallos parciales por ítem no bloquean el resto.
+
+### Endpoints
+
+- **POST** `/{inventory_id}/capture-sessions/{session_id}/groups/{group_id}/materialize`
+  - **Respuesta 200:** `{ "group_id", "aisle_id", "created_assets", "skipped_assets", "failed_assets", "status": "materialized" }`
+  - **Precondiciones:** misma política de sesión cerrada / no terminal que G4 (`ensure_group_aisle_assignment_allowed`); el grupo debe existir y estar **`assigned_existing`** o **`assigned_new`** con `assigned_aisle_id` seteado.
+  - **422** `CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION` si el grupo sigue `unassigned` o sin pasillo.
+
+- **POST** `/{inventory_id}/capture-sessions/{session_id}/groups/materialize`
+  - **Respuesta 200:** `{ "total_groups", "materialized_groups", "skipped_groups", "total_assets_created", "total_assets_skipped", "total_assets_failed" }`
+  - Recorre todos los grupos persistidos: los **no asignados** se cuentan en `skipped_groups`; para cada grupo asignado ejecuta la misma lógica que el endpoint por grupo.
+
+### Trazabilidad (`metadata_json` en `SourceAsset`)
+
+Incluye al menos: `capture_session_id`, `capture_session_group_id`, `capture_session_item_id`, `effective_capture_time`, `time_source`, `original_filename`, `staging_storage_key`, y campos de preview cuando existan (`assignment_reason`, `preview_target_position_id`).
+
+### Nota de invariantes (G5 vs Phase-4)
+
+- El **`POST .../aisles/{aisle_id}/capture-sessions/.../materialize`** (Phase 4, sesión acoplada a pasillo + preview) **no** se modifica.
+- G5 no borra ni muta bytes de staging; solo lectura + escritura de assets finales.
 
 ## Nota de invariantes
 
 - Upload a `items` **no** crea `SourceAsset`.
-- Solo `materialize` crea `SourceAsset`.
+- La creación de `SourceAsset` desde ítems de captura ocurre en **Phase 4** `materialize` (aisle-bound) o en **G5** `groups/.../materialize` (grouping-first).
 - `process_aisle` opera exclusivamente sobre `SourceAsset`.

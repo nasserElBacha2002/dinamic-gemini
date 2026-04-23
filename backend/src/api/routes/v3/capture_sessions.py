@@ -13,6 +13,7 @@ from src.api.dependencies import (
     get_cancel_capture_session_use_case,
     get_close_capture_session_use_case,
     get_create_aisle_and_assign_capture_session_group_use_case,
+    get_materialize_capture_session_group_use_case,
     get_materialize_capture_session_use_case,
     get_compute_capture_session_assignment_preview_use_case,
     get_compute_capture_session_groups_use_case,
@@ -33,6 +34,8 @@ from src.api.schemas.capture_schemas import (
     CaptureSessionMaterializeRequest,
     CaptureSessionResponse,
     CaptureSessionStagingUploadFileError,
+    MaterializeAllCaptureSessionGroupsResponse,
+    MaterializeCaptureSessionGroupResponse,
     MaterializeCaptureSessionResponse,
     PaginatedCaptureSessionListResponse,
     UploadCaptureSessionItemsResponse,
@@ -52,6 +55,7 @@ from src.application.use_cases.create_capture_session import CreateCaptureSessio
 from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
 from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
 from src.application.use_cases.materialize_capture_session import MaterializeCaptureSessionUseCase
+from src.application.use_cases.materialize_capture_session_group import MaterializeCaptureSessionGroupUseCase
 from src.application.use_cases.update_capture_session_clock_offset import UpdateCaptureSessionClockOffsetUseCase
 from src.application.use_cases.compute_capture_session_groups import ComputeCaptureSessionGroupsUseCase
 from src.application.use_cases.get_capture_session_groups import GetCaptureSessionGroupsUseCase
@@ -438,6 +442,57 @@ def create_aisle_and_assign_capture_session_group_inventory_scope(
         reraise_if_mapped(e)
         raise
     return capture_session_groups_to_response(summaries)
+
+
+@router.post(
+    "/{inventory_id}/capture-sessions/{session_id}/groups/materialize",
+    response_model=MaterializeAllCaptureSessionGroupsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def post_materialize_all_assigned_capture_session_groups(
+    inventory_id: str,
+    session_id: str,
+    use_case: MaterializeCaptureSessionGroupUseCase = Depends(get_materialize_capture_session_group_use_case),
+) -> MaterializeAllCaptureSessionGroupsResponse:
+    try:
+        out = use_case.materialize_all_assigned(inventory_id=inventory_id, session_id=session_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return MaterializeAllCaptureSessionGroupsResponse(
+        total_groups=out.total_groups,
+        materialized_groups=out.materialized_groups,
+        skipped_groups=out.skipped_groups,
+        total_assets_created=out.total_assets_created,
+        total_assets_skipped=out.total_assets_skipped,
+        total_assets_failed=out.total_assets_failed,
+    )
+
+
+@router.post(
+    "/{inventory_id}/capture-sessions/{session_id}/groups/{group_id}/materialize",
+    response_model=MaterializeCaptureSessionGroupResponse,
+    status_code=status.HTTP_200_OK,
+)
+def post_materialize_capture_session_group(
+    inventory_id: str,
+    session_id: str,
+    group_id: str,
+    use_case: MaterializeCaptureSessionGroupUseCase = Depends(get_materialize_capture_session_group_use_case),
+) -> MaterializeCaptureSessionGroupResponse:
+    try:
+        out = use_case.materialize_one(inventory_id=inventory_id, session_id=session_id, group_id=group_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return MaterializeCaptureSessionGroupResponse(
+        group_id=out.group_id,
+        aisle_id=out.aisle_id,
+        created_assets=out.created_assets,
+        skipped_assets=out.skipped_assets,
+        failed_assets=out.failed_assets,
+        status=out.status,
+    )
 
 
 @router.post(

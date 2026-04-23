@@ -1000,6 +1000,30 @@ def get_create_aisle_and_assign_capture_session_group_use_case(
     )
 
 
+def get_materialize_capture_session_group_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    artifact_storage=Depends(get_artifact_storage),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.materialize_capture_session_group import MaterializeCaptureSessionGroupUseCase
+
+    return MaterializeCaptureSessionGroupUseCase(
+        session_repo=session_repo,
+        group_repo=group_repo,
+        item_repo=item_repo,
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        artifact_storage=artifact_storage,
+        status_reconciler=status_reconciler,
+        clock=clock,
+    )
+
+
 def get_materialize_capture_session_use_case(
     session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
     item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),

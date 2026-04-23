@@ -37,3 +37,5 @@ class SourceAsset:
     content_type: Optional[str] = None
     file_size_bytes: Optional[int] = None
     etag: Optional[str] = None
+    #: When set, enforces at-most-one SourceAsset per capture session item (G5 group materialize).
+    capture_session_item_id: Optional[str] = None

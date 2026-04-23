@@ -210,6 +210,26 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
             rows = cur.fetchall()
         return tuple(_row_to_item(r) for r in rows)
 
+    def list_by_session_and_group_id(self, session_id: str, group_id: str) -> Sequence[CaptureSessionItem]:
+        gid = (group_id or "").strip()
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, session_id, staging_storage_key, content_hash,
+                       effective_capture_time, time_source, time_confidence,
+                       import_status, assignment_status, linked_source_asset_id,
+                       last_error_code, last_error_detail, updated_at, original_filename,
+                       adjusted_capture_time, assignment_reason, preview_target_position_id,
+                       group_id
+                FROM capture_session_items
+                WHERE session_id = ? AND group_id = ?
+                ORDER BY effective_capture_time ASC, id ASC
+                """,
+                (session_id, gid),
+            )
+            rows = cur.fetchall()
+        return tuple(_row_to_item(r) for r in rows)
+
     def list_staging_cleanup_candidates(self, session_id: str) -> Sequence[CaptureSessionItem]:
         with self._client.cursor() as cur:
             cur.execute(

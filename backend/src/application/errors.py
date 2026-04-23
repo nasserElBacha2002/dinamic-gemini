@@ -213,3 +213,7 @@ class CaptureSessionGroupAssignmentNotAllowedError(Exception):
 
 class AisleNotFoundForAssignmentError(Exception):
     """Raised when the target aisle does not exist or does not belong to the session's inventory (G4)."""
+
+
+class CaptureSessionGroupNotAssignedForMaterializationError(Exception):
+    """Raised when materialize-group is called on a group that is still unassigned (G5)."""

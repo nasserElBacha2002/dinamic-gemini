@@ -170,6 +170,7 @@ from src.application.errors import (
     CaptureSessionGroupAlreadyAssignedError,
     CaptureSessionGroupAssignmentNotAllowedError,
     CaptureSessionGroupNotFoundError,
+    CaptureSessionGroupNotAssignedForMaterializationError,
     CaptureSessionGroupingNotAllowedError,
     CaptureSessionNoItemsForGroupingError,
     CaptureSessionInvalidClockOffsetError,
@@ -225,6 +226,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_FOUND,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
     HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
     HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
     HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
@@ -259,6 +261,7 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
     CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
     CAPTURE_SESSION_GROUP_NOT_FOUND,
+    CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
     CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
     CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
     CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
@@ -538,6 +541,12 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=404,
             error_code=CAPTURE_SESSION_GROUP_NOT_FOUND,
             detail=str(exc) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_FOUND,
+        )
+    if isinstance(exc, CaptureSessionGroupNotAssignedForMaterializationError):
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
+            detail=str(exc) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
         )
     if isinstance(exc, CaptureSessionGroupAlreadyAssignedError):
         return StructuredApiHttpError(

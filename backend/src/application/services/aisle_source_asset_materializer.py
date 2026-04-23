@@ -85,6 +85,7 @@ class AisleSourceAssetMaterializer:
         uploaded: UploadedFile,
         now: datetime,
         metadata_json: Optional[Dict[str, Any]] = None,
+        capture_session_item_id: Optional[str] = None,
     ) -> Tuple[SourceAsset, str]:
         """Write bytes to final storage, save ``SourceAsset``, return (entity, rollback_delete_key).
 
@@ -147,6 +148,7 @@ class AisleSourceAssetMaterializer:
             content_type=content_type,
             file_size_bytes=file_size_bytes,
             etag=etag,
+            capture_session_item_id=capture_session_item_id,
         )
         self._asset_repo.save(asset)
         return asset, delete_key

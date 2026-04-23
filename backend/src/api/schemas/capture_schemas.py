@@ -127,6 +127,28 @@ class MaterializeCaptureSessionResponse(CaptureSessionDetailResponse):
     created_assets_count: int = 0
 
 
+class MaterializeCaptureSessionGroupResponse(BaseModel):
+    """G5 — materialize one assigned temporal group into ``SourceAsset`` rows on the group's aisle."""
+
+    group_id: str
+    aisle_id: str
+    created_assets: int
+    skipped_assets: int
+    failed_assets: int = 0
+    status: str = "materialized"
+
+
+class MaterializeAllCaptureSessionGroupsResponse(BaseModel):
+    """G5 — materialize every assigned group for a session (unassigned groups are skipped)."""
+
+    total_groups: int
+    materialized_groups: int
+    skipped_groups: int
+    total_assets_created: int
+    total_assets_skipped: int
+    total_assets_failed: int = 0
+
+
 def capture_session_to_response(s: CaptureSession) -> CaptureSessionResponse:
     return CaptureSessionResponse(
         id=s.id,

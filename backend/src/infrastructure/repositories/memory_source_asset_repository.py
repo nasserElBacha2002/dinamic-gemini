@@ -29,6 +29,15 @@ class MemorySourceAssetRepository(SourceAssetRepository):
             return True
         return False
 
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+        cid = (capture_session_item_id or "").strip()
+        if not cid:
+            return None
+        for a in self._store.values():
+            if (a.capture_session_item_id or "").strip() == cid:
+                return a
+        return None
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         assets = [a for a in self._store.values() if a.aisle_id == aisle_id]
         return sorted(assets, key=lambda a: a.uploaded_at)

@@ -6,6 +6,7 @@ etc.); same object round-trips as SQL row mapping.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Dict, Optional, Sequence
 
 from src.application.errors import CaptureSessionDuplicateItemContentError
@@ -37,6 +38,22 @@ class MemoryCaptureSessionItemRepository(CaptureSessionItemRepository):
     def list_by_session(self, session_id: str) -> Sequence[CaptureSessionItem]:
         rows = [i for i in self._store.values() if i.session_id == session_id]
         rows.sort(key=lambda i: (i.updated_at, i.id))
+        return tuple(rows)
+
+    def list_by_session_and_group_id(self, session_id: str, group_id: str) -> Sequence[CaptureSessionItem]:
+        gid = (group_id or "").strip()
+        rows = [
+            i
+            for i in self._store.values()
+            if i.session_id == session_id and (i.group_id or "").strip() == gid
+        ]
+
+        def _sort_key(it: CaptureSessionItem) -> tuple:
+            if it.effective_capture_time is None:
+                return (datetime.max.replace(tzinfo=timezone.utc), it.id)
+            return (it.effective_capture_time, it.id)
+
+        rows.sort(key=_sort_key)
         return tuple(rows)
 
     def list_staging_cleanup_candidates(self, session_id: str) -> Sequence[CaptureSessionItem]:
