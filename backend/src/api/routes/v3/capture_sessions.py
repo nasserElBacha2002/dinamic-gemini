@@ -13,6 +13,7 @@ from src.api.dependencies import (
     get_cancel_capture_session_use_case,
     get_close_capture_session_use_case,
     get_create_aisle_and_assign_capture_session_group_use_case,
+    get_compute_materialized_capture_session_group_preview_use_case,
     get_materialize_capture_session_group_use_case,
     get_materialize_capture_session_use_case,
     get_compute_capture_session_assignment_preview_use_case,
@@ -37,6 +38,8 @@ from src.api.schemas.capture_schemas import (
     MaterializeAllCaptureSessionGroupsResponse,
     MaterializeCaptureSessionGroupResponse,
     MaterializeCaptureSessionResponse,
+    MaterializedCaptureSessionGroupPreviewResponse,
+    materialized_capture_session_group_preview_to_response,
     PaginatedCaptureSessionListResponse,
     UploadCaptureSessionItemsResponse,
     capture_session_groups_to_response,
@@ -55,6 +58,9 @@ from src.application.use_cases.create_capture_session import CreateCaptureSessio
 from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
 from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
 from src.application.use_cases.materialize_capture_session import MaterializeCaptureSessionUseCase
+from src.application.use_cases.compute_materialized_capture_session_group_preview import (
+    ComputeMaterializedCaptureSessionGroupPreviewUseCase,
+)
 from src.application.use_cases.materialize_capture_session_group import MaterializeCaptureSessionGroupUseCase
 from src.application.use_cases.update_capture_session_clock_offset import UpdateCaptureSessionClockOffsetUseCase
 from src.application.use_cases.compute_capture_session_groups import ComputeCaptureSessionGroupsUseCase
@@ -493,6 +499,27 @@ def post_materialize_capture_session_group(
         failed_assets=out.failed_assets,
         status=out.status,
     )
+
+
+@router.post(
+    "/{inventory_id}/capture-sessions/{session_id}/groups/{group_id}/preview",
+    response_model=MaterializedCaptureSessionGroupPreviewResponse,
+    status_code=status.HTTP_200_OK,
+)
+def post_materialized_capture_session_group_preview(
+    inventory_id: str,
+    session_id: str,
+    group_id: str,
+    use_case: ComputeMaterializedCaptureSessionGroupPreviewUseCase = Depends(
+        get_compute_materialized_capture_session_group_preview_use_case
+    ),
+) -> MaterializedCaptureSessionGroupPreviewResponse:
+    try:
+        result = use_case.execute(inventory_id=inventory_id, session_id=session_id, group_id=group_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return materialized_capture_session_group_preview_to_response(result)
 
 
 @router.post(

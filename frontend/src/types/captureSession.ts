@@ -117,3 +117,41 @@ export interface CaptureSessionMaterializeRequest {
 export interface MaterializeCaptureSessionResponse extends CaptureSessionDetailResponse {
   created_assets_count: number;
 }
+
+export interface MaterializeCaptureSessionGroupResponse {
+  group_id: string;
+  aisle_id: string;
+  created_assets: number;
+  skipped_assets: number;
+  failed_assets?: number;
+  status?: string;
+}
+
+export type CaptureSessionGroupPreviewStatusWire = 'ready' | 'empty' | 'partial';
+
+export interface MaterializedGroupPreviewItemResponse {
+  capture_session_item_id: string;
+  source_asset_id: string;
+  assignment_status: string;
+  assignment_reason: string;
+  adjusted_capture_time?: string | null;
+  preview_target_position_id?: string | null;
+}
+
+export interface MaterializedGroupPreviewSummaryResponse {
+  proposed_count: number;
+  conflict_count: number;
+  unassigned_count: number;
+  previewed_item_count: number;
+}
+
+export interface MaterializedCaptureSessionGroupPreviewResponse {
+  capture_session_id: string;
+  group_id: string;
+  aisle_id: string;
+  source_asset_count: number;
+  source_asset_ids: string[];
+  preview_status: CaptureSessionGroupPreviewStatusWire;
+  items: MaterializedGroupPreviewItemResponse[];
+  summary: MaterializedGroupPreviewSummaryResponse;
+}

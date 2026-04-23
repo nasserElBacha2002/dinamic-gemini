@@ -121,3 +121,9 @@ HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT = (
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION = (
     "This capture session group is not assigned to an aisle; assign it before materialization."
 )
+HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW = (
+    "Assign this capture session group to an aisle before preview."
+)
+HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW = (
+    "Materialize this capture session group before preview."
+)

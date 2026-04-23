@@ -63,6 +63,25 @@ vi.mock('../src/features/ingestionSessions/hooks/useCaptureSessions', () => ({
   useAisleOptions: (...args: unknown[]) => mockUseAisleOptions(...args),
   useAssignCaptureSessionGroupToExistingAisle: () => mockUseAssignCaptureSessionGroupToExistingAisle(),
   useCreateAisleFromCaptureSessionGroup: () => mockUseCreateAisleFromCaptureSessionGroup(),
+  useMaterializeCaptureSessionGroup: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    isPending: false,
+    error: null,
+  }),
+  usePreviewMaterializedCaptureSessionGroup: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({
+      capture_session_id: 'sess-1',
+      group_id: 'g1',
+      aisle_id: 'aisle-1',
+      source_asset_count: 0,
+      source_asset_ids: [],
+      preview_status: 'empty',
+      items: [],
+      summary: { proposed_count: 0, conflict_count: 0, unassigned_count: 0, previewed_item_count: 0 },
+    }),
+    isPending: false,
+    error: null,
+  }),
 }));
 
 function renderWithClient(ui: ReactElement) {

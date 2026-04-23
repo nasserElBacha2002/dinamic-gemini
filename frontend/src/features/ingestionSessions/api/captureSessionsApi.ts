@@ -6,6 +6,8 @@ import type {
   CaptureSessionDetailResponse,
   CaptureSessionGroupsListResponse,
   CaptureSessionResponse,
+  MaterializedCaptureSessionGroupPreviewResponse,
+  MaterializeCaptureSessionGroupResponse,
   UploadCaptureSessionItemsResponse,
   PaginatedCaptureSessionListResponse,
 } from '../../../types/captureSession';
@@ -166,6 +168,26 @@ export async function createAisleFromCaptureSessionGroup(
     body: JSON.stringify({ code }),
   });
   return handleResponse<CaptureSessionGroupsListResponse>(response);
+}
+
+export async function materializeCaptureSessionGroup(
+  inventoryId: string,
+  sessionId: string,
+  groupId: string
+): Promise<MaterializeCaptureSessionGroupResponse> {
+  const base = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups/${encodeURIComponent(groupId)}/materialize`;
+  const response = await protectedFetch(base, { method: 'POST' });
+  return handleResponse<MaterializeCaptureSessionGroupResponse>(response);
+}
+
+export async function previewMaterializedCaptureSessionGroup(
+  inventoryId: string,
+  sessionId: string,
+  groupId: string
+): Promise<MaterializedCaptureSessionGroupPreviewResponse> {
+  const base = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups/${encodeURIComponent(groupId)}/preview`;
+  const response = await protectedFetch(base, { method: 'POST' });
+  return handleResponse<MaterializedCaptureSessionGroupPreviewResponse>(response);
 }
 
 /**

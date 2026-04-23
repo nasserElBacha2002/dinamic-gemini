@@ -217,3 +217,11 @@ class AisleNotFoundForAssignmentError(Exception):
 
 class CaptureSessionGroupNotAssignedForMaterializationError(Exception):
     """Raised when materialize-group is called on a group that is still unassigned (G5)."""
+
+
+class CaptureSessionGroupNotAssignedForPreviewError(Exception):
+    """Raised when G6 group preview is requested before the temporal group is assigned to an aisle."""
+
+
+class CaptureSessionGroupNotMaterializedForPreviewError(Exception):
+    """Raised when G6 preview requires at least one materialized SourceAsset for the group (G6)."""

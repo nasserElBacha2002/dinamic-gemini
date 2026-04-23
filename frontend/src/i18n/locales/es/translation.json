@@ -953,6 +953,15 @@
       "grouping_assigned_aisle_code": "Pasillo: {{code}}",
       "grouping_assigned_aisle_id_only": "ID de pasillo: {{id}}",
       "grouping_assign_no_aisles_helper": "No hay pasillos en este inventario. Creá un pasillo primero y luego asigná.",
+      "grouping_preview": "Vista previa",
+      "grouping_materialize": "Materializar",
+      "grouping_preview_disabled_assign": "Asigná este grupo a un pasillo primero",
+      "grouping_preview_disabled_materialize": "Materializá este grupo antes de la vista previa",
+      "grouping_preview_dialog_title": "Vista previa del grupo (activos materializados)",
+      "grouping_preview_meta": "Pasillo: {{aisle}} · {{assets}} activo(s) de origen · estado: {{status}}",
+      "grouping_preview_summary": "{{proposed}} propuestos · {{conflicts}} conflictos · {{unassigned}} sin asignar · {{items}} ítem(s) en la vista previa",
+      "grouping_preview_empty_hint": "No hay activos utilizables para la vista previa (solo vacíos o ítems no importados).",
+      "grouping_preview_item_row": "{{status}} — ítem {{itemId}} — activo {{assetId}}",
       "grouping_create_code_helper": "1–64 caracteres (mismas reglas que al crear un pasillo)."
     },
     "upload": {

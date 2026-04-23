@@ -6,7 +6,7 @@ Reglas obligatorias para preservar arquitectura, determinismo e integración con
 
 - Nunca crear `SourceAsset` durante upload a staging (`/items`).
 - Solo `materialize` crea `SourceAsset` desde `CaptureSessionItem`.
-- Preview es determinístico (orden temporal + heurística explícita del módulo).
+- Preview es determinístico (orden temporal + heurística explícita del módulo `compute_item_preview_outcomes`).
 - Materialización es idempotente por `(session_id, idempotency_key)`.
 - El pipeline (`process_aisle`) consume exclusivamente `SourceAsset`.
 
@@ -28,6 +28,7 @@ Reglas obligatorias para preservar arquitectura, determinismo e integración con
 - G4 (group → aisle): vincular cada grupo temporal a un pasillo existente o crear uno nuevo; no materializa ni preview de posiciones. Contrato: `docs/capture-session-api-contract.md` (sección “Group → aisle assignment (G4)”).
 - G4 / UI: no ejecutar `compute-groups` de nuevo si hay asignaciones sin **confirmación explícita** al usuario (pérdida de `assigned_*`). G4 no incluye reasignación ni undo; estados `assigned_existing` / `assigned_new` son finales hasta evolución de producto.
 - G5 (group materialize): solo grupos **asignados** a pasillo; idempotencia vía `source_assets.capture_session_item_id` (única); no modificar `process_aisle` ni el materialize Phase-4 aisle-bound. Contrato: `docs/capture-session-api-contract.md` (sección “Group materialization (G5)”).
+- G6 (group preview): **solo** lectura; opera sobre `SourceAsset` ya materializados en el pasillo del grupo, filtrados al `group_id`; no muta ítems ni sesión; no sustituye `process_aisle`. Debe rechazarse con 422 si el grupo no está asignado o si aún no hay materialización utilizable. Contrato: `docs/capture-session-api-contract.md` (sección “Group preview after materialization (G6)”).
 
 ## Reglas de datos y trazabilidad
 

@@ -118,6 +118,7 @@ export default function ImportSessionDetail({
         inventoryId={detail.session.inventory_id}
         sessionId={detail.session.id}
         session={detail.session}
+        items={detail.items}
         ungroupedCount={ungroupedCount}
         onRefresh={onRefresh}
       />

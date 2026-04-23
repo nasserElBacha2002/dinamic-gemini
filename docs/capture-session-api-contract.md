@@ -259,7 +259,7 @@ Agrupación **inventory-level** por segmentación temporal (gap configurable, de
 
 ## Group → aisle assignment (G4)
 
-Puente operativo: cada grupo temporal puede vincularse a un **pasillo existente** o disparar la **creación de un pasillo nuevo** (mismo contrato de `code` que `POST /aisles`). No materializa (G5) ni preview de posiciones (G6).
+Puente operativo: cada grupo temporal puede vincularse a un **pasillo existente** o disparar la **creación de un pasillo nuevo** (mismo contrato de `code` que `POST /aisles`). No materializa (G5). La **vista previa de posiciones en modo grouping-first** es **G6** (después de asignación y materialización; ver sección G6).
 
 ### Endpoints
 
@@ -318,6 +318,37 @@ Incluye al menos: `capture_session_id`, `capture_session_group_id`, `capture_ses
 
 - El **`POST .../aisles/{aisle_id}/capture-sessions/.../materialize`** (Phase 4, sesión acoplada a pasillo + preview) **no** se modifica.
 - G5 no borra ni muta bytes de staging; solo lectura + escritura de assets finales.
+
+## Group preview after materialization (G6)
+
+Vista previa **downstream** alineada con el flujo grouping-first: solo después de **asignar el grupo a un pasillo (G4)** y **materializar** ítems a `SourceAsset` en ese pasillo (G5). El use case **no** persiste preview en `CaptureSessionItem` ni cambia el estado de la sesión; **no** invoca `process_aisle`.
+
+### Flujo operativo (grouping-first)
+
+`upload → grouping (compute-groups) → assignment (G4) → materialization (G5) → preview (G6) → processing (process_aisle)`
+
+### Endpoint
+
+- **POST** `/{inventory_id}/capture-sessions/{session_id}/groups/{group_id}/preview`
+  - **Body:** ninguno
+  - **Respuesta 200:** `MaterializedCaptureSessionGroupPreviewResponse`
+    - `capture_session_id`, `group_id`, `aisle_id`
+    - `source_asset_count`, `source_asset_ids[]` — activos del pasillo filtrados a los de **este** grupo (`metadata_json.capture_session_group_id` y/o `capture_session_item_id` + pertenencia al grupo)
+    - `preview_status`: `ready` \| `empty` \| `partial`
+    - `items[]`: por cada activo considerado, `capture_session_item_id`, `source_asset_id`, `assignment_status`, `assignment_reason`, `adjusted_capture_time`, `preview_target_position_id` (misma heurística ordinal que `compute_item_preview_outcomes` sobre posiciones del pasillo)
+    - `summary`: conteos `proposed_count`, `conflict_count`, `unassigned_count`, `previewed_item_count`
+
+### Errores (G6)
+
+| HTTP | `code` | Cuándo |
+|------|--------|--------|
+| 422 | `CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW` | Grupo `unassigned` o sin `assigned_aisle_id`. |
+| 422 | `CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW` | Hay ítems importados sin `linked_source_asset_id` y **ningún** `SourceAsset` en el pasillo califica para el grupo (debe materializarse primero). |
+| 404 | `CAPTURE_SESSION_GROUP_NOT_FOUND` | `group_id` inválido para la sesión. |
+| 404 | `CAPTURE_SESSION_NOT_FOUND` | Sesión no pertenece al inventario. |
+| 409 | `CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED` | Misma política de sesión cerrada / no terminal que G4 (`ensure_group_aisle_assignment_allowed`). |
+
+**Vacíos HTTP 200:** cuando ya hay materialización pero no hay ítems importados utilizables para el preview (p. ej. solo `import_failed`), `preview_status` será `empty` con `items` vacío o no útiles según corresponda.
 
 ## Nota de invariantes
 

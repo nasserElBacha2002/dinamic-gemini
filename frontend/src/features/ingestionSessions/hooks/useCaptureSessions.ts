@@ -12,6 +12,8 @@ import {
   getCaptureSessionDetail,
   getCaptureSessionGroups,
   getCaptureSessions,
+  materializeCaptureSessionGroup,
+  previewMaterializedCaptureSessionGroup,
   type CaptureSessionsListQuery,
 } from '../api/captureSessionsApi';
 
@@ -113,6 +115,39 @@ export function useCreateAisleFromCaptureSessionGroup() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.groups(inventoryId, sessionId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aislesListTable(inventoryId) });
     },
+  });
+}
+
+export function useMaterializeCaptureSessionGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      inventoryId,
+      sessionId,
+      groupId,
+    }: {
+      inventoryId: string;
+      sessionId: string;
+      groupId: string;
+    }) => materializeCaptureSessionGroup(inventoryId, sessionId, groupId),
+    onSuccess: (_data, { inventoryId, sessionId }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.detail(inventoryId, sessionId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.groups(inventoryId, sessionId) });
+    },
+  });
+}
+
+export function usePreviewMaterializedCaptureSessionGroup() {
+  return useMutation({
+    mutationFn: ({
+      inventoryId,
+      sessionId,
+      groupId,
+    }: {
+      inventoryId: string;
+      sessionId: string;
+      groupId: string;
+    }) => previewMaterializedCaptureSessionGroup(inventoryId, sessionId, groupId),
   });
 }
 

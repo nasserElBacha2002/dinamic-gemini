@@ -1000,6 +1000,29 @@ def get_create_aisle_and_assign_capture_session_group_use_case(
     )
 
 
+def get_compute_materialized_capture_session_group_preview_use_case(
+    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
+    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
+    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+):
+    from src.application.use_cases.compute_materialized_capture_session_group_preview import (
+        ComputeMaterializedCaptureSessionGroupPreviewUseCase,
+    )
+    from src.config import load_settings
+
+    s = load_settings()
+    return ComputeMaterializedCaptureSessionGroupPreviewUseCase(
+        session_repo=session_repo,
+        group_repo=group_repo,
+        item_repo=item_repo,
+        position_repo=position_repo,
+        asset_repo=asset_repo,
+        preview_max_positions=s.v3_capture_preview_max_positions,
+    )
+
+
 def get_materialize_capture_session_group_use_case(
     session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
     group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),

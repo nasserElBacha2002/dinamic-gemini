@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field
 
 from src.api.schemas.listing_schemas import PageMeta
 from src.application.ports.capture_repositories import CaptureSessionGroupSummary
+from src.application.use_cases.compute_materialized_capture_session_group_preview import (
+    ComputeMaterializedCaptureSessionGroupPreviewResult,
+)
 from src.domain.capture.entities import CaptureSession, CaptureSessionItem
 
 
@@ -147,6 +150,67 @@ class MaterializeAllCaptureSessionGroupsResponse(BaseModel):
     total_assets_created: int
     total_assets_skipped: int
     total_assets_failed: int = 0
+
+
+class MaterializedGroupPreviewItemResponse(BaseModel):
+    """G6 — one materialized asset row joined to its capture item preview outcome."""
+
+    capture_session_item_id: str
+    source_asset_id: str
+    assignment_status: str
+    assignment_reason: str
+    adjusted_capture_time: Optional[datetime] = None
+    preview_target_position_id: Optional[str] = None
+
+
+class MaterializedGroupPreviewSummaryResponse(BaseModel):
+    proposed_count: int
+    conflict_count: int
+    unassigned_count: int
+    previewed_item_count: int
+
+
+class MaterializedCaptureSessionGroupPreviewResponse(BaseModel):
+    """G6 — downstream preview over ``SourceAsset`` rows for one assigned temporal group."""
+
+    capture_session_id: str
+    group_id: str
+    aisle_id: str
+    source_asset_count: int
+    source_asset_ids: List[str] = Field(default_factory=list)
+    preview_status: str
+    items: List[MaterializedGroupPreviewItemResponse] = Field(default_factory=list)
+    summary: MaterializedGroupPreviewSummaryResponse
+
+
+def materialized_capture_session_group_preview_to_response(
+    result: ComputeMaterializedCaptureSessionGroupPreviewResult,
+) -> MaterializedCaptureSessionGroupPreviewResponse:
+    return MaterializedCaptureSessionGroupPreviewResponse(
+        capture_session_id=result.capture_session_id,
+        group_id=result.group_id,
+        aisle_id=result.aisle_id,
+        source_asset_count=result.source_asset_count,
+        source_asset_ids=list(result.source_asset_ids),
+        preview_status=result.preview_status,
+        items=[
+            MaterializedGroupPreviewItemResponse(
+                capture_session_item_id=i.capture_session_item_id,
+                source_asset_id=i.source_asset_id,
+                assignment_status=i.assignment_status,
+                assignment_reason=i.assignment_reason,
+                adjusted_capture_time=i.adjusted_capture_time,
+                preview_target_position_id=i.preview_target_position_id,
+            )
+            for i in result.items
+        ],
+        summary=MaterializedGroupPreviewSummaryResponse(
+            proposed_count=result.summary.proposed_count,
+            conflict_count=result.summary.conflict_count,
+            unassigned_count=result.summary.unassigned_count,
+            previewed_item_count=result.summary.previewed_item_count,
+        ),
+    )
 
 
 def capture_session_to_response(s: CaptureSession) -> CaptureSessionResponse:

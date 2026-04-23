@@ -953,6 +953,15 @@
       "grouping_assigned_aisle_code": "Aisle: {{code}}",
       "grouping_assigned_aisle_id_only": "Aisle ID: {{id}}",
       "grouping_assign_no_aisles_helper": "No aisles in this inventory. Create an aisle first, then assign.",
+      "grouping_preview": "Preview",
+      "grouping_materialize": "Materialize",
+      "grouping_preview_disabled_assign": "Assign this group to an aisle first",
+      "grouping_preview_disabled_materialize": "Materialize this group before preview",
+      "grouping_preview_dialog_title": "Group preview (materialized assets)",
+      "grouping_preview_meta": "Aisle: {{aisle}} · {{assets}} source asset(s) · status: {{status}}",
+      "grouping_preview_summary": "{{proposed}} proposed · {{conflicts}} conflicts · {{unassigned}} unassigned · {{items}} item(s) in preview",
+      "grouping_preview_empty_hint": "No usable assets available for preview (empty or non-imported items only).",
+      "grouping_preview_item_row": "{{status}} — item {{itemId}} — asset {{assetId}}",
       "grouping_create_code_helper": "1–64 characters (same rules as creating an aisle)."
     },
     "upload": {
