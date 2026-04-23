@@ -51,6 +51,7 @@ class CaptureSessionGroupSummaryResponse(BaseModel):
     item_count: int
     start_time: datetime
     end_time: datetime
+    algorithm_version: str
 
 
 class CaptureSessionGroupsListResponse(BaseModel):
@@ -66,6 +67,7 @@ def capture_session_groups_to_response(summaries: Sequence[CaptureSessionGroupSu
                 item_count=s.item_count,
                 start_time=s.start_time,
                 end_time=s.end_time,
+                algorithm_version=s.algorithm_version,
             )
             for s in summaries
         ]

@@ -31,6 +31,15 @@ logger = logging.getLogger(__name__)
 
 TIME_GAP_ALGORITHM_VERSION = "time_gap_v1"
 
+# Same HTTP code ``CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING`` — distinct stable ``detail`` for product/FE (Option A).
+_MSG_GROUPING_EMPTY_SESSION = (
+    "This capture session has no items; add items before temporal grouping can run."
+)
+_MSG_GROUPING_NO_QUALIFYING_ITEMS = (
+    "This capture session has items, but none are eligible for temporal grouping "
+    "(requires imported items with effective_capture_time)."
+)
+
 
 def _sort_key_time(item: CaptureSessionItem):
     return item.adjusted_capture_time or item.effective_capture_time
@@ -55,12 +64,14 @@ class ComputeCaptureSessionGroupsUseCase:
     def execute(self, *, inventory_id: str, session_id: str) -> Sequence[CaptureSessionGroupSummary]:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
-            raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
+            raise CaptureSessionNotFoundError(
+                "Capture session not found for this inventory (session id does not match inventory scope)."
+            )
         self._ensure_grouping_allowed(session)
 
         all_items = list(self._item_repo.list_by_session(session_id))
         if not all_items:
-            raise CaptureSessionNoItemsForGroupingError("This capture session has no items to group.")
+            raise CaptureSessionNoItemsForGroupingError(_MSG_GROUPING_EMPTY_SESSION)
 
         qualifying = [
             i
@@ -68,9 +79,7 @@ class ComputeCaptureSessionGroupsUseCase:
             if i.import_status == CaptureSessionItemImportStatus.IMPORTED and i.effective_capture_time is not None
         ]
         if not qualifying:
-            raise CaptureSessionNoItemsForGroupingError(
-                "No imported items with effective_capture_time are available for temporal grouping."
-            )
+            raise CaptureSessionNoItemsForGroupingError(_MSG_GROUPING_NO_QUALIFYING_ITEMS)
 
         qualifying.sort(key=lambda i: (_sort_key_time(i) or i.updated_at, i.id))
 
@@ -107,6 +116,7 @@ class ComputeCaptureSessionGroupsUseCase:
                     item_count=len(cluster),
                     start_time=min(times),
                     end_time=max(times),
+                    algorithm_version=TIME_GAP_ALGORITHM_VERSION,
                 )
             )
         logger.info(

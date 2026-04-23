@@ -10,7 +10,10 @@ from src.application.errors import (
     CaptureSessionGroupingNotAllowedError,
     CaptureSessionNoItemsForGroupingError,
 )
-from src.application.use_cases.compute_capture_session_groups import ComputeCaptureSessionGroupsUseCase
+from src.application.use_cases.compute_capture_session_groups import (
+    TIME_GAP_ALGORITHM_VERSION,
+    ComputeCaptureSessionGroupsUseCase,
+)
 from src.domain.capture.entities import (
     CaptureSession,
     CaptureSessionItem,
@@ -111,6 +114,7 @@ def test_single_group_when_gap_within_threshold(grouping_ctx) -> None:
     assert len(summaries) == 1
     assert summaries[0].item_count == 2
     assert summaries[0].group_index == 1
+    assert summaries[0].algorithm_version == TIME_GAP_ALGORITHM_VERSION
     grouped = [i for i in ir.list_by_session(sid) if i.group_id is not None]
     assert len(grouped) == 2
     assert grouped[0].group_id == grouped[1].group_id
@@ -272,5 +276,13 @@ def test_no_qualifying_items_raises(grouping_ctx) -> None:
         )
     )
 
-    with pytest.raises(CaptureSessionNoItemsForGroupingError):
+    with pytest.raises(CaptureSessionNoItemsForGroupingError, match="none are eligible"):
+        uc.execute(inventory_id=inv, session_id=sid)
+
+
+def test_empty_session_raises_distinct_no_items_message(grouping_ctx) -> None:
+    sr, ir, _gr, uc = grouping_ctx
+    inv, sid = "inv-1", "sess-1"
+    sr.save(_session(session_id=sid, inventory_id=inv))
+    with pytest.raises(CaptureSessionNoItemsForGroupingError, match="has no items"):
         uc.execute(inventory_id=inv, session_id=sid)

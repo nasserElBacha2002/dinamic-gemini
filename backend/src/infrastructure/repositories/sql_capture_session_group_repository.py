@@ -52,13 +52,14 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                 SELECT
                     g.id AS group_id,
                     g.group_index,
+                    g.algorithm_version,
                     COUNT(i.id) AS item_count,
                     MIN(COALESCE(i.adjusted_capture_time, i.effective_capture_time)) AS start_time,
                     MAX(COALESCE(i.adjusted_capture_time, i.effective_capture_time)) AS end_time
                 FROM dbo.capture_session_groups g
                 INNER JOIN dbo.capture_session_items i ON i.group_id = g.id
                 WHERE g.session_id = ?
-                GROUP BY g.id, g.group_index, g.created_at
+                GROUP BY g.id, g.group_index, g.created_at, g.algorithm_version
                 ORDER BY g.group_index ASC
                 """,
                 (session_id,),
@@ -73,6 +74,9 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
             gid = (getattr(row, "group_id", None) or "").strip()
             if not gid:
                 continue
+            algo = (getattr(row, "algorithm_version", None) or "").strip()
+            if not algo:
+                continue
             out.append(
                 CaptureSessionGroupSummary(
                     group_id=gid,
@@ -80,6 +84,7 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                     item_count=int(getattr(row, "item_count", 0)),
                     start_time=st,
                     end_time=en,
+                    algorithm_version=algo,
                 )
             )
         return tuple(out)

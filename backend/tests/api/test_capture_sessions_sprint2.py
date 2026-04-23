@@ -295,6 +295,7 @@ def test_compute_groups_after_close_and_list_groups(memory_capture: None) -> Non
     assert g0["group_id"]
     assert g0["start_time"]
     assert g0["end_time"]
+    assert g0["algorithm_version"] == "time_gap_v1"
 
     lg = client.get(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/groups")
     assert lg.status_code == 200, lg.text

@@ -44,12 +44,26 @@ Fuente de verdad: rutas en `backend/src/api/routes/v3/capture_sessions.py` + sch
 - `last_error_code?: string | null`
 - `last_error_detail?: string | null`
 - `original_filename?: string | null`
+- `group_id?: string | null` — G3: id del grupo temporal asignado por `compute-groups`; `null` si aún no se agrupó o el ítem no fue elegible
 - `updated_at: string(datetime)`
 
 ### CaptureSessionDetailResponse
 
 - `session: CaptureSessionResponse`
 - `items: CaptureSessionItemResponse[]`
+
+### CaptureSessionGroupSummaryResponse (G3)
+
+- `group_id: string`
+- `group_index: number` (1-based, estable por recomputo dentro de la sesión)
+- `item_count: number`
+- `start_time: string(datetime)` — mínimo de `COALESCE(adjusted_capture_time, effective_capture_time)` entre miembros
+- `end_time: string(datetime)` — máximo de la misma clave
+- `algorithm_version: string` — p. ej. `time_gap_v1` (auditoría / trazabilidad del algoritmo persistido en `capture_session_groups`)
+
+### CaptureSessionGroupsListResponse (G3)
+
+- `groups: CaptureSessionGroupSummaryResponse[]`
 
 ### MaterializeCaptureSessionResponse
 
@@ -209,6 +223,40 @@ Dos rutas equivalentes (misma forma de body y de respuesta 201):
   - `CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED` (409)
   - `CAPTURE_SESSION_ALREADY_MATERIALIZED` (409)
   - `CAPTURE_SESSION_MATERIALIZATION_FAILED` (500)
+
+## Temporal grouping (G3)
+
+Agrupación **inventory-level** por segmentación temporal (gap configurable, default 60s vía `v3_capture_grouping_max_gap_seconds`). No crea `SourceAsset`, no materializa y no asigna pasillos.
+
+### Endpoints
+
+- **POST** `/{inventory_id}/capture-sessions/{session_id}/compute-groups`
+  - **Respuesta 200:** `CaptureSessionGroupsListResponse` (`groups[]` con `algorithm_version` en cada fila).
+  - **Precondiciones:** sesión **cerrada** (`closed_at != null`); estado no terminal prohibido para grouping (`cancelled`, `failed`, `confirmed` → error).
+  - **Elegibilidad de ítems:** solo `import_status: imported` con `effective_capture_time != null` entran en clusters; el resto permanece con `group_id: null` en detalle de sesión.
+  - **Idempotencia / recomputo:** volver a llamar **borra** grupos previos de esa sesión, limpia `group_id` en ítems y recalcula (mismos índices de grupo 1..N según datos; nuevos `group_id` UUID).
+
+- **GET** `/{inventory_id}/capture-sessions/{session_id}/groups`
+  - **Respuesta 200:** misma forma que arriba (lista actualmente persistida).
+  - Sesión debe existir para el inventario (mismo `404` que detalle si no aplica).
+
+### Errores (códigos estables)
+
+| HTTP | `code` | Cuándo |
+|------|--------|--------|
+| 404 | `CAPTURE_SESSION_NOT_FOUND` | `session_id` no pertenece al `inventory_id`. |
+| 409 | `CAPTURE_SESSION_GROUPING_NOT_ALLOWED` | Sesión no cerrada, o estado `cancelled` / `failed` / `confirmed`. |
+| 422 | `CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING` | **Mismo código**, `detail` distinto (Option A): (a) sesión **sin ítems**; (b) hay ítems pero **ninguno califica** (no importados o sin `effective_capture_time`). El cliente debe usar `detail` para distinguir. |
+
+### Política de producto / UI
+
+- Puede haber ítems **sin grupo** después de un compute (no elegibles); deben seguir visibles en el detalle de sesión.
+- La UI mínima de grouping vive hoy en la vista de detalle; en G4 puede extraerse o ampliarse sin cambiar el contrato base de listados.
+
+### Follow-up técnico (G4 — sin implementar aquí)
+
+- El modelo actual expone **summaries** + membresía vía `group_id` en ítems; **asignación grupo → pasillo** u operaciones de merge/split probablemente requieran ampliar el repositorio de grupos (lecturas/escrituras adicionales) y nuevos use cases, sin reemplazar el motor `time_gap_v1` salvo decisión explícita de producto.
+- La UI de grouping es deliberadamente mínima; G4 puede separar mejor el bloque de “operaciones sobre grupos” del layout de detalle.
 
 ## Nota de invariantes
 

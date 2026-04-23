@@ -30,6 +30,7 @@ class CaptureSessionGroupSummary:
     item_count: int
     start_time: datetime
     end_time: datetime
+    algorithm_version: str
 
 
 class CaptureSessionRepository(ABC):

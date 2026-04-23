@@ -65,6 +65,8 @@ export interface CaptureSessionGroupSummaryResponse {
   item_count: number;
   start_time: string;
   end_time: string;
+  /** G3 algorithm tag (e.g. `time_gap_v1`); mirrors persisted `capture_session_groups.algorithm_version`. */
+  algorithm_version: string;
 }
 
 export interface CaptureSessionGroupsListResponse {

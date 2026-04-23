@@ -51,6 +51,7 @@ class MemoryCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                     item_count=len(members),
                     start_time=min(times),
                     end_time=max(times),
+                    algorithm_version=g.algorithm_version,
                 )
             )
         return tuple(out)

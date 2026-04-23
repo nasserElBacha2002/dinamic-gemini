@@ -25,5 +25,7 @@ class GetCaptureSessionGroupsUseCase:
     def execute(self, *, inventory_id: str, session_id: str) -> Sequence[CaptureSessionGroupSummary]:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
-            raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
+            raise CaptureSessionNotFoundError(
+                "Capture session not found for this inventory (session id does not match inventory scope)."
+            )
         return self._group_repo.list_summaries(session_id)
