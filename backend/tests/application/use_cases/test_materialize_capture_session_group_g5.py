@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from io import BytesIO
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,7 @@ from src.application.errors import CaptureSessionGroupNotAssignedForMaterializat
 from src.application.ports.clock import Clock
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.materialize_capture_session_group import MaterializeCaptureSessionGroupUseCase
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.capture.entities import (
     CaptureSession,
@@ -47,11 +49,24 @@ def _tiny_jpeg_bytes() -> bytes:
     return bio.getvalue()
 
 
-def _ctx(tmp_path):
+class _ItemRepoSaveFailsOnLinkedItem(MemoryCaptureSessionItemRepository):
+    """Fails ``save`` when persisting a non-empty ``linked_source_asset_id`` for a given item id."""
+
+    def __init__(self, fail_item_id: str) -> None:
+        super().__init__()
+        self._fail_item_id = fail_item_id
+
+    def save(self, item: CaptureSessionItem) -> None:  # type: ignore[override]
+        if item.id == self._fail_item_id and (item.linked_source_asset_id or "").strip():
+            raise OSError("simulated item row persistence failure")
+        super().save(item)
+
+
+def _ctx(tmp_path, item_repo: MemoryCaptureSessionItemRepository | None = None):
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
     session_repo = MemoryCaptureSessionRepository()
-    item_repo = MemoryCaptureSessionItemRepository()
+    item_repo = item_repo if item_repo is not None else MemoryCaptureSessionItemRepository()
     group_repo = MemoryCaptureSessionGroupRepository(item_repo)
     asset_repo = MemorySourceAssetRepository()
     store = V3ArtifactStorageAdapter(tmp_path)
@@ -295,3 +310,186 @@ def test_partial_failure_one_item_other_succeeds(tmp_path) -> None:
     assert out.created_assets == 1
     assert out.failed_assets == 1
     assert c["asset_repo"].get_by_capture_session_item_id(good_id) is not None
+
+
+def test_stale_linked_source_asset_id_is_re_materialized(tmp_path) -> None:
+    c = _ctx(tmp_path)
+    uc = c["uc"]
+    now = c["clock"].now()
+    item_id = str(uuid4())
+    key = "staging/stale.jpg"
+    (tmp_path / key).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / key).write_bytes(_tiny_jpeg_bytes())
+    c["item_repo"].save(
+        CaptureSessionItem(
+            id=item_id,
+            session_id=c["session_id"],
+            staging_storage_key=key,
+            import_status=CaptureSessionItemImportStatus.IMPORTED,
+            assignment_status=CaptureSessionItemAssignmentStatus.PENDING,
+            updated_at=now,
+            effective_capture_time=now,
+            original_filename="stale.jpg",
+            group_id=c["group_id"],
+            linked_source_asset_id="00000000-0000-4000-8000-000000000099",
+        )
+    )
+    c["group_repo"].insert(
+        CaptureSessionGroup(
+            id=c["group_id"],
+            session_id=c["session_id"],
+            group_index=1,
+            created_at=now,
+            algorithm_version="time_gap_v1",
+            assigned_aisle_id=c["aisle_id"],
+            assignment_status=CaptureSessionGroupAisleAssignmentStatus.ASSIGNED_EXISTING,
+            assigned_at=now,
+        )
+    )
+    out = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    assert out.created_assets == 1
+    assert out.skipped_assets == 0
+    asset = c["asset_repo"].get_by_capture_session_item_id(item_id)
+    assert asset is not None
+    assert c["item_repo"].get_by_id(item_id).linked_source_asset_id == asset.id
+
+
+def test_existing_asset_by_item_id_repairs_empty_item_link(tmp_path) -> None:
+    c = _ctx(tmp_path)
+    uc = c["uc"]
+    now = c["clock"].now()
+    item_id = str(uuid4())
+    aid = str(uuid4())
+    c["asset_repo"].save(
+        SourceAsset(
+            id=aid,
+            aisle_id=c["aisle_id"],
+            type=SourceAssetType.PHOTO,
+            original_filename="orphan.jpg",
+            storage_path="/orphan",
+            mime_type="image/jpeg",
+            uploaded_at=now,
+            capture_session_item_id=item_id,
+        )
+    )
+    key = "staging/orphan.jpg"
+    (tmp_path / key).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / key).write_bytes(_tiny_jpeg_bytes())
+    c["item_repo"].save(
+        CaptureSessionItem(
+            id=item_id,
+            session_id=c["session_id"],
+            staging_storage_key=key,
+            import_status=CaptureSessionItemImportStatus.IMPORTED,
+            assignment_status=CaptureSessionItemAssignmentStatus.PENDING,
+            updated_at=now,
+            effective_capture_time=now,
+            original_filename="orphan.jpg",
+            group_id=c["group_id"],
+            linked_source_asset_id=None,
+        )
+    )
+    c["group_repo"].insert(
+        CaptureSessionGroup(
+            id=c["group_id"],
+            session_id=c["session_id"],
+            group_index=1,
+            created_at=now,
+            algorithm_version="time_gap_v1",
+            assigned_aisle_id=c["aisle_id"],
+            assignment_status=CaptureSessionGroupAisleAssignmentStatus.ASSIGNED_EXISTING,
+            assigned_at=now,
+        )
+    )
+    out = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    assert out.created_assets == 0
+    assert out.skipped_assets == 1
+    assert c["item_repo"].get_by_id(item_id).linked_source_asset_id == aid
+
+
+def test_finalize_called_when_item_save_fails_after_asset_created(tmp_path) -> None:
+    item_id = "item-save-fail"
+    c = _ctx(tmp_path, item_repo=_ItemRepoSaveFailsOnLinkedItem(item_id))
+    uc = c["uc"]
+    now = c["clock"].now()
+    key = "staging/savefail.jpg"
+    (tmp_path / key).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / key).write_bytes(_tiny_jpeg_bytes())
+    c["item_repo"].save(
+        CaptureSessionItem(
+            id=item_id,
+            session_id=c["session_id"],
+            staging_storage_key=key,
+            import_status=CaptureSessionItemImportStatus.IMPORTED,
+            assignment_status=CaptureSessionItemAssignmentStatus.PENDING,
+            updated_at=now,
+            effective_capture_time=now,
+            original_filename="sf.jpg",
+            group_id=c["group_id"],
+        )
+    )
+    c["group_repo"].insert(
+        CaptureSessionGroup(
+            id=c["group_id"],
+            session_id=c["session_id"],
+            group_index=1,
+            created_at=now,
+            algorithm_version="time_gap_v1",
+            assigned_aisle_id=c["aisle_id"],
+            assignment_status=CaptureSessionGroupAisleAssignmentStatus.ASSIGNED_EXISTING,
+            assigned_at=now,
+        )
+    )
+    finalize = MagicMock()
+    uc._materializer.finalize_aisle_after_source_assets_changed = finalize  # type: ignore[method-assign]
+    out = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    assert out.created_assets == 1
+    assert out.failed_assets == 1
+    assert c["asset_repo"].get_by_capture_session_item_id(item_id) is not None
+    finalize.assert_called_once()
+
+
+def test_bulk_one_group_failure_does_not_abort_others(tmp_path) -> None:
+    c = _ctx(tmp_path)
+    uc = c["uc"]
+    now = c["clock"].now()
+    g1, g2 = str(uuid4()), str(uuid4())
+    bogus_aisle = "00000000-0000-4000-8000-0000000000aa"
+    for gid, aid, idx in (
+        (g1, c["aisle_id"], 1),
+        (g2, bogus_aisle, 2),
+    ):
+        key = f"staging/bulk-{idx}.jpg"
+        (tmp_path / key).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / key).write_bytes(_tiny_jpeg_bytes())
+        iid = str(uuid4())
+        c["item_repo"].save(
+            CaptureSessionItem(
+                id=iid,
+                session_id=c["session_id"],
+                staging_storage_key=key,
+                import_status=CaptureSessionItemImportStatus.IMPORTED,
+                assignment_status=CaptureSessionItemAssignmentStatus.PENDING,
+                updated_at=now,
+                effective_capture_time=now,
+                original_filename=f"b{idx}.jpg",
+                group_id=gid,
+            )
+        )
+        c["group_repo"].insert(
+            CaptureSessionGroup(
+                id=gid,
+                session_id=c["session_id"],
+                group_index=idx,
+                created_at=now,
+                algorithm_version="time_gap_v1",
+                assigned_aisle_id=aid,
+                assignment_status=CaptureSessionGroupAisleAssignmentStatus.ASSIGNED_EXISTING,
+                assigned_at=now,
+            )
+        )
+
+    out = uc.materialize_all_assigned(inventory_id=c["inv_id"], session_id=c["session_id"])
+    assert out.materialized_groups == 1
+    assert out.total_assets_created == 1
+    assert out.total_assets_failed >= 1

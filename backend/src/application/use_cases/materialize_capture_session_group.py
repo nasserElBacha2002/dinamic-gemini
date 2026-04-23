@@ -29,7 +29,7 @@ from src.application.services.aisle_source_asset_materializer import (
     AisleSourceAssetMaterializer,
     validate_staging_media_upload_file,
 )
-from src.application.services.capture_session_group_assignment_guard import ensure_group_aisle_assignment_allowed
+from src.application.use_cases.capture_session_group_assignment_guard import ensure_group_aisle_assignment_allowed
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.capture.entities import (
     CaptureSessionGroupAisleAssignmentStatus,
@@ -109,14 +109,10 @@ class MaterializeCaptureSessionGroupUseCase:
             CaptureSessionGroupAisleAssignmentStatus.ASSIGNED_EXISTING,
             CaptureSessionGroupAisleAssignmentStatus.ASSIGNED_NEW,
         ):
-            raise CaptureSessionGroupNotAssignedForMaterializationError(
-                "Group must be assigned to an aisle before materialization."
-            )
+            raise CaptureSessionGroupNotAssignedForMaterializationError("")
         aisle_id = (group.assigned_aisle_id or "").strip()
         if not aisle_id:
-            raise CaptureSessionGroupNotAssignedForMaterializationError(
-                "Group must be assigned to an aisle before materialization."
-            )
+            raise CaptureSessionGroupNotAssignedForMaterializationError("")
 
         aisle = require_aisle_scoped_to_inventory(
             self._aisle_repo,
@@ -173,32 +169,41 @@ class MaterializeCaptureSessionGroupUseCase:
                 skipped_groups += 1
                 continue
             aisle_id = (s.assigned_aisle_id or "").strip()
-            aisle = require_aisle_scoped_to_inventory(
-                self._aisle_repo,
-                inventory_id=inventory_id,
-                aisle_id=aisle_id,
-                detail_style="strict",
-            )
-            c, sk, f = self._materialize_items_for_group(
-                session_id=session_id,
-                group_id=s.group_id,
-                aisle_id=aisle.id,
-                inventory_id=inventory_id,
-                now=now,
-            )
-            materialized_groups += 1
-            total_created += c
-            total_skipped += sk
-            total_failed += f
-            logger.info(
-                "G5 materialize group (bulk) session_id=%s group_id=%s aisle_id=%s created=%s skipped=%s failed=%s",
-                session_id,
-                s.group_id,
-                aisle_id,
-                c,
-                sk,
-                f,
-            )
+            try:
+                aisle = require_aisle_scoped_to_inventory(
+                    self._aisle_repo,
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                    detail_style="strict",
+                )
+                c, sk, f = self._materialize_items_for_group(
+                    session_id=session_id,
+                    group_id=s.group_id,
+                    aisle_id=aisle.id,
+                    inventory_id=inventory_id,
+                    now=now,
+                )
+                materialized_groups += 1
+                total_created += c
+                total_skipped += sk
+                total_failed += f
+                logger.info(
+                    "G5 materialize group (bulk) session_id=%s group_id=%s aisle_id=%s created=%s skipped=%s failed=%s",
+                    session_id,
+                    s.group_id,
+                    aisle_id,
+                    c,
+                    sk,
+                    f,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "G5 bulk materialize group failed session_id=%s group_id=%s aisle_id=%s",
+                    session_id,
+                    s.group_id,
+                    aisle_id,
+                )
+                total_failed += 1
 
         return MaterializeAllCaptureSessionGroupsResult(
             total_groups=total,
@@ -232,15 +237,30 @@ class MaterializeCaptureSessionGroupUseCase:
         any_new_asset = False
         for item in imported:
             try:
-                if (item.linked_source_asset_id or "").strip():
-                    skipped += 1
-                    continue
+                link_id = (item.linked_source_asset_id or "").strip()
+                if link_id:
+                    linked_asset = self._asset_repo.get_by_id(link_id)
+                    if linked_asset is not None:
+                        skipped += 1
+                        continue
+
                 existing = self._asset_repo.get_by_capture_session_item_id(item.id)
                 if existing is not None:
                     item.linked_source_asset_id = existing.id
                     item.updated_at = now
-                    self._item_repo.save(item)
-                    skipped += 1
+                    try:
+                        self._item_repo.save(item)
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "G5 item partially failed: existing asset present but item link update failed "
+                            "session_id=%s group_id=%s item_id=%s",
+                            session_id,
+                            group_id,
+                            item.id,
+                        )
+                        failed += 1
+                    else:
+                        skipped += 1
                     continue
 
                 uploaded = self._read_staging_item_as_uploaded_file(item)
@@ -255,11 +275,20 @@ class MaterializeCaptureSessionGroupUseCase:
                     ),
                     capture_session_item_id=item.id,
                 )
+                any_new_asset = True
+                created += 1
                 item.linked_source_asset_id = asset.id
                 item.updated_at = now
-                self._item_repo.save(item)
-                created += 1
-                any_new_asset = True
+                try:
+                    self._item_repo.save(item)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "G5 item partially failed: asset created but item update failed session_id=%s group_id=%s item_id=%s",
+                        session_id,
+                        group_id,
+                        item.id,
+                    )
+                    failed += 1
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "G5 materialize item failed session_id=%s group_id=%s item_id=%s",
