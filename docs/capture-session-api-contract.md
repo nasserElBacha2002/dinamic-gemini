@@ -334,7 +334,10 @@ Vista previa **downstream** alineada con el flujo grouping-first: solo después 
   - **Respuesta 200:** `MaterializedCaptureSessionGroupPreviewResponse`
     - `capture_session_id`, `group_id`, `aisle_id`
     - `source_asset_count`, `source_asset_ids[]` — activos del pasillo filtrados a los de **este** grupo (`metadata_json.capture_session_group_id` y/o `capture_session_item_id` + pertenencia al grupo)
-    - `preview_status`: `ready` \| `empty` \| `partial`
+    - `preview_status`: `ready` \| `empty` \| `partial` — semántica estricta en código (`_classify_g6_preview_status`):
+      - **empty**: ningún ítem importado elegible para la heurística ordinal (p. ej. sin filas resueltas desde activos del grupo, o solo ítems no importados).
+      - **partial**: hay ítems importados en preview pero cobertura o resultados mixtos (hueco de unión activo→ítem, materialización incompleta, CONFLICT / UNASSIGNED del preview, o no todos PROPOSED).
+      - **ready**: al menos un ítem importado en preview, sin huecos ni materialización incompleta, todos los outcomes son PROPOSED.
     - `items[]`: por cada activo considerado, `capture_session_item_id`, `source_asset_id`, `assignment_status`, `assignment_reason`, `adjusted_capture_time`, `preview_target_position_id` (misma heurística ordinal que `compute_item_preview_outcomes` sobre posiciones del pasillo)
     - `summary`: conteos `proposed_count`, `conflict_count`, `unassigned_count`, `previewed_item_count`
 

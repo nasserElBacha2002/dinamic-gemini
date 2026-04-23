@@ -17,7 +17,9 @@ from src.application.ports.capture_repositories import (
 )
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository, SourceAssetRepository
 from src.application.services.capture_assignment_preview import compute_item_preview_outcomes
-from src.application.use_cases.capture_session_group_assignment_guard import ensure_group_aisle_assignment_allowed
+from src.application.use_cases.capture_session_group_assignment_guard import (
+    ensure_group_aisle_assignment_allowed,
+)
 from src.domain.assets.entities import SourceAsset
 from src.domain.capture.entities import (
     CaptureSessionGroupAisleAssignmentStatus,
@@ -61,6 +63,53 @@ def _asset_scopes_to_capture_session_group(
     return (it.group_id or "").strip() == group_id
 
 
+def _classify_g6_preview_status(
+    *,
+    filtered_asset_count: int,
+    resolved_row_count: int,
+    distinct_preview_imported_item_count: int,
+    has_any_unlinked_imported_in_group: bool,
+    proposed_outcome_count: int,
+    conflict_outcome_count: int,
+    unassigned_outcome_count: int,
+) -> str:
+    """Return ``preview_status`` for G6 with explicit, auditable semantics.
+
+    **empty** — No usable materialized input for the ordinal preview heuristic:
+      - No imported items could be joined from scoped aisle assets into preview rows
+        (includes: zero scoped assets that resolve to a row; scoped assets only join to
+        non-imported items; metadata-scoped assets with no resolvable ``CaptureSessionItem``).
+
+    **partial** — At least one usable imported item is previewed, but coverage or outcomes are mixed:
+      - ``filtered_asset_count > resolved_row_count`` (orphan / unjoinable scoped assets),
+      - Some imported group items still lack ``linked_source_asset_id`` while any scoped asset exists,
+      - Any CONFLICT or UNASSIGNED outcome from ``compute_item_preview_outcomes``,
+      - ``proposed_outcome_count < distinct_preview_imported_item_count``.
+
+    **ready** — All previewable imported items tied to resolved rows received PROPOSED, with no gaps:
+      - ``distinct_preview_imported_item_count > 0``,
+      - No join gap, no materialization gap, no conflict/unassigned outcomes,
+      - ``proposed_outcome_count == distinct_preview_imported_item_count``.
+    """
+    join_gap_count = filtered_asset_count - resolved_row_count
+    materialization_incomplete = bool(filtered_asset_count) and has_any_unlinked_imported_in_group
+
+    no_usable_preview_input = distinct_preview_imported_item_count == 0
+    if no_usable_preview_input:
+        return "empty"
+
+    mixed_or_incomplete = (
+        join_gap_count > 0
+        or materialization_incomplete
+        or conflict_outcome_count > 0
+        or unassigned_outcome_count > 0
+        or proposed_outcome_count < distinct_preview_imported_item_count
+    )
+    if mixed_or_incomplete:
+        return "partial"
+    return "ready"
+
+
 @dataclass(frozen=True)
 class MaterializedGroupPreviewItemResult:
     capture_session_item_id: str
@@ -92,7 +141,11 @@ class ComputeMaterializedCaptureSessionGroupPreviewResult:
 
 
 class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
-    """Read-only preview: ordinal pairing over ``Position`` rows for items tied to group assets."""
+    """Read-only G6 preview: post-assignment, post-materialization, group-scoped ``SourceAsset`` → ordinal pairing.
+
+    Session gates match G4/G5 via :func:`ensure_group_aisle_assignment_allowed`. Preview does not mutate
+    ``CaptureSessionItem`` or session rows and does not invoke aisle processing.
+    """
 
     def __init__(
         self,
@@ -250,17 +303,17 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             previewed_item_count=previewed_item_count,
         )
 
-        orphan_assets = len(filtered) > len(rows)
-        materialization_partial = bool(filtered) and any(
-            not (i.linked_source_asset_id or "").strip() for i in imported_group
+        preview_status = _classify_g6_preview_status(
+            filtered_asset_count=len(filtered),
+            resolved_row_count=len(rows),
+            distinct_preview_imported_item_count=len(preview_items),
+            has_any_unlinked_imported_in_group=any(
+                not (i.linked_source_asset_id or "").strip() for i in imported_group
+            ),
+            proposed_outcome_count=proposed,
+            conflict_outcome_count=conflict,
+            unassigned_outcome_count=unassigned,
         )
-
-        if not filtered or not rows or not preview_items:
-            preview_status = "empty"
-        elif materialization_partial or orphan_assets or conflict > 0 or unassigned > 0:
-            preview_status = "partial"
-        else:
-            preview_status = "ready"
 
         return ComputeMaterializedCaptureSessionGroupPreviewResult(
             capture_session_id=session_id,

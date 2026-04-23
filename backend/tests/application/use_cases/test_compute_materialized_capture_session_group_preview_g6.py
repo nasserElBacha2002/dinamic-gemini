@@ -16,6 +16,7 @@ from src.application.errors import (
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.compute_materialized_capture_session_group_preview import (
     ComputeMaterializedCaptureSessionGroupPreviewUseCase,
+    _classify_g6_preview_status,
 )
 from src.application.use_cases.materialize_capture_session_group import MaterializeCaptureSessionGroupUseCase
 from src.domain.assets.entities import SourceAsset, SourceAssetType
@@ -158,6 +159,144 @@ def _insert_assigned_group(c, *, group_id: str | None = None) -> str:
         )
     )
     return gid
+
+
+def test_classify_g6_preview_status_explicit_contract() -> None:
+    assert (
+        _classify_g6_preview_status(
+            filtered_asset_count=0,
+            resolved_row_count=0,
+            distinct_preview_imported_item_count=0,
+            has_any_unlinked_imported_in_group=False,
+            proposed_outcome_count=0,
+            conflict_outcome_count=0,
+            unassigned_outcome_count=0,
+        )
+        == "empty"
+    )
+    assert (
+        _classify_g6_preview_status(
+            filtered_asset_count=2,
+            resolved_row_count=0,
+            distinct_preview_imported_item_count=0,
+            has_any_unlinked_imported_in_group=False,
+            proposed_outcome_count=0,
+            conflict_outcome_count=0,
+            unassigned_outcome_count=0,
+        )
+        == "empty"
+    )
+    assert (
+        _classify_g6_preview_status(
+            filtered_asset_count=1,
+            resolved_row_count=1,
+            distinct_preview_imported_item_count=1,
+            has_any_unlinked_imported_in_group=False,
+            proposed_outcome_count=1,
+            conflict_outcome_count=0,
+            unassigned_outcome_count=0,
+        )
+        == "ready"
+    )
+    assert (
+        _classify_g6_preview_status(
+            filtered_asset_count=2,
+            resolved_row_count=1,
+            distinct_preview_imported_item_count=1,
+            has_any_unlinked_imported_in_group=False,
+            proposed_outcome_count=1,
+            conflict_outcome_count=0,
+            unassigned_outcome_count=0,
+        )
+        == "partial"
+    )
+    assert (
+        _classify_g6_preview_status(
+            filtered_asset_count=1,
+            resolved_row_count=1,
+            distinct_preview_imported_item_count=1,
+            has_any_unlinked_imported_in_group=True,
+            proposed_outcome_count=1,
+            conflict_outcome_count=0,
+            unassigned_outcome_count=0,
+        )
+        == "partial"
+    )
+    assert (
+        _classify_g6_preview_status(
+            filtered_asset_count=1,
+            resolved_row_count=1,
+            distinct_preview_imported_item_count=1,
+            has_any_unlinked_imported_in_group=False,
+            proposed_outcome_count=0,
+            conflict_outcome_count=1,
+            unassigned_outcome_count=0,
+        )
+        == "partial"
+    )
+    assert (
+        _classify_g6_preview_status(
+            filtered_asset_count=1,
+            resolved_row_count=1,
+            distinct_preview_imported_item_count=1,
+            has_any_unlinked_imported_in_group=False,
+            proposed_outcome_count=0,
+            conflict_outcome_count=0,
+            unassigned_outcome_count=1,
+        )
+        == "partial"
+    )
+    assert (
+        _classify_g6_preview_status(
+            filtered_asset_count=1,
+            resolved_row_count=1,
+            distinct_preview_imported_item_count=2,
+            has_any_unlinked_imported_in_group=False,
+            proposed_outcome_count=1,
+            conflict_outcome_count=0,
+            unassigned_outcome_count=0,
+        )
+        == "partial"
+    )
+
+
+def test_preview_metadata_scoped_asset_without_resolvable_item_is_empty_and_stable(tmp_path) -> None:
+    """Metadata matches session+group but no joinable item → no rows; trace count stays on filtered assets."""
+    c = _base_ctx(tmp_path)
+    now = c["clock"].now()
+    _insert_assigned_group(c)
+    orphan_id = str(uuid4())
+    c["asset_repo"].save(
+        SourceAsset(
+            id=orphan_id,
+            aisle_id=c["aisle_id"],
+            type=SourceAssetType.PHOTO,
+            original_filename="orphan.jpg",
+            storage_path="orphan",
+            mime_type="image/jpeg",
+            uploaded_at=now,
+            metadata_json={
+                "capture_session_id": c["session_id"],
+                "capture_session_group_id": c["group_id"],
+            },
+            capture_session_item_id=None,
+        )
+    )
+    out = c["preview_uc"].execute(
+        inventory_id=c["inv_id"],
+        session_id=c["session_id"],
+        group_id=c["group_id"],
+    )
+    out2 = c["preview_uc"].execute(
+        inventory_id=c["inv_id"],
+        session_id=c["session_id"],
+        group_id=c["group_id"],
+    )
+    assert out == out2
+    assert out.source_asset_count == 1
+    assert out.source_asset_ids == (orphan_id,)
+    assert out.preview_status == "empty"
+    assert out.items == ()
 
 
 def test_preview_unassigned_group_raises(tmp_path) -> None:

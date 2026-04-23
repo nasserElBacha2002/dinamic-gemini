@@ -29,7 +29,9 @@ from src.application.services.aisle_source_asset_materializer import (
     AisleSourceAssetMaterializer,
     validate_staging_media_upload_file,
 )
-from src.application.use_cases.capture_session_group_assignment_guard import ensure_group_aisle_assignment_allowed
+from src.application.use_cases.capture_session_group_assignment_guard import (
+    ensure_group_aisle_assignment_allowed,
+)
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.capture.entities import (
     CaptureSessionGroupAisleAssignmentStatus,

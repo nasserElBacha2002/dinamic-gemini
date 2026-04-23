@@ -19,7 +19,7 @@ import {
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { resolveApiErrorMessage } from '../../../utils/apiErrors';
+import { getApiErrorMessage, resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { formatDate } from '../../../utils/formatDate';
 import type {
   CaptureSessionGroupSummaryResponse,
@@ -36,7 +36,7 @@ import {
   useMaterializeCaptureSessionGroup,
   usePreviewMaterializedCaptureSessionGroup,
 } from '../hooks/useCaptureSessions';
-import { groupPreviewUnavailableReasonKey } from '../utils/groupingPreviewGate';
+import { heuristicGroupPreviewCtaBlockedReasonKey } from '../utils/groupingPreviewGate';
 
 export interface ImportSessionGroupingPanelProps {
   inventoryId: string;
@@ -104,6 +104,8 @@ export default function ImportSessionGroupingPanel({
   const [recomputeConfirmOpen, setRecomputeConfirmOpen] = useState(false);
   const [previewGroupId, setPreviewGroupId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<MaterializedCaptureSessionGroupPreviewResponse | null>(null);
+  /** Surfaces ``mutateAsync`` rejections even when test mocks omit TanStack ``mutation.error`` updates. */
+  const [previewActionError, setPreviewActionError] = useState<string | null>(null);
 
   const aisleCodeById = useMemo(
     () => buildAisleCodeById(aislesQuery.data?.items),
@@ -118,8 +120,8 @@ export default function ImportSessionGroupingPanel({
       createAisleForGroup.error ||
       materializeGroup.error ||
       previewGroup.error;
-    if (!err) return null;
-    return resolveApiErrorMessage(err, 'errors.request_failed');
+    const fromQuery = err ? resolveApiErrorMessage(err, 'errors.request_failed') : null;
+    return fromQuery || previewActionError;
   }, [
     assignGroup.error,
     computeGroups.error,
@@ -127,6 +129,7 @@ export default function ImportSessionGroupingPanel({
     groupsQuery.error,
     materializeGroup.error,
     previewGroup.error,
+    previewActionError,
   ]);
 
   const aisleItems = aislesQuery.data?.items ?? [];
@@ -203,7 +206,7 @@ export default function ImportSessionGroupingPanel({
             const chip = groupAssignmentChip(g, t);
             const unassigned = (g.assignment_status ?? 'unassigned') === 'unassigned';
             const aisleLine = !unassigned ? assignedAisleLabel(g) : null;
-            const previewBlockReason = groupPreviewUnavailableReasonKey(g, items);
+            const previewBlockReason = heuristicGroupPreviewCtaBlockedReasonKey(g, items);
             const previewDisabled =
               !!previewBlockReason || previewGroup.isPending || materializeGroup.isPending;
             return (
@@ -265,6 +268,7 @@ export default function ImportSessionGroupingPanel({
                           variant="outlined"
                           disabled={previewDisabled}
                           onClick={() => {
+                            setPreviewActionError(null);
                             void previewGroup
                               .mutateAsync({
                                 inventoryId,
@@ -272,8 +276,15 @@ export default function ImportSessionGroupingPanel({
                                 groupId: g.group_id,
                               })
                               .then((data) => {
+                                setPreviewActionError(null);
                                 setPreviewData(data);
                                 setPreviewGroupId(g.group_id);
+                              })
+                              .catch((e: unknown) => {
+                                const raw = getApiErrorMessage(e, '').trim();
+                                setPreviewActionError(
+                                  raw || resolveApiErrorMessage(e, 'errors.request_failed')
+                                );
                               });
                           }}
                         >
@@ -431,6 +442,7 @@ export default function ImportSessionGroupingPanel({
         onClose={() => {
           setPreviewGroupId(null);
           setPreviewData(null);
+          setPreviewActionError(null);
         }}
         fullWidth
         maxWidth="md"
@@ -438,7 +450,12 @@ export default function ImportSessionGroupingPanel({
         <DialogTitle>{t('ingestion_sessions.detail.grouping_preview_dialog_title')}</DialogTitle>
         <DialogContent>
           {previewData ? (
-            <Stack spacing={1} sx={{ mt: 0.5 }}>
+            <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+              <Typography variant="body2" color="text.secondary">
+                {t('ingestion_sessions.detail.grouping_preview_trace_session', {
+                  id: previewData.capture_session_id,
+                })}
+              </Typography>
               <Typography variant="body2" color="text.secondary">
                 {t('ingestion_sessions.detail.grouping_preview_meta', {
                   aisle: previewData.aisle_id,
@@ -458,13 +475,41 @@ export default function ImportSessionGroupingPanel({
                 })}
               </Typography>
               {previewData.items.map((row) => (
-                <Typography key={`${row.source_asset_id}-${row.capture_session_item_id}`} variant="body2">
-                  {t('ingestion_sessions.detail.grouping_preview_item_row', {
-                    status: row.assignment_status,
-                    itemId: row.capture_session_item_id,
-                    assetId: row.source_asset_id,
-                  })}
-                </Typography>
+                <Box
+                  key={`${row.source_asset_id}-${row.capture_session_item_id}`}
+                  sx={{
+                    borderLeft: 2,
+                    borderColor: 'divider',
+                    pl: 1,
+                  }}
+                >
+                  <Typography variant="body2" component="div">
+                    {t('ingestion_sessions.detail.grouping_preview_row_status', { status: row.assignment_status })}
+                  </Typography>
+                  <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
+                    {t('ingestion_sessions.detail.grouping_preview_row_reason', { reason: row.assignment_reason })}
+                  </Typography>
+                  <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
+                    {t('ingestion_sessions.detail.grouping_preview_row_item', { id: row.capture_session_item_id })}
+                  </Typography>
+                  <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
+                    {t('ingestion_sessions.detail.grouping_preview_row_asset', { id: row.source_asset_id })}
+                  </Typography>
+                  {row.preview_target_position_id ? (
+                    <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
+                      {t('ingestion_sessions.detail.grouping_preview_row_position', {
+                        id: row.preview_target_position_id,
+                      })}
+                    </Typography>
+                  ) : null}
+                  {row.adjusted_capture_time ? (
+                    <Typography variant="body2" component="div">
+                      {t('ingestion_sessions.detail.grouping_preview_row_time', {
+                        time: formatDate(row.adjusted_capture_time),
+                      })}
+                    </Typography>
+                  ) : null}
+                </Box>
               ))}
             </Stack>
           ) : null}
@@ -474,6 +519,7 @@ export default function ImportSessionGroupingPanel({
             onClick={() => {
               setPreviewGroupId(null);
               setPreviewData(null);
+              setPreviewActionError(null);
             }}
           >
             {t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}

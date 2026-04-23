@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   groupHasMaterializedAssetForGroup,
-  groupPreviewUnavailableReasonKey,
+  heuristicDetailItemsImplyNoLinkedSourceAssetForImportedGroupItems,
+  heuristicGroupPreviewCtaBlockedReasonKey,
 } from '../src/features/ingestionSessions/utils/groupingPreviewGate';
 import type {
   CaptureSessionGroupSummaryResponse,
@@ -37,37 +38,46 @@ function item(overrides: Partial<CaptureSessionItemResponse> = {}): CaptureSessi
   };
 }
 
-describe('groupingPreviewGate — G6', () => {
-  it('disables preview for unassigned groups', () => {
-    const reason = groupPreviewUnavailableReasonKey(group({ assignment_status: 'unassigned' }), []);
+describe('groupingPreviewGate — G6 heuristics', () => {
+  it('blocks CTA for unassigned groups', () => {
+    const reason = heuristicGroupPreviewCtaBlockedReasonKey(group({ assignment_status: 'unassigned' }), []);
     expect(reason).toBe('ingestion_sessions.detail.grouping_preview_disabled_assign');
   });
 
-  it('disables preview until at least one item has linked_source_asset_id', () => {
-    const reason = groupPreviewUnavailableReasonKey(
+  it('blocks CTA when every imported detail row for the group lacks a link', () => {
+    const reason = heuristicGroupPreviewCtaBlockedReasonKey(
       group({ assignment_status: 'assigned_existing', assigned_aisle_id: 'a-1' }),
       [item({ linked_source_asset_id: null })]
     );
     expect(reason).toBe('ingestion_sessions.detail.grouping_preview_disabled_materialize');
   });
 
-  it('returns null when preview may run', () => {
-    const reason = groupPreviewUnavailableReasonKey(
+  it('does not block on materialization when detail has no rows for that group (stale slice)', () => {
+    const reason = heuristicGroupPreviewCtaBlockedReasonKey(
+      group({ assignment_status: 'assigned_existing', assigned_aisle_id: 'a-1' }),
+      [item({ group_id: 'other-group', linked_source_asset_id: null })]
+    );
+    expect(reason).toBeNull();
+  });
+
+  it('does not block when at least one imported row for the group has a link', () => {
+    const reason = heuristicGroupPreviewCtaBlockedReasonKey(
       group({ assignment_status: 'assigned_existing', assigned_aisle_id: 'a-1' }),
       [item({ linked_source_asset_id: 'asset-1' })]
     );
     expect(reason).toBeNull();
   });
 
-  it('detects materialized items for the group', () => {
-    expect(groupHasMaterializedAssetForGroup('g-1', [item({ group_id: 'g-1', linked_source_asset_id: 'x' })])).toBe(
-      true
-    );
-    expect(groupHasMaterializedAssetForGroup('g-1', [item({ group_id: 'g-1', linked_source_asset_id: '' })])).toBe(
-      false
-    );
-    expect(groupHasMaterializedAssetForGroup('g-1', [item({ group_id: 'g-2', linked_source_asset_id: 'x' })])).toBe(
-      false
-    );
+  it('exposes legacy groupHasMaterializedAssetForGroup as inverse of no-link heuristic', () => {
+    expect(groupHasMaterializedAssetForGroup('g-1', [item({ linked_source_asset_id: 'x' })])).toBe(true);
+    expect(groupHasMaterializedAssetForGroup('g-1', [item({ linked_source_asset_id: null })])).toBe(false);
+  });
+
+  it('heuristicDetailItemsImplyNoLinkedSourceAssetForImportedGroupItems is false when no imported rows', () => {
+    expect(
+      heuristicDetailItemsImplyNoLinkedSourceAssetForImportedGroupItems('g-1', [
+        item({ import_status: 'import_failed' }),
+      ])
+    ).toBe(false);
   });
 });
