@@ -945,7 +945,15 @@
       "grouping_assign_select_aisle": "Elegir pasillo",
       "grouping_create_dialog_title": "Crear pasillo desde el grupo",
       "grouping_create_dialog_code_label": "Código de pasillo",
-      "grouping_create_dialog_confirm": "Crear y asignar"
+      "grouping_create_dialog_confirm": "Crear y asignar",
+      "grouping_recompute_confirm_title": "¿Perder asignaciones a pasillos?",
+      "grouping_recompute_confirm_body": "Volver a calcular grupos borra los grupos actuales y todas las asignaciones a pasillos de esta sesión. No se puede deshacer desde la app.",
+      "grouping_recompute_confirm_cancel": "Cancelar",
+      "grouping_recompute_confirm_proceed": "Recalcular igual",
+      "grouping_assigned_aisle_code": "Pasillo: {{code}}",
+      "grouping_assigned_aisle_id_only": "ID de pasillo: {{id}}",
+      "grouping_assign_no_aisles_helper": "No hay pasillos en este inventario. Creá un pasillo primero y luego asigná.",
+      "grouping_create_code_helper": "1–64 caracteres (mismas reglas que al crear un pasillo)."
     },
     "upload": {
       "title": "Subir medios importados",

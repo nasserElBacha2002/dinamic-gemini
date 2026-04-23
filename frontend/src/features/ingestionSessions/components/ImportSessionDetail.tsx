@@ -1,45 +1,26 @@
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import {
-  Alert,
   Avatar,
   Box,
   Button,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
-  FormControl,
-  InputLabel,
   List,
   ListItem,
   ListItemAvatar,
   ListItemText,
-  MenuItem,
-  Select,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { formatDate } from '../../../utils/formatDate';
 import type {
   CaptureSessionDetailResponse,
-  CaptureSessionGroupSummaryResponse,
   CaptureSessionItemResponse,
-  CaptureSessionResponse,
 } from '../../../types/captureSession';
 import ImportSessionUpload from './ImportSessionUpload';
-import {
-  useAssignCaptureSessionGroupToExistingAisle,
-  useAisleOptions,
-  useCaptureSessionGroups,
-  useComputeCaptureSessionGroups,
-  useCreateAisleFromCaptureSessionGroup,
-} from '../hooks/useCaptureSessions';
+import ImportSessionGroupingPanel from './ImportSessionGroupingPanel';
 
 interface ImportSessionDetailProps {
   detail: CaptureSessionDetailResponse;
@@ -53,11 +34,6 @@ interface ImportSessionDetailProps {
   onRefresh: () => void;
 }
 
-function captureSessionAllowsTemporalGrouping(session: CaptureSessionResponse): boolean {
-  if (!session.closed_at) return false;
-  return !['cancelled', 'failed', 'confirmed'].includes(session.status);
-}
-
 function sortItemsByEffectiveCaptureTime(items: CaptureSessionItemResponse[]): CaptureSessionItemResponse[] {
   return [...items].sort((a, b) => {
     const t1 = a.effective_capture_time ? new Date(a.effective_capture_time).getTime() : Number.POSITIVE_INFINITY;
@@ -65,20 +41,6 @@ function sortItemsByEffectiveCaptureTime(items: CaptureSessionItemResponse[]): C
     if (t1 !== t2) return t1 - t2;
     return a.id.localeCompare(b.id);
   });
-}
-
-function groupAssignmentChip(
-  g: CaptureSessionGroupSummaryResponse,
-  t: (key: string) => string
-): { label: string; color: 'default' | 'success' | 'warning' } {
-  const st = g.assignment_status ?? 'unassigned';
-  if (st === 'assigned_existing') {
-    return { label: t('ingestion_sessions.detail.grouping_assignment_existing'), color: 'success' };
-  }
-  if (st === 'assigned_new') {
-    return { label: t('ingestion_sessions.detail.grouping_assignment_new'), color: 'success' };
-  }
-  return { label: t('ingestion_sessions.detail.grouping_assignment_unassigned'), color: 'warning' };
 }
 
 function importStatusChip(
@@ -111,31 +73,10 @@ export default function ImportSessionDetail({
   const { t } = useTranslation();
   const sortedItems = useMemo(() => sortItemsByEffectiveCaptureTime(detail.items), [detail.items]);
   const noItems = sortedItems.length === 0;
-  const inventoryId = detail.session.inventory_id;
-  const sessionId = detail.session.id;
-  const groupingEnabled = captureSessionAllowsTemporalGrouping(detail.session);
-  const groupsQuery = useCaptureSessionGroups(inventoryId, sessionId, { enabled: groupingEnabled });
-  const aislesQuery = useAisleOptions(inventoryId, { enabled: groupingEnabled });
-  const computeGroups = useComputeCaptureSessionGroups();
-  const assignGroup = useAssignCaptureSessionGroupToExistingAisle();
-  const createAisleForGroup = useCreateAisleFromCaptureSessionGroup();
-  const [assignGroupId, setAssignGroupId] = useState<string | null>(null);
-  const [createGroupId, setCreateGroupId] = useState<string | null>(null);
-  const [selectedAisleId, setSelectedAisleId] = useState('');
-  const [newAisleCode, setNewAisleCode] = useState('');
   const ungroupedCount = useMemo(
     () => detail.items.filter((i) => i.group_id == null || i.group_id === '').length,
     [detail.items]
   );
-  const groupingError = useMemo(() => {
-    const err =
-      groupsQuery.error ||
-      computeGroups.error ||
-      assignGroup.error ||
-      createAisleForGroup.error;
-    if (!err) return null;
-    return resolveApiErrorMessage(err, 'errors.request_failed');
-  }, [assignGroup.error, computeGroups.error, createAisleForGroup.error, groupsQuery.error]);
 
   return (
     <Stack spacing={2}>
@@ -173,182 +114,13 @@ export default function ImportSessionDetail({
 
       <Divider />
 
-      <Box>
-        <Typography variant="subtitle1" gutterBottom>
-          {t('ingestion_sessions.detail.grouping_title')}
-        </Typography>
-        {!groupingEnabled ? (
-          <Typography variant="body2" color="text.secondary">
-            {['cancelled', 'failed', 'confirmed'].includes(detail.session.status)
-              ? t('ingestion_sessions.detail.grouping_hint_blocked')
-              : t('ingestion_sessions.detail.grouping_hint_close')}
-          </Typography>
-        ) : (
-          <Stack spacing={1}>
-            <Button
-              variant="outlined"
-              disabled={
-                computeGroups.isPending || assignGroup.isPending || createAisleForGroup.isPending
-              }
-              onClick={() => {
-                void computeGroups.mutateAsync({ inventoryId, sessionId }).then(() => {
-                  onRefresh();
-                });
-              }}
-            >
-              {t('ingestion_sessions.detail.grouping_compute')}
-            </Button>
-            {groupingError ? <Alert severity="error">{groupingError}</Alert> : null}
-            {groupsQuery.isLoading ? (
-              <Typography variant="body2" color="text.secondary">
-                {t('ingestion_sessions.detail.grouping_loading')}
-              </Typography>
-            ) : null}
-            {!groupsQuery.isLoading && (groupsQuery.data?.groups.length ?? 0) === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                {t('ingestion_sessions.detail.grouping_empty')}
-              </Typography>
-            ) : null}
-            {(groupsQuery.data?.groups ?? []).map((g) => {
-                const chip = groupAssignmentChip(g, t);
-                const unassigned = (g.assignment_status ?? 'unassigned') === 'unassigned';
-                return (
-                  <Box
-                    key={g.group_id}
-                    sx={{
-                      border: 1,
-                      borderColor: 'divider',
-                      borderRadius: 1,
-                      p: 1,
-                    }}
-                  >
-                    <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" sx={{ mb: 0.5 }}>
-                      <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
-                      {unassigned ? (
-                        <>
-                          <Button
-                            size="small"
-                            variant="text"
-                            onClick={() => {
-                              setSelectedAisleId('');
-                              setAssignGroupId(g.group_id);
-                            }}
-                          >
-                            {t('ingestion_sessions.detail.grouping_assign_existing')}
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="text"
-                            onClick={() => {
-                              setNewAisleCode('');
-                              setCreateGroupId(g.group_id);
-                            }}
-                          >
-                            {t('ingestion_sessions.detail.grouping_create_aisle')}
-                          </Button>
-                        </>
-                      ) : null}
-                    </Stack>
-                    <Typography variant="body2">
-                      {t('ingestion_sessions.detail.grouping_row', {
-                        index: g.group_index,
-                        count: g.item_count,
-                        start: formatDate(g.start_time),
-                        end: formatDate(g.end_time),
-                      })}
-                    </Typography>
-                  </Box>
-                );
-              })}
-            {ungroupedCount > 0 ? (
-              <Typography variant="caption" color="text.secondary" display="block">
-                {t('ingestion_sessions.detail.grouping_ungrouped', { count: ungroupedCount })}
-              </Typography>
-            ) : null}
-          </Stack>
-        )}
-      </Box>
-
-      <Dialog open={assignGroupId != null} onClose={() => setAssignGroupId(null)} fullWidth maxWidth="sm">
-        <DialogTitle>{t('ingestion_sessions.detail.grouping_assign_dialog_title')}</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth margin="normal" size="small">
-            <InputLabel id="assign-aisle-label">{t('ingestion_sessions.detail.grouping_assign_select_aisle')}</InputLabel>
-            <Select
-              labelId="assign-aisle-label"
-              label={t('ingestion_sessions.detail.grouping_assign_select_aisle')}
-              value={selectedAisleId}
-              onChange={(e) => setSelectedAisleId(e.target.value)}
-            >
-              {(aislesQuery.data?.items ?? []).map((a) => (
-                <MenuItem key={a.id} value={a.id}>
-                  {a.code}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAssignGroupId(null)}>{t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}</Button>
-          <Button
-            variant="contained"
-            disabled={!selectedAisleId.trim() || assignGroup.isPending || !assignGroupId}
-            onClick={() => {
-              if (!assignGroupId) return;
-              void assignGroup
-                .mutateAsync({
-                  inventoryId,
-                  sessionId,
-                  groupId: assignGroupId,
-                  aisleId: selectedAisleId.trim(),
-                })
-                .then(() => {
-                  setAssignGroupId(null);
-                  onRefresh();
-                });
-            }}
-          >
-            {t('ingestion_sessions.detail.grouping_assign_dialog_confirm')}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={createGroupId != null} onClose={() => setCreateGroupId(null)} fullWidth maxWidth="sm">
-        <DialogTitle>{t('ingestion_sessions.detail.grouping_create_dialog_title')}</DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            margin="normal"
-            size="small"
-            label={t('ingestion_sessions.detail.grouping_create_dialog_code_label')}
-            value={newAisleCode}
-            onChange={(e) => setNewAisleCode(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCreateGroupId(null)}>{t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}</Button>
-          <Button
-            variant="contained"
-            disabled={!newAisleCode.trim() || createAisleForGroup.isPending || !createGroupId}
-            onClick={() => {
-              if (!createGroupId) return;
-              void createAisleForGroup
-                .mutateAsync({
-                  inventoryId,
-                  sessionId,
-                  groupId: createGroupId,
-                  code: newAisleCode.trim(),
-                })
-                .then(() => {
-                  setCreateGroupId(null);
-                  onRefresh();
-                });
-            }}
-          >
-            {t('ingestion_sessions.detail.grouping_create_dialog_confirm')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ImportSessionGroupingPanel
+        inventoryId={detail.session.inventory_id}
+        sessionId={detail.session.id}
+        session={detail.session}
+        ungroupedCount={ungroupedCount}
+        onRefresh={onRefresh}
+      />
 
       <Divider />
 

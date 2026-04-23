@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import type { ReactElement } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ImportSessionDetail from '../src/features/ingestionSessions/components/ImportSessionDetail';
 import type { CaptureSessionDetailResponse } from '../src/types/captureSession';
@@ -31,8 +31,21 @@ vi.mock('react-i18next', () => ({
       if (key === 'ingestion_sessions.detail.grouping_assign_existing') return 'Assign to aisle';
       if (key === 'ingestion_sessions.detail.grouping_create_aisle') return 'Create aisle';
       if (key === 'ingestion_sessions.detail.grouping_assign_dialog_title') return 'Assign dialog title';
+      if (key === 'ingestion_sessions.detail.grouping_assign_dialog_confirm') return 'Assign';
+      if (key === 'ingestion_sessions.detail.grouping_assign_dialog_cancel') return 'Cancel';
+      if (key === 'ingestion_sessions.detail.grouping_assign_select_aisle') return 'Select aisle';
       if (key === 'ingestion_sessions.detail.grouping_create_dialog_title') return 'Create dialog title';
       if (key === 'ingestion_sessions.detail.grouping_create_dialog_code_label') return 'Aisle code';
+      if (key === 'ingestion_sessions.detail.grouping_recompute_confirm_title') return 'Lose assignments title';
+      if (key === 'ingestion_sessions.detail.grouping_recompute_confirm_body') return 'Lose assignments body';
+      if (key === 'ingestion_sessions.detail.grouping_recompute_confirm_cancel') return 'Recompute cancel';
+      if (key === 'ingestion_sessions.detail.grouping_recompute_confirm_proceed') return 'Recompute proceed';
+      if (key === 'ingestion_sessions.detail.grouping_assigned_aisle_code' && options && 'code' in options) {
+        return `Aisle: ${String(options.code)}`;
+      }
+      if (key === 'ingestion_sessions.detail.grouping_assigned_aisle_id_only' && options && 'id' in options) {
+        return `Aisle ID: ${String(options.id)}`;
+      }
       if (key.startsWith('ingestion_sessions.detail.')) return key;
       if (key.startsWith('ingestion_sessions.actions.')) return key;
       return key;
@@ -185,6 +198,247 @@ describe('ImportSessionDetail — G4 group → aisle', () => {
     fireEvent.click(screen.getByText('Create aisle'));
     expect(screen.getByText('Create dialog title')).toBeInTheDocument();
     expect(screen.getByLabelText('Aisle code')).toBeInTheDocument();
+  });
+
+  it('calls assign mutation with expected payload after confirming in assign dialog', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ groups: [] });
+    mockUseAssignCaptureSessionGroupToExistingAisle.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+      error: null,
+    });
+    mockUseCaptureSessionGroups.mockReturnValue({
+      data: {
+        groups: [
+          {
+            group_id: 'g-1',
+            group_index: 1,
+            item_count: 1,
+            start_time: '2026-01-02T12:01:00.000Z',
+            end_time: '2026-01-02T12:02:00.000Z',
+            algorithm_version: 'time_gap_v1',
+            assignment_status: 'unassigned',
+            assigned_aisle_id: null,
+            assigned_at: null,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    const detail = buildDetail({
+      closed_at: '2026-01-02T10:00:00.000Z',
+      status: 'ready_for_review',
+    });
+    renderWithClient(
+      <ImportSessionDetail
+        detail={detail}
+        canUpload={false}
+        canClose={false}
+        canCancel
+        closing={false}
+        cancelling={false}
+        onCloseSession={() => {}}
+        onCancelSession={() => {}}
+        onRefresh={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByText('Assign to aisle'));
+    const dialog = screen.getByRole('dialog', { name: 'Assign dialog title' });
+    fireEvent.mouseDown(within(dialog).getByRole('combobox'));
+    const option = await screen.findByRole('option', { name: 'A-01' });
+    fireEvent.click(option);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Assign' }));
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith({
+        inventoryId: 'inv-1',
+        sessionId: 'sess-1',
+        groupId: 'g-1',
+        aisleId: 'aisle-1',
+      });
+    });
+  });
+
+  it('opens destructive recompute confirmation when at least one group is assigned', async () => {
+    const computeMutate = vi.fn().mockResolvedValue({ groups: [] });
+    mockUseComputeCaptureSessionGroups.mockReturnValue({
+      mutateAsync: computeMutate,
+      isPending: false,
+      error: null,
+    });
+    mockUseCaptureSessionGroups.mockReturnValue({
+      data: {
+        groups: [
+          {
+            group_id: 'g-1',
+            group_index: 1,
+            item_count: 1,
+            start_time: '2026-01-02T12:01:00.000Z',
+            end_time: '2026-01-02T12:02:00.000Z',
+            algorithm_version: 'time_gap_v1',
+            assignment_status: 'assigned_existing',
+            assigned_aisle_id: 'aisle-1',
+            assigned_at: '2026-01-02T12:30:00.000Z',
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    const detail = buildDetail({
+      closed_at: '2026-01-02T10:00:00.000Z',
+      status: 'ready_for_review',
+    });
+    renderWithClient(
+      <ImportSessionDetail
+        detail={detail}
+        canUpload={false}
+        canClose={false}
+        canCancel
+        closing={false}
+        cancelling={false}
+        onCloseSession={() => {}}
+        onCancelSession={() => {}}
+        onRefresh={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByText('Compute groups'));
+    const warnDialog = screen.getByRole('dialog', { name: 'Lose assignments title' });
+    expect(within(warnDialog).getByText('Lose assignments body')).toBeInTheDocument();
+    fireEvent.click(within(warnDialog).getByRole('button', { name: 'Recompute proceed' }));
+    await waitFor(() => {
+      expect(computeMutate).toHaveBeenCalledWith({ inventoryId: 'inv-1', sessionId: 'sess-1' });
+    });
+  });
+
+  it('runs compute immediately when no group has an aisle assignment', async () => {
+    const computeMutate = vi.fn().mockResolvedValue({ groups: [] });
+    mockUseComputeCaptureSessionGroups.mockReturnValue({
+      mutateAsync: computeMutate,
+      isPending: false,
+      error: null,
+    });
+    mockUseCaptureSessionGroups.mockReturnValue({
+      data: {
+        groups: [
+          {
+            group_id: 'g-1',
+            group_index: 1,
+            item_count: 1,
+            start_time: '2026-01-02T12:01:00.000Z',
+            end_time: '2026-01-02T12:02:00.000Z',
+            algorithm_version: 'time_gap_v1',
+            assignment_status: 'unassigned',
+            assigned_aisle_id: null,
+            assigned_at: null,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    const detail = buildDetail({
+      closed_at: '2026-01-02T10:00:00.000Z',
+      status: 'ready_for_review',
+    });
+    renderWithClient(
+      <ImportSessionDetail
+        detail={detail}
+        canUpload={false}
+        canClose={false}
+        canCancel
+        closing={false}
+        cancelling={false}
+        onCloseSession={() => {}}
+        onCancelSession={() => {}}
+        onRefresh={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByText('Compute groups'));
+    expect(screen.queryByText('Lose assignments title')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(computeMutate).toHaveBeenCalledWith({ inventoryId: 'inv-1', sessionId: 'sess-1' });
+    });
+  });
+
+  it('shows aisle id fallback when code is not in the loaded aisle list', () => {
+    mockUseCaptureSessionGroups.mockReturnValue({
+      data: {
+        groups: [
+          {
+            group_id: 'g-1',
+            group_index: 1,
+            item_count: 1,
+            start_time: '2026-01-02T12:01:00.000Z',
+            end_time: '2026-01-02T12:02:00.000Z',
+            algorithm_version: 'time_gap_v1',
+            assignment_status: 'assigned_new',
+            assigned_aisle_id: 'aisle-unknown',
+            assigned_at: '2026-01-02T12:30:00.000Z',
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    const detail = buildDetail({
+      closed_at: '2026-01-02T10:00:00.000Z',
+      status: 'ready_for_review',
+    });
+    renderWithClient(
+      <ImportSessionDetail
+        detail={detail}
+        canUpload={false}
+        canClose={false}
+        canCancel
+        closing={false}
+        cancelling={false}
+        onCloseSession={() => {}}
+        onCancelSession={() => {}}
+        onRefresh={() => {}}
+      />
+    );
+    expect(screen.getByText('Aisle ID: aisle-unknown')).toBeInTheDocument();
+  });
+
+  it('shows resolved aisle code line for an assigned group', () => {
+    mockUseCaptureSessionGroups.mockReturnValue({
+      data: {
+        groups: [
+          {
+            group_id: 'g-1',
+            group_index: 1,
+            item_count: 1,
+            start_time: '2026-01-02T12:01:00.000Z',
+            end_time: '2026-01-02T12:02:00.000Z',
+            algorithm_version: 'time_gap_v1',
+            assignment_status: 'assigned_existing',
+            assigned_aisle_id: 'aisle-1',
+            assigned_at: '2026-01-02T12:30:00.000Z',
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    const detail = buildDetail({
+      closed_at: '2026-01-02T10:00:00.000Z',
+      status: 'ready_for_review',
+    });
+    renderWithClient(
+      <ImportSessionDetail
+        detail={detail}
+        canUpload={false}
+        canClose={false}
+        canCancel
+        closing={false}
+        cancelling={false}
+        onCloseSession={() => {}}
+        onCancelSession={() => {}}
+        onRefresh={() => {}}
+      />
+    );
+    expect(screen.getByText('Aisle: A-01')).toBeInTheDocument();
   });
 
   it('does not show assign actions when group is already assigned to an existing aisle', () => {

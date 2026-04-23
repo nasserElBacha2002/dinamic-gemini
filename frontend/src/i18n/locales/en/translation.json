@@ -945,7 +945,15 @@
       "grouping_assign_select_aisle": "Select aisle",
       "grouping_create_dialog_title": "Create aisle from group",
       "grouping_create_dialog_code_label": "Aisle code",
-      "grouping_create_dialog_confirm": "Create and assign"
+      "grouping_create_dialog_confirm": "Create and assign",
+      "grouping_recompute_confirm_title": "Lose aisle assignments?",
+      "grouping_recompute_confirm_body": "Recomputing groups deletes the current groups and clears every aisle assignment for this session. This cannot be undone from the app.",
+      "grouping_recompute_confirm_cancel": "Cancel",
+      "grouping_recompute_confirm_proceed": "Recompute anyway",
+      "grouping_assigned_aisle_code": "Aisle: {{code}}",
+      "grouping_assigned_aisle_id_only": "Aisle ID: {{id}}",
+      "grouping_assign_no_aisles_helper": "No aisles in this inventory. Create an aisle first, then assign.",
+      "grouping_create_code_helper": "1–64 characters (same rules as creating an aisle)."
     },
     "upload": {
       "title": "Upload imported media",

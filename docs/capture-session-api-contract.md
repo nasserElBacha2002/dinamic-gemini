@@ -254,7 +254,8 @@ Agrupación **inventory-level** por segmentación temporal (gap configurable, de
 ### Política de producto / UI
 
 - Puede haber ítems **sin grupo** después de un compute (no elegibles); deben seguir visibles en el detalle de sesión.
-- La UI de grouping + asignación vive en la vista de detalle de sesión de importación.
+- La UI de grouping + asignación vive en el panel de agrupación del detalle de sesión de importación (`ImportSessionGroupingPanel`).
+- **Recomputo destructivo:** si ya hay grupos con asignación a pasillo (`assignment_status` distinto de `unassigned`), la UI debe **advertir y pedir confirmación** antes de llamar otra vez a `compute-groups`; sin esa confirmación el operador puede perder trabajo (las asignaciones G4 se pierden al borrarse las filas de grupo).
 
 ## Group → aisle assignment (G4)
 
@@ -280,6 +281,8 @@ Puente operativo: cada grupo temporal puede vincularse a un **pasillo existente*
 | `unassigned` | Grupo calculado; aún sin pasillo operativo. |
 | `assigned_existing` | Vinculado a un pasillo que ya existía en el inventario. |
 | `assigned_new` | Pasillo creado en esta operación y vinculado al grupo. |
+
+Los estados `assigned_existing` y `assigned_new` son **finales dentro de G4**: no hay API ni UI de **reasignación**, **desasignación** ni **deshacer** en esta etapa; corregir una asignación equivocada queda fuera de alcance hasta un track posterior (p. ej. volver a ejecutar `compute-groups` solo tras confirmación explícita en UI, lo que borra asignaciones).
 
 ### Errores (G4)
 
