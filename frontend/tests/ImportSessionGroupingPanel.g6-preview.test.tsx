@@ -283,6 +283,7 @@ describe('ImportSessionGroupingPanel — G6 preview CTA', () => {
       source_asset_count: 1,
       source_asset_ids: ['asset-1'],
       preview_status: 'ready',
+      preview_operator_state: 'ready',
       summary: { proposed_count: 1, conflict_count: 0, unassigned_count: 0, previewed_item_count: 1 },
       items: [
         {

@@ -68,6 +68,18 @@ describe('groupingPreviewGate — G6 heuristics', () => {
     expect(reason).toBeNull();
   });
 
+  it('does not block on materialization when backend reports partial materialization', () => {
+    const reason = heuristicGroupPreviewCtaBlockedReasonKey(
+      group({
+        assignment_status: 'assigned_existing',
+        assigned_aisle_id: 'a-1',
+        materialization_state: 'partially_materialized',
+      }),
+      [item({ linked_source_asset_id: null })]
+    );
+    expect(reason).toBeNull();
+  });
+
   it('exposes legacy groupHasMaterializedAssetForGroup as inverse of no-link heuristic', () => {
     expect(groupHasMaterializedAssetForGroup('g-1', [item({ linked_source_asset_id: 'x' })])).toBe(true);
     expect(groupHasMaterializedAssetForGroup('g-1', [item({ linked_source_asset_id: null })])).toBe(false);

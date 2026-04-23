@@ -296,6 +296,7 @@ def test_preview_metadata_scoped_asset_without_resolvable_item_is_empty_and_stab
     assert out.source_asset_count == 1
     assert out.source_asset_ids == (orphan_id,)
     assert out.preview_status == "empty"
+    assert out.preview_operator_state == out.preview_status
     assert out.items == ()
 
 
@@ -411,6 +412,7 @@ def test_preview_assigned_materialized_succeeds(tmp_path) -> None:
     )
     assert r1 == r2
     assert r1.preview_status == "ready"
+    assert r1.preview_operator_state == r1.preview_status
     assert r1.source_asset_count == 2
     assert len(r1.source_asset_ids) == 2
     assert r1.aisle_id == c["aisle_id"]
@@ -516,6 +518,7 @@ def test_preview_empty_when_materialized_only_non_imported_items(tmp_path) -> No
         group_id=c["group_id"],
     )
     assert out.preview_status == "empty"
+    assert out.preview_operator_state == out.preview_status
     assert out.source_asset_count == 1
 
 
@@ -589,4 +592,5 @@ def test_preview_partial_when_materialization_incomplete(tmp_path) -> None:
         group_id=c["group_id"],
     )
     assert out.preview_status == "partial"
+    assert out.preview_operator_state == out.preview_status
     assert out.source_asset_count >= 1

@@ -225,3 +225,7 @@ class CaptureSessionGroupNotAssignedForPreviewError(Exception):
 
 class CaptureSessionGroupNotMaterializedForPreviewError(Exception):
     """Raised when G6 preview requires at least one materialized SourceAsset for the group (G6)."""
+
+
+class CaptureSessionGroupIntegrityError(Exception):
+    """G7 — defensive invariant violation (session/group/item linkage or preview/materialize scope)."""

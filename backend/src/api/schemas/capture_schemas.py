@@ -58,6 +58,8 @@ class CaptureSessionGroupSummaryResponse(BaseModel):
     assignment_status: str = "unassigned"
     assigned_aisle_id: Optional[str] = None
     assigned_at: Optional[datetime] = None
+    #: G7 derived: ``unassigned`` | ``assigned`` | ``materialized`` | ``partially_materialized``.
+    materialization_state: str = "unassigned"
 
 
 class CaptureSessionGroupsListResponse(BaseModel):
@@ -77,6 +79,7 @@ def capture_session_groups_to_response(summaries: Sequence[CaptureSessionGroupSu
                 assignment_status=s.assignment_status,
                 assigned_aisle_id=s.assigned_aisle_id,
                 assigned_at=s.assigned_at,
+                materialization_state=s.materialization_state,
             )
             for s in summaries
         ]
@@ -179,6 +182,8 @@ class MaterializedCaptureSessionGroupPreviewResponse(BaseModel):
     source_asset_count: int
     source_asset_ids: List[str] = Field(default_factory=list)
     preview_status: str
+    #: G7 operator-facing state for HTTP 200 responses (mirrors ``preview_status``).
+    preview_operator_state: str
     items: List[MaterializedGroupPreviewItemResponse] = Field(default_factory=list)
     summary: MaterializedGroupPreviewSummaryResponse
 
@@ -193,6 +198,7 @@ def materialized_capture_session_group_preview_to_response(
         source_asset_count=result.source_asset_count,
         source_asset_ids=list(result.source_asset_ids),
         preview_status=result.preview_status,
+        preview_operator_state=result.preview_operator_state,
         items=[
             MaterializedGroupPreviewItemResponse(
                 capture_session_item_id=i.capture_session_item_id,

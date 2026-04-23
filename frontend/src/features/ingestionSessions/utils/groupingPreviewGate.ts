@@ -50,6 +50,10 @@ export function heuristicGroupPreviewCtaBlockedReasonKey(
   if ((group.assignment_status ?? 'unassigned') === 'unassigned') {
     return 'ingestion_sessions.detail.grouping_preview_disabled_assign';
   }
+  const mat = group.materialization_state;
+  if (mat === 'materialized' || mat === 'partially_materialized') {
+    return null;
+  }
   if (heuristicDetailItemsImplyNoLinkedSourceAssetForImportedGroupItems(group.group_id, items)) {
     return 'ingestion_sessions.detail.grouping_preview_disabled_materialize';
   }

@@ -23,6 +23,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
     HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
 )
 from src.api.errors.structured_api_http import (
@@ -38,6 +39,7 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
     CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
     CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
     CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
     CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
     CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
@@ -68,6 +70,7 @@ from src.application.errors import (
     CaptureSessionGroupNotAssignedForMaterializationError,
     CaptureSessionGroupNotAssignedForPreviewError,
     CaptureSessionGroupNotMaterializedForPreviewError,
+    CaptureSessionGroupIntegrityError,
     CaptureSessionGroupingNotAllowedError,
     CaptureSessionInvalidClockOffsetError,
     CaptureSessionNoItemsForGroupingError,
@@ -437,6 +440,12 @@ def test_mapped_job_promotion_not_allowed_non_canonical_detail_is_generic() -> N
             422,
             CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
             HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+        ),
+        (
+            CaptureSessionGroupIntegrityError("integrity broken"),
+            422,
+            CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
+            "integrity broken",
         ),
         (
             CaptureSessionGroupAlreadyAssignedError("already done"),

@@ -127,3 +127,6 @@ HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW = (
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW = (
     "Materialize this capture session group before preview."
 )
+HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION = (
+    "Capture session group data consistency check failed; retry is not recommended until data is reviewed."
+)

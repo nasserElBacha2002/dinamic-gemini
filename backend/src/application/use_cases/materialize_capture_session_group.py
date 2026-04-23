@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from typing import Mapping, MutableMapping
+from uuid import uuid4
 
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import (
@@ -29,10 +31,20 @@ from src.application.services.aisle_source_asset_materializer import (
     AisleSourceAssetMaterializer,
     validate_staging_media_upload_file,
 )
+from src.application.services.capture_flow_observability import (
+    emit_capture_flow_event,
+    get_capture_flow_metrics,
+    LOG_OP_G5_MATERIALIZE_ALL_GROUPS,
+    LOG_OP_G5_MATERIALIZE_GROUP,
+    RESULT_FAILED,
+    RESULT_PARTIAL,
+    RESULT_SUCCESS,
+)
+from src.application.services.capture_group_item_integrity import validate_group_items_coherent
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.capture_session_group_assignment_guard import (
     ensure_group_aisle_assignment_allowed,
 )
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.capture.entities import (
     CaptureSessionGroupAisleAssignmentStatus,
     CaptureSessionItem,
@@ -123,21 +135,38 @@ class MaterializeCaptureSessionGroupUseCase:
             detail_style="strict",
         )
         now = self._clock.now()
-        created, skipped, failed = self._materialize_items_for_group(
+        operation_id = str(uuid4())
+        diag: dict[str, int] = {}
+        created, skipped, failed, imported_n, _ = self._materialize_items_for_group(
             session_id=session_id,
             group_id=group_id,
             aisle_id=aisle.id,
             inventory_id=inventory_id,
             now=now,
+            materialization_operation_id=operation_id,
+            materialize_diag=diag,
         )
-        logger.info(
-            "G5 materialize group session_id=%s group_id=%s aisle_id=%s created=%s skipped=%s failed=%s",
-            session_id,
-            group_id,
-            aisle_id,
-            created,
-            skipped,
-            failed,
+        result_status = RESULT_PARTIAL if failed > 0 else RESULT_SUCCESS
+        metrics = get_capture_flow_metrics()
+        metrics.record_materialization(
+            created=created,
+            skipped=skipped,
+            failed=failed,
+            imported_item_count=imported_n,
+        )
+        emit_capture_flow_event(
+            logger=logger,
+            inventory_id=inventory_id,
+            session_id=session_id,
+            operation=LOG_OP_G5_MATERIALIZE_GROUP,
+            result_status=result_status,
+            group_id=group_id,
+            aisle_id=aisle_id,
+            counts={"created": created, "skipped": skipped, "failed": failed},
+            extra={
+                "materialization_operation_id": operation_id,
+                "materialize_diag": dict(diag),
+            },
         )
         return MaterializeCaptureSessionGroupResult(
             group_id=group_id,
@@ -164,6 +193,8 @@ class MaterializeCaptureSessionGroupUseCase:
         materialized_groups = 0
         total_created = total_skipped = total_failed = 0
         now = self._clock.now()
+        metrics = get_capture_flow_metrics()
+        bulk_group_failures = 0
 
         for s in summaries:
             st = (s.assignment_status or "").strip().lower()
@@ -171,6 +202,8 @@ class MaterializeCaptureSessionGroupUseCase:
                 skipped_groups += 1
                 continue
             aisle_id = (s.assigned_aisle_id or "").strip()
+            operation_id = str(uuid4())
+            diag: dict[str, int] = {}
             try:
                 aisle = require_aisle_scoped_to_inventory(
                     self._aisle_repo,
@@ -178,34 +211,88 @@ class MaterializeCaptureSessionGroupUseCase:
                     aisle_id=aisle_id,
                     detail_style="strict",
                 )
-                c, sk, f = self._materialize_items_for_group(
+                c, sk, f, imported_n, _d = self._materialize_items_for_group(
                     session_id=session_id,
                     group_id=s.group_id,
                     aisle_id=aisle.id,
                     inventory_id=inventory_id,
                     now=now,
+                    materialization_operation_id=operation_id,
+                    materialize_diag=diag,
                 )
                 materialized_groups += 1
                 total_created += c
                 total_skipped += sk
                 total_failed += f
-                logger.info(
-                    "G5 materialize group (bulk) session_id=%s group_id=%s aisle_id=%s created=%s skipped=%s failed=%s",
-                    session_id,
-                    s.group_id,
-                    aisle_id,
-                    c,
-                    sk,
-                    f,
+                metrics.record_materialization(
+                    created=c,
+                    skipped=sk,
+                    failed=f,
+                    imported_item_count=imported_n,
+                )
+                emit_capture_flow_event(
+                    logger=logger,
+                    inventory_id=inventory_id,
+                    session_id=session_id,
+                    operation=LOG_OP_G5_MATERIALIZE_GROUP,
+                    result_status=RESULT_PARTIAL if f > 0 else RESULT_SUCCESS,
+                    group_id=s.group_id,
+                    aisle_id=aisle_id,
+                    counts={"created": c, "skipped": sk, "failed": f},
+                    extra={
+                        "materialization_operation_id": operation_id,
+                        "materialize_diag": dict(diag),
+                        "bulk": True,
+                    },
                 )
             except Exception:  # noqa: BLE001
+                bulk_group_failures += 1
                 logger.exception(
                     "G5 bulk materialize group failed session_id=%s group_id=%s aisle_id=%s",
                     session_id,
                     s.group_id,
                     aisle_id,
                 )
+                metrics.record_materialization(
+                    created=0,
+                    skipped=0,
+                    failed=0,
+                    imported_item_count=0,
+                    failed_whole_group=True,
+                )
+                emit_capture_flow_event(
+                    logger=logger,
+                    inventory_id=inventory_id,
+                    session_id=session_id,
+                    operation=LOG_OP_G5_MATERIALIZE_GROUP,
+                    result_status=RESULT_FAILED,
+                    group_id=s.group_id,
+                    aisle_id=aisle_id,
+                    counts={"created": 0, "skipped": 0, "failed": 1},
+                    extra={
+                        "materialization_operation_id": operation_id,
+                        "bulk": True,
+                        "bulk_group_exception": True,
+                    },
+                )
                 total_failed += 1
+
+        emit_capture_flow_event(
+            logger=logger,
+            inventory_id=inventory_id,
+            session_id=session_id,
+            operation=LOG_OP_G5_MATERIALIZE_ALL_GROUPS,
+            result_status=RESULT_PARTIAL if bulk_group_failures or total_failed else RESULT_SUCCESS,
+            counts={
+                "total_groups": total,
+                "materialized_groups": materialized_groups,
+                "skipped_groups": skipped_groups,
+                "total_assets_created": total_created,
+                "total_assets_skipped": total_skipped,
+                "total_assets_failed": total_failed,
+                "bulk_group_failures": bulk_group_failures,
+            },
+        )
 
         return MaterializeAllCaptureSessionGroupsResult(
             total_groups=total,
@@ -224,8 +311,11 @@ class MaterializeCaptureSessionGroupUseCase:
         aisle_id: str,
         inventory_id: str,
         now: datetime,
-    ) -> tuple[int, int, int]:
+        materialization_operation_id: str,
+        materialize_diag: MutableMapping[str, int] | None = None,
+    ) -> tuple[int, int, int, int, Mapping[str, int]]:
         items = list(self._item_repo.list_by_session_and_group_id(session_id, group_id))
+        validate_group_items_coherent(items, session_id=session_id, group_id=group_id)
         imported = [i for i in items if i.import_status == CaptureSessionItemImportStatus.IMPORTED]
         tz = now.tzinfo or timezone.utc
         imported.sort(
@@ -237,6 +327,12 @@ class MaterializeCaptureSessionGroupUseCase:
 
         created = skipped = failed = 0
         any_new_asset = False
+        mat_iso = now.isoformat()
+        diag = materialize_diag if materialize_diag is not None else {}
+
+        def _bump(key: str) -> None:
+            diag[key] = diag.get(key, 0) + 1
+
         for item in imported:
             try:
                 link_id = (item.linked_source_asset_id or "").strip()
@@ -244,7 +340,9 @@ class MaterializeCaptureSessionGroupUseCase:
                     linked_asset = self._asset_repo.get_by_id(link_id)
                     if linked_asset is not None:
                         skipped += 1
+                        _bump("skipped_item_already_linked_valid_asset")
                         continue
+                    _bump("cleared_stale_linked_source_asset_id")
 
                 existing = self._asset_repo.get_by_capture_session_item_id(item.id)
                 if existing is not None:
@@ -263,6 +361,7 @@ class MaterializeCaptureSessionGroupUseCase:
                         failed += 1
                     else:
                         skipped += 1
+                        _bump("repaired_item_link_from_existing_row")
                     continue
 
                 uploaded = self._read_staging_item_as_uploaded_file(item)
@@ -274,6 +373,8 @@ class MaterializeCaptureSessionGroupUseCase:
                         session_id=session_id,
                         group_id=group_id,
                         item=item,
+                        materialization_operation_id=materialization_operation_id,
+                        materialized_at_iso=mat_iso,
                     ),
                     capture_session_item_id=item.id,
                 )
@@ -310,7 +411,7 @@ class MaterializeCaptureSessionGroupUseCase:
                 now=now,
             )
 
-        return created, skipped, failed
+        return created, skipped, failed, len(imported), diag
 
     def _read_staging_item_as_uploaded_file(self, item: CaptureSessionItem) -> UploadedFile:
         key = (item.staging_storage_key or "").strip()
@@ -343,11 +444,15 @@ class MaterializeCaptureSessionGroupUseCase:
         session_id: str,
         group_id: str,
         item: CaptureSessionItem,
+        materialization_operation_id: str,
+        materialized_at_iso: str,
     ) -> dict[str, object]:
         return {
             "capture_session_id": session_id,
             "capture_session_group_id": group_id,
             "capture_session_item_id": item.id,
+            "materialized_at": materialized_at_iso,
+            "materialization_operation_id": materialization_operation_id,
             "effective_capture_time": item.effective_capture_time.isoformat() if item.effective_capture_time else None,
             "time_source": item.time_source.value if item.time_source else None,
             "time_confidence": item.time_confidence,

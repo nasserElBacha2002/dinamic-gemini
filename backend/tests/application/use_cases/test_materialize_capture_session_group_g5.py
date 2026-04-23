@@ -199,6 +199,8 @@ def test_materialize_assigned_group_creates_assets_and_traceability(tmp_path) ->
     assert meta.get("capture_session_group_id") == c["group_id"]
     assert meta.get("capture_session_item_id") == item1_id
     assert meta.get("original_filename") == "a.jpg"
+    assert meta.get("materialized_at")
+    assert meta.get("materialization_operation_id")
 
 
 def test_materialize_idempotent_second_run_skips(tmp_path) -> None:

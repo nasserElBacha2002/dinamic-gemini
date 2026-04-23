@@ -64,6 +64,13 @@ export type CaptureSessionGroupAssignmentStatusWire =
   | 'assigned_existing'
   | 'assigned_new';
 
+/** G7 derived materialization progress for the group (server-computed). */
+export type CaptureSessionGroupMaterializationStateWire =
+  | 'unassigned'
+  | 'assigned'
+  | 'materialized'
+  | 'partially_materialized';
+
 export interface CaptureSessionGroupSummaryResponse {
   group_id: string;
   group_index: number;
@@ -75,6 +82,8 @@ export interface CaptureSessionGroupSummaryResponse {
   assignment_status: CaptureSessionGroupAssignmentStatusWire;
   assigned_aisle_id: string | null;
   assigned_at: string | null;
+  /** G7: mirrors backend `materialization_state`. */
+  materialization_state?: CaptureSessionGroupMaterializationStateWire;
 }
 
 export interface CaptureSessionGroupsListResponse {
@@ -152,6 +161,8 @@ export interface MaterializedCaptureSessionGroupPreviewResponse {
   source_asset_count: number;
   source_asset_ids: string[];
   preview_status: CaptureSessionGroupPreviewStatusWire;
+  /** G7: for HTTP 200, mirrors `preview_status`; unavailable states are expressed via 422 + `code`. */
+  preview_operator_state: CaptureSessionGroupPreviewStatusWire;
   items: MaterializedGroupPreviewItemResponse[];
   summary: MaterializedGroupPreviewSummaryResponse;
 }

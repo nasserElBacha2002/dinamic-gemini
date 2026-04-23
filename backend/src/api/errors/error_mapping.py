@@ -173,6 +173,7 @@ from src.application.errors import (
     CaptureSessionGroupNotAssignedForMaterializationError,
     CaptureSessionGroupNotAssignedForPreviewError,
     CaptureSessionGroupNotMaterializedForPreviewError,
+    CaptureSessionGroupIntegrityError,
     CaptureSessionGroupingNotAllowedError,
     CaptureSessionNoItemsForGroupingError,
     CaptureSessionInvalidClockOffsetError,
@@ -231,6 +232,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
     HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
     HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
     HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
@@ -268,6 +270,7 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
     CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
     CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
     CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
     CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
     CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
@@ -565,6 +568,12 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
             status_code=422,
             error_code=CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
             detail=str(exc) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+        )
+    if isinstance(exc, CaptureSessionGroupIntegrityError):
+        return StructuredApiHttpError(
+            status_code=422,
+            error_code=CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
+            detail=str(exc) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
         )
     if isinstance(exc, CaptureSessionGroupAlreadyAssignedError):
         return StructuredApiHttpError(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Sequence
 
 from src.application.errors import (
@@ -18,9 +19,17 @@ from src.application.ports.clock import Clock
 from src.application.use_cases.capture_session_group_assignment_guard import (
     ensure_group_aisle_assignment_allowed,
 )
+from src.application.services.capture_flow_observability import (
+    emit_capture_flow_event,
+    get_capture_flow_metrics,
+    LOG_OP_G4_ASSIGN_GROUP_CREATE_AISLE,
+    RESULT_SUCCESS,
+)
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.get_capture_session_groups import GetCaptureSessionGroupsUseCase
 from src.domain.capture.entities import CaptureSessionGroupAisleAssignmentStatus
+
+logger = logging.getLogger(__name__)
 
 
 class CreateAisleAndAssignCaptureSessionGroupUseCase:
@@ -62,4 +71,16 @@ class CreateAisleAndAssignCaptureSessionGroupUseCase:
         group.assigned_at = now
         self._group_repo.update(group)
 
-        return self._list_groups.execute(inventory_id=inventory_id, session_id=session_id)
+        out = self._list_groups.execute(inventory_id=inventory_id, session_id=session_id)
+        get_capture_flow_metrics().record_g4_assign()
+        emit_capture_flow_event(
+            logger=logger,
+            inventory_id=inventory_id,
+            session_id=session_id,
+            operation=LOG_OP_G4_ASSIGN_GROUP_CREATE_AISLE,
+            result_status=RESULT_SUCCESS,
+            group_id=group_id,
+            aisle_id=aisle.id,
+            counts={"groups_returned": len(out)},
+        )
+        return out

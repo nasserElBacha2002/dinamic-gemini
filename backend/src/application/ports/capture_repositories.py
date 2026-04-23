@@ -34,6 +34,8 @@ class CaptureSessionGroupSummary:
     assigned_aisle_id: Optional[str] = None
     assignment_status: str = "unassigned"
     assigned_at: Optional[datetime] = None
+    #: G7 derived operator state: ``unassigned`` | ``assigned`` | ``materialized`` | ``partially_materialized``.
+    materialization_state: str = "unassigned"
 
 
 class CaptureSessionRepository(ABC):

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from src.application.ports.capture_repositories import CaptureSessionGroupRepository, CaptureSessionGroupSummary
+from src.application.services.capture_group_materialization_state import materialization_state_for_counts
 from src.database.sqlserver import SqlServerClient
 from src.domain.capture.entities import CaptureSessionGroup, CaptureSessionGroupAisleAssignmentStatus
 
@@ -172,6 +173,13 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
             assigned_aisle = (str(assigned_aisle_raw).strip() if assigned_aisle_raw is not None else None) or None
             assigned_at = _ensure_utc(getattr(row, "assigned_at", None))
             ast = (getattr(row, "assignment_status", None) or "unassigned").strip().lower()
+            imported_n = int(getattr(row, "imported_count", 0) or 0)
+            linked_n = int(getattr(row, "linked_imported_count", 0) or 0)
+            mat_state = materialization_state_for_counts(
+                assignment_status=ast,
+                imported_count=imported_n,
+                linked_imported_count=linked_n,
+            )
             out.append(
                 CaptureSessionGroupSummary(
                     group_id=gid,
@@ -183,6 +191,7 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                     assigned_aisle_id=assigned_aisle,
                     assignment_status=ast,
                     assigned_at=assigned_at,
+                    materialization_state=mat_state,
                 )
             )
         return tuple(out)

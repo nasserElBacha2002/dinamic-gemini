@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from src.application.errors import (
+    CaptureSessionGroupIntegrityError,
     CaptureSessionGroupNotFoundError,
     CaptureSessionGroupNotAssignedForPreviewError,
     CaptureSessionGroupNotMaterializedForPreviewError,
@@ -17,6 +19,17 @@ from src.application.ports.capture_repositories import (
 )
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository, SourceAssetRepository
 from src.application.services.capture_assignment_preview import compute_item_preview_outcomes
+from src.application.services.capture_flow_observability import (
+    emit_capture_flow_event,
+    get_capture_flow_metrics,
+    LOG_OP_G6_PREVIEW_GROUP,
+    RESULT_FAILED,
+    RESULT_SUCCESS,
+)
+from src.application.services.capture_group_item_integrity import (
+    validate_assets_belong_to_aisle,
+    validate_group_items_coherent,
+)
 from src.application.use_cases.capture_session_group_assignment_guard import (
     ensure_group_aisle_assignment_allowed,
 )
@@ -27,6 +40,8 @@ from src.domain.capture.entities import (
     CaptureSessionItemAssignmentStatus,
     CaptureSessionItemImportStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _capture_session_item_id_from_asset(asset: SourceAsset) -> str | None:
@@ -136,6 +151,8 @@ class ComputeMaterializedCaptureSessionGroupPreviewResult:
     source_asset_count: int
     source_asset_ids: tuple[str, ...]
     preview_status: str
+    #: G7 operator-facing mirror of ``preview_status`` for successful responses (``empty`` \| ``partial`` \| ``ready``).
+    preview_operator_state: str
     items: tuple[MaterializedGroupPreviewItemResult, ...]
     summary: MaterializedGroupPreviewSummaryResult
 
@@ -171,6 +188,39 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
         session_id: str,
         group_id: str,
     ) -> ComputeMaterializedCaptureSessionGroupPreviewResult:
+        try:
+            return self._execute_inner(
+                inventory_id=inventory_id,
+                session_id=session_id,
+                group_id=group_id,
+            )
+        except CaptureSessionGroupIntegrityError:
+            raise
+        except Exception:
+            logger.exception(
+                "G6 preview failed inventory_id=%s session_id=%s group_id=%s",
+                inventory_id,
+                session_id,
+                group_id,
+            )
+            get_capture_flow_metrics().record_preview(failed=True)
+            emit_capture_flow_event(
+                logger=logger,
+                inventory_id=inventory_id,
+                session_id=session_id,
+                operation=LOG_OP_G6_PREVIEW_GROUP,
+                result_status=RESULT_FAILED,
+                group_id=group_id,
+            )
+            raise
+
+    def _execute_inner(
+        self,
+        *,
+        inventory_id: str,
+        session_id: str,
+        group_id: str,
+    ) -> ComputeMaterializedCaptureSessionGroupPreviewResult:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
             raise CaptureSessionNotFoundError("Capture session not found for this inventory.")
@@ -188,6 +238,7 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
         aisle_id = (group.assigned_aisle_id or "").strip()
 
         group_items = list(self._item_repo.list_by_session_and_group_id(session_id, group_id))
+        validate_group_items_coherent(group_items, session_id=session_id, group_id=group_id)
         group_item_ids = {i.id for i in group_items}
         item_by_id = {i.id: i for i in group_items}
         imported_group = [i for i in group_items if i.import_status == CaptureSessionItemImportStatus.IMPORTED]
@@ -206,6 +257,7 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             )
         ]
         filtered.sort(key=lambda x: (x.uploaded_at, x.id))
+        validate_assets_belong_to_aisle(filtered, aisle_id=aisle_id)
 
         if not filtered and any_unlinked_imported:
             raise CaptureSessionGroupNotMaterializedForPreviewError("")
@@ -315,13 +367,34 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             unassigned_outcome_count=unassigned,
         )
 
-        return ComputeMaterializedCaptureSessionGroupPreviewResult(
+        out = ComputeMaterializedCaptureSessionGroupPreviewResult(
             capture_session_id=session_id,
             group_id=group_id,
             aisle_id=aisle_id,
             source_asset_count=len(filtered),
             source_asset_ids=tuple(a.id for a in filtered),
             preview_status=preview_status,
+            preview_operator_state=preview_status,
             items=tuple(item_results),
             summary=summary,
         )
+        get_capture_flow_metrics().record_preview(failed=False)
+        emit_capture_flow_event(
+            logger=logger,
+            inventory_id=inventory_id,
+            session_id=session_id,
+            operation=LOG_OP_G6_PREVIEW_GROUP,
+            result_status=RESULT_SUCCESS,
+            group_id=group_id,
+            aisle_id=aisle_id,
+            counts={
+                "source_asset_count": len(filtered),
+                "preview_rows": len(rows),
+                "preview_items": previewed_item_count,
+                "proposed": proposed,
+                "conflict": conflict,
+                "unassigned": unassigned,
+            },
+            extra={"preview_status": preview_status, "preview_operator_state": preview_status},
+        )
+        return out

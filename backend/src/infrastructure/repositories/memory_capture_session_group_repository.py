@@ -9,7 +9,12 @@ from src.application.ports.capture_repositories import (
     CaptureSessionGroupSummary,
     CaptureSessionItemRepository,
 )
-from src.domain.capture.entities import CaptureSessionGroup, CaptureSessionItem
+from src.application.services.capture_group_materialization_state import materialization_state_for_counts
+from src.domain.capture.entities import (
+    CaptureSessionGroup,
+    CaptureSessionItem,
+    CaptureSessionItemImportStatus,
+)
 
 
 def _sort_time(item: CaptureSessionItem):
@@ -59,6 +64,13 @@ class MemoryCaptureSessionGroupRepository(CaptureSessionGroupRepository):
             times = [_sort_time(i) for i in members if _sort_time(i) is not None]
             if not times:
                 continue
+            imported = [i for i in members if i.import_status == CaptureSessionItemImportStatus.IMPORTED]
+            linked_imported = sum(1 for i in imported if (i.linked_source_asset_id or "").strip())
+            mat_state = materialization_state_for_counts(
+                assignment_status=g.assignment_status.value,
+                imported_count=len(imported),
+                linked_imported_count=linked_imported,
+            )
             out.append(
                 CaptureSessionGroupSummary(
                     group_id=g.id,
@@ -70,6 +82,7 @@ class MemoryCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                     assigned_aisle_id=g.assigned_aisle_id,
                     assignment_status=g.assignment_status.value,
                     assigned_at=g.assigned_at,
+                    materialization_state=mat_state,
                 )
             )
         return tuple(out)

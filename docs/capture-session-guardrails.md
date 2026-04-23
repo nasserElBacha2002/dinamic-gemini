@@ -29,11 +29,12 @@ Reglas obligatorias para preservar arquitectura, determinismo e integración con
 - G4 / UI: no ejecutar `compute-groups` de nuevo si hay asignaciones sin **confirmación explícita** al usuario (pérdida de `assigned_*`). G4 no incluye reasignación ni undo; estados `assigned_existing` / `assigned_new` son finales hasta evolución de producto.
 - G5 (group materialize): solo grupos **asignados** a pasillo; idempotencia vía `source_assets.capture_session_item_id` (única); no modificar `process_aisle` ni el materialize Phase-4 aisle-bound. Contrato: `docs/capture-session-api-contract.md` (sección “Group materialization (G5)”).
 - G6 (group preview): **solo** lectura; opera sobre `SourceAsset` ya materializados en el pasillo del grupo, filtrados al `group_id`; no muta ítems ni sesión; no sustituye `process_aisle`. Debe rechazarse con 422 si el grupo no está asignado o si aún no hay materialización utilizable. Contrato: `docs/capture-session-api-contract.md` (sección “Group preview after materialization (G6)”). El campo ``preview_status`` sigue reglas explícitas en ``_classify_g6_preview_status`` (empty / partial / ready). La UI puede usar heurísticas locales sobre ``linked_source_asset_id`` solo como **precheck**; la fuente de verdad sigue siendo el endpoint de preview.
+- G7 (operación): endurecimiento sin cambiar rutas ni arquitectura G3–G6 — logs JSON + métricas ligeras en proceso, validaciones defensivas de coherencia (sesión/grupo/ítem y activos en pasillo), `materialization_state` en listados de grupos, `preview_operator_state` en respuesta 200 de preview, metadata ampliada en materialización, código `CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION` (422) ante invariantes rotas. Ver `docs/capture-session-api-contract.md` (sección “Operación y observabilidad (G7)”).
 
 ## Reglas de datos y trazabilidad
 
 - Mantener `adjusted_capture_time`, `assignment_reason`, `preview_target_position_id` como resultado de preview.
-- Mantener metadata mínima de trazabilidad en `SourceAsset.metadata_json` durante materialización.
+- Mantener metadata de trazabilidad en `SourceAsset.metadata_json` durante materialización (G7: incluir `materialized_at` y `materialization_operation_id` además de ids de sesión/grupo/ítem).
 - Ante evidencia insuficiente, priorizar estados explícitos y no inferencias implícitas.
 
 ## Anti-patrones prohibidos

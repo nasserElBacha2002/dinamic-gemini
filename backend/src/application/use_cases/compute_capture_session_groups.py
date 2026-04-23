@@ -19,6 +19,12 @@ from src.application.ports.capture_repositories import (
     CaptureSessionRepository,
 )
 from src.application.ports.clock import Clock
+from src.application.services.capture_flow_observability import (
+    emit_capture_flow_event,
+    get_capture_flow_metrics,
+    LOG_OP_G3_COMPUTE_GROUPS,
+    RESULT_SUCCESS,
+)
 from src.domain.capture.entities import (
     CaptureSessionGroup,
     CaptureSessionItem,
@@ -117,13 +123,22 @@ class ComputeCaptureSessionGroupsUseCase:
                     start_time=min(times),
                     end_time=max(times),
                     algorithm_version=TIME_GAP_ALGORITHM_VERSION,
+                    materialization_state="unassigned",
                 )
             )
-        logger.info(
-            "capture session groups computed session_id=%s groups=%s algorithm=%s",
-            session_id,
-            len(summaries),
-            TIME_GAP_ALGORITHM_VERSION,
+        total_members = sum(s.item_count for s in summaries)
+        get_capture_flow_metrics().record_g3_compute()
+        emit_capture_flow_event(
+            logger=logger,
+            inventory_id=inventory_id,
+            session_id=session_id,
+            operation=LOG_OP_G3_COMPUTE_GROUPS,
+            result_status=RESULT_SUCCESS,
+            counts={
+                "groups_created": len(summaries),
+                "items_assigned_to_groups": total_members,
+            },
+            extra={"algorithm_version": TIME_GAP_ALGORITHM_VERSION},
         )
         return tuple(summaries)
 

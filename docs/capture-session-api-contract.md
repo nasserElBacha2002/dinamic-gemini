@@ -63,6 +63,7 @@ Fuente de verdad: rutas en `backend/src/api/routes/v3/capture_sessions.py` + sch
 - `assignment_status: string` — `unassigned` \| `assigned_existing` \| `assigned_new` (G4)
 - `assigned_aisle_id: string | null` — pasillo vinculado al grupo cuando aplica (G4)
 - `assigned_at: string(datetime) | null` — momento de la asignación (G4)
+- `materialization_state: string` — G7: `unassigned` \| `assigned` \| `materialized` \| `partially_materialized` (derivado de `assignment_status` y del enlace `linked_source_asset_id` en ítems **imported** del grupo)
 
 ### CaptureSessionGroupsListResponse (G3)
 
@@ -338,6 +339,7 @@ Vista previa **downstream** alineada con el flujo grouping-first: solo después 
       - **empty**: ningún ítem importado elegible para la heurística ordinal (p. ej. sin filas resueltas desde activos del grupo, o solo ítems no importados).
       - **partial**: hay ítems importados en preview pero cobertura o resultados mixtos (hueco de unión activo→ítem, materialización incompleta, CONFLICT / UNASSIGNED del preview, o no todos PROPOSED).
       - **ready**: al menos un ítem importado en preview, sin huecos ni materialización incompleta, todos los outcomes son PROPOSED.
+    - `preview_operator_state` (G7): en **200** replica `preview_status` (`empty` \| `partial` \| `ready`) para UX/telemetría. Estados **unavailable** (sin asignar / sin materializar) se expresan vía **422** y `code` (`CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW`, `CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW`).
     - `items[]`: por cada activo considerado, `capture_session_item_id`, `source_asset_id`, `assignment_status`, `assignment_reason`, `adjusted_capture_time`, `preview_target_position_id` (misma heurística ordinal que `compute_item_preview_outcomes` sobre posiciones del pasillo)
     - `summary`: conteos `proposed_count`, `conflict_count`, `unassigned_count`, `previewed_item_count`
 
@@ -347,11 +349,18 @@ Vista previa **downstream** alineada con el flujo grouping-first: solo después 
 |------|--------|--------|
 | 422 | `CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW` | Grupo `unassigned` o sin `assigned_aisle_id`. |
 | 422 | `CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW` | Hay ítems importados sin `linked_source_asset_id` y **ningún** `SourceAsset` en el pasillo califica para el grupo (debe materializarse primero). |
+| 422 | `CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION` | G7: violación defensiva de coherencia sesión/grupo/ítem o de alcance de activos en el pasillo (datos inconsistentes). |
 | 404 | `CAPTURE_SESSION_GROUP_NOT_FOUND` | `group_id` inválido para la sesión. |
 | 404 | `CAPTURE_SESSION_NOT_FOUND` | Sesión no pertenece al inventario. |
 | 409 | `CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED` | Misma política de sesión cerrada / no terminal que G4 (`ensure_group_aisle_assignment_allowed`). |
 
 **Vacíos HTTP 200:** cuando ya hay materialización pero no hay ítems importados utilizables para el preview (p. ej. solo `import_failed`), `preview_status` será `empty` con `items` vacío o no útiles según corresponda.
+
+## Operación y observabilidad (G7)
+
+- **Logs estructurados (JSON en línea, nivel INFO)** para: `G3_compute_groups`, `G4_assign_group_existing_aisle`, `G4_assign_group_create_aisle`, `G5_materialize_group`, `G5_materialize_all_groups`, `G6_preview_group`. Campos mínimos: `inventory_id`, `session_id`, `operation`, `result_status`, `timestamp`, y cuando aplica `group_id`, `aisle_id`, `counts`, `metrics` (contadores en proceso + promedios móviles ligeros).
+- **Reintentos:** G5 sigue idempotente; diagnósticos opcionales en `materialize_diag` (p. ej. enlace reparado desde fila existente, skip por activo ya vinculado). G6 no persiste estado de preview: cada `POST .../preview` recalcula desde `SourceAsset` + ítems.
+- **Trazabilidad en `SourceAsset.metadata_json` (G5):** `capture_session_id`, `capture_session_group_id`, `capture_session_item_id`, `materialized_at`, `materialization_operation_id` (UUID por corrida de materialización de grupo).
 
 ## Nota de invariantes
 
