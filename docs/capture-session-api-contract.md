@@ -57,6 +57,27 @@ Fuente de verdad: rutas en `backend/src/api/routes/v3/capture_sessions.py` + sch
 - `items: CaptureSessionItemResponse[]`
 - `created_assets_count: number`
 
+### CaptureSessionStagingUploadFileError
+
+- `filename: string`
+- `code: string` (estable; alineado con códigos v3 e.g. `ZERO_BYTE_FILE`, `UNSUPPORTED_ASSET_TYPE`, `CAPTURE_SESSION_STAGING_FILE_TOO_LARGE`, `CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT`)
+- `detail: string`
+- `file_index: number` (índice 0-based del archivo en el multipart **de ese** POST)
+
+### UploadCaptureSessionItemsResponse
+
+- `items: CaptureSessionItemResponse[]` — filas persistidas por esta petición (importadas y, si aplica, filas `import_failed` por fallos de almacenamiento/persistencia)
+- `errors: CaptureSessionStagingUploadFileError[]` — fallos de **validación / negocio por archivo** sin fila correspondiente (o duplicado detectado al guardar sin persistir ítem importado)
+
+## Política de errores (staging batch)
+
+- **Errores globales de la petición** (request inválido o sesión no acepta uploads): el servidor responde con **HTTP de error** (4xx/5xx) y cuerpo de error estructurado o validación FastAPI según el caso. Ejemplos: `EMPTY_UPLOAD` (422), `CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE` (422), `CAPTURE_SESSION_NOT_FOUND` (404), `CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS` (409).
+- **Errores por archivo dentro de un multipart válido** (tamaño de lote OK, sesión acepta uploads): el servidor responde **201** con `items` y `errors` poblados según corresponda (**éxito parcial** permitido: algunos archivos importados, otros listados solo en `errors[]`).
+
+## Frontend (ingesta — workspace de upload)
+
+- El cliente agrupa archivos en tandas de hasta el máximo por POST (config backend `v3_capture_max_files_per_upload`, por defecto 50) y envía **varias peticiones secuenciales** (una tanda tras otra), no POSTs en paralelo por tanda. Ver comentarios en `frontend/src/features/ingestionSessions/hooks/useUploadCaptureItems.ts` y `captureSessionsApi.ts`.
+
 ## Endpoints
 
 ## 1) Crear sesión
@@ -118,23 +139,33 @@ Fuente de verdad: rutas en `backend/src/api/routes/v3/capture_sessions.py` + sch
   - `INVENTORY_NOT_FOUND` (404)
   - `CAPTURE_SESSION_NOT_FOUND` (404)
 
-## 6) Subir items a staging
+## 6) Subir items a staging (batch multipart)
 
-- **POST** `/{inventory_id}/aisles/{aisle_id}/capture-sessions/{session_id}/items`
-- **Body:** `multipart/form-data` (`files[]`)
-- **Respuesta 201:** `UploadCaptureSessionItemsResponse`
-- **Estado requerido:**
-  - sesión no cerrada (`closed_at is null`)
-  - no `CANCELLED`, `FAILED`, `CONFIRMED`
-- **Errores principales:**
-  - `CAPTURE_SESSION_NOT_FOUND` (404)
-  - `CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS` (409)
-  - `CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT` (409)
-  - `EMPTY_UPLOAD` (422)
-  - `ZERO_BYTE_FILE` (422)
-  - `CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE` (422)
-  - `CAPTURE_SESSION_STAGING_FILE_TOO_LARGE` (422)
-  - `UNSUPPORTED_ASSET_TYPE` (400)
+Dos rutas equivalentes (misma forma de body y de respuesta 201):
+
+- **POST** `/{inventory_id}/capture-sessions/{session_id}/items` (sesión a nivel inventario; `aisle_id` de la sesión puede ser `null`)
+- **POST** `/{inventory_id}/aisles/{aisle_id}/capture-sessions/{session_id}/items` (compatibilidad con sesión vinculada a pasillo)
+
+**Body:** `multipart/form-data` con uno o más campos de archivo bajo el nombre `files` (múltiples partes `files` en la misma petición).
+
+**Respuesta 201:** `UploadCaptureSessionItemsResponse`
+
+- `items[]`: ítems persistidos en esta petición (p. ej. `import_status: imported`, o `import_failed` si falló escritura en almacenamiento/persistencia tras validar el archivo).
+- `errors[]`: fallos **por archivo** (validación, duplicado de contenido en la sesión, etc.) con `filename`, `code`, `detail`, `file_index`. Un mismo POST puede terminar en **éxito parcial**: algunos archivos en `items`, otros solo en `errors`.
+
+**Estado requerido de la sesión:**
+
+- no cerrada (`closed_at is null`)
+- no `CANCELLED`, `FAILED`, `CONFIRMED`
+
+**Errores HTTP de toda la petición (sin cuerpo 201 de batch):**
+
+- `CAPTURE_SESSION_NOT_FOUND` (404)
+- `CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS` (409)
+- `EMPTY_UPLOAD` (422) — ningún archivo
+- `CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE` (422) — más archivos que el máximo por POST
+
+**Nota:** códigos como `ZERO_BYTE_FILE`, `UNSUPPORTED_ASSET_TYPE`, `CAPTURE_SESSION_STAGING_FILE_TOO_LARGE` o `CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT` pueden aparecer **dentro de** `errors[]` con **201** cuando el resto del batch es procesable. No deben confundirse con los mismos códigos devueltos como error HTTP global en otros flujos de la API.
 
 ## 7) Actualizar clock offset
 

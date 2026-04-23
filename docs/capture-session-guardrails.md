@@ -23,6 +23,7 @@ Reglas obligatorias para preservar arquitectura, determinismo e integración con
 - `CONFIRMING` en fase actual significa: materializado + bloqueado para mutaciones del flujo de captura.
 - G1 (inventory-level operable): `upload`, `close` y `cancel` se permiten sin `aisle_id`.
 - G1 (fuera de alcance para sesiones sin pasillo): `preview`, `clock-offset` y `materialize` siguen acoplados a sesión aisle-bound y deben responder con error estructurado cuando no aplique.
+- G2 (batch staging): contrato HTTP **201** con `items[]` + `errors[]` por archivo en multipart válido; errores de **toda** la petición siguen siendo HTTP de error. Política de transporte en UI: chunks secuenciales (sin POSTs paralelos por tanda). Ver `docs/capture-session-api-contract.md` (sección 6 y “Política de errores”).
 
 ## Reglas de datos y trazabilidad
 

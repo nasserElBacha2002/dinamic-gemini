@@ -1,3 +1,14 @@
+/**
+ * Capture staging upload from the browser.
+ *
+ * **Transport policy:** uploads run as **sequential HTTP POSTs**, each carrying up to
+ * ``CAPTURE_STAGING_MAX_FILES_PER_REQUEST`` files (aligned with backend
+ * ``v3_capture_max_files_per_upload``). Chunks are **not** sent in parallel: this keeps
+ * per-chunk progress, ``items``/``errors`` correlation via ``file_index``, and final
+ * ``uploadedCount``/``failedCount`` deterministic without overlapping multipart bodies.
+ * There is no hidden “max concurrency = N” pool; throughput is bounded by chunk size
+ * and network latency, not parallel staging requests from this hook.
+ */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../api/queryKeys';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
@@ -83,6 +94,7 @@ export function useUploadCaptureItems() {
 
       const notify = () => vars.onQueueUpdate?.(queue.map((q) => ({ ...q })));
 
+      // One staging POST at a time (see module docstring).
       const chunkSize = CAPTURE_STAGING_MAX_FILES_PER_REQUEST;
       for (let offset = 0; offset < queue.length; offset += chunkSize) {
         const slice = queue.slice(offset, offset + chunkSize);

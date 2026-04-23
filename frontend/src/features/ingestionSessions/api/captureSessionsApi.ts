@@ -116,7 +116,12 @@ export async function cancelCaptureSession(
   return handleResponse<CaptureSessionDetailResponse>(response);
 }
 
-/** Matches backend ``v3_capture_max_files_per_upload`` default (50). */
+/**
+ * Max files per staging POST (matches backend ``v3_capture_max_files_per_upload``, default 50).
+ * The ingestion hook sends **multiple sequential** requests of at most this many files
+ * when the user selects more than the limit; it does **not** issue parallel POSTs for
+ * different chunks (see ``useUploadCaptureItems``).
+ */
 export const CAPTURE_STAGING_MAX_FILES_PER_REQUEST = 50;
 
 function parseUploadStagingResponse(body: Record<string, unknown>): UploadCaptureSessionItemsResponse {
