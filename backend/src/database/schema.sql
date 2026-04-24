@@ -325,6 +325,29 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_ass
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'etag')
     ALTER TABLE source_assets ADD etag NVARCHAR(128) NULL;
 GO
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'capture_session_item_id')
+    ALTER TABLE source_assets ADD capture_session_item_id VARCHAR(36) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_source_assets_capture_session_item_id'
+      AND object_id = OBJECT_ID('source_assets')
+)
+BEGIN
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_source_assets_capture_session_item_id
+    ON source_assets(capture_session_item_id)
+    WHERE capture_session_item_id IS NOT NULL;
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.foreign_keys WHERE name = 'FK_source_assets_capture_session_item'
+)
+BEGIN
+    ALTER TABLE source_assets
+    ADD CONSTRAINT FK_source_assets_capture_session_item
+    FOREIGN KEY (capture_session_item_id) REFERENCES capture_session_items(id);
+END;
+GO
 
 -- v3.0 — Positions (Épica 6, Documento técnico §7.4)
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'positions')
@@ -592,4 +615,260 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_
     ALTER TABLE inventory_visual_references ADD file_size_bytes BIGINT NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'etag')
     ALTER TABLE inventory_visual_references ADD etag NVARCHAR(128) NULL;
+GO
+
+-- Sprint 1 — Field capture sessions (mirror migrations/versions/0016_capture_sessions.sql).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'capture_sessions')
+BEGIN
+    CREATE TABLE capture_sessions (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        opened_at DATETIME2 NULL,
+        closed_at DATETIME2 NULL,
+        clock_offset_seconds INT NOT NULL DEFAULT 0,
+        CONSTRAINT FK_capture_sessions_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_capture_sessions_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id)
+    );
+    CREATE INDEX IX_capture_sessions_inventory_id ON capture_sessions(inventory_id);
+    CREATE INDEX IX_capture_sessions_aisle_id ON capture_sessions(aisle_id);
+    CREATE INDEX IX_capture_sessions_status_updated ON capture_sessions(status, updated_at);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_capture_sessions_one_open_per_aisle'
+      AND object_id = OBJECT_ID('dbo.capture_sessions')
+)
+BEGIN
+    ;WITH open_ranked AS (
+        SELECT
+            id,
+            ROW_NUMBER() OVER (
+                PARTITION BY inventory_id, aisle_id
+                ORDER BY created_at ASC, id ASC
+            ) AS rn
+        FROM dbo.capture_sessions
+        WHERE closed_at IS NULL
+          AND aisle_id IS NOT NULL
+          AND status <> 'cancelled'
+          AND status <> 'failed'
+          AND status <> 'confirmed'
+    )
+    UPDATE cs
+    SET
+        status = 'cancelled',
+        closed_at = SYSUTCDATETIME(),
+        updated_at = SYSUTCDATETIME()
+    FROM dbo.capture_sessions AS cs
+    INNER JOIN open_ranked AS r ON r.id = cs.id
+    WHERE r.rn > 1;
+
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_capture_sessions_one_open_per_aisle
+        ON dbo.capture_sessions (inventory_id, aisle_id)
+        WHERE aisle_id IS NOT NULL
+          AND closed_at IS NULL
+          AND status <> 'cancelled'
+          AND status <> 'failed'
+          AND status <> 'confirmed';
+END;
+GO
+
+-- Phase G1 — inventory-level capture sessions (mirror migrations/versions/0020_capture_sessions_inventory_scope.sql).
+IF EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_sessions')
+      AND name = 'aisle_id'
+      AND is_nullable = 0
+)
+BEGIN
+    ALTER TABLE dbo.capture_sessions ALTER COLUMN aisle_id VARCHAR(36) NULL;
+END;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'capture_session_items')
+BEGIN
+    CREATE TABLE capture_session_items (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        session_id VARCHAR(36) NOT NULL,
+        staging_storage_key NVARCHAR(1024) NOT NULL,
+        content_hash NVARCHAR(128) NULL,
+        effective_capture_time DATETIME2 NULL,
+        time_source VARCHAR(32) NULL,
+        time_confidence FLOAT NULL,
+        import_status VARCHAR(32) NOT NULL,
+        assignment_status VARCHAR(32) NOT NULL,
+        linked_source_asset_id VARCHAR(36) NULL,
+        last_error_code VARCHAR(64) NULL,
+        last_error_detail NVARCHAR(512) NULL,
+        updated_at DATETIME2 NOT NULL,
+        original_filename NVARCHAR(512) NULL,
+        adjusted_capture_time DATETIME2 NULL,
+        assignment_reason NVARCHAR(512) NULL,
+        preview_target_position_id VARCHAR(36) NULL,
+        CONSTRAINT FK_capture_session_items_session FOREIGN KEY (session_id) REFERENCES capture_sessions(id) ON DELETE CASCADE,
+        CONSTRAINT FK_capture_session_items_source_asset FOREIGN KEY (linked_source_asset_id) REFERENCES source_assets(id)
+    );
+    CREATE INDEX IX_capture_session_items_session_id ON capture_session_items(session_id);
+    CREATE INDEX IX_capture_session_items_linked_asset ON capture_session_items(linked_source_asset_id);
+END;
+GO
+
+-- Filtered unique: duplicate (session_id, content_hash) disallowed when hash present; NULL hash allowed multiple times.
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_capture_session_items_session_content_hash'
+      AND object_id = OBJECT_ID('capture_session_items')
+)
+BEGIN
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_capture_session_items_session_content_hash
+        ON capture_session_items(session_id, content_hash)
+        WHERE content_hash IS NOT NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('capture_session_items') AND name = 'original_filename'
+)
+    ALTER TABLE capture_session_items ADD original_filename NVARCHAR(512) NULL;
+GO
+
+-- Sprint 3 — clock offset + preview columns (mirror migrations/versions/0019_capture_session_sprint3_preview.sql).
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_sessions') AND name = 'clock_offset_seconds'
+)
+    ALTER TABLE dbo.capture_sessions ADD clock_offset_seconds INT NOT NULL DEFAULT 0;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_items') AND name = 'adjusted_capture_time'
+)
+    ALTER TABLE dbo.capture_session_items ADD adjusted_capture_time DATETIME2 NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_items') AND name = 'assignment_reason'
+)
+    ALTER TABLE dbo.capture_session_items ADD assignment_reason NVARCHAR(512) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_items') AND name = 'preview_target_position_id'
+)
+    ALTER TABLE dbo.capture_session_items ADD preview_target_position_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'capture_session_confirmations')
+BEGIN
+    CREATE TABLE capture_session_confirmations (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        session_id VARCHAR(36) NOT NULL,
+        idempotency_key NVARCHAR(128) NOT NULL,
+        outcome_json NVARCHAR(MAX) NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_capture_session_confirmations_session FOREIGN KEY (session_id) REFERENCES capture_sessions(id) ON DELETE CASCADE,
+        CONSTRAINT UQ_capture_session_confirmations_session_key UNIQUE (session_id, idempotency_key)
+    );
+    CREATE INDEX IX_capture_session_confirmations_session_id ON capture_session_confirmations(session_id);
+END;
+GO
+
+-- G3 — temporal capture groups (mirror migrations/versions/0021_capture_session_groups.sql).
+-- FK items→groups: NO ACTION avoids SQL Server 1785 (multiple cascade paths from capture_sessions).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'capture_session_groups')
+BEGIN
+    CREATE TABLE dbo.capture_session_groups (
+        id VARCHAR(36) NOT NULL CONSTRAINT PK_capture_session_groups PRIMARY KEY,
+        session_id VARCHAR(36) NOT NULL,
+        group_index INT NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        algorithm_version NVARCHAR(64) NOT NULL,
+        CONSTRAINT FK_capture_session_groups_session FOREIGN KEY (session_id) REFERENCES dbo.capture_sessions(id) ON DELETE CASCADE,
+        CONSTRAINT UQ_capture_session_groups_session_index UNIQUE (session_id, group_index)
+    );
+    CREATE INDEX IX_capture_session_groups_session_id ON dbo.capture_session_groups(session_id);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_items')
+      AND name = 'group_id'
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_items ADD group_id VARCHAR(36) NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE name = 'FK_capture_session_items_group'
+      AND parent_object_id = OBJECT_ID('dbo.capture_session_items')
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_items
+        ADD CONSTRAINT FK_capture_session_items_group
+        FOREIGN KEY (group_id) REFERENCES dbo.capture_session_groups(id) ON DELETE NO ACTION;
+END;
+GO
+
+-- G4 — group → aisle assignment (mirror migrations/versions/0022_capture_session_group_aisle_assignment.sql).
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_groups')
+      AND name = 'assigned_aisle_id'
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_groups ADD assigned_aisle_id VARCHAR(36) NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_groups')
+      AND name = 'assignment_status'
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_groups
+        ADD assignment_status NVARCHAR(32) NOT NULL
+            CONSTRAINT DF_capture_session_groups_assignment_status DEFAULT ('unassigned');
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.capture_session_groups')
+      AND name = 'assigned_at'
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_groups ADD assigned_at DATETIME2 NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE name = 'FK_capture_session_groups_assigned_aisle'
+      AND parent_object_id = OBJECT_ID('dbo.capture_session_groups')
+)
+BEGIN
+    ALTER TABLE dbo.capture_session_groups
+        ADD CONSTRAINT FK_capture_session_groups_assigned_aisle
+        FOREIGN KEY (assigned_aisle_id) REFERENCES dbo.aisles(id) ON DELETE NO ACTION;
+END;
 GO

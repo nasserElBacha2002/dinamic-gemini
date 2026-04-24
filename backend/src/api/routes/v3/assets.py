@@ -41,7 +41,8 @@ from src.application.errors import AisleNotFoundError
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
-from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
+from src.application.dto.uploaded_file import UploadedFile
+from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
 from src.domain.assets.entities import SourceAsset
 
 from .shared import asset_to_response, resolve_normalized_asset_path, heic_extensions

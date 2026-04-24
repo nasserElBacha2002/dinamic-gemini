@@ -699,6 +699,85 @@ class LimitsAndSchemaSettings(BaseModel):
         default_factory=lambda: (os.getenv("DEPLOYMENT_ID") or "").strip() or None,
         description="Deployment identifier used to annotate migration history. Env: DEPLOYMENT_ID.",
     )
+    v3_capture_max_open_sessions_per_aisle: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_OPEN_SESSIONS_PER_AISLE", "1")),
+        ge=1,
+        le=20,
+        description=(
+            "v3 capture: max concurrent open (non-terminal, unclosed) sessions per aisle. "
+            "Env: V3_CAPTURE_MAX_OPEN_SESSIONS_PER_AISLE (default 1)."
+        ),
+    )
+    v3_capture_session_list_default_page_size: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_SESSION_LIST_DEFAULT_PAGE_SIZE", "25")),
+        ge=1,
+        le=500,
+        description="Default page size for GET .../capture-sessions. Env: V3_CAPTURE_SESSION_LIST_DEFAULT_PAGE_SIZE.",
+    )
+    v3_capture_session_list_max_page_size: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_SESSION_LIST_MAX_PAGE_SIZE", "200")),
+        ge=1,
+        le=1000,
+        description="Max page size for GET .../capture-sessions. Env: V3_CAPTURE_SESSION_LIST_MAX_PAGE_SIZE.",
+    )
+    v3_capture_staging_storage_prefix: str = Field(
+        default_factory=lambda: (os.getenv("V3_CAPTURE_STAGING_STORAGE_PREFIX", "capture/staging") or "capture/staging").strip(),
+        description=(
+            "Relative prefix under artifact storage for capture staging blobs (not aisle SourceAsset paths). "
+            "Env: V3_CAPTURE_STAGING_STORAGE_PREFIX."
+        ),
+    )
+    v3_capture_max_files_per_upload: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_FILES_PER_UPLOAD", "50")),
+        ge=1,
+        le=200,
+        description="Max files per POST .../capture-sessions/{id}/items staging upload. Env: V3_CAPTURE_MAX_FILES_PER_UPLOAD.",
+    )
+    v3_capture_grouping_max_gap_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_GROUPING_MAX_GAP_SECONDS", "60")),
+        ge=1,
+        le=86400,
+        description=(
+            "Max seconds between consecutive capture times within one temporal group (G3). "
+            "Env: V3_CAPTURE_GROUPING_MAX_GAP_SECONDS."
+        ),
+    )
+    v3_capture_clock_offset_min_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_CLOCK_OFFSET_MIN_SECONDS", "-86400")),
+        ge=-864000,
+        le=0,
+        description="Min session clock offset seconds (Sprint 3). Env: V3_CAPTURE_CLOCK_OFFSET_MIN_SECONDS.",
+    )
+    v3_capture_clock_offset_max_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_CLOCK_OFFSET_MAX_SECONDS", "86400")),
+        ge=0,
+        le=864000,
+        description="Max session clock offset seconds (Sprint 3). Env: V3_CAPTURE_CLOCK_OFFSET_MAX_SECONDS.",
+    )
+    v3_capture_preview_max_positions: int = Field(
+        default_factory=lambda: int(os.getenv("V3_CAPTURE_PREVIEW_MAX_POSITIONS", "10000")),
+        ge=1,
+        le=50000,
+        description="Max positions loaded for capture assignment preview per aisle. Env: V3_CAPTURE_PREVIEW_MAX_POSITIONS.",
+    )
+    v3_capture_time_confidence_exif: float = Field(
+        default_factory=lambda: float(os.getenv("V3_CAPTURE_TIME_CONFIDENCE_EXIF", "0.85")),
+        ge=0.0,
+        le=1.0,
+        description="Confidence when time is taken from EXIF (Sprint 3). Env: V3_CAPTURE_TIME_CONFIDENCE_EXIF.",
+    )
+    v3_capture_time_confidence_mtime: float = Field(
+        default_factory=lambda: float(os.getenv("V3_CAPTURE_TIME_CONFIDENCE_MTIME", "0.55")),
+        ge=0.0,
+        le=1.0,
+        description="Confidence when time is taken from file mtime (Sprint 3). Env: V3_CAPTURE_TIME_CONFIDENCE_MTIME.",
+    )
+    v3_capture_time_confidence_fallback: float = Field(
+        default_factory=lambda: float(os.getenv("V3_CAPTURE_TIME_CONFIDENCE_FALLBACK", "0.35")),
+        ge=0.0,
+        le=1.0,
+        description="Confidence when time falls back to ingest clock (Sprint 3). Env: V3_CAPTURE_TIME_CONFIDENCE_FALLBACK.",
+    )
 
 
 class PhotosInputSettings(BaseModel):

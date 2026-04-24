@@ -139,7 +139,8 @@ templates + tests per type: ``PositionResultContextMismatchError``, ``PositionDe
 module; do not invent new English ``detail`` strings when a ``code`` + existing template applies;
 never expose raw ``str(exc)`` on new paths.
 
-**When to add a new type to** :func:`mapped_http_exception`
+**When to add a new type:** append an entry to ``_HTTP_EXCEPTION_DISPATCH`` (consumed by
+:func:`mapped_http_exception`; same ordering rules as above).
 
 - Add a **narrow, domain-specific** exception class when **multiple routes** already map
   it the same way, or a new cross-cutting error must stay consistent.
@@ -153,7 +154,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, Callable, cast
 
 from fastapi import HTTPException
 
@@ -165,6 +166,29 @@ from src.application.errors import (
     BenchmarkCompareJobsMustDifferError,
     BenchmarkCompareManyInvalidSelectionError,
     BenchmarkRequiresTestInventoryError,
+    CaptureSessionDuplicateItemContentError,
+    AisleNotFoundForAssignmentError,
+    CaptureSessionGroupAlreadyAssignedError,
+    CaptureSessionGroupAssignmentNotAllowedError,
+    CaptureSessionGroupNotFoundError,
+    CaptureSessionGroupNotAssignedForMaterializationError,
+    CaptureSessionGroupNotAssignedForPreviewError,
+    CaptureSessionGroupNotMaterializedForPreviewError,
+    CaptureSessionGroupIntegrityError,
+    CaptureSessionGroupingNotAllowedError,
+    CaptureSessionNoItemsForGroupingError,
+    CaptureSessionInvalidClockOffsetError,
+    CaptureSessionInvalidIdempotencyKeyError,
+    CaptureSessionInvalidStateError,
+    CaptureSessionMaterializationFailedError,
+    CaptureSessionMaterializationNotAllowedError,
+    CaptureSessionNotAcceptingUploadsError,
+    CaptureSessionAlreadyMaterializedError,
+    CaptureSessionNotFoundError,
+    CaptureSessionPreviewNotAllowedError,
+    CaptureSessionStagingFileTooLargeError,
+    CaptureSessionStatusFilterInvalidError,
+    CaptureSessionUploadBatchTooLargeError,
     DuplicateAisleCodeError,
     EmptyUploadError,
     InventoryNotFoundError,
@@ -176,6 +200,8 @@ from src.application.errors import (
     JobPromotionNotAllowedError,
     MaxInventoryVisualReferencesExceededError,
     MergeJobScopeAmbiguousError,
+    NoSourceAssetsForAisleProcessingError,
+    OpenCaptureSessionExistsError,
     PositionDeletedError,
     PositionNotFoundError,
     PositionResultContextMismatchError,
@@ -189,11 +215,36 @@ from src.application.errors import (
 )
 from src.api.constants.error_wire import (
     HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION,
+    HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
     HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
     HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
     HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+    HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+    HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
+    HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
+    HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
+    HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE,
+    HTTP_DETAIL_CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_FOUND,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
+    HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
+    HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
+    HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+    HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_FAILED,
+    HTTP_DETAIL_CAPTURE_SESSION_ALREADY_MATERIALIZED,
+    HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
+    HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
     HTTP_DETAIL_INVENTORY_NOT_FOUND,
     HTTP_DETAIL_JOB_NOT_FOUND,
+    HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
     HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
     HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
     HTTP_DETAIL_UNEXPECTED_ERROR,
@@ -205,14 +256,42 @@ from src.api.errors.structured_api_http import (
     AISLE_NOT_FOUND,
     AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
     ASSET_NOT_FOUND,
+    AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
     BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
+    EMPTY_UPLOAD,
+    UNSUPPORTED_ASSET_TYPE,
+    ZERO_BYTE_FILE,
+    CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
+    AISLE_NOT_FOUND_FOR_ASSIGNMENT,
+    CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
+    CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
+    CAPTURE_SESSION_GROUP_NOT_FOUND,
+    CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
+    CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
+    CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
+    CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+    CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
+    CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
+    CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
+    CAPTURE_SESSION_INVALID_STATE,
+    CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    CAPTURE_SESSION_NOT_FOUND,
+    CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
+    CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+    CAPTURE_SESSION_MATERIALIZATION_FAILED,
+    CAPTURE_SESSION_ALREADY_MATERIALIZED,
+    CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
+    CAPTURE_SESSION_STATUS_FILTER_INVALID,
+    CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
     INTERNAL_SERVER_ERROR,
     INVENTORY_NOT_FOUND,
     JOB_NOT_FOUND,
     JOB_NOT_IN_AISLE_SCOPE,
     JOB_PROMOTION_NOT_ALLOWED,
+    OPEN_CAPTURE_SESSION_EXISTS,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
     VISUAL_REFERENCE_NOT_FOUND,
@@ -291,6 +370,253 @@ def _normalized_job_promotion_not_allowed_detail(exc: JobPromotionNotAllowedErro
     return "This job cannot be promoted to operational"
 
 
+def _structured_fixed(
+    status_code: int, *, error_code: str, detail: str
+) -> Callable[[BaseException], HTTPException]:
+    """Build mapper that ignores the exception instance (stable ``detail``)."""
+
+    def _map(_: BaseException) -> HTTPException:
+        return StructuredApiHttpError(status_code, error_code=error_code, detail=detail)
+
+    return _map
+
+
+def _structured_detail(
+    status_code: int,
+    *,
+    error_code: str,
+    detail: Callable[[BaseException], str],
+) -> Callable[[BaseException], HTTPException]:
+    def _map(exc: BaseException) -> HTTPException:
+        return StructuredApiHttpError(status_code, error_code=error_code, detail=detail(exc))
+
+    return _map
+
+
+def _plain_http(status_code: int) -> Callable[[BaseException], HTTPException]:
+    """Legacy branch: ``HTTPException`` with ``detail=str(exc)``."""
+
+    def _map(exc: BaseException) -> HTTPException:
+        return HTTPException(status_code=status_code, detail=str(exc))
+
+    return _map
+
+
+def _map_stored_artifact_access(exc: BaseException) -> HTTPException:
+    e = cast(StoredArtifactAccessError, exc)
+    return HTTPException(status_code=e.status_code, detail=e.detail)
+
+
+# Ordered dispatch: ``isinstance`` checks run in insertion order (Python 3.7+ ``dict``).
+# If two registered types stand in a subclass relationship, the **first** entry wins.
+_HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HTTPException]] = {
+    StoredArtifactAccessError: _map_stored_artifact_access,
+    InventoryNotFoundError: _structured_fixed(
+        404, error_code=INVENTORY_NOT_FOUND, detail=HTTP_DETAIL_INVENTORY_NOT_FOUND
+    ),
+    AisleNotFoundError: _structured_fixed(
+        404, error_code=AISLE_NOT_FOUND, detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY
+    ),
+    PositionNotFoundError: _structured_fixed(
+        404, error_code=POSITION_NOT_FOUND, detail=HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE
+    ),
+    ProductNotFoundError: _structured_fixed(
+        404, error_code=PRODUCT_NOT_FOUND, detail=HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION
+    ),
+    InventoryVisualReferenceNotFoundError: _structured_fixed(
+        404, error_code=VISUAL_REFERENCE_NOT_FOUND, detail=HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND
+    ),
+    SourceAssetNotFoundForAisleError: _structured_fixed(
+        404, error_code=ASSET_NOT_FOUND, detail=HTTP_DETAIL_ASSET_NOT_FOUND
+    ),
+    JobNotFoundError: _structured_detail(
+        404,
+        error_code=JOB_NOT_FOUND,
+        detail=lambda e: _normalized_job_not_found_detail(cast(JobNotFoundError, e)),
+    ),
+    JobDoesNotBelongToAisleError: _structured_detail(
+        404,
+        error_code=JOB_NOT_IN_AISLE_SCOPE,
+        detail=lambda e: _normalized_job_does_not_belong_detail(cast(JobDoesNotBelongToAisleError, e)),
+    ),
+    PositionResultContextMismatchError: _plain_http(409),
+    PositionDeletedError: _plain_http(409),
+    DuplicateAisleCodeError: _plain_http(409),
+    ActiveJobExistsError: _structured_detail(
+        409,
+        error_code=ACTIVE_JOB_EXISTS,
+        detail=lambda e: _normalized_active_job_exists_detail(cast(ActiveJobExistsError, e)),
+    ),
+    NoSourceAssetsForAisleProcessingError: _structured_fixed(
+        409,
+        error_code=AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
+        detail=HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
+    ),
+    AisleSourceAssetMutationBlockedError: _structured_fixed(
+        409,
+        error_code=AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
+        detail=HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION,
+    ),
+    BenchmarkRequiresTestInventoryError: _plain_http(409),
+    JobPromotionNotAllowedError: _structured_detail(
+        409,
+        error_code=JOB_PROMOTION_NOT_ALLOWED,
+        detail=lambda e: _normalized_job_promotion_not_allowed_detail(cast(JobPromotionNotAllowedError, e)),
+    ),
+    ReviewMutationNotAllowedError: _plain_http(409),
+    EmptyUploadError: _structured_fixed(
+        422, error_code=EMPTY_UPLOAD, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED
+    ),
+    ZeroByteFileError: _structured_fixed(
+        422, error_code=ZERO_BYTE_FILE, detail=HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED
+    ),
+    UnknownProcessingProviderError: _plain_http(422),
+    InvalidProcessingModelError: _plain_http(422),
+    InvalidProcessingPromptKeyError: _plain_http(422),
+    ProcessingProviderNotConfiguredError: _plain_http(422),
+    BenchmarkCompareJobsMustDifferError: _structured_fixed(
+        422,
+        error_code=BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+        detail=HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    ),
+    BenchmarkCompareManyInvalidSelectionError: _structured_detail(
+        422,
+        error_code=BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
+        detail=lambda e: str(e),
+    ),
+    MergeJobScopeAmbiguousError: _plain_http(422),
+    AnalyticsScopeValidationError: _structured_fixed(
+        422,
+        error_code=ANALYTICS_SCOPE_VALIDATION_FAILED,
+        detail=HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
+    ),
+    CaptureSessionNotFoundError: _structured_fixed(
+        404, error_code=CAPTURE_SESSION_NOT_FOUND, detail=HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND
+    ),
+    OpenCaptureSessionExistsError: _structured_fixed(
+        409,
+        error_code=OPEN_CAPTURE_SESSION_EXISTS,
+        detail=HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
+    ),
+    CaptureSessionInvalidClockOffsetError: _structured_detail(
+        422,
+        error_code=CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
+        detail=lambda e: str(e),
+    ),
+    CaptureSessionPreviewNotAllowedError: _structured_detail(
+        409,
+        error_code=CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
+        detail=lambda e: str(e),
+    ),
+    CaptureSessionGroupingNotAllowedError: _structured_detail(
+        409,
+        error_code=CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+    ),
+    CaptureSessionNoItemsForGroupingError: _structured_detail(
+        422,
+        error_code=CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
+    ),
+    CaptureSessionGroupNotFoundError: _structured_detail(
+        404,
+        error_code=CAPTURE_SESSION_GROUP_NOT_FOUND,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_FOUND,
+    ),
+    CaptureSessionGroupNotAssignedForMaterializationError: _structured_detail(
+        422,
+        error_code=CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
+    ),
+    CaptureSessionGroupNotAssignedForPreviewError: _structured_detail(
+        422,
+        error_code=CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
+    ),
+    CaptureSessionGroupNotMaterializedForPreviewError: _structured_detail(
+        422,
+        error_code=CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    ),
+    CaptureSessionGroupIntegrityError: _structured_detail(
+        422,
+        error_code=CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
+    ),
+    CaptureSessionGroupAlreadyAssignedError: _structured_detail(
+        409,
+        error_code=CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
+    ),
+    CaptureSessionGroupAssignmentNotAllowedError: _structured_detail(
+        409,
+        error_code=CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
+    ),
+    AisleNotFoundForAssignmentError: _structured_detail(
+        404,
+        error_code=AISLE_NOT_FOUND_FOR_ASSIGNMENT,
+        detail=lambda e: str(e) or HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
+    ),
+    CaptureSessionInvalidIdempotencyKeyError: _structured_fixed(
+        422,
+        error_code=CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
+    ),
+    CaptureSessionMaterializationNotAllowedError: _structured_fixed(
+        409,
+        error_code=CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+    ),
+    CaptureSessionAlreadyMaterializedError: _structured_fixed(
+        409,
+        error_code=CAPTURE_SESSION_ALREADY_MATERIALIZED,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_ALREADY_MATERIALIZED,
+    ),
+    CaptureSessionMaterializationFailedError: _structured_fixed(
+        500,
+        error_code=CAPTURE_SESSION_MATERIALIZATION_FAILED,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_FAILED,
+    ),
+    CaptureSessionInvalidStateError: _structured_fixed(
+        409,
+        error_code=CAPTURE_SESSION_INVALID_STATE,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE,
+    ),
+    CaptureSessionNotAcceptingUploadsError: _structured_fixed(
+        409,
+        error_code=CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    ),
+    CaptureSessionDuplicateItemContentError: _structured_fixed(
+        409,
+        error_code=CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
+    ),
+    CaptureSessionUploadBatchTooLargeError: _structured_fixed(
+        422,
+        error_code=CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    ),
+    CaptureSessionStagingFileTooLargeError: _structured_fixed(
+        422,
+        error_code=CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
+    ),
+    CaptureSessionStatusFilterInvalidError: _structured_fixed(
+        422,
+        error_code=CAPTURE_SESSION_STATUS_FILTER_INVALID,
+        detail=HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
+    ),
+    UnsupportedAssetTypeError: _structured_detail(
+        400,
+        error_code=UNSUPPORTED_ASSET_TYPE,
+        detail=lambda e: str(e),
+    ),
+    MaxInventoryVisualReferencesExceededError: _plain_http(400),
+}
+
+
 def mapped_http_exception(exc: BaseException) -> HTTPException | None:
     """Return an ``HTTPException`` for registered errors, or ``None`` if not handled here.
 
@@ -302,125 +628,9 @@ def mapped_http_exception(exc: BaseException) -> HTTPException | None:
     detail for value-level validation differ by endpoint and must stay explicit at the route
     or use-case boundary.
     """
-    # StoredArtifactAccessError: Category A (reason-curated detail, not traceback text).
-    if isinstance(exc, StoredArtifactAccessError):
-        return HTTPException(status_code=exc.status_code, detail=exc.detail)
-    # --- Category A: stable fixed-detail not-found / scope errors (+ additive error codes) ---
-    if isinstance(exc, InventoryNotFoundError):
-        return StructuredApiHttpError(
-            404,
-            error_code=INVENTORY_NOT_FOUND,
-            detail=HTTP_DETAIL_INVENTORY_NOT_FOUND,
-        )
-    if isinstance(exc, AisleNotFoundError):
-        return StructuredApiHttpError(
-            404,
-            error_code=AISLE_NOT_FOUND,
-            detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
-        )
-    if isinstance(exc, PositionNotFoundError):
-        return StructuredApiHttpError(
-            404,
-            error_code=POSITION_NOT_FOUND,
-            detail=HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
-        )
-    if isinstance(exc, ProductNotFoundError):
-        return StructuredApiHttpError(
-            404,
-            error_code=PRODUCT_NOT_FOUND,
-            detail=HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
-        )
-    if isinstance(exc, InventoryVisualReferenceNotFoundError):
-        return StructuredApiHttpError(
-            404,
-            error_code=VISUAL_REFERENCE_NOT_FOUND,
-            detail=HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
-        )
-    if isinstance(exc, SourceAssetNotFoundForAisleError):
-        return StructuredApiHttpError(
-            404,
-            error_code=ASSET_NOT_FOUND,
-            detail=HTTP_DETAIL_ASSET_NOT_FOUND,
-        )
-    # --- Category B (Phase 2–3): structured + controlled ``detail`` templates ---
-    # ``JobNotFoundError``: canonical ``Job not found: <id>`` preserved; anything else → ``Job not found``.
-    # See ``_normalized_job_not_found_detail`` (same rule as module docstring).
-    if isinstance(exc, JobNotFoundError):
-        return StructuredApiHttpError(
-            status_code=404,
-            error_code=JOB_NOT_FOUND,
-            detail=_normalized_job_not_found_detail(exc),
-        )
-    if isinstance(exc, JobDoesNotBelongToAisleError):
-        return StructuredApiHttpError(
-            status_code=404,
-            error_code=JOB_NOT_IN_AISLE_SCOPE,
-            detail=_normalized_job_does_not_belong_detail(exc),
-        )
-    if isinstance(exc, PositionResultContextMismatchError):
-        return HTTPException(status_code=409, detail=str(exc))
-    if isinstance(exc, PositionDeletedError):
-        return HTTPException(status_code=409, detail=str(exc))
-    if isinstance(exc, DuplicateAisleCodeError):
-        return HTTPException(status_code=409, detail=str(exc))
-    if isinstance(exc, ActiveJobExistsError):
-        return StructuredApiHttpError(
-            status_code=409,
-            error_code=ACTIVE_JOB_EXISTS,
-            detail=_normalized_active_job_exists_detail(exc),
-        )
-    if isinstance(exc, AisleSourceAssetMutationBlockedError):
-        return StructuredApiHttpError(
-            status_code=409,
-            error_code=AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
-            detail=HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION,
-        )
-    if isinstance(exc, BenchmarkRequiresTestInventoryError):
-        return HTTPException(status_code=409, detail=str(exc))
-    if isinstance(exc, JobPromotionNotAllowedError):
-        return StructuredApiHttpError(
-            status_code=409,
-            error_code=JOB_PROMOTION_NOT_ALLOWED,
-            detail=_normalized_job_promotion_not_allowed_detail(exc),
-        )
-    if isinstance(exc, ReviewMutationNotAllowedError):
-        return HTTPException(status_code=409, detail=str(exc))
-    if isinstance(exc, EmptyUploadError):
-        return HTTPException(status_code=422, detail=str(exc))
-    if isinstance(exc, ZeroByteFileError):
-        return HTTPException(status_code=422, detail=str(exc))
-    if isinstance(exc, UnknownProcessingProviderError):
-        return HTTPException(status_code=422, detail=str(exc))
-    if isinstance(exc, InvalidProcessingModelError):
-        return HTTPException(status_code=422, detail=str(exc))
-    if isinstance(exc, InvalidProcessingPromptKeyError):
-        return HTTPException(status_code=422, detail=str(exc))
-    if isinstance(exc, ProcessingProviderNotConfiguredError):
-        return HTTPException(status_code=422, detail=str(exc))
-    if isinstance(exc, BenchmarkCompareJobsMustDifferError):
-        return StructuredApiHttpError(
-            status_code=422,
-            error_code=BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
-            detail=HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
-        )
-    if isinstance(exc, BenchmarkCompareManyInvalidSelectionError):
-        return StructuredApiHttpError(
-            status_code=422,
-            error_code=BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
-            detail=str(exc),
-        )
-    if isinstance(exc, MergeJobScopeAmbiguousError):
-        return HTTPException(status_code=422, detail=str(exc))
-    if isinstance(exc, AnalyticsScopeValidationError):
-        return StructuredApiHttpError(
-            status_code=422,
-            error_code=ANALYTICS_SCOPE_VALIDATION_FAILED,
-            detail=HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
-        )
-    if isinstance(exc, UnsupportedAssetTypeError):
-        return HTTPException(status_code=400, detail=str(exc))
-    if isinstance(exc, MaxInventoryVisualReferencesExceededError):
-        return HTTPException(status_code=400, detail=str(exc))
+    for exc_type, build in _HTTP_EXCEPTION_DISPATCH.items():
+        if isinstance(exc, exc_type):
+            return build(exc)
     return None
 
 

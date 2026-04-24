@@ -90,6 +90,11 @@ class SourceAssetRepository(ABC):
         """Return upload count and latest ``uploaded_at`` per aisle id (missing aisles omitted or zero)."""
         ...
 
+    @abstractmethod
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+        """Return the asset linked to this capture item id, if any (G5 idempotency)."""
+        ...
+
 
 class PositionRepository(ABC):
     @abstractmethod

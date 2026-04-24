@@ -63,6 +63,7 @@ def _row_to_asset(row) -> SourceAsset:
     )
     # mime_type: domain/API; content_type: storage metadata (falls back to mime for legacy rows).
     content_type = (getattr(row, "content_type", None) or "").strip() or (getattr(row, "mime_type", None) or "")
+    cap_item = (getattr(row, "capture_session_item_id", None) or "").strip() or None
     return SourceAsset(
         id=aid,
         aisle_id=row.aisle_id or "",
@@ -78,6 +79,7 @@ def _row_to_asset(row) -> SourceAsset:
         content_type=content_type or None,
         file_size_bytes=getattr(row, "file_size_bytes", None),
         etag=(getattr(row, "etag", None) or "").strip() or None,
+        capture_session_item_id=cap_item,
     )
 
 
@@ -97,7 +99,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 SET aisle_id = ?, type = ?, original_filename = ?, storage_path = ?,
                     storage_provider = ?, storage_bucket = ?, storage_key = ?,
                     content_type = ?, file_size_bytes = ?, etag = ?,
-                    mime_type = ?, uploaded_at = ?, metadata_json = ?
+                    mime_type = ?, uploaded_at = ?, metadata_json = ?,
+                    capture_session_item_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -114,6 +117,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     asset.mime_type,
                     uploaded,
                     meta_str,
+                    asset.capture_session_item_id,
                     asset.id,
                 ),
             )
@@ -123,9 +127,9 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     INSERT INTO source_assets (
                         id, aisle_id, type, original_filename, storage_path,
                         storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                        mime_type, uploaded_at, metadata_json
+                        mime_type, uploaded_at, metadata_json, capture_session_item_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         asset.id,
@@ -142,6 +146,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                         asset.mime_type,
                         uploaded,
                         meta_str,
+                        asset.capture_session_item_id,
                     ),
                 )
 
@@ -151,7 +156,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 """
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                       mime_type, uploaded_at, metadata_json
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id
                 FROM source_assets WHERE id = ?
                 """,
                 (asset_id,),
@@ -166,13 +171,32 @@ class SqlSourceAssetRepository(SourceAssetRepository):
             cur.execute("DELETE FROM source_assets WHERE id = ?", (asset_id,))
             return cur.rowcount > 0
 
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+        cid = (capture_session_item_id or "").strip()
+        if not cid:
+            return None
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, aisle_id, type, original_filename, storage_path,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id
+                FROM source_assets WHERE capture_session_item_id = ?
+                """,
+                (cid,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return _row_to_asset(row)
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         with self._client.cursor() as cur:
             cur.execute(
                 """
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                       mime_type, uploaded_at, metadata_json
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id
                 FROM source_assets WHERE aisle_id = ? ORDER BY uploaded_at ASC
                 """,
                 (aisle_id,),

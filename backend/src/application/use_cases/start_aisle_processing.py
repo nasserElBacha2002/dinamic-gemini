@@ -17,9 +17,14 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from src.application.errors import ActiveJobExistsError, InventoryNotFoundError
+from src.application.errors import ActiveJobExistsError, InventoryNotFoundError, NoSourceAssetsForAisleProcessingError
 from src.application.ports.contracts import ProcessAislePayload
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    JobRepository,
+    SourceAssetRepository,
+)
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
@@ -110,12 +115,14 @@ class StartAisleProcessingUseCase:
         self,
         inventory_repo: InventoryRepository,
         aisle_repo: AisleRepository,
+        asset_repo: SourceAssetRepository,
         job_repo: JobRepository,
         launch_service: AisleJobLaunchService,
         stale_reconciler: JobStaleReconciler,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
+        self._asset_repo = asset_repo
         self._job_repo = job_repo
         self._launch_service = launch_service
         self._stale_reconciler = stale_reconciler
@@ -131,6 +138,17 @@ class StartAisleProcessingUseCase:
             aisle_id=command.aisle_id,
             detail_style="strict",
         )
+
+        aisle_assets = self._asset_repo.list_by_aisle(command.aisle_id)
+        if not aisle_assets:
+            logger.info(
+                "aisle.process_rejected_no_source_assets inventory_id=%s aisle_id=%s",
+                command.inventory_id,
+                command.aisle_id,
+            )
+            raise NoSourceAssetsForAisleProcessingError(
+                f"No source assets for aisle {command.aisle_id}; upload media before processing."
+            )
 
         _require_no_active_process_job_for_aisle(
             stale_reconciler=self._stale_reconciler,

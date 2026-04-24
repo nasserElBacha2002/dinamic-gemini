@@ -842,6 +842,7 @@
   },
   "nav": {
     "inventories": "Inventarios",
+    "ingestion_sessions": "Sesiones de importación",
     "review_queue": "Cola de revisión",
     "metrics": "Métricas",
     "ai_config": "Configuración de IA"
@@ -878,9 +879,130 @@
       "title": "Métricas",
       "subtitle": "Desempeño operativo y tendencias de calidad"
     },
+    "ingestion_sessions": {
+      "title": "Sesiones de importación",
+      "subtitle": "Subí medios y prepará sesiones para preview"
+    },
     "admin_ai_config": {
       "title": "Configuración de IA",
       "subtitle": "Administrá proveedores, prompts y paridad de prompts"
+    }
+  },
+  "ingestion_sessions": {
+    "page": {
+      "title": "Sesiones de importación",
+      "subtitle": "Creá, subí y prepará sesiones antes del preview."
+    },
+    "filters": {
+      "title": "Filtros de sesión",
+      "inventory": "Inventario",
+      "aisle": "Pasillo",
+      "all_aisles": "Todos los pasillos"
+    },
+    "list": {
+      "title": "Sesiones de importación",
+      "column_session_id": "ID de sesión",
+      "column_aisle_id": "ID de pasillo",
+      "column_status": "Estado",
+      "column_created": "Creada",
+      "column_actions": "Acciones"
+    },
+    "detail": {
+      "page_title": "Detalle de sesión de importación",
+      "section_title": "Sesión",
+      "title": "Sesión de importación",
+      "session_id": "ID",
+      "status": "Estado",
+      "created": "Creada",
+      "import_status": "estado_importación",
+      "import_status_imported": "Importado",
+      "import_status_failed": "Importación fallida",
+      "import_status_pending": "Pendiente / en curso",
+      "effective_capture_time": "Hora de captura",
+      "time_source": "Fuente de hora",
+      "time_source_values": {
+        "exif": "EXIF",
+        "file_mtime": "Fecha de modificación del archivo",
+        "fallback_clock": "Reloj del servidor (respaldo)"
+      },
+      "time_confidence": "Confianza de hora",
+      "grouping_title": "Agrupación",
+      "grouping_compute": "Calcular grupos",
+      "grouping_hint_close": "Cerrá la sesión para ejecutar la agrupación temporal determinística.",
+      "grouping_hint_blocked": "La agrupación temporal no está disponible para este estado de sesión.",
+      "grouping_loading": "Cargando grupos…",
+      "grouping_empty": "Todavía no hay grupos. Ejecutá el cálculo después de cerrar la sesión.",
+      "grouping_row": "Grupo {{index}} — {{count}} ítems — {{start}} → {{end}}",
+      "grouping_ungrouped": "{{count}} ítem(s) no están en ningún grupo (excluidos por reglas o sin hora de captura).",
+      "grouping_assign_existing": "Asignar a pasillo",
+      "grouping_create_aisle": "Crear pasillo",
+      "grouping_assignment_unassigned": "Sin asignar",
+      "grouping_assignment_existing": "Asignado (pasillo existente)",
+      "grouping_assignment_new": "Pasillo nuevo creado",
+      "grouping_assign_dialog_title": "Asignar grupo a pasillo",
+      "grouping_assign_dialog_confirm": "Asignar",
+      "grouping_assign_dialog_cancel": "Cancelar",
+      "grouping_assign_select_aisle": "Elegir pasillo",
+      "grouping_create_dialog_title": "Crear pasillo desde el grupo",
+      "grouping_create_dialog_code_label": "Código de pasillo",
+      "grouping_create_dialog_confirm": "Crear y asignar",
+      "grouping_recompute_confirm_title": "¿Perder asignaciones a pasillos?",
+      "grouping_recompute_confirm_body": "Volver a calcular grupos borra los grupos actuales y todas las asignaciones a pasillos de esta sesión. No se puede deshacer desde la app.",
+      "grouping_recompute_confirm_cancel": "Cancelar",
+      "grouping_recompute_confirm_proceed": "Recalcular igual",
+      "grouping_assigned_aisle_code": "Pasillo: {{code}}",
+      "grouping_assigned_aisle_id_only": "ID de pasillo: {{id}}",
+      "grouping_assign_no_aisles_helper": "No hay pasillos en este inventario. Creá un pasillo primero y luego asigná.",
+      "grouping_preview": "Vista previa",
+      "grouping_materialize": "Materializar",
+      "grouping_preview_disabled_assign": "Asigná este grupo a un pasillo primero",
+      "grouping_preview_disabled_materialize": "Materializá este grupo antes de la vista previa",
+      "grouping_preview_dialog_title": "Vista previa del grupo (activos materializados)",
+      "grouping_preview_trace_session": "Sesión de captura: {{id}}",
+      "grouping_preview_meta": "Pasillo: {{aisle}} · {{assets}} activo(s) de origen · estado: {{status}}",
+      "grouping_preview_row_status": "Estado de asignación: {{status}}",
+      "grouping_preview_row_reason": "Motivo: {{reason}}",
+      "grouping_preview_row_item": "Ítem de captura: {{id}}",
+      "grouping_preview_row_asset": "Activo de origen: {{id}}",
+      "grouping_preview_row_position": "Posición objetivo (preview): {{id}}",
+      "grouping_preview_row_time": "Hora de captura ajustada: {{time}}",
+      "grouping_preview_summary": "{{proposed}} propuestos · {{conflicts}} conflictos · {{unassigned}} sin asignar · {{items}} ítem(s) en la vista previa",
+      "grouping_preview_empty_hint": "No hay activos utilizables para la vista previa (solo vacíos o ítems no importados).",
+      "grouping_preview_item_row": "{{status}} — ítem {{itemId}} — activo {{assetId}}",
+      "grouping_create_code_helper": "1–64 caracteres (mismas reglas que al crear un pasillo)."
+    },
+    "upload": {
+      "title": "Subir medios importados",
+      "subtitle": "Arrastrá y soltá archivos aquí o seleccioná múltiples archivos desde tu dispositivo.",
+      "select_files": "Seleccionar archivos",
+      "error_summary": "La carga terminó con errores. Revisá los estados por archivo abajo.",
+      "summary_ok": "{{ok}} archivo(s) subidos correctamente.",
+      "summary_mixed": "{{ok}} archivo(s) subidos correctamente, {{fail}} fallidos.",
+      "summary_all_failed": "Ningún archivo se subió correctamente ({{fail}} fallidos).",
+      "status": {
+        "uploaded": "Subido",
+        "failed": "Fallido",
+        "uploading": "Subiendo",
+        "pending": "Pendiente"
+      }
+    },
+    "actions": {
+      "new_import_session": "Nueva sesión de importación",
+      "open": "Abrir",
+      "close_session": "Cerrar sesión",
+      "cancel_session": "Cancelar sesión",
+      "back_to_sessions": "Volver a sesiones"
+    },
+    "empty": {
+      "title": "Todavía no hay sesiones de importación",
+      "message": "Creá una nueva sesión de importación para comenzar.",
+      "upload_to_begin": "Subí imágenes para comenzar."
+    },
+    "errors": {
+      "missing_inventory_or_session": "Faltan parámetros de ruta requeridos: inventoryId y sessionId."
+    },
+    "common": {
+      "not_available": "N/D"
     }
   },
   "shell": {

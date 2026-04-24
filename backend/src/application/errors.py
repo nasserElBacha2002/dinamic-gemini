@@ -32,6 +32,10 @@ class EmptyUploadError(Exception):
     """Raised when no files are provided for an aisle asset upload."""
 
 
+class NoSourceAssetsForAisleProcessingError(Exception):
+    """Raised when aisle processing is requested but the aisle has no persisted SourceAsset rows."""
+
+
 class SourceAssetNotFoundForAisleError(Exception):
     """Raised when a source asset id is unknown or does not belong to the scoped aisle."""
 
@@ -125,3 +129,103 @@ class BenchmarkCompareManyInvalidSelectionError(Exception):
 
 class AnalyticsScopeValidationError(Exception):
     """Raised when analytics filters combine ``inventory_id`` and ``aisle_id`` inconsistently."""
+
+
+class CaptureSessionNotFoundError(Exception):
+    """Raised when a capture session is missing or not scoped to the requested inventory/aisle."""
+
+
+class OpenCaptureSessionExistsError(Exception):
+    """Raised when creating a session would exceed the allowed number of open sessions for the aisle."""
+
+
+class CaptureSessionInvalidStateError(Exception):
+    """Raised when a session lifecycle transition is not allowed for the current status."""
+
+
+class CaptureSessionNotAcceptingUploadsError(Exception):
+    """Raised when staging uploads are blocked (terminal state, cancelled, or closed session)."""
+
+
+class CaptureSessionDuplicateItemContentError(Exception):
+    """Raised when the same content hash is already registered for this session (unique index)."""
+
+
+class CaptureSessionUploadBatchTooLargeError(Exception):
+    """Raised when the number of files in one staging upload exceeds the configured cap."""
+
+
+class CaptureSessionStagingFileTooLargeError(Exception):
+    """Raised when a single staging upload exceeds the configured max upload size."""
+
+
+class CaptureSessionStatusFilterInvalidError(Exception):
+    """Raised when GET .../capture-sessions ``status`` query contains unknown or empty tokens."""
+
+
+class CaptureSessionConfirmLedgerDuplicateError(Exception):
+    """Raised when inserting a duplicate (session_id, idempotency_key) into the confirm ledger."""
+
+
+class CaptureSessionInvalidClockOffsetError(Exception):
+    """Raised when ``clock_offset_seconds`` is outside the configured safe range."""
+
+
+class CaptureSessionPreviewNotAllowedError(Exception):
+    """Raised when assignment preview cannot run for the current session state or scope."""
+
+
+class CaptureSessionMaterializationNotAllowedError(Exception):
+    """Raised when materialization cannot run for the current session state or item set."""
+
+
+class CaptureSessionMaterializationFailedError(Exception):
+    """Raised when materialization fails after entering the operation (storage/persistence/runtime)."""
+
+
+class CaptureSessionAlreadyMaterializedError(Exception):
+    """Raised when a session has already been materialized and a different idempotency key is used."""
+
+
+class CaptureSessionInvalidIdempotencyKeyError(Exception):
+    """Raised when materialization/confirm idempotency key is missing or invalid."""
+
+
+class CaptureSessionGroupingNotAllowedError(Exception):
+    """Raised when temporal grouping cannot run for the current session (not closed, terminal, etc.)."""
+
+
+class CaptureSessionNoItemsForGroupingError(Exception):
+    """Raised when no imported items with capture timestamps exist to form groups."""
+
+
+class CaptureSessionGroupNotFoundError(Exception):
+    """Raised when a temporal group id is unknown for the given capture session."""
+
+
+class CaptureSessionGroupAlreadyAssignedError(Exception):
+    """Raised when a group already has an aisle assignment (G4)."""
+
+
+class CaptureSessionGroupAssignmentNotAllowedError(Exception):
+    """Raised when aisle assignment to a group is not allowed for the current session state (G4)."""
+
+
+class AisleNotFoundForAssignmentError(Exception):
+    """Raised when the target aisle does not exist or does not belong to the session's inventory (G4)."""
+
+
+class CaptureSessionGroupNotAssignedForMaterializationError(Exception):
+    """Raised when materialize-group is called on a group that is still unassigned (G5)."""
+
+
+class CaptureSessionGroupNotAssignedForPreviewError(Exception):
+    """Raised when G6 group preview is requested before the temporal group is assigned to an aisle."""
+
+
+class CaptureSessionGroupNotMaterializedForPreviewError(Exception):
+    """Raised when G6 preview requires at least one materialized SourceAsset for the group (G6)."""
+
+
+class CaptureSessionGroupIntegrityError(Exception):
+    """G7 — defensive invariant violation (session/group/item linkage or preview/materialize scope)."""

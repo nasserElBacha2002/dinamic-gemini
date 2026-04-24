@@ -1,0 +1,45 @@
+# Capture Session Guardrails (R1)
+
+Reglas obligatorias para preservar arquitectura, determinismo e integración con pipeline.
+
+## Invariantes críticos
+
+- Nunca crear `SourceAsset` durante upload a staging (`/items`).
+- Solo `materialize` crea `SourceAsset` desde `CaptureSessionItem`.
+- Preview es determinístico (orden temporal + heurística explícita del módulo `compute_item_preview_outcomes`).
+- Materialización es idempotente por `(session_id, idempotency_key)`.
+- El pipeline (`process_aisle`) consume exclusivamente `SourceAsset`.
+
+## Reglas de implementación
+
+- Rutas API deben mantenerse delgadas: parsear -> use case -> serializar.
+- Errores de negocio en captura deben salir como estructura `code/detail`.
+- No introducir lógica de pipeline dentro de flujo de captura.
+- No acoplar UI a supuestos implícitos; usar estados y códigos documentados.
+
+## Reglas de estados
+
+- Bloquear acciones inválidas según estado (`DRAFT/IMPORTING/READY_FOR_REVIEW/ASSIGNMENT_PROPOSED/CONFIRMING`).
+- `CONFIRMING` en fase actual significa: materializado + bloqueado para mutaciones del flujo de captura.
+- G1 (inventory-level operable): `upload`, `close` y `cancel` se permiten sin `aisle_id`.
+- G1 (fuera de alcance para sesiones sin pasillo): `preview`, `clock-offset` y `materialize` siguen acoplados a sesión aisle-bound y deben responder con error estructurado cuando no aplique.
+- G2 (batch staging): contrato HTTP **201** con `items[]` + `errors[]` por archivo en multipart válido; errores de **toda** la petición siguen siendo HTTP de error. Política de transporte en UI: chunks secuenciales (sin POSTs paralelos por tanda). Ver `docs/capture-session-api-contract.md` (sección 6 y “Política de errores”).
+- G3 (temporal grouping, inventory-level): segmentación por gap de tiempo sobre ítems importados con `effective_capture_time`; no materializa. Contrato y errores: `docs/capture-session-api-contract.md` (sección “Temporal grouping (G3)”).
+- G4 (group → aisle): vincular cada grupo temporal a un pasillo existente o crear uno nuevo; no materializa ni preview de posiciones. Contrato: `docs/capture-session-api-contract.md` (sección “Group → aisle assignment (G4)”).
+- G4 / UI: no ejecutar `compute-groups` de nuevo si hay asignaciones sin **confirmación explícita** al usuario (pérdida de `assigned_*`). G4 no incluye reasignación ni undo; estados `assigned_existing` / `assigned_new` son finales hasta evolución de producto.
+- G5 (group materialize): solo grupos **asignados** a pasillo; idempotencia vía `source_assets.capture_session_item_id` (única); no modificar `process_aisle` ni el materialize Phase-4 aisle-bound. Contrato: `docs/capture-session-api-contract.md` (sección “Group materialization (G5)”).
+- G6 (group preview): **solo** lectura; opera sobre `SourceAsset` ya materializados en el pasillo del grupo, filtrados al `group_id`; no muta ítems ni sesión; no sustituye `process_aisle`. Debe rechazarse con 422 si el grupo no está asignado o si aún no hay materialización utilizable. Contrato: `docs/capture-session-api-contract.md` (sección “Group preview after materialization (G6)”). El campo ``preview_status`` sigue reglas explícitas en ``_classify_g6_preview_status`` (empty / partial / ready). La UI puede usar heurísticas locales sobre ``linked_source_asset_id`` solo como **precheck**; la fuente de verdad sigue siendo el endpoint de preview.
+- G7 (operación): endurecimiento sin cambiar rutas ni arquitectura G3–G6 — logs JSON + métricas ligeras en proceso, validaciones defensivas de coherencia (sesión/grupo/ítem y activos en pasillo), `materialization_state` en listados de grupos, `preview_operator_state` en respuesta 200 de preview, metadata ampliada en materialización, código `CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION` (422) ante invariantes rotas. Ver `docs/capture-session-api-contract.md` (sección “Operación y observabilidad (G7)”).
+
+## Reglas de datos y trazabilidad
+
+- Mantener `adjusted_capture_time`, `assignment_reason`, `preview_target_position_id` como resultado de preview.
+- Mantener metadata de trazabilidad en `SourceAsset.metadata_json` durante materialización (G7: incluir `materialized_at` y `materialization_operation_id` además de ids de sesión/grupo/ítem).
+- Ante evidencia insuficiente, priorizar estados explícitos y no inferencias implícitas.
+
+## Anti-patrones prohibidos
+
+- Saltarse materialización y procesar desde staging.
+- Crear un segundo camino de creación de `SourceAsset` fuera de use case de materialización.
+- Modificar schema/estados core en R1 para resolver necesidades de UI.
+- Introducir integración directa de dron en este track.
