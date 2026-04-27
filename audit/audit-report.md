@@ -87,6 +87,58 @@ Registrar hallazgos de backend, frontend y seguridad de sistema corriendo, sin c
   - Menor trazabilidad de fallos al coexistir deuda de estilo, tipado y pruebas en paralelo.
   - Dificultad para endurecer el Quality Gate sin una remediación incremental por lotes.
 
+## Resumen de hallazgos frontend
+
+| Herramienta/Auditoría | Severidad predominante | Cantidad aprox | Estado | Observaciones |
+|---|---|---:|---|---|
+| ESLint | Medio | 66 (40 errores, 26 warnings) | Detectado | En corrida actual sí ejecuta; en corridas previas quedó `SKIPPED` por ausencia de script `lint`. |
+| Typecheck | - | 0 | OK | TypeScript compila sin errores en la corrida registrada. |
+| npm audit | Medio | 7 moderadas | Detectado | Vulnerabilidades en cadena Vite/Vitest y paquetes transversales (`esbuild`, `postcss`, `yaml`). |
+| Vitest | Alto | 19 archivos / 86 tests fallidos | Detectado | Fallos agrupados en suites principales de UI/flujo operacional. |
+| useEffect audit | Medio | 46 usos / 20 archivos | Detectado | Conteos útiles, pero con posibles falsos positivos/negativos por heurística textual. |
+| Error handling audit | Medio | 100 archivos con patrones | Detectado | Alta dispersión de patrones; requiere normalización por criticidad y UX. |
+| Reusable components audit | Medio | 0 archivos candidatos / 300+ referencias UI | Detectado | Resultado inconsistente entre conteo de archivos y referencias; indica limitación del scanner. |
+
+### Hallazgos clave frontend
+
+- ESLint ya se ejecuta y reporta 66 findings (40 errores, 26 warnings), con foco en hooks React (`set-state-in-effect`, dependencias faltantes).
+- Typecheck finaliza sin errores de TypeScript en la corrida auditada.
+- `npm audit` reporta 7 vulnerabilidades moderadas (sin high/critical), principalmente en la cadena de build/test.
+- Las remediaciones sugeridas por `npm audit` para Vite/Vitest implican upgrade semver major, por lo que requieren validación de compatibilidad.
+- Vitest muestra 19 archivos de test fallidos y 86 tests fallidos, concentrados en `ExecutionLogPanel`, `CompareRunsPage`, `MetricsPage`, `InventoryDetailPage` y flujos de revisión.
+- Se observa warning recurrente de entorno npm: `Unknown env config "devdir"`, que introduce ruido en reportes y puede afectar consistencia de ejecución.
+- La auditoría de `useEffect` detecta uso extendido, pero los patrones avanzados (fetch/listeners/timers) aparecen en cero y pueden estar subdetectados.
+- La auditoría de manejo de errores detecta alta cantidad de archivos con patrones (`onError`, `isError`, `try/catch`), lo que sugiere dispersión de estrategia.
+- La auditoría de componentes reutilizables muestra un desalineamiento (0 archivos candidatos pero cientos de referencias), señal de que la heurística de descubrimiento necesita ajuste.
+
+### Riesgos frontend identificados
+
+- **Riesgos técnicos**
+  - Fallos en suites de UI críticas pueden afectar flujos operativos y confianza en regresión.
+  - Findings de hooks React pueden derivar en renders en cascada o efectos no controlados.
+  - Cobertura de test efectiva reducida por volumen de suites inestables.
+
+- **Riesgos de seguridad/dependencias**
+  - Vulnerabilidades moderadas en dependencias de tooling (build/test) con posibilidad de impacto en entornos de desarrollo/CI.
+  - Correcciones disponibles con upgrades mayores que pueden introducir incompatibilidades no triviales.
+
+- **Riesgos de mantenibilidad**
+  - Acumulación de findings de lint y fallos de test incrementa costo de cambios futuros.
+  - Estrategia de manejo de errores potencialmente fragmentada entre páginas/hooks/componentes.
+  - Detección incompleta de oportunidades de reutilización puede sostener duplicación de UI.
+
+- **Riesgos de tooling**
+  - Variabilidad entre corridas (por ejemplo lint `SKIPPED` en etapas previas) dificulta trazabilidad histórica si no se normaliza el entorno.
+  - Warning `devdir` de npm ensucia reportes y complica lectura automatizada.
+
+### Limitaciones de auditoría frontend
+
+- ESLint no se ejecutó en corridas iniciales hasta agregar script `lint`; en la corrida actual ya ejecuta y reporta findings.
+- Las auditorías estáticas por patrones de texto (`grep/find`) son aproximadas y no equivalen a análisis semántico AST.
+- Sin `ripgrep`, el script usa fallback con `find/grep`; esto puede afectar precisión y performance.
+- Resultados en cero (por ejemplo algunos patrones de `useEffect`) pueden ser falsos negativos por expresiones regulares o estructura del código.
+- Parte de los fallos de tests puede estar influida por cambios de copy/i18n o contratos de texto, no solo por roturas de lógica de negocio.
+
 ## Observaciones generales
 
 - Implementación progresiva del Quality Gate.

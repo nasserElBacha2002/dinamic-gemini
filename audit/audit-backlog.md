@@ -140,15 +140,172 @@
 - Recomendación futura: Documentar justificación técnica o reemplazar patrones donde corresponda.
 - Estado: Pendiente
 
+### AUD-013 - Hallazgos ESLint en hooks React con riesgo de renders en cascada
+- Área: Frontend
+- Herramienta: ESLint
+- Severidad: Alto
+- Archivo/Ruta: `frontend/src/components/CreateAisleDialog.tsx`, `frontend/src/components/ExecutionLogPanel.tsx`, `frontend/src/components/ui/ImageViewer.tsx`, `frontend/src/components/imageAssets/ManagedImageAssetsDrawer.tsx`
+- Descripción: Se detectan errores `react-hooks/set-state-in-effect` y dependencias incompletas en hooks.
+- Riesgo: Posibles rerenders innecesarios, efectos no deterministas y comportamiento UI difícil de estabilizar.
+- Evidencia: `audit/raw/frontend-eslint.txt`
+- Recomendación futura: Revisar patrones de efectos y mover inicializaciones/derivaciones a `useMemo`/estado derivado cuando corresponda.
+- Estado: Pendiente
+
+### AUD-014 - Deuda de lint frontend concentrada en reglas de hooks y refresh
+- Área: Frontend
+- Herramienta: ESLint
+- Severidad: Medio
+- Archivo/Ruta: `frontend/src/` (global)
+- Descripción: La corrida reporta 66 findings (40 errores, 26 warnings), incluyendo `react-refresh/only-export-components` y warnings de dependencias.
+- Riesgo: Ruido técnico elevado que dificulta priorizar fallos funcionales en PRs.
+- Evidencia: `audit/raw/frontend-eslint.txt`
+- Recomendación futura: Aplicar remediación por lotes de reglas, empezando por errores bloqueantes de hooks.
+- Estado: Pendiente
+
+### AUD-015 - Drift de tooling de lint entre corridas (SKIPPED previo vs ejecución actual)
+- Área: Frontend
+- Herramienta: ESLint
+- Severidad: Medio
+- Archivo/Ruta: `frontend/package.json`, `scripts/audit/run_frontend_audit.sh`
+- Descripción: En fases previas lint quedó `SKIPPED` por falta de script; actualmente ejecuta, lo que evidencia inconsistencia histórica de setup.
+- Riesgo: Trazabilidad incompleta de calidad frontend entre ejecuciones del gate.
+- Evidencia: historial de `audit/raw/frontend-eslint.txt` + reportes de Fase 3.
+- Recomendación futura: Mantener control de precondiciones del entorno y versionar checklist de tooling mínimo.
+- Estado: Pendiente
+
+### AUD-016 - Vulnerabilidades moderadas en cadena de build/test frontend
+- Área: Frontend
+- Herramienta: npm audit
+- Severidad: Alto
+- Archivo/Ruta: `frontend/package-lock.json`
+- Descripción: Se reportan 7 vulnerabilidades moderadas en `vite`, `vitest`, `vite-node`, `@vitest/mocker`, `esbuild`, `postcss`, `yaml`.
+- Riesgo: Riesgo de seguridad en toolchain de desarrollo/CI y posibles superficies de ataque indirectas.
+- Evidencia: `audit/raw/frontend-npm-audit.json`
+- Recomendación futura: Planificar remediación por dependencias, priorizando advisories con CVE/CWE de mayor impacto.
+- Estado: Pendiente
+
+### AUD-017 - Remediaciones de npm audit requieren upgrades major (riesgo de compatibilidad)
+- Área: Frontend
+- Herramienta: npm audit
+- Severidad: Medio
+- Archivo/Ruta: `frontend/package.json`, `frontend/package-lock.json`
+- Descripción: Las correcciones propuestas para `vite`/`vitest` apuntan a versiones semver major.
+- Riesgo: Posibles cambios breaking en tooling, tests y configuración de build.
+- Evidencia: `audit/raw/frontend-npm-audit.json`
+- Recomendación futura: Ejecutar upgrade controlado en rama dedicada con matriz de tests y smoke de build.
+- Estado: Pendiente
+
+### AUD-018 - Fallos de tests en ExecutionLogPanel afectan observabilidad operativa
+- Área: Frontend
+- Herramienta: Vitest
+- Severidad: Alto
+- Archivo/Ruta: `frontend/tests/ExecutionLogPanel.test.tsx`
+- Descripción: 6 de 8 tests fallan en la suite, incluyendo validaciones de rendering y contenido.
+- Riesgo: Menor confiabilidad en UI de trazabilidad/observabilidad de ejecución.
+- Evidencia: `audit/raw/frontend-vitest.txt`
+- Recomendación futura: Reconciliar contratos de texto/datos de panel con expectativas de test.
+- Estado: Pendiente
+
+### AUD-019 - Fallos en CompareRunsPage impactan flujos comparativos de analítica
+- Área: Frontend
+- Herramienta: Vitest
+- Severidad: Alto
+- Archivo/Ruta: `frontend/tests/CompareRunsPage.test.tsx`, `frontend/tests/CompareRunsDialog.test.tsx`
+- Descripción: Fallos repetidos en pruebas de comparación entre corridas y su diálogo asociado.
+- Riesgo: Riesgo funcional en vistas de benchmarking y análisis comparativo para usuarios.
+- Evidencia: `audit/raw/frontend-vitest.txt`
+- Recomendación futura: Validar contratos de filtros, copys y dependencias de datos en vistas de comparación.
+- Estado: Pendiente
+
+### AUD-020 - Fallos en MetricsPage y dashboards asociados
+- Área: Frontend
+- Herramienta: Vitest
+- Severidad: Alto
+- Archivo/Ruta: `frontend/tests/MetricsPage.test.tsx`
+- Descripción: 7 de 13 tests fallan en la suite de métricas.
+- Riesgo: Posible degradación en tablero de métricas y confianza de indicadores mostrados.
+- Evidencia: `audit/raw/frontend-vitest.txt`
+- Recomendación futura: Ajustar fixtures/expectativas de métricas y validar adaptadores de datos de analytics.
+- Estado: Pendiente
+
+### AUD-021 - Inestabilidad amplia de pruebas frontend en suites core
+- Área: Frontend
+- Herramienta: Vitest
+- Severidad: Crítico
+- Archivo/Ruta: `frontend/tests/` (global, 19 archivos fallidos)
+- Descripción: La corrida registra 19 archivos fallidos y 86 tests fallidos sobre 426.
+- Riesgo: Alto riesgo de regresiones al no contar con red de seguridad confiable para cambios de UI/estado.
+- Evidencia: `audit/raw/frontend-vitest.txt` (resumen final)
+- Recomendación futura: Plan de estabilización por dominios (auth, inventario, revisión, analytics) con gate incremental.
+- Estado: Pendiente
+
+### AUD-022 - Limitaciones del scanner de useEffect para patrones avanzados
+- Área: Frontend
+- Herramienta: useEffect audit
+- Severidad: Medio
+- Archivo/Ruta: `frontend/src/` (múltiples archivos)
+- Descripción: Se detectan 46 usos de `useEffect`, pero varios patrones avanzados figuran en cero, sugiriendo subdetección por heurística.
+- Riesgo: Falsos negativos en detección de side-effects problemáticos o lógica de API dentro de efectos.
+- Evidencia: `audit/raw/frontend-useeffects-audit.md`
+- Recomendación futura: Mejorar scanner (AST o regex multiline robusta) y cruzar con findings de ESLint hooks.
+- Estado: Pendiente
+
+### AUD-023 - Riesgo de interpretación parcial en auditoría de manejo de errores
+- Área: Frontend
+- Herramienta: Error handling audit
+- Severidad: Medio
+- Archivo/Ruta: `frontend/src/`, `frontend/tests/`
+- Descripción: El reporte marca 100 archivos con patrones de error, pero no diferencia criticidad ni contexto (UI, test, utilidades).
+- Riesgo: Backlog sobredimensionado sin priorización clara; posible mezcla de ruido y deuda real.
+- Evidencia: `audit/raw/frontend-error-handling-audit.md`
+- Recomendación futura: Clasificar por capas (runtime UI vs test helpers) y por impacto de usuario.
+- Estado: Pendiente
+
+### AUD-024 - Inconsistencia en auditoría de componentes reutilizables
+- Área: Frontend
+- Herramienta: Reusable components audit
+- Severidad: Medio
+- Archivo/Ruta: `frontend/src/components`, `frontend/src/pages`, `frontend/src/features`
+- Descripción: Reporta 0 archivos candidatos, pero cientos de referencias a componentes base (`Button`, `Table`, `Dialog`, etc.).
+- Riesgo: Falso negativo en detección de duplicación y oportunidades de abstracción.
+- Evidencia: `audit/raw/frontend-reusable-components-audit.md`
+- Recomendación futura: Ajustar descubrimiento de archivos por rutas y mejorar criterio de agrupación por patrón.
+- Estado: Pendiente
+
+### AUD-025 - Warning recurrente de npm por configuración de entorno (devdir)
+- Área: Frontend
+- Herramienta: npm / tooling
+- Severidad: Bajo
+- Archivo/Ruta: entorno npm local (visible al inicio de reportes)
+- Descripción: Se repite `npm warn Unknown env config "devdir"` en lint, typecheck, audit y tests.
+- Riesgo: Ruido operativo y potencial confusión en pipelines/entornos compartidos.
+- Evidencia: `audit/raw/frontend-eslint.txt`, `audit/raw/frontend-typecheck.txt`, `audit/raw/frontend-npm-audit.json`, `audit/raw/frontend-vitest.txt`
+- Recomendación futura: Auditar configuración npm del entorno y documentar estándar para ejecución local/CI.
+- Estado: Pendiente
+
+### AUD-026 - Warnings de React Router future flags en ejecución de tests
+- Área: Frontend
+- Herramienta: Vitest
+- Severidad: Bajo
+- Archivo/Ruta: suites de UI con enrutamiento (`frontend/tests/...`)
+- Descripción: Se observan warnings de future flags de React Router durante tests.
+- Riesgo: Riesgo de deuda de compatibilidad para próximas versiones del router.
+- Evidencia: `audit/raw/frontend-vitest.txt`
+- Recomendación futura: Planificar adopción progresiva de future flags y actualizar setup de test/router wrappers.
+- Estado: Pendiente
+
 ## Falsos positivos
 
 - **Bandit B608 en repositorios SQL con parámetros controlados**: parte de los hallazgos puede corresponder a SQL dinámico con placeholders seguros y parámetros separados.
 - **Bandit B101 en asserts de validación interna**: algunos casos pueden ser validaciones internas no expuestas a entrada externa.
 - **Bandit B404/B603 en subprocess de worker on-demand**: posible falso positivo parcial si la fuente de comandos está completamente controlada por configuración interna.
 - **Mypy import-not-found de librerías sin stubs oficiales**: en varios casos no implica bug runtime, sino cobertura tipada incompleta.
+- **useEffect audit con patrones en cero**: algunos conteos pueden ser falsos negativos por limitaciones de regex/fallback textual.
+- **Reusable components audit (0 archivos vs alta referencia)**: resultado potencialmente sesgado por heurística de descubrimiento de archivos.
 
 ## Observaciones generales
 
 - El backend está funcionalmente activo, pero presenta una deuda técnica significativa en calidad estática (lint + typing) y estabilidad de pruebas.
 - La prioridad para la siguiente fase de remediación debería enfocarse en: (1) pruebas fallidas core, (2) hallazgos de seguridad MEDIUM, (3) contratos de tipos en rutas y pipeline.
 - El material generado en `audit/raw/` es suficiente para construir un plan de corrección por lotes sin alterar aún el comportamiento de deploy.
+- En frontend, la mayor deuda actual se concentra en estabilidad de tests, findings de hooks en ESLint y vulnerabilidades moderadas de toolchain.
