@@ -1,6 +1,6 @@
 # Resumen automático de auditoría
 
-Fecha: 2026-04-27T13:38:29+00:00
+Fecha: 2026-04-27T13:43:26+00:00
 Estado general: FINDINGS
 Severidad máxima: critical
 
@@ -8,7 +8,7 @@ Severidad máxima: critical
 
 | Área | Estado | Severidad máxima | Observación |
 |---|---|---|---|
-| Backend | FINDINGS | critical | Tests fallidos backend=94 |
+| Backend | NOT_RUN | info | Sin fallos críticos detectados |
 | Frontend | FINDINGS | critical | Tests fallidos frontend=86 |
 | Arquitectura backend | FINDINGS | high | Boundary FAIL=1 |
 | Arquitectura frontend | FINDINGS | high | Import signals=8 |
@@ -17,11 +17,11 @@ Severidad máxima: critical
 
 | Herramienta | Estado | Severidad | Métricas | Reporte |
 |---|---|---|---|---|
-| Ruff | FINDINGS | medium | issues=3545, fixable=829 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-ruff.txt |
-| Mypy | FINDINGS | high | errors=80, files=35 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-mypy.txt |
-| Bandit | FINDINGS | high | total=59, high=1, medium=35, low=23 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-bandit.json |
-| pip-audit | OK | none | total=0 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-pip-audit.json |
-| Pytest | FINDINGS | critical | collected=1785, failed=94, passed=1678, skipped=13 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-pytest.txt |
+| Ruff | NOT_RUN | info | - | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-ruff.txt |
+| Mypy | NOT_RUN | info | - | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-mypy.txt |
+| Bandit | NOT_RUN | info | - | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-bandit.json |
+| pip-audit | NOT_RUN | info | - | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-pip-audit.json |
+| Pytest | NOT_RUN | info | - | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-pytest.txt |
 
 ## Frontend
 
@@ -39,8 +39,8 @@ Severidad máxima: critical
 
 | Auditoría | Estado | Severidad | Métricas | Reporte |
 |---|---|---|---|---|
-| Code smells | FINDINGS | high | too_many_args=118, too_many_branches=25, too_many_returns=20, broad_exception=85, unused_import=42, signals=290 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-code-smells.txt |
-| Complejidad | FINDINGS | high | grade_c=124, grade_d=27, grade_e=8, grade_f=4 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-complexity.txt |
+| Code smells | NOT_RUN | info | - | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-code-smells.txt |
+| Complejidad | NOT_RUN | info | - | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-complexity.txt |
 | Límites de imports | FINDINGS | high | fail=1, review=2 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-import-boundaries.txt |
 | SOLID/GRASP | FINDINGS | medium | signals=12 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/backend-solid-grasp-audit.md |
 
@@ -57,11 +57,9 @@ Severidad máxima: critical
 
 ## Hallazgos principales automáticos
 
-- Backend pytest reporta 94 tests fallidos.
 - Frontend vitest reporta 86 tests fallidos.
-- Bandit: total=59, high=1, medium=35.
+- Bandit: total=0, high=0, medium=0.
 - npm audit frontend: moderate=7, high=0, critical=0.
-- Mypy backend detecta 80 errores en 35 archivos.
 - Complejidad frontend: files>300=19, files>1000=4.
 - Boundaries backend: fail=1, review=2.
 - Boundaries frontend: señales heurísticas=8.
@@ -69,7 +67,6 @@ Severidad máxima: critical
 - Duplicación frontend no cuantificada formalmente (jscpd no disponible).
 - useEffect audit: usos=46, archivos=20; revisar posibles falsos negativos.
 - Error handling audit: archivos=100, try=59, catch=25.
-- Ruff backend: issues=3545, fixable=829.
 
 ## Recomendación automática de prioridad
 

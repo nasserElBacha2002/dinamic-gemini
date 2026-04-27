@@ -251,6 +251,48 @@ Orquestación completa:
 bash scripts/audit/run_full_audit.sh
 ```
 
+### Fase 5 — Política de bloqueo progresiva
+
+En esta fase se define una política de gate inicial con foco en bloqueos críticos.
+
+Script agregado:
+
+- `scripts/audit/enforce_quality_gate.py`
+
+Entrada:
+
+- `audit/audit-status.json`
+
+Condiciones que bloquean (FAIL):
+
+- Tests backend fallidos (`pytest_failed > 0`, con fallback a `tools.pytest.metrics.failed`).
+- Tests frontend fallidos (`vitest_failed_tests > 0`, con fallback a `tools.vitest.metrics.failed_tests`).
+- Severidad máxima global `critical`.
+- Estado global `overall_status == "error"`.
+
+Condiciones que **no bloquean aún** (solo warning/log):
+
+- `mypy`, `ruff`, `eslint`, `npm audit`, `bandit`.
+- arquitectura backend/frontend.
+- code smells, complejidad, duplicación y código muerto.
+
+Modos de ejecución:
+
+```bash
+python scripts/audit/enforce_quality_gate.py
+```
+
+Modo estricto (propaga exit 1 si FAIL):
+
+```bash
+python scripts/audit/enforce_quality_gate.py --strict
+```
+
+Integración:
+
+- `scripts/audit/run_full_audit.sh` lo ejecuta al final.
+- En Fase 5 mantiene comportamiento no bloqueante del flujo completo (`run_full_audit.sh` finaliza con `exit 0`).
+
 ## Dependencias de auditoría (backend)
 
 Las herramientas de auditoría del backend se declaran como dependencias de desarrollo en:
