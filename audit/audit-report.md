@@ -49,6 +49,15 @@ Registrar hallazgos de backend, frontend y seguridad de sistema corriendo, sin c
 | Error handling audit | audit/raw/frontend-error-handling-audit.md | Pendiente | |
 | Reusable components audit | audit/raw/frontend-reusable-components-audit.md | Pendiente | |
 
+## Resultados arquitectura backend
+
+| Auditoría | Reporte | Estado | Observaciones |
+|---|---|---|---|
+| Code smells | audit/raw/backend-code-smells.txt | Pendiente | |
+| Complejidad | audit/raw/backend-complexity.txt | Pendiente | |
+| Límites de imports | audit/raw/backend-import-boundaries.txt | Pendiente | |
+| SOLID/GRASP | audit/raw/backend-solid-grasp-audit.md | Pendiente | |
+
 ## Resumen de hallazgos backend
 
 | Herramienta | Severidad predominante | Cantidad aprox | Estado | Observaciones |

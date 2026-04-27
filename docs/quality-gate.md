@@ -136,6 +136,46 @@ Ejecución:
 bash scripts/audit/run_frontend_audit.sh
 ```
 
+### Fase 3.2 — Auditoría de arquitectura backend
+
+En esta fase, `scripts/audit/run_backend_architecture_audit.sh` ejecuta auditoría arquitectónica del backend en modo no bloqueante.
+
+Objetivo:
+
+- Detectar señales de code smells, complejidad y acoplamiento entre capas.
+- Auditar límites de imports por capas arquitectónicas.
+- Generar evaluación heurística inicial de principios SOLID y GRASP.
+- Registrar evidencia sin corregir hallazgos en esta etapa.
+
+Herramientas utilizadas (si están disponibles):
+
+- `pylint`
+- `vulture`
+- `radon`
+- `import-linter` / `grimp`
+- Fallback con análisis AST en Python para reglas de imports
+
+Archivos de salida generados en `audit/raw/`:
+
+- `audit/raw/backend-code-smells.txt`
+- `audit/raw/backend-complexity.txt`
+- `audit/raw/backend-import-boundaries.txt`
+- `audit/raw/backend-solid-grasp-audit.md`
+
+Comportamiento clave:
+
+- Sigue siendo **no bloqueante** en esta etapa.
+- Si una herramienta no está instalada, se documenta en el reporte correspondiente.
+- Si hay hallazgos de arquitectura, se registran como evidencia para revisión posterior.
+- El script finaliza con `exit 0` para no bloquear el flujo actual.
+- La evaluación SOLID/GRASP es **heurística** y requiere análisis manual posterior.
+
+Ejecución:
+
+```bash
+bash scripts/audit/run_backend_architecture_audit.sh
+```
+
 ## Dependencias de auditoría (backend)
 
 Las herramientas de auditoría del backend se declaran como dependencias de desarrollo en:
@@ -149,6 +189,11 @@ Herramientas declaradas en dev para el gate inicial:
 - `bandit`
 - `pip-audit`
 - `pytest`
+- `radon`
+- `pylint`
+- `vulture`
+- `grimp`
+- `import-linter`
 
 Instalación recomendada (sin instalar globalmente):
 
