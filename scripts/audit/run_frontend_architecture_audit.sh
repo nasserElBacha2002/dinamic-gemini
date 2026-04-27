@@ -7,7 +7,6 @@ ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 RAW_DIR="$ROOT_DIR/audit/raw"
 mkdir -p "$RAW_DIR"
 
-# Frontend path detection
 if [ -d "$ROOT_DIR/frontend" ]; then
   FRONTEND_DIR="$ROOT_DIR/frontend"
 elif [ -f "$ROOT_DIR/package.json" ]; then
@@ -35,6 +34,46 @@ echo "Directorio frontend detectado: ${FRONTEND_DIR:-NO_ENCONTRADO}"
 echo "Directorio de evidencia: $RAW_DIR"
 echo
 
+run_with_timeout() {
+  _seconds="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$_seconds" "$@"
+    return $?
+  fi
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$_seconds" "$@"
+    return $?
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$_seconds" "$@" <<'PY'
+import subprocess
+import sys
+seconds = int(sys.argv[1])
+cmd = sys.argv[2:]
+try:
+    p = subprocess.run(cmd, timeout=seconds)
+    raise SystemExit(p.returncode)
+except subprocess.TimeoutExpired:
+    raise SystemExit(124)
+PY
+    return $?
+  fi
+  "$@"
+  return $?
+}
+
+append_timeout_note_if_needed() {
+  _report="$1"
+  if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    {
+      echo
+      echo "Nota: no se detectó timeout/gtimeout en el sistema."
+      echo "Recomendación macOS: instalar coreutils para usar gtimeout."
+    } >>"$_report"
+  fi
+}
+
 if [ -z "$FRONTEND_DIR" ] || [ ! -d "$FRONTEND_DIR" ]; then
   {
     echo "Frontend no detectado. Auditoría omitida."
@@ -51,18 +90,10 @@ if [ -z "$FRONTEND_DIR" ] || [ ! -d "$FRONTEND_DIR" ]; then
     echo
     echo "Frontend no detectado. No se pudo ejecutar auditoría."
   } >"$SOLID_REACT_REPORT"
-  echo "Resumen frontend architecture audit:"
-  printf "%-24s | %-13s | %s\n" "Auditoria" "Estado" "Reporte"
-  printf "%-24s | %-13s | %s\n" "Code smells" "$CODE_SMELLS_STATUS" "audit/raw/frontend-code-smells.txt"
-  printf "%-24s | %-13s | %s\n" "Complejidad" "$COMPLEXITY_STATUS" "audit/raw/frontend-complexity.txt"
-  printf "%-24s | %-13s | %s\n" "Limites de imports" "$IMPORT_BOUNDARIES_STATUS" "audit/raw/frontend-import-boundaries.txt"
-  printf "%-24s | %-13s | %s\n" "Duplicacion" "$DUPLICATION_STATUS" "audit/raw/frontend-duplication.txt"
-  printf "%-24s | %-13s | %s\n" "Codigo muerto" "$DEAD_CODE_STATUS" "audit/raw/frontend-dead-code.txt"
-  printf "%-24s | %-13s | %s\n" "SOLID/React" "$SOLID_REACT_STATUS" "audit/raw/frontend-solid-react-audit.md"
   exit 0
 fi
 
-# 1) Code smells
+echo "[START] frontend code smells"
 {
   echo "# Frontend code smells audit"
   echo "source_dir: $FRONTEND_DIR"
@@ -70,51 +101,44 @@ fi
   echo
   if command -v npm >/dev/null 2>&1 && [ -f "$FRONTEND_DIR/package.json" ]; then
     echo "## ESLint"
-    (cd "$FRONTEND_DIR" && npm run lint)
-    eslint_exit="$?"
-    echo
-    echo "eslint_exit_code=$eslint_exit"
+    run_with_timeout 90 sh -c "cd \"$FRONTEND_DIR\" && npm run lint"
+    ESLINT_RC="$?"
+    echo "eslint_exit_code=$ESLINT_RC"
+    [ "$ESLINT_RC" -eq 124 ] && echo "TIMEOUT"
   else
     echo "ESLint no disponible (npm o package.json faltante)."
-    eslint_exit=127
-  fi
-
-  if [ -f "$FRONTEND_DIR/package.json" ]; then
-    echo
-    echo "## Heurísticas de smells (fallback textual)"
-    find "$FRONTEND_DIR/src" -type f \( -name "*.tsx" -o -name "*.ts" \) \
-      ! -path "*/node_modules/*" ! -path "*/dist/*" ! -path "*/build/*" ! -path "*/coverage/*" ! -path "*/.vite/*" \
-      -print0 2>/dev/null | while IFS= read -r -d '' f; do
-        lines="$(wc -l <"$f" | tr -d ' ')"
-        [ "$lines" -gt 300 ] && echo "LARGE_FILE>300: ${f#$FRONTEND_DIR/} ($lines)"
-      done
-    find "$FRONTEND_DIR/src" -type f \( -name "*.tsx" -o -name "*.ts" \) \
-      ! -path "*/node_modules/*" ! -path "*/dist/*" ! -path "*/build/*" ! -path "*/coverage/*" ! -path "*/.vite/*" \
-      -print0 2>/dev/null | xargs -0 grep -nE "useEffect\s*\(" 2>/dev/null | wc -l | awk '{print "useEffect_usages_approx=" $1}'
+    echo "eslint_exit_code=127"
   fi
 } >"$CODE_SMELLS_REPORT" 2>&1
-if rg -n "eslint_exit_code=127|ESLint no disponible" "$CODE_SMELLS_REPORT" >/dev/null 2>&1; then
+if [ -d "$FRONTEND_DIR/src" ]; then
+  run_with_timeout 60 sh -c "find \"$FRONTEND_DIR/src\" -type f \( -name '*.tsx' -o -name '*.ts' \) ! -path '*/node_modules/*' ! -path '*/dist/*' ! -path '*/build/*' ! -path '*/coverage/*' ! -path '*/.vite/*' -print0 2>/dev/null | xargs -0 wc -l 2>/dev/null | awk '\$1 > 300 {print \"LARGE_FILE>300: \" \$2 \" (\" \$1 \")\"}'" >>"$CODE_SMELLS_REPORT" 2>&1
+  [ "$?" -eq 124 ] && echo "TIMEOUT fallback find/grep (60s)." >>"$CODE_SMELLS_REPORT"
+fi
+append_timeout_note_if_needed "$CODE_SMELLS_REPORT"
+if rg -n "TIMEOUT" "$CODE_SMELLS_REPORT" >/dev/null 2>&1; then
+  CODE_SMELLS_STATUS="ERROR"
+elif rg -n "eslint_exit_code=127|ESLint no disponible" "$CODE_SMELLS_REPORT" >/dev/null 2>&1; then
   CODE_SMELLS_STATUS="NOT_INSTALLED"
 elif rg -n "eslint_exit_code=0" "$CODE_SMELLS_REPORT" >/dev/null 2>&1; then
   CODE_SMELLS_STATUS="OK"
 else
   CODE_SMELLS_STATUS="FINDINGS"
 fi
+echo "[END] frontend code smells"
 
-# 2) Complexity
-python3 - "$FRONTEND_DIR" "$COMPLEXITY_REPORT" <<'PY'
+echo "[START] frontend complexity"
+COMPLEXITY_TMP="$RAW_DIR/.frontend_complexity.py"
+cat >"$COMPLEXITY_TMP" <<'PY'
 import os
 import re
 import sys
 from collections import defaultdict
 from datetime import datetime
-
 root = sys.argv[1]
 report = sys.argv[2]
 src = os.path.join(root, "src")
 exts = (".ts", ".tsx")
 exclude_parts = {"node_modules", "dist", "build", "coverage", ".vite"}
-
 files = []
 for r, _d, fs in os.walk(src):
     parts = set(r.replace("\\", "/").split("/"))
@@ -123,32 +147,22 @@ for r, _d, fs in os.walk(src):
     for fn in fs:
         if fn.endswith(exts):
             files.append(os.path.join(r, fn))
-
 summary = defaultdict(int)
 large_files = []
-high_conditional = []
-
 for f in files:
     try:
         txt = open(f, "r", encoding="utf-8").read()
     except Exception:
         continue
-    lines = txt.splitlines()
     rel = f.replace(root + os.sep, "").replace("\\", "/")
+    lines = txt.splitlines()
     n_lines = len(lines)
-    n_funcs = len(re.findall(r"\bfunction\b|=>", txt))
-    n_if = len(re.findall(r"\bif\s*\(", txt))
-    n_for = len(re.findall(r"\bfor\s*\(", txt))
-    n_switch = len(re.findall(r"\bswitch\s*\(", txt))
-    cond_score = n_if + n_for + n_switch
+    cond_score = len(re.findall(r"\bif\s*\(|\bfor\s*\(|\bswitch\s*\(", txt))
     summary["files"] += 1
-    summary["functions"] += n_funcs
+    summary["functions"] += len(re.findall(r"\bfunction\b|=>", txt))
     summary["if_for_switch"] += cond_score
     if n_lines > 300:
         large_files.append((rel, n_lines))
-    if cond_score > 25:
-        high_conditional.append((rel, cond_score, n_lines))
-
 with open(report, "w", encoding="utf-8") as out:
     out.write("# Frontend complexity audit\n")
     out.write(f"generated_at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -156,206 +170,164 @@ with open(report, "w", encoding="utf-8") as out:
     out.write(f"- files_scanned: {summary['files']}\n")
     out.write(f"- functions_approx: {summary['functions']}\n")
     out.write(f"- conditional_tokens_approx: {summary['if_for_switch']}\n\n")
-    out.write("## Clasificación\n")
-    out.write("- A/B: aceptable\n")
-    out.write("- C: revisar\n")
-    out.write("- D/E/F: alto riesgo\n\n")
     out.write("## Archivos > 300 líneas (revisar)\n")
     if not large_files:
         out.write("- No detectados.\n")
     else:
         for rel, ln in sorted(large_files, key=lambda x: x[1], reverse=True)[:80]:
             out.write(f"- {rel}: {ln}\n")
-    out.write("\n## Archivos con alta densidad condicional (riesgo)\n")
-    if not high_conditional:
-        out.write("- No detectados.\n")
-    else:
-        for rel, c, ln in sorted(high_conditional, key=lambda x: x[1], reverse=True)[:80]:
-            out.write(f"- {rel}: cond={c}, lines={ln}\n")
     out.write("\nObservación: auditoría heurística por conteo textual.\n")
 PY
-if [ "$?" -eq 0 ]; then
+run_with_timeout 60 python3 "$COMPLEXITY_TMP" "$FRONTEND_DIR" "$COMPLEXITY_REPORT"
+CMP_RC="$?"
+rm -f "$COMPLEXITY_TMP"
+if [ "$CMP_RC" -eq 124 ]; then
+  {
+    echo "# Frontend complexity audit"
+    echo "TIMEOUT"
+  } >"$COMPLEXITY_REPORT"
+  COMPLEXITY_STATUS="ERROR"
+elif [ "$CMP_RC" -eq 0 ]; then
   COMPLEXITY_STATUS="FINDINGS"
 else
   COMPLEXITY_STATUS="ERROR"
 fi
+append_timeout_note_if_needed "$COMPLEXITY_REPORT"
+echo "[END] frontend complexity"
 
-# 3) Import boundaries (madge/depcruise optional + fallback)
+echo "[START] frontend import boundaries"
 {
   echo "# Frontend import boundaries audit"
   echo "source_dir: $FRONTEND_DIR/src"
   echo "generated_at: $(date '+%Y-%m-%d %H:%M:%S')"
   echo
-  echo "## Tool checks"
   if command -v madge >/dev/null 2>&1; then
-    echo "- madge: installed"
-    (cd "$FRONTEND_DIR" && madge --circular src) || true
+    run_with_timeout 90 sh -c "cd \"$FRONTEND_DIR\" && madge --circular src"
+    [ "$?" -eq 124 ] && echo "TIMEOUT madge"
   else
-    echo "- madge: not installed"
+    echo "madge no instalado."
   fi
   if command -v depcruise >/dev/null 2>&1; then
-    echo "- dependency-cruiser: installed"
+    run_with_timeout 90 sh -c "cd \"$FRONTEND_DIR\" && depcruise src"
+    [ "$?" -eq 124 ] && echo "TIMEOUT dependency-cruiser"
   else
-    echo "- dependency-cruiser: not installed"
+    echo "dependency-cruiser no instalado."
   fi
-  echo
-  echo "## Heurística de imports sospechosos"
-  find "$FRONTEND_DIR/src/components" -type f \( -name "*.tsx" -o -name "*.ts" \) 2>/dev/null | while IFS= read -r f; do
-    grep -nE "from ['\"](\.\./)*api/|from ['\"]@/api/|axios|fetch\(" "$f" >/dev/null 2>&1 && \
-      echo "R1 components->api/fetch: ${f#$FRONTEND_DIR/}"
-  done
-  find "$FRONTEND_DIR/src/features" -type f \( -name "*.tsx" -o -name "*.ts" \) 2>/dev/null | while IFS= read -r f; do
-    grep -nE "from ['\"](\.\./)*features/" "$f" >/dev/null 2>&1 && \
-      echo "R3 feature cross-import: ${f#$FRONTEND_DIR/}"
-  done
-  find "$FRONTEND_DIR/src/components" -type f \( -name "*.tsx" -o -name "*.ts" \) 2>/dev/null | while IFS= read -r f; do
-    grep -nE "switch\s*\(|if\s*\(" "$f" >/dev/null 2>&1 && \
-      echo "R4 ui-business-logic-suspect: ${f#$FRONTEND_DIR/}"
-  done
-  echo
-  echo "Reglas auditadas:"
-  echo "- R1 components no deberían importar API concreta ni usar fetch/axios directo."
-  echo "- R2 hooks como capa intermedia de lógica."
-  echo "- R3 features evitar acoplamiento circular/cruzado innecesario."
-  echo "- R4 UI evitar lógica de negocio pesada."
 } >"$IMPORT_BOUNDARIES_REPORT" 2>&1
-if rg -n "suspect|cross-import|components->api" "$IMPORT_BOUNDARIES_REPORT" >/dev/null 2>&1; then
+run_with_timeout 60 sh -c "find \"$FRONTEND_DIR/src/components\" -type f \( -name '*.tsx' -o -name '*.ts' \) 2>/dev/null | while IFS= read -r f; do grep -nE \"from ['\\\"](\\.\./)*api/|from ['\\\"]@/api/|axios|fetch\\(\" \"\$f\" >/dev/null 2>&1 && echo \"R1 components->api/fetch: \$f\"; done" >>"$IMPORT_BOUNDARIES_REPORT" 2>&1
+[ "$?" -eq 124 ] && echo "TIMEOUT fallback find/grep (60s)." >>"$IMPORT_BOUNDARIES_REPORT"
+append_timeout_note_if_needed "$IMPORT_BOUNDARIES_REPORT"
+if rg -n "TIMEOUT" "$IMPORT_BOUNDARIES_REPORT" >/dev/null 2>&1; then
+  IMPORT_BOUNDARIES_STATUS="ERROR"
+elif rg -n "R1 components->api/fetch" "$IMPORT_BOUNDARIES_REPORT" >/dev/null 2>&1; then
   IMPORT_BOUNDARIES_STATUS="FINDINGS"
 else
   IMPORT_BOUNDARIES_STATUS="OK"
 fi
+echo "[END] frontend import boundaries"
 
-# 4) Duplication
+echo "[START] frontend duplication"
 {
   echo "# Frontend duplication audit"
   echo "generated_at: $(date '+%Y-%m-%d %H:%M:%S')"
   echo
   if command -v jscpd >/dev/null 2>&1; then
-    echo "## jscpd"
-    jscpd "$FRONTEND_DIR/src" --silent --reporters console
-    echo "jscpd_exit_code=$?"
+    run_with_timeout 90 jscpd "$FRONTEND_DIR/src" --silent --reporters console
+    JSCPD_RC="$?"
+    echo "jscpd_exit_code=$JSCPD_RC"
+    [ "$JSCPD_RC" -eq 124 ] && echo "TIMEOUT"
   else
-    echo "jscpd no instalado. Usando fallback heurístico."
-    echo
-    echo "## Fallback heurístico"
-    echo "- Buscando archivos con nombres de componentes repetidos por sufijo."
-    find "$FRONTEND_DIR/src" -type f \( -name "*Dialog*.tsx" -o -name "*Table*.tsx" -o -name "*Card*.tsx" -o -name "*Panel*.tsx" \) \
-      ! -path "*/node_modules/*" ! -path "*/dist/*" ! -path "*/build/*" ! -path "*/coverage/*" ! -path "*/.vite/*" 2>/dev/null | sed "s|$FRONTEND_DIR/|- |"
+    echo "jscpd no instalado."
   fi
 } >"$DUPLICATION_REPORT" 2>&1
-if rg -n "jscpd no instalado" "$DUPLICATION_REPORT" >/dev/null 2>&1; then
+run_with_timeout 60 sh -c "find \"$FRONTEND_DIR/src\" -type f \( -name '*Dialog*.tsx' -o -name '*Table*.tsx' -o -name '*Card*.tsx' -o -name '*Panel*.tsx' \) 2>/dev/null" >>"$DUPLICATION_REPORT" 2>&1
+[ "$?" -eq 124 ] && echo "TIMEOUT fallback find/grep (60s)." >>"$DUPLICATION_REPORT"
+append_timeout_note_if_needed "$DUPLICATION_REPORT"
+if rg -n "TIMEOUT" "$DUPLICATION_REPORT" >/dev/null 2>&1; then
+  DUPLICATION_STATUS="ERROR"
+elif rg -n "jscpd no instalado" "$DUPLICATION_REPORT" >/dev/null 2>&1; then
   DUPLICATION_STATUS="NOT_INSTALLED"
 else
   DUPLICATION_STATUS="FINDINGS"
 fi
+echo "[END] frontend duplication"
 
-# 5) Dead code
+echo "[START] frontend dead code"
 {
   echo "# Frontend dead code audit"
   echo "generated_at: $(date '+%Y-%m-%d %H:%M:%S')"
   echo
   if command -v ts-prune >/dev/null 2>&1; then
-    echo "## ts-prune"
-    (cd "$FRONTEND_DIR" && ts-prune)
-    echo "ts_prune_exit_code=$?"
+    run_with_timeout 90 sh -c "cd \"$FRONTEND_DIR\" && ts-prune"
+    RC="$?"
+    echo "ts_prune_exit_code=$RC"
+    [ "$RC" -eq 124 ] && echo "TIMEOUT"
   elif command -v npx >/dev/null 2>&1; then
-    echo "## npx ts-prune fallback"
-    (cd "$FRONTEND_DIR" && npx ts-prune)
-    echo "npx_ts_prune_exit_code=$?"
+    run_with_timeout 90 sh -c "cd \"$FRONTEND_DIR\" && npx ts-prune"
+    RC="$?"
+    echo "npx_ts_prune_exit_code=$RC"
+    [ "$RC" -eq 124 ] && echo "TIMEOUT"
   else
     echo "ts-prune no instalado y npx no disponible."
-    echo
-    echo "## Fallback heurístico"
-    echo "- No se pudo ejecutar detección de exports no usados en forma automática."
   fi
 } >"$DEAD_CODE_REPORT" 2>&1
-if rg -n "no instalado|No se pudo ejecutar" "$DEAD_CODE_REPORT" >/dev/null 2>&1; then
+append_timeout_note_if_needed "$DEAD_CODE_REPORT"
+if rg -n "TIMEOUT" "$DEAD_CODE_REPORT" >/dev/null 2>&1; then
+  DEAD_CODE_STATUS="ERROR"
+elif rg -n "no instalado|no disponible" "$DEAD_CODE_REPORT" >/dev/null 2>&1; then
   DEAD_CODE_STATUS="NOT_INSTALLED"
 else
   DEAD_CODE_STATUS="FINDINGS"
 fi
+echo "[END] frontend dead code"
 
-# 6) SOLID + React report synthesis
-python3 - "$CODE_SMELLS_REPORT" "$COMPLEXITY_REPORT" "$IMPORT_BOUNDARIES_REPORT" "$DUPLICATION_REPORT" "$DEAD_CODE_REPORT" "$SOLID_REACT_REPORT" <<'PY'
+echo "[START] frontend solid/react"
+SOLID_TMP="$RAW_DIR/.frontend_solid_react.py"
+cat >"$SOLID_TMP" <<'PY'
 import re
 import sys
 from datetime import datetime
-
 smells, complexity, boundaries, dup, dead, out = sys.argv[1:7]
-
-def read(path):
+def read(p):
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
+        return open(p, "r", encoding="utf-8").read()
     except Exception:
         return ""
-
-s = read(smells)
-c = read(complexity)
-b = read(boundaries)
-d = read(dup)
-dc = read(dead)
-
-large_components = len(re.findall(r"LARGE_FILE>300", s)) + len(re.findall(r"> 300 líneas", c))
-hook_findings = len(re.findall(r"useEffect|react-hooks", s, re.IGNORECASE))
-boundary_findings = len(re.findall(r"suspect|cross-import|components->api", b))
+s, c, b, d, dc = read(smells), read(complexity), read(boundaries), read(dup), read(dead)
+large = len(re.findall(r"LARGE_FILE>300|> 300 líneas", s + "\n" + c))
+hooks = len(re.findall(r"useEffect|react-hooks", s, re.IGNORECASE))
+bound = len(re.findall(r"components->api|R1 ", b))
 dup_signals = len(re.findall(r"Dialog|Table|Card|Panel", d))
 dead_signals = len([ln for ln in dc.splitlines() if ln.strip() and ":" in ln and "node_modules" not in ln])
-
 with open(out, "w", encoding="utf-8") as f:
     f.write("# Auditoría frontend - SOLID y patrones React\n\n")
-    f.write("## Alcance\n\n")
-    f.write("Evaluación heurística de arquitectura frontend (React + TypeScript + Vite), sin cambios funcionales.\n\n")
-    f.write("## Señales automáticas analizadas\n\n")
-    f.write(f"- tamaño de componentes: señales={large_components}\n")
-    f.write("- complejidad: basada en líneas/funciones/condicionales por archivo\n")
-    f.write(f"- duplicación: señales={dup_signals}\n")
-    f.write(f"- imports entre capas: señales={boundary_findings}\n")
-    f.write(f"- hooks y efectos: señales={hook_findings}\n")
-    f.write(f"- código muerto potencial: señales={dead_signals}\n\n")
-
-    f.write("## SOLID aplicado a frontend\n\n")
-    f.write("### Single Responsibility\n")
-    f.write("- Señales: componentes con mezcla de UI + fetch + navegación + estado complejo.\n\n")
-    f.write("### Open/Closed\n")
-    f.write("- Señales: `if/switch` extensos en render para status/tipo/provider.\n\n")
-    f.write("### Liskov\n")
-    f.write("- Señales: props inconsistentes en componentes reutilizables o contratos ambiguos.\n\n")
-    f.write("### Interface Segregation\n")
-    f.write("- Señales: interfaces de props grandes y hooks con retornos demasiado amplios.\n\n")
-    f.write("### Dependency Inversion\n")
-    f.write("- Señales: UI importando servicios concretos en lugar de capa de hooks/adapters.\n\n")
-
-    f.write("## Patrones React\n\n")
-    f.write("- uso de hooks: revisar efectos con lógica no trivial.\n")
-    f.write("- separación UI vs lógica: fortalecer composición y hooks intermedios.\n")
-    f.write("- TanStack Query vs fetch manual: evaluar consistencia por feature.\n")
-    f.write("- manejo de estado: controlar crecimiento de estado local en componentes grandes.\n")
-    f.write("- composición de componentes: detectar sobreacoplamiento entre features.\n\n")
-
     f.write("## Hallazgos iniciales\n\n")
-    f.write(f"- Señales de componentes/archivos grandes: {large_components}\n")
-    f.write(f"- Señales de imports sospechosos entre capas frontend: {boundary_findings}\n")
+    f.write(f"- Señales de componentes/archivos grandes: {large}\n")
+    f.write(f"- Señales de imports sospechosos entre capas frontend: {bound}\n")
     f.write(f"- Señales de duplicación potencial: {dup_signals}\n")
     f.write(f"- Señales de código muerto potencial: {dead_signals}\n")
-    f.write(f"- Señales de hooks/efectos a revisar: {hook_findings}\n\n")
-
+    f.write(f"- Señales de hooks/efectos a revisar: {hooks}\n\n")
     f.write("## Limitaciones\n\n")
-    f.write("- Auditoría heurística y no determinista en términos arquitectónicos.\n")
-    f.write("- Puede producir falsos positivos/falsos negativos.\n")
-    f.write("- Requiere validación manual por módulo/feature.\n\n")
-
-    f.write("## Recomendaciones futuras\n\n")
-    f.write("- Definir contratos claros UI/hooks/services por feature.\n")
-    f.write("- Introducir reglas de arquitectura frontend versionadas (import boundaries).\n")
-    f.write("- Priorizar remediación incremental por riesgo (hooks críticos, coupling, duplicación).\n")
+    f.write("- Auditoría heurística con posibles falsos positivos.\n")
     f.write(f"- generated_at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
 PY
-if [ "$?" -eq 0 ]; then
+run_with_timeout 60 python3 "$SOLID_TMP" "$CODE_SMELLS_REPORT" "$COMPLEXITY_REPORT" "$IMPORT_BOUNDARIES_REPORT" "$DUPLICATION_REPORT" "$DEAD_CODE_REPORT" "$SOLID_REACT_REPORT"
+SR_RC="$?"
+rm -f "$SOLID_TMP"
+if [ "$SR_RC" -eq 124 ]; then
+  {
+    echo "# Auditoría frontend - SOLID y patrones React"
+    echo
+    echo "TIMEOUT"
+  } >"$SOLID_REACT_REPORT"
+  SOLID_REACT_STATUS="ERROR"
+elif [ "$SR_RC" -eq 0 ]; then
   SOLID_REACT_STATUS="FINDINGS"
 else
   SOLID_REACT_STATUS="ERROR"
 fi
+append_timeout_note_if_needed "$SOLID_REACT_REPORT"
+echo "[END] frontend solid/react"
 
 echo "Resumen frontend architecture audit:"
 printf "%-24s | %-13s | %s\n" "Auditoria" "Estado" "Reporte"

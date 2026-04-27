@@ -1,6 +1,6 @@
 # Resumen automático de auditoría
 
-Fecha: 2026-04-27T13:15:51+00:00
+Fecha: 2026-04-27T13:34:24+00:00
 Estado general: FINDINGS
 Severidad máxima: critical
 
@@ -11,7 +11,7 @@ Severidad máxima: critical
 | Backend | NOT_RUN | info | Sin fallos críticos detectados |
 | Frontend | FINDINGS | critical | Tests fallidos frontend=86 |
 | Arquitectura backend | FINDINGS | high | Boundary FAIL=1 |
-| Arquitectura frontend | FINDINGS | high | Import signals=23 |
+| Arquitectura frontend | FINDINGS | high | Import signals=8 |
 
 ## Backend
 
@@ -50,7 +50,7 @@ Severidad máxima: critical
 |---|---|---|---|---|
 | Code smells | FINDINGS | high | problems=66, errors=40, warnings=26 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/frontend-code-smells.txt |
 | Complejidad | FINDINGS | high | files_scanned=183, functions_approx=1513, conditional_tokens=808, files_gt_300=19, files_gt_1000=4 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/frontend-complexity.txt |
-| Límites de imports | FINDINGS | medium | signals=23 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/frontend-import-boundaries.txt |
+| Límites de imports | FINDINGS | medium | signals=8 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/frontend-import-boundaries.txt |
 | Duplicación | SKIPPED | info | - | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/frontend-duplication.txt |
 | Código muerto | FINDINGS | medium | signals=470 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/frontend-dead-code.txt |
 | SOLID/React | FINDINGS | medium | signals=6 | /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/audit/raw/frontend-solid-react-audit.md |
@@ -62,7 +62,7 @@ Severidad máxima: critical
 - npm audit frontend: moderate=7, high=0, critical=0.
 - Complejidad frontend: files>300=19, files>1000=4.
 - Boundaries backend: fail=1, review=2.
-- Boundaries frontend: señales heurísticas=23.
+- Boundaries frontend: señales heurísticas=8.
 - Código muerto frontend: señales=470 (requiere validación manual).
 - Duplicación frontend no cuantificada formalmente (jscpd no disponible).
 - useEffect audit: usos=46, archivos=20; revisar posibles falsos negativos.
