@@ -136,7 +136,7 @@ Se analizaron reportes de `audit/raw/` para:
 <!-- AUTO-AUDIT-SUMMARY:START -->
 ## Consolidación automática reproducible
 
-- Generado: 2026-04-27T17:08:14+00:00
+- Generado: 2026-04-27T17:16:08+00:00
 - Fuente automática: `audit/audit-summary.md`
 - Estado machine-readable: `audit/audit-status.json`
 

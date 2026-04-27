@@ -1,5 +1,5 @@
 # Frontend dead code audit
-generated_at: 2026-04-27 14:08:13
+generated_at: 2026-04-27 14:16:07
 
 src/api/client.ts:438 - getAisleStatus
 src/api/client.ts:504 - getExecutionLogTxtUrl (used in module)

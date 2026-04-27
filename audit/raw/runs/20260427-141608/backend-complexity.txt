@@ -1,6 +1,6 @@
 # Backend complexity audit
 source_dir: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src
-generated_at: 2026-04-27 14:08:06
+generated_at: 2026-04-27 14:16:00
 
 ## Cyclomatic Complexity (radon cc)
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/config.py

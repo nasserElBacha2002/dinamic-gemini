@@ -1161,4 +1161,4 @@ backend/src/view_selection/selector.py                                          
 --------------------------------------------------------------------------------------------------------------------------------
 TOTAL                                                                                              21064   3677    83%
 Coverage HTML written to dir htmlcov
-=============== 1772 passed, 13 skipped, 120 warnings in 21.02s ================
+=============== 1772 passed, 13 skipped, 120 warnings in 22.60s ================

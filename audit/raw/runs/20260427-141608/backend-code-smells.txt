@@ -1,6 +1,6 @@
 # Backend code smells audit
 source_dir: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src
-generated_at: 2026-04-27 14:07:58
+generated_at: 2026-04-27 14:15:51
 
 ## Pylint
 ************* Module src.config

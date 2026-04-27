@@ -1,5 +1,5 @@
 # Frontend complexity audit
-generated_at: 2026-04-27 14:08:12
+generated_at: 2026-04-27 14:16:07
 
 ## Resumen
 - files_scanned: 183

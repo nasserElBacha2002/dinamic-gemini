@@ -1,6 +1,6 @@
 # Backend import boundaries audit
 source_dir: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src
-generated_at: 2026-04-27 14:08:08
+generated_at: 2026-04-27 14:16:02
 
 Tooling:
 - import-linter: heuristic fallback used (sin contrato ini)

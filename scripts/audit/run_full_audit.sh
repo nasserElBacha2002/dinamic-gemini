@@ -27,9 +27,15 @@ run_if_exists "scripts/audit/run_frontend_architecture_audit.sh"
 run_if_exists "scripts/audit/generate_audit_summary.py"
 
 # Versionar salidas raw de esta corrida (copia de los archivos planos en audit/raw/).
-# La consolidación lee siempre los nombres fijos en audit/raw/; el historial queda en audit/raw/runs/<id>/
+# La consolidación lee siempre los nombres fijos en audit/raw/.
+# Solo se conserva el último snapshot: se borra audit/raw/runs/ antes de crear el nuevo.
+RUNS_DIR="$ROOT_DIR/audit/raw/runs"
+if [ -d "$RUNS_DIR" ]; then
+  echo "Eliminando snapshot raw anterior (audit/raw/runs/)"
+  rm -rf "$RUNS_DIR"
+fi
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
-ARCH="$ROOT_DIR/audit/raw/runs/$RUN_ID"
+ARCH="$RUNS_DIR/$RUN_ID"
 mkdir -p "$ARCH"
 for f in "$ROOT_DIR/audit/raw"/*; do
   [ -f "$f" ] || continue
