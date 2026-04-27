@@ -58,6 +58,17 @@ Registrar hallazgos de backend, frontend y seguridad de sistema corriendo, sin c
 | Límites de imports | audit/raw/backend-import-boundaries.txt | Pendiente | |
 | SOLID/GRASP | audit/raw/backend-solid-grasp-audit.md | Pendiente | |
 
+## Resultados arquitectura frontend
+
+| Auditoría | Reporte | Estado | Observaciones |
+|---|---|---|---|
+| Code smells | audit/raw/frontend-code-smells.txt | Pendiente | |
+| Complejidad | audit/raw/frontend-complexity.txt | Pendiente | |
+| Límites de imports | audit/raw/frontend-import-boundaries.txt | Pendiente | |
+| Duplicación | audit/raw/frontend-duplication.txt | Pendiente | |
+| Código muerto | audit/raw/frontend-dead-code.txt | Pendiente | |
+| SOLID/React | audit/raw/frontend-solid-react-audit.md | Pendiente | |
+
 ## Resumen de hallazgos backend
 
 | Herramienta | Severidad predominante | Cantidad aprox | Estado | Observaciones |

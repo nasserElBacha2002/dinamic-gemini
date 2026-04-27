@@ -176,6 +176,48 @@ Ejecución:
 bash scripts/audit/run_backend_architecture_audit.sh
 ```
 
+### Fase 3.3 — Auditoría de arquitectura frontend
+
+En esta fase, `scripts/audit/run_frontend_architecture_audit.sh` ejecuta una auditoría arquitectónica del frontend en modo no bloqueante.
+
+Objetivo:
+
+- Detectar señales de code smells, complejidad, acoplamiento, duplicación y código muerto.
+- Auditar límites de imports entre capas frontend.
+- Generar evaluación heurística de SOLID aplicado a React y patrones de composición.
+- Registrar evidencia sin corregir hallazgos en esta etapa.
+
+Herramientas utilizadas (si están disponibles):
+
+- `eslint` + plugins (`react-hooks`, `react-refresh`, `sonarjs`)
+- `madge` (dependencias/imports)
+- `jscpd` (duplicación)
+- `ts-prune` (código muerto/exportaciones no usadas)
+- Fallback heurístico con análisis textual/AST para complejidad y acoplamiento
+
+Archivos de salida generados en `audit/raw/`:
+
+- `audit/raw/frontend-code-smells.txt`
+- `audit/raw/frontend-complexity.txt`
+- `audit/raw/frontend-import-boundaries.txt`
+- `audit/raw/frontend-solid-react-audit.md`
+- `audit/raw/frontend-duplication.txt`
+- `audit/raw/frontend-dead-code.txt`
+
+Comportamiento clave:
+
+- Sigue siendo **no bloqueante**.
+- Si faltan herramientas, se documenta en reportes y se continúa.
+- Los hallazgos no bloquean deploy en esta fase.
+- El script finaliza con `exit 0`.
+- La evaluación SOLID/React es heurística y requiere revisión manual.
+
+Ejecución:
+
+```bash
+bash scripts/audit/run_frontend_architecture_audit.sh
+```
+
 ## Dependencias de auditoría (backend)
 
 Las herramientas de auditoría del backend se declaran como dependencias de desarrollo en:
