@@ -63,6 +63,10 @@ output/
 # Data files (videos de prueba, etc.)
 data/
 
+# Audit artifacts
+audit/raw/*
+!audit/raw/.gitkeep
+
 # Test coverage
 htmlcov/
 .tox/
