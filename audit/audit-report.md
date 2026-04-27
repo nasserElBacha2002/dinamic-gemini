@@ -1,166 +1,127 @@
 # Auditoría técnica inicial
 
-Fecha:
-Rama:
-Commit:
-Ejecutor:
+Fecha: 2026-04-27
+Rama: N/A (workspace sin metadata git disponible)
+Commit: N/A
+Ejecutor: Quality Gate local
 
 ## Objetivo
 
-Documentar resultados de validaciones técnicas y de seguridad ejecutadas antes del deploy a `develop`, dejando evidencia trazable para análisis posterior.
+Consolidar evidencia técnica de calidad, seguridad, pruebas y arquitectura sin corregir hallazgos todavía.
 
 ## Alcance
 
-Registrar hallazgos de backend, frontend y seguridad de sistema corriendo, sin corregirlos todavía en esta etapa.
+Se analizaron reportes de `audit/raw/` para:
+- Backend operativo
+- Frontend operativo
+- Arquitectura backend
+- Arquitectura frontend
 
-## Herramientas previstas
+## Estado general consolidado
 
-- Backend: Ruff, Mypy, Bandit, pip-audit, Pytest, Trivy
-- Frontend: ESLint, Typecheck, npm audit, Vitest
-- Sistema corriendo: OWASP ZAP baseline scan
+| Área | Estado | Severidad máxima | Riesgo principal | Observación |
+|---|---|---|---|---|
+| Backend | Detectado | Crítico | 94 tests fallidos en suites core | Deuda fuerte en tests, lint y tipado |
+| Frontend | Detectado | Alto | 86 tests fallidos y 7 vulnerabilidades moderadas | Inestabilidad funcional en UI y deuda de hooks |
+| Arquitectura backend | Detectado | Alto | Complejidad y acoplamiento en capas | 1 violación FAIL de boundaries + rutas API sobrecargadas |
+| Arquitectura frontend | Detectado | Alto | Componentes grandes y acoplamiento UI-servicios | Heurísticas detectan 23 señales de imports sospechosos |
+| Dependencias | Detectado | Alto | Vulnerabilidades/modo de auditoría parcial | Frontend con 7 moderadas; backend sin CVE pero con limitación PyPI |
+| Tests | Detectado | Crítico | Red de regresión inestable | Backend y frontend con fallos relevantes en flujos principales |
 
-## Resumen de hallazgos
+## Resumen backend
 
-| Área | Herramienta | Severidad | Cantidad | Estado |
-|---|---|---:|---:|---|
-| Backend | - | - | - | Pendiente |
-| Frontend | - | - | - | Pendiente |
-| Seguridad | - | - | - | Pendiente |
+| Herramienta | Reporte | Estado | Severidad | Cantidad aprox | Observaciones |
+|---|---|---|---|---:|---|
+| Ruff | `audit/raw/backend-ruff.txt` | Detectado | Medio | 3545 | Alto volumen de deuda de estilo/calidad; 829 fixables directos |
+| Mypy | `audit/raw/backend-mypy.txt` | Detectado | Alto | 80 | Errores en 35 archivos, incluyendo contratos y stubs faltantes |
+| Bandit | `audit/raw/backend-bandit.json` | Detectado | Alto | 59 | 1 HIGH, 35 MEDIUM, 23 LOW |
+| pip-audit | `audit/raw/backend-pip-audit.json` | Detectado | Informativo | 0 CVE | Sin vulnerabilidades conocidas; paquete local no auditable en PyPI |
+| Pytest | `audit/raw/backend-pytest.txt` | Detectado | Crítico | 94 fallos | 1785 tests corridos (1678 pass, 13 skip) |
 
-## Resultados backend
+## Resumen frontend
 
-| Herramienta | Reporte | Estado | Observaciones |
-|---|---|---|---|
-| Ruff | audit/raw/backend-ruff.txt | Pendiente | |
-| Mypy | audit/raw/backend-mypy.txt | Pendiente | |
-| Bandit | audit/raw/backend-bandit.json | Pendiente | |
-| pip-audit | audit/raw/backend-pip-audit.json | Pendiente | |
-| Pytest | audit/raw/backend-pytest.txt | Pendiente | |
+| Herramienta/Auditoría | Reporte | Estado | Severidad | Cantidad aprox | Observaciones |
+|---|---|---|---|---:|---|
+| ESLint | `audit/raw/frontend-eslint.txt` | Detectado | Medio | 66 | 40 errores y 26 warnings; foco en hooks |
+| Typecheck | `audit/raw/frontend-typecheck.txt` | OK | - | 0 | `tsc --noEmit` sin errores |
+| npm audit | `audit/raw/frontend-npm-audit.json` | Detectado | Medio | 7 | 7 moderadas (vite/vitest/esbuild/postcss/yaml) |
+| Vitest | `audit/raw/frontend-vitest.txt` | Detectado | Alto | 86 fallos | 19 archivos fallidos (de 68) |
+| useEffect audit | `audit/raw/frontend-useeffects-audit.md` | Detectado | Medio | 46 usos | 20 archivos con `useEffect`; varios patrones en 0 |
+| Error handling audit | `audit/raw/frontend-error-handling-audit.md` | Detectado | Medio | 100 archivos | Señales amplias de manejo de errores, requiere priorización |
+| Reusable components audit | `audit/raw/frontend-reusable-components-audit.md` | Detectado | Medio | 0 / 300+ refs | 0 candidatos pero alta referencia de componentes base |
 
-## Resultados frontend
+## Resumen arquitectura backend
 
-| Herramienta/Auditoría | Reporte | Estado | Observaciones |
-|---|---|---|---|
-| ESLint | audit/raw/frontend-eslint.txt | Pendiente | |
-| Typecheck | audit/raw/frontend-typecheck.txt | Pendiente | |
-| npm audit | audit/raw/frontend-npm-audit.json | Pendiente | |
-| Vitest | audit/raw/frontend-vitest.txt | Pendiente | |
-| useEffect audit | audit/raw/frontend-useeffects-audit.md | Pendiente | |
-| Error handling audit | audit/raw/frontend-error-handling-audit.md | Pendiente | |
-| Reusable components audit | audit/raw/frontend-reusable-components-audit.md | Pendiente | |
+| Auditoría | Reporte | Estado | Severidad | Observaciones |
+|---|---|---|---|---|
+| Code smells | `audit/raw/backend-code-smells.txt` | Detectado | Alto | Pylint reporta too-many-*, unused-import y broad-exception |
+| Complejidad | `audit/raw/backend-complexity.txt` | Detectado | Alto | Funciones con grado D y múltiples C en pipeline/orquestación |
+| Límites de imports | `audit/raw/backend-import-boundaries.txt` | Detectado | Alto | 1 FAIL (application->api), 2 REVIEW, 5 rutas API sospechosas |
+| SOLID/GRASP | `audit/raw/backend-solid-grasp-audit.md` | Detectado | Medio | Evaluación heurística con señales claras de refactor futuro |
 
-## Resultados arquitectura backend
+## Resumen arquitectura frontend
 
-| Auditoría | Reporte | Estado | Observaciones |
-|---|---|---|---|
-| Code smells | audit/raw/backend-code-smells.txt | Pendiente | |
-| Complejidad | audit/raw/backend-complexity.txt | Pendiente | |
-| Límites de imports | audit/raw/backend-import-boundaries.txt | Pendiente | |
-| SOLID/GRASP | audit/raw/backend-solid-grasp-audit.md | Pendiente | |
+| Auditoría | Reporte | Estado | Severidad | Observaciones |
+|---|---|---|---|---|
+| Code smells | `audit/raw/frontend-code-smells.txt` | Detectado | Alto | ESLint + heurística; hallazgos react-hooks y set-state-in-effect |
+| Complejidad | `audit/raw/frontend-complexity.txt` | Detectado | Alto | 183 archivos, 1513 funciones aprox, 808 condicionales |
+| Límites de imports | `audit/raw/frontend-import-boundaries.txt` | Detectado | Medio | Señales de components con imports API/fetch directo |
+| Duplicación | `audit/raw/frontend-duplication.txt` | Detectado | Informativo | `jscpd` no instalado; fallback por patrones de nombres |
+| Código muerto | `audit/raw/frontend-dead-code.txt` | Detectado | Medio | `ts-prune` reporta alto volumen de exports potencialmente no usados |
+| SOLID/React | `audit/raw/frontend-solid-react-audit.md` | Detectado | Medio | Evaluación heurística de SRP, DIP y patrones React |
 
-## Resultados arquitectura frontend
+## Hallazgos clave consolidados
 
-| Auditoría | Reporte | Estado | Observaciones |
-|---|---|---|---|
-| Code smells | audit/raw/frontend-code-smells.txt | Pendiente | |
-| Complejidad | audit/raw/frontend-complexity.txt | Pendiente | |
-| Límites de imports | audit/raw/frontend-import-boundaries.txt | Pendiente | |
-| Duplicación | audit/raw/frontend-duplication.txt | Pendiente | |
-| Código muerto | audit/raw/frontend-dead-code.txt | Pendiente | |
-| SOLID/React | audit/raw/frontend-solid-react-audit.md | Pendiente | |
+- Backend presenta **94 tests fallidos** en áreas core de operación de inventario/pipeline.
+- Frontend presenta **86 tests fallidos** en suites clave (`ExecutionLogPanel`, `CompareRunsPage`, `MetricsPage`, `InventoryDetailPage`).
+- Bandit reporta **1 hallazgo HIGH** y **35 MEDIUM**; principal riesgo en SQL dinámico y manejo de excepciones.
+- Mypy reporta **80 errores en 35 archivos**, con riesgo de contratos inconsistentes.
+- Ruff reporta **3545 issues**, indicando deuda técnica estructural.
+- npm audit frontend reporta **7 vulnerabilidades moderadas** en toolchain.
+- Arquitectura backend detecta **violación de boundary** (`application` importando `api`) y rutas API extensas.
+- Arquitectura frontend detecta **acoplamiento UI->API/fetch** en componentes.
+- Auditoría de complejidad frontend identifica archivos de **>1000 líneas** (`MetricsPage`, `api/client`).
+- `ts-prune` detecta alta cantidad de exports potencialmente no usados (requiere validación manual).
+- Auditorías heurísticas (`SOLID/GRASP`, `SOLID/React`, scanners textuales) aportan señales, no pruebas definitivas.
+- Warning recurrente `npm Unknown env config "devdir"` genera ruido operativo en reportes.
 
-## Resumen de hallazgos backend
+## Riesgos consolidados
 
-| Herramienta | Severidad predominante | Cantidad aprox | Estado | Observaciones |
-|---|---|---:|---|---|
-| Ruff | Medio | 3545 | Detectado | Predominan problemas de estilo, tipado moderno e imports; hay un subconjunto con potencial impacto funcional. |
-| Mypy | Alto | 80 (en 35 archivos) | Detectado | Errores de contratos de tipos, imports faltantes de stubs y retornos incompatibles en rutas/casos de uso. |
-| Bandit | Medio | \~120+ | Detectado | Predominan LOW, con varios MEDIUM (especialmente patrones de SQL dinámico y subprocess). |
-| pip-audit | Bajo | 0 vulnerabilidades conocidas | Detectado | Auditoría sin CVEs reportadas; el paquete local no publicado se marca como no auditable en PyPI. |
-| Pytest | Crítico | 94 fallos (1785 tests) | Detectado | Alta tasa de fallos en áreas core de API v3, jobs, pipeline e integración de repositorios. |
+### Riesgos críticos
 
-### Hallazgos clave
+- Inestabilidad de pruebas backend y frontend que compromete la confianza de regresión.
 
-- La suite backend ejecuta 1785 tests y reporta 94 fallos, concentrados en flujos operativos de pasillos, jobs y ejecución de pipeline.
-- Hay un volumen alto de deuda de lint (3545), con mucha repetición en reglas de formato/imports y tipado legacy, lo que dificulta revisiones y estabilidad de cambios.
-- Mypy reporta 80 errores en 35 archivos; destacan `import-not-found`, `arg-type`, `name-defined` y `return` en rutas v3 y servicios de aplicación.
-- En Bandit aparecen patrones `B608` (construcción SQL por strings), con severidad MEDIUM, que requieren revisión manual para separar riesgos reales de consultas parametrizadas seguras.
-- Se detectan patrones `try/except/pass` y `try/except/continue` en componentes de jobs/pipeline, que pueden ocultar fallos operativos.
-- Hay alertas por uso de `subprocess` en servicios de arranque on-demand; aunque pueden ser controladas, requieren validación de entrada y contexto de ejecución.
-- `pip-audit` no reporta CVEs conocidas en esta corrida, pero indica limitación para auditar el paquete local `dinamic-gemini` al no estar en PyPI.
-- La cobertura global reportada por pytest-cov es 81%; existen módulos con cobertura baja/cero en zonas de almacenamiento y tracking que incrementan riesgo de regresión.
+### Riesgos altos
 
-### Riesgos identificados
+- Hallazgos de seguridad (Bandit HIGH/MEDIUM) y vulnerabilidades moderadas de dependencias frontend.
+- Errores de tipado backend con impacto potencial en contratos y runtime.
+- Complejidad alta en orquestadores/páginas críticas que eleva probabilidad de defectos.
 
-- **Riesgos técnicos**
-  - Regresiones funcionales en rutas v3 y casos de uso críticos por el volumen de tests fallidos.
-  - Mayor probabilidad de errores en runtime por inconsistencias de tipos no resueltas.
-  - Menor mantenibilidad por exceso de findings repetitivos de lint.
+### Riesgos medios
 
-- **Riesgos de seguridad**
-  - Potenciales vectores de inyección SQL en puntos con query dinámica señalados por Bandit.
-  - Manejo silencioso de excepciones que puede ocultar incidentes.
-  - Superficie de riesgo asociada a ejecución de subprocess si no se valida estrictamente la entrada.
+- Deuda extensa de lint/code smells en backend y frontend.
+- Acoplamiento arquitectónico entre capas (backend y frontend).
+- Detección de posible código muerto sin clasificación por criticidad.
 
-- **Riesgos de mantenibilidad**
-  - Costo alto de onboarding y de revisión por ruido técnico acumulado.
-  - Menor trazabilidad de fallos al coexistir deuda de estilo, tipado y pruebas en paralelo.
-  - Dificultad para endurecer el Quality Gate sin una remediación incremental por lotes.
+### Riesgos bajos / informativos
 
-## Resumen de hallazgos frontend
+- Limitaciones de tooling instalado parcialmente (jscpd/import tooling según entorno).
+- Warnings de entorno npm (`devdir`) que afectan legibilidad de ejecuciones.
 
-| Herramienta/Auditoría | Severidad predominante | Cantidad aprox | Estado | Observaciones |
-|---|---|---:|---|---|
-| ESLint | Medio | 66 (40 errores, 26 warnings) | Detectado | En corrida actual sí ejecuta; en corridas previas quedó `SKIPPED` por ausencia de script `lint`. |
-| Typecheck | - | 0 | OK | TypeScript compila sin errores en la corrida registrada. |
-| npm audit | Medio | 7 moderadas | Detectado | Vulnerabilidades en cadena Vite/Vitest y paquetes transversales (`esbuild`, `postcss`, `yaml`). |
-| Vitest | Alto | 19 archivos / 86 tests fallidos | Detectado | Fallos agrupados en suites principales de UI/flujo operacional. |
-| useEffect audit | Medio | 46 usos / 20 archivos | Detectado | Conteos útiles, pero con posibles falsos positivos/negativos por heurística textual. |
-| Error handling audit | Medio | 100 archivos con patrones | Detectado | Alta dispersión de patrones; requiere normalización por criticidad y UX. |
-| Reusable components audit | Medio | 0 archivos candidatos / 300+ referencias UI | Detectado | Resultado inconsistente entre conteo de archivos y referencias; indica limitación del scanner. |
+## Limitaciones de la auditoría
 
-### Hallazgos clave frontend
+- SOLID/GRASP y SOLID/React se evaluaron de forma **heurística**, no como verificación formal.
+- Algunos scanners producen falsos positivos/falsos negativos.
+- Varios resultados dependen de herramientas instaladas en entorno local.
+- Sin `ripgrep`, algunos pasos usan fallback `find/grep` con menor precisión.
+- En corridas sin script `lint`, ESLint puede quedar `SKIPPED`.
+- Esta auditoría **no implica corrección automática**.
 
-- ESLint ya se ejecuta y reporta 66 findings (40 errores, 26 warnings), con foco en hooks React (`set-state-in-effect`, dependencias faltantes).
-- Typecheck finaliza sin errores de TypeScript en la corrida auditada.
-- `npm audit` reporta 7 vulnerabilidades moderadas (sin high/critical), principalmente en la cadena de build/test.
-- Las remediaciones sugeridas por `npm audit` para Vite/Vitest implican upgrade semver major, por lo que requieren validación de compatibilidad.
-- Vitest muestra 19 archivos de test fallidos y 86 tests fallidos, concentrados en `ExecutionLogPanel`, `CompareRunsPage`, `MetricsPage`, `InventoryDetailPage` y flujos de revisión.
-- Se observa warning recurrente de entorno npm: `Unknown env config "devdir"`, que introduce ruido en reportes y puede afectar consistencia de ejecución.
-- La auditoría de `useEffect` detecta uso extendido, pero los patrones avanzados (fetch/listeners/timers) aparecen en cero y pueden estar subdetectados.
-- La auditoría de manejo de errores detecta alta cantidad de archivos con patrones (`onError`, `isError`, `try/catch`), lo que sugiere dispersión de estrategia.
-- La auditoría de componentes reutilizables muestra un desalineamiento (0 archivos candidatos pero cientos de referencias), señal de que la heurística de descubrimiento necesita ajuste.
+## Recomendación de priorización
 
-### Riesgos frontend identificados
-
-- **Riesgos técnicos**
-  - Fallos en suites de UI críticas pueden afectar flujos operativos y confianza en regresión.
-  - Findings de hooks React pueden derivar en renders en cascada o efectos no controlados.
-  - Cobertura de test efectiva reducida por volumen de suites inestables.
-
-- **Riesgos de seguridad/dependencias**
-  - Vulnerabilidades moderadas en dependencias de tooling (build/test) con posibilidad de impacto en entornos de desarrollo/CI.
-  - Correcciones disponibles con upgrades mayores que pueden introducir incompatibilidades no triviales.
-
-- **Riesgos de mantenibilidad**
-  - Acumulación de findings de lint y fallos de test incrementa costo de cambios futuros.
-  - Estrategia de manejo de errores potencialmente fragmentada entre páginas/hooks/componentes.
-  - Detección incompleta de oportunidades de reutilización puede sostener duplicación de UI.
-
-- **Riesgos de tooling**
-  - Variabilidad entre corridas (por ejemplo lint `SKIPPED` en etapas previas) dificulta trazabilidad histórica si no se normaliza el entorno.
-  - Warning `devdir` de npm ensucia reportes y complica lectura automatizada.
-
-### Limitaciones de auditoría frontend
-
-- ESLint no se ejecutó en corridas iniciales hasta agregar script `lint`; en la corrida actual ya ejecuta y reporta findings.
-- Las auditorías estáticas por patrones de texto (`grep/find`) son aproximadas y no equivalen a análisis semántico AST.
-- Sin `ripgrep`, el script usa fallback con `find/grep`; esto puede afectar precisión y performance.
-- Resultados en cero (por ejemplo algunos patrones de `useEffect`) pueden ser falsos negativos por expresiones regulares o estructura del código.
-- Parte de los fallos de tests puede estar influida por cambios de copy/i18n o contratos de texto, no solo por roturas de lógica de negocio.
-
-## Observaciones generales
-
-- Implementación progresiva del Quality Gate.
-- En esta etapa se prioriza detección y documentación.
-- La política de bloqueo se endurecerá en fases posteriores.
+1. Estabilizar tests rotos (backend y frontend).
+2. Atender seguridad/dependencias (Bandit HIGH/MEDIUM + npm audit).
+3. Reducir errores de tipado (`mypy` / contratos TS).
+4. Normalizar tooling faltante/entorno de auditoría.
+5. Corregir violaciones de arquitectura y acoplamiento entre capas.
+6. Ejecutar refactors de mantenibilidad (code smells, complejidad, duplicación/código muerto).

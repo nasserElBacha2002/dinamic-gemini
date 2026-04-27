@@ -2,310 +2,285 @@
 
 ## Críticos
 
-### AUD-001 - Fallos masivos en pruebas de flujo operativo de pasillos y jobs
+### AUD-001 - Fallos masivos en pruebas backend core (API/use-cases/pipeline)
 - Área: Backend
 - Herramienta: Pytest
 - Severidad: Crítico
-- Archivo/Ruta: `backend/tests/api/test_aisles_v3_wiring.py`, `backend/tests/application/use_cases/test_aisle_processing.py`, `backend/tests/infrastructure/pipeline/`
-- Descripción: Se observan múltiples fallos en flujos core de creación/cancelación/procesamiento de jobs de pasillo y coordinación de pipeline.
-- Riesgo: Alta probabilidad de regresiones en operaciones principales y resultados inconsistentes en producción.
-- Evidencia: `audit/raw/backend-pytest.txt` (94 fallos totales; resumen final y short test summary).
-- Recomendación futura: Priorizar corrección por dominios (API v3 -> use cases -> infraestructura) y validar con smoke tests de negocio.
+- Archivo/Ruta: `backend/tests/api/`, `backend/tests/application/use_cases/`, `backend/tests/infrastructure/pipeline/`
+- Descripción: La corrida backend reporta 94 tests fallidos sobre 1785, con afectación transversal de flujos operativos.
+- Riesgo: Regresiones funcionales en operaciones principales de inventario y procesamiento.
+- Evidencia:
+  - `audit/raw/backend-pytest.txt`
+- Recomendación futura: Plan de estabilización por dominios y smoke tests de regresión por flujo.
 - Estado: Pendiente
 
-### AUD-002 - Inestabilidad en casos de uso de carga y gestión de assets de pasillo
-- Área: Backend
-- Herramienta: Pytest
+### AUD-002 - Fallos masivos en pruebas frontend de pantallas operativas
+- Área: Frontend
+- Herramienta: Vitest
 - Severidad: Crítico
-- Archivo/Ruta: `backend/tests/application/use_cases/test_upload_aisle_assets.py`, `backend/tests/application/use_cases/test_delete_aisle_source_asset.py`
-- Descripción: Fallan múltiples escenarios de upload/listado/borrado y rollback de assets.
-- Riesgo: Riesgo directo sobre disponibilidad e integridad del flujo de carga de evidencias.
-- Evidencia: `audit/raw/backend-pytest.txt`
-- Recomendación futura: Corregir contratos transaccionales y reglas de estado antes de endurecer el gate.
+- Archivo/Ruta: `frontend/tests/ExecutionLogPanel.test.tsx`, `frontend/tests/CompareRunsPage.test.tsx`, `frontend/tests/MetricsPage.test.tsx`, `frontend/tests/InventoryDetailPage.test.tsx`
+- Descripción: La corrida frontend registra 86 tests fallidos en 19 archivos.
+- Riesgo: Alto riesgo de regresión visible en UX y flujos de operador.
+- Evidencia:
+  - `audit/raw/frontend-vitest.txt`
+- Recomendación futura: Estabilizar suites por prioridad de negocio antes de endurecer gate.
 - Estado: Pendiente
 
 ## Altos
 
-### AUD-003 - Errores de tipado en rutas v3 con retornos y dependencias no resueltas
+### AUD-003 - Errores de tipado backend en contratos críticos
 - Área: Backend
 - Herramienta: Mypy
 - Severidad: Alto
-- Archivo/Ruta: `backend/src/api/routes/v3/aisles.py`, `backend/src/api/routes/v3/assets.py`, `backend/src/api/routes/v3/inventories.py`, `backend/src/api/routes/v3/capture_sessions.py`
-- Descripción: Se detectan `Missing return statement`, `name-defined` y firmas incompatibles en rutas HTTP.
-- Riesgo: Posible comportamiento no determinista en handlers y degradación de contratos de API.
-- Evidencia: `audit/raw/backend-mypy.txt`
-- Recomendación futura: Normalizar firmas/retornos y asegurar imports/símbolos explícitos por ruta.
+- Archivo/Ruta: `backend/src/api/routes/v3/`, `backend/src/application/`, `backend/src/pipeline/`, `backend/src/llm/`
+- Descripción: 80 errores de tipado en 35 archivos, incluyendo retornos incompatibles, símbolos faltantes y tipos ambiguos.
+- Riesgo: Fallos en runtime y degradación de contratos internos.
+- Evidencia:
+  - `audit/raw/backend-mypy.txt`
+- Recomendación futura: Corregir por capas empezando por rutas y casos de uso.
 - Estado: Pendiente
 
-### AUD-004 - Errores de tipado en integración de pipeline y adapters LLM
-- Área: Backend
-- Herramienta: Mypy
-- Severidad: Alto
-- Archivo/Ruta: `backend/src/pipeline/hybrid_inventory_pipeline.py`, `backend/src/llm/openai_sdk_adapter.py`, `backend/src/llm/anthropic_sdk_adapter.py`
-- Descripción: Se observan incompatibilidades de tipos en invocaciones y payloads complejos.
-- Riesgo: Fallos en tiempo de ejecución en rutas de procesamiento y análisis.
-- Evidencia: `audit/raw/backend-mypy.txt`
-- Recomendación futura: Ajustar contratos tipados de adapters y DTOs intermedios.
-- Estado: Pendiente
-
-### AUD-005 - Dependencias sin stubs tipados en rutas críticas
-- Área: Backend
-- Herramienta: Mypy
-- Severidad: Alto
-- Archivo/Ruta: `backend/src/env_settings/sqlserver_resolution.py`, `backend/src/database/sqlserver.py`, `backend/src/infrastructure/repositories/*`, `backend/src/auth/security.py`
-- Descripción: `import-not-found` / `import-untyped` para `pyodbc`, `boto3`, `passlib`.
-- Riesgo: Pérdida de cobertura de análisis estático en componentes de persistencia y autenticación.
-- Evidencia: `audit/raw/backend-mypy.txt`
-- Recomendación futura: Incorporar stubs o exclusiones tipadas justificadas por módulo.
-- Estado: Pendiente
-
-### AUD-006 - Posibles vectores de SQL injection por construcción dinámica de queries
+### AUD-004 - Hallazgos de seguridad backend con severidad alta/media
 - Área: Backend
 - Herramienta: Bandit
 - Severidad: Alto
-- Archivo/Ruta: `backend/src/infrastructure/repositories/sql_job_repository.py`, `sql_product_record_repository.py`, `sql_raw_label_repository.py`, `sql_source_asset_repository.py`, `sql_normalized_label_repository.py`
-- Descripción: Hallazgos `B608` de severidad MEDIA por uso de f-strings/placeholders dinámicos en SQL.
-- Riesgo: Si algún valor no está controlado/parametrizado, podría abrir vector de inyección.
-- Evidencia: `audit/raw/backend-bandit.json`
-- Recomendación futura: Revisar consulta por consulta y documentar casos seguros con parametrización estricta.
+- Archivo/Ruta: `backend/src/infrastructure/repositories/`, `backend/src/jobs/`, `backend/src/pipeline/`
+- Descripción: 59 hallazgos (1 HIGH, 35 MEDIUM, 23 LOW), destacando SQL dinámico y manejo de excepciones.
+- Riesgo: Superficie de ataque y ocultamiento de errores.
+- Evidencia:
+  - `audit/raw/backend-bandit.json`
+- Recomendación futura: Priorizar remediación de HIGH y MEDIUM por riesgo real.
 - Estado: Pendiente
 
-## Medios
-
-### AUD-007 - Deuda de lint elevada y repetitiva en backend
-- Área: Backend
-- Herramienta: Ruff
-- Severidad: Medio
-- Archivo/Ruta: `backend/` (global)
-- Descripción: Se reportan 3545 errores, con fuerte repetición de reglas de formato/imports/tipado moderno.
-- Riesgo: Alto ruido técnico que dificulta detectar problemas realmente críticos en revisiones.
-- Evidencia: `audit/raw/backend-ruff.txt` (línea final: `Found 3545 errors.`)
-- Recomendación futura: Plan de remediación por lotes (primero imports/whitespace, luego upgrades de typing).
-- Estado: Pendiente
-
-### AUD-008 - Manejo silencioso de excepciones en jobs y pipeline
-- Área: Backend
-- Herramienta: Bandit
-- Severidad: Medio
-- Archivo/Ruta: `backend/src/jobs/dev_reset_local_jobs.py`, `backend/src/jobs/worker.py`, `backend/src/pipeline/hybrid_inventory_pipeline.py`
-- Descripción: Hallazgos `B110`/`B112` por `except ...: pass/continue`.
-- Riesgo: Ocultamiento de errores operativos y pérdida de trazabilidad de incidentes.
-- Evidencia: `audit/raw/backend-bandit.json`
-- Recomendación futura: Registrar excepciones y aplicar manejo explícito por tipo de error.
-- Estado: Pendiente
-
-### AUD-009 - Uso de subprocess con validación pendiente de inputs
-- Área: Backend
-- Herramienta: Bandit
-- Severidad: Medio
-- Archivo/Ruta: `backend/src/infrastructure/services/on_demand_worker_launch_service.py`
-- Descripción: Hallazgos `B404`/`B603` por uso de `subprocess` en lanzamiento de procesos.
-- Riesgo: Riesgo de ejecución no deseada si se amplía superficie de entrada no confiable.
-- Evidencia: `audit/raw/backend-bandit.json`
-- Recomendación futura: Endurecer validación/origen del comando y auditar contexto de ejecución.
-- Estado: Pendiente
-
-### AUD-010 - Errores de tipos en consolidación y normalización de datos
-- Área: Backend
-- Herramienta: Mypy
-- Severidad: Medio
-- Archivo/Ruta: `backend/src/consolidate/consolidate.py`, `backend/src/application/mappers/position_canonical_view.py`, `backend/src/jobs/job_store.py`
-- Descripción: Operaciones con tipos opcionales o mixtos (`str | None`, `dict` tipado débil) generan incompatibilidades.
-- Riesgo: Cálculos/serializaciones inconsistentes en escenarios borde.
-- Evidencia: `audit/raw/backend-mypy.txt`
-- Recomendación futura: Tipado explícito de estructuras intermedias y validación previa a operaciones aritméticas.
-- Estado: Pendiente
-
-## Bajos
-
-### AUD-011 - Hallazgos de estilo de baja criticidad (whitespace/import ordering)
-- Área: Backend
-- Herramienta: Ruff
-- Severidad: Bajo
-- Archivo/Ruta: `backend/tests/`, `backend/scripts/`
-- Descripción: Reglas como `W293`, `I001`, `W292` aparecen en múltiples archivos y no implican fallo funcional directo.
-- Riesgo: Bajo impacto funcional; sí afecta consistencia del código y revisabilidad.
-- Evidencia: `audit/raw/backend-ruff.txt`
-- Recomendación futura: Aplicar autofix controlado por carpetas y validar en CI.
-- Estado: Pendiente
-
-### AUD-012 - Hallazgos de pseudoaleatoriedad y asserts en contexto no criptográfico
-- Área: Backend
-- Herramienta: Bandit
-- Severidad: Bajo
-- Archivo/Ruta: `backend/src/llm/anthropic_sdk_adapter.py`, `backend/src/llm/costing.py`, `backend/src/pipeline/services/multi_provider_analysis_execution.py`
-- Descripción: Alertas `B311` y `B101` por `random` y `assert`; en principio no están en contexto criptográfico o de control de acceso.
-- Riesgo: Bajo en contexto actual, pero requiere confirmación técnica para evitar falsos supuestos.
-- Evidencia: `audit/raw/backend-bandit.json`
-- Recomendación futura: Documentar justificación técnica o reemplazar patrones donde corresponda.
-- Estado: Pendiente
-
-### AUD-013 - Hallazgos ESLint en hooks React con riesgo de renders en cascada
-- Área: Frontend
-- Herramienta: ESLint
-- Severidad: Alto
-- Archivo/Ruta: `frontend/src/components/CreateAisleDialog.tsx`, `frontend/src/components/ExecutionLogPanel.tsx`, `frontend/src/components/ui/ImageViewer.tsx`, `frontend/src/components/imageAssets/ManagedImageAssetsDrawer.tsx`
-- Descripción: Se detectan errores `react-hooks/set-state-in-effect` y dependencias incompletas en hooks.
-- Riesgo: Posibles rerenders innecesarios, efectos no deterministas y comportamiento UI difícil de estabilizar.
-- Evidencia: `audit/raw/frontend-eslint.txt`
-- Recomendación futura: Revisar patrones de efectos y mover inicializaciones/derivaciones a `useMemo`/estado derivado cuando corresponda.
-- Estado: Pendiente
-
-### AUD-014 - Deuda de lint frontend concentrada en reglas de hooks y refresh
-- Área: Frontend
-- Herramienta: ESLint
-- Severidad: Medio
-- Archivo/Ruta: `frontend/src/` (global)
-- Descripción: La corrida reporta 66 findings (40 errores, 26 warnings), incluyendo `react-refresh/only-export-components` y warnings de dependencias.
-- Riesgo: Ruido técnico elevado que dificulta priorizar fallos funcionales en PRs.
-- Evidencia: `audit/raw/frontend-eslint.txt`
-- Recomendación futura: Aplicar remediación por lotes de reglas, empezando por errores bloqueantes de hooks.
-- Estado: Pendiente
-
-### AUD-015 - Drift de tooling de lint entre corridas (SKIPPED previo vs ejecución actual)
-- Área: Frontend
-- Herramienta: ESLint
-- Severidad: Medio
-- Archivo/Ruta: `frontend/package.json`, `scripts/audit/run_frontend_audit.sh`
-- Descripción: En fases previas lint quedó `SKIPPED` por falta de script; actualmente ejecuta, lo que evidencia inconsistencia histórica de setup.
-- Riesgo: Trazabilidad incompleta de calidad frontend entre ejecuciones del gate.
-- Evidencia: historial de `audit/raw/frontend-eslint.txt` + reportes de Fase 3.
-- Recomendación futura: Mantener control de precondiciones del entorno y versionar checklist de tooling mínimo.
-- Estado: Pendiente
-
-### AUD-016 - Vulnerabilidades moderadas en cadena de build/test frontend
+### AUD-005 - Vulnerabilidades moderadas en dependencias frontend
 - Área: Frontend
 - Herramienta: npm audit
 - Severidad: Alto
 - Archivo/Ruta: `frontend/package-lock.json`
-- Descripción: Se reportan 7 vulnerabilidades moderadas en `vite`, `vitest`, `vite-node`, `@vitest/mocker`, `esbuild`, `postcss`, `yaml`.
-- Riesgo: Riesgo de seguridad en toolchain de desarrollo/CI y posibles superficies de ataque indirectas.
-- Evidencia: `audit/raw/frontend-npm-audit.json`
-- Recomendación futura: Planificar remediación por dependencias, priorizando advisories con CVE/CWE de mayor impacto.
+- Descripción: 7 vulnerabilidades moderadas, principalmente en cadena Vite/Vitest/esbuild/postcss/yaml.
+- Riesgo: Riesgo de seguridad en tooling de build/test y CI.
+- Evidencia:
+  - `audit/raw/frontend-npm-audit.json`
+- Recomendación futura: Plan de upgrade controlado con validación de compatibilidad.
 - Estado: Pendiente
 
-### AUD-017 - Remediaciones de npm audit requieren upgrades major (riesgo de compatibilidad)
-- Área: Frontend
-- Herramienta: npm audit
+### AUD-006 - Violación de límites de arquitectura backend (application -> api)
+- Área: Arquitectura backend
+- Herramienta: Import boundaries audit
+- Severidad: Alto
+- Archivo/Ruta: `backend/src/application/services/position_traceability.py`
+- Descripción: Se detecta regla FAIL en boundaries: capa application importa componente de `src.api`.
+- Riesgo: Acoplamiento inverso y erosión de DIP.
+- Evidencia:
+  - `audit/raw/backend-import-boundaries.txt`
+- Recomendación futura: Reubicar dependencia a puerto/servicio de capa intermedia.
+- Estado: Pendiente
+
+### AUD-007 - Complejidad alta en orquestación backend
+- Área: Arquitectura backend
+- Herramienta: Radon / complexity
+- Severidad: Alto
+- Archivo/Ruta: `backend/src/pipeline/hybrid_inventory_pipeline.py`, `backend/src/pipeline/stages/analysis_stage.py`
+- Descripción: Se detectan funciones con grado D y múltiples C en pipeline/orquestación.
+- Riesgo: Mayor probabilidad de defectos, baja testabilidad y mantenimiento costoso.
+- Evidencia:
+  - `audit/raw/backend-complexity.txt`
+- Recomendación futura: Refactor por subresponsabilidades y límites de etapa.
+- Estado: Pendiente
+
+### AUD-008 - Code smells backend estructurales (too-many-*, imports no usados)
+- Área: Arquitectura backend
+- Herramienta: Pylint
+- Severidad: Alto
+- Archivo/Ruta: `backend/src/` (múltiples módulos)
+- Descripción: Alta recurrencia de `too-many-arguments`, `too-many-branches`, `too-many-statements`, `unused-import`.
+- Riesgo: Baja cohesión, mayor acoplamiento y dificultad de evolución segura.
+- Evidencia:
+  - `audit/raw/backend-code-smells.txt`
+- Recomendación futura: Remediación incremental por módulos críticos.
+- Estado: Pendiente
+
+### AUD-009 - Code smells frontend en hooks React (set-state-in-effect)
+- Área: Arquitectura frontend
+- Herramienta: ESLint / frontend code smells
+- Severidad: Alto
+- Archivo/Ruta: `frontend/src/components/CreateAisleDialog.tsx`, `frontend/src/components/ExecutionLogPanel.tsx`, `frontend/src/components/ui/ImageViewer.tsx`
+- Descripción: Findings de `react-hooks/set-state-in-effect` y dependencias faltantes.
+- Riesgo: Renders en cascada, efectos no deterministas y errores de estado.
+- Evidencia:
+  - `audit/raw/frontend-eslint.txt`
+  - `audit/raw/frontend-code-smells.txt`
+- Recomendación futura: Reestructurar efectos y derivaciones de estado.
+- Estado: Pendiente
+
+### AUD-010 - Complejidad extrema en frontend (componentes/servicios muy grandes)
+- Área: Arquitectura frontend
+- Herramienta: Complexity audit
+- Severidad: Alto
+- Archivo/Ruta: `frontend/src/features/analytics/MetricsPage.tsx`, `frontend/src/api/client.ts`, `frontend/src/pages/AislePositionsPage.tsx`
+- Descripción: Archivos >300 líneas (algunos >1000) y alta densidad condicional.
+- Riesgo: Mantenibilidad baja y mayor tasa de defectos.
+- Evidencia:
+  - `audit/raw/frontend-complexity.txt`
+- Recomendación futura: Separar por módulos/hook/controller view-model.
+- Estado: Pendiente
+
+## Medios
+
+### AUD-011 - Deuda de lint backend de gran volumen
+- Área: Backend
+- Herramienta: Ruff
 - Severidad: Medio
-- Archivo/Ruta: `frontend/package.json`, `frontend/package-lock.json`
-- Descripción: Las correcciones propuestas para `vite`/`vitest` apuntan a versiones semver major.
-- Riesgo: Posibles cambios breaking en tooling, tests y configuración de build.
-- Evidencia: `audit/raw/frontend-npm-audit.json`
-- Recomendación futura: Ejecutar upgrade controlado en rama dedicada con matriz de tests y smoke de build.
+- Archivo/Ruta: `backend/` (global)
+- Descripción: 3545 errores de lint con alto ruido técnico acumulado.
+- Riesgo: Dificulta revisiones y detección de issues críticos.
+- Evidencia:
+  - `audit/raw/backend-ruff.txt`
+- Recomendación futura: Plan por lotes (autofix seguro + revisión manual por reglas).
 - Estado: Pendiente
 
-### AUD-018 - Fallos de tests en ExecutionLogPanel afectan observabilidad operativa
-- Área: Frontend
-- Herramienta: Vitest
-- Severidad: Alto
-- Archivo/Ruta: `frontend/tests/ExecutionLogPanel.test.tsx`
-- Descripción: 6 de 8 tests fallan en la suite, incluyendo validaciones de rendering y contenido.
-- Riesgo: Menor confiabilidad en UI de trazabilidad/observabilidad de ejecución.
-- Evidencia: `audit/raw/frontend-vitest.txt`
-- Recomendación futura: Reconciliar contratos de texto/datos de panel con expectativas de test.
+### AUD-012 - Acoplamiento frontend components -> API/fetch directo
+- Área: Arquitectura frontend
+- Herramienta: Import boundaries audit
+- Severidad: Medio
+- Archivo/Ruta: `frontend/src/components/` (múltiples)
+- Descripción: Se detectan imports/uso directo de API/fetch desde componentes UI.
+- Riesgo: Mezcla de responsabilidades y menor reutilización/testabilidad.
+- Evidencia:
+  - `audit/raw/frontend-import-boundaries.txt`
+- Recomendación futura: Consolidar lógica en hooks/adapters de capa intermedia.
 - Estado: Pendiente
 
-### AUD-019 - Fallos en CompareRunsPage impactan flujos comparativos de analítica
-- Área: Frontend
-- Herramienta: Vitest
-- Severidad: Alto
-- Archivo/Ruta: `frontend/tests/CompareRunsPage.test.tsx`, `frontend/tests/CompareRunsDialog.test.tsx`
-- Descripción: Fallos repetidos en pruebas de comparación entre corridas y su diálogo asociado.
-- Riesgo: Riesgo funcional en vistas de benchmarking y análisis comparativo para usuarios.
-- Evidencia: `audit/raw/frontend-vitest.txt`
-- Recomendación futura: Validar contratos de filtros, copys y dependencias de datos en vistas de comparación.
+### AUD-013 - Señales de lógica pesada en rutas API backend
+- Área: Arquitectura backend
+- Herramienta: Import boundaries audit (heurística R3)
+- Severidad: Medio
+- Archivo/Ruta: `backend/src/api/routes/v3/aisles.py`, `inventories.py`, `shared.py`, `assets.py`, `capture_sessions.py`
+- Descripción: Rutas extensas con alta ramificación, sospecha de lógica de negocio en capa API.
+- Riesgo: Baja cohesión en controllers y mayor acoplamiento.
+- Evidencia:
+  - `audit/raw/backend-import-boundaries.txt`
+- Recomendación futura: Extraer coordinación de negocio a casos de uso/servicios application.
 - Estado: Pendiente
 
-### AUD-020 - Fallos en MetricsPage y dashboards asociados
-- Área: Frontend
-- Herramienta: Vitest
-- Severidad: Alto
-- Archivo/Ruta: `frontend/tests/MetricsPage.test.tsx`
-- Descripción: 7 de 13 tests fallan en la suite de métricas.
-- Riesgo: Posible degradación en tablero de métricas y confianza de indicadores mostrados.
-- Evidencia: `audit/raw/frontend-vitest.txt`
-- Recomendación futura: Ajustar fixtures/expectativas de métricas y validar adaptadores de datos de analytics.
+### AUD-014 - Hallazgos heurísticos SOLID/GRASP backend
+- Área: Arquitectura backend
+- Herramienta: SOLID/GRASP audit
+- Severidad: Medio
+- Archivo/Ruta: `backend/src/` (global)
+- Descripción: Señales de SRP, DIP y acoplamiento requieren validación manual.
+- Riesgo: Deuda arquitectónica progresiva si no se gobierna por reglas.
+- Evidencia:
+  - `audit/raw/backend-solid-grasp-audit.md`
+- Recomendación futura: Definir políticas de import boundaries como código y checks de arquitectura.
 - Estado: Pendiente
 
-### AUD-021 - Inestabilidad amplia de pruebas frontend en suites core
-- Área: Frontend
-- Herramienta: Vitest
-- Severidad: Crítico
-- Archivo/Ruta: `frontend/tests/` (global, 19 archivos fallidos)
-- Descripción: La corrida registra 19 archivos fallidos y 86 tests fallidos sobre 426.
-- Riesgo: Alto riesgo de regresiones al no contar con red de seguridad confiable para cambios de UI/estado.
-- Evidencia: `audit/raw/frontend-vitest.txt` (resumen final)
-- Recomendación futura: Plan de estabilización por dominios (auth, inventario, revisión, analytics) con gate incremental.
+### AUD-015 - Hallazgos heurísticos SOLID/React frontend
+- Área: Arquitectura frontend
+- Herramienta: SOLID/React audit
+- Severidad: Medio
+- Archivo/Ruta: `frontend/src/` (global)
+- Descripción: Señales de componentes con múltiples responsabilidades y acoplamiento UI-lógica.
+- Riesgo: Escalabilidad limitada y mayor costo de evolución por feature.
+- Evidencia:
+  - `audit/raw/frontend-solid-react-audit.md`
+- Recomendación futura: Definir contratos UI/hooks/services y criterios de composición.
 - Estado: Pendiente
 
-### AUD-022 - Limitaciones del scanner de useEffect para patrones avanzados
+### AUD-016 - Código muerto potencial frontend (exports no usados)
+- Área: Arquitectura frontend
+- Herramienta: ts-prune
+- Severidad: Medio
+- Archivo/Ruta: `frontend/src/` (múltiples módulos)
+- Descripción: Alto volumen de exports reportados como no usados o usados solo localmente.
+- Riesgo: Complejidad accidental y superficie de mantenimiento innecesaria.
+- Evidencia:
+  - `audit/raw/frontend-dead-code.txt`
+- Recomendación futura: Clasificar hallazgos por criticidad y limpiar de forma incremental.
+- Estado: Pendiente
+
+### AUD-017 - Duplicación frontend sin métrica robusta instalada
+- Área: Arquitectura frontend
+- Herramienta: Duplicación audit
+- Severidad: Medio
+- Archivo/Ruta: `frontend/src/` (componentes con patrones repetidos)
+- Descripción: `jscpd` no instalado; fallback textual detecta familias de componentes repetibles.
+- Riesgo: Duplicación no cuantificada con precisión y posible deuda de UI.
+- Evidencia:
+  - `audit/raw/frontend-duplication.txt`
+- Recomendación futura: habilitar `jscpd` en entorno y re-ejecutar medición formal.
+- Estado: Pendiente
+
+### AUD-018 - Limitaciones en auditoría useEffect (falsos negativos posibles)
 - Área: Frontend
 - Herramienta: useEffect audit
 - Severidad: Medio
-- Archivo/Ruta: `frontend/src/` (múltiples archivos)
-- Descripción: Se detectan 46 usos de `useEffect`, pero varios patrones avanzados figuran en cero, sugiriendo subdetección por heurística.
-- Riesgo: Falsos negativos en detección de side-effects problemáticos o lógica de API dentro de efectos.
-- Evidencia: `audit/raw/frontend-useeffects-audit.md`
-- Recomendación futura: Mejorar scanner (AST o regex multiline robusta) y cruzar con findings de ESLint hooks.
+- Archivo/Ruta: `frontend/src/`
+- Descripción: Se detectan 46 usos, pero varios patrones complejos quedan en 0 por heurística textual.
+- Riesgo: Subdetección de riesgos reales en side-effects.
+- Evidencia:
+  - `audit/raw/frontend-useeffects-audit.md`
+- Recomendación futura: mejorar scanner con AST o reglas de lint específicas.
 - Estado: Pendiente
 
-### AUD-023 - Riesgo de interpretación parcial en auditoría de manejo de errores
+### AUD-019 - Auditoría de manejo de errores sin priorización por impacto
 - Área: Frontend
 - Herramienta: Error handling audit
 - Severidad: Medio
 - Archivo/Ruta: `frontend/src/`, `frontend/tests/`
-- Descripción: El reporte marca 100 archivos con patrones de error, pero no diferencia criticidad ni contexto (UI, test, utilidades).
-- Riesgo: Backlog sobredimensionado sin priorización clara; posible mezcla de ruido y deuda real.
-- Evidencia: `audit/raw/frontend-error-handling-audit.md`
-- Recomendación futura: Clasificar por capas (runtime UI vs test helpers) y por impacto de usuario.
+- Descripción: 100 archivos con patrones de error, sin clasificación por criticidad ni contexto de usuario.
+- Riesgo: Backlog ruidoso y baja accionabilidad inmediata.
+- Evidencia:
+  - `audit/raw/frontend-error-handling-audit.md`
+- Recomendación futura: categorizar por capa y por impacto UX/operativo.
 - Estado: Pendiente
 
-### AUD-024 - Inconsistencia en auditoría de componentes reutilizables
-- Área: Frontend
-- Herramienta: Reusable components audit
-- Severidad: Medio
-- Archivo/Ruta: `frontend/src/components`, `frontend/src/pages`, `frontend/src/features`
-- Descripción: Reporta 0 archivos candidatos, pero cientos de referencias a componentes base (`Button`, `Table`, `Dialog`, etc.).
-- Riesgo: Falso negativo en detección de duplicación y oportunidades de abstracción.
-- Evidencia: `audit/raw/frontend-reusable-components-audit.md`
-- Recomendación futura: Ajustar descubrimiento de archivos por rutas y mejorar criterio de agrupación por patrón.
-- Estado: Pendiente
+## Bajos
 
-### AUD-025 - Warning recurrente de npm por configuración de entorno (devdir)
-- Área: Frontend
-- Herramienta: npm / tooling
+### AUD-020 - Warning recurrente de entorno npm (devdir)
+- Área: Tooling
+- Herramienta: npm
 - Severidad: Bajo
-- Archivo/Ruta: entorno npm local (visible al inicio de reportes)
-- Descripción: Se repite `npm warn Unknown env config "devdir"` en lint, typecheck, audit y tests.
-- Riesgo: Ruido operativo y potencial confusión en pipelines/entornos compartidos.
-- Evidencia: `audit/raw/frontend-eslint.txt`, `audit/raw/frontend-typecheck.txt`, `audit/raw/frontend-npm-audit.json`, `audit/raw/frontend-vitest.txt`
-- Recomendación futura: Auditar configuración npm del entorno y documentar estándar para ejecución local/CI.
+- Archivo/Ruta: entorno local npm
+- Descripción: `npm warn Unknown env config "devdir"` aparece en múltiples reportes.
+- Riesgo: Ruido en logs y confusión operativa.
+- Evidencia:
+  - `audit/raw/frontend-eslint.txt`
+  - `audit/raw/frontend-typecheck.txt`
+  - `audit/raw/frontend-npm-audit.json`
+  - `audit/raw/frontend-vitest.txt`
+- Recomendación futura: estandarizar configuración npm de entorno local/CI.
 - Estado: Pendiente
 
-### AUD-026 - Warnings de React Router future flags en ejecución de tests
+### AUD-021 - pipaudit backend con limitación de paquete local no publicado
+- Área: Dependencias backend
+- Herramienta: pip-audit
+- Severidad: Informativo
+- Archivo/Ruta: `backend` package metadata
+- Descripción: No hay CVEs conocidas, pero el paquete local `dinamic-gemini` no es auditable en PyPI.
+- Riesgo: Visibilidad parcial del riesgo de dependencias propias.
+- Evidencia:
+  - `audit/raw/backend-pip-audit.json`
+- Recomendación futura: mantener SBOM y control de dependencias directas/transitivas en CI.
+- Estado: Pendiente
+
+## Informativos
+
+### AUD-022 - Typecheck frontend sin errores en corrida auditada
 - Área: Frontend
-- Herramienta: Vitest
-- Severidad: Bajo
-- Archivo/Ruta: suites de UI con enrutamiento (`frontend/tests/...`)
-- Descripción: Se observan warnings de future flags de React Router durante tests.
-- Riesgo: Riesgo de deuda de compatibilidad para próximas versiones del router.
-- Evidencia: `audit/raw/frontend-vitest.txt`
-- Recomendación futura: Planificar adopción progresiva de future flags y actualizar setup de test/router wrappers.
+- Herramienta: Typecheck
+- Severidad: Informativo
+- Archivo/Ruta: `frontend/src/`
+- Descripción: `tsc --noEmit` ejecuta correctamente en la evidencia actual.
+- Riesgo: Sin riesgo inmediato detectado en tipado TS.
+- Evidencia:
+  - `audit/raw/frontend-typecheck.txt`
+- Recomendación futura: sostener gate de typecheck y monitorear regresiones.
 - Estado: Pendiente
 
-## Falsos positivos
+## Falsos positivos / a validar
 
-- **Bandit B608 en repositorios SQL con parámetros controlados**: parte de los hallazgos puede corresponder a SQL dinámico con placeholders seguros y parámetros separados.
-- **Bandit B101 en asserts de validación interna**: algunos casos pueden ser validaciones internas no expuestas a entrada externa.
-- **Bandit B404/B603 en subprocess de worker on-demand**: posible falso positivo parcial si la fuente de comandos está completamente controlada por configuración interna.
-- **Mypy import-not-found de librerías sin stubs oficiales**: en varios casos no implica bug runtime, sino cobertura tipada incompleta.
-- **useEffect audit con patrones en cero**: algunos conteos pueden ser falsos negativos por limitaciones de regex/fallback textual.
-- **Reusable components audit (0 archivos vs alta referencia)**: resultado potencialmente sesgado por heurística de descubrimiento de archivos.
-
-## Observaciones generales
-
-- El backend está funcionalmente activo, pero presenta una deuda técnica significativa en calidad estática (lint + typing) y estabilidad de pruebas.
-- La prioridad para la siguiente fase de remediación debería enfocarse en: (1) pruebas fallidas core, (2) hallazgos de seguridad MEDIUM, (3) contratos de tipos en rutas y pipeline.
-- El material generado en `audit/raw/` es suficiente para construir un plan de corrección por lotes sin alterar aún el comportamiento de deploy.
-- En frontend, la mayor deuda actual se concentra en estabilidad de tests, findings de hooks en ESLint y vulnerabilidades moderadas de toolchain.
+- Bandit `B608` puede marcar SQL dinámico seguro con placeholders parametrizados.
+- `ts-prune` incluye casos “used in module” que requieren validación manual antes de eliminar.
+- Auditorías heurísticas SOLID/GRASP y SOLID/React no prueban violación formal por sí solas.
+- Auditorías por patrones textuales (`useEffect`, error handling, reusable components) pueden omitir casos reales o sobredetectar ruido.
