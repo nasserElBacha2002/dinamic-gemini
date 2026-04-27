@@ -191,6 +191,9 @@ class StubSourceAssetRepo(SourceAssetRepository):
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return []
 
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+        return None
+
     def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
         return {aid: self._rollup[aid] for aid in aisle_ids if aid in self._rollup}
 

@@ -335,7 +335,7 @@ def test_confirm_position_non_operational_job_is_editable() -> None:
         clock=FixedClock(now),
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
     )
-    use_case.execute("inv-1", "aisle-1", "pos-1")
+    use_case.execute("inv-1", "aisle-1", "pos-1", "job-other")
     updated = position_repo.get_by_id("pos-1")
     assert updated is not None
     assert updated.status == PositionStatus.REVIEWED
@@ -369,7 +369,7 @@ def test_confirm_position_legacy_aisle_allows_scoped_row() -> None:
         clock=FixedClock(now),
         aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
     )
-    use_case.execute("inv-1", "aisle-1", "pos-1")
+    use_case.execute("inv-1", "aisle-1", "pos-1", "job-x")
     updated = position_repo.get_by_id("pos-1")
     assert updated is not None
     assert updated.status == PositionStatus.REVIEWED

@@ -232,7 +232,7 @@ def test_get_position_detail_group_member_resolves_to_representative_current_sta
         assert list_resp.status_code == 200
         list_row = list_resp.json()["positions"][0]
 
-        resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions/pos-e2e-2")
+        resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions/pos-e2e-1")
         assert resp.status_code == 200
         pos = resp.json()["position"]
 
