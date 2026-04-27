@@ -60,8 +60,16 @@ def test_push_success_to_db_calls_set_job_outputs_and_insert_pallet_results(outp
         "frames_selected": 10,
         "prompt_version": "global_min_v1",
         "metrics": {"total_calls": 2, "fallback_attempts": 1},
-        "pallets": [
-            {"pallet_id": "P1", "internal_code": "X", "quantity": 5, "source": "label", "confidence": 0.9, "fallback_used": False, "estimated_visible_boxes": None},
+        "entities": [
+            {
+                "pallet_id": "P1",
+                "internal_code": "X",
+                "final_quantity": None,
+                "product_label_quantity": 5,
+                "confidence": 0.9,
+                "source_image_id": None,
+                "traceability_status": None,
+            },
         ],
     }
     report_path.write_text(json.dumps(report_data), encoding="utf-8")
@@ -78,7 +86,11 @@ def test_push_success_to_db_calls_set_job_outputs_and_insert_pallet_results(outp
     assert call_kw["frames_count_sent"] == 10
     assert call_kw["gemini_calls"] == 2
     assert call_kw["prompt_version"] == "global_min_v1"
-    mock_pallet.insert_pallet_results.assert_called_once_with("job_xyz", report_data["pallets"])
+    mock_pallet.insert_pallet_results.assert_called_once()
+    ip_call = mock_pallet.insert_pallet_results.call_args
+    assert ip_call[0][0] == "job_xyz"
+    assert len(ip_call[0][1]) == 1
+    assert ip_call[0][1][0]["pallet_id"] == "P1"
     assert mock_events.insert_event.call_count >= 3  # FRAMES_SELECTED, GEMINI_GLOBAL_CALL, FALLBACK_RUN, REPORT_WRITTEN
 
 
@@ -155,7 +167,7 @@ def test_insert_pallet_results_quantity_object_final_quantity_preferred():
     mock_cursor.execute.assert_called_once()
     args = mock_cursor.execute.call_args[0][1]
     assert args[3] == 12  # quantity_to_store
-    assert args[8] == 10  # raw_estimated_visible_boxes
+    assert args[7] == 10  # raw_estimated_visible_boxes
 
 
 # --- API uses DB when enabled: removed in Stage 3 (v1 job routes retired) ---

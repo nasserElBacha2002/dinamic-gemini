@@ -1,0 +1,2 @@
+No known vulnerabilities found
+{"dependencies": [{"name": "dinamic-gemini", "skip_reason": "Dependency not found on PyPI and could not be audited: dinamic-gemini (0.1.0)"}], "fixes": []}

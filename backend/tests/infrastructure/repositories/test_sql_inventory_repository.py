@@ -10,9 +10,12 @@ from __future__ import annotations
 import os
 import pytest
 
-from src.database.sqlserver import SqlServerClient, now_utc
+from src.database.sqlserver import now_utc
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
+from tests.support.sql_integration import sql_server_client_or_skip
+
+pytestmark = pytest.mark.integration
 
 
 def _connection_string() -> str:
@@ -42,10 +45,7 @@ def _connection_string() -> str:
 
 @pytest.fixture(scope="module")
 def sql_client():
-    cs = _connection_string()
-    if not cs:
-        pytest.skip("SQL Server not configured (set SQLSERVER_CONNECTION_STRING or server/database/uid/pwd)")
-    return SqlServerClient(cs)
+    return sql_server_client_or_skip(_connection_string())
 
 
 @pytest.fixture

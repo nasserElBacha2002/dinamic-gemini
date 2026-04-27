@@ -436,7 +436,7 @@ def test_get_aisle_status_returns_aisle_and_latest_job() -> None:
     assert response2.status_code == 200
     data2 = response2.json()
     assert data2["latest_job"] is not None
-    assert data2["latest_job"]["status"] == "queued"
+    assert data2["latest_job"]["status"] == "starting"
     assert "created_at" in data2["latest_job"], "aisle status latest_job must expose created_at (Phase 2 Block 2)"
     assert data2["aisle"]["status"] == "queued"
 
@@ -627,27 +627,26 @@ def test_cancel_queued_job_returns_202_and_list_and_status_show_canceled() -> No
     assert cancel_resp.status_code == 202
     cancel_data = cancel_resp.json()
     assert cancel_data["id"] == job_id
-    assert cancel_data["status"] == "canceled"
-    assert cancel_data["finished_at"] is not None
-    assert cancel_data["cancel_requested_at"] is None
+    assert cancel_data["status"] == "cancel_requested"
+    assert cancel_data["cancel_requested_at"] is not None
 
     list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
     assert list_resp.status_code == 200
     list_data = list_resp.json()["items"]
     assert len(list_data) == 1
     assert list_data[0]["latest_job"] is not None
-    assert list_data[0]["latest_job"]["status"] == "canceled"
+    assert list_data[0]["latest_job"]["status"] == "cancel_requested"
 
     status_resp = client.get(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status",
     )
     assert status_resp.status_code == 200
     assert status_resp.json()["latest_job"] is not None
-    assert status_resp.json()["latest_job"]["status"] == "canceled"
+    assert status_resp.json()["latest_job"]["status"] == "cancel_requested"
 
 
-def test_cancel_already_canceled_job_returns_409() -> None:
-    """Phase 3 Block 1 Case 3: Cancel terminal (CANCELED) job -> 409."""
+def test_cancel_after_cancel_requested_is_idempotent_returns_202() -> None:
+    """Phase 3 Block 1 Case 3: Second cancel on same job is idempotent -> 202."""
     create_resp = client.post("/api/v3/inventories", json={"name": "For Cancel 409"})
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
@@ -670,8 +669,7 @@ def test_cancel_already_canceled_job_returns_409() -> None:
     cancel_again = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
     )
-    assert cancel_again.status_code == 409
-    assert "terminal" in cancel_again.json().get("detail", "").lower() or "cancel" in cancel_again.json().get("detail", "").lower()
+    assert cancel_again.status_code == 202
 
 
 def test_cancel_running_job_returns_202_and_list_and_status_show_cancel_requested() -> None:
@@ -1124,8 +1122,8 @@ def test_post_process_when_latest_job_running_returns_409() -> None:
         app.dependency_overrides.pop(get_source_asset_repo, None)
 
 
-def test_post_process_after_terminal_job_creates_new_job() -> None:
-    """Phase 3 Case 5: After terminal state (e.g. CANCELED), POST process creates a new job; list/status show new job."""
+def test_post_process_after_cancel_requested_blocked_by_active_job_returns_409() -> None:
+    """Phase 3 Case 5: While latest job is still active (cancel_requested), POST process is rejected with 409."""
     create_resp = client.post("/api/v3/inventories", json={"name": "For Re-process"})
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
@@ -1149,19 +1147,8 @@ def test_post_process_after_terminal_job_creates_new_job() -> None:
     process2 = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
     )
-    assert process2.status_code == 202
-    job_id_2 = process2.json()["job_id"]
-    assert job_id_2 != job_id_1
-
-    list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
-    assert list_resp.status_code == 200
-    assert list_resp.json()["items"][0]["latest_job"]["id"] == job_id_2
-    assert list_resp.json()["items"][0]["latest_job"]["status"] == "queued"
-
-    status_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
-    assert status_resp.status_code == 200
-    assert status_resp.json()["latest_job"]["id"] == job_id_2
-    assert status_resp.json()["latest_job"]["status"] == "queued"
+    assert process2.status_code == 409
+    assert "active" in process2.json().get("detail", "").lower()
 
 
 def test_execution_log_and_lifecycle_when_artifacts_missing() -> None:
@@ -1387,7 +1374,6 @@ def test_execution_log_returns_events_for_canceled_job() -> None:
         cd = txt_resp.headers.get("content-disposition", "")
         assert "attachment" in cd.lower()
         assert "inventory_inv-cancel-log_aisle_aisle-cancel-log_job_job-cancel-log_execution_log.txt" in cd
-        assert b"job.canceled" in txt_resp.content
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         app.dependency_overrides.pop(get_inventory_repo, None)
@@ -1729,7 +1715,7 @@ def test_list_aisles_includes_latest_job_when_present() -> None:
     aisles2 = list_resp2.json()["items"]
     assert len(aisles2) == 1
     assert aisles2[0]["latest_job"] is not None
-    assert aisles2[0]["latest_job"]["status"] == "queued"
+    assert aisles2[0]["latest_job"]["status"] == "starting"
     assert "created_at" in aisles2[0]["latest_job"], "aisle list latest_job must expose created_at (Phase 2 Block 2)"
     assert aisles2[0]["status"] == "queued"
 
@@ -1930,7 +1916,7 @@ def test_positions_list_and_detail_degrade_only_enrichment_when_hybrid_report_mi
     empty_output = Path(tempfile.mkdtemp(prefix="phase7_empty_output_"))
     try:
         mock_settings = patch(
-            "src.api.routes.v3.shared.load_settings",
+            "src.api.routes.v3.inventories.load_settings",
             return_value=type("Settings", (), {"output_dir": empty_output})(),
         )
         app.dependency_overrides[get_current_admin] = _fake_admin

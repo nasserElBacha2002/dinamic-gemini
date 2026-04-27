@@ -1,0 +1,14 @@
+# Frontend import boundaries audit
+source_dir: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src
+generated_at: 2026-04-27 14:16:07
+
+madge no instalado.
+dependency-cruiser no instalado.
+R1 components->api/fetch: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src/components/ExecutionLogPanel.tsx
+R1 components->api/fetch: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src/components/ui/TraceabilityChip.tsx
+R1 components->api/fetch: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src/components/CreateAisleDialog.tsx
+R1 components->api/fetch: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src/components/ReferenceImagesDrawer.tsx
+R1 components->api/fetch: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src/components/compare/CompareRunJobPickers.tsx
+R1 components->api/fetch: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src/components/AisleObservabilityDialog.tsx
+R1 components->api/fetch: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src/components/imageAssets/ManagedImageAssetsDrawer.tsx
+R1 components->api/fetch: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src/components/CreateInventoryDialog.tsx

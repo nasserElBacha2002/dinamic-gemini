@@ -70,6 +70,9 @@ class StubAssetRepo(SourceAssetRepository):
     def delete_by_id(self, asset_id: str) -> bool:
         return self._store.pop(asset_id, None) is not None
 
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+        return None
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return [a for a in self._store.values() if a.aisle_id == aisle_id]
 

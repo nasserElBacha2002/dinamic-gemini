@@ -1,52 +1,67 @@
 {
-  "overall_status": "findings",
+  "overall_status": "error",
   "max_severity": "critical",
-  "generated_at": "2026-04-27T13:50:32+00:00",
+  "generated_at": "2026-04-27T17:16:08+00:00",
   "areas": {
     "backend": {
-      "status": "NOT_RUN",
-      "max_severity": "info",
+      "status": "ERROR",
+      "max_severity": "high",
       "tools": {
         "ruff": {
-          "status": "NOT_RUN",
-          "severity": "info",
-          "metrics": {},
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "issues": 3552,
+            "fixable": 828
+          },
           "report": "audit/raw/backend-ruff.txt",
-          "observation": "Herramienta no instalada en la corrida."
+          "observation": ""
         },
         "mypy": {
-          "status": "NOT_RUN",
-          "severity": "info",
-          "metrics": {},
+          "status": "FINDINGS",
+          "severity": "high",
+          "metrics": {
+            "errors": 80,
+            "files": 35
+          },
           "report": "audit/raw/backend-mypy.txt",
           "observation": ""
         },
         "bandit": {
-          "status": "NOT_RUN",
-          "severity": "info",
-          "metrics": {},
+          "status": "FINDINGS",
+          "severity": "high",
+          "metrics": {
+            "total": 59,
+            "high": 1,
+            "medium": 35,
+            "low": 23
+          },
           "report": "audit/raw/backend-bandit.json",
           "observation": ""
         },
         "pip-audit": {
-          "status": "NOT_RUN",
-          "severity": "info",
-          "metrics": {},
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "total": 0
+          },
           "report": "audit/raw/backend-pip-audit.json",
-          "observation": ""
+          "observation": "Paquete local no auditable en PyPI."
         },
         "pytest": {
-          "status": "NOT_RUN",
-          "severity": "info",
-          "metrics": {},
+          "status": "ERROR",
+          "severity": "medium",
+          "metrics": {
+            "collected": 1785
+          },
           "report": "audit/raw/backend-pytest.txt",
           "observation": ""
         }
       },
       "highlights": {
         "tool_count": 5,
-        "findings_count": 0,
-        "not_run_count": 5
+        "findings_count": 3,
+        "not_run_count": 0
       }
     },
     "frontend": {
@@ -144,16 +159,28 @@
       "max_severity": "high",
       "tools": {
         "code_smells": {
-          "status": "NOT_RUN",
-          "severity": "info",
-          "metrics": {},
+          "status": "FINDINGS",
+          "severity": "high",
+          "metrics": {
+            "too_many_args": 118,
+            "too_many_branches": 25,
+            "too_many_returns": 20,
+            "broad_exception": 85,
+            "unused_import": 42,
+            "signals": 290
+          },
           "report": "audit/raw/backend-code-smells.txt",
           "observation": ""
         },
         "complejidad": {
-          "status": "NOT_RUN",
-          "severity": "info",
-          "metrics": {},
+          "status": "FINDINGS",
+          "severity": "high",
+          "metrics": {
+            "grade_c": 124,
+            "grade_d": 27,
+            "grade_e": 8,
+            "grade_f": 4
+          },
           "report": "audit/raw/backend-complexity.txt",
           "observation": ""
         },
@@ -179,8 +206,8 @@
       },
       "highlights": {
         "tool_count": 4,
-        "findings_count": 2,
-        "not_run_count": 2
+        "findings_count": 4,
+        "not_run_count": 0
       }
     },
     "frontend_architecture": {

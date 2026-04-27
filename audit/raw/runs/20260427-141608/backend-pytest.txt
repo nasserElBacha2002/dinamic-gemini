@@ -1,0 +1,1164 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.12, pytest-9.0.2, pluggy-1.6.0
+rootdir: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend
+configfile: pyproject.toml
+plugins: anyio-4.12.1, cov-7.0.0
+collected 1785 items
+
+backend/tests/api/test_admin_ai_config_api.py .........                  [  0%]
+backend/tests/api/test_aisle_aggregate_execution_log_api.py ...          [  0%]
+backend/tests/api/test_aisle_asset_image_display_url.py .....            [  0%]
+backend/tests/api/test_aisle_merge_endpoints.py ..                       [  1%]
+backend/tests/api/test_aisles_v3_wiring.py ............................. [  2%]
+..............................                                           [  4%]
+backend/tests/api/test_analytics_api.py ....                             [  4%]
+backend/tests/api/test_capture_sessions_materialize_phase4.py ....       [  4%]
+backend/tests/api/test_capture_sessions_sprint2.py ..................    [  5%]
+backend/tests/api/test_capture_sessions_sprint3.py ...                   [  5%]
+backend/tests/api/test_error_mapping.py ................................ [  7%]
+.......................................                                  [  9%]
+backend/tests/api/test_heic_asset_preview.py ........                    [ 10%]
+backend/tests/api/test_inventories_v3_wiring.py ........                 [ 10%]
+backend/tests/api/test_inventory_export_api.py .......                   [ 11%]
+backend/tests/api/test_inventory_metrics_api.py ..                       [ 11%]
+backend/tests/api/test_inventory_response_mapping.py ...                 [ 11%]
+backend/tests/api/test_inventory_visual_references_api.py ssssssssssss   [ 12%]
+backend/tests/api/test_merge_dependencies_di.py ..                       [ 12%]
+backend/tests/api/test_phase6_benchmark_api.py ......................    [ 13%]
+backend/tests/api/test_position_summary_mapping.py ..................... [ 14%]
+.........                                                                [ 15%]
+backend/tests/api/test_position_summary_sprint2_contract.py ..........   [ 15%]
+backend/tests/api/test_positions_deduplication_v3_2_3.py ....            [ 16%]
+backend/tests/api/test_recomputed_consolidation_e2e.py .....             [ 16%]
+backend/tests/api/test_review_actions_api.py .................           [ 17%]
+backend/tests/api/test_schema_guard_readiness.py ..                      [ 17%]
+backend/tests/api/test_sprint_1_4_list_routes.py ....                    [ 17%]
+backend/tests/api/test_v3_stored_artifact_access_unit.py ............... [ 18%]
+..                                                                       [ 18%]
+backend/tests/application/mappers/test_inventory_export_rows.py ....     [ 18%]
+backend/tests/application/mappers/test_position_canonical_view.py ...... [ 19%]
+......                                                                   [ 19%]
+backend/tests/application/ports/test_ports_contract.py .......           [ 19%]
+backend/tests/application/ports/test_rollup_contracts_import.py ..       [ 19%]
+backend/tests/application/services/test_aisle_analysis_context_builder.py . [ 20%]
+.                                                                        [ 20%]
+backend/tests/application/services/test_aisle_inventory_scope.py .....   [ 20%]
+backend/tests/application/services/test_aisle_source_asset_materializer.py . [ 20%]
+                                                                         [ 20%]
+backend/tests/application/services/test_analytics_query_service.py ...   [ 20%]
+backend/tests/application/services/test_capture_assignment_preview.py .. [ 20%]
+...                                                                      [ 20%]
+backend/tests/application/services/test_capture_staging_time_metadata.py . [ 20%]
+...                                                                      [ 21%]
+backend/tests/application/services/test_csv_inventory_exporter.py .      [ 21%]
+backend/tests/application/services/test_display_primary_product.py ...   [ 21%]
+backend/tests/application/services/test_final_count_builder.py ....      [ 21%]
+backend/tests/application/services/test_inventory_visual_reference_resolver.py . [ 21%]
+..                                                                       [ 21%]
+backend/tests/application/services/test_label_normalization_service.py . [ 21%]
+...                                                                      [ 21%]
+backend/tests/application/services/test_process_aisle_execution_resolution.py . [ 21%]
+..                                                                       [ 22%]
+backend/tests/application/services/test_process_aisle_job_for_aisle.py . [ 22%]
+...                                                                      [ 22%]
+backend/tests/application/services/test_processing_experiment_catalog_models.py . [ 22%]
+.......                                                                  [ 22%]
+backend/tests/application/services/test_processing_provider_resolution.py . [ 22%]
+..........                                                               [ 23%]
+backend/tests/application/services/test_production_inventory_processing.py . [ 23%]
+.                                                                        [ 23%]
+backend/tests/application/services/test_result_context_resolver.py ..... [ 23%]
+......                                                                   [ 24%]
+backend/tests/application/test_admin_ai_config_inspection.py .....       [ 24%]
+backend/tests/application/test_analytics_phase51.py .............        [ 25%]
+backend/tests/application/test_execution_log_enrichment.py ............  [ 25%]
+backend/tests/application/test_job_engine_params.py .............        [ 26%]
+backend/tests/application/use_cases/test_aisle_processing.py ........... [ 27%]
+.....                                                                    [ 27%]
+backend/tests/application/use_cases/test_backfill_legacy_aisles.py ..... [ 27%]
+..                                                                       [ 27%]
+backend/tests/application/use_cases/test_benchmark_execution_time.py ... [ 27%]
+...                                                                      [ 28%]
+backend/tests/application/use_cases/test_cancel_aisle_job.py .......     [ 28%]
+backend/tests/application/use_cases/test_capture_g7_operational_hardening.py . [ 28%]
+...                                                                      [ 28%]
+backend/tests/application/use_cases/test_capture_session_group_g4.py ... [ 28%]
+....                                                                     [ 29%]
+backend/tests/application/use_cases/test_capture_session_materialize_phase4.py . [ 29%]
+......                                                                   [ 29%]
+backend/tests/application/use_cases/test_capture_sessions_sprint2.py ... [ 29%]
+.............                                                            [ 30%]
+backend/tests/application/use_cases/test_capture_sessions_sprint3.py ... [ 30%]
+...                                                                      [ 30%]
+backend/tests/application/use_cases/test_compare_aisle_runs.py ....      [ 30%]
+backend/tests/application/use_cases/test_compare_many_aisle_runs.py .... [ 31%]
+.................                                                        [ 32%]
+backend/tests/application/use_cases/test_compute_capture_session_groups.py . [ 32%]
+.........                                                                [ 32%]
+backend/tests/application/use_cases/test_compute_materialized_capture_session_group_preview_g6.py . [ 32%]
+.......                                                                  [ 33%]
+backend/tests/application/use_cases/test_confirm_position.py ..........  [ 33%]
+backend/tests/application/use_cases/test_create_aisle.py ....            [ 33%]
+backend/tests/application/use_cases/test_create_inventory.py ..          [ 34%]
+backend/tests/application/use_cases/test_delete_aisle_source_asset.py .. [ 34%]
+..                                                                       [ 34%]
+backend/tests/application/use_cases/test_delete_position.py ..           [ 34%]
+backend/tests/application/use_cases/test_export_inventory_results.py ... [ 34%]
+..........                                                               [ 35%]
+backend/tests/application/use_cases/test_get_aisle_merge_results_phase2.py . [ 35%]
+                                                                         [ 35%]
+backend/tests/application/use_cases/test_get_inventory.py ..             [ 35%]
+backend/tests/application/use_cases/test_get_inventory_metrics.py ..     [ 35%]
+backend/tests/application/use_cases/test_get_position_detail.py .....    [ 35%]
+backend/tests/application/use_cases/test_inventory_status_lifecycle_and_backfill.py . [ 35%]
+..                                                                       [ 35%]
+backend/tests/application/use_cases/test_list_aisle_positions_query.py . [ 35%]
+.....                                                                    [ 36%]
+backend/tests/application/use_cases/test_list_aisles_by_inventory.py ... [ 36%]
+                                                                         [ 36%]
+backend/tests/application/use_cases/test_list_aisles_with_status.py .... [ 36%]
+.                                                                        [ 36%]
+backend/tests/application/use_cases/test_list_inventories.py ..          [ 36%]
+backend/tests/application/use_cases/test_list_inventory_list_items.py .. [ 36%]
+..                                                                       [ 36%]
+backend/tests/application/use_cases/test_list_review_queue.py ....       [ 37%]
+backend/tests/application/use_cases/test_manage_inventory_visual_references.py . [ 37%]
+..                                                                       [ 37%]
+backend/tests/application/use_cases/test_mark_position_image_mismatch.py . [ 37%]
+.                                                                        [ 37%]
+backend/tests/application/use_cases/test_mark_position_unknown.py ..     [ 37%]
+backend/tests/application/use_cases/test_materialize_capture_session_group_g5.py . [ 37%]
+.......                                                                  [ 38%]
+backend/tests/application/use_cases/test_multi_run_job_scoping_phase1.py . [ 38%]
+....                                                                     [ 38%]
+backend/tests/application/use_cases/test_phase2_list_positions_result_context.py . [ 38%]
+..                                                                       [ 38%]
+backend/tests/application/use_cases/test_phase5_openai_persist_list_e2e.py . [ 38%]
+.                                                                        [ 38%]
+backend/tests/application/use_cases/test_promote_aisle_operational_job.py . [ 38%]
+.                                                                        [ 38%]
+backend/tests/application/use_cases/test_quantity_authoritative_priority.py . [ 38%]
+....                                                                     [ 38%]
+backend/tests/application/use_cases/test_recompute_consolidated_counts.py . [ 39%]
+...                                                                      [ 39%]
+backend/tests/application/use_cases/test_resolve_aisle_job_for_inventory_read.py . [ 39%]
+....                                                                     [ 39%]
+backend/tests/application/use_cases/test_retry_aisle_job.py ............ [ 40%]
+.                                                                        [ 40%]
+backend/tests/application/use_cases/test_run_aisle_merge.py .........    [ 40%]
+backend/tests/application/use_cases/test_update_product_quantity.py .... [ 40%]
+                                                                         [ 40%]
+backend/tests/application/use_cases/test_update_product_sku.py ...       [ 41%]
+backend/tests/application/use_cases/test_upload_aisle_assets.py ........ [ 41%]
+...                                                                      [ 41%]
+backend/tests/application/use_cases/test_upload_inventory_visual_references.py . [ 41%]
+...........                                                              [ 42%]
+backend/tests/application/utils/test_natural_sort.py ..                  [ 42%]
+backend/tests/auth/test_auth_api.py ..............                       [ 43%]
+backend/tests/auth/test_auth_security.py ..                              [ 43%]
+backend/tests/auth/test_jairo_v3_integration.py ....                     [ 43%]
+backend/tests/auth/test_route_protection.py ........                     [ 44%]
+backend/tests/database/test_jobs_repository_storage_metadata.py ..       [ 44%]
+backend/tests/database/test_legacy_stage8_sql_freeze.py .......          [ 44%]
+backend/tests/database/test_migration_0016_capture_sessions.py .         [ 44%]
+backend/tests/database/test_migration_0017_capture_session_items_filename.py . [ 44%]
+                                                                         [ 44%]
+backend/tests/database/test_migration_0018_capture_sessions_one_open_per_aisle.py . [ 44%]
+                                                                         [ 44%]
+backend/tests/database/test_migration_0019_capture_session_sprint3_preview.py . [ 44%]
+                                                                         [ 44%]
+backend/tests/database/test_migration_service.py ...                     [ 44%]
+backend/tests/domain/capture/test_capture_entities.py ...                [ 45%]
+backend/tests/domain/labels/test_canonicalization.py ......              [ 45%]
+backend/tests/domain/labels/test_merge_engine.py ........                [ 45%]
+backend/tests/domain/test_derive_inventory_status.py ......              [ 46%]
+backend/tests/domain/test_inventory_visual_reference_entity.py ........  [ 46%]
+backend/tests/domain/test_qty_resolution_v3_2_2.py ........              [ 47%]
+backend/tests/domain/test_review_sql_literals.py ....                    [ 47%]
+backend/tests/domain/v3/test_entities.py ......                          [ 47%]
+backend/tests/infrastructure/pipeline/test_v3_execution_artifacts_service.py . [ 47%]
+.                                                                        [ 47%]
+backend/tests/infrastructure/pipeline/test_v3_job_execution_state.py ... [ 48%]
+.                                                                        [ 48%]
+backend/tests/infrastructure/pipeline/test_v3_job_executor_analysis_context.py s [ 48%]
+                                                                         [ 48%]
+backend/tests/infrastructure/pipeline/test_v3_job_executor_coordination.py . [ 48%]
+.                                                                        [ 48%]
+backend/tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py . [ 48%]
+.........                                                                [ 48%]
+backend/tests/infrastructure/pipeline/test_v3_job_executor_phase5.py ... [ 48%]
+..................                                                       [ 49%]
+backend/tests/infrastructure/pipeline/test_v3_process_aisle_pipeline_runner.py . [ 50%]
+...                                                                      [ 50%]
+backend/tests/infrastructure/pipeline/test_v3_report_mapper_and_persist.py . [ 50%]
+.........................                                                [ 51%]
+backend/tests/infrastructure/pipeline/test_worker_durable_artifact_publisher.py . [ 51%]
+.....                                                                    [ 51%]
+backend/tests/infrastructure/repositories/test_memory_capture_session_confirm_idempotency_repository.py . [ 52%]
+.                                                                        [ 52%]
+backend/tests/infrastructure/repositories/test_memory_inventory_visual_reference_repository.py . [ 52%]
+....                                                                     [ 52%]
+backend/tests/infrastructure/repositories/test_memory_review_action_repository.py . [ 52%]
+                                                                         [ 52%]
+backend/tests/infrastructure/repositories/test_memory_source_asset_repository.py . [ 52%]
+.                                                                        [ 52%]
+backend/tests/infrastructure/repositories/test_product_record_qty_round_trip.py . [ 52%]
+.....                                                                    [ 52%]
+backend/tests/infrastructure/repositories/test_sql_aisle_repository.py . [ 52%]
+...                                                                      [ 53%]
+backend/tests/infrastructure/repositories/test_sql_analytics_repository.py . [ 53%]
+..                                                                       [ 53%]
+backend/tests/infrastructure/repositories/test_sql_evidence_repository.py . [ 53%]
+.                                                                        [ 53%]
+backend/tests/infrastructure/repositories/test_sql_inventory_repository.py . [ 53%]
+...                                                                      [ 53%]
+backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py . [ 53%]
+..                                                                       [ 53%]
+backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository_unit.py . [ 53%]
+.                                                                        [ 53%]
+backend/tests/infrastructure/repositories/test_sql_job_repository.py ..  [ 54%]
+backend/tests/infrastructure/repositories/test_sql_job_scope_predicates.py . [ 54%]
+.....                                                                    [ 54%]
+backend/tests/infrastructure/repositories/test_sql_normalized_label_repository.py . [ 54%]
+                                                                         [ 54%]
+backend/tests/infrastructure/repositories/test_sql_raw_label_repository.py . [ 54%]
+                                                                         [ 54%]
+backend/tests/infrastructure/repositories/test_sql_source_asset_repository.py . [ 54%]
+..                                                                       [ 54%]
+backend/tests/infrastructure/services/test_inventory_metrics_service.py . [ 54%]
+....                                                                     [ 54%]
+backend/tests/infrastructure/services/test_on_demand_worker_launch_service.py . [ 54%]
+....                                                                     [ 55%]
+backend/tests/infrastructure/storage/test_inventory_visual_reference_paths.py . [ 55%]
+......                                                                   [ 55%]
+backend/tests/infrastructure/storage/test_s3_artifact_storage_adapter.py . [ 55%]
+.....                                                                    [ 55%]
+backend/tests/integration/capture/test_capture_session_sql_repository.py . [ 55%]
+.....                                                                    [ 56%]
+backend/tests/jobs/test_run_worker_dev.py ...                            [ 56%]
+backend/tests/jobs/test_run_worker_entrypoint.py .....                   [ 56%]
+backend/tests/jobs/test_worker_bootstrap.py ..                           [ 56%]
+backend/tests/jobs/test_worker_db_claim.py .......                       [ 57%]
+backend/tests/legacy/test_legacy_database_repository_import_guard.py .   [ 57%]
+backend/tests/legacy/test_persistence_observability.py .....             [ 57%]
+backend/tests/llm/test_anthropic_sdk_adapter.py ........................ [ 58%]
+                                                                         [ 58%]
+backend/tests/llm/test_anthropic_usage_extract.py ..                     [ 58%]
+backend/tests/llm/test_claude_prompt_contract.py ...............         [ 59%]
+backend/tests/llm/test_deepseek_sdk_adapter.py .......                   [ 60%]
+backend/tests/llm/test_entity_normalizer.py ............................ [ 61%]
+.......................                                                  [ 63%]
+backend/tests/llm/test_hybrid_prompt_profiles.py .....                   [ 63%]
+backend/tests/llm/test_hybrid_resolution_provider_policy.py .......      [ 63%]
+backend/tests/llm/test_llm_costing.py ..................                 [ 64%]
+backend/tests/llm/test_llm_provider_factory.py ..                        [ 64%]
+backend/tests/llm/test_openai_json_text_extraction.py .....              [ 65%]
+backend/tests/llm/test_openai_sdk_adapter.py .........                   [ 65%]
+backend/tests/llm/test_openai_usage_extract.py ..                        [ 65%]
+backend/tests/llm/test_phase5_prompt_unification.py .....                [ 66%]
+backend/tests/llm/test_prompt_composer_parity.py .........               [ 66%]
+backend/tests/llm/test_prompt_traceability.py ....                       [ 66%]
+backend/tests/llm/test_prompt_version_phase7.py .........                [ 67%]
+backend/tests/pipeline/test_gemini_sdk_adapter.py ..                     [ 67%]
+backend/tests/pipeline/test_hybrid_analysis_prompt_service.py .......    [ 67%]
+backend/tests/pipeline/test_llm_executor_harness.py .............        [ 68%]
+backend/tests/pipeline/test_multi_provider_analysis_execution.py ....... [ 68%]
+.                                                                        [ 68%]
+backend/tests/pipeline/test_phase4_architecture_boundaries.py ......     [ 69%]
+backend/tests/pipeline/test_pipeline_provider_resolver.py ....           [ 69%]
+backend/tests/pipeline/test_prompt_composition_propagation.py .......... [ 70%]
+.                                                                        [ 70%]
+backend/tests/pipeline/test_provider_analysis_execution_config.py ...... [ 70%]
+.                                                                        [ 70%]
+backend/tests/pipeline/test_provider_analysis_result_normalization.py .  [ 70%]
+backend/tests/pipeline/test_provider_definitions.py ..                   [ 70%]
+backend/tests/pipeline/test_provider_keys.py ..                          [ 70%]
+backend/tests/pipeline/test_provider_llm_request_metadata.py ...         [ 70%]
+backend/tests/pipeline/test_provider_registry.py .......                 [ 71%]
+backend/tests/pipeline/test_provider_result_aggregator.py ...            [ 71%]
+backend/tests/pipeline/test_run_metadata.py ...........                  [ 72%]
+backend/tests/runtime/test_app_container.py .....                        [ 72%]
+backend/tests/scripts/test_check_migration_presence.py ................. [ 73%]
+.                                                                        [ 73%]
+backend/tests/scripts/test_report_v3_route_repository_usage.py .         [ 73%]
+backend/tests/test_artifact_storage_config.py ...                        [ 73%]
+backend/tests/test_baseline_pipeline_smoke.py .                          [ 73%]
+backend/tests/test_config.py .......................                     [ 75%]
+backend/tests/test_config_sqlserver_resolution.py ..............         [ 75%]
+backend/tests/test_consolidate.py ...................                    [ 76%]
+backend/tests/test_e2e_v2_2.py ....                                      [ 77%]
+backend/tests/test_epic_3_1_a.py .................                       [ 78%]
+backend/tests/test_epic_3_1_b.py .................                       [ 78%]
+backend/tests/test_epic_3_1_c.py ..........                              [ 79%]
+backend/tests/test_epic_3_1_d.py .............                           [ 80%]
+backend/tests/test_epic_5.py ............                                [ 80%]
+backend/tests/test_evidence.py ......................                    [ 82%]
+backend/tests/test_execution_log.py ............                         [ 82%]
+backend/tests/test_frames_2_2_b.py ...........                           [ 83%]
+backend/tests/test_gemini_client.py ..........                           [ 84%]
+backend/tests/test_hybrid_global_analysis_strategy_phase4.py ........... [ 84%]
+....                                                                     [ 84%]
+backend/tests/test_io.py .......................                         [ 86%]
+backend/tests/test_preprocess.py ....................                    [ 87%]
+backend/tests/test_reid.py ....................................          [ 89%]
+backend/tests/test_schemas.py .........................                  [ 90%]
+backend/tests/test_selector.py ........                                  [ 91%]
+backend/tests/test_stage1_core_refactor.py ......                        [ 91%]
+backend/tests/test_stage2_single_call_hybrid.py ........                 [ 91%]
+backend/tests/test_stage3_validation.py ...........                      [ 92%]
+backend/tests/test_stage4_operational_integration.py .....               [ 92%]
+backend/tests/test_stage5_frame_selection.py .........                   [ 93%]
+backend/tests/test_stage6_fallback.py ............                       [ 94%]
+backend/tests/test_stage8_db.py .....                                    [ 94%]
+backend/tests/test_stage_2_1_a.py .....................................  [ 96%]
+backend/tests/test_stage_2_1_e.py .....                                  [ 96%]
+backend/tests/test_stage_2_2_c.py .....................                  [ 97%]
+backend/tests/test_stage_2_2_d_llm_provider.py ..                        [ 97%]
+backend/tests/test_stage_a_components.py ...                             [ 98%]
+backend/tests/test_stage_b_ports_adapters.py ...                         [ 98%]
+backend/tests/test_stage_c_stages.py .........                           [ 98%]
+backend/tests/test_tracker.py ...                                        [ 98%]
+backend/tests/test_validation.py .....                                   [ 99%]
+backend/tests/test_video.py ..............                               [100%]
+
+=============================== warnings summary ===============================
+backend/src/api/server.py:190
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/server.py:190: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4599
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/.venv/lib/python3.13/site-packages/fastapi/applications.py:4599: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+backend/tests/infrastructure/repositories/test_sql_aisle_repository.py:20
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_aisle_repository.py:20: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_inventory_repository.py:18
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_inventory_repository.py:18: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py:23
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py:23: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_normalized_label_repository.py:18
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_normalized_label_repository.py:18: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_raw_label_repository.py:18
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_raw_label_repository.py:18: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/integration/capture/test_capture_session_sql_repository.py:28
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/capture/test_capture_session_sql_repository.py:28: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:101: DeprecationWarning: deprecated
+    assert resp.sku == "ITEM-A"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:102: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 10
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:103: DeprecationWarning: deprecated
+    assert resp.qty == 10
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:104: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:105: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:108: DeprecationWarning: deprecated
+    assert resp.has_evidence is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:109: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_has_evidence_false_when_no_primary_evidence
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:127: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:150: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename == "photo.jpg"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:151: DeprecationWarning: deprecated
+    assert resp.source_image_id == "img-uuid"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:352: DeprecationWarning: deprecated
+    assert resp.sku is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:353: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:354: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:355: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:356: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:357: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:358: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:359: DeprecationWarning: deprecated
+    assert resp.source_image_id is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_omits_legacy_snapshot_when_include_technical_false
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:376: DeprecationWarning: deprecated
+    assert resp.detected_summary_json is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:437: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:438: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:439: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:464: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:465: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:466: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:467: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:491: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:492: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:493: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_corrected_quantity_when_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:526: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == 7
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_corrected_quantity_none_when_not_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:559: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:595: DeprecationWarning: deprecated
+    assert resp.qty == 5
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:596: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:597: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:598: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:631: DeprecationWarning: deprecated
+    assert resp.qty == 3
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:632: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:633: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:634: DeprecationWarning: deprecated
+    assert resp.qtyResolved is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:667: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:668: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:669: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:670: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:692: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:693: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:694: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:695: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:717: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:718: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:751: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:752: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:753: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is not None
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:754: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:787: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:788: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:824: DeprecationWarning: deprecated
+    assert resp.qty == 4
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:825: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:827: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:830: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 4
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:852: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:853: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:854: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:855: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+tests/api/test_position_summary_sprint2_contract.py::test_product_block_primary_sku_and_identity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:51: DeprecationWarning: deprecated
+    assert r.sku == r.product.sku
+
+tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:173: DeprecationWarning: deprecated
+    assert r.qty == 2
+
+tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:177: DeprecationWarning: deprecated
+    assert r.qtySource == r.quantity.source
+
+tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:206: DeprecationWarning: deprecated
+    assert r.source_image_id == r.traceability.source_image_id
+
+tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:207: DeprecationWarning: deprecated
+    assert r.traceability_status == r.traceability.status
+
+tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:208: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == r.traceability.primary_evidence_id
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:268: DeprecationWarning: deprecated
+    assert r.sku == "Z"
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:270: DeprecationWarning: deprecated
+    assert r.detected_quantity == 5
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:272: DeprecationWarning: deprecated
+    assert r.qtySource == "detected"
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:274: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == "pe"
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:341: DeprecationWarning: deprecated
+    assert resp.sku == view.product.public_sku
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:342: DeprecationWarning: deprecated
+    assert resp.qty == view.quantity.qty
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:343: DeprecationWarning: deprecated
+    assert resp.qtySource == view.quantity.qty_source
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:344: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == view.quantity.qty_inference_reason
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:345: DeprecationWarning: deprecated
+    assert resp.qtyResolved == view.quantity.qty_resolved
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:346: DeprecationWarning: deprecated
+    assert resp.detected_quantity == view.quantity.detected_quantity
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:347: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == view.quantity.corrected_quantity
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:348: DeprecationWarning: deprecated
+    assert resp.source_image_id == view.traceability.source_image_id
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:349: DeprecationWarning: deprecated
+    assert resp.traceability_status == view.traceability.traceability_status
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:350: DeprecationWarning: deprecated
+    assert resp.has_evidence == view.review.has_evidence
+
+tests/test_e2e_v2_2.py::test_e2e_photos_job_persists_normalized_and_generates_report
+tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+tests/test_stage_b_ports_adapters.py::test_job_repository_create_returns_persisted_record
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/jobs/job_store.py:89: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow().isoformat() + "Z"
+
+tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/jobs/job_store.py:252: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    data["updated_at"] = datetime.utcnow().isoformat() + "Z"
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.13.12-final-0 _______________
+
+Name                                                                                               Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------------------------------------------------------------------
+backend/src/__init__.py                                                                                0      0   100%
+backend/src/api/__init__.py                                                                            0      0   100%
+backend/src/api/constants/__init__.py                                                                  0      0   100%
+backend/src/api/constants/error_wire.py                                                               49      0   100%
+backend/src/api/constants/route_paths.py                                                               6      0   100%
+backend/src/api/dependencies.py                                                                      225     15    93%   174, 238, 288, 418, 434, 446, 457, 469, 786, 1010-1016, 1036-1038
+backend/src/api/errors/__init__.py                                                                     4      0   100%
+backend/src/api/errors/error_mapping.py                                                               84      0   100%
+backend/src/api/errors/structured_api_http.py                                                         49      0   100%
+backend/src/api/photos_handler.py                                                                     63     10    84%   22, 29-31, 58, 67, 74, 79, 82, 98
+backend/src/api/routes/__init__.py                                                                     0      0   100%
+backend/src/api/routes/v3/__init__.py                                                                  2      0   100%
+backend/src/api/routes/v3/admin_ai_config.py                                                          19      0   100%
+backend/src/api/routes/v3/aisles.py                                                                  253     43    83%   155-156, 170, 178-181, 319, 357-358, 434-438, 462, 483, 538-545, 577-584, 622-626, 669-671, 698, 706-708, 746, 778, 803, 824, 843-857
+backend/src/api/routes/v3/analytics_api.py                                                            82     16    80%   50, 53, 55, 85, 145-159, 213-215, 246-248, 325
+backend/src/api/routes/v3/assets.py                                                                  149     36    76%   95, 99, 109, 115, 156-165, 183, 185, 192-194, 260-267, 281, 283, 285, 289-321, 352-356
+backend/src/api/routes/v3/capture_sessions.py                                                        216     51    76%   105-107, 125, 142-144, 167, 187-189, 210-212, 249, 282, 307, 336, 355-357, 378, 393-395, 422, 447-449, 463-468, 489-494, 517-522, 553-555, 607
+backend/src/api/routes/v3/inventories.py                                                             146     48    67%   94-119, 224, 271-289, 298-302, 315-328, 340-356, 369-370, 380-390
+backend/src/api/routes/v3/positions.py                                                                42      2    95%   131, 209
+backend/src/api/routes/v3/review_queue.py                                                             28      0   100%
+backend/src/api/routes/v3/reviews.py                                                                  38      2    95%   79-80
+backend/src/api/routes/v3/router.py                                                                   11      0   100%
+backend/src/api/routes/v3/shared.py                                                                  235     34    86%   85, 89-91, 95, 149, 152, 156-157, 161, 164, 175-176, 200-206, 284, 320, 331-339, 355-373, 391-398, 416-423, 441-448, 741, 776
+backend/src/api/schema_guard.py                                                                       12      0   100%
+backend/src/api/schemas/__init__.py                                                                    0      0   100%
+backend/src/api/schemas/admin_ai_config_schemas.py                                                    71      0   100%
+backend/src/api/schemas/aisle_schemas.py                                                              43      0   100%
+backend/src/api/schemas/analytics_schemas.py                                                          92      0   100%
+backend/src/api/schemas/asset_schemas.py                                                              32      2    94%   76, 79
+backend/src/api/schemas/benchmark_schemas.py                                                         152      0   100%
+backend/src/api/schemas/capture_schemas.py                                                           117      1    99%   194
+backend/src/api/schemas/inventory_schemas.py                                                          49      0   100%
+backend/src/api/schemas/listing_schemas.py                                                            18      0   100%
+backend/src/api/schemas/merge_schemas.py                                                              24      0   100%
+backend/src/api/schemas/position_schemas.py                                                          134      0   100%
+backend/src/api/schemas/processing_schemas.py                                                        101      0   100%
+backend/src/api/schemas/reference_usage_schemas.py                                                     9      0   100%
+backend/src/api/schemas/requests.py                                                                   11     11     0%   3-20
+backend/src/api/schemas/responses.py                                                                  66      0   100%
+backend/src/api/schemas/review_queue_schemas.py                                                       19      0   100%
+backend/src/api/server.py                                                                            115     46    60%   51, 79, 142-145, 179, 183-187, 193-262
+backend/src/api/services/__init__.py                                                                   0      0   100%
+backend/src/api/services/v3_stored_artifact_access.py                                                298     81    73%   79, 91, 101-102, 127, 137-138, 161, 175, 183-188, 214, 240-253, 347, 362, 397-406, 431, 475-483, 490, 511-520, 558, 567-577, 614-623, 665-666, 689-727, 745, 762-791
+backend/src/app.py                                                                                    80     41    49%   63-65, 69-119, 123
+backend/src/application/__init__.py                                                                    0      0   100%
+backend/src/application/constants/review_quality.py                                                    1      0   100%
+backend/src/application/dto/analytics_dto.py                                                         100      0   100%
+backend/src/application/dto/uploaded_file.py                                                          10      0   100%
+backend/src/application/errors.py                                                                     57      0   100%
+backend/src/application/mappers/inventory_export_rows.py                                              67      3    96%   38, 57, 97
+backend/src/application/mappers/position_canonical_view.py                                           232     17    93%   49-50, 57, 93, 95, 97, 127-128, 170-173, 177-180, 310
+backend/src/application/ports/__init__.py                                                              5      0   100%
+backend/src/application/ports/analytics_repository.py                                                  5      0   100%
+backend/src/application/ports/capture_repositories.py                                                 52      0   100%
+backend/src/application/ports/capture_staging_time.py                                                 14      0   100%
+backend/src/application/ports/clock.py                                                                 5      0   100%
+backend/src/application/ports/contracts.py                                                           111      0   100%
+backend/src/application/ports/repositories.py                                                         84      7    92%   162-167, 223
+backend/src/application/ports/rollup_contracts.py                                                      8      0   100%
+backend/src/application/ports/services.py                                                             18      0   100%
+backend/src/application/services/__init__.py                                                           3      0   100%
+backend/src/application/services/admin_ai_config_inspection.py                                       100      6    94%   125-128, 214-215
+backend/src/application/services/aisle_analysis_context_builder.py                                    14      0   100%
+backend/src/application/services/aisle_inventory_scope.py                                             17      0   100%
+backend/src/application/services/aisle_job_launch_service.py                                          51      0   100%
+backend/src/application/services/aisle_review_lifecycle_sync.py                                       33      5    85%   38-43, 51-53
+backend/src/application/services/aisle_source_asset_materializer.py                                   79      2    97%   50, 56
+backend/src/application/services/analytics_aggregation_core.py                                       256     44    83%   97, 101, 114, 116, 129, 174-186, 213, 292, 336, 402, 404, 406, 408, 410, 414, 432, 434, 436, 439-442, 456, 460-461, 465, 468, 472-484
+backend/src/application/services/analytics_query_service.py                                           29      6    79%   40, 43, 46, 49, 52, 57
+backend/src/application/services/capture_assignment_preview.py                                        52      3    94%   35, 43, 77
+backend/src/application/services/capture_flow_observability.py                                        83      0   100%
+backend/src/application/services/capture_group_item_integrity.py                                      19      2    89%   23, 38
+backend/src/application/services/capture_group_materialization_state.py                               12      2    83%   21, 25
+backend/src/application/services/capture_staging_time_metadata.py                                     62     10    84%   35, 41, 45, 50-51, 59-60, 62, 72-73
+backend/src/application/services/csv_inventory_exporter.py                                            24      1    96%   88
+backend/src/application/services/display_primary_product.py                                            7      0   100%
+backend/src/application/services/execution_log_enrichment.py                                         174     23    87%   35-41, 48, 52-53, 57, 61-63, 68, 108, 111, 142, 158, 189, 317, 324-325
+backend/src/application/services/final_count_builder.py                                               37      1    97%   26
+backend/src/application/services/inventory_processing_mode.py                                          7      0   100%
+backend/src/application/services/inventory_status_reconciler.py                                       32      1    97%   53
+backend/src/application/services/inventory_visual_reference_resolver.py                               15      0   100%
+backend/src/application/services/job_engine_params.py                                                 15      1    93%   26
+backend/src/application/services/job_stale_reconciler.py                                              30      0   100%
+backend/src/application/services/label_normalization.py                                               40      0   100%
+backend/src/application/services/operational_execution_config_resolver.py                             16      1    94%   32
+backend/src/application/services/position_sku_consolidation.py                                        60      3    95%   24-25, 34
+backend/src/application/services/position_traceability.py                                             57     24    58%   25-30, 58, 61, 64, 69-90
+backend/src/application/services/process_aisle_execution_resolution.py                                25      0   100%
+backend/src/application/services/process_aisle_job_for_aisle.py                                       13      0   100%
+backend/src/application/services/processing_experiment_catalog.py                                     44      6    86%   21, 24-30, 43, 58
+backend/src/application/services/processing_provider_resolution.py                                    36      2    94%   75, 85
+backend/src/application/services/production_inventory_processing.py                                   29      2    93%   45, 48
+backend/src/application/services/result_context_resolver.py                                           31      0   100%
+backend/src/application/use_cases/__init__.py                                                          3      0   100%
+backend/src/application/use_cases/assign_capture_session_group_to_existing_aisle.py                   44      1    98%   70
+backend/src/application/use_cases/backfill_inventory_statuses.py                                      20      0   100%
+backend/src/application/use_cases/backfill_legacy_aisles.py                                           82      8    90%   89, 161-168
+backend/src/application/use_cases/benchmark_compare_support.py                                       152     21    86%   38-46, 54-57, 142, 193-207, 216, 248, 289
+backend/src/application/use_cases/cancel_aisle_job.py                                                 42      0   100%
+backend/src/application/use_cases/cancel_capture_session.py                                           40      8    80%   33, 35, 37, 39, 47, 50, 53-54
+backend/src/application/use_cases/capture_session_group_assignment_guard.py                           11      2    82%   26, 30
+backend/src/application/use_cases/close_capture_session.py                                            44     10    77%   51, 55, 57, 62, 65, 67-70, 72
+backend/src/application/use_cases/compare_aisle_runs.py                                               62      0   100%
+backend/src/application/use_cases/compare_many_aisle_runs.py                                         129      4    97%   120, 123, 132, 165
+backend/src/application/use_cases/compute_capture_session_assignment_preview.py                       41      2    95%   51, 72
+backend/src/application/use_cases/compute_capture_session_groups.py                                   90      6    93%   73, 117, 155, 161, 170-171
+backend/src/application/use_cases/compute_materialized_capture_session_group_preview.py              159     14    91%   55-56, 75-78, 198, 226, 231, 279, 290, 316-326, 342
+backend/src/application/use_cases/confirm_position.py                                                 31      0   100%
+backend/src/application/use_cases/create_aisle.py                                                     31      0   100%
+backend/src/application/use_cases/create_aisle_and_assign_capture_session_group.py                    39      3    92%   55, 62, 65
+backend/src/application/use_cases/create_capture_session.py                                           28      0   100%
+backend/src/application/use_cases/create_inventory.py                                                 35      0   100%
+backend/src/application/use_cases/delete_aisle_source_asset.py                                        45      3    93%   78, 85-86
+backend/src/application/use_cases/delete_position.py                                                  33      1    97%   62
+backend/src/application/use_cases/export_aisle_benchmark.py                                           69      7    90%   89, 99, 101, 150-167
+backend/src/application/use_cases/export_inventory_results.py                                         75      2    97%   170, 173
+backend/src/application/use_cases/get_aisle_merge_results.py                                          32      1    97%   49
+backend/src/application/use_cases/get_aisle_processing_status.py                                      24      0   100%
+backend/src/application/use_cases/get_capture_session_detail.py                                       24      1    96%   34
+backend/src/application/use_cases/get_capture_session_groups.py                                       13      1    92%   28
+backend/src/application/use_cases/get_inventory.py                                                    12      0   100%
+backend/src/application/use_cases/get_inventory_metrics.py                                            14      0   100%
+backend/src/application/use_cases/get_position_detail.py                                              74      0   100%
+backend/src/application/use_cases/list_aisle_assets.py                                                17      0   100%
+backend/src/application/use_cases/list_aisle_jobs.py                                                  28      1    96%   41
+backend/src/application/use_cases/list_aisle_positions.py                                            121      6    95%   79, 83, 85, 98-99, 130
+backend/src/application/use_cases/list_aisles_by_inventory.py                                         13      0   100%
+backend/src/application/use_cases/list_aisles_with_status.py                                          96      9    91%   76, 78-79, 81, 83, 85, 118-119, 122
+backend/src/application/use_cases/list_capture_sessions.py                                            28      1    96%   49
+backend/src/application/use_cases/list_inventories.py                                                  9      0   100%
+backend/src/application/use_cases/list_inventory_list_items.py                                        63      9    86%   34, 36, 38, 40-41, 43, 45, 88-89
+backend/src/application/use_cases/list_review_queue.py                                               134     33    75%   54-56, 60-61, 67-79, 88, 90, 92, 95-98, 101-103, 109, 116, 134, 136, 174
+backend/src/application/use_cases/manage_inventory_visual_references.py                               82     19    77%   46, 49, 58-59, 85, 92, 96, 125-127, 145-155, 160-161
+backend/src/application/use_cases/mark_position_image_mismatch.py                                     31      0   100%
+backend/src/application/use_cases/mark_position_unknown.py                                            31      0   100%
+backend/src/application/use_cases/materialize_capture_session.py                                     141     18    87%   106, 134, 144, 196, 198, 200-202, 210-211, 230, 236, 255-256, 260-261, 269-270
+backend/src/application/use_cases/materialize_capture_session_group.py                               184     12    93%   115, 120, 129, 187, 202-203, 353-361, 407, 420, 426
+backend/src/application/use_cases/persist_aisle_result.py                                             77      5    94%   74, 77, 166-168
+backend/src/application/use_cases/promote_aisle_operational_job.py                                    35      1    97%   59
+backend/src/application/use_cases/recompute_consolidated_counts.py                                    95      2    98%   140, 150
+backend/src/application/use_cases/resolve_aisle_job_for_inventory_read.py                             17      0   100%
+backend/src/application/use_cases/retry_aisle_job.py                                                  42      0   100%
+backend/src/application/use_cases/review_validation.py                                                63     10    84%   64, 69, 107-108, 116-119, 149, 151
+backend/src/application/use_cases/run_aisle_merge.py                                                  34      0   100%
+backend/src/application/use_cases/start_aisle_processing.py                                           59      0   100%
+backend/src/application/use_cases/update_capture_session_clock_offset.py                              38      2    95%   52, 65
+backend/src/application/use_cases/update_position_code.py                                             35     18    49%   54-101
+backend/src/application/use_cases/update_product_quantity.py                                          42      0   100%
+backend/src/application/use_cases/update_product_sku.py                                               51      2    96%   79-83
+backend/src/application/use_cases/upload_aisle_assets.py                                              48      5    90%   96, 103-106
+backend/src/application/use_cases/upload_capture_session_staging_items.py                            140     32    77%   89, 128, 135, 137, 152-161, 220-244, 261-306
+backend/src/application/use_cases/upload_inventory_visual_references.py                               97      5    95%   158-163, 200-201
+backend/src/application/utils/natural_sort.py                                                         16      0   100%
+backend/src/application/utils/review_queue_derived.py                                                 36      4    89%   63-65, 71
+backend/src/auth/__init__.py                                                                           0      0   100%
+backend/src/auth/config.py                                                                            13      0   100%
+backend/src/auth/dependencies.py                                                                      38      3    92%   43, 51, 77
+backend/src/auth/errors.py                                                                             9      0   100%
+backend/src/auth/routes.py                                                                            25      0   100%
+backend/src/auth/schemas.py                                                                           26      0   100%
+backend/src/auth/security.py                                                                          40      9    78%   37-39, 70, 72, 74, 78, 96, 110, 120
+backend/src/auth/service.py                                                                          108      8    93%   77, 105, 109, 169, 202, 209, 249, 252
+backend/src/backfill_inventory_status.py                                                              18     18     0%   11-41
+backend/src/backfill_legacy_aisles.py                                                                 46     46     0%   11-119
+backend/src/config.py                                                                                 47      1    98%   64
+backend/src/consolidate/__init__.py                                                                    0      0   100%
+backend/src/consolidate/consolidate.py                                                                81      9    89%   136, 149, 158, 179-180, 190, 204, 231, 244
+backend/src/consolidate/normalize.py                                                                  19      1    95%   37
+backend/src/database/__init__.py                                                                       3      0   100%
+backend/src/database/migrations/__init__.py                                                            2      0   100%
+backend/src/database/migrations/__main__.py                                                            4      4     0%   3-8
+backend/src/database/migrations/cli.py                                                                68     39    43%   25-36, 40-41, 45-46, 71-90, 94-114, 118-138, 156-162
+backend/src/database/migrations/service.py                                                           128     53    59%   69-80, 84-85, 109-125, 129-140, 144-157, 166-167, 199-202, 235-255, 268
+backend/src/database/repository.py                                                                   214     72    66%   28-29, 57, 63-66, 73-78, 148, 165-176, 204-213, 251-262, 296, 301, 357, 390-431, 449, 496-525, 539-547, 553-575
+backend/src/database/sqlserver.py                                                                     39      8    79%   12-13, 26, 32, 48-49, 56-57
+backend/src/decision/__init__.py                                                                       2      0   100%
+backend/src/decision/count_status.py                                                                  46      2    96%   78-79
+backend/src/decision/entity_order.py                                                                   4      0   100%
+backend/src/decision/pallet_id.py                                                                     34      0   100%
+backend/src/decision/processing_mode.py                                                                6      0   100%
+backend/src/decision/quality_score.py                                                                 14      0   100%
+backend/src/detection/__init__.py                                                                      2      2     0%   9-11
+backend/src/detection/heuristic_detector.py                                                           79     79     0%   8-135
+backend/src/detection/pallet_detector.py                                                              20     20     0%   8-65
+backend/src/domain/__init__.py                                                                        11      0   100%
+backend/src/domain/aisle/__init__.py                                                                   2      0   100%
+backend/src/domain/aisle/entities.py                                                                  59      3    95%   52, 74-75
+backend/src/domain/assets/__init__.py                                                                  2      0   100%
+backend/src/domain/assets/entities.py                                                                 25      0   100%
+backend/src/domain/capture/__init__.py                                                                 2      0   100%
+backend/src/domain/capture/entities.py                                                                80      0   100%
+backend/src/domain/entity.py                                                                          31      0   100%
+backend/src/domain/evidence/__init__.py                                                                2      0   100%
+backend/src/domain/evidence/entities.py                                                               30      0   100%
+backend/src/domain/inventory/__init__.py                                                               3      0   100%
+backend/src/domain/inventory/derive_status_from_aisles.py                                             19      1    95%   45
+backend/src/domain/inventory/entities.py                                                              37      0   100%
+backend/src/domain/inventory/visual_reference.py                                                      34      0   100%
+backend/src/domain/jobs/__init__.py                                                                    2      0   100%
+backend/src/domain/jobs/entities.py                                                                   43      0   100%
+backend/src/domain/labels/__init__.py                                                                  3      0   100%
+backend/src/domain/labels/canonicalization.py                                                         14      0   100%
+backend/src/domain/labels/entities.py                                                                 55      0   100%
+backend/src/domain/labels/merge.py                                                                    62      5    92%   61, 64, 90, 107, 143
+backend/src/domain/pallet.py                                                                          14      0   100%
+backend/src/domain/positions/__init__.py                                                               2      0   100%
+backend/src/domain/positions/entities.py                                                              33      0   100%
+backend/src/domain/products/__init__.py                                                                2      0   100%
+backend/src/domain/products/entities.py                                                               19      0   100%
+backend/src/domain/quantity/__init__.py                                                                0      0   100%
+backend/src/domain/quantity/resolution.py                                                             69      4    94%   71, 73-74, 77
+backend/src/domain/reviews/__init__.py                                                                 2      0   100%
+backend/src/domain/reviews/entities.py                                                                24      0   100%
+backend/src/domain/reviews/sql_literals.py                                                            23      0   100%
+backend/src/domain/traceability.py                                                                    59      1    98%   140
+backend/src/env_settings/__init__.py                                                                   0      0   100%
+backend/src/env_settings/grouped_settings.py                                                         221     12    95%   251-254, 518-521, 643-646
+backend/src/env_settings/parsing.py                                                                   48     17    65%   17-18, 26-30, 40-41, 48, 52-53, 61-65
+backend/src/env_settings/pipeline_analysis_execution_strings.py                                       17      0   100%
+backend/src/env_settings/sqlserver_resolution.py                                                     140     29    79%   24-36, 51-56, 63-64, 70, 95-98, 101, 128, 267, 285
+backend/src/evidence/__init__.py                                                                       4      0   100%
+backend/src/evidence/evidence_pack.py                                                                169     13    92%   43, 56-61, 80-81, 102, 114, 223-227, 236, 277, 298
+backend/src/evidence/paths.py                                                                         10      0   100%
+backend/src/evidence/scoring.py                                                                       33      0   100%
+backend/src/exceptions/__init__.py                                                                     2      0   100%
+backend/src/exceptions/global_analysis_exceptions.py                                                   4      0   100%
+backend/src/fallback/__init__.py                                                                       3      0   100%
+backend/src/fallback/fallback_policy.py                                                               20      3    85%   19, 45, 47
+backend/src/fallback/visual_fallback_analyzer.py                                                      62     12    81%   36-37, 47, 58, 60, 65-66, 69-70, 72, 74, 100
+backend/src/frames/__init__.py                                                                         3      0   100%
+backend/src/frames/normalize.py                                                                      205     46    78%   40-53, 73, 87, 92-96, 148, 184, 233, 269, 279-283, 286, 292, 295, 298, 304, 315, 330, 333-335, 367, 380, 383, 399-401, 408, 418
+backend/src/frames/sources/__init__.py                                                                 5      0   100%
+backend/src/frames/sources/base.py                                                                     6      0   100%
+backend/src/frames/sources/factory.py                                                                  9      0   100%
+backend/src/frames/sources/photos_source.py                                                           48      6    88%   41-42, 44, 47, 54, 72
+backend/src/frames/sources/video_source.py                                                            34      3    91%   46, 67-68
+backend/src/frames/types.py                                                                            8      0   100%
+backend/src/infrastructure/__init__.py                                                                 0      0   100%
+backend/src/infrastructure/adapters/__init__.py                                                        2      0   100%
+backend/src/infrastructure/adapters/clock.py                                                           5      0   100%
+backend/src/infrastructure/pipeline/__init__.py                                                        2      0   100%
+backend/src/infrastructure/pipeline/input_artifact_resolver.py                                        98     23    77%   24, 28-29, 42, 77-88, 96, 99, 101, 118-123, 125, 130, 154, 163, 182-187, 189
+backend/src/infrastructure/pipeline/v3_execution_artifacts_service.py                                 16      0   100%
+backend/src/infrastructure/pipeline/v3_job_execution_state.py                                        157      3    98%   117, 173, 183
+backend/src/infrastructure/pipeline/v3_job_executor.py                                               202     37    82%   134, 151-152, 154-156, 164-165, 169-170, 187-188, 294-297, 311, 378, 393-396, 446-451, 520-530
+backend/src/infrastructure/pipeline/v3_process_aisle_pipeline_runner.py                               78      9    88%   117-119, 165-170
+backend/src/infrastructure/pipeline/v3_report_mapper.py                                              169     22    87%   59, 63-64, 106, 109-112, 115-118, 151-153, 156, 193, 285, 329-332
+backend/src/infrastructure/pipeline/worker_durable_artifact_publisher.py                              41      1    98%   172
+backend/src/infrastructure/repositories/__init__.py                                                    3      0   100%
+backend/src/infrastructure/repositories/memory_aisle_repository.py                                    20      2    90%   33-34
+backend/src/infrastructure/repositories/memory_analytics_repository.py                               211    126    40%   102, 105, 113, 123-125, 146, 195-274, 281-363, 366-432, 440, 478-489
+backend/src/infrastructure/repositories/memory_capture_session_confirm_idempotency_repository.py      15      0   100%
+backend/src/infrastructure/repositories/memory_capture_session_group_repository.py                    44      3    93%   48, 63, 66
+backend/src/infrastructure/repositories/memory_capture_session_item_repository.py                     50      6    88%   30, 53, 63, 65, 67, 75
+backend/src/infrastructure/repositories/memory_capture_session_repository.py                          64      6    91%   34, 50, 72, 91, 96, 98
+backend/src/infrastructure/repositories/memory_evidence_repository.py                                 13      1    92%   21
+backend/src/infrastructure/repositories/memory_final_count_repository.py                              24      1    96%   43
+backend/src/infrastructure/repositories/memory_inventory_repository.py                                13      0   100%
+backend/src/infrastructure/repositories/memory_inventory_visual_reference_repository.py               29     10    66%   20, 29-33, 41-43, 46
+backend/src/infrastructure/repositories/memory_job_repository.py                                      42      8    81%   33, 53-57, 63, 68
+backend/src/infrastructure/repositories/memory_normalized_label_repository.py                         22      0   100%
+backend/src/infrastructure/repositories/memory_position_repository.py                                 46      4    91%   45, 49, 55, 57
+backend/src/infrastructure/repositories/memory_product_record_repository.py                           18      0   100%
+backend/src/infrastructure/repositories/memory_raw_label_repository.py                                18      0   100%
+backend/src/infrastructure/repositories/memory_review_action_repository.py                            12      0   100%
+backend/src/infrastructure/repositories/memory_source_asset_repository.py                             43      3    93%   30, 35, 47
+backend/src/infrastructure/repositories/sql_aisle_repository.py                                       63      9    86%   23, 33-39, 47-48, 50-51, 72
+backend/src/infrastructure/repositories/sql_analytics_repository.py                                  333    291    13%   54-58, 63, 68, 77, 89-94, 103-108, 118-123, 180, 183-329, 349-381, 384-490, 497-592, 597-640, 645-672, 675-762, 765-827, 832-882
+backend/src/infrastructure/repositories/sql_capture_session_confirm_idempotency_repository.py         54     54     0%   3-102
+backend/src/infrastructure/repositories/sql_capture_session_group_repository.py                       88     88     0%   3-197
+backend/src/infrastructure/repositories/sql_capture_session_item_repository.py                        96     53    45%   29, 33-38, 42-47, 51-56, 68-72, 101, 175, 178-192, 195-211, 214-231, 234-251, 254-266, 271-281
+backend/src/infrastructure/repositories/sql_capture_session_repository.py                            102     21    79%   40-42, 50, 54-55, 79, 126, 142-152, 186-187, 189-191, 193-194, 196-197
+backend/src/infrastructure/repositories/sql_evidence_repository.py                                    55     24    56%   22-26, 33-34, 41, 77-109, 140-153, 156-168
+backend/src/infrastructure/repositories/sql_final_count_repository.py                                 63     40    37%   17-21, 26, 28, 33-46, 68-77, 151-176, 179-203
+backend/src/infrastructure/repositories/sql_inventory_repository.py                                   63      9    86%   44-50, 121-127, 160-166
+backend/src/infrastructure/repositories/sql_inventory_visual_reference_repository.py                  85     30    65%   28, 56, 58, 60, 62, 64, 66, 69, 93-105, 110, 139-147, 190-219, 222-223
+backend/src/infrastructure/repositories/sql_job_repository.py                                        124     30    76%   39-45, 53-54, 60-64, 82-83, 85-86, 124, 265-268, 274, 318-325, 328, 333
+backend/src/infrastructure/repositories/sql_normalized_label_repository.py                            76     19    75%   18, 27-28, 33, 38-42, 47, 53-57, 65, 71, 97, 102
+backend/src/infrastructure/repositories/sql_position_repository.py                                   118     34    71%   22, 24, 33-35, 42-44, 56-62, 70, 93-124, 159, 184-186, 188-189, 191-192, 194-195, 209, 254
+backend/src/infrastructure/repositories/sql_product_record_repository.py                              72     54    25%   17-21, 25-30, 48-53, 57-64, 72-101, 127-139, 142-152, 155-173
+backend/src/infrastructure/repositories/sql_raw_label_repository.py                                   61     13    79%   18, 26, 29-30, 35, 40-44, 58, 86, 91
+backend/src/infrastructure/repositories/sql_review_action_repository.py                               62     45    27%   20-24, 34-51, 55-71, 89-95, 114-125
+backend/src/infrastructure/repositories/sql_source_asset_repository.py                                98     29    70%   33-39, 45-49, 56, 154-167, 170-172, 175-191, 209, 226
+backend/src/infrastructure/services/__init__.py                                                        2      0   100%
+backend/src/infrastructure/services/inventory_metrics_service.py                                      28      0   100%
+backend/src/infrastructure/services/on_demand_worker_launch_service.py                                60     10    83%   51-58, 65-77, 101-102, 106
+backend/src/infrastructure/storage/artifact_store.py                                                  24      0   100%
+backend/src/infrastructure/storage/inventory_visual_reference_paths.py                                11      0   100%
+backend/src/infrastructure/storage/s3_artifact_storage_adapter.py                                    134     38    72%   41, 43-52, 57, 61, 67, 73, 85, 97-98, 106-113, 118, 124-127, 142-144, 156, 163-165, 171, 179-186, 194-196, 212, 219-226
+backend/src/infrastructure/storage/sql_storage_fields.py                                              11      1    91%   35
+backend/src/infrastructure/storage/v3_artifact_storage_adapter.py                                     56      9    84%   28-29, 62, 75-77, 80-81, 84
+backend/src/io/__init__.py                                                                             0      0   100%
+backend/src/io/logging.py                                                                             26      4    85%   66-69
+backend/src/io/outputs.py                                                                             59      9    85%   31-51
+backend/src/io/sanitize.py                                                                            28      2    93%   95, 98
+backend/src/jobs/__init__.py                                                                           4      0   100%
+backend/src/jobs/adapters/__init__.py                                                                  3      0   100%
+backend/src/jobs/adapters/job_store_adapter.py                                                        19      2    89%   26, 46
+backend/src/jobs/adapters/memory_queue_adapter.py                                                      9      2    78%   22, 25
+backend/src/jobs/dev_reset_local_jobs.py                                                              84     84     0%   7-132
+backend/src/jobs/image_identity.py                                                                    55      4    93%   86-87, 105, 117
+backend/src/jobs/job_store.py                                                                        199     54    73%   60-62, 149, 154-155, 204-205, 214, 231, 234, 236-238, 246, 266-273, 288-293, 298-306, 311-326
+backend/src/jobs/models.py                                                                            32      0   100%
+backend/src/jobs/photos_paths.py                                                                      21      0   100%
+backend/src/jobs/ports/__init__.py                                                                     3      3     0%   3-6
+backend/src/jobs/ports/job_queue.py                                                                    5      5     0%   7-25
+backend/src/jobs/ports/job_repository.py                                                               7      7     0%   7-25
+backend/src/jobs/queue.py                                                                             11      5    55%   17, 22-25
+backend/src/jobs/run_worker.py                                                                        83      6    93%   22-24, 69, 71, 86, 173
+backend/src/jobs/run_worker_dev.py                                                                    18      1    94%   36
+backend/src/jobs/worker.py                                                                           148     38    74%   28-37, 87, 120, 132-140, 152, 159-160, 204-205, 212-213, 217-221, 223-224, 228-236, 247, 264-290, 305-306
+backend/src/jobs/worker_bootstrap.py                                                                  52      5    90%   77-78, 106, 125-126
+backend/src/legacy/__init__.py                                                                         2      0   100%
+backend/src/legacy/persistence_observability.py                                                       76      9    88%   40, 53, 55, 57, 69, 74, 103, 128, 153
+backend/src/llm/__init__.py                                                                            0      0   100%
+backend/src/llm/anthropic_sdk_adapter.py                                                             303     56    82%   63, 91-92, 95, 108, 253, 255, 266, 297-304, 313-318, 333, 338-339, 346, 351-365, 369-371, 382-400, 416-417, 436, 447-451, 453, 470, 478, 543, 571-573
+backend/src/llm/costing.py                                                                           267     44    84%   55, 58-70, 87-88, 130, 132, 188, 195, 199, 212-214, 216, 249, 255, 265, 274, 336, 411, 424, 455, 464-465, 486, 507-514
+backend/src/llm/deepseek_sdk_adapter.py                                                               30      0   100%
+backend/src/llm/errors.py                                                                              7      0   100%
+backend/src/llm/gemini_client.py                                                                      93     17    82%   91-101, 190-196, 239-245
+backend/src/llm/gemini_global_analyzer.py                                                             62     10    84%   30-31, 66, 77, 79-80, 92-95
+backend/src/llm/gemini_sdk_adapter.py                                                                 51     17    67%   43-47, 49, 94-120
+backend/src/llm/normalization/__init__.py                                                              2      0   100%
+backend/src/llm/normalization/entity_normalizer.py                                                   166     10    94%   115, 124, 171, 174-175, 214, 231, 239-240, 296
+backend/src/llm/openai_sdk_adapter.py                                                                205     56    73%   124, 129-130, 137, 146, 150-151, 163, 175-191, 225-227, 279-280, 283, 293, 304-331, 342-344, 358-371, 381-387
+backend/src/llm/prompt_composer/__init__.py                                                            3      0   100%
+backend/src/llm/prompt_composer/composer.py                                                           11      0   100%
+backend/src/llm/prompt_composer/enrichments.py                                                        16      0   100%
+backend/src/llm/prompt_composer/hybrid_assembly.py                                                    12      0   100%
+backend/src/llm/prompt_composer/hybrid_profiles.py                                                    25      0   100%
+backend/src/llm/prompt_composer/hybrid_resolution.py                                                  34      4    88%   42, 84, 87, 109
+backend/src/llm/prompt_composer/prompt_traceability.py                                               102      6    94%   191, 199, 211-212, 224, 254
+backend/src/llm/prompts.py                                                                             8      0   100%
+backend/src/llm/providers/__init__.py                                                                  7      4    43%   9-13
+backend/src/llm/providers/base.py                                                                      6      0   100%
+backend/src/llm/providers/factory.py                                                                  15      5    67%   34-40
+backend/src/llm/providers/gemini_provider.py                                                          12      1    92%   22
+backend/src/llm/providers/openai_provider.py                                                          15      2    87%   18, 23
+backend/src/llm/types.py                                                                              22      0   100%
+backend/src/models/__init__.py                                                                         0      0   100%
+backend/src/models/schemas.py                                                                        151      6    96%   131-138, 142-143
+backend/src/parsing/__init__.py                                                                        2      0   100%
+backend/src/parsing/global_analysis_parser.py                                                        111     27    76%   42, 46, 48, 50, 59, 62, 68, 71-72, 78, 81, 86-87, 93-94, 123-124, 132, 135-136, 159, 162, 167, 171, 176, 185-186
+backend/src/pipeline/__init__.py                                                                       6      4    33%   7-11
+backend/src/pipeline/adapters/__init__.py                                                              6      4    33%   7-11
+backend/src/pipeline/adapters/gemini/__init__.py                                                       2      2     0%   3-5
+backend/src/pipeline/adapters/hybrid_global_analysis_strategy.py                                     117      6    95%   181-186, 244, 344
+backend/src/pipeline/context/__init__.py                                                               2      0   100%
+backend/src/pipeline/context/run_context.py                                                           39      1    97%   101
+backend/src/pipeline/contracts/__init__.py                                                             3      0   100%
+backend/src/pipeline/contracts/analysis_context.py                                                    69     11    84%   52-59, 70-71, 113
+backend/src/pipeline/contracts/multi_provider_trace_types.py                                          23      0   100%
+backend/src/pipeline/contracts/pipeline_analysis_execution_settings.py                                 6      0   100%
+backend/src/pipeline/contracts/stage.py                                                                5      0   100%
+backend/src/pipeline/errors.py                                                                         4      0   100%
+backend/src/pipeline/execution_log.py                                                                166     29    83%   51-55, 64-65, 89-94, 135-145, 151, 192-193, 197, 201, 209, 242, 247-248, 266-267
+backend/src/pipeline/hybrid_inventory_pipeline.py                                                    190     34    82%   56, 63-64, 156-159, 190, 209-212, 224-236, 251-254, 272-275, 298-301, 327-328
+backend/src/pipeline/ports/__init__.py                                                                 2      0   100%
+backend/src/pipeline/ports/analysis_provider.py                                                       24      0   100%
+backend/src/pipeline/ports/llm_execution.py                                                            5      0   100%
+backend/src/pipeline/provider_keys.py                                                                  8      0   100%
+backend/src/pipeline/providers/__init__.py                                                             4      0   100%
+backend/src/pipeline/providers/definitions.py                                                         21      0   100%
+backend/src/pipeline/providers/registry.py                                                            28      0   100%
+backend/src/pipeline/run_metadata.py                                                                  76     10    87%   45-54
+backend/src/pipeline/services/__init__.py                                                              0      0   100%
+backend/src/pipeline/services/analysis_visual_reference_prep.py                                       47      4    91%   47-48, 51, 62
+backend/src/pipeline/services/hybrid_analysis_prompt.py                                               56      0   100%
+backend/src/pipeline/services/multi_provider_analysis_execution.py                                    76      7    91%   56, 78, 161, 186, 262-269
+backend/src/pipeline/services/pipeline_provider_resolver.py                                           21      0   100%
+backend/src/pipeline/services/provider_analysis_execution_config.py                                   45      0   100%
+backend/src/pipeline/services/provider_analysis_result_normalization.py                                8      0   100%
+backend/src/pipeline/services/provider_llm_request_metadata.py                                        15      0   100%
+backend/src/pipeline/services/provider_result_aggregator.py                                           23      1    96%   47
+backend/src/pipeline/stages/__init__.py                                                                7      0   100%
+backend/src/pipeline/stages/analysis_stage.py                                                         53     18    66%   64-77, 102-113
+backend/src/pipeline/stages/entity_resolution_stage.py                                                39      0   100%
+backend/src/pipeline/stages/evidence_stage.py                                                         26      2    92%   46-51
+backend/src/pipeline/stages/frame_acquisition_stage.py                                                81      0   100%
+backend/src/pipeline/stages/input_preparation_stage.py                                                38      0   100%
+backend/src/pipeline/stages/reporting_stage.py                                                        41      0   100%
+backend/src/preprocess/__init__.py                                                                     0      0   100%
+backend/src/preprocess/image_ops.py                                                                   73      8    89%   84, 128, 135, 142, 168, 178, 205, 244
+backend/src/preprocess/selectors.py                                                                   36      1    97%   111
+backend/src/preprocess/similarity.py                                                                  60     18    70%   37, 42, 62, 67, 78, 117-130, 153, 155, 159
+backend/src/reid/__init__.py                                                                          47      8    83%   101-108
+backend/src/reid/clip_embedder.py                                                                     48      8    83%   18, 23, 30, 69, 81, 85-87
+backend/src/reid/gating.py                                                                            72     32    56%   71-102
+backend/src/reid/merge.py                                                                             79      8    90%   26, 31, 45, 89, 123-124, 151, 156
+backend/src/reid/phash.py                                                                             46     11    76%   18, 20, 53, 65-66, 70-71, 73, 77-79
+backend/src/reid/signature.py                                                                         73      5    93%   62-64, 104, 114
+backend/src/reporting/__init__.py                                                                      3      0   100%
+backend/src/reporting/artifacts.py                                                                    32      0   100%
+backend/src/reporting/display_label.py                                                                 9      0   100%
+backend/src/reporting/hybrid_report.py                                                                46      7    85%   35-36, 40, 48, 117-119
+backend/src/review/__init__.py                                                                         3      0   100%
+backend/src/review/review_merge.py                                                                    52     10    81%   27-30, 36, 38, 50, 71, 74, 77
+backend/src/review/review_store.py                                                                    39      5    87%   25-27, 29, 51
+backend/src/roi/__init__.py                                                                            3      3     0%   9-12
+backend/src/roi/cropper.py                                                                            33     33     0%   5-69
+backend/src/roi/quality.py                                                                             8      8     0%   7-27
+backend/src/runtime/__init__.py                                                                        2      0   100%
+backend/src/runtime/app_container.py                                                                 303     87    71%   99-100, 132-145, 223-225, 237, 247-251, 271-273, 293-295, 307, 315-317, 329, 337-339, 350-358, 375, 422-424, 436, 444-446, 458, 466-468, 479-504, 507-525, 528-548, 551-573, 576-598
+backend/src/runtime/v3_deps.py                                                                        50      8    84%   73, 94, 98, 102, 106, 110, 114, 118
+backend/src/storage/__init__.py                                                                        0      0   100%
+backend/src/storage/adapters/__init__.py                                                               2      2     0%   3-5
+backend/src/storage/adapters/filesystem_artifact_storage.py                                           31     31     0%   5-52
+backend/src/storage/ports/__init__.py                                                                  2      2     0%   3-5
+backend/src/storage/ports/artifact_storage.py                                                          8      8     0%   9-35
+backend/src/tracking/__init__.py                                                                       3      0   100%
+backend/src/tracking/track_builder.py                                                                 20     16    20%   24-59
+backend/src/tracking/tracker.py                                                                       58      4    93%   61, 64-65, 80
+backend/src/utils/__init__.py                                                                          2      0   100%
+backend/src/utils/validation.py                                                                       34      3    91%   42, 49, 61
+backend/src/validation/__init__.py                                                                     2      0   100%
+backend/src/validation/global_analysis_schema.py                                                     109     28    74%   42, 51, 53, 55, 57, 59, 61, 64-65, 85, 91, 129, 132, 140, 144, 154, 158, 166, 169, 179, 182-183, 194-197, 202, 204
+backend/src/video/__init__.py                                                                          0      0   100%
+backend/src/video/frames.py                                                                          165     25    85%   53, 112, 118, 122, 128, 132, 145, 197, 207, 230, 238, 242, 260-266, 268, 272, 312, 314, 318, 323, 326
+backend/src/video/ingest.py                                                                           46      7    85%   40, 53, 64, 67, 70, 116-117
+backend/src/view_selection/__init__.py                                                                 2      0   100%
+backend/src/view_selection/selector.py                                                               238     58    76%   39, 50, 52, 65-68, 74, 79-80, 99, 118, 122, 132, 135, 145-154, 191, 198, 204, 222, 254, 269-275, 283, 305-319, 323-327, 337-338, 348-374
+--------------------------------------------------------------------------------------------------------------------------------
+TOTAL                                                                                              21064   3677    83%
+Coverage HTML written to dir htmlcov
+=============== 1772 passed, 13 skipped, 120 warnings in 22.60s ================

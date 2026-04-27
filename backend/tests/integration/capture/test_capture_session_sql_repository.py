@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import pytest
 
 from src.application.errors import CaptureSessionDuplicateItemContentError, OpenCaptureSessionExistsError
-from src.database.sqlserver import SqlServerClient, now_utc
+from src.database.sqlserver import now_utc
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.capture.entities import (
     CaptureSession,
@@ -23,6 +23,9 @@ from src.infrastructure.repositories.sql_aisle_repository import SqlAisleReposit
 from src.infrastructure.repositories.sql_capture_session_item_repository import SqlCaptureSessionItemRepository
 from src.infrastructure.repositories.sql_capture_session_repository import SqlCaptureSessionRepository
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
+from tests.support.sql_integration import sql_server_client_or_skip
+
+pytestmark = pytest.mark.integration
 
 
 def _connection_string() -> str:
@@ -52,10 +55,7 @@ def _connection_string() -> str:
 
 @pytest.fixture(scope="module")
 def sql_client():
-    cs = _connection_string()
-    if not cs:
-        pytest.skip("SQL Server not configured (set SQLSERVER_CONNECTION_STRING or server/database/uid/pwd)")
-    return SqlServerClient(cs)
+    return sql_server_client_or_skip(_connection_string())
 
 
 @pytest.fixture

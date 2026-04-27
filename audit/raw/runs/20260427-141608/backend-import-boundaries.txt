@@ -1,0 +1,43 @@
+# Backend import boundaries audit
+source_dir: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src
+generated_at: 2026-04-27 14:16:02
+
+Tooling:
+- import-linter: heuristic fallback used (sin contrato ini)
+- grimp: optional (not required for fallback)
+- method: python AST scan
+
+## Reglas y estado
+- R1 domain no importa api/infrastructure/runtime/pipeline/llm: PASS
+- R2 application no importa api: FAIL
+- R2b application no importa fastapi: PASS
+- R4 infrastructure no importa api: PASS
+- R5 pipeline/llm con imports a domain (revisión manual): REVIEW
+- R3 api rutas con lógica pesada (heurística): REVIEW
+
+### R1 violaciones detectadas
+- Sin hallazgos.
+
+### R2 violaciones detectadas
+- application/services/position_traceability.py -> src.api.services.v3_stored_artifact_access
+
+### R2b violaciones detectadas
+- Sin hallazgos.
+
+### R4 violaciones detectadas
+- Sin hallazgos.
+
+### R5 señales a revisar
+- pipeline/stages/entity_resolution_stage.py -> src.domain.entity
+- pipeline/stages/entity_resolution_stage.py -> src.domain.traceability
+- pipeline/stages/reporting_stage.py -> src.domain.entity
+- pipeline/stages/evidence_stage.py -> src.domain.entity
+
+### R3 señales de lógica de negocio pesada en rutas API
+- api/routes/v3/aisles.py (lineas=862, branch_signals=52)
+- api/routes/v3/inventories.py (lineas=390, branch_signals=33)
+- api/routes/v3/shared.py (lineas=777, branch_signals=66)
+- api/routes/v3/assets.py (lineas=356, branch_signals=41)
+- api/routes/v3/capture_sessions.py (lineas=619, branch_signals=41)
+
+Observacion: auditoría heurística; validar manualmente antes de concluir violación arquitectónica.

@@ -81,6 +81,9 @@ class StubAssetRepo(SourceAssetRepository):
             return True
         return False
 
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+        return None
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return [a for a in self._store.values() if a.aisle_id == aisle_id]
 
@@ -211,7 +214,8 @@ def test_upload_aisle_assets_raises_when_aisle_not_found() -> None:
         use_case.execute("inv1", "nonexistent", files)
 
 
-def test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure() -> None:
+def test_upload_aisle_assets_leaves_storage_orphan_when_db_save_fails() -> None:
+    """Storage is written before DB save; on save failure the use case does not compensate deletes."""
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
     inv_repo = StubInventoryRepo([inv])
@@ -233,10 +237,11 @@ def test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure() -> None:
 
     with pytest.raises(RuntimeError, match="simulated db failure"):
         use_case.execute("inv1", "a1", files)
-    assert storage._deleted == [storage._written[0][0]]
+    assert storage._deleted == []
+    assert len(storage._written) == 1
 
 
-def test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim() -> None:
+def test_upload_aisle_assets_failed_save_leaves_canonical_storage_key_without_delete() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
     inv_repo = StubInventoryRepo([inv])
@@ -258,7 +263,8 @@ def test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim() -> N
 
     with pytest.raises(RuntimeError, match="simulated db failure"):
         use_case.execute("inv1", "a1", files)
-    assert storage._deleted == [storage._written[0][0]]
+    assert storage._deleted == []
+    assert len(storage._written) == 1
 
 
 def test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory() -> None:

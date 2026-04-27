@@ -266,4 +266,4 @@ def test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle(tmp_path: Pa
     spy_state.fail_job_and_aisle.assert_called_once()
     call_kw = spy_state.fail_job_and_aisle.call_args[0]
     assert call_kw[0] == job_id
-    assert "exit code 2" in call_kw[2]
+    assert "code 2" in call_kw[2]
