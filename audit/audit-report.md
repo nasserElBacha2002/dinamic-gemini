@@ -37,6 +37,18 @@ Registrar hallazgos de backend, frontend y seguridad de sistema corriendo, sin c
 | pip-audit | audit/raw/backend-pip-audit.json | Pendiente | |
 | Pytest | audit/raw/backend-pytest.txt | Pendiente | |
 
+## Resultados frontend
+
+| Herramienta/Auditoría | Reporte | Estado | Observaciones |
+|---|---|---|---|
+| ESLint | audit/raw/frontend-eslint.txt | Pendiente | |
+| Typecheck | audit/raw/frontend-typecheck.txt | Pendiente | |
+| npm audit | audit/raw/frontend-npm-audit.json | Pendiente | |
+| Vitest | audit/raw/frontend-vitest.txt | Pendiente | |
+| useEffect audit | audit/raw/frontend-useeffects-audit.md | Pendiente | |
+| Error handling audit | audit/raw/frontend-error-handling-audit.md | Pendiente | |
+| Reusable components audit | audit/raw/frontend-reusable-components-audit.md | Pendiente | |
+
 ## Resumen de hallazgos backend
 
 | Herramienta | Severidad predominante | Cantidad aprox | Estado | Observaciones |

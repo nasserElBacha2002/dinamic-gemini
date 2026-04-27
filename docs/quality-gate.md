@@ -96,6 +96,46 @@ Ejecución:
 bash scripts/audit/run_backend_audit.sh
 ```
 
+### Fase 3 — Auditoría local del frontend
+
+En esta fase, `scripts/audit/run_frontend_audit.sh` ejecuta auditoría local real del frontend en modo no bloqueante.
+
+Herramientas ejecutadas cuando están disponibles:
+
+- ESLint
+- Typecheck
+- npm audit
+- Vitest
+
+Auditorías estáticas adicionales:
+
+- Auditoría de `useEffect`
+- Auditoría de manejo de errores frontend
+- Auditoría de componentes reutilizables/genéricos
+
+Archivos de salida generados en `audit/raw/`:
+
+- `audit/raw/frontend-eslint.txt`
+- `audit/raw/frontend-typecheck.txt`
+- `audit/raw/frontend-npm-audit.json`
+- `audit/raw/frontend-vitest.txt`
+- `audit/raw/frontend-useeffects-audit.md`
+- `audit/raw/frontend-error-handling-audit.md`
+- `audit/raw/frontend-reusable-components-audit.md`
+
+Comportamiento clave:
+
+- Sigue siendo **no bloqueante** en esta etapa.
+- Si una herramienta no está instalada o no existe script npm, se documenta y se continúa.
+- Si hay findings o errores, se registra estado por herramienta y se continúa.
+- El script finaliza con `exit 0` para no bloquear el flujo actual.
+
+Ejecución:
+
+```bash
+bash scripts/audit/run_frontend_audit.sh
+```
+
 ## Dependencias de auditoría (backend)
 
 Las herramientas de auditoría del backend se declaran como dependencias de desarrollo en:
