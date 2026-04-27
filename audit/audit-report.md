@@ -129,7 +129,7 @@ Se analizaron reportes de `audit/raw/` para:
 <!-- AUTO-AUDIT-SUMMARY:START -->
 ## Consolidación automática reproducible
 
-- Generado: 2026-04-27T13:34:24+00:00
+- Generado: 2026-04-27T13:38:29+00:00
 - Fuente automática: `audit/audit-summary.md`
 - Estado machine-readable: `audit/audit-status.json`
 
@@ -137,7 +137,7 @@ Resumen breve:
 
 # Resumen automático de auditoría
 
-Fecha: 2026-04-27T13:34:24+00:00
+Fecha: 2026-04-27T13:38:29+00:00
 Estado general: FINDINGS
 Severidad máxima: critical
 <!-- AUTO-AUDIT-SUMMARY:END -->
