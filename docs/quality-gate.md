@@ -218,6 +218,39 @@ Ejecución:
 bash scripts/audit/run_frontend_architecture_audit.sh
 ```
 
+### Fase 4 — Consolidación automática de auditorías
+
+En esta fase se agrega consolidación reproducible automática de todos los reportes `audit/raw/*`.
+
+Script principal:
+
+- `scripts/audit/generate_audit_summary.py`
+
+Archivos generados:
+
+- `audit/audit-summary.md` (resumen automático consolidado)
+- `audit/audit-status.json` (estado machine-readable)
+
+Comportamiento:
+
+- El script tolera reportes faltantes y marca `NOT_RUN`.
+- Normaliza estados: `OK`, `FINDINGS`, `NOT_RUN`, `SKIPPED`, `ERROR`.
+- Evalúa severidad por reglas heurísticas (`critical` a `none`).
+- No corrige hallazgos.
+- No bloquea deploy en esta fase.
+
+Ejecución directa:
+
+```bash
+python scripts/audit/generate_audit_summary.py
+```
+
+Orquestación completa:
+
+```bash
+bash scripts/audit/run_full_audit.sh
+```
+
 ## Dependencias de auditoría (backend)
 
 Las herramientas de auditoría del backend se declaran como dependencias de desarrollo en:

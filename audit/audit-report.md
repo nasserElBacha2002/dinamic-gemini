@@ -125,3 +125,19 @@ Se analizaron reportes de `audit/raw/` para:
 4. Normalizar tooling faltante/entorno de auditoría.
 5. Corregir violaciones de arquitectura y acoplamiento entre capas.
 6. Ejecutar refactors de mantenibilidad (code smells, complejidad, duplicación/código muerto).
+
+<!-- AUTO-AUDIT-SUMMARY:START -->
+## Consolidación automática reproducible
+
+- Generado: 2026-04-27T13:15:51+00:00
+- Fuente automática: `audit/audit-summary.md`
+- Estado machine-readable: `audit/audit-status.json`
+
+Resumen breve:
+
+# Resumen automático de auditoría
+
+Fecha: 2026-04-27T13:15:51+00:00
+Estado general: FINDINGS
+Severidad máxima: critical
+<!-- AUTO-AUDIT-SUMMARY:END -->
