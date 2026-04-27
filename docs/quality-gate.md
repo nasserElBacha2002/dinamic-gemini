@@ -63,6 +63,39 @@ No se corrigen hallazgos todavía y no se modifica lógica funcional del sistema
 - Scripts placeholder en `scripts/audit/` para orquestación futura.
 - Preparación de `audit/raw/` como repositorio de evidencia.
 
+### Fase 2 — Auditoría local del backend
+
+En esta fase, `scripts/audit/run_backend_audit.sh` ejecuta auditoría local real del backend (sin bloquear deploy).
+
+Herramientas ejecutadas cuando están disponibles:
+
+- Ruff
+- Mypy
+- Bandit
+- pip-audit
+- Pytest
+
+Archivos de salida generados en `audit/raw/`:
+
+- `audit/raw/backend-ruff.txt`
+- `audit/raw/backend-mypy.txt`
+- `audit/raw/backend-bandit.json`
+- `audit/raw/backend-pip-audit.json`
+- `audit/raw/backend-pytest.txt`
+
+Comportamiento clave:
+
+- Sigue siendo **no bloqueante** en esta etapa.
+- Si una herramienta no está instalada, se documenta y se continúa.
+- Si hay findings o errores en una herramienta, se registra y se continúa.
+- El script finaliza con `exit 0` para no frenar el flujo actual.
+
+Ejecución:
+
+```bash
+bash scripts/audit/run_backend_audit.sh
+```
+
 ## Dependencias de auditoría (backend)
 
 Las herramientas de auditoría del backend se declaran como dependencias de desarrollo en:
@@ -84,7 +117,7 @@ cd backend
 pip install -e ".[dev]"
 ```
 
-Nota: en esta etapa los scripts de `scripts/audit/` son placeholders seguros; verifican disponibilidad y preparan estructura, pero no ejecutan auditorías reales todavía.
+Nota: en Fase 2 el script de backend ya ejecuta auditorías reales en modo no bloqueante. Los demás scripts pueden continuar como placeholders hasta su fase correspondiente.
 
 ## No objetivos (por ahora)
 
