@@ -62,12 +62,15 @@ class ToolResult:
         return ", ".join(parts)
 
 
-def status_from_presence(content: Optional[str]) -> str:
-    return "NOT_RUN" if content is None else "OK"
+def to_repo_relative(path: Path, repo_root: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(repo_root.resolve())).replace("\\", "/")
+    except Exception:
+        return str(path).replace("\\", "/")
 
 
 def parse_backend_ruff(path: Path) -> ToolResult:
-    tr = ToolResult("Ruff", str(path))
+    tr = ToolResult("Ruff", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -101,7 +104,7 @@ def parse_backend_ruff(path: Path) -> ToolResult:
 
 
 def parse_backend_mypy(path: Path) -> ToolResult:
-    tr = ToolResult("Mypy", str(path))
+    tr = ToolResult("Mypy", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -136,7 +139,7 @@ def parse_backend_mypy(path: Path) -> ToolResult:
 
 
 def parse_backend_bandit(path: Path) -> ToolResult:
-    tr = ToolResult("Bandit", str(path))
+    tr = ToolResult("Bandit", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -180,7 +183,7 @@ def parse_backend_bandit(path: Path) -> ToolResult:
 
 
 def parse_backend_pip_audit(path: Path) -> ToolResult:
-    tr = ToolResult("pip-audit", str(path))
+    tr = ToolResult("pip-audit", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -213,7 +216,7 @@ def parse_backend_pip_audit(path: Path) -> ToolResult:
 
 
 def parse_backend_pytest(path: Path) -> ToolResult:
-    tr = ToolResult("Pytest", str(path))
+    tr = ToolResult("Pytest", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -244,7 +247,7 @@ def parse_backend_pytest(path: Path) -> ToolResult:
 
 
 def parse_frontend_eslint(path: Path) -> ToolResult:
-    tr = ToolResult("ESLint", str(path))
+    tr = ToolResult("ESLint", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -267,7 +270,7 @@ def parse_frontend_eslint(path: Path) -> ToolResult:
 
 
 def parse_frontend_typecheck(path: Path) -> ToolResult:
-    tr = ToolResult("Typecheck", str(path))
+    tr = ToolResult("Typecheck", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -279,7 +282,7 @@ def parse_frontend_typecheck(path: Path) -> ToolResult:
 
 
 def parse_frontend_npm_audit(path: Path) -> ToolResult:
-    tr = ToolResult("npm audit", str(path))
+    tr = ToolResult("npm audit", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -306,7 +309,7 @@ def parse_frontend_npm_audit(path: Path) -> ToolResult:
 
 
 def parse_frontend_vitest(path: Path) -> ToolResult:
-    tr = ToolResult("Vitest", str(path))
+    tr = ToolResult("Vitest", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -327,7 +330,7 @@ def parse_frontend_vitest(path: Path) -> ToolResult:
 
 
 def parse_metric_md(path: Path, name: str, regex_pairs: List[Tuple[str, str]], default_sev: str) -> ToolResult:
-    tr = ToolResult(name, str(path))
+    tr = ToolResult(name, "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -345,7 +348,7 @@ def parse_metric_md(path: Path, name: str, regex_pairs: List[Tuple[str, str]], d
 
 
 def parse_arch_backend_code_smells(path: Path) -> ToolResult:
-    tr = ToolResult("Code smells", str(path))
+    tr = ToolResult("Code smells", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -375,7 +378,7 @@ def parse_arch_backend_code_smells(path: Path) -> ToolResult:
 
 
 def parse_arch_backend_complexity(path: Path) -> ToolResult:
-    tr = ToolResult("Complejidad", str(path))
+    tr = ToolResult("Complejidad", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -399,7 +402,7 @@ def parse_arch_backend_complexity(path: Path) -> ToolResult:
 
 
 def parse_arch_backend_imports(path: Path) -> ToolResult:
-    tr = ToolResult("Límites de imports", str(path))
+    tr = ToolResult("Límites de imports", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -424,7 +427,7 @@ def parse_arch_backend_imports(path: Path) -> ToolResult:
 
 
 def parse_arch_backend_solid(path: Path) -> ToolResult:
-    tr = ToolResult("SOLID/GRASP", str(path))
+    tr = ToolResult("SOLID/GRASP", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -445,7 +448,7 @@ def parse_arch_backend_solid(path: Path) -> ToolResult:
 
 
 def parse_arch_frontend_code_smells(path: Path) -> ToolResult:
-    tr = ToolResult("Code smells", str(path))
+    tr = ToolResult("Code smells", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -462,7 +465,7 @@ def parse_arch_frontend_code_smells(path: Path) -> ToolResult:
 
 
 def parse_arch_frontend_complexity(path: Path) -> ToolResult:
-    tr = ToolResult("Complejidad", str(path))
+    tr = ToolResult("Complejidad", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -484,7 +487,7 @@ def parse_arch_frontend_complexity(path: Path) -> ToolResult:
 
 
 def parse_arch_frontend_imports(path: Path) -> ToolResult:
-    tr = ToolResult("Límites de imports", str(path))
+    tr = ToolResult("Límites de imports", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -496,7 +499,7 @@ def parse_arch_frontend_imports(path: Path) -> ToolResult:
 
 
 def parse_arch_frontend_dup(path: Path) -> ToolResult:
-    tr = ToolResult("Duplicación", str(path))
+    tr = ToolResult("Duplicación", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -511,7 +514,7 @@ def parse_arch_frontend_dup(path: Path) -> ToolResult:
 
 
 def parse_arch_frontend_dead(path: Path) -> ToolResult:
-    tr = ToolResult("Código muerto", str(path))
+    tr = ToolResult("Código muerto", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -523,7 +526,7 @@ def parse_arch_frontend_dead(path: Path) -> ToolResult:
 
 
 def parse_arch_frontend_solid(path: Path) -> ToolResult:
-    tr = ToolResult("SOLID/React", str(path))
+    tr = ToolResult("SOLID/React", "")
     content = safe_read(path)
     if content is None:
         return tr
@@ -692,7 +695,9 @@ def build_summary_markdown(
     return "\n".join(lines)
 
 
-def update_audit_report_with_autosection(audit_report: Path, summary_md: str, generated_at: str) -> None:
+def update_audit_report_with_autosection(
+    audit_report: Path, generated_at: str, overall_status: str, max_sev: str
+) -> None:
     if not audit_report.exists():
         return
     start = "<!-- AUTO-AUDIT-SUMMARY:START -->"
@@ -703,8 +708,8 @@ def update_audit_report_with_autosection(audit_report: Path, summary_md: str, ge
         f"- Generado: {generated_at}\n"
         f"- Fuente automática: `audit/audit-summary.md`\n"
         f"- Estado machine-readable: `audit/audit-status.json`\n\n"
-        f"Resumen breve:\n\n"
-        f"{summary_md.split('## Estado general')[0].strip()}\n"
+        f"- Estado general: {overall_status.upper()}\n"
+        f"- Severidad máxima: {max_sev}\n"
         f"{end}"
     )
     content = audit_report.read_text(encoding="utf-8", errors="replace")
@@ -720,6 +725,21 @@ def update_audit_report_with_autosection(audit_report: Path, summary_md: str, ge
     audit_report.write_text(new_content, encoding="utf-8")
 
 
+def validate_consistency(areas: Dict[str, List[ToolResult]], status_obj: Dict[str, object]) -> None:
+    labels = ["Backend", "Frontend", "Arquitectura backend", "Arquitectura frontend"]
+    if len(labels) != len(set(labels)):
+        raise ValueError("Duplicación interna de áreas en tabla general.")
+
+    for area_key, tools in areas.items():
+        names = [t.name for t in tools]
+        if len(names) != len(set(names)):
+            raise ValueError(f"Herramientas duplicadas en sección {area_key}.")
+
+    for required in ("overall_status", "max_severity", "generated_at"):
+        if required not in status_obj:
+            raise ValueError(f"Falta campo requerido en audit-status.json: {required}")
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[2]
     raw = repo_root / "audit" / "raw"
@@ -728,26 +748,57 @@ def main() -> int:
 
     generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+    backend_files = {
+        "Ruff": raw / "backend-ruff.txt",
+        "Mypy": raw / "backend-mypy.txt",
+        "Bandit": raw / "backend-bandit.json",
+        "pip-audit": raw / "backend-pip-audit.json",
+        "Pytest": raw / "backend-pytest.txt",
+    }
+    frontend_files = {
+        "ESLint": raw / "frontend-eslint.txt",
+        "Typecheck": raw / "frontend-typecheck.txt",
+        "npm audit": raw / "frontend-npm-audit.json",
+        "Vitest": raw / "frontend-vitest.txt",
+        "useEffect audit": raw / "frontend-useeffects-audit.md",
+        "Error handling audit": raw / "frontend-error-handling-audit.md",
+        "Reusable components audit": raw / "frontend-reusable-components-audit.md",
+    }
+    backend_arch_files = {
+        "Code smells": raw / "backend-code-smells.txt",
+        "Complejidad": raw / "backend-complexity.txt",
+        "Límites de imports": raw / "backend-import-boundaries.txt",
+        "SOLID/GRASP": raw / "backend-solid-grasp-audit.md",
+    }
+    frontend_arch_files = {
+        "Code smells": raw / "frontend-code-smells.txt",
+        "Complejidad": raw / "frontend-complexity.txt",
+        "Límites de imports": raw / "frontend-import-boundaries.txt",
+        "Duplicación": raw / "frontend-duplication.txt",
+        "Código muerto": raw / "frontend-dead-code.txt",
+        "SOLID/React": raw / "frontend-solid-react-audit.md",
+    }
+
     backend = [
-        parse_backend_ruff(raw / "backend-ruff.txt"),
-        parse_backend_mypy(raw / "backend-mypy.txt"),
-        parse_backend_bandit(raw / "backend-bandit.json"),
-        parse_backend_pip_audit(raw / "backend-pip-audit.json"),
-        parse_backend_pytest(raw / "backend-pytest.txt"),
+        parse_backend_ruff(backend_files["Ruff"]),
+        parse_backend_mypy(backend_files["Mypy"]),
+        parse_backend_bandit(backend_files["Bandit"]),
+        parse_backend_pip_audit(backend_files["pip-audit"]),
+        parse_backend_pytest(backend_files["Pytest"]),
     ]
     frontend = [
-        parse_frontend_eslint(raw / "frontend-eslint.txt"),
-        parse_frontend_typecheck(raw / "frontend-typecheck.txt"),
-        parse_frontend_npm_audit(raw / "frontend-npm-audit.json"),
-        parse_frontend_vitest(raw / "frontend-vitest.txt"),
+        parse_frontend_eslint(frontend_files["ESLint"]),
+        parse_frontend_typecheck(frontend_files["Typecheck"]),
+        parse_frontend_npm_audit(frontend_files["npm audit"]),
+        parse_frontend_vitest(frontend_files["Vitest"]),
         parse_metric_md(
-            raw / "frontend-useeffects-audit.md",
+            frontend_files["useEffect audit"],
             "useEffect audit",
             [("uses", r"usos de `useEffect`: (\d+)"), ("files", r"archivos con `useEffect`: (\d+)")],
             "medium",
         ),
         parse_metric_md(
-            raw / "frontend-error-handling-audit.md",
+            frontend_files["Error handling audit"],
             "Error handling audit",
             [
                 ("files", r"patrones de manejo de errores detectados \(aprox\): (\d+)"),
@@ -757,25 +808,25 @@ def main() -> int:
             "medium",
         ),
         parse_metric_md(
-            raw / "frontend-reusable-components-audit.md",
+            frontend_files["Reusable components audit"],
             "Reusable components audit",
             [("candidate_files", r"candidatas.*: (\d+)"), ("button_refs", r"Referencias a Button: (\d+)")],
             "medium",
         ),
     ]
     backend_arch = [
-        parse_arch_backend_code_smells(raw / "backend-code-smells.txt"),
-        parse_arch_backend_complexity(raw / "backend-complexity.txt"),
-        parse_arch_backend_imports(raw / "backend-import-boundaries.txt"),
-        parse_arch_backend_solid(raw / "backend-solid-grasp-audit.md"),
+        parse_arch_backend_code_smells(backend_arch_files["Code smells"]),
+        parse_arch_backend_complexity(backend_arch_files["Complejidad"]),
+        parse_arch_backend_imports(backend_arch_files["Límites de imports"]),
+        parse_arch_backend_solid(backend_arch_files["SOLID/GRASP"]),
     ]
     frontend_arch = [
-        parse_arch_frontend_code_smells(raw / "frontend-code-smells.txt"),
-        parse_arch_frontend_complexity(raw / "frontend-complexity.txt"),
-        parse_arch_frontend_imports(raw / "frontend-import-boundaries.txt"),
-        parse_arch_frontend_dup(raw / "frontend-duplication.txt"),
-        parse_arch_frontend_dead(raw / "frontend-dead-code.txt"),
-        parse_arch_frontend_solid(raw / "frontend-solid-react-audit.md"),
+        parse_arch_frontend_code_smells(frontend_arch_files["Code smells"]),
+        parse_arch_frontend_complexity(frontend_arch_files["Complejidad"]),
+        parse_arch_frontend_imports(frontend_arch_files["Límites de imports"]),
+        parse_arch_frontend_dup(frontend_arch_files["Duplicación"]),
+        parse_arch_frontend_dead(frontend_arch_files["Código muerto"]),
+        parse_arch_frontend_solid(frontend_arch_files["SOLID/React"]),
     ]
 
     areas = {
@@ -784,6 +835,14 @@ def main() -> int:
         "backend_architecture": backend_arch,
         "frontend_architecture": frontend_arch,
     }
+    for tr in backend:
+        tr.report = to_repo_relative(backend_files[tr.name], repo_root)
+    for tr in frontend:
+        tr.report = to_repo_relative(frontend_files[tr.name], repo_root)
+    for tr in backend_arch:
+        tr.report = to_repo_relative(backend_arch_files[tr.name], repo_root)
+    for tr in frontend_arch:
+        tr.report = to_repo_relative(frontend_arch_files[tr.name], repo_root)
 
     area_status = {k: compute_area_status(v) for k, v in areas.items()}
     all_sev = [t.severity for vals in areas.values() for t in vals]
@@ -823,6 +882,7 @@ def main() -> int:
             },
         }
 
+    validate_consistency(areas, status_obj)
     summary_md = build_summary_markdown(generated_at, overall_status, overall_max_sev, areas)
 
     (audit_dir / "audit-summary.md").write_text(summary_md, encoding="utf-8")
@@ -831,8 +891,9 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    # Optional: append/update clearly marked auto-generated section in manual report.
-    update_audit_report_with_autosection(audit_dir / "audit-report.md", summary_md, generated_at)
+    update_audit_report_with_autosection(
+        audit_dir / "audit-report.md", generated_at, overall_status, overall_max_sev
+    )
 
     print(f"Generated: {audit_dir / 'audit-summary.md'}")
     print(f"Generated: {audit_dir / 'audit-status.json'}")

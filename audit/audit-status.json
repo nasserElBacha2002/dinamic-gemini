@@ -1,0 +1,256 @@
+{
+  "overall_status": "findings",
+  "max_severity": "critical",
+  "generated_at": "2026-04-27T13:48:35+00:00",
+  "areas": {
+    "backend": {
+      "status": "NOT_RUN",
+      "max_severity": "info",
+      "tools": {
+        "ruff": {
+          "status": "NOT_RUN",
+          "severity": "info",
+          "metrics": {},
+          "report": "audit/raw/backend-ruff.txt",
+          "observation": "Herramienta no instalada en la corrida."
+        },
+        "mypy": {
+          "status": "NOT_RUN",
+          "severity": "info",
+          "metrics": {},
+          "report": "audit/raw/backend-mypy.txt",
+          "observation": ""
+        },
+        "bandit": {
+          "status": "NOT_RUN",
+          "severity": "info",
+          "metrics": {},
+          "report": "audit/raw/backend-bandit.json",
+          "observation": ""
+        },
+        "pip-audit": {
+          "status": "NOT_RUN",
+          "severity": "info",
+          "metrics": {},
+          "report": "audit/raw/backend-pip-audit.json",
+          "observation": ""
+        },
+        "pytest": {
+          "status": "NOT_RUN",
+          "severity": "info",
+          "metrics": {},
+          "report": "audit/raw/backend-pytest.txt",
+          "observation": ""
+        }
+      },
+      "highlights": {
+        "tool_count": 5,
+        "findings_count": 0,
+        "not_run_count": 5
+      }
+    },
+    "frontend": {
+      "status": "FINDINGS",
+      "max_severity": "critical",
+      "tools": {
+        "eslint": {
+          "status": "FINDINGS",
+          "severity": "high",
+          "metrics": {
+            "problems": 66,
+            "errors": 40,
+            "warnings": 26
+          },
+          "report": "audit/raw/frontend-eslint.txt",
+          "observation": ""
+        },
+        "typecheck": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "ts_errors": 0
+          },
+          "report": "audit/raw/frontend-typecheck.txt",
+          "observation": ""
+        },
+        "npm_audit": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "critical": 0,
+            "high": 0,
+            "moderate": 7,
+            "low": 0,
+            "info": 0,
+            "total": 7
+          },
+          "report": "audit/raw/frontend-npm-audit.json",
+          "observation": ""
+        },
+        "vitest": {
+          "status": "FINDINGS",
+          "severity": "critical",
+          "metrics": {
+            "failed_files": 19,
+            "passed_files": 49,
+            "total_files": 68,
+            "failed_tests": 86,
+            "passed_tests": 340,
+            "total_tests": 426
+          },
+          "report": "audit/raw/frontend-vitest.txt",
+          "observation": ""
+        },
+        "useeffect_audit": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "uses": 46,
+            "files": 20
+          },
+          "report": "audit/raw/frontend-useeffects-audit.md",
+          "observation": ""
+        },
+        "error_handling_audit": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "files": 100,
+            "try_blocks": 59,
+            "catch_blocks": 25
+          },
+          "report": "audit/raw/frontend-error-handling-audit.md",
+          "observation": ""
+        },
+        "reusable_components_audit": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "candidate_files": 0,
+            "button_refs": 332
+          },
+          "report": "audit/raw/frontend-reusable-components-audit.md",
+          "observation": ""
+        }
+      },
+      "highlights": {
+        "tool_count": 7,
+        "findings_count": 6,
+        "not_run_count": 0
+      }
+    },
+    "backend_architecture": {
+      "status": "FINDINGS",
+      "max_severity": "high",
+      "tools": {
+        "code_smells": {
+          "status": "NOT_RUN",
+          "severity": "info",
+          "metrics": {},
+          "report": "audit/raw/backend-code-smells.txt",
+          "observation": ""
+        },
+        "complejidad": {
+          "status": "NOT_RUN",
+          "severity": "info",
+          "metrics": {},
+          "report": "audit/raw/backend-complexity.txt",
+          "observation": ""
+        },
+        "límites_de_imports": {
+          "status": "FINDINGS",
+          "severity": "high",
+          "metrics": {
+            "fail": 1,
+            "review": 2
+          },
+          "report": "audit/raw/backend-import-boundaries.txt",
+          "observation": ""
+        },
+        "solid/grasp": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "signals": 12
+          },
+          "report": "audit/raw/backend-solid-grasp-audit.md",
+          "observation": ""
+        }
+      },
+      "highlights": {
+        "tool_count": 4,
+        "findings_count": 2,
+        "not_run_count": 2
+      }
+    },
+    "frontend_architecture": {
+      "status": "FINDINGS",
+      "max_severity": "high",
+      "tools": {
+        "code_smells": {
+          "status": "FINDINGS",
+          "severity": "high",
+          "metrics": {
+            "problems": 66,
+            "errors": 40,
+            "warnings": 26
+          },
+          "report": "audit/raw/frontend-code-smells.txt",
+          "observation": ""
+        },
+        "complejidad": {
+          "status": "FINDINGS",
+          "severity": "high",
+          "metrics": {
+            "files_scanned": 183,
+            "functions_approx": 1513,
+            "conditional_tokens": 808,
+            "files_gt_300": 19,
+            "files_gt_1000": 4
+          },
+          "report": "audit/raw/frontend-complexity.txt",
+          "observation": ""
+        },
+        "límites_de_imports": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "signals": 8
+          },
+          "report": "audit/raw/frontend-import-boundaries.txt",
+          "observation": ""
+        },
+        "duplicación": {
+          "status": "SKIPPED",
+          "severity": "info",
+          "metrics": {},
+          "report": "audit/raw/frontend-duplication.txt",
+          "observation": "jscpd no instalado; fallback heurístico."
+        },
+        "código_muerto": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "signals": 470
+          },
+          "report": "audit/raw/frontend-dead-code.txt",
+          "observation": ""
+        },
+        "solid/react": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "signals": 6
+          },
+          "report": "audit/raw/frontend-solid-react-audit.md",
+          "observation": ""
+        }
+      },
+      "highlights": {
+        "tool_count": 6,
+        "findings_count": 5,
+        "not_run_count": 1
+      }
+    }
+  }
+}
