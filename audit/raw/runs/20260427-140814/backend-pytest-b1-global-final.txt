@@ -1,0 +1,568 @@
+........................................................................ [  4%]
+........................................................................ [  8%]
+..............................................................ssssssssss [ 12%]
+ss...................................................................... [ 16%]
+........................................................................ [ 20%]
+........................................................................ [ 24%]
+........................................................................ [ 28%]
+........................................................................ [ 32%]
+........................................................................ [ 36%]
+........................................................................ [ 40%]
+................FF...................................................... [ 44%]
+..................................................................s..... [ 48%]
+........................................................................ [ 52%]
+.....................F.F..FF............................................ [ 56%]
+........................................................................ [ 60%]
+........................................................................ [ 64%]
+........................................................................ [ 68%]
+........................................................................ [ 72%]
+........................................................................ [ 76%]
+........................................................................ [ 80%]
+........................................................................ [ 84%]
+........................................................................ [ 88%]
+...........FF.FF................F...............................FFFF.... [ 92%]
+..F...F................F..F............................................. [ 96%]
+.........................................................                [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert [] == ['uploads/ais...d6_photo.jpg']
+      
+      Right contains one more item: 'uploads/aisles/a1/raw/9c145c95-9d92-41b3-bdb3-a563a5b613d6_photo.jpg'
+      Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+ERROR    src.application.use_cases.upload_aisle_assets:upload_aisle_assets.py:107 Aisle asset upload failed aisle_id=a1 uploaded_count=0 attempted_count=1
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/upload_aisle_assets.py", line 79, in execute
+    asset, delete_key = self._materializer.persist_uploaded_file_as_source_asset(
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        aisle_id=aisle_id,
+        ^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        metadata_json=None,
+        ^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_source_asset_materializer.py", line 153, in persist_uploaded_file_as_source_asset
+    self._asset_repo.save(asset)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/use_cases/test_upload_aisle_assets.py", line 133, in save
+    raise RuntimeError("simulated db failure")
+RuntimeError: simulated db failure
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/use_cases/test_upload_aisle_assets.py:239: AssertionError: assert [] == ['uploads/ais...d6_photo.jpg']
+E   AssertionError: assert [] == ['uploads/ais...60_photo.jpg']
+      
+      Right contains one more item: 'uploads/aisles/a1/raw/963798c1-8663-492f-8dcd-f479e5e76660_photo.jpg'
+      Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+ERROR    src.application.use_cases.upload_aisle_assets:upload_aisle_assets.py:107 Aisle asset upload failed aisle_id=a1 uploaded_count=0 attempted_count=1
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/upload_aisle_assets.py", line 79, in execute
+    asset, delete_key = self._materializer.persist_uploaded_file_as_source_asset(
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        aisle_id=aisle_id,
+        ^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        metadata_json=None,
+        ^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_source_asset_materializer.py", line 153, in persist_uploaded_file_as_source_asset
+    self._asset_repo.save(asset)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/use_cases/test_upload_aisle_assets.py", line 133, in save
+    raise RuntimeError("simulated db failure")
+RuntimeError: simulated db failure
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/use_cases/test_upload_aisle_assets.py:264: AssertionError: assert [] == ['uploads/ais...60_photo.jpg']
+E   pyodbc.IntegrityError: ('23000', "[23000] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Violation of PRIMARY KEY constraint 'PK__inventor__3213E83FEB9FDAD2'. Cannot insert duplicate key in object 'dbo.inventory_visual_references'. The duplicate key value is (test-v324-ref-001). (2627) (SQLExecDirectW)")
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('23000', "[23000] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Violation of PRIMARY KEY constraint 'PK__inventor__3213E83FEB9FDAD2'. Cannot insert duplicate key in object 'dbo.inventory_visual_references'. The duplicate key value is (test-v324-ref-001). (2627) (SQLExecDirectW)")
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 42, in cursor
+    yield cur
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_inventory_visual_reference_repository.py", line 112, in create
+    cur.execute(
+    ~~~~~~~~~~~^
+        """
+        ^^^
+    ...<21 lines>...
+        ),
+        ^^
+    )
+    ^
+pyodbc.IntegrityError: ('23000', "[23000] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Violation of PRIMARY KEY constraint 'PK__inventor__3213E83FEB9FDAD2'. Cannot insert duplicate key in object 'dbo.inventory_visual_references'. The duplicate key value is (test-v324-ref-001). (2627) (SQLExecDirectW)")
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_inventory_visual_reference_repository.py:112: pyodbc.IntegrityError: ('23000', "[23000] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Violation of PRIMARY KEY constraint 'PK__inventor__3213E83FEB9FDAD2'. Cannot insert duplicate key in object 'dbo.inventory_visual_references'. The duplicate key value is (test-v324-ref-001). (2627) (SQLExecDirectW)")
+E   pyodbc.IntegrityError: ('23000', "[23000] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Violation of PRIMARY KEY constraint 'PK__inventor__3213E83FEB9FDAD2'. Cannot insert duplicate key in object 'dbo.inventory_visual_references'. The duplicate key value is (test-v324-multi-0). (2627) (SQLExecDirectW)")
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('23000', "[23000] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Violation of PRIMARY KEY constraint 'PK__inventor__3213E83FEB9FDAD2'. Cannot insert duplicate key in object 'dbo.inventory_visual_references'. The duplicate key value is (test-v324-multi-0). (2627) (SQLExecDirectW)")
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 42, in cursor
+    yield cur
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_inventory_visual_reference_repository.py", line 112, in create
+    cur.execute(
+    ~~~~~~~~~~~^
+        """
+        ^^^
+    ...<21 lines>...
+        ),
+        ^^
+    )
+    ^
+pyodbc.IntegrityError: ('23000', "[23000] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Violation of PRIMARY KEY constraint 'PK__inventor__3213E83FEB9FDAD2'. Cannot insert duplicate key in object 'dbo.inventory_visual_references'. The duplicate key value is (test-v324-multi-0). (2627) (SQLExecDirectW)")
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_inventory_visual_reference_repository.py:112: pyodbc.IntegrityError: ('23000', "[23000] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Violation of PRIMARY KEY constraint 'PK__inventor__3213E83FEB9FDAD2'. Cannot insert duplicate key in object 'dbo.inventory_visual_references'. The duplicate key value is (test-v324-multi-0). (2627) (SQLExecDirectW)")
+E   assert 27 == 26
+     +  where 27 = len(('job-1', 'aisle', 'aisle-1', 'process_aisle', 'starting', '{"aisle_id": "aisle-1"}', ...))
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_job_repository.py:72: assert 27 == 26
+E   assert 26 == 25
+     +  where 26 = len(('aisle', 'aisle-1', 'process_aisle', 'starting', '{"aisle_id": "aisle-1"}', None, ...))
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_job_repository.py:84: assert 26 == 25
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+    r
+      Field required [type=missing, input_value={'n': 'Leche UAT', 'q': 8...: 0.93, 'b': 'Cremigal'}, input_type=dict]
+        For further information visit https://errors.pydantic.dev/2.12/v/missing
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/test_schemas.py:52: pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+    r
+      Field required [type=missing, input_value={'n': 'Test', 'q': 10, 'c': 0.95}, input_type=dict]
+        For further information visit https://errors.pydantic.dev/2.12/v/missing
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/test_schemas.py:62: pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+    r
+      Field required [type=missing, input_value={'n': 'Producto 1', 'q': 50, 'c': 0.9}, input_type=dict]
+        For further information visit https://errors.pydantic.dev/2.12/v/missing
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/test_schemas.py:90: pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+    r
+      Field required [type=missing, input_value={'n': 'Producto', 'q': 10, 'c': 0.8}, input_type=dict]
+        For further information visit https://errors.pydantic.dev/2.12/v/missing
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/test_schemas.py:100: pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+    r
+      Field required [type=missing, input_value={'n': 'Test', 'q': 10, 'c': 0.8, 'b': 'Brand'}, input_type=dict]
+        For further information visit https://errors.pydantic.dev/2.12/v/missing
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/test_schemas.py:329: pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E   TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:345: TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+E   TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:345: TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+E   TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:345: TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+E   TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:345: TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+E   assert 0 != 0
+     +  where 0 = _dhash(array([[[0, 0, 0],\n        [0, 0, 0],\n        [0, 0, 0],\n        ...,\n        [0, 0, 0],\n        [0, 0, 0],\n        [0...   [0, 0, 0],\n        ...,\n        [0, 0, 0],\n        [0, 0, 0],\n        [0, 0, 0]]], shape=(100, 100, 3), dtype=uint8))
+     +  and   0 = _dhash(array([[[255, 255, 255],\n        [255, 255, 255],\n        [255, 255, 255],\n        ...,\n        [255, 255, 255],\n     ...    ...,\n        [255, 255, 255],\n        [255, 255, 255],\n        [255, 255, 255]]], shape=(100, 100, 3), dtype=uint8))
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/test_stage5_frame_selection.py:66: assert 0 != 0
+E   assert 3.2297725260416663 >= 50.0
+     +  where 3.2297725260416663 = _blur_metric(array([[[122, 131, 117],\n        [122, 130, 117],\n        [123, 130, 118],\n        ...,\n        [126, 138, 118],\n     ...      ...,\n        [117, 129, 121],\n        [115, 129, 121],\n        [116, 128, 121]]], shape=(60, 80, 3), dtype=uint8))
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/test_stage5_frame_selection.py:117: assert 3.2297725260416663 >= 50.0
+E   AssertionError: Expected 'insert_pallet_results' to be called once. Called 0 times.
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:990: AssertionError: Expected 'insert_pallet_results' to be called once. Called 0 times.
+E   assert None == 10
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/test_stage8_db.py:158: assert None == 10
+=============================== warnings summary ===============================
+backend/src/api/server.py:190
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/server.py:190: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4599
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/.venv/lib/python3.13/site-packages/fastapi/applications.py:4599: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:101: DeprecationWarning: deprecated
+    assert resp.sku == "ITEM-A"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:102: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 10
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:103: DeprecationWarning: deprecated
+    assert resp.qty == 10
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:104: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:105: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:108: DeprecationWarning: deprecated
+    assert resp.has_evidence is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:109: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_has_evidence_false_when_no_primary_evidence
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:127: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:150: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename == "photo.jpg"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:151: DeprecationWarning: deprecated
+    assert resp.source_image_id == "img-uuid"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:352: DeprecationWarning: deprecated
+    assert resp.sku is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:353: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:354: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:355: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:356: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:357: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:358: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:359: DeprecationWarning: deprecated
+    assert resp.source_image_id is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_omits_legacy_snapshot_when_include_technical_false
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:376: DeprecationWarning: deprecated
+    assert resp.detected_summary_json is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:437: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:438: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:439: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:464: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:465: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:466: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:467: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:491: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:492: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:493: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_corrected_quantity_when_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:526: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == 7
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_corrected_quantity_none_when_not_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:559: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:595: DeprecationWarning: deprecated
+    assert resp.qty == 5
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:596: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:597: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:598: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:631: DeprecationWarning: deprecated
+    assert resp.qty == 3
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:632: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:633: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:634: DeprecationWarning: deprecated
+    assert resp.qtyResolved is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:667: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:668: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:669: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:670: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:692: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:693: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:694: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:695: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:717: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:718: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:751: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:752: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:753: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is not None
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:754: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:787: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:788: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:824: DeprecationWarning: deprecated
+    assert resp.qty == 4
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:825: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:827: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:830: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 4
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:852: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:853: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:854: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:855: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_product_block_primary_sku_and_identity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:51: DeprecationWarning: deprecated
+    assert r.sku == r.product.sku
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:173: DeprecationWarning: deprecated
+    assert r.qty == 2
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:177: DeprecationWarning: deprecated
+    assert r.qtySource == r.quantity.source
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:206: DeprecationWarning: deprecated
+    assert r.source_image_id == r.traceability.source_image_id
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:207: DeprecationWarning: deprecated
+    assert r.traceability_status == r.traceability.status
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:208: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == r.traceability.primary_evidence_id
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:268: DeprecationWarning: deprecated
+    assert r.sku == "Z"
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:270: DeprecationWarning: deprecated
+    assert r.detected_quantity == 5
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:272: DeprecationWarning: deprecated
+    assert r.qtySource == "detected"
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:274: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == "pe"
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:341: DeprecationWarning: deprecated
+    assert resp.sku == view.product.public_sku
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:342: DeprecationWarning: deprecated
+    assert resp.qty == view.quantity.qty
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:343: DeprecationWarning: deprecated
+    assert resp.qtySource == view.quantity.qty_source
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:344: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == view.quantity.qty_inference_reason
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:345: DeprecationWarning: deprecated
+    assert resp.qtyResolved == view.quantity.qty_resolved
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:346: DeprecationWarning: deprecated
+    assert resp.detected_quantity == view.quantity.detected_quantity
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:347: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == view.quantity.corrected_quantity
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:348: DeprecationWarning: deprecated
+    assert resp.source_image_id == view.traceability.source_image_id
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:349: DeprecationWarning: deprecated
+    assert resp.traceability_status == view.traceability.traceability_status
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:350: DeprecationWarning: deprecated
+    assert resp.has_evidence == view.review.has_evidence
+
+backend/tests/test_e2e_v2_2.py::test_e2e_photos_job_persists_normalized_and_generates_report
+backend/tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+backend/tests/test_stage_b_ports_adapters.py::test_job_repository_create_returns_persisted_record
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/jobs/job_store.py:89: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow().isoformat() + "Z"
+
+backend/tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+backend/tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/jobs/job_store.py:252: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    data["updated_at"] = datetime.utcnow().isoformat() + "Z"
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim
+FAILED backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py::test_sql_save_and_list_by_inventory
+FAILED backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py::test_sql_multiple_references_same_inventory
+FAILED backend/tests/infrastructure/repositories/test_sql_job_repository.py::test_save_insert_placeholder_count_matches_parameters_for_starting_job
+FAILED backend/tests/infrastructure/repositories/test_sql_job_repository.py::test_save_update_placeholder_count_matches_parameters
+FAILED backend/tests/test_schemas.py::test_minified_product_valid - pydantic_...
+FAILED backend/tests/test_schemas.py::test_minified_product_confidence_clamp
+FAILED backend/tests/test_schemas.py::test_minified_pallet_valid - pydantic_c...
+FAILED backend/tests/test_schemas.py::test_minified_frame_result_valid - pyda...
+FAILED backend/tests/test_schemas.py::test_minified_product_json_serialization
+FAILED backend/tests/test_stage3_validation.py::test_analyzer_valid_response_passes
+FAILED backend/tests/test_stage3_validation.py::test_analyzer_invalid_json_raises_parsing_error
+FAILED backend/tests/test_stage3_validation.py::test_analyzer_invalid_structure_raises_validation_error
+FAILED backend/tests/test_stage3_validation.py::test_analyzer_uses_provided_logger_for_all_logs
+FAILED backend/tests/test_stage5_frame_selection.py::test_dhash_different_frame_different_hash
+FAILED backend/tests/test_stage5_frame_selection.py::test_optimized_filters_blurred_frames
+FAILED backend/tests/test_stage8_db.py::test_push_success_to_db_calls_set_job_outputs_and_insert_pallet_results
+FAILED backend/tests/test_stage8_db.py::test_insert_pallet_results_quantity_object_final_quantity_preferred
+19 failed, 1753 passed, 13 skipped, 114 warnings in 12.87s

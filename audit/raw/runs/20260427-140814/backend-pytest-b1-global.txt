@@ -1,0 +1,2400 @@
+........................................................................ [  4%]
+........................................................................ [  8%]
+..............................................................ssssssssss [ 12%]
+ss...................................................................... [ 16%]
+........................................................................ [ 20%]
+...F.................................................................... [ 24%]
+........................................................................ [ 28%]
+........................................................................ [ 32%]
+........................................................................ [ 36%]
+........................................................................ [ 40%]
+..............FFFFFFFFFFF............................................... [ 44%]
+..................................................................s..... [ 48%]
+........................................................................ [ 52%]
+........EEEE.....FFFFEEE..FF......FF..........................FFFFFF.... [ 56%]
+........................................................................ [ 60%]
+........................................................................ [ 64%]
+........................................................................ [ 68%]
+........................................................................ [ 72%]
+........................................................................ [ 76%]
+........................................................................ [ 80%]
+........................................................................ [ 84%]
+........................................................................ [ 88%]
+...........FF.FF................F...............................FFFF.... [ 92%]
+..F...F................F..F............................................. [ 96%]
+.........................................................                [100%]
+==================================== ERRORS ====================================
+________ ERROR at setup of test_sql_aisle_repository_save_and_get_by_id ________
+
+sql_client = <src.database.sqlserver.SqlServerClient object at 0x119f70fa0>
+inventory_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119e97e00>
+
+    @pytest.fixture
+    def aisle_repo(sql_client, inventory_repo):
+        """Ensure at least one inventory exists for aisle FK."""
+        now = now_utc()
+        inv = Inventory(
+            id="test-epica3-inv-001",
+            name="SQL Aisle Test Inventory",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+>       inventory_repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_aisle_repository.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f70fa0>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log setup ------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+_ ERROR at setup of test_sql_aisle_repository_list_by_inventory_includes_saved _
+
+sql_client = <src.database.sqlserver.SqlServerClient object at 0x119f70fa0>
+inventory_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119ded090>
+
+    @pytest.fixture
+    def aisle_repo(sql_client, inventory_repo):
+        """Ensure at least one inventory exists for aisle FK."""
+        now = now_utc()
+        inv = Inventory(
+            id="test-epica3-inv-001",
+            name="SQL Aisle Test Inventory",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+>       inventory_repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_aisle_repository.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f70fa0>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log setup ------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+____ ERROR at setup of test_sql_aisle_repository_get_by_inventory_and_code _____
+
+sql_client = <src.database.sqlserver.SqlServerClient object at 0x119f70fa0>
+inventory_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119deccd0>
+
+    @pytest.fixture
+    def aisle_repo(sql_client, inventory_repo):
+        """Ensure at least one inventory exists for aisle FK."""
+        now = now_utc()
+        inv = Inventory(
+            id="test-epica3-inv-001",
+            name="SQL Aisle Test Inventory",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+>       inventory_repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_aisle_repository.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f70fa0>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log setup ------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+__ ERROR at setup of test_sql_aisle_repository_get_by_id_missing_returns_none __
+
+sql_client = <src.database.sqlserver.SqlServerClient object at 0x119f70fa0>
+inventory_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119f1c180>
+
+    @pytest.fixture
+    def aisle_repo(sql_client, inventory_repo):
+        """Ensure at least one inventory exists for aisle FK."""
+        now = now_utc()
+        inv = Inventory(
+            id="test-epica3-inv-001",
+            name="SQL Aisle Test Inventory",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+>       inventory_repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_aisle_repository.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f70fa0>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log setup ------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+____________ ERROR at setup of test_sql_save_and_list_by_inventory _____________
+
+inventory_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119dd0850>
+
+    @pytest.fixture
+    def ensure_inventory(inventory_repo):
+        """Ensure an inventory exists for FK; use a dedicated test id to avoid clashes."""
+        from src.domain.inventory.entities import Inventory, InventoryStatus
+        now = now_utc()
+        inv = Inventory(
+            id="test-v324-inv-ref",
+            name="Test inventory for visual refs",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+>       inventory_repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f0e580>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log setup ------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+____ ERROR at setup of test_sql_list_by_inventory_empty_for_other_inventory ____
+
+inventory_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119dd0250>
+
+    @pytest.fixture
+    def ensure_inventory(inventory_repo):
+        """Ensure an inventory exists for FK; use a dedicated test id to avoid clashes."""
+        from src.domain.inventory.entities import Inventory, InventoryStatus
+        now = now_utc()
+        inv = Inventory(
+            id="test-v324-inv-ref",
+            name="Test inventory for visual refs",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+>       inventory_repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f0e580>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log setup ------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+________ ERROR at setup of test_sql_multiple_references_same_inventory _________
+
+inventory_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119a63c50>
+
+    @pytest.fixture
+    def ensure_inventory(inventory_repo):
+        """Ensure an inventory exists for FK; use a dedicated test id to avoid clashes."""
+        from src.domain.inventory.entities import Inventory, InventoryStatus
+        now = now_utc()
+        inv = Inventory(
+            id="test-v324-inv-ref",
+            name="Test inventory for visual refs",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+>       inventory_repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f0e580>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log setup ------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+=================================== FAILURES ===================================
+______ test_materializer_persist_then_finalize_marks_aisle_and_reconciles ______
+
+    def test_materializer_persist_then_finalize_marks_aisle_and_reconciles() -> None:
+        now = datetime(2025, 6, 1, 10, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        inv_repo = StubInventoryRepo(inv)
+        aisle_repo = StubAisleRepo(aisle)
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/services/test_aisle_source_asset_materializer.py:100: TypeError
+___ test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded ____
+
+    def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:156: TypeError
+_____________ test_upload_aisle_assets_raises_when_aisle_not_found _____________
+
+    def test_upload_aisle_assets_raises_when_aisle_not_found() -> None:
+        aisle_repo = StubAisleRepo()
+        inv_repo = StubInventoryRepo([])
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:196: TypeError
+_______ test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure _______
+
+    def test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = FailingAssetRepo()
+                     ^^^^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class FailingAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:221: TypeError
+____ test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim _____
+
+    def test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = FailingAssetRepo()
+                     ^^^^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class FailingAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:246: TypeError
+____ test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory _____
+
+    def test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        inv_repo = StubInventoryRepo([])
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:270: TypeError
+________ test_upload_aisle_assets_raises_when_unsupported_content_type _________
+
+    def test_upload_aisle_assets_raises_when_unsupported_content_type() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:293: TypeError
+_______________ test_upload_aisle_assets_raises_when_empty_files _______________
+
+    def test_upload_aisle_assets_raises_when_empty_files() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:316: TypeError
+______ test_upload_aisle_assets_rejects_video_extension_labeled_as_image _______
+
+    def test_upload_aisle_assets_rejects_video_extension_labeled_as_image() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:338: TypeError
+_______________ test_list_aisle_assets_returns_assets_for_aisle ________________
+
+    def test_list_aisle_assets_returns_assets_for_aisle() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.ASSETS_UPLOADED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:360: TypeError
+______________ test_list_aisle_assets_raises_when_aisle_not_found ______________
+
+    def test_list_aisle_assets_raises_when_aisle_not_found() -> None:
+        aisle_repo = StubAisleRepo()
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:377: TypeError
+_______ test_list_aisle_assets_get_validated_aisle_matches_execute_rules _______
+
+    def test_list_aisle_assets_get_validated_aisle_matches_execute_rules() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.ASSETS_UPLOADED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:389: TypeError
+_______________ test_sql_inventory_repository_save_and_get_by_id _______________
+
+repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119f1c510>
+
+    def test_sql_inventory_repository_save_and_get_by_id(repo: SqlInventoryRepository) -> None:
+        now = now_utc()
+        inv = Inventory(
+            id="test-epica2-001",
+            name="SQL Test Inventory",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+>       repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_inventory_repository.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f71220>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+____________ test_sql_inventory_repository_list_all_includes_saved _____________
+
+repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x1192c6210>
+
+    def test_sql_inventory_repository_list_all_includes_saved(repo: SqlInventoryRepository) -> None:
+        now = now_utc()
+        inv = Inventory(
+            id="test-epica2-002",
+            name="List Test",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+>       repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_inventory_repository.py:82: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f71220>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+_________ test_sql_inventory_repository_get_by_id_missing_returns_none _________
+
+repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119d55590>
+
+    def test_sql_inventory_repository_get_by_id_missing_returns_none(repo: SqlInventoryRepository) -> None:
+>       assert repo.get_by_id("nonexistent-id-xyz") is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/infrastructure/repositories/test_sql_inventory_repository.py:89: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:105: in get_by_id
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f71220>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+_ test_sql_inventory_repository_round_trips_processing_mode_and_primary_snapshot _
+
+repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119d567a0>
+
+    def test_sql_inventory_repository_round_trips_processing_mode_and_primary_snapshot(
+        repo: SqlInventoryRepository,
+    ) -> None:
+        now = now_utc()
+        inv = Inventory(
+            id="test-epica2-mode-snap",
+            name="Mode Snapshot",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+            processing_mode=InventoryProcessingMode.TEST,
+            primary_provider_name="prov-x",
+            primary_model_name="model-y",
+            primary_prompt_key="prompt-z",
+            primary_prompt_version="pv1",
+        )
+>       repo.save(inv)
+
+backend/tests/infrastructure/repositories/test_sql_inventory_repository.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119f71220>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+____ test_save_insert_placeholder_count_matches_parameters_for_starting_job ____
+
+    def test_save_insert_placeholder_count_matches_parameters_for_starting_job() -> None:
+        client = RecordingClient(rowcounts=[0, 1])
+        repo = SqlJobRepository(client)  # type: ignore[arg-type]
+    
+        repo.save(_make_job())
+    
+        assert len(client.cursor_instance.executions) == 2
+        insert_sql, insert_params = client.cursor_instance.executions[1]
+        assert "INSERT INTO inventory_jobs" in insert_sql
+>       assert insert_sql.count("?") == len(insert_params) == 26
+E       assert 27 == 26
+E        +  where 27 = len(('job-1', 'aisle', 'aisle-1', 'process_aisle', 'starting', '{"aisle_id": "aisle-1"}', ...))
+
+backend/tests/infrastructure/repositories/test_sql_job_repository.py:72: AssertionError
+____________ test_save_update_placeholder_count_matches_parameters _____________
+
+    def test_save_update_placeholder_count_matches_parameters() -> None:
+        client = RecordingClient(rowcounts=[1])
+        repo = SqlJobRepository(client)  # type: ignore[arg-type]
+    
+        repo.save(_make_job())
+    
+        assert len(client.cursor_instance.executions) == 1
+        update_sql, update_params = client.cursor_instance.executions[0]
+        assert "UPDATE inventory_jobs" in update_sql
+>       assert update_sql.count("?") == len(update_params) == 25
+E       assert 26 == 25
+E        +  where 26 = len(('aisle', 'aisle-1', 'process_aisle', 'starting', '{"aisle_id": "aisle-1"}', None, ...))
+
+backend/tests/infrastructure/repositories/test_sql_job_repository.py:84: AssertionError
+_____ test_sql_normalized_label_repository_save_list_and_replace_for_scope _____
+
+repo = <src.infrastructure.repositories.sql_normalized_label_repository.SqlNormalizedLabelRepository object at 0x119deda90>
+
+    def test_sql_normalized_label_repository_save_list_and_replace_for_scope(repo: SqlNormalizedLabelRepository) -> None:
+        now = now_utc()
+        inv_id = "inv-test"
+        aisle_id = "aisle-test"
+    
+>       repo.replace_for_scope(inv_id, aisle_id)
+
+backend/tests/infrastructure/repositories/test_sql_normalized_label_repository.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_normalized_label_repository.py:199: in replace_for_scope
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119dab2f0>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+____________ test_sql_raw_label_repository_save_and_list_for_scope _____________
+
+repo = <src.infrastructure.repositories.sql_raw_label_repository.SqlRawLabelRepository object at 0x119f1c050>
+
+    def test_sql_raw_label_repository_save_and_list_for_scope(repo: SqlRawLabelRepository) -> None:
+        now = now_utc()
+        labels = [
+            RawLabel(
+                id="test-raw-001",
+                inventory_id="inv-test",
+                aisle_id="aisle-test",
+                position_id="pos-test",
+                evidence_id="ev-test",
+                group_key="position:pos-test:evidence:ev-test",
+                provider="pipeline",
+                source_type="hybrid_report",
+                source_reference="entity-1",
+                sku_raw="SKU-1",
+                sku_candidate="SKU-1",
+                product_name_raw="Name",
+                detected_text="SKU-1",
+                confidence=0.9,
+                metadata={"k": "v"},
+                created_at=now,
+            )
+        ]
+>       repo.save_many(labels)
+
+backend/tests/infrastructure/repositories/test_sql_raw_label_repository.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_raw_label_repository.py:87: in save_many
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119d811d0>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+_________________ test_sql_capture_session_save_and_get_by_id __________________
+
+inv_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119b42c60>
+aisle_repo = <src.infrastructure.repositories.sql_aisle_repository.SqlAisleRepository object at 0x119c267b0>
+session_repo = <src.infrastructure.repositories.sql_capture_session_repository.SqlCaptureSessionRepository object at 0x119c27620>
+
+    def test_sql_capture_session_save_and_get_by_id(
+        inv_repo: SqlInventoryRepository,
+        aisle_repo: SqlAisleRepository,
+        session_repo: SqlCaptureSessionRepository,
+    ) -> None:
+        suffix = uuid.uuid4().hex[:10]
+        inv_id = f"cap-inv-{suffix}"
+        aisle_id = f"cap-aisle-{suffix}"
+>       _save_inv_aisle(inv_repo, aisle_repo, inv_id, aisle_id)
+
+backend/tests/integration/capture/test_capture_session_sql_repository.py:134: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/integration/capture/test_capture_session_sql_repository.py:104: in _save_inv_aisle
+    inv_repo.save(
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119fd9b80>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+______________ test_sql_capture_session_allows_nullable_aisle_id _______________
+
+inv_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119dc1b70>
+session_repo = <src.infrastructure.repositories.sql_capture_session_repository.SqlCaptureSessionRepository object at 0x119decb90>
+
+    def test_sql_capture_session_allows_nullable_aisle_id(
+        inv_repo: SqlInventoryRepository,
+        session_repo: SqlCaptureSessionRepository,
+    ) -> None:
+        suffix = uuid.uuid4().hex[:10]
+        inv_id = f"cap-inv-null-{suffix}"
+        t = now_utc()
+>       inv_repo.save(
+            Inventory(
+                id=inv_id,
+                name=f"cap-sql-null-{suffix[:8]}",
+                status=InventoryStatus.DRAFT,
+                created_at=t,
+                updated_at=t,
+                processing_mode=InventoryProcessingMode.TEST,
+            )
+        )
+
+backend/tests/integration/capture/test_capture_session_sql_repository.py:162: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119fd9b80>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+____________________ test_sql_open_session_count_and_close _____________________
+
+inv_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119b3b070>
+aisle_repo = <src.infrastructure.repositories.sql_aisle_repository.SqlAisleRepository object at 0x119dee350>
+session_repo = <src.infrastructure.repositories.sql_capture_session_repository.SqlCaptureSessionRepository object at 0x119dedf90>
+
+    def test_sql_open_session_count_and_close(
+        inv_repo: SqlInventoryRepository,
+        aisle_repo: SqlAisleRepository,
+        session_repo: SqlCaptureSessionRepository,
+    ) -> None:
+        suffix = uuid.uuid4().hex[:10]
+        inv_id = f"cap-inv2-{suffix}"
+        aisle_id = f"cap-aisle2-{suffix}"
+>       _save_inv_aisle(inv_repo, aisle_repo, inv_id, aisle_id)
+
+backend/tests/integration/capture/test_capture_session_sql_repository.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/integration/capture/test_capture_session_sql_repository.py:104: in _save_inv_aisle
+    inv_repo.save(
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119fd9b80>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+________________ test_sql_second_open_session_same_aisle_raises ________________
+
+sql_client = <src.database.sqlserver.SqlServerClient object at 0x119fd9b80>
+inv_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119fcf380>
+aisle_repo = <src.infrastructure.repositories.sql_aisle_repository.SqlAisleRepository object at 0x119deda90>
+session_repo = <src.infrastructure.repositories.sql_capture_session_repository.SqlCaptureSessionRepository object at 0x119afbce0>
+
+    def test_sql_second_open_session_same_aisle_raises(
+        sql_client: SqlServerClient,
+        inv_repo: SqlInventoryRepository,
+        aisle_repo: SqlAisleRepository,
+        session_repo: SqlCaptureSessionRepository,
+    ) -> None:
+>       _require_one_open_per_aisle_index(sql_client)
+
+backend/tests/integration/capture/test_capture_session_sql_repository.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/integration/capture/test_capture_session_sql_repository.py:83: in _require_one_open_per_aisle_index
+    with sql_client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119fd9b80>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+_____________________ test_sql_duplicate_item_content_hash _____________________
+
+inv_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119d87a10>
+aisle_repo = <src.infrastructure.repositories.sql_aisle_repository.SqlAisleRepository object at 0x119f1ce90>
+session_repo = <src.infrastructure.repositories.sql_capture_session_repository.SqlCaptureSessionRepository object at 0x119f1cfc0>
+item_repo = <src.infrastructure.repositories.sql_capture_session_item_repository.SqlCaptureSessionItemRepository object at 0x119c24980>
+
+    def test_sql_duplicate_item_content_hash(
+        inv_repo: SqlInventoryRepository,
+        aisle_repo: SqlAisleRepository,
+        session_repo: SqlCaptureSessionRepository,
+        item_repo: SqlCaptureSessionItemRepository,
+    ) -> None:
+        suffix = uuid.uuid4().hex[:10]
+        inv_id = f"cap-inv4-{suffix}"
+        aisle_id = f"cap-aisle4-{suffix}"
+>       _save_inv_aisle(inv_repo, aisle_repo, inv_id, aisle_id)
+
+backend/tests/integration/capture/test_capture_session_sql_repository.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/integration/capture/test_capture_session_sql_repository.py:104: in _save_inv_aisle
+    inv_repo.save(
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119fd9b80>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+______________________ test_sql_list_sessions_pagination _______________________
+
+inv_repo = <src.infrastructure.repositories.sql_inventory_repository.SqlInventoryRepository object at 0x119f2c950>
+aisle_repo = <src.infrastructure.repositories.sql_aisle_repository.SqlAisleRepository object at 0x119f1cc30>
+session_repo = <src.infrastructure.repositories.sql_capture_session_repository.SqlCaptureSessionRepository object at 0x119e9fbf0>
+
+    def test_sql_list_sessions_pagination(
+        inv_repo: SqlInventoryRepository,
+        aisle_repo: SqlAisleRepository,
+        session_repo: SqlCaptureSessionRepository,
+    ) -> None:
+        suffix = uuid.uuid4().hex[:10]
+        inv_id = f"cap-inv5-{suffix}"
+        t = now_utc()
+>       inv_repo.save(
+            Inventory(
+                id=inv_id,
+                name=f"cap-sql-pg-{suffix[:8]}",
+                status=InventoryStatus.DRAFT,
+                created_at=t,
+                updated_at=t,
+                processing_mode=InventoryProcessingMode.TEST,
+            )
+        )
+
+backend/tests/integration/capture/test_capture_session_sql_repository.py:316: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/infrastructure/repositories/sql_inventory_repository.py:57: in save
+    with self._client.cursor() as cur:
+         ^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <src.database.sqlserver.SqlServerClient object at 0x119fd9b80>
+
+    @contextmanager
+    def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
+        """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""
+        conn: Optional[pyodbc.Connection] = None
+        try:
+>           conn = pyodbc.connect(self._connection_string)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+
+backend/src/database/sqlserver.py:40: OperationalError
+------------------------------ Captured log call -------------------------------
+ERROR    src.database.sqlserver:sqlserver.py:50 SQL Server operation failed: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/database/sqlserver.py", line 40, in cursor
+    conn = pyodbc.connect(self._connection_string)
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 17 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+_________________________ test_minified_product_valid __________________________
+
+    def test_minified_product_valid():
+        """Test de creación de MinifiedProduct válido."""
+>       product = MinifiedProduct(n="Leche UAT", q=84, c=0.93, b="Cremigal")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E       r
+E         Field required [type=missing, input_value={'n': 'Leche UAT', 'q': 8...: 0.93, 'b': 'Cremigal'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+backend/tests/test_schemas.py:52: ValidationError
+____________________ test_minified_product_confidence_clamp ____________________
+
+    def test_minified_product_confidence_clamp():
+        """Test de validación de confianza en MinifiedProduct."""
+        # Confianza dentro del rango válido
+>       product1 = MinifiedProduct(n="Test", q=10, c=0.95)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E       r
+E         Field required [type=missing, input_value={'n': 'Test', 'q': 10, 'c': 0.95}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+backend/tests/test_schemas.py:62: ValidationError
+__________________________ test_minified_pallet_valid __________________________
+
+    def test_minified_pallet_valid():
+        """Test de creación de MinifiedPallet válido."""
+        products = [
+>           MinifiedProduct(n="Producto 1", q=50, c=0.9),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            MinifiedProduct(n="Producto 2", q=30, c=0.85),
+        ]
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E       r
+E         Field required [type=missing, input_value={'n': 'Producto 1', 'q': 50, 'c': 0.9}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+backend/tests/test_schemas.py:90: ValidationError
+_______________________ test_minified_frame_result_valid _______________________
+
+    def test_minified_frame_result_valid():
+        """Test de creación de MinifiedFrameResult válido."""
+>       products = [MinifiedProduct(n="Producto", q=10, c=0.8)]
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E       r
+E         Field required [type=missing, input_value={'n': 'Producto', 'q': 10, 'c': 0.8}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+backend/tests/test_schemas.py:100: ValidationError
+___________________ test_minified_product_json_serialization ___________________
+
+    def test_minified_product_json_serialization():
+        """Test de serialización JSON de MinifiedProduct."""
+>       product = MinifiedProduct(n="Test", q=10, c=0.8, b="Brand")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for MinifiedProduct
+E       r
+E         Field required [type=missing, input_value={'n': 'Test', 'q': 10, 'c': 0.8, 'b': 'Brand'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.12/v/missing
+
+backend/tests/test_schemas.py:329: ValidationError
+_____________________ test_analyzer_valid_response_passes ______________________
+
+    def test_analyzer_valid_response_passes():
+        """Analyzer returns data when Gemini returns valid JSON that passes validation."""
+        mock_client = MagicMock()
+        mock_client.generate_global_analysis_raw.return_value = '{"total_pallets_detected": 0, "pallets": []}'
+        analyzer = GeminiGlobalAnalyzer(mock_client)
+        one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
+    
+>       result = analyzer.analyze_video_frames(one_frame)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_stage3_validation.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/llm/gemini_global_analyzer.py:97: in analyze_video_frames
+    data = json.loads(cleaned)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <MagicMock name='mock.generate_global_analysis_structured().strip()' id='4826264448'>
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with
+        the result of any object literal decoded with an ordered list of pairs.
+        The return value of ``object_pairs_hook`` will be used instead of the
+        ``dict``.  This feature can be used to implement custom decoders.  If
+        ``object_hook`` is also defined, the ``object_pairs_hook`` takes
+        priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:345: TypeError
+_______________ test_analyzer_invalid_json_raises_parsing_error ________________
+
+    def test_analyzer_invalid_json_raises_parsing_error():
+        """Analyzer raises GlobalAnalysisParsingError when response is not valid JSON."""
+        mock_client = MagicMock()
+        mock_client.generate_global_analysis_raw.return_value = "not json at all"
+        analyzer = GeminiGlobalAnalyzer(mock_client)
+        one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
+    
+        with pytest.raises(GlobalAnalysisParsingError, match="Invalid JSON"):
+>           analyzer.analyze_video_frames(one_frame)
+
+backend/tests/test_stage3_validation.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/llm/gemini_global_analyzer.py:97: in analyze_video_frames
+    data = json.loads(cleaned)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <MagicMock name='mock.generate_global_analysis_structured().strip()' id='4826257392'>
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with
+        the result of any object literal decoded with an ordered list of pairs.
+        The return value of ``object_pairs_hook`` will be used instead of the
+        ``dict``.  This feature can be used to implement custom decoders.  If
+        ``object_hook`` is also defined, the ``object_pairs_hook`` takes
+        priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:345: TypeError
+___________ test_analyzer_invalid_structure_raises_validation_error ____________
+
+    def test_analyzer_invalid_structure_raises_validation_error():
+        """Analyzer raises GlobalAnalysisValidationError when JSON is valid but structure fails."""
+        mock_client = MagicMock()
+        mock_client.generate_global_analysis_raw.return_value = '{"total_pallets_detected": 1}'
+        analyzer = GeminiGlobalAnalyzer(mock_client)
+        one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
+    
+        with pytest.raises(GlobalAnalysisValidationError, match="pallets"):
+>           analyzer.analyze_video_frames(one_frame)
+
+backend/tests/test_stage3_validation.py:140: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/llm/gemini_global_analyzer.py:97: in analyze_video_frames
+    data = json.loads(cleaned)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <MagicMock name='mock.generate_global_analysis_structured().strip()' id='4833735216'>
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with
+        the result of any object literal decoded with an ordered list of pairs.
+        The return value of ``object_pairs_hook`` will be used instead of the
+        ``dict``.  This feature can be used to implement custom decoders.  If
+        ``object_hook`` is also defined, the ``object_pairs_hook`` takes
+        priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:345: TypeError
+_______________ test_analyzer_uses_provided_logger_for_all_logs ________________
+
+    def test_analyzer_uses_provided_logger_for_all_logs():
+        """When logger= is passed, analyzer uses it for info and warning (not module logger)."""
+        mock_client = MagicMock()
+        mock_client.generate_global_analysis_raw.return_value = '{"total_pallets_detected": 0, "pallets": []}'
+        mock_logger = MagicMock()
+        analyzer = GeminiGlobalAnalyzer(mock_client)
+        one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
+    
+>       analyzer.analyze_video_frames(one_frame, logger=mock_logger)
+
+backend/tests/test_stage3_validation.py:151: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/src/llm/gemini_global_analyzer.py:97: in analyze_video_frames
+    data = json.loads(cleaned)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <MagicMock name='mock.generate_global_analysis_structured().strip()' id='4833726816'>
+cls = None, object_hook = None, parse_float = None, parse_int = None
+parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with
+        the result of any object literal decoded with an ordered list of pairs.
+        The return value of ``object_pairs_hook`` will be used instead of the
+        ``dict``.  This feature can be used to implement custom decoders.  If
+        ``object_hook`` is also defined, the ``object_pairs_hook`` takes
+        priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+>               raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+E               TypeError: the JSON object must be str, bytes or bytearray, not MagicMock
+
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:345: TypeError
+__________________ test_dhash_different_frame_different_hash ___________________
+
+    def test_dhash_different_frame_different_hash():
+        """Different content produces different dHash (very likely)."""
+        a = np.zeros((100, 100, 3), dtype=np.uint8)
+        b = np.ones((100, 100, 3), dtype=np.uint8) * 255
+>       assert _dhash(a) != _dhash(b)
+E       assert 0 != 0
+E        +  where 0 = _dhash(array([[[0, 0, 0],\n        [0, 0, 0],\n        [0, 0, 0],\n        ...,\n        [0, 0, 0],\n        [0, 0, 0],\n        [0...   [0, 0, 0],\n        ...,\n        [0, 0, 0],\n        [0, 0, 0],\n        [0, 0, 0]]], shape=(100, 100, 3), dtype=uint8))
+E        +  and   0 = _dhash(array([[[255, 255, 255],\n        [255, 255, 255],\n        [255, 255, 255],\n        ...,\n        [255, 255, 255],\n     ...    ...,\n        [255, 255, 255],\n        [255, 255, 255],\n        [255, 255, 255]]], shape=(100, 100, 3), dtype=uint8))
+
+backend/tests/test_stage5_frame_selection.py:66: AssertionError
+____________________ test_optimized_filters_blurred_frames _____________________
+
+    def test_optimized_filters_blurred_frames():
+        """Blurred frames are excluded when blur_threshold is above their metric."""
+        sharp = np.random.randint(0, 256, (60, 80, 3), dtype=np.uint8)
+        blurred = cv2.GaussianBlur(sharp, (21, 21), 8)
+        # Mix: sharp at 0,2,4,... and blurred at 1,3,5,...
+        frames = [sharp, blurred] * 10  # 20 frames
+        with patch("src.video.frames.cv2.VideoCapture", return_value=_make_mock_cap(frames)):
+            out_frames, meta = extract_representative_frames(
+                "/fake/path.mp4",
+                max_frames=25,
+                strategy=STRATEGY_OPTIMIZED,
+                blur_threshold=50.0,
+                hash_threshold=64,
+            )
+        # All accepted frames should be sharp (high Laplacian variance)
+        for f in out_frames:
+>           assert _blur_metric(f) >= 50.0
+E           assert 3.1465901041666666 >= 50.0
+E            +  where 3.1465901041666666 = _blur_metric(array([[[118, 129, 120],\n        [120, 127, 120],\n        [119, 128, 120],\n        ...,\n        [130, 124, 121],\n     ...      ...,\n        [127, 129, 130],\n        [128, 130, 131],\n        [129, 130, 130]]], shape=(60, 80, 3), dtype=uint8))
+
+backend/tests/test_stage5_frame_selection.py:117: AssertionError
+___ test_push_success_to_db_calls_set_job_outputs_and_insert_pallet_results ____
+
+output_dir = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-15/test_push_success_to_db_calls_0')
+
+    def test_push_success_to_db_calls_set_job_outputs_and_insert_pallet_results(output_dir):
+        """_push_success_to_db calls set_job_outputs and insert_pallet_results when report has pallets."""
+        report_path = output_dir / "hybrid_report.json"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_data = {
+            "frames_selected": 10,
+            "prompt_version": "global_min_v1",
+            "metrics": {"total_calls": 2, "fallback_attempts": 1},
+            "pallets": [
+                {"pallet_id": "P1", "internal_code": "X", "quantity": 5, "source": "label", "confidence": 0.9, "fallback_used": False, "estimated_visible_boxes": None},
+            ],
+        }
+        report_path.write_text(json.dumps(report_data), encoding="utf-8")
+    
+        mock_jobs = MagicMock()
+        mock_pallet = MagicMock()
+        mock_events = MagicMock()
+        with patch("src.jobs.worker._db_repos") as m_repos:
+            m_repos.return_value = (mock_jobs, mock_pallet, mock_events)
+            _push_success_to_db("job_xyz", report_path, None, str(output_dir))
+    
+        mock_jobs.set_job_outputs.assert_called_once()
+        call_kw = mock_jobs.set_job_outputs.call_args[1]
+        assert call_kw["frames_count_sent"] == 10
+        assert call_kw["gemini_calls"] == 2
+        assert call_kw["prompt_version"] == "global_min_v1"
+>       mock_pallet.insert_pallet_results.assert_called_once_with("job_xyz", report_data["pallets"])
+
+backend/tests/test_stage8_db.py:81: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='mock.insert_pallet_results' id='4836511424'>
+args = ('job_xyz', [{'confidence': 0.9, 'estimated_visible_boxes': None, 'fallback_used': False, 'internal_code': 'X', ...}])
+kwargs = {}
+msg = "Expected 'insert_pallet_results' to be called once. Called 0 times."
+
+    def assert_called_once_with(self, /, *args, **kwargs):
+        """assert that the mock was called exactly once and that that call was
+        with the specified arguments."""
+        if not self.call_count == 1:
+            msg = ("Expected '%s' to be called once. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'insert_pallet_results' to be called once. Called 0 times.
+
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:990: AssertionError
+_____ test_insert_pallet_results_quantity_object_final_quantity_preferred ______
+
+    def test_insert_pallet_results_quantity_object_final_quantity_preferred():
+        """Object: quantity_to_store = final_quantity if not None else quantity; raw_estimated_visible_boxes from estimated_visible_boxes."""
+        mock_client = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = mock_cursor
+        mock_cm.__exit__.return_value = None
+        mock_client.cursor.return_value = mock_cm
+        repo = PalletResultsRepository(mock_client)
+        P = SimpleNamespace
+        pallets = [
+            P(pallet_id="P1", internal_code="X", final_quantity=12, quantity=5, source="label", confidence=0.9, fallback_used=False, estimated_visible_boxes=10),
+        ]
+        repo.insert_pallet_results("job_1", pallets)
+        mock_cursor.execute.assert_called_once()
+        args = mock_cursor.execute.call_args[0][1]
+        assert args[3] == 12  # quantity_to_store
+>       assert args[8] == 10  # raw_estimated_visible_boxes
+        ^^^^^^^^^^^^^^^^^^^^
+E       assert None == 10
+
+backend/tests/test_stage8_db.py:158: AssertionError
+=============================== warnings summary ===============================
+backend/src/api/server.py:190
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/server.py:190: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4599
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/.venv/lib/python3.13/site-packages/fastapi/applications.py:4599: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:101: DeprecationWarning: deprecated
+    assert resp.sku == "ITEM-A"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:102: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 10
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:103: DeprecationWarning: deprecated
+    assert resp.qty == 10
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:104: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:105: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:108: DeprecationWarning: deprecated
+    assert resp.has_evidence is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:109: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_has_evidence_false_when_no_primary_evidence
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:127: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:150: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename == "photo.jpg"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:151: DeprecationWarning: deprecated
+    assert resp.source_image_id == "img-uuid"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:352: DeprecationWarning: deprecated
+    assert resp.sku is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:353: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:354: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:355: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:356: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:357: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:358: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:359: DeprecationWarning: deprecated
+    assert resp.source_image_id is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_omits_legacy_snapshot_when_include_technical_false
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:376: DeprecationWarning: deprecated
+    assert resp.detected_summary_json is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:437: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:438: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:439: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:464: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:465: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:466: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:467: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:491: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:492: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:493: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_corrected_quantity_when_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:526: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == 7
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_corrected_quantity_none_when_not_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:559: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:595: DeprecationWarning: deprecated
+    assert resp.qty == 5
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:596: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:597: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:598: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:631: DeprecationWarning: deprecated
+    assert resp.qty == 3
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:632: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:633: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:634: DeprecationWarning: deprecated
+    assert resp.qtyResolved is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:667: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:668: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:669: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:670: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:692: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:693: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:694: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:695: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:717: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:718: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:751: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:752: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:753: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is not None
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:754: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:787: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+backend/tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:788: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:824: DeprecationWarning: deprecated
+    assert resp.qty == 4
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:825: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:827: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:830: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 4
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:852: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:853: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:854: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+backend/tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:855: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_product_block_primary_sku_and_identity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:51: DeprecationWarning: deprecated
+    assert r.sku == r.product.sku
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:173: DeprecationWarning: deprecated
+    assert r.qty == 2
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:177: DeprecationWarning: deprecated
+    assert r.qtySource == r.quantity.source
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:206: DeprecationWarning: deprecated
+    assert r.source_image_id == r.traceability.source_image_id
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:207: DeprecationWarning: deprecated
+    assert r.traceability_status == r.traceability.status
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:208: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == r.traceability.primary_evidence_id
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:268: DeprecationWarning: deprecated
+    assert r.sku == "Z"
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:270: DeprecationWarning: deprecated
+    assert r.detected_quantity == 5
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:272: DeprecationWarning: deprecated
+    assert r.qtySource == "detected"
+
+backend/tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:274: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == "pe"
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:341: DeprecationWarning: deprecated
+    assert resp.sku == view.product.public_sku
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:342: DeprecationWarning: deprecated
+    assert resp.qty == view.quantity.qty
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:343: DeprecationWarning: deprecated
+    assert resp.qtySource == view.quantity.qty_source
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:344: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == view.quantity.qty_inference_reason
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:345: DeprecationWarning: deprecated
+    assert resp.qtyResolved == view.quantity.qty_resolved
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:346: DeprecationWarning: deprecated
+    assert resp.detected_quantity == view.quantity.detected_quantity
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:347: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == view.quantity.corrected_quantity
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:348: DeprecationWarning: deprecated
+    assert resp.source_image_id == view.traceability.source_image_id
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:349: DeprecationWarning: deprecated
+    assert resp.traceability_status == view.traceability.traceability_status
+
+backend/tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:350: DeprecationWarning: deprecated
+    assert resp.has_evidence == view.review.has_evidence
+
+backend/tests/test_e2e_v2_2.py::test_e2e_photos_job_persists_normalized_and_generates_report
+backend/tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+backend/tests/test_stage_b_ports_adapters.py::test_job_repository_create_returns_persisted_record
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/jobs/job_store.py:89: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow().isoformat() + "Z"
+
+backend/tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+backend/tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/jobs/job_store.py:252: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    data["updated_at"] = datetime.utcnow().isoformat() + "Z"
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.13.12-final-0 _______________
+
+Name                                                                                               Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------------------------------------------------------------------
+backend/src/__init__.py                                                                                0      0   100%
+backend/src/api/__init__.py                                                                            0      0   100%
+backend/src/api/constants/__init__.py                                                                  0      0   100%
+backend/src/api/constants/error_wire.py                                                               49      0   100%
+backend/src/api/constants/route_paths.py                                                               6      0   100%
+backend/src/api/dependencies.py                                                                      225     15    93%   174, 238, 288, 418, 434, 446, 457, 469, 786, 1010-1016, 1036-1038
+backend/src/api/errors/__init__.py                                                                     4      0   100%
+backend/src/api/errors/error_mapping.py                                                               84      0   100%
+backend/src/api/errors/structured_api_http.py                                                         49      0   100%
+backend/src/api/photos_handler.py                                                                     63     10    84%   22, 29-31, 58, 67, 74, 79, 82, 98
+backend/src/api/routes/__init__.py                                                                     0      0   100%
+backend/src/api/routes/v3/__init__.py                                                                  2      0   100%
+backend/src/api/routes/v3/admin_ai_config.py                                                          19      0   100%
+backend/src/api/routes/v3/aisles.py                                                                  253     43    83%   155-156, 170, 178-181, 319, 357-358, 434-438, 462, 483, 538-545, 577-584, 622-626, 669-671, 698, 706-708, 746, 778, 803, 824, 843-857
+backend/src/api/routes/v3/analytics_api.py                                                            82     16    80%   50, 53, 55, 85, 145-159, 213-215, 246-248, 325
+backend/src/api/routes/v3/assets.py                                                                  149     36    76%   95, 99, 109, 115, 156-165, 183, 185, 192-194, 260-267, 281, 283, 285, 289-321, 352-356
+backend/src/api/routes/v3/capture_sessions.py                                                        216     51    76%   105-107, 125, 142-144, 167, 187-189, 210-212, 249, 282, 307, 336, 355-357, 378, 393-395, 422, 447-449, 463-468, 489-494, 517-522, 553-555, 607
+backend/src/api/routes/v3/inventories.py                                                             146     48    67%   94-119, 224, 271-289, 298-302, 315-328, 340-356, 369-370, 380-390
+backend/src/api/routes/v3/positions.py                                                                42      2    95%   131, 209
+backend/src/api/routes/v3/review_queue.py                                                             28      0   100%
+backend/src/api/routes/v3/reviews.py                                                                  38      2    95%   79-80
+backend/src/api/routes/v3/router.py                                                                   11      0   100%
+backend/src/api/routes/v3/shared.py                                                                  235     34    86%   85, 89-91, 95, 149, 152, 156-157, 161, 164, 175-176, 200-206, 284, 320, 331-339, 355-373, 391-398, 416-423, 441-448, 741, 776
+backend/src/api/schema_guard.py                                                                       12      0   100%
+backend/src/api/schemas/__init__.py                                                                    0      0   100%
+backend/src/api/schemas/admin_ai_config_schemas.py                                                    71      0   100%
+backend/src/api/schemas/aisle_schemas.py                                                              43      0   100%
+backend/src/api/schemas/analytics_schemas.py                                                          92      0   100%
+backend/src/api/schemas/asset_schemas.py                                                              32      2    94%   76, 79
+backend/src/api/schemas/benchmark_schemas.py                                                         152      0   100%
+backend/src/api/schemas/capture_schemas.py                                                           117      1    99%   194
+backend/src/api/schemas/inventory_schemas.py                                                          49      0   100%
+backend/src/api/schemas/listing_schemas.py                                                            18      0   100%
+backend/src/api/schemas/merge_schemas.py                                                              24      0   100%
+backend/src/api/schemas/position_schemas.py                                                          134      0   100%
+backend/src/api/schemas/processing_schemas.py                                                        101      0   100%
+backend/src/api/schemas/reference_usage_schemas.py                                                     9      0   100%
+backend/src/api/schemas/requests.py                                                                   11     11     0%   3-20
+backend/src/api/schemas/responses.py                                                                  66      0   100%
+backend/src/api/schemas/review_queue_schemas.py                                                       19      0   100%
+backend/src/api/server.py                                                                            115     46    60%   51, 79, 142-145, 179, 183-187, 193-262
+backend/src/api/services/__init__.py                                                                   0      0   100%
+backend/src/api/services/v3_stored_artifact_access.py                                                298     81    73%   79, 91, 101-102, 127, 137-138, 161, 175, 183-188, 214, 240-253, 347, 362, 397-406, 431, 475-483, 490, 511-520, 558, 567-577, 614-623, 665-666, 689-727, 745, 762-791
+backend/src/app.py                                                                                    80     41    49%   63-65, 69-119, 123
+backend/src/application/__init__.py                                                                    0      0   100%
+backend/src/application/constants/review_quality.py                                                    1      0   100%
+backend/src/application/dto/analytics_dto.py                                                         100      0   100%
+backend/src/application/dto/uploaded_file.py                                                          10      0   100%
+backend/src/application/errors.py                                                                     57      0   100%
+backend/src/application/mappers/inventory_export_rows.py                                              67      3    96%   38, 57, 97
+backend/src/application/mappers/position_canonical_view.py                                           232     17    93%   49-50, 57, 93, 95, 97, 127-128, 170-173, 177-180, 310
+backend/src/application/ports/__init__.py                                                              5      0   100%
+backend/src/application/ports/analytics_repository.py                                                  5      0   100%
+backend/src/application/ports/capture_repositories.py                                                 52      0   100%
+backend/src/application/ports/capture_staging_time.py                                                 14      0   100%
+backend/src/application/ports/clock.py                                                                 5      0   100%
+backend/src/application/ports/contracts.py                                                           111      0   100%
+backend/src/application/ports/repositories.py                                                         84      7    92%   162-167, 223
+backend/src/application/ports/rollup_contracts.py                                                      8      0   100%
+backend/src/application/ports/services.py                                                             18      0   100%
+backend/src/application/services/__init__.py                                                           3      0   100%
+backend/src/application/services/admin_ai_config_inspection.py                                       100      6    94%   125-128, 214-215
+backend/src/application/services/aisle_analysis_context_builder.py                                    14      0   100%
+backend/src/application/services/aisle_inventory_scope.py                                             17      0   100%
+backend/src/application/services/aisle_job_launch_service.py                                          51      0   100%
+backend/src/application/services/aisle_review_lifecycle_sync.py                                       33      5    85%   38-43, 51-53
+backend/src/application/services/aisle_source_asset_materializer.py                                   79      8    90%   36, 39, 50, 52, 56, 124-126
+backend/src/application/services/analytics_aggregation_core.py                                       256     44    83%   97, 101, 114, 116, 129, 174-186, 213, 292, 336, 402, 404, 406, 408, 410, 414, 432, 434, 436, 439-442, 456, 460-461, 465, 468, 472-484
+backend/src/application/services/analytics_query_service.py                                           29      6    79%   40, 43, 46, 49, 52, 57
+backend/src/application/services/capture_assignment_preview.py                                        52      3    94%   35, 43, 77
+backend/src/application/services/capture_flow_observability.py                                        83      0   100%
+backend/src/application/services/capture_group_item_integrity.py                                      19      2    89%   23, 38
+backend/src/application/services/capture_group_materialization_state.py                               12      2    83%   21, 25
+backend/src/application/services/capture_staging_time_metadata.py                                     62     10    84%   35, 41, 45, 50-51, 59-60, 62, 72-73
+backend/src/application/services/csv_inventory_exporter.py                                            24      1    96%   88
+backend/src/application/services/display_primary_product.py                                            7      0   100%
+backend/src/application/services/execution_log_enrichment.py                                         174     23    87%   35-41, 48, 52-53, 57, 61-63, 68, 108, 111, 142, 158, 189, 317, 324-325
+backend/src/application/services/final_count_builder.py                                               37      1    97%   26
+backend/src/application/services/inventory_processing_mode.py                                          7      0   100%
+backend/src/application/services/inventory_status_reconciler.py                                       32      1    97%   53
+backend/src/application/services/inventory_visual_reference_resolver.py                               15      0   100%
+backend/src/application/services/job_engine_params.py                                                 15      1    93%   26
+backend/src/application/services/job_stale_reconciler.py                                              30      0   100%
+backend/src/application/services/label_normalization.py                                               40      0   100%
+backend/src/application/services/operational_execution_config_resolver.py                             16      1    94%   32
+backend/src/application/services/position_sku_consolidation.py                                        60      3    95%   24-25, 34
+backend/src/application/services/position_traceability.py                                             57     24    58%   25-30, 58, 61, 64, 69-90
+backend/src/application/services/process_aisle_execution_resolution.py                                25      0   100%
+backend/src/application/services/process_aisle_job_for_aisle.py                                       13      0   100%
+backend/src/application/services/processing_experiment_catalog.py                                     44      6    86%   21, 24-30, 43, 58
+backend/src/application/services/processing_provider_resolution.py                                    36      2    94%   75, 85
+backend/src/application/services/production_inventory_processing.py                                   29      2    93%   45, 48
+backend/src/application/services/result_context_resolver.py                                           31      0   100%
+backend/src/application/use_cases/__init__.py                                                          3      0   100%
+backend/src/application/use_cases/assign_capture_session_group_to_existing_aisle.py                   44      1    98%   70
+backend/src/application/use_cases/backfill_inventory_statuses.py                                      20      0   100%
+backend/src/application/use_cases/backfill_legacy_aisles.py                                           82      8    90%   89, 161-168
+backend/src/application/use_cases/benchmark_compare_support.py                                       152     21    86%   38-46, 54-57, 142, 193-207, 216, 248, 289
+backend/src/application/use_cases/cancel_aisle_job.py                                                 42      0   100%
+backend/src/application/use_cases/cancel_capture_session.py                                           40      8    80%   33, 35, 37, 39, 47, 50, 53-54
+backend/src/application/use_cases/capture_session_group_assignment_guard.py                           11      2    82%   26, 30
+backend/src/application/use_cases/close_capture_session.py                                            44     10    77%   51, 55, 57, 62, 65, 67-70, 72
+backend/src/application/use_cases/compare_aisle_runs.py                                               62      0   100%
+backend/src/application/use_cases/compare_many_aisle_runs.py                                         129      4    97%   120, 123, 132, 165
+backend/src/application/use_cases/compute_capture_session_assignment_preview.py                       41      2    95%   51, 72
+backend/src/application/use_cases/compute_capture_session_groups.py                                   90      6    93%   73, 117, 155, 161, 170-171
+backend/src/application/use_cases/compute_materialized_capture_session_group_preview.py              159     14    91%   55-56, 75-78, 198, 226, 231, 279, 290, 316-326, 342
+backend/src/application/use_cases/confirm_position.py                                                 31      0   100%
+backend/src/application/use_cases/create_aisle.py                                                     31      0   100%
+backend/src/application/use_cases/create_aisle_and_assign_capture_session_group.py                    39      3    92%   55, 62, 65
+backend/src/application/use_cases/create_capture_session.py                                           28      0   100%
+backend/src/application/use_cases/create_inventory.py                                                 35      0   100%
+backend/src/application/use_cases/delete_aisle_source_asset.py                                        45      3    93%   78, 85-86
+backend/src/application/use_cases/delete_position.py                                                  33      1    97%   62
+backend/src/application/use_cases/export_aisle_benchmark.py                                           69      7    90%   89, 99, 101, 150-167
+backend/src/application/use_cases/export_inventory_results.py                                         75      2    97%   170, 173
+backend/src/application/use_cases/get_aisle_merge_results.py                                          32      1    97%   49
+backend/src/application/use_cases/get_aisle_processing_status.py                                      24      0   100%
+backend/src/application/use_cases/get_capture_session_detail.py                                       24      1    96%   34
+backend/src/application/use_cases/get_capture_session_groups.py                                       13      1    92%   28
+backend/src/application/use_cases/get_inventory.py                                                    12      0   100%
+backend/src/application/use_cases/get_inventory_metrics.py                                            14      0   100%
+backend/src/application/use_cases/get_position_detail.py                                              74      0   100%
+backend/src/application/use_cases/list_aisle_assets.py                                                17      1    94%   40
+backend/src/application/use_cases/list_aisle_jobs.py                                                  28      1    96%   41
+backend/src/application/use_cases/list_aisle_positions.py                                            121      6    95%   79, 83, 85, 98-99, 130
+backend/src/application/use_cases/list_aisles_by_inventory.py                                         13      0   100%
+backend/src/application/use_cases/list_aisles_with_status.py                                          96      9    91%   76, 78-79, 81, 83, 85, 118-119, 122
+backend/src/application/use_cases/list_capture_sessions.py                                            28      1    96%   49
+backend/src/application/use_cases/list_inventories.py                                                  9      0   100%
+backend/src/application/use_cases/list_inventory_list_items.py                                        63      9    86%   34, 36, 38, 40-41, 43, 45, 88-89
+backend/src/application/use_cases/list_review_queue.py                                               134     33    75%   54-56, 60-61, 67-79, 88, 90, 92, 95-98, 101-103, 109, 116, 134, 136, 174
+backend/src/application/use_cases/manage_inventory_visual_references.py                               82     19    77%   46, 49, 58-59, 85, 92, 96, 125-127, 145-155, 160-161
+backend/src/application/use_cases/mark_position_image_mismatch.py                                     31      0   100%
+backend/src/application/use_cases/mark_position_unknown.py                                            31      0   100%
+backend/src/application/use_cases/materialize_capture_session.py                                     141     18    87%   106, 134, 144, 196, 198, 200-202, 210-211, 230, 236, 255-256, 260-261, 269-270
+backend/src/application/use_cases/materialize_capture_session_group.py                               184     12    93%   115, 120, 129, 187, 202-203, 353-361, 407, 420, 426
+backend/src/application/use_cases/persist_aisle_result.py                                             77      5    94%   74, 77, 166-168
+backend/src/application/use_cases/promote_aisle_operational_job.py                                    35      1    97%   59
+backend/src/application/use_cases/recompute_consolidated_counts.py                                    95      2    98%   140, 150
+backend/src/application/use_cases/resolve_aisle_job_for_inventory_read.py                             17      0   100%
+backend/src/application/use_cases/retry_aisle_job.py                                                  42      0   100%
+backend/src/application/use_cases/review_validation.py                                                63     10    84%   64, 69, 107-108, 116-119, 149, 151
+backend/src/application/use_cases/run_aisle_merge.py                                                  34      0   100%
+backend/src/application/use_cases/start_aisle_processing.py                                           59      0   100%
+backend/src/application/use_cases/update_capture_session_clock_offset.py                              38      2    95%   52, 65
+backend/src/application/use_cases/update_position_code.py                                             35     18    49%   54-101
+backend/src/application/use_cases/update_product_quantity.py                                          42      0   100%
+backend/src/application/use_cases/update_product_sku.py                                               51      2    96%   79-83
+backend/src/application/use_cases/upload_aisle_assets.py                                              48     11    77%   65, 94-113
+backend/src/application/use_cases/upload_capture_session_staging_items.py                            140     32    77%   89, 128, 135, 137, 152-161, 220-244, 261-306
+backend/src/application/use_cases/upload_inventory_visual_references.py                               97      5    95%   158-163, 200-201
+backend/src/application/utils/natural_sort.py                                                         16      0   100%
+backend/src/application/utils/review_queue_derived.py                                                 36      4    89%   63-65, 71
+backend/src/auth/__init__.py                                                                           0      0   100%
+backend/src/auth/config.py                                                                            13      0   100%
+backend/src/auth/dependencies.py                                                                      38      3    92%   43, 51, 77
+backend/src/auth/errors.py                                                                             9      0   100%
+backend/src/auth/routes.py                                                                            25      0   100%
+backend/src/auth/schemas.py                                                                           26      0   100%
+backend/src/auth/security.py                                                                          40      9    78%   37-39, 70, 72, 74, 78, 96, 110, 120
+backend/src/auth/service.py                                                                          108      8    93%   77, 105, 109, 169, 202, 209, 249, 252
+backend/src/backfill_inventory_status.py                                                              18     18     0%   11-41
+backend/src/backfill_legacy_aisles.py                                                                 46     46     0%   11-119
+backend/src/config.py                                                                                 47      1    98%   64
+backend/src/consolidate/__init__.py                                                                    0      0   100%
+backend/src/consolidate/consolidate.py                                                                81      9    89%   136, 149, 158, 179-180, 190, 204, 231, 244
+backend/src/consolidate/normalize.py                                                                  19      1    95%   37
+backend/src/database/__init__.py                                                                       3      0   100%
+backend/src/database/migrations/__init__.py                                                            2      0   100%
+backend/src/database/migrations/__main__.py                                                            4      4     0%   3-8
+backend/src/database/migrations/cli.py                                                                68     39    43%   25-36, 40-41, 45-46, 71-90, 94-114, 118-138, 156-162
+backend/src/database/migrations/service.py                                                           128     53    59%   69-80, 84-85, 109-125, 129-140, 144-157, 166-167, 199-202, 235-255, 268
+backend/src/database/repository.py                                                                   214     73    66%   28-29, 57, 63-66, 73-78, 148, 156, 165-176, 204-213, 251-262, 296, 301, 357, 390-431, 449, 496-525, 539-547, 553-575
+backend/src/database/sqlserver.py                                                                     39     15    62%   12-13, 26, 32, 41-43, 46-49, 54-57
+backend/src/decision/__init__.py                                                                       2      0   100%
+backend/src/decision/count_status.py                                                                  46      2    96%   78-79
+backend/src/decision/entity_order.py                                                                   4      0   100%
+backend/src/decision/pallet_id.py                                                                     34      0   100%
+backend/src/decision/processing_mode.py                                                                6      0   100%
+backend/src/decision/quality_score.py                                                                 14      0   100%
+backend/src/detection/__init__.py                                                                      2      2     0%   9-11
+backend/src/detection/heuristic_detector.py                                                           79     79     0%   8-135
+backend/src/detection/pallet_detector.py                                                              20     20     0%   8-65
+backend/src/domain/__init__.py                                                                        11      0   100%
+backend/src/domain/aisle/__init__.py                                                                   2      0   100%
+backend/src/domain/aisle/entities.py                                                                  59      3    95%   52, 74-75
+backend/src/domain/assets/__init__.py                                                                  2      0   100%
+backend/src/domain/assets/entities.py                                                                 25      0   100%
+backend/src/domain/capture/__init__.py                                                                 2      0   100%
+backend/src/domain/capture/entities.py                                                                80      0   100%
+backend/src/domain/entity.py                                                                          31      0   100%
+backend/src/domain/evidence/__init__.py                                                                2      0   100%
+backend/src/domain/evidence/entities.py                                                               30      0   100%
+backend/src/domain/inventory/__init__.py                                                               3      0   100%
+backend/src/domain/inventory/derive_status_from_aisles.py                                             19      1    95%   45
+backend/src/domain/inventory/entities.py                                                              37      0   100%
+backend/src/domain/inventory/visual_reference.py                                                      34      0   100%
+backend/src/domain/jobs/__init__.py                                                                    2      0   100%
+backend/src/domain/jobs/entities.py                                                                   43      0   100%
+backend/src/domain/labels/__init__.py                                                                  3      0   100%
+backend/src/domain/labels/canonicalization.py                                                         14      0   100%
+backend/src/domain/labels/entities.py                                                                 55      0   100%
+backend/src/domain/labels/merge.py                                                                    62      5    92%   61, 64, 90, 107, 143
+backend/src/domain/pallet.py                                                                          14      0   100%
+backend/src/domain/positions/__init__.py                                                               2      0   100%
+backend/src/domain/positions/entities.py                                                              33      0   100%
+backend/src/domain/products/__init__.py                                                                2      0   100%
+backend/src/domain/products/entities.py                                                               19      0   100%
+backend/src/domain/quantity/__init__.py                                                                0      0   100%
+backend/src/domain/quantity/resolution.py                                                             69      4    94%   71, 73-74, 77
+backend/src/domain/reviews/__init__.py                                                                 2      0   100%
+backend/src/domain/reviews/entities.py                                                                24      0   100%
+backend/src/domain/reviews/sql_literals.py                                                            23      0   100%
+backend/src/domain/traceability.py                                                                    59      1    98%   140
+backend/src/env_settings/__init__.py                                                                   0      0   100%
+backend/src/env_settings/grouped_settings.py                                                         221     12    95%   251-254, 518-521, 643-646
+backend/src/env_settings/parsing.py                                                                   48     17    65%   17-18, 26-30, 40-41, 48, 52-53, 61-65
+backend/src/env_settings/pipeline_analysis_execution_strings.py                                       17      0   100%
+backend/src/env_settings/sqlserver_resolution.py                                                     140     29    79%   24-36, 51-56, 63-64, 70, 95-98, 101, 128, 267, 285
+backend/src/evidence/__init__.py                                                                       4      0   100%
+backend/src/evidence/evidence_pack.py                                                                169     13    92%   43, 56-61, 80-81, 102, 114, 223-227, 236, 277, 298
+backend/src/evidence/paths.py                                                                         10      0   100%
+backend/src/evidence/scoring.py                                                                       33      0   100%
+backend/src/exceptions/__init__.py                                                                     2      0   100%
+backend/src/exceptions/global_analysis_exceptions.py                                                   4      0   100%
+backend/src/fallback/__init__.py                                                                       3      0   100%
+backend/src/fallback/fallback_policy.py                                                               20      3    85%   19, 45, 47
+backend/src/fallback/visual_fallback_analyzer.py                                                      62     12    81%   36-37, 47, 58, 60, 65-66, 69-70, 72, 74, 100
+backend/src/frames/__init__.py                                                                         3      0   100%
+backend/src/frames/normalize.py                                                                      205     46    78%   40-53, 73, 87, 92-96, 148, 184, 233, 269, 279-283, 286, 292, 295, 298, 304, 315, 330, 333-335, 367, 380, 383, 399-401, 408, 418
+backend/src/frames/sources/__init__.py                                                                 5      0   100%
+backend/src/frames/sources/base.py                                                                     6      0   100%
+backend/src/frames/sources/factory.py                                                                  9      0   100%
+backend/src/frames/sources/photos_source.py                                                           48      6    88%   41-42, 44, 47, 54, 72
+backend/src/frames/sources/video_source.py                                                            34      3    91%   46, 67-68
+backend/src/frames/types.py                                                                            8      0   100%
+backend/src/infrastructure/__init__.py                                                                 0      0   100%
+backend/src/infrastructure/adapters/__init__.py                                                        2      0   100%
+backend/src/infrastructure/adapters/clock.py                                                           5      0   100%
+backend/src/infrastructure/pipeline/__init__.py                                                        2      0   100%
+backend/src/infrastructure/pipeline/input_artifact_resolver.py                                        98     23    77%   24, 28-29, 42, 77-88, 96, 99, 101, 118-123, 125, 130, 154, 163, 182-187, 189
+backend/src/infrastructure/pipeline/v3_execution_artifacts_service.py                                 16      0   100%
+backend/src/infrastructure/pipeline/v3_job_execution_state.py                                        157      3    98%   117, 173, 183
+backend/src/infrastructure/pipeline/v3_job_executor.py                                               202     37    82%   134, 151-152, 154-156, 164-165, 169-170, 187-188, 294-297, 311, 378, 393-396, 446-451, 520-530
+backend/src/infrastructure/pipeline/v3_process_aisle_pipeline_runner.py                               78      9    88%   117-119, 165-170
+backend/src/infrastructure/pipeline/v3_report_mapper.py                                              169     22    87%   59, 63-64, 106, 109-112, 115-118, 151-153, 156, 193, 285, 329-332
+backend/src/infrastructure/pipeline/worker_durable_artifact_publisher.py                              41      1    98%   172
+backend/src/infrastructure/repositories/__init__.py                                                    3      0   100%
+backend/src/infrastructure/repositories/memory_aisle_repository.py                                    20      0   100%
+backend/src/infrastructure/repositories/memory_analytics_repository.py                               211    126    40%   102, 105, 113, 123-125, 146, 195-274, 281-363, 366-432, 440, 478-489
+backend/src/infrastructure/repositories/memory_capture_session_confirm_idempotency_repository.py      15      0   100%
+backend/src/infrastructure/repositories/memory_capture_session_group_repository.py                    44      3    93%   48, 63, 66
+backend/src/infrastructure/repositories/memory_capture_session_item_repository.py                     50      6    88%   30, 53, 63, 65, 67, 75
+backend/src/infrastructure/repositories/memory_capture_session_repository.py                          64      6    91%   34, 50, 72, 91, 96, 98
+backend/src/infrastructure/repositories/memory_evidence_repository.py                                 13      1    92%   21
+backend/src/infrastructure/repositories/memory_final_count_repository.py                              24      1    96%   43
+backend/src/infrastructure/repositories/memory_inventory_repository.py                                13      0   100%
+backend/src/infrastructure/repositories/memory_inventory_visual_reference_repository.py               29     10    66%   20, 29-33, 41-43, 46
+backend/src/infrastructure/repositories/memory_job_repository.py                                      42      3    93%   56-57, 63
+backend/src/infrastructure/repositories/memory_normalized_label_repository.py                         22      0   100%
+backend/src/infrastructure/repositories/memory_position_repository.py                                 46      4    91%   45, 49, 55, 57
+backend/src/infrastructure/repositories/memory_product_record_repository.py                           18      0   100%
+backend/src/infrastructure/repositories/memory_raw_label_repository.py                                18      0   100%
+backend/src/infrastructure/repositories/memory_review_action_repository.py                            12      0   100%
+backend/src/infrastructure/repositories/memory_source_asset_repository.py                             43      3    93%   30, 35, 47
+backend/src/infrastructure/repositories/sql_aisle_repository.py                                       63     45    29%   22-26, 30-39, 43-52, 71-97, 117-129, 132-142, 145-157
+backend/src/infrastructure/repositories/sql_analytics_repository.py                                  333    291    13%   54-58, 63, 68, 77, 89-94, 103-108, 118-123, 180, 183-329, 349-381, 384-490, 497-592, 597-640, 645-672, 675-762, 765-827, 832-882
+backend/src/infrastructure/repositories/sql_capture_session_confirm_idempotency_repository.py         54     54     0%   3-102
+backend/src/infrastructure/repositories/sql_capture_session_group_repository.py                       88     88     0%   3-197
+backend/src/infrastructure/repositories/sql_capture_session_item_repository.py                        96     70    27%   25-29, 33-38, 42-47, 51-56, 61-62, 68-72, 99-175, 178-192, 195-211, 214-231, 234-251, 254-266, 271-281
+backend/src/infrastructure/repositories/sql_capture_session_repository.py                            102     79    23%   22-23, 29-33, 37-42, 46-56, 74-126, 129-139, 142-152, 155-167, 180-214
+backend/src/infrastructure/repositories/sql_evidence_repository.py                                    55     25    55%   22-26, 33-34, 41, 74, 77-109, 140-153, 156-168
+backend/src/infrastructure/repositories/sql_final_count_repository.py                                 63     40    37%   17-21, 26, 28, 33-46, 68-77, 151-176, 179-203
+backend/src/infrastructure/repositories/sql_inventory_repository.py                                   63     38    40%   32, 40-50, 58-80, 106-129, 145-184
+backend/src/infrastructure/repositories/sql_inventory_visual_reference_repository.py                  85     39    54%   28, 30, 56, 58, 60, 62, 64, 66, 69, 93-105, 108-112, 139-147, 174-187, 190-219, 222-223
+backend/src/infrastructure/repositories/sql_job_repository.py                                        124     83    33%   32, 36-45, 49-54, 58-64, 78-87, 124, 221-229, 232-245, 250-262, 265-268, 273-291, 299-328, 332-358
+backend/src/infrastructure/repositories/sql_normalized_label_repository.py                            76     50    34%   17-21, 25-28, 32-42, 46-57, 65, 69-72, 96-103, 174-189
+backend/src/infrastructure/repositories/sql_position_repository.py                                   118     70    41%   21-25, 29-35, 39-44, 51-62, 66-71, 93-124, 147-159, 184-186, 188-189, 191-192, 194-195, 209, 235-239, 253-268
+backend/src/infrastructure/repositories/sql_product_record_repository.py                              72     72     0%   5-173
+backend/src/infrastructure/repositories/sql_raw_label_repository.py                                   61     32    48%   17-21, 25-30, 34-44, 56-59, 86, 88-92
+backend/src/infrastructure/repositories/sql_review_action_repository.py                               62     62     0%   5-125
+backend/src/infrastructure/repositories/sql_source_asset_repository.py                                98     53    46%   26, 33-39, 45-49, 56, 94-125, 154-167, 170-172, 175-191, 194-205, 208-231
+backend/src/infrastructure/services/__init__.py                                                        2      0   100%
+backend/src/infrastructure/services/inventory_metrics_service.py                                      28      0   100%
+backend/src/infrastructure/services/on_demand_worker_launch_service.py                                60     10    83%   51-58, 65-77, 101-102, 106
+backend/src/infrastructure/storage/artifact_store.py                                                  24      0   100%
+backend/src/infrastructure/storage/inventory_visual_reference_paths.py                                11      0   100%
+backend/src/infrastructure/storage/s3_artifact_storage_adapter.py                                    134     38    72%   41, 43-52, 57, 61, 67, 73, 85, 97-98, 106-113, 118, 124-127, 142-144, 156, 163-165, 171, 179-186, 194-196, 212, 219-226
+backend/src/infrastructure/storage/sql_storage_fields.py                                              11      1    91%   35
+backend/src/infrastructure/storage/v3_artifact_storage_adapter.py                                     56      9    84%   28-29, 62, 75-77, 80-81, 84
+backend/src/io/__init__.py                                                                             0      0   100%
+backend/src/io/logging.py                                                                             26      4    85%   66-69
+backend/src/io/outputs.py                                                                             59      9    85%   31-51
+backend/src/io/sanitize.py                                                                            28      2    93%   95, 98
+backend/src/jobs/__init__.py                                                                           4      0   100%
+backend/src/jobs/adapters/__init__.py                                                                  3      0   100%
+backend/src/jobs/adapters/job_store_adapter.py                                                        19      2    89%   26, 46
+backend/src/jobs/adapters/memory_queue_adapter.py                                                      9      2    78%   22, 25
+backend/src/jobs/dev_reset_local_jobs.py                                                              84     84     0%   7-132
+backend/src/jobs/image_identity.py                                                                    55      4    93%   86-87, 105, 117
+backend/src/jobs/job_store.py                                                                        199     54    73%   60-62, 149, 154-155, 204-205, 214, 231, 234, 236-238, 246, 266-273, 288-293, 298-306, 311-326
+backend/src/jobs/models.py                                                                            32      0   100%
+backend/src/jobs/photos_paths.py                                                                      21      0   100%
+backend/src/jobs/ports/__init__.py                                                                     3      3     0%   3-6
+backend/src/jobs/ports/job_queue.py                                                                    5      5     0%   7-25
+backend/src/jobs/ports/job_repository.py                                                               7      7     0%   7-25
+backend/src/jobs/queue.py                                                                             11      5    55%   17, 22-25
+backend/src/jobs/run_worker.py                                                                        83      6    93%   22-24, 69, 71, 86, 173
+backend/src/jobs/run_worker_dev.py                                                                    18      1    94%   36
+backend/src/jobs/worker.py                                                                           148     40    73%   28-37, 87, 120, 132-140, 152, 159-160, 175, 198, 204-205, 212-213, 217-221, 223-224, 228-236, 247, 264-290, 305-306
+backend/src/jobs/worker_bootstrap.py                                                                  52      5    90%   77-78, 106, 125-126
+backend/src/legacy/__init__.py                                                                         2      0   100%
+backend/src/legacy/persistence_observability.py                                                       76      9    88%   40, 53, 55, 57, 69, 74, 103, 128, 153
+backend/src/llm/__init__.py                                                                            0      0   100%
+backend/src/llm/anthropic_sdk_adapter.py                                                             303     56    82%   63, 91-92, 95, 108, 253, 255, 266, 297-304, 313-318, 333, 338-339, 346, 351-365, 369-371, 382-400, 416-417, 436, 447-451, 453, 470, 478, 543, 571-573
+backend/src/llm/costing.py                                                                           267     44    84%   55, 58-70, 87-88, 130, 132, 188, 195, 199, 212-214, 216, 249, 255, 265, 274, 336, 411, 424, 455, 464-465, 486, 507-514
+backend/src/llm/deepseek_sdk_adapter.py                                                               30      0   100%
+backend/src/llm/errors.py                                                                              7      0   100%
+backend/src/llm/gemini_client.py                                                                      93     17    82%   91-101, 190-196, 239-245
+backend/src/llm/gemini_global_analyzer.py                                                             62     15    76%   30-31, 66, 77, 79-80, 92-95, 99-100, 115-117
+backend/src/llm/gemini_sdk_adapter.py                                                                 51     17    67%   43-47, 49, 94-120
+backend/src/llm/normalization/__init__.py                                                              2      0   100%
+backend/src/llm/normalization/entity_normalizer.py                                                   166     10    94%   115, 124, 171, 174-175, 214, 231, 239-240, 296
+backend/src/llm/openai_sdk_adapter.py                                                                205     56    73%   124, 129-130, 137, 146, 150-151, 163, 175-191, 225-227, 279-280, 283, 293, 304-331, 342-344, 358-371, 381-387
+backend/src/llm/prompt_composer/__init__.py                                                            3      0   100%
+backend/src/llm/prompt_composer/composer.py                                                           11      0   100%
+backend/src/llm/prompt_composer/enrichments.py                                                        16      0   100%
+backend/src/llm/prompt_composer/hybrid_assembly.py                                                    12      0   100%
+backend/src/llm/prompt_composer/hybrid_profiles.py                                                    25      0   100%
+backend/src/llm/prompt_composer/hybrid_resolution.py                                                  34      4    88%   42, 84, 87, 109
+backend/src/llm/prompt_composer/prompt_traceability.py                                               102      6    94%   191, 199, 211-212, 224, 254
+backend/src/llm/prompts.py                                                                             8      0   100%
+backend/src/llm/providers/__init__.py                                                                  7      4    43%   9-13
+backend/src/llm/providers/base.py                                                                      6      0   100%
+backend/src/llm/providers/factory.py                                                                  15      5    67%   34-40
+backend/src/llm/providers/gemini_provider.py                                                          12      1    92%   22
+backend/src/llm/providers/openai_provider.py                                                          15      2    87%   18, 23
+backend/src/llm/types.py                                                                              22      0   100%
+backend/src/models/__init__.py                                                                         0      0   100%
+backend/src/models/schemas.py                                                                        151      6    96%   131-138, 142-143
+backend/src/parsing/__init__.py                                                                        2      0   100%
+backend/src/parsing/global_analysis_parser.py                                                        111     27    76%   42, 46, 48, 50, 59, 62, 68, 71-72, 78, 81, 86-87, 93-94, 123-124, 132, 135-136, 159, 162, 167, 171, 176, 185-186
+backend/src/pipeline/__init__.py                                                                       6      4    33%   7-11
+backend/src/pipeline/adapters/__init__.py                                                              6      4    33%   7-11
+backend/src/pipeline/adapters/gemini/__init__.py                                                       2      2     0%   3-5
+backend/src/pipeline/adapters/hybrid_global_analysis_strategy.py                                     117      6    95%   181-186, 244, 344
+backend/src/pipeline/context/__init__.py                                                               2      0   100%
+backend/src/pipeline/context/run_context.py                                                           39      1    97%   101
+backend/src/pipeline/contracts/__init__.py                                                             3      0   100%
+backend/src/pipeline/contracts/analysis_context.py                                                    69     11    84%   52-59, 70-71, 113
+backend/src/pipeline/contracts/multi_provider_trace_types.py                                          23      0   100%
+backend/src/pipeline/contracts/pipeline_analysis_execution_settings.py                                 6      0   100%
+backend/src/pipeline/contracts/stage.py                                                                5      0   100%
+backend/src/pipeline/errors.py                                                                         4      0   100%
+backend/src/pipeline/execution_log.py                                                                166     29    83%   51-55, 64-65, 89-94, 135-145, 151, 192-193, 197, 201, 209, 242, 247-248, 266-267
+backend/src/pipeline/hybrid_inventory_pipeline.py                                                    190     34    82%   56, 63-64, 156-159, 190, 209-212, 224-236, 251-254, 272-275, 298-301, 327-328
+backend/src/pipeline/ports/__init__.py                                                                 2      0   100%
+backend/src/pipeline/ports/analysis_provider.py                                                       24      0   100%
+backend/src/pipeline/ports/llm_execution.py                                                            5      0   100%
+backend/src/pipeline/provider_keys.py                                                                  8      0   100%
+backend/src/pipeline/providers/__init__.py                                                             4      0   100%
+backend/src/pipeline/providers/definitions.py                                                         21      0   100%
+backend/src/pipeline/providers/registry.py                                                            28      0   100%
+backend/src/pipeline/run_metadata.py                                                                  76     10    87%   45-54
+backend/src/pipeline/services/__init__.py                                                              0      0   100%
+backend/src/pipeline/services/analysis_visual_reference_prep.py                                       47      4    91%   47-48, 51, 62
+backend/src/pipeline/services/hybrid_analysis_prompt.py                                               56      0   100%
+backend/src/pipeline/services/multi_provider_analysis_execution.py                                    76      7    91%   56, 78, 161, 186, 262-269
+backend/src/pipeline/services/pipeline_provider_resolver.py                                           21      0   100%
+backend/src/pipeline/services/provider_analysis_execution_config.py                                   45      0   100%
+backend/src/pipeline/services/provider_analysis_result_normalization.py                                8      0   100%
+backend/src/pipeline/services/provider_llm_request_metadata.py                                        15      0   100%
+backend/src/pipeline/services/provider_result_aggregator.py                                           23      1    96%   47
+backend/src/pipeline/stages/__init__.py                                                                7      0   100%
+backend/src/pipeline/stages/analysis_stage.py                                                         53     18    66%   64-77, 102-113
+backend/src/pipeline/stages/entity_resolution_stage.py                                                39      0   100%
+backend/src/pipeline/stages/evidence_stage.py                                                         26      2    92%   46-51
+backend/src/pipeline/stages/frame_acquisition_stage.py                                                81      0   100%
+backend/src/pipeline/stages/input_preparation_stage.py                                                38      0   100%
+backend/src/pipeline/stages/reporting_stage.py                                                        41      0   100%
+backend/src/preprocess/__init__.py                                                                     0      0   100%
+backend/src/preprocess/image_ops.py                                                                   73      8    89%   84, 128, 135, 142, 168, 178, 205, 244
+backend/src/preprocess/selectors.py                                                                   36      1    97%   111
+backend/src/preprocess/similarity.py                                                                  60     18    70%   37, 42, 62, 67, 78, 117-130, 153, 155, 159
+backend/src/reid/__init__.py                                                                          47      8    83%   101-108
+backend/src/reid/clip_embedder.py                                                                     48      8    83%   18, 23, 30, 69, 81, 85-87
+backend/src/reid/gating.py                                                                            72     32    56%   71-102
+backend/src/reid/merge.py                                                                             79      8    90%   26, 31, 45, 89, 123-124, 151, 156
+backend/src/reid/phash.py                                                                             46     11    76%   18, 20, 53, 65-66, 70-71, 73, 77-79
+backend/src/reid/signature.py                                                                         73      5    93%   62-64, 104, 114
+backend/src/reporting/__init__.py                                                                      3      0   100%
+backend/src/reporting/artifacts.py                                                                    32      0   100%
+backend/src/reporting/display_label.py                                                                 9      0   100%
+backend/src/reporting/hybrid_report.py                                                                46      7    85%   35-36, 40, 48, 117-119
+backend/src/review/__init__.py                                                                         3      0   100%
+backend/src/review/review_merge.py                                                                    52     10    81%   27-30, 36, 38, 50, 71, 74, 77
+backend/src/review/review_store.py                                                                    39      5    87%   25-27, 29, 51
+backend/src/roi/__init__.py                                                                            3      3     0%   9-12
+backend/src/roi/cropper.py                                                                            33     33     0%   5-69
+backend/src/roi/quality.py                                                                             8      8     0%   7-27
+backend/src/runtime/__init__.py                                                                        2      0   100%
+backend/src/runtime/app_container.py                                                                 303     94    69%   109, 112-114, 129-131, 134-139, 152-154, 174-176, 196-198, 218-220, 237, 240-244, 266-268, 288-290, 307, 310-312, 329, 332-334, 350-358, 375, 417-419, 436, 439-441, 458, 461-463, 479-504, 507-525, 528-548, 551-573, 576-598
+backend/src/runtime/v3_deps.py                                                                        50      8    84%   73, 94, 98, 102, 106, 110, 114, 118
+backend/src/storage/__init__.py                                                                        0      0   100%
+backend/src/storage/adapters/__init__.py                                                               2      2     0%   3-5
+backend/src/storage/adapters/filesystem_artifact_storage.py                                           31     31     0%   5-52
+backend/src/storage/ports/__init__.py                                                                  2      2     0%   3-5
+backend/src/storage/ports/artifact_storage.py                                                          8      8     0%   9-35
+backend/src/tracking/__init__.py                                                                       3      0   100%
+backend/src/tracking/track_builder.py                                                                 20     16    20%   24-59
+backend/src/tracking/tracker.py                                                                       58      4    93%   61, 64-65, 80
+backend/src/utils/__init__.py                                                                          2      0   100%
+backend/src/utils/validation.py                                                                       34      3    91%   42, 49, 61
+backend/src/validation/__init__.py                                                                     2      0   100%
+backend/src/validation/global_analysis_schema.py                                                     109     28    74%   42, 51, 53, 55, 57, 59, 61, 64-65, 85, 91, 129, 132, 140, 144, 154, 158, 166, 169, 179, 182-183, 194-197, 202, 204
+backend/src/video/__init__.py                                                                          0      0   100%
+backend/src/video/frames.py                                                                          165     25    85%   53, 112, 118, 122, 128, 132, 145, 197, 207, 230, 238, 242, 260-266, 268, 272, 312, 314, 318, 323, 326
+backend/src/video/ingest.py                                                                           46      7    85%   40, 53, 64, 67, 70, 116-117
+backend/src/view_selection/__init__.py                                                                 2      0   100%
+backend/src/view_selection/selector.py                                                               238     58    76%   39, 50, 52, 65-68, 74, 79-80, 99, 118, 122, 132, 135, 145-154, 191, 198, 204, 222, 254, 269-275, 283, 305-319, 323-327, 337-338, 348-374
+--------------------------------------------------------------------------------------------------------------------------------
+TOTAL                                                                                              21064   4053    81%
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ============================
+FAILED backend/tests/application/services/test_aisle_source_asset_materializer.py::test_materializer_persist_then_finalize_marks_aisle_and_reconciles
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_raises_when_aisle_not_found
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_raises_when_unsupported_content_type
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_raises_when_empty_files
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_rejects_video_extension_labeled_as_image
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_list_aisle_assets_returns_assets_for_aisle
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_list_aisle_assets_raises_when_aisle_not_found
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_list_aisle_assets_get_validated_aisle_matches_execute_rules
+FAILED backend/tests/infrastructure/repositories/test_sql_inventory_repository.py::test_sql_inventory_repository_save_and_get_by_id
+FAILED backend/tests/infrastructure/repositories/test_sql_inventory_repository.py::test_sql_inventory_repository_list_all_includes_saved
+FAILED backend/tests/infrastructure/repositories/test_sql_inventory_repository.py::test_sql_inventory_repository_get_by_id_missing_returns_none
+FAILED backend/tests/infrastructure/repositories/test_sql_inventory_repository.py::test_sql_inventory_repository_round_trips_processing_mode_and_primary_snapshot
+FAILED backend/tests/infrastructure/repositories/test_sql_job_repository.py::test_save_insert_placeholder_count_matches_parameters_for_starting_job
+FAILED backend/tests/infrastructure/repositories/test_sql_job_repository.py::test_save_update_placeholder_count_matches_parameters
+FAILED backend/tests/infrastructure/repositories/test_sql_normalized_label_repository.py::test_sql_normalized_label_repository_save_list_and_replace_for_scope
+FAILED backend/tests/infrastructure/repositories/test_sql_raw_label_repository.py::test_sql_raw_label_repository_save_and_list_for_scope
+FAILED backend/tests/integration/capture/test_capture_session_sql_repository.py::test_sql_capture_session_save_and_get_by_id
+FAILED backend/tests/integration/capture/test_capture_session_sql_repository.py::test_sql_capture_session_allows_nullable_aisle_id
+FAILED backend/tests/integration/capture/test_capture_session_sql_repository.py::test_sql_open_session_count_and_close
+FAILED backend/tests/integration/capture/test_capture_session_sql_repository.py::test_sql_second_open_session_same_aisle_raises
+FAILED backend/tests/integration/capture/test_capture_session_sql_repository.py::test_sql_duplicate_item_content_hash
+FAILED backend/tests/integration/capture/test_capture_session_sql_repository.py::test_sql_list_sessions_pagination
+FAILED backend/tests/test_schemas.py::test_minified_product_valid - pydantic_...
+FAILED backend/tests/test_schemas.py::test_minified_product_confidence_clamp
+FAILED backend/tests/test_schemas.py::test_minified_pallet_valid - pydantic_c...
+FAILED backend/tests/test_schemas.py::test_minified_frame_result_valid - pyda...
+FAILED backend/tests/test_schemas.py::test_minified_product_json_serialization
+FAILED backend/tests/test_stage3_validation.py::test_analyzer_valid_response_passes
+FAILED backend/tests/test_stage3_validation.py::test_analyzer_invalid_json_raises_parsing_error
+FAILED backend/tests/test_stage3_validation.py::test_analyzer_invalid_structure_raises_validation_error
+FAILED backend/tests/test_stage3_validation.py::test_analyzer_uses_provided_logger_for_all_logs
+FAILED backend/tests/test_stage5_frame_selection.py::test_dhash_different_frame_different_hash
+FAILED backend/tests/test_stage5_frame_selection.py::test_optimized_filters_blurred_frames
+FAILED backend/tests/test_stage8_db.py::test_push_success_to_db_calls_set_job_outputs_and_insert_pallet_results
+FAILED backend/tests/test_stage8_db.py::test_insert_pallet_results_quantity_object_final_quantity_preferred
+ERROR backend/tests/infrastructure/repositories/test_sql_aisle_repository.py::test_sql_aisle_repository_save_and_get_by_id
+ERROR backend/tests/infrastructure/repositories/test_sql_aisle_repository.py::test_sql_aisle_repository_list_by_inventory_includes_saved
+ERROR backend/tests/infrastructure/repositories/test_sql_aisle_repository.py::test_sql_aisle_repository_get_by_inventory_and_code
+ERROR backend/tests/infrastructure/repositories/test_sql_aisle_repository.py::test_sql_aisle_repository_get_by_id_missing_returns_none
+ERROR backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py::test_sql_save_and_list_by_inventory
+ERROR backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py::test_sql_list_by_inventory_empty_for_other_inventory
+ERROR backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py::test_sql_multiple_references_same_inventory
+39 failed, 1726 passed, 13 skipped, 114 warnings, 7 errors in 1607.40s (0:26:47)

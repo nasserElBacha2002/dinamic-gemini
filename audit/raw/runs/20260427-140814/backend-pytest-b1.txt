@@ -1,0 +1,1753 @@
+......................................F....FF........F..F........F...... [  4%]
+..F..................................................................... [  8%]
+..............................................................ssssssssss [ 12%]
+ss......................FF.............................................. [ 16%]
+F....................................................................... [ 20%]
+...F.................................................................... [ 24%]
+.........................................FFFFFFFFFFFF................... [ 28%]
+........................................................................ [ 32%]
+.......................FF.......FFFF.................................... [ 36%]
+.FFFFF.................................................................. [ 40%]
+..............FFFFFF
+=================================== FAILURES ===================================
+______________ test_get_aisle_status_returns_aisle_and_latest_job ______________
+
+    def test_get_aisle_status_returns_aisle_and_latest_job() -> None:
+        create_resp = client.post("/api/v3/inventories", json={"name": "For Status"})
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "S-01"},
+        )
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+    
+        response = client.get(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status",
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "aisle" in data
+        assert data["aisle"]["id"] == aisle_id
+        assert data["aisle"]["status"] == "created"
+        assert "latest_job" in data
+        assert data["latest_job"] is None
+    
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
+        response2 = client.get(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status",
+        )
+        assert response2.status_code == 200
+        data2 = response2.json()
+        assert data2["latest_job"] is not None
+>       assert data2["latest_job"]["status"] == "queued"
+E       AssertionError: assert 'starting' == 'queued'
+E         
+E         - queued
+E         + starting
+
+backend/tests/api/test_aisles_v3_wiring.py:439: AssertionError
+_____ test_cancel_queued_job_returns_202_and_list_and_status_show_canceled _____
+
+    def test_cancel_queued_job_returns_202_and_list_and_status_show_canceled() -> None:
+        """Phase 3 Block 1 Case 1: Cancel QUEUED job -> 202; list and status expose latest_job.status = canceled."""
+        create_resp = client.post("/api/v3/inventories", json={"name": "For Cancel"})
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "C-01"},
+        )
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        process_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+        )
+        assert process_resp.status_code == 202
+        job_id = process_resp.json()["job_id"]
+    
+        cancel_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
+        )
+        assert cancel_resp.status_code == 202
+        cancel_data = cancel_resp.json()
+        assert cancel_data["id"] == job_id
+>       assert cancel_data["status"] == "canceled"
+E       AssertionError: assert 'cancel_requested' == 'canceled'
+E         
+E         - canceled
+E         + cancel_requested
+
+backend/tests/api/test_aisles_v3_wiring.py:630: AssertionError
+_________________ test_cancel_already_canceled_job_returns_409 _________________
+
+    def test_cancel_already_canceled_job_returns_409() -> None:
+        """Phase 3 Block 1 Case 3: Cancel terminal (CANCELED) job -> 409."""
+        create_resp = client.post("/api/v3/inventories", json={"name": "For Cancel 409"})
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "C-02"},
+        )
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        process_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+        )
+        assert process_resp.status_code == 202
+        job_id = process_resp.json()["job_id"]
+    
+        client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
+        )
+        cancel_again = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id}/cancel",
+        )
+>       assert cancel_again.status_code == 409
+E       assert 202 == 409
+E        +  where 202 = <Response [202 Accepted]>.status_code
+
+backend/tests/api/test_aisles_v3_wiring.py:673: AssertionError
+_____________ test_post_process_after_terminal_job_creates_new_job _____________
+
+    def test_post_process_after_terminal_job_creates_new_job() -> None:
+        """Phase 3 Case 5: After terminal state (e.g. CANCELED), POST process creates a new job; list/status show new job."""
+        create_resp = client.post("/api/v3/inventories", json={"name": "For Re-process"})
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "RP-01"},
+        )
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        process1 = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+        )
+        assert process1.status_code == 202
+        job_id_1 = process1.json()["job_id"]
+        cancel_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/jobs/{job_id_1}/cancel",
+        )
+        assert cancel_resp.status_code == 202
+    
+        process2 = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+        )
+>       assert process2.status_code == 202
+E       assert 409 == 202
+E        +  where 409 = <Response [409 Conflict]>.status_code
+
+backend/tests/api/test_aisles_v3_wiring.py:1152: AssertionError
+______________ test_execution_log_returns_events_for_canceled_job ______________
+
+    def test_execution_log_returns_events_for_canceled_job() -> None:
+        now = datetime.now(timezone.utc)
+        inv_repo = MemoryInventoryRepository()
+        aisle_repo = MemoryAisleRepository()
+        job_repo = MemoryJobRepository()
+    
+        inv = Inventory("inv-cancel-log", "Canceled Log", InventoryStatus.DRAFT, now, now)
+        inv_repo.save(inv)
+        aisle = Aisle("aisle-cancel-log", "inv-cancel-log", "CL-01", AisleStatus.FAILED, now, now)
+        aisle_repo.save(aisle)
+        job = Job(
+            id="job-cancel-log",
+            target_type="aisle",
+            target_id="aisle-cancel-log",
+            job_type="process_aisle",
+            status=JobStatus.CANCELED,
+            payload_json={"aisle_id": "aisle-cancel-log"},
+            created_at=now,
+            updated_at=now,
+            finished_at=now,
+            error_message="Job canceled by operator request",
+        )
+        job_repo.save(job)
+    
+        base = Path(tempfile.mkdtemp(prefix="phase8_cancel_exec_log_"))
+        run_dir = base / "job-cancel-log" / "run"
+        run_dir.mkdir(parents=True)
+        (run_dir / "execution_log.jsonl").write_text(
+            '\n'.join(
+                [
+                    '{"ts":"2025-01-01T00:00:00+00:00","stage":"AnalysisStage","level":"info","message":"job.cancel_requested","payload":{"event":"job.cancel_requested"}}',
+                    '{"ts":"2025-01-01T00:00:01+00:00","stage":"Pipeline","level":"info","message":"job.canceled","payload":{"event":"job.canceled"}}',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        try:
+            from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+    
+            fake_settings = type(
+                "Settings",
+                (),
+                {"output_dir": str(base), "artifact_storage_legacy_local_read_enabled": True},
+            )()
+            store = V3ArtifactStorageAdapter(base / "artifact-root")
+            app.dependency_overrides[get_current_admin] = _fake_admin
+            app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+            app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+            app.dependency_overrides[get_job_repo] = lambda: job_repo
+            app.dependency_overrides[get_artifact_storage] = lambda: store
+            with patch("src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings):
+                c = TestClient(app)
+                response = c.get(
+                    "/api/v3/inventories/inv-cancel-log/aisles/aisle-cancel-log/jobs/job-cancel-log/execution-log"
+                )
+            assert response.status_code == 200
+            body = response.json()
+            messages = [event["message"] for event in body["events"]]
+            assert "job.cancel_requested" in messages
+            assert "job.canceled" in messages
+            assert body["inventory_id"] == "inv-cancel-log"
+            assert body["aisle_id"] == "aisle-cancel-log"
+            assert body["requested_job_id"] == "job-cancel-log"
+            for ev in body["events"]:
+                assert "is_requested_job_event" in ev
+                assert "event_job_id" in ev
+    
+            txt_resp = c.get(
+                "/api/v3/inventories/inv-cancel-log/aisles/aisle-cancel-log/jobs/job-cancel-log/execution-log.txt"
+            )
+            assert txt_resp.status_code == 200
+            assert "text/plain" in txt_resp.headers.get("content-type", "").lower()
+            cd = txt_resp.headers.get("content-disposition", "")
+            assert "attachment" in cd.lower()
+            assert "inventory_inv-cancel-log_aisle_aisle-cancel-log_job_job-cancel-log_execution_log.txt" in cd
+>           assert b"job.canceled" in txt_resp.content
+E           AssertionError: assert b'job.canceled' in b''
+E            +  where b'' = <Response [200 OK]>.content
+
+backend/tests/api/test_aisles_v3_wiring.py:1390: AssertionError
+______________ test_list_aisles_includes_latest_job_when_present _______________
+
+    def test_list_aisles_includes_latest_job_when_present() -> None:
+        create_resp = client.post("/api/v3/inventories", json={"name": "For List Job"})
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "LJ-01"},
+        )
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+    
+        list_resp = client.get(f"/api/v3/inventories/{inv_id}/aisles")
+        assert list_resp.status_code == 200
+        aisles = list_resp.json()["items"]
+        assert len(aisles) == 1
+        assert aisles[0].get("latest_job") is None
+    
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process")
+        list_resp2 = client.get(f"/api/v3/inventories/{inv_id}/aisles")
+        assert list_resp2.status_code == 200
+        aisles2 = list_resp2.json()["items"]
+        assert len(aisles2) == 1
+        assert aisles2[0]["latest_job"] is not None
+>       assert aisles2[0]["latest_job"]["status"] == "queued"
+E       AssertionError: assert 'starting' == 'queued'
+E         
+E         - queued
+E         + starting
+
+backend/tests/api/test_aisles_v3_wiring.py:1732: AssertionError
+_ test_positions_list_and_detail_degrade_only_enrichment_when_hybrid_report_missing _
+
+    def test_positions_list_and_detail_degrade_only_enrichment_when_hybrid_report_missing() -> None:
+        """Phase 7 Block 7.1: Missing hybrid_report.json does not corrupt DB-backed truth.
+    
+        When a position has entity_uid but no traceability/source-image fields in stored summary
+        and no matching hybrid_report.json exists on disk:
+        - GET list and GET detail return 200.
+        - DB-backed fields (status, needs_review, qty, corrected_quantity, qtySource, review truth)
+          remain coherent and authoritative.
+        - Only optional enrichment fields (source_image_id, traceability_status,
+          source_image_original_filename) degrade to null.
+        - No non-null enriched values are fabricated.
+        """
+        now = datetime.now(timezone.utc)
+        inv_repo = MemoryInventoryRepository()
+        aisle_repo = MemoryAisleRepository()
+        position_repo = MemoryPositionRepository()
+        product_repo = MemoryProductRecordRepository()
+        evidence_repo = MemoryEvidenceRepository()
+        review_repo = MemoryReviewActionRepository()
+    
+        inv = Inventory("inv-p7", "Phase7 Artifacts", InventoryStatus.DRAFT, now, now)
+        inv_repo.save(inv)
+        aisle = Aisle("aisle-p7", "inv-p7", "P7-01", AisleStatus.CREATED, now, now)
+        aisle_repo.save(aisle)
+        # Position has entity_uid so enrichment is attempted; no source_image_id / traceability_status
+        # / source_image_original_filename in stored summary so enrichment would fill them if report existed.
+        position = Position(
+            id="pos-p7",
+            aisle_id="aisle-p7",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=True,
+            primary_evidence_id=None,
+            created_at=now,
+            updated_at=now,
+            detected_summary_json={
+                "entity_uid": "job-no-hr_ent1",
+                "internal_code": "SKU-P7",
+            },
+        )
+        position_repo.save(position)
+        product = ProductRecord(
+            id="prod-p7",
+            position_id="pos-p7",
+            sku="SKU-P7",
+            description="Phase7 product",
+            detected_quantity=3,
+            corrected_quantity=None,
+            confidence=0.95,
+            created_at=now,
+            updated_at=now,
+            qty_source="detected",
+            qty_inference_reason=None,
+        )
+        product_repo.save(product)
+    
+        # output_dir with no job-no-hr/run/hybrid_report.json so enrichment finds nothing
+        empty_output = Path(tempfile.mkdtemp(prefix="phase7_empty_output_"))
+        try:
+            mock_settings = patch(
+                "src.api.routes.v3.shared.load_settings",
+                return_value=type("Settings", (), {"output_dir": empty_output})(),
+            )
+            app.dependency_overrides[get_current_admin] = _fake_admin
+            app.dependency_overrides[get_inventory_repo] = lambda: inv_repo
+            app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
+            app.dependency_overrides[get_position_repo] = lambda: position_repo
+            app.dependency_overrides[get_product_record_repo] = lambda: product_repo
+            app.dependency_overrides[get_evidence_repo] = lambda: evidence_repo
+            app.dependency_overrides[get_review_action_repo] = lambda: review_repo
+            try:
+>               mock_settings.start()
+
+backend/tests/api/test_aisles_v3_wiring.py:1944: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:1654: in start
+    result = self.__enter__()
+             ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:1497: in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <unittest.mock._patch object at 0x117018830>
+
+    def get_original(self):
+        target = self.getter()
+        name = self.attribute
+    
+        original = DEFAULT
+        local = False
+    
+        try:
+            original = target.__dict__[name]
+        except (AttributeError, KeyError):
+            original = getattr(target, name, DEFAULT)
+        else:
+            local = True
+    
+        if name in _builtins and isinstance(target, ModuleType):
+            self.create = True
+    
+        if not self.create and original is DEFAULT:
+>           raise AttributeError(
+                "%s does not have the attribute %r" % (target, name)
+            )
+E           AttributeError: <module 'src.api.routes.v3.shared' from '/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/shared.py'> does not have the attribute 'load_settings'
+
+/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:1467: AttributeError
+____ test_benchmark_compare_many_rejects_invalid_max_diff_rows_when_enabled ____
+
+    def test_benchmark_compare_many_rejects_invalid_max_diff_rows_when_enabled() -> None:
+        _seed()
+        try:
+            c = TestClient(app)
+            r = c.post(
+                "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+                json={
+                    "job_ids": ["j1", "j2"],
+                    "baseline_job_id": "j1",
+                    "include_diff_rows": True,
+                    "max_diff_rows": 251,
+                },
+            )
+            assert r.status_code == 422
+            body = r.json()
+>           assert body.get("code") == "BENCHMARK_COMPARE_MANY_INVALID_SELECTION"
+E           AssertionError: assert None == 'BENCHMARK_COMPARE_MANY_INVALID_SELECTION'
+E            +  where None = <built-in method get of dict object at 0x117202900>('code')
+E            +    where <built-in method get of dict object at 0x117202900> = {'detail': [{'ctx': {'le': 250}, 'input': 251, 'loc': ['body', 'max_diff_rows'], 'msg': 'Input should be less than or equal to 250', ...}]}.get
+
+backend/tests/api/test_phase6_benchmark_api.py:556: AssertionError
+__ test_benchmark_compare_many_ignores_max_diff_rows_when_diff_rows_disabled ___
+
+    def test_benchmark_compare_many_ignores_max_diff_rows_when_diff_rows_disabled() -> None:
+        _seed()
+        try:
+            c = TestClient(app)
+            r = c.post(
+                "/api/v3/inventories/inv-b6/aisles/aisle-b6/benchmark/compare-many",
+                json={
+                    "job_ids": ["j1", "j2"],
+                    "baseline_job_id": "j1",
+                    "include_diff_rows": False,
+                    "max_diff_rows": 251,
+                },
+            )
+>           assert r.status_code == 200
+E           assert 422 == 200
+E            +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+backend/tests/api/test_phase6_benchmark_api.py:575: AssertionError
+_ test_get_position_detail_group_member_resolves_to_representative_current_state _
+
+    def test_get_position_detail_group_member_resolves_to_representative_current_state() -> None:
+        repos = _seed_repos_duplicate_aisle()
+        app.dependency_overrides[get_current_admin] = _fake_admin
+        app.dependency_overrides[get_inventory_repo] = lambda: repos["inv_repo"]
+        app.dependency_overrides[get_aisle_repo] = lambda: repos["aisle_repo"]
+        app.dependency_overrides[get_position_repo] = lambda: repos["position_repo"]
+        app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
+        app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
+        app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
+        try:
+            client = TestClient(app)
+            list_resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions")
+            assert list_resp.status_code == 200
+            list_row = list_resp.json()["positions"][0]
+    
+            resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions/pos-e2e-2")
+>           assert resp.status_code == 200
+E           assert 404 == 200
+E            +  where 404 = <Response [404 Not Found]>.status_code
+
+backend/tests/api/test_recomputed_consolidation_e2e.py:236: AssertionError
+______ test_materializer_persist_then_finalize_marks_aisle_and_reconciles ______
+
+    def test_materializer_persist_then_finalize_marks_aisle_and_reconciles() -> None:
+        now = datetime(2025, 6, 1, 10, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        inv_repo = StubInventoryRepo(inv)
+        aisle_repo = StubAisleRepo(aisle)
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/services/test_aisle_source_asset_materializer.py:100: TypeError
+________ test_start_aisle_processing_creates_job_and_marks_aisle_queued ________
+
+    def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        job_repo = StubJobRepo()
+        queue = StubWorkerLaunchService()
+        clock = FixedClock(now)
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+    
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=_stub_asset_repo_with_one_photo(),
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=clock,
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, clock),
+        )
+
+backend/tests/application/use_cases/test_aisle_processing.py:217: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
+>       repo = StubAssetRepo()
+               ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:109: TypeError
+______ test_start_aisle_processing_persists_explicit_provider_and_prompt _______
+
+    def test_start_aisle_processing_persists_explicit_provider_and_prompt() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        job_repo = StubJobRepo()
+        queue = StubWorkerLaunchService()
+        clock = FixedClock(now)
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=_stub_asset_repo_with_one_photo(),
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=clock,
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, clock),
+        )
+
+backend/tests/application/use_cases/test_aisle_processing.py:262: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
+>       repo = StubAssetRepo()
+               ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:109: TypeError
+___________ test_start_aisle_processing_persists_job_before_enqueue ____________
+
+    def test_start_aisle_processing_persists_job_before_enqueue() -> None:
+        """Regression test for the v3 queue race condition.
+    
+        The worker dequeues job ids from an in-memory queue. To avoid dequeuing a job
+        before persistence, the use case must persist the job/aisle first, then enqueue.
+        """
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        job_repo = StubJobRepo()
+    
+        class AssertingLaunchService(WorkerLaunchService):
+            def __init__(self) -> None:
+                self.launched: list[str] = []
+    
+            def launch(self, job_id: str) -> str:
+                assert job_repo.get_by_id(job_id) is not None
+                self.launched.append(job_id)
+                return f"exec-{job_id}"
+    
+        queue = AssertingLaunchService()
+        clock = FixedClock(now)
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=_stub_asset_repo_with_one_photo(),
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=clock,
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, clock),
+        )
+
+backend/tests/application/use_cases/test_aisle_processing.py:317: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
+>       repo = StubAssetRepo()
+               ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:109: TypeError
+_________ test_start_aisle_processing_marks_failed_when_enqueue_fails __________
+
+    def test_start_aisle_processing_marks_failed_when_enqueue_fails() -> None:
+        """If enqueue(job_id) fails, do not leave QUEUED job/aisle behind."""
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        job_repo = StubJobRepo()
+    
+        class FailingQueue(WorkerLaunchService):
+            def __init__(self) -> None:
+                self.captured_job_id: str | None = None
+    
+            def launch(self, job_id: str) -> str:
+                self.captured_job_id = job_id
+                raise RuntimeError("in-memory queue failure")
+    
+        queue = FailingQueue()
+        clock = FixedClock(now)
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=_stub_asset_repo_with_one_photo(),
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=clock,
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, clock),
+        )
+
+backend/tests/application/use_cases/test_aisle_processing.py:356: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
+>       repo = StubAssetRepo()
+               ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:109: TypeError
+______ test_start_aisle_processing_persists_starting_before_worker_launch ______
+
+    def test_start_aisle_processing_persists_starting_before_worker_launch() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        job_repo = StubJobRepo()
+    
+        class InspectingLaunchService(WorkerLaunchService):
+            def launch(self, job_id: str) -> str:
+                persisted = job_repo.get_by_id(job_id)
+                assert persisted is not None
+                assert persisted.status == JobStatus.STARTING
+                assert persisted.current_stage == "worker_launch"
+                assert persisted.current_substep == "spawn_requested"
+                assert persisted.execution_id is None
+                return "exec-started"
+    
+        clock = FixedClock(now)
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=_stub_asset_repo_with_one_photo(),
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=InspectingLaunchService(),
+                clock=clock,
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, clock),
+        )
+
+backend/tests/application/use_cases/test_aisle_processing.py:411: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
+>       repo = StubAssetRepo()
+               ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:109: TypeError
+__ test_start_aisle_processing_reconciles_stale_active_job_before_new_launch ___
+
+    def test_start_aisle_processing_reconciles_stale_active_job_before_new_launch() -> None:
+        now = datetime(2025, 3, 6, 12, 15, 0, tzinfo=timezone.utc)
+        stale_time = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        job_repo = StubJobRepo()
+        job_repo.save(
+            Job(
+                id="stale-job",
+                target_type="aisle",
+                target_id="a1",
+                job_type="process_aisle",
+                status=JobStatus.RUNNING,
+                payload_json={"aisle_id": "a1"},
+                created_at=stale_time,
+                updated_at=stale_time,
+                last_heartbeat_at=stale_time,
+            )
+        )
+        queue = StubWorkerLaunchService()
+        clock = FixedClock(now)
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=_stub_asset_repo_with_one_photo(),
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=clock,
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, clock, stale_after_seconds=60),
+        )
+
+backend/tests/application/use_cases/test_aisle_processing.py:456: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
+>       repo = StubAssetRepo()
+               ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:109: TypeError
+_ test_start_aisle_processing_raises_inventory_not_found_when_resolve_execution_keys _
+
+    def test_start_aisle_processing_raises_inventory_not_found_when_resolve_execution_keys() -> None:
+        """Phase 9: HTTP path resolves inventory before aisle checks."""
+        inv_repo = StubInventoryRepo([])
+        aisle_repo = StubAisleRepo()
+        job_repo = StubJobRepo()
+        queue = StubWorkerLaunchService()
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=StubAssetRepo(),
+                       ^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=FixedClock(now),
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
+        )
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:489: TypeError
+___________ test_start_aisle_processing_raises_when_aisle_not_found ____________
+
+    def test_start_aisle_processing_raises_when_aisle_not_found() -> None:
+        aisle_repo = StubAisleRepo()
+        inv_repo = StubInventoryRepo([])
+        job_repo = StubJobRepo()
+        queue = StubWorkerLaunchService()
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
+    
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=StubAssetRepo(),
+                       ^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=FixedClock(now),
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
+        )
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:521: TypeError
+___ test_start_aisle_processing_raises_when_aisle_belongs_to_other_inventory ___
+
+    def test_start_aisle_processing_raises_when_aisle_belongs_to_other_inventory() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        inv_repo = StubInventoryRepo([])
+        job_repo = StubJobRepo()
+        queue = StubWorkerLaunchService()
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
+    
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=StubAssetRepo(),
+                       ^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=FixedClock(now),
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
+        )
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:550: TypeError
+__________ test_start_aisle_processing_rejects_when_no_source_assets ___________
+
+    def test_start_aisle_processing_rejects_when_no_source_assets() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        job_repo = StubJobRepo()
+        queue = StubWorkerLaunchService()
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=StubAssetRepo(),
+                       ^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=FixedClock(now),
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
+        )
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:578: TypeError
+__________ test_start_aisle_processing_raises_when_active_job_exists ___________
+
+    def test_start_aisle_processing_raises_when_active_job_exists() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.QUEUED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        job_repo = StubJobRepo()
+        job_repo.save(
+            Job(
+                id="existing",
+                target_type="aisle",
+                target_id="a1",
+                job_type="process_aisle",
+                status=JobStatus.QUEUED,
+                payload_json={},
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        queue = StubWorkerLaunchService()
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
+    
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=_stub_asset_repo_with_one_photo(),
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=FixedClock(now),
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
+        )
+
+backend/tests/application/use_cases/test_aisle_processing.py:618: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
+>       repo = StubAssetRepo()
+               ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:109: TypeError
+______ test_start_aisle_processing_allows_new_job_when_latest_is_terminal ______
+
+    def test_start_aisle_processing_allows_new_job_when_latest_is_terminal() -> None:
+        """Non-blocking terminal latest job must not trip _require_no_active_process_job_for_aisle."""
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        job_repo = StubJobRepo()
+        job_repo.save(
+            Job(
+                id="old-done",
+                target_type="aisle",
+                target_id="a1",
+                job_type="process_aisle",
+                status=JobStatus.FAILED,
+                payload_json={},
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        queue = StubWorkerLaunchService()
+        clock = FixedClock(now)
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+    
+        use_case = StartAisleProcessingUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+>           asset_repo=_stub_asset_repo_with_one_photo(),
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            job_repo=job_repo,
+            launch_service=make_launch_service(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                worker_launch_service=queue,
+                clock=clock,
+                reconciler=reconciler,
+            ),
+            stale_reconciler=make_stale_reconciler(job_repo, clock),
+        )
+
+backend/tests/application/use_cases/test_aisle_processing.py:661: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
+>       repo = StubAssetRepo()
+               ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_aisle_processing.py:109: TypeError
+____________ test_confirm_position_non_operational_job_is_editable _____________
+
+    def test_confirm_position_non_operational_job_is_editable() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
+        aisle = Aisle(
+            "aisle-1",
+            "inv-1",
+            "A01",
+            AisleStatus.CREATED,
+            now,
+            now,
+            operational_job_id="job-op",
+        )
+        position = Position(
+            id="pos-1",
+            aisle_id="aisle-1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=True,
+            primary_evidence_id=None,
+            created_at=now,
+            updated_at=now,
+            job_id="job-other",
+        )
+        inv_repo = StubInventoryRepo(inv)
+        aisle_repo = StubAisleRepo(aisle)
+        position_repo = StubPositionRepo(position)
+        review_repo = StubReviewRepo()
+        use_case = ConfirmPositionUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+            position_repo=position_repo,
+            review_repo=review_repo,
+            clock=FixedClock(now),
+            aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
+        )
+>       use_case.execute("inv-1", "aisle-1", "pos-1")
+E       TypeError: ConfirmPositionUseCase.execute() missing 1 required positional argument: 'job_id'
+
+backend/tests/application/use_cases/test_confirm_position.py:338: TypeError
+_____________ test_confirm_position_legacy_aisle_allows_scoped_row _____________
+
+    def test_confirm_position_legacy_aisle_allows_scoped_row() -> None:
+        """Legacy aisle (no operational_job_id): scoped rows are also editable."""
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
+        aisle = Aisle("aisle-1", "inv-1", "A01", AisleStatus.CREATED, now, now)
+        position = Position(
+            id="pos-1",
+            aisle_id="aisle-1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=True,
+            primary_evidence_id=None,
+            created_at=now,
+            updated_at=now,
+            job_id="job-x",
+        )
+        inv_repo = StubInventoryRepo(inv)
+        aisle_repo = StubAisleRepo(aisle)
+        position_repo = StubPositionRepo(position)
+        review_repo = StubReviewRepo()
+        use_case = ConfirmPositionUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+            position_repo=position_repo,
+            review_repo=review_repo,
+            clock=FixedClock(now),
+            aisle_review_sync=_aisle_review_sync(inv_repo, aisle_repo, position_repo, FixedClock(now)),
+        )
+>       use_case.execute("inv-1", "aisle-1", "pos-1")
+E       TypeError: ConfirmPositionUseCase.execute() missing 1 required positional argument: 'job_id'
+
+backend/tests/application/use_cases/test_confirm_position.py:372: TypeError
+________ test_delete_removes_asset_storage_and_reverts_aisle_when_last _________
+
+    def test_delete_removes_asset_storage_and_reverts_aisle_when_last() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.ASSETS_UPLOADED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_delete_aisle_source_asset.py:181: TypeError
+_____________________ test_delete_blocked_when_active_job ______________________
+
+    def test_delete_blocked_when_active_job() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.ASSETS_UPLOADED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_delete_aisle_source_asset.py:211: TypeError
+__________________ test_delete_raises_when_asset_wrong_aisle ___________________
+
+    def test_delete_raises_when_asset_wrong_aisle() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.ASSETS_UPLOADED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_delete_aisle_source_asset.py:250: TypeError
+______________________ test_delete_raises_aisle_not_found ______________________
+
+    def test_delete_raises_aisle_not_found() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle_repo = StubAisleRepo()
+        clock = cast(Clock, FixedClock(now))
+        reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+        use_case = DeleteAisleSourceAssetUseCase(
+            aisle_repo=aisle_repo,
+>           asset_repo=StubAssetRepo(),
+                       ^^^^^^^^^^^^^^^
+            job_repo=InMemoryJobRepo([]),
+            artifact_storage=StubArtifactStorage(),
+            clock=clock,
+            status_reconciler=reconciler,
+        )
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_delete_aisle_source_asset.py:276: TypeError
+_________ test_list_aisles_with_status_returns_aisles_and_latest_jobs __________
+
+    def test_list_aisles_with_status_returns_aisles_and_latest_jobs() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        a1 = Aisle("a1", "inv-1", "A-01", AisleStatus.CREATED, now, now)
+        a2 = Aisle("a2", "inv-1", "A-02", AisleStatus.CREATED, now, now)
+        j1 = Job(
+            "j1",
+            "aisle",
+            "a1",
+            "process_aisle",
+            JobStatus.RUNNING,
+            {},
+            now,
+            now,
+        )
+        inv_repo = StubInventoryRepo({"inv-1"})
+        aisle_repo = StubAisleRepo([a1, a2])
+        job_repo = StubJobRepo({"a1": j1})
+    
+        use_case = ListAislesWithStatusUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            position_repo=StubPositionRepo([]),
+>           source_asset_repo=StubSourceAssetRepo({}),
+                              ^^^^^^^^^^^^^^^^^^^^^^^
+            result_context_resolver=ResultContextResolver(job_repo, StubPositionRepo([])),
+        )
+E       TypeError: Can't instantiate abstract class StubSourceAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_list_aisles_with_status.py:221: TypeError
+______ test_list_aisles_with_status_rollups_positions_and_pending_review _______
+
+    def test_list_aisles_with_status_rollups_positions_and_pending_review() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        later = datetime(2025, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
+        a1 = Aisle("a1", "inv-1", "A-01", AisleStatus.CREATED, now, now)
+        p1 = Position(
+            "p1",
+            "a1",
+            PositionStatus.DETECTED,
+            0.9,
+            True,
+            None,
+            now,
+            later,
+        )
+        p2 = Position(
+            "p2",
+            "a1",
+            PositionStatus.DETECTED,
+            0.9,
+            False,
+            None,
+            now,
+            now,
+        )
+        inv_repo = StubInventoryRepo({"inv-1"})
+        aisle_repo = StubAisleRepo([a1])
+        job_repo = StubJobRepo({})
+        pos_repo = StubPositionRepo([p1, p2])
+        asset_roll = AisleAssetRollup(count=3, last_uploaded_at=later)
+>       src_repo = StubSourceAssetRepo({"a1": asset_roll})
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubSourceAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_list_aisles_with_status.py:266: TypeError
+___ test_list_aisles_with_status_last_activity_at_can_win_on_latest_job_only ___
+
+    def test_list_aisles_with_status_last_activity_at_can_win_on_latest_job_only() -> None:
+        """When aisle, positions, and asset rollup are older than the latest job, max must follow the job."""
+        t_old = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        t_job = datetime(2025, 6, 15, 9, 30, 0, tzinfo=timezone.utc)
+        a1 = Aisle("a1", "inv-1", "A-01", AisleStatus.PROCESSED, t_old, t_old)
+        p1 = Position(
+            "p1",
+            "a1",
+            PositionStatus.REVIEWED,
+            0.95,
+            False,
+            None,
+            t_old,
+            t_old,
+        )
+        j1 = Job(
+            "job-newest",
+            "aisle",
+            "a1",
+            "process_aisle",
+            JobStatus.SUCCEEDED,
+            {},
+            t_job,
+            t_job,
+        )
+        inv_repo = StubInventoryRepo({"inv-1"})
+        aisle_repo = StubAisleRepo([a1])
+        job_repo = StubJobRepo({"a1": j1})
+        pos_repo = StubPositionRepo([p1])
+>       src_repo = StubSourceAssetRepo(
+            {"a1": AisleAssetRollup(count=1, last_uploaded_at=t_old)}
+        )
+E       TypeError: Can't instantiate abstract class StubSourceAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_list_aisles_with_status.py:315: TypeError
+_____ test_list_aisles_positions_count_uses_operational_slice_not_all_runs _____
+
+    def test_list_aisles_positions_count_uses_operational_slice_not_all_runs() -> None:
+        """Multi-run aisles: rollups count only the operational job slice (resolver semantics)."""
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        later = datetime(2025, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
+        a1 = Aisle("a1", "inv-1", "A-01", AisleStatus.PROCESSED, now, now, operational_job_id="job-2")
+        j1 = Job("job-1", "aisle", "a1", "process_aisle", JobStatus.SUCCEEDED, {}, now, now)
+        j2 = Job("job-2", "aisle", "a1", "process_aisle", JobStatus.SUCCEEDED, {}, later, later)
+        job_repo = MemoryJobRepository()
+        job_repo.save(j1)
+        job_repo.save(j2)
+        pos_repo = MemoryPositionRepository()
+        for i in range(6):
+            pos_repo.save(
+                Position(
+                    f"p1-{i}",
+                    "a1",
+                    PositionStatus.DETECTED,
+                    0.9,
+                    True,
+                    None,
+                    now,
+                    now,
+                    job_id="job-1",
+                )
+            )
+        for i in range(6):
+            pos_repo.save(
+                Position(
+                    f"p2-{i}",
+                    "a1",
+                    PositionStatus.DETECTED,
+                    0.9,
+                    True,
+                    None,
+                    later,
+                    later,
+                    job_id="job-2",
+                )
+            )
+        inv_repo = StubInventoryRepo({"inv-1"})
+        aisle_repo = StubAisleRepo([a1])
+        use_case = ListAislesWithStatusUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            position_repo=pos_repo,
+>           source_asset_repo=StubSourceAssetRepo({}),
+                              ^^^^^^^^^^^^^^^^^^^^^^^
+            result_context_resolver=ResultContextResolver(job_repo, pos_repo),
+        )
+E       TypeError: Can't instantiate abstract class StubSourceAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_list_aisles_with_status.py:378: TypeError
+_________ test_list_aisles_with_status_raises_when_inventory_not_found _________
+
+    def test_list_aisles_with_status_raises_when_inventory_not_found() -> None:
+        inv_repo = StubInventoryRepo(set())
+        aisle_repo = StubAisleRepo([])
+        job_repo = StubJobRepo()
+        use_case = ListAislesWithStatusUseCase(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            position_repo=StubPositionRepo([]),
+>           source_asset_repo=StubSourceAssetRepo({}),
+                              ^^^^^^^^^^^^^^^^^^^^^^^
+            result_context_resolver=ResultContextResolver(job_repo, StubPositionRepo([])),
+        )
+E       TypeError: Can't instantiate abstract class StubSourceAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_list_aisles_with_status.py:399: TypeError
+___ test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded ____
+
+    def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:156: TypeError
+_____________ test_upload_aisle_assets_raises_when_aisle_not_found _____________
+
+    def test_upload_aisle_assets_raises_when_aisle_not_found() -> None:
+        aisle_repo = StubAisleRepo()
+        inv_repo = StubInventoryRepo([])
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:196: TypeError
+_______ test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure _______
+
+    def test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = FailingAssetRepo()
+                     ^^^^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class FailingAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:221: TypeError
+____ test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim _____
+
+    def test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
+        inv_repo = StubInventoryRepo([inv])
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+>       asset_repo = FailingAssetRepo()
+                     ^^^^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class FailingAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:246: TypeError
+____ test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory _____
+
+    def test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        inv_repo = StubInventoryRepo([])
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:270: TypeError
+________ test_upload_aisle_assets_raises_when_unsupported_content_type _________
+
+    def test_upload_aisle_assets_raises_when_unsupported_content_type() -> None:
+        now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+        aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+        aisle_repo = StubAisleRepo()
+        aisle_repo.save(aisle)
+        inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+>       asset_repo = StubAssetRepo()
+                     ^^^^^^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class StubAssetRepo without an implementation for abstract method 'get_by_capture_session_item_id'
+
+backend/tests/application/use_cases/test_upload_aisle_assets.py:293: TypeError
+=============================== warnings summary ===============================
+backend/src/api/server.py:190
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/server.py:190: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4599
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/.venv/lib/python3.13/site-packages/fastapi/applications.py:4599: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:101: DeprecationWarning: deprecated
+    assert resp.sku == "ITEM-A"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:102: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 10
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:103: DeprecationWarning: deprecated
+    assert resp.qty == 10
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:104: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:105: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:108: DeprecationWarning: deprecated
+    assert resp.has_evidence is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:109: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_has_evidence_false_when_no_primary_evidence
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:127: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:150: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename == "photo.jpg"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:151: DeprecationWarning: deprecated
+    assert resp.source_image_id == "img-uuid"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:352: DeprecationWarning: deprecated
+    assert resp.sku is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:353: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:354: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:355: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:356: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:357: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:358: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:359: DeprecationWarning: deprecated
+    assert resp.source_image_id is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_omits_legacy_snapshot_when_include_technical_false
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:376: DeprecationWarning: deprecated
+    assert resp.detected_summary_json is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:437: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:438: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:439: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:464: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:465: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:466: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:467: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:491: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:492: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:493: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_corrected_quantity_when_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:526: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == 7
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_corrected_quantity_none_when_not_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:559: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:595: DeprecationWarning: deprecated
+    assert resp.qty == 5
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:596: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:597: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:598: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:631: DeprecationWarning: deprecated
+    assert resp.qty == 3
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:632: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:633: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:634: DeprecationWarning: deprecated
+    assert resp.qtyResolved is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:667: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:668: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:669: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:670: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:692: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:693: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:694: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:695: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:717: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:718: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:751: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:752: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:753: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is not None
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:754: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:787: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:788: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:824: DeprecationWarning: deprecated
+    assert resp.qty == 4
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:825: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:827: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:830: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 4
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:852: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:853: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:854: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:855: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+tests/api/test_position_summary_sprint2_contract.py::test_product_block_primary_sku_and_identity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:51: DeprecationWarning: deprecated
+    assert r.sku == r.product.sku
+
+tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:173: DeprecationWarning: deprecated
+    assert r.qty == 2
+
+tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:177: DeprecationWarning: deprecated
+    assert r.qtySource == r.quantity.source
+
+tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:206: DeprecationWarning: deprecated
+    assert r.source_image_id == r.traceability.source_image_id
+
+tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:207: DeprecationWarning: deprecated
+    assert r.traceability_status == r.traceability.status
+
+tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:208: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == r.traceability.primary_evidence_id
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:268: DeprecationWarning: deprecated
+    assert r.sku == "Z"
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:270: DeprecationWarning: deprecated
+    assert r.detected_quantity == 5
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:272: DeprecationWarning: deprecated
+    assert r.qtySource == "detected"
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:274: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == "pe"
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:341: DeprecationWarning: deprecated
+    assert resp.sku == view.product.public_sku
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:342: DeprecationWarning: deprecated
+    assert resp.qty == view.quantity.qty
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:343: DeprecationWarning: deprecated
+    assert resp.qtySource == view.quantity.qty_source
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:344: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == view.quantity.qty_inference_reason
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:345: DeprecationWarning: deprecated
+    assert resp.qtyResolved == view.quantity.qty_resolved
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:346: DeprecationWarning: deprecated
+    assert resp.detected_quantity == view.quantity.detected_quantity
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:347: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == view.quantity.corrected_quantity
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:348: DeprecationWarning: deprecated
+    assert resp.source_image_id == view.traceability.source_image_id
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:349: DeprecationWarning: deprecated
+    assert resp.traceability_status == view.traceability.traceability_status
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:350: DeprecationWarning: deprecated
+    assert resp.has_evidence == view.review.has_evidence
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/api/test_aisles_v3_wiring.py::test_get_aisle_status_returns_aisle_and_latest_job
+FAILED backend/tests/api/test_aisles_v3_wiring.py::test_cancel_queued_job_returns_202_and_list_and_status_show_canceled
+FAILED backend/tests/api/test_aisles_v3_wiring.py::test_cancel_already_canceled_job_returns_409
+FAILED backend/tests/api/test_aisles_v3_wiring.py::test_post_process_after_terminal_job_creates_new_job
+FAILED backend/tests/api/test_aisles_v3_wiring.py::test_execution_log_returns_events_for_canceled_job
+FAILED backend/tests/api/test_aisles_v3_wiring.py::test_list_aisles_includes_latest_job_when_present
+FAILED backend/tests/api/test_aisles_v3_wiring.py::test_positions_list_and_detail_degrade_only_enrichment_when_hybrid_report_missing
+FAILED backend/tests/api/test_phase6_benchmark_api.py::test_benchmark_compare_many_rejects_invalid_max_diff_rows_when_enabled
+FAILED backend/tests/api/test_phase6_benchmark_api.py::test_benchmark_compare_many_ignores_max_diff_rows_when_diff_rows_disabled
+FAILED backend/tests/api/test_recomputed_consolidation_e2e.py::test_get_position_detail_group_member_resolves_to_representative_current_state
+FAILED backend/tests/application/services/test_aisle_source_asset_materializer.py::test_materializer_persist_then_finalize_marks_aisle_and_reconciles
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_creates_job_and_marks_aisle_queued
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_persists_explicit_provider_and_prompt
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_persists_job_before_enqueue
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_marks_failed_when_enqueue_fails
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_persists_starting_before_worker_launch
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_reconciles_stale_active_job_before_new_launch
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_raises_inventory_not_found_when_resolve_execution_keys
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_raises_when_aisle_not_found
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_raises_when_aisle_belongs_to_other_inventory
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_rejects_when_no_source_assets
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_raises_when_active_job_exists
+FAILED backend/tests/application/use_cases/test_aisle_processing.py::test_start_aisle_processing_allows_new_job_when_latest_is_terminal
+FAILED backend/tests/application/use_cases/test_confirm_position.py::test_confirm_position_non_operational_job_is_editable
+FAILED backend/tests/application/use_cases/test_confirm_position.py::test_confirm_position_legacy_aisle_allows_scoped_row
+FAILED backend/tests/application/use_cases/test_delete_aisle_source_asset.py::test_delete_removes_asset_storage_and_reverts_aisle_when_last
+FAILED backend/tests/application/use_cases/test_delete_aisle_source_asset.py::test_delete_blocked_when_active_job
+FAILED backend/tests/application/use_cases/test_delete_aisle_source_asset.py::test_delete_raises_when_asset_wrong_aisle
+FAILED backend/tests/application/use_cases/test_delete_aisle_source_asset.py::test_delete_raises_aisle_not_found
+FAILED backend/tests/application/use_cases/test_list_aisles_with_status.py::test_list_aisles_with_status_returns_aisles_and_latest_jobs
+FAILED backend/tests/application/use_cases/test_list_aisles_with_status.py::test_list_aisles_with_status_rollups_positions_and_pending_review
+FAILED backend/tests/application/use_cases/test_list_aisles_with_status.py::test_list_aisles_with_status_last_activity_at_can_win_on_latest_job_only
+FAILED backend/tests/application/use_cases/test_list_aisles_with_status.py::test_list_aisles_positions_count_uses_operational_slice_not_all_runs
+FAILED backend/tests/application/use_cases/test_list_aisles_with_status.py::test_list_aisles_with_status_raises_when_inventory_not_found
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_raises_when_aisle_not_found
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_rolls_back_uploaded_files_on_db_failure
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_rollback_uses_persisted_storage_key_verbatim
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory
+FAILED backend/tests/application/use_cases/test_upload_aisle_assets.py::test_upload_aisle_assets_raises_when_unsupported_content_type
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 40 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+40 failed, 688 passed, 12 skipped, 109 warnings in 1016.47s (0:16:56)

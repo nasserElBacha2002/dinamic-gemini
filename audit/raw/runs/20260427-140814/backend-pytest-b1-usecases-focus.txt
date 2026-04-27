@@ -1,0 +1,420 @@
+...................                                                      [100%]
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.13.12-final-0 _______________
+
+Name                                                                                               Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------------------------------------------------------------------
+backend/src/__init__.py                                                                                0      0   100%
+backend/src/api/__init__.py                                                                            0      0   100%
+backend/src/api/constants/__init__.py                                                                  0      0   100%
+backend/src/api/constants/error_wire.py                                                               49     49     0%   14-130
+backend/src/api/constants/route_paths.py                                                               6      6     0%   7-16
+backend/src/api/dependencies.py                                                                      225    225     0%   13-1062
+backend/src/api/errors/__init__.py                                                                     4      4     0%   3-8
+backend/src/api/errors/error_mapping.py                                                               84     84     0%   153-684
+backend/src/api/errors/structured_api_http.py                                                         49     49     0%   41-115
+backend/src/api/photos_handler.py                                                                     63     63     0%   8-110
+backend/src/api/routes/__init__.py                                                                     0      0   100%
+backend/src/api/routes/v3/__init__.py                                                                  2      2     0%   3-5
+backend/src/api/routes/v3/admin_ai_config.py                                                          19     19     0%   3-48
+backend/src/api/routes/v3/aisles.py                                                                  253    253     0%   3-858
+backend/src/api/routes/v3/analytics_api.py                                                            82     82     0%   3-325
+backend/src/api/routes/v3/assets.py                                                                  149    149     0%   3-356
+backend/src/api/routes/v3/capture_sessions.py                                                        216    216     0%   3-608
+backend/src/api/routes/v3/inventories.py                                                             146    146     0%   7-390
+backend/src/api/routes/v3/positions.py                                                                42     42     0%   3-209
+backend/src/api/routes/v3/review_queue.py                                                             28     28     0%   3-104
+backend/src/api/routes/v3/reviews.py                                                                  38     38     0%   3-83
+backend/src/api/routes/v3/router.py                                                                   11     11     0%   7-25
+backend/src/api/routes/v3/shared.py                                                                  235    235     0%   6-776
+backend/src/api/schema_guard.py                                                                       12     12     0%   3-19
+backend/src/api/schemas/__init__.py                                                                    0      0   100%
+backend/src/api/schemas/admin_ai_config_schemas.py                                                    71     71     0%   3-102
+backend/src/api/schemas/aisle_schemas.py                                                              43     43     0%   3-63
+backend/src/api/schemas/analytics_schemas.py                                                          92     92     0%   3-118
+backend/src/api/schemas/asset_schemas.py                                                              32     32     0%   3-82
+backend/src/api/schemas/benchmark_schemas.py                                                         152    152     0%   3-231
+backend/src/api/schemas/capture_schemas.py                                                           117    117     0%   3-237
+backend/src/api/schemas/inventory_schemas.py                                                          49     49     0%   3-105
+backend/src/api/schemas/listing_schemas.py                                                            18     18     0%   3-61
+backend/src/api/schemas/merge_schemas.py                                                              24     24     0%   1-49
+backend/src/api/schemas/position_schemas.py                                                          134    134     0%   7-338
+backend/src/api/schemas/processing_schemas.py                                                        101    101     0%   3-174
+backend/src/api/schemas/reference_usage_schemas.py                                                     9      9     0%   3-16
+backend/src/api/schemas/requests.py                                                                   11     11     0%   3-20
+backend/src/api/schemas/responses.py                                                                  66     66     0%   3-137
+backend/src/api/schemas/review_queue_schemas.py                                                       19     19     0%   3-34
+backend/src/api/server.py                                                                            115    115     0%   6-262
+backend/src/api/services/__init__.py                                                                   0      0   100%
+backend/src/api/services/v3_stored_artifact_access.py                                                298    298     0%   22-791
+backend/src/app.py                                                                                    80     80     0%   5-123
+backend/src/application/__init__.py                                                                    0      0   100%
+backend/src/application/errors.py                                                                     57      1    98%   123
+backend/src/application/ports/__init__.py                                                              5      0   100%
+backend/src/application/ports/analytics_repository.py                                                  5      5     0%   3-19
+backend/src/application/ports/capture_repositories.py                                                 52     52     0%   7-143
+backend/src/application/ports/capture_staging_time.py                                                 14     14     0%   3-26
+backend/src/application/ports/clock.py                                                                 5      0   100%
+backend/src/application/ports/contracts.py                                                           111      0   100%
+backend/src/application/ports/repositories.py                                                         84      7    92%   162-167, 223
+backend/src/application/ports/rollup_contracts.py                                                      8      0   100%
+backend/src/application/ports/services.py                                                             18      0   100%
+backend/src/application/services/__init__.py                                                           3      0   100%
+backend/src/application/services/admin_ai_config_inspection.py                                       100    100     0%   10-276
+backend/src/application/services/aisle_analysis_context_builder.py                                    14     14     0%   3-46
+backend/src/application/services/aisle_inventory_scope.py                                             17      4    76%   36, 40-44
+backend/src/application/services/aisle_job_launch_service.py                                          51     51     0%   7-128
+backend/src/application/services/aisle_review_lifecycle_sync.py                                       33      5    85%   38-43, 51-53
+backend/src/application/services/aisle_source_asset_materializer.py                                   79     79     0%   10-166
+backend/src/application/services/analytics_aggregation_core.py                                       256    256     0%   7-484
+backend/src/application/services/analytics_query_service.py                                           29     29     0%   3-57
+backend/src/application/services/capture_assignment_preview.py                                        52     52     0%   17-129
+backend/src/application/services/capture_flow_observability.py                                        83     83     0%   3-144
+backend/src/application/services/capture_group_item_integrity.py                                      19     19     0%   3-38
+backend/src/application/services/capture_group_materialization_state.py                               12     12     0%   3-26
+backend/src/application/services/capture_staging_time_metadata.py                                     62     62     0%   13-112
+backend/src/application/services/csv_inventory_exporter.py                                            24     24     0%   6-91
+backend/src/application/services/display_primary_product.py                                            7      7     0%   10-21
+backend/src/application/services/execution_log_enrichment.py                                         174    174     0%   10-327
+backend/src/application/services/final_count_builder.py                                               37     29    22%   24-27, 31-42, 57-90
+backend/src/application/services/inventory_processing_mode.py                                          7      7     0%   3-14
+backend/src/application/services/inventory_status_reconciler.py                                       32      3    91%   33, 37, 53
+backend/src/application/services/inventory_visual_reference_resolver.py                               15     15     0%   3-33
+backend/src/application/services/job_engine_params.py                                                 15     15     0%   3-26
+backend/src/application/services/job_stale_reconciler.py                                              30     30     0%   1-42
+backend/src/application/services/label_normalization.py                                               40     27    32%   20, 33, 44-64, 72-78, 102-103
+backend/src/application/services/operational_execution_config_resolver.py                             16      4    75%   25-33
+backend/src/application/services/position_sku_consolidation.py                                        60     60     0%   12-104
+backend/src/application/services/position_traceability.py                                             57     57     0%   8-96
+backend/src/application/services/process_aisle_execution_resolution.py                                25     25     0%   7-63
+backend/src/application/services/process_aisle_job_for_aisle.py                                       13     13     0%   8-31
+backend/src/application/services/processing_experiment_catalog.py                                     44     32    27%   14, 19-31, 40-51, 56-65, 70, 85-86, 90
+backend/src/application/services/processing_provider_resolution.py                                    36     27    25%   43-79, 83-87
+backend/src/application/services/production_inventory_processing.py                                   29     29     0%   3-49
+backend/src/application/services/result_context_resolver.py                                           31      5    84%   52, 54, 60-62
+backend/src/application/use_cases/__init__.py                                                          3      0   100%
+backend/src/application/use_cases/assign_capture_session_group_to_existing_aisle.py                   44     44     0%   3-96
+backend/src/application/use_cases/backfill_inventory_statuses.py                                      20     20     0%   8-38
+backend/src/application/use_cases/backfill_legacy_aisles.py                                           82     82     0%   8-190
+backend/src/application/use_cases/benchmark_compare_support.py                                       152    152     0%   12-289
+backend/src/application/use_cases/cancel_aisle_job.py                                                 42     42     0%   12-100
+backend/src/application/use_cases/cancel_capture_session.py                                           40     40     0%   3-61
+backend/src/application/use_cases/capture_session_group_assignment_guard.py                           11     11     0%   3-30
+backend/src/application/use_cases/close_capture_session.py                                            44     44     0%   19-86
+backend/src/application/use_cases/compare_aisle_runs.py                                               62     62     0%   3-128
+backend/src/application/use_cases/compare_many_aisle_runs.py                                         129    129     0%   3-269
+backend/src/application/use_cases/compute_capture_session_assignment_preview.py                       41     41     0%   9-82
+backend/src/application/use_cases/compute_capture_session_groups.py                                   90     90     0%   3-189
+backend/src/application/use_cases/compute_materialized_capture_session_group_preview.py              159    159     0%   3-400
+backend/src/application/use_cases/confirm_position.py                                                 31      0   100%
+backend/src/application/use_cases/create_aisle.py                                                     31     16    48%   34-37, 40-62
+backend/src/application/use_cases/create_aisle_and_assign_capture_session_group.py                    39     39     0%   3-86
+backend/src/application/use_cases/create_capture_session.py                                           28     28     0%   3-59
+backend/src/application/use_cases/create_inventory.py                                                 35     20    43%   40-43, 46-72
+backend/src/application/use_cases/delete_aisle_source_asset.py                                        45      3    93%   78, 85-86
+backend/src/application/use_cases/delete_position.py                                                  33     33     0%   7-95
+backend/src/application/use_cases/export_aisle_benchmark.py                                           69     69     0%   3-167
+backend/src/application/use_cases/export_inventory_results.py                                         75     75     0%   25-191
+backend/src/application/use_cases/get_aisle_merge_results.py                                          32     32     0%   1-60
+backend/src/application/use_cases/get_aisle_processing_status.py                                      24     24     0%   7-55
+backend/src/application/use_cases/get_capture_session_detail.py                                       24     24     0%   3-39
+backend/src/application/use_cases/get_capture_session_groups.py                                       13     13     0%   3-31
+backend/src/application/use_cases/get_inventory.py                                                    12     12     0%   7-22
+backend/src/application/use_cases/get_inventory_metrics.py                                            14     14     0%   8-29
+backend/src/application/use_cases/get_position_detail.py                                              74     74     0%   11-201
+backend/src/application/use_cases/list_aisle_assets.py                                                17     17     0%   7-40
+backend/src/application/use_cases/list_aisle_jobs.py                                                  28     28     0%   3-51
+backend/src/application/use_cases/list_aisle_positions.py                                            121    121     0%   11-221
+backend/src/application/use_cases/list_aisles_by_inventory.py                                         13     13     0%   8-29
+backend/src/application/use_cases/list_aisles_with_status.py                                          96     10    90%   76, 78-79, 81, 83, 85, 116, 118-119, 122
+backend/src/application/use_cases/list_capture_sessions.py                                            28     28     0%   3-62
+backend/src/application/use_cases/list_inventories.py                                                  9      2    78%   17, 20
+backend/src/application/use_cases/list_inventory_list_items.py                                        63     63     0%   12-99
+backend/src/application/use_cases/list_review_queue.py                                               134    134     0%   8-230
+backend/src/application/use_cases/manage_inventory_visual_references.py                               82     82     0%   8-166
+backend/src/application/use_cases/mark_position_image_mismatch.py                                     31     31     0%   8-93
+backend/src/application/use_cases/mark_position_unknown.py                                            31     31     0%   10-96
+backend/src/application/use_cases/materialize_capture_session.py                                     141    141     0%   3-273
+backend/src/application/use_cases/materialize_capture_session_group.py                               184    184     0%   3-450
+backend/src/application/use_cases/persist_aisle_result.py                                             77     77     0%   19-179
+backend/src/application/use_cases/promote_aisle_operational_job.py                                    35     35     0%   3-69
+backend/src/application/use_cases/recompute_consolidated_counts.py                                    95     95     0%   8-210
+backend/src/application/use_cases/resolve_aisle_job_for_inventory_read.py                             17     17     0%   8-35
+backend/src/application/use_cases/retry_aisle_job.py                                                  42     42     0%   1-120
+backend/src/application/use_cases/review_validation.py                                                63     21    67%   64, 67, 69, 107-108, 116-119, 128-135, 147-154
+backend/src/application/use_cases/run_aisle_merge.py                                                  34     34     0%   1-68
+backend/src/application/use_cases/start_aisle_processing.py                                           59     59     0%   14-170
+backend/src/application/use_cases/update_capture_session_clock_offset.py                              38     38     0%   3-73
+backend/src/application/use_cases/update_position_code.py                                             35     35     0%   7-101
+backend/src/application/use_cases/update_product_quantity.py                                          42     42     0%   7-121
+backend/src/application/use_cases/update_product_sku.py                                               51     51     0%   7-136
+backend/src/application/use_cases/upload_aisle_assets.py                                              48     48     0%   16-113
+backend/src/application/use_cases/upload_capture_session_staging_items.py                            140    140     0%   3-316
+backend/src/application/use_cases/upload_inventory_visual_references.py                               97     97     0%   16-230
+backend/src/auth/__init__.py                                                                           0      0   100%
+backend/src/auth/config.py                                                                            13     13     0%   1-39
+backend/src/auth/dependencies.py                                                                      38     38     0%   8-110
+backend/src/auth/errors.py                                                                             9      9     0%   1-22
+backend/src/auth/routes.py                                                                            25     25     0%   8-109
+backend/src/auth/schemas.py                                                                           26     26     0%   1-72
+backend/src/auth/security.py                                                                          40     40     0%   10-121
+backend/src/auth/service.py                                                                          108    108     0%   15-253
+backend/src/backfill_inventory_status.py                                                              18     18     0%   11-41
+backend/src/backfill_legacy_aisles.py                                                                 46     46     0%   11-119
+backend/src/config.py                                                                                 47     17    64%   64, 93, 97-101, 113-115, 144-146, 158-160, 169
+backend/src/consolidate/__init__.py                                                                    0      0   100%
+backend/src/consolidate/consolidate.py                                                                81     81     0%   8-285
+backend/src/consolidate/normalize.py                                                                  19     19     0%   8-95
+backend/src/database/__init__.py                                                                       3      0   100%
+backend/src/database/migrations/__init__.py                                                            2      2     0%   3-13
+backend/src/database/migrations/__main__.py                                                            4      4     0%   3-8
+backend/src/database/migrations/cli.py                                                                68     68     0%   7-162
+backend/src/database/migrations/service.py                                                           128    128     0%   3-281
+backend/src/database/repository.py                                                                   214    176    18%   23-31, 47-51, 55-57, 61-66, 70-78, 85, 100-113, 145-156, 165-176, 204-213, 251-262, 272-363, 388-431, 444, 448-487, 496-525, 532, 535-547, 553-575
+backend/src/database/sqlserver.py                                                                     39     27    31%   12-13, 18, 25-33, 38-57
+backend/src/decision/__init__.py                                                                       2      2     0%   3-5
+backend/src/decision/count_status.py                                                                  46     46     0%   14-79
+backend/src/decision/entity_order.py                                                                   4      4     0%   8-19
+backend/src/decision/pallet_id.py                                                                     34     34     0%   9-61
+backend/src/decision/processing_mode.py                                                                6      6     0%   9-44
+backend/src/decision/quality_score.py                                                                 14     14     0%   13-39
+backend/src/detection/__init__.py                                                                      2      2     0%   9-11
+backend/src/detection/heuristic_detector.py                                                           79     79     0%   8-135
+backend/src/detection/pallet_detector.py                                                              20     20     0%   8-65
+backend/src/domain/__init__.py                                                                        11      0   100%
+backend/src/domain/aisle/__init__.py                                                                   2      0   100%
+backend/src/domain/aisle/entities.py                                                                  59     19    68%   43-44, 52, 58-59, 62-63, 66-71, 74-75, 88-92
+backend/src/domain/assets/__init__.py                                                                  2      0   100%
+backend/src/domain/assets/entities.py                                                                 25      0   100%
+backend/src/domain/capture/__init__.py                                                                 2      2     0%   3-15
+backend/src/domain/capture/entities.py                                                                80     80     0%   9-123
+backend/src/domain/entity.py                                                                          31      0   100%
+backend/src/domain/evidence/__init__.py                                                                2      0   100%
+backend/src/domain/evidence/entities.py                                                               30      0   100%
+backend/src/domain/inventory/__init__.py                                                               3      0   100%
+backend/src/domain/inventory/derive_status_from_aisles.py                                             19      5    74%   30, 35, 37, 39, 45
+backend/src/domain/inventory/entities.py                                                              37      7    81%   47-48, 51-53, 56-57
+backend/src/domain/inventory/visual_reference.py                                                      34     14    59%   37-50
+backend/src/domain/jobs/__init__.py                                                                    2      0   100%
+backend/src/domain/jobs/entities.py                                                                   43      0   100%
+backend/src/domain/labels/__init__.py                                                                  3      0   100%
+backend/src/domain/labels/canonicalization.py                                                         14     10    29%   22-31
+backend/src/domain/labels/entities.py                                                                 55      0   100%
+backend/src/domain/labels/merge.py                                                                    62     36    42%   41, 45, 50-55, 60-66, 80-143
+backend/src/domain/pallet.py                                                                          14      0   100%
+backend/src/domain/positions/__init__.py                                                               2      0   100%
+backend/src/domain/positions/entities.py                                                              33      0   100%
+backend/src/domain/products/__init__.py                                                                2      0   100%
+backend/src/domain/products/entities.py                                                               19      0   100%
+backend/src/domain/quantity/__init__.py                                                                0      0   100%
+backend/src/domain/quantity/resolution.py                                                             69     69     0%   9-202
+backend/src/domain/reviews/__init__.py                                                                 2      0   100%
+backend/src/domain/reviews/entities.py                                                                24      0   100%
+backend/src/domain/reviews/sql_literals.py                                                            23     23     0%   7-69
+backend/src/domain/traceability.py                                                                    59     59     0%   13-143
+backend/src/env_settings/__init__.py                                                                   0      0   100%
+backend/src/env_settings/grouped_settings.py                                                         221     30    86%   244-246, 251-254, 259, 509-513, 518-521, 537-542, 643-646, 650-652
+backend/src/env_settings/parsing.py                                                                   48     40    17%   11-18, 23-30, 34-41, 46-53, 58-65
+backend/src/env_settings/pipeline_analysis_execution_strings.py                                       17      9    47%   31-34, 39-43
+backend/src/env_settings/sqlserver_resolution.py                                                     140    102    27%   24-36, 41-56, 61-64, 68-73, 78-80, 85-90, 94-101, 106, 111-113, 122-131, 136-137, 169-171, 176-248, 260-261, 266-285, 290
+backend/src/evidence/__init__.py                                                                       4      4     0%   9-13
+backend/src/evidence/evidence_pack.py                                                                169    169     0%   7-328
+backend/src/evidence/paths.py                                                                         10     10     0%   3-32
+backend/src/evidence/scoring.py                                                                       33     33     0%   3-89
+backend/src/exceptions/__init__.py                                                                     2      2     0%   3-8
+backend/src/exceptions/global_analysis_exceptions.py                                                   4      4     0%   8-17
+backend/src/fallback/__init__.py                                                                       3      3     0%   3-10
+backend/src/fallback/fallback_policy.py                                                               20     20     0%   7-48
+backend/src/fallback/visual_fallback_analyzer.py                                                      62     62     0%   7-109
+backend/src/frames/__init__.py                                                                         3      3     0%   3-6
+backend/src/frames/normalize.py                                                                      205    205     0%   10-419
+backend/src/frames/sources/__init__.py                                                                 5      5     0%   3-8
+backend/src/frames/sources/base.py                                                                     6      6     0%   3-13
+backend/src/frames/sources/factory.py                                                                  9      9     0%   3-21
+backend/src/frames/sources/photos_source.py                                                           48     48     0%   10-92
+backend/src/frames/sources/video_source.py                                                            34     34     0%   7-77
+backend/src/frames/types.py                                                                            8      8     0%   3-20
+backend/src/infrastructure/__init__.py                                                                 0      0   100%
+backend/src/infrastructure/adapters/__init__.py                                                        2      2     0%   3-5
+backend/src/infrastructure/adapters/clock.py                                                           5      5     0%   7-16
+backend/src/infrastructure/pipeline/__init__.py                                                        2      2     0%   3-8
+backend/src/infrastructure/pipeline/input_artifact_resolver.py                                        98     98     0%   1-203
+backend/src/infrastructure/pipeline/v3_execution_artifacts_service.py                                 16     16     0%   8-40
+backend/src/infrastructure/pipeline/v3_job_execution_state.py                                        157    157     0%   8-299
+backend/src/infrastructure/pipeline/v3_job_executor.py                                               202    202     0%   8-541
+backend/src/infrastructure/pipeline/v3_process_aisle_pipeline_runner.py                               78     78     0%   9-239
+backend/src/infrastructure/pipeline/v3_report_mapper.py                                              169    169     0%   11-384
+backend/src/infrastructure/pipeline/worker_durable_artifact_publisher.py                              41     41     0%   22-173
+backend/src/infrastructure/repositories/__init__.py                                                    3      0   100%
+backend/src/infrastructure/repositories/memory_aisle_repository.py                                    20     20     0%   8-35
+backend/src/infrastructure/repositories/memory_analytics_repository.py                               211    211     0%   10-489
+backend/src/infrastructure/repositories/memory_capture_session_confirm_idempotency_repository.py      15     15     0%   3-27
+backend/src/infrastructure/repositories/memory_capture_session_group_repository.py                    44     44     0%   3-88
+backend/src/infrastructure/repositories/memory_capture_session_item_repository.py                     50     50     0%   7-83
+backend/src/infrastructure/repositories/memory_capture_session_repository.py                          64     64     0%   7-103
+backend/src/infrastructure/repositories/memory_evidence_repository.py                                 13     13     0%   5-24
+backend/src/infrastructure/repositories/memory_final_count_repository.py                              24     24     0%   3-60
+backend/src/infrastructure/repositories/memory_inventory_repository.py                                13      4    69%   18, 21, 24, 27
+backend/src/infrastructure/repositories/memory_inventory_visual_reference_repository.py               29     29     0%   7-46
+backend/src/infrastructure/repositories/memory_job_repository.py                                      42     17    60%   27-35, 40-47, 50, 53-57, 63, 68
+backend/src/infrastructure/repositories/memory_normalized_label_repository.py                         22     22     0%   3-57
+backend/src/infrastructure/repositories/memory_position_repository.py                                 46     30    35%   22, 38-64, 69-73
+backend/src/infrastructure/repositories/memory_product_record_repository.py                           18     18     0%   5-34
+backend/src/infrastructure/repositories/memory_raw_label_repository.py                                18     18     0%   3-34
+backend/src/infrastructure/repositories/memory_review_action_repository.py                            12     12     0%   5-22
+backend/src/infrastructure/repositories/memory_source_asset_repository.py                             43     43     0%   7-59
+backend/src/infrastructure/repositories/sql_aisle_repository.py                                       63     63     0%   8-157
+backend/src/infrastructure/repositories/sql_analytics_repository.py                                  333    333     0%   12-882
+backend/src/infrastructure/repositories/sql_capture_session_confirm_idempotency_repository.py         54     54     0%   3-102
+backend/src/infrastructure/repositories/sql_capture_session_group_repository.py                       88     88     0%   3-197
+backend/src/infrastructure/repositories/sql_capture_session_item_repository.py                        96     96     0%   3-281
+backend/src/infrastructure/repositories/sql_capture_session_repository.py                            102    102     0%   3-214
+backend/src/infrastructure/repositories/sql_evidence_repository.py                                    55     55     0%   5-168
+backend/src/infrastructure/repositories/sql_final_count_repository.py                                 63     63     0%   5-214
+backend/src/infrastructure/repositories/sql_inventory_repository.py                                   63     48    24%   28-32, 37, 40-50, 54-80, 105-129, 145-184
+backend/src/infrastructure/repositories/sql_inventory_visual_reference_repository.py                  85     85     0%   7-223
+backend/src/infrastructure/repositories/sql_job_repository.py                                        124    124     0%   8-358
+backend/src/infrastructure/repositories/sql_normalized_label_repository.py                            76     76     0%   5-200
+backend/src/infrastructure/repositories/sql_position_repository.py                                   118    118     0%   5-268
+backend/src/infrastructure/repositories/sql_product_record_repository.py                              72     72     0%   5-173
+backend/src/infrastructure/repositories/sql_raw_label_repository.py                                   61     61     0%   5-184
+backend/src/infrastructure/repositories/sql_review_action_repository.py                               62     62     0%   5-125
+backend/src/infrastructure/repositories/sql_source_asset_repository.py                                98     98     0%   5-231
+backend/src/infrastructure/services/__init__.py                                                        2      2     0%   3-5
+backend/src/infrastructure/services/inventory_metrics_service.py                                      28     28     0%   13-58
+backend/src/infrastructure/services/on_demand_worker_launch_service.py                                60     60     0%   1-110
+backend/src/infrastructure/storage/artifact_store.py                                                  24      0   100%
+backend/src/io/__init__.py                                                                             0      0   100%
+backend/src/io/logging.py                                                                             26     26     0%   8-94
+backend/src/io/outputs.py                                                                             59     59     0%   8-204
+backend/src/io/sanitize.py                                                                            28     28     0%   8-99
+backend/src/jobs/__init__.py                                                                           4      0   100%
+backend/src/jobs/adapters/__init__.py                                                                  3      3     0%   3-6
+backend/src/jobs/adapters/job_store_adapter.py                                                        19     19     0%   7-46
+backend/src/jobs/adapters/memory_queue_adapter.py                                                      9      9     0%   5-25
+backend/src/jobs/dev_reset_local_jobs.py                                                              84     84     0%   7-132
+backend/src/jobs/image_identity.py                                                                    55     55     0%   13-138
+backend/src/jobs/job_store.py                                                                        199    178    11%   26-29, 34-62, 66, 70, 87-132, 137-155, 164-238, 243-278, 282-293, 298-306, 311-326
+backend/src/jobs/models.py                                                                            32      0   100%
+backend/src/jobs/photos_paths.py                                                                      21     21     0%   13-76
+backend/src/jobs/ports/__init__.py                                                                     3      3     0%   3-6
+backend/src/jobs/ports/job_queue.py                                                                    5      5     0%   7-25
+backend/src/jobs/ports/job_repository.py                                                               7      7     0%   7-25
+backend/src/jobs/queue.py                                                                             11      5    55%   17, 22-25
+backend/src/jobs/run_worker.py                                                                        83     83     0%   1-173
+backend/src/jobs/run_worker_dev.py                                                                    18     18     0%   1-36
+backend/src/jobs/worker.py                                                                           148    148     0%   6-336
+backend/src/jobs/worker_bootstrap.py                                                                  52     52     0%   1-126
+backend/src/legacy/__init__.py                                                                         2      0   100%
+backend/src/legacy/persistence_observability.py                                                       76     59    22%   37-40, 44-60, 65-74, 83-86, 96, 102-105, 114, 124-131, 147-156
+backend/src/llm/__init__.py                                                                            0      0   100%
+backend/src/llm/anthropic_sdk_adapter.py                                                             303    303     0%   27-589
+backend/src/llm/costing.py                                                                           267    267     0%   9-516
+backend/src/llm/deepseek_sdk_adapter.py                                                               30     30     0%   23-93
+backend/src/llm/errors.py                                                                              7      7     0%   3-18
+backend/src/llm/gemini_client.py                                                                      93     93     0%   9-245
+backend/src/llm/gemini_global_analyzer.py                                                             62     62     0%   5-118
+backend/src/llm/gemini_sdk_adapter.py                                                                 51     51     0%   8-125
+backend/src/llm/normalization/__init__.py                                                              2      2     0%   3-10
+backend/src/llm/normalization/entity_normalizer.py                                                   166    166     0%   39-327
+backend/src/llm/openai_sdk_adapter.py                                                                205    205     0%   10-400
+backend/src/llm/prompt_composer/__init__.py                                                            3      0   100%
+backend/src/llm/prompt_composer/composer.py                                                           11      4    64%   46-51
+backend/src/llm/prompt_composer/enrichments.py                                                        16     16     0%   9-50
+backend/src/llm/prompt_composer/hybrid_assembly.py                                                    12     12     0%   37-85
+backend/src/llm/prompt_composer/hybrid_profiles.py                                                    25      0   100%
+backend/src/llm/prompt_composer/hybrid_resolution.py                                                  34     22    35%   34-36, 42, 55, 82-109
+backend/src/llm/prompt_composer/prompt_traceability.py                                               102    102     0%   35-296
+backend/src/llm/prompts.py                                                                             8      8     0%   17-41
+backend/src/llm/providers/__init__.py                                                                  7      7     0%   3-13
+backend/src/llm/providers/base.py                                                                      6      6     0%   7-20
+backend/src/llm/providers/factory.py                                                                  15     15     0%   9-40
+backend/src/llm/providers/gemini_provider.py                                                          12     12     0%   3-25
+backend/src/llm/providers/openai_provider.py                                                          15     15     0%   3-28
+backend/src/llm/types.py                                                                              22     15    32%   30-41, 63-68
+backend/src/models/__init__.py                                                                         0      0   100%
+backend/src/models/schemas.py                                                                        151    151     0%   11-346
+backend/src/parsing/__init__.py                                                                        2      2     0%   3-8
+backend/src/parsing/global_analysis_parser.py                                                        111    111     0%   8-217
+backend/src/pipeline/__init__.py                                                                       6      4    33%   7-11
+backend/src/pipeline/adapters/__init__.py                                                              6      6     0%   3-11
+backend/src/pipeline/adapters/gemini/__init__.py                                                       2      2     0%   3-5
+backend/src/pipeline/adapters/hybrid_global_analysis_strategy.py                                     117    117     0%   17-349
+backend/src/pipeline/context/__init__.py                                                               2      0   100%
+backend/src/pipeline/context/run_context.py                                                           39      7    82%   86-101, 110-111
+backend/src/pipeline/contracts/__init__.py                                                             3      3     0%   3-12
+backend/src/pipeline/contracts/analysis_context.py                                                    69     69     0%   8-122
+backend/src/pipeline/contracts/multi_provider_trace_types.py                                          23     23     0%   8-49
+backend/src/pipeline/contracts/pipeline_analysis_execution_settings.py                                 6      6     0%   11-21
+backend/src/pipeline/contracts/stage.py                                                                5      5     0%   8-22
+backend/src/pipeline/errors.py                                                                         4      4     0%   1-8
+backend/src/pipeline/execution_log.py                                                                166    166     0%   9-267
+backend/src/pipeline/hybrid_inventory_pipeline.py                                                    190    190     0%   7-332
+backend/src/pipeline/ports/__init__.py                                                                 2      0   100%
+backend/src/pipeline/ports/analysis_provider.py                                                       24      0   100%
+backend/src/pipeline/ports/llm_execution.py                                                            5      0   100%
+backend/src/pipeline/provider_keys.py                                                                  8      5    38%   20-24
+backend/src/pipeline/providers/__init__.py                                                             4      0   100%
+backend/src/pipeline/providers/definitions.py                                                         21      2    90%   85, 94
+backend/src/pipeline/providers/registry.py                                                            28     18    36%   49, 61-79, 92-94
+backend/src/pipeline/run_metadata.py                                                                  76     76     0%   10-164
+backend/src/pipeline/services/__init__.py                                                              0      0   100%
+backend/src/pipeline/services/analysis_visual_reference_prep.py                                       47     47     0%   7-95
+backend/src/pipeline/services/hybrid_analysis_prompt.py                                               56     56     0%   16-133
+backend/src/pipeline/services/multi_provider_analysis_execution.py                                    76     76     0%   23-269
+backend/src/pipeline/services/pipeline_provider_resolver.py                                           21      5    76%   54-55, 72-73, 81
+backend/src/pipeline/services/provider_analysis_execution_config.py                                   45     45     0%   19-109
+backend/src/pipeline/services/provider_analysis_result_normalization.py                                8      8     0%   12-45
+backend/src/pipeline/services/provider_llm_request_metadata.py                                        15     15     0%   13-52
+backend/src/pipeline/services/provider_result_aggregator.py                                           23     23     0%   14-63
+backend/src/pipeline/stages/__init__.py                                                                7      7     0%   3-10
+backend/src/pipeline/stages/analysis_stage.py                                                         53     53     0%   9-118
+backend/src/pipeline/stages/entity_resolution_stage.py                                                39     39     0%   10-76
+backend/src/pipeline/stages/evidence_stage.py                                                         26     26     0%   7-60
+backend/src/pipeline/stages/frame_acquisition_stage.py                                                81     81     0%   8-244
+backend/src/pipeline/stages/input_preparation_stage.py                                                38     38     0%   20-108
+backend/src/pipeline/stages/reporting_stage.py                                                        41     41     0%   12-78
+backend/src/preprocess/__init__.py                                                                     0      0   100%
+backend/src/preprocess/image_ops.py                                                                   73     73     0%   18-249
+backend/src/preprocess/selectors.py                                                                   36     36     0%   9-125
+backend/src/preprocess/similarity.py                                                                  60     60     0%   9-165
+backend/src/reid/__init__.py                                                                          47     47     0%   8-118
+backend/src/reid/clip_embedder.py                                                                     48     48     0%   9-88
+backend/src/reid/gating.py                                                                            72     72     0%   7-134
+backend/src/reid/merge.py                                                                             79     79     0%   9-162
+backend/src/reid/phash.py                                                                             46     46     0%   7-80
+backend/src/reid/signature.py                                                                         73     73     0%   7-149
+backend/src/reporting/__init__.py                                                                      3      3     0%   3-6
+backend/src/reporting/artifacts.py                                                                    32     32     0%   19-93
+backend/src/reporting/display_label.py                                                                 9      9     0%   10-39
+backend/src/reporting/hybrid_report.py                                                                46     46     0%   9-136
+backend/src/review/__init__.py                                                                         3      3     0%   6-9
+backend/src/review/review_merge.py                                                                    52     52     0%   3-82
+backend/src/review/review_store.py                                                                    39     39     0%   3-61
+backend/src/roi/__init__.py                                                                            3      3     0%   9-12
+backend/src/roi/cropper.py                                                                            33     33     0%   5-69
+backend/src/roi/quality.py                                                                             8      8     0%   7-27
+backend/src/runtime/__init__.py                                                                        2      2     0%   8-20
+backend/src/runtime/app_container.py                                                                 303    303     0%   9-605
+backend/src/runtime/v3_deps.py                                                                        50     50     0%   9-122
+backend/src/storage/__init__.py                                                                        0      0   100%
+backend/src/storage/adapters/__init__.py                                                               2      2     0%   3-5
+backend/src/storage/adapters/filesystem_artifact_storage.py                                           31     31     0%   5-52
+backend/src/storage/ports/__init__.py                                                                  2      2     0%   3-5
+backend/src/storage/ports/artifact_storage.py                                                          8      8     0%   9-35
+backend/src/tracking/__init__.py                                                                       3      3     0%   9-12
+backend/src/tracking/track_builder.py                                                                 20     20     0%   5-59
+backend/src/tracking/tracker.py                                                                       58     58     0%   8-100
+backend/src/utils/__init__.py                                                                          2      0   100%
+backend/src/utils/validation.py                                                                       34     28    18%   21-32, 41-52, 60-67
+backend/src/validation/__init__.py                                                                     2      2     0%   3-5
+backend/src/validation/global_analysis_schema.py                                                     109    109     0%   7-210
+backend/src/video/__init__.py                                                                          0      0   100%
+backend/src/video/frames.py                                                                          165    165     0%   12-343
+backend/src/video/ingest.py                                                                           46     46     0%   10-117
+backend/src/view_selection/__init__.py                                                                 2      2     0%   8-10
+backend/src/view_selection/selector.py                                                               238    238     0%   9-412
+--------------------------------------------------------------------------------------------------------------------------------
+TOTAL                                                                                              20390  18594     9%
+Coverage HTML written to dir htmlcov
+19 passed in 3.05s

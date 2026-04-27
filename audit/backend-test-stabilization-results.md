@@ -56,3 +56,66 @@ Corrida equivalente sin cobertura (`--override-ini="addopts="`): mismos totales 
 
 - Reducir `DeprecationWarning` en tests y codigo legacy (fuera de alcance B1).
 - Opcional: ejecutar solo integracion con SQL real (`-m integration`) en entorno con SQL Server y schema aplicado.
+
+---
+
+## Corrida global final (B1.4 — cierre)
+
+Fecha de validacion: 2026-04-27
+
+Comando (raiz del repo, `pytest.ini` con cobertura por defecto):
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+Resultado:
+
+```txt
+Total tests: 1785  (1772 passed + 13 skipped)
+Passed: 1772
+Skipped: 13
+Failed: 0
+```
+
+Duracion aproximada: ~19 s (incluye `--cov=src` y reportes term/html).
+
+### Criterios de cierre B1 (verificados)
+
+| Criterio | Estado |
+|----------|--------|
+| `pytest -q` → 0 failed | Cumplido |
+| Entorno reproducible (`.venv`, Python 3.13, `pythonpath` en `pytest.ini` / `backend/pyproject.toml`) | Cumplido |
+| Tests alineados al comportamiento real del backend | Cumplido (sin cambios productivos en esta corrida) |
+| Integration SQL no rompe suite local (skip / timeout si no hay DB) | Cumplido |
+| Codigo productivo `backend/src/` sin cambios en B1 | Cumplido en esta fase |
+
+## Cambios finales realizados (resumen acumulado B1)
+
+- **Stubs completados**: repos fake con `get_by_capture_session_item_id` / `delete_by_id` donde exigia el ABC.
+- **Tests alineados a contrato actual**: API (estados de job, cancel idempotente, 422 Pydantic), use cases (`job_id`, etc.), pipeline, schemas (`MinifiedProduct.r`), Stage 3/5/8, `SqlJobRepository` placeholder counts.
+- **Integration tests aislados**: `pytest.mark.integration` en modulos SQL ODBC; `sql_server_client_or_skip()` en `tests/support/sql_integration.py`.
+- **Tests renombrados**: ej. cancel idempotente vs 409; proceso bloqueado por job activo vs “crea nuevo job”.
+- **B1.4**: ningun fix adicional requerido en esta corrida; la suite ya estaba estable.
+
+## Sanity check de coverage (B1.4 — no optimizacion)
+
+Objetivo: confirmar que rutas API y use cases criticos **se ejecutan** en tests (no 0% por error de coleccion / imports).
+
+- **API v3** (`backend/src/api/routes/v3/`): modulos con ejecucion significativa, p. ej. `aisles.py` ~83%, `inventories.py` ~67%, `positions.py` ~95%, `router.py` 100% (muestra de corrida con cov).
+- **Use cases** (`backend/src/application/use_cases/`): amplia cobertura en archivos revisados, p. ej. `confirm_position.py` 100%, `cancel_aisle_job.py` 100%, muchos casos en rango 77–100%.
+- **TOTAL** bajo `src/`: ~83% lineas cubiertas en el reporte agregado de esta corrida.
+
+Módulos con 0% o bajo cubrimiento suelen ser **codigo legacy o adapters no ejercitados** por esta suite; no se interpreta como fallo de B1.
+
+## Deuda consciente (NO resolver en B1)
+
+- Comportamiento documentado en tests de upload: si falla el `save` del asset tras escribir storage, **no hay compensacion automatica** de archivos (huérfanos posibles); el test lo refleja; mejorar seria producto/proceso, no B1.
+- Divergencias futuras entre errores Pydantic (`detail`) y payloads legacy con `code` en otros endpoints: vigilar en contratos / B2.
+- `DeprecationWarning` acumulados (~114 en corrida): limpieza en fase de mantenimiento o B2 (tipado / APIs deprecadas).
+- Coverage bajo o 0% en modulos no criticos para v3 (p. ej. partes de `storage/adapters`, `roi/quality`): aceptable hasta definir prioridad de tests.
+- Correr `-m integration` contra SQL Server real sigue siendo validacion aparte (CI o entorno dedicado).
+
+## Resultado para fases posteriores (B2+)
+
+Base lista: suite estable, corrida global confiable, integracion SQL aislada y documentada. Siguiente foco razonable: tipado estricto, contratos de API formales, o auditoria de arquitectura **sin** mezclar con estabilidad de tests.

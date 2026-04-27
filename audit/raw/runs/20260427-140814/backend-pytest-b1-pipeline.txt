@@ -1,0 +1,520 @@
+......sFFFFFFFFFF
+=================================== FAILURES ===================================
+___________ test_execute_success_invokes_state_runner_and_artifacts ____________
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_execute_success_invokes_s0')
+
+    def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> None:
+        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=timezone.utc)
+        job_id = "coord-success"
+        aisle_id = "aisle-1"
+        job_repo = InMemoryJobRepo()
+        job_repo.save(
+            Job(
+                id=job_id,
+                target_type="aisle",
+                target_id=aisle_id,
+                job_type="process_aisle",
+                status=JobStatus.STARTING,
+                payload_json={"aisle_id": aisle_id},
+                created_at=now,
+                updated_at=now,
+                execution_id="ex-1",
+            )
+        )
+        aisle_repo = InMemoryAisleRepo()
+        aisle_repo.save(
+            Aisle(
+                id=aisle_id,
+                inventory_id="inv-1",
+                code="A01",
+                status=AisleStatus.CREATED,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        inv_repo = InMemoryInventoryRepo()
+        inv_repo.save(
+            Inventory(
+                id="inv-1",
+                name="Inv",
+                status=InventoryStatus.PROCESSING,
+                created_at=now,
+                updated_at=now,
+                processing_mode=InventoryProcessingMode.TEST,
+            )
+        )
+    
+        class _OnePhotoRepo:
+            def list_by_aisle(self, aid: str) -> Sequence[SourceAsset]:
+                if aid != aisle_id:
+                    return []
+                return [
+                    SourceAsset(
+                        id="asset-1",
+                        aisle_id=aisle_id,
+                        type=SourceAssetType.PHOTO,
+                        original_filename="photo.jpg",
+                        storage_path="a1/photo.jpg",
+                        mime_type="image/jpeg",
+                        uploaded_at=now,
+                    )
+                ]
+    
+>       noop = NoopRepo()
+               ^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_coordination.py:85: TypeError
+_______ test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle ________
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_execute_nonzero_pipeline_0')
+
+    def test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle(tmp_path: Path) -> None:
+        now = datetime(2026, 3, 2, 12, 0, 0, tzinfo=timezone.utc)
+        job_id = "coord-fail-pipe"
+        aisle_id = "aisle-2"
+        job_repo = InMemoryJobRepo()
+        job_repo.save(
+            Job(
+                id=job_id,
+                target_type="aisle",
+                target_id=aisle_id,
+                job_type="process_aisle",
+                status=JobStatus.STARTING,
+                payload_json={"aisle_id": aisle_id},
+                created_at=now,
+                updated_at=now,
+                execution_id="ex-2",
+            )
+        )
+        aisle_repo = InMemoryAisleRepo()
+        aisle_repo.save(
+            Aisle(
+                id=aisle_id,
+                inventory_id="inv-1",
+                code="A02",
+                status=AisleStatus.CREATED,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        inv_repo = InMemoryInventoryRepo()
+        inv_repo.save(
+            Inventory(
+                id="inv-1",
+                name="Inv",
+                status=InventoryStatus.PROCESSING,
+                created_at=now,
+                updated_at=now,
+                processing_mode=InventoryProcessingMode.TEST,
+            )
+        )
+    
+        class _OnePhotoRepo:
+            def list_by_aisle(self, aid: str) -> Sequence[SourceAsset]:
+                if aid != aisle_id:
+                    return []
+                return [
+                    SourceAsset(
+                        id="asset-2",
+                        aisle_id=aisle_id,
+                        type=SourceAssetType.PHOTO,
+                        original_filename="p.jpg",
+                        storage_path="a1/p.jpg",
+                        mime_type="image/jpeg",
+                        uploaded_at=now,
+                    )
+                ]
+    
+>       noop = NoopRepo()
+               ^^^^^^^^^^
+E       TypeError: Can't instantiate abstract class NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_coordination.py:220: TypeError
+____ test_build_pipeline_input_downloads_s3_source_asset_to_temp_workspace _____
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_build_pipeline_input_down0')
+
+    def test_build_pipeline_input_downloads_s3_source_asset_to_temp_workspace(tmp_path: Path) -> None:
+        job_dir = tmp_path / "job-1"
+        job_dir.mkdir(parents=True, exist_ok=True)
+        store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-1.jpg": b"s3-photo"})
+>       ex = _executor("inv-1", [], store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_inventory_id = 'inv-1', visual_refs = []
+artifact_store = <test_v3_job_executor_input_resolution._FakeArtifactStore object at 0x113949e80>
+
+    def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
+        return V3JobExecutor(
+            job_repo=_NoopJobRepo(),
+            aisle_repo=_NoopAisleRepo(),
+>           source_asset_repo=_NoopRepo(),
+                              ^^^^^^^^^^^
+            position_repo=_NoopRepo(),
+            product_record_repo=_NoopRepo(),
+            evidence_repo=_NoopRepo(),
+            clock=_Clock(),
+            inventory_repo=_InventoryRepo(
+                Inventory(
+                    id=tmp_inventory_id,
+                    name="inv",
+                    status=InventoryStatus.DRAFT,
+                    created_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                    updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                )
+            ),
+            inventory_visual_reference_repo=_VisualRepo(visual_refs),
+            artifact_store=artifact_store,
+        )
+E       TypeError: Can't instantiate abstract class _NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:203: TypeError
+_ test_build_pipeline_input_accepts_sql_mapped_source_asset_with_provider_metadata _
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_build_pipeline_input_acce0')
+
+    def test_build_pipeline_input_accepts_sql_mapped_source_asset_with_provider_metadata(tmp_path: Path) -> None:
+        job_dir = tmp_path / "job-sql-mapped"
+        job_dir.mkdir(parents=True, exist_ok=True)
+        store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-sql.jpg": b"s3-photo"})
+>       ex = _executor("inv-sql", [], store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:259: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_inventory_id = 'inv-sql', visual_refs = []
+artifact_store = <test_v3_job_executor_input_resolution._FakeArtifactStore object at 0x113960b90>
+
+    def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
+        return V3JobExecutor(
+            job_repo=_NoopJobRepo(),
+            aisle_repo=_NoopAisleRepo(),
+>           source_asset_repo=_NoopRepo(),
+                              ^^^^^^^^^^^
+            position_repo=_NoopRepo(),
+            product_record_repo=_NoopRepo(),
+            evidence_repo=_NoopRepo(),
+            clock=_Clock(),
+            inventory_repo=_InventoryRepo(
+                Inventory(
+                    id=tmp_inventory_id,
+                    name="inv",
+                    status=InventoryStatus.DRAFT,
+                    created_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                    updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                )
+            ),
+            inventory_visual_reference_repo=_VisualRepo(visual_refs),
+            artifact_store=artifact_store,
+        )
+E       TypeError: Can't instantiate abstract class _NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:203: TypeError
+__ test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent __
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_build_pipeline_input_lega0')
+
+    def test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent(tmp_path: Path) -> None:
+        legacy_base = tmp_path / "v3_uploads"
+        (legacy_base / "legacy").mkdir(parents=True, exist_ok=True)
+        (legacy_base / "legacy" / "asset.jpg").write_bytes(b"legacy")
+        job_dir = tmp_path / "job-2"
+        job_dir.mkdir(parents=True, exist_ok=True)
+>       ex = _executor("inv-2", [], _FakeArtifactStore({}))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:302: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_inventory_id = 'inv-2', visual_refs = []
+artifact_store = <test_v3_job_executor_input_resolution._FakeArtifactStore object at 0x113960a50>
+
+    def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
+        return V3JobExecutor(
+            job_repo=_NoopJobRepo(),
+            aisle_repo=_NoopAisleRepo(),
+>           source_asset_repo=_NoopRepo(),
+                              ^^^^^^^^^^^
+            position_repo=_NoopRepo(),
+            product_record_repo=_NoopRepo(),
+            evidence_repo=_NoopRepo(),
+            clock=_Clock(),
+            inventory_repo=_InventoryRepo(
+                Inventory(
+                    id=tmp_inventory_id,
+                    name="inv",
+                    status=InventoryStatus.DRAFT,
+                    created_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                    updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                )
+            ),
+            inventory_visual_reference_repo=_VisualRepo(visual_refs),
+            artifact_store=artifact_store,
+        )
+E       TypeError: Can't instantiate abstract class _NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:203: TypeError
+_ test_build_pipeline_input_resolves_local_provider_source_asset_without_bucket _
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_build_pipeline_input_reso0')
+
+    def test_build_pipeline_input_resolves_local_provider_source_asset_without_bucket(tmp_path: Path) -> None:
+        job_dir = tmp_path / "job-local-asset"
+        job_dir.mkdir(parents=True, exist_ok=True)
+        store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-local.jpg": b"local-photo"})
+>       ex = _executor("inv-local-asset", [], store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:327: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_inventory_id = 'inv-local-asset', visual_refs = []
+artifact_store = <test_v3_job_executor_input_resolution._FakeArtifactStore object at 0x1138eed70>
+
+    def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
+        return V3JobExecutor(
+            job_repo=_NoopJobRepo(),
+            aisle_repo=_NoopAisleRepo(),
+>           source_asset_repo=_NoopRepo(),
+                              ^^^^^^^^^^^
+            position_repo=_NoopRepo(),
+            product_record_repo=_NoopRepo(),
+            evidence_repo=_NoopRepo(),
+            clock=_Clock(),
+            inventory_repo=_InventoryRepo(
+                Inventory(
+                    id=tmp_inventory_id,
+                    name="inv",
+                    status=InventoryStatus.DRAFT,
+                    created_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                    updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                )
+            ),
+            inventory_visual_reference_repo=_VisualRepo(visual_refs),
+            artifact_store=artifact_store,
+        )
+E       TypeError: Can't instantiate abstract class _NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:203: TypeError
+____ test_build_pipeline_input_resolves_s3_visual_references_to_temp_files _____
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_build_pipeline_input_reso1')
+
+    def test_build_pipeline_input_resolves_s3_visual_references_to_temp_files(tmp_path: Path) -> None:
+        job_dir = tmp_path / "job-3"
+        job_dir.mkdir(parents=True, exist_ok=True)
+        ref = InventoryVisualReference(
+            id="ref-1",
+            inventory_id="inv-3",
+            filename="ref.jpg",
+            storage_path="inventories/inv-3/visual_references/ref-1.jpg",
+            mime_type="image/jpeg",
+            file_size=7,
+            created_at=datetime.now(timezone.utc),
+            storage_provider="s3",
+            storage_bucket="bucket-a",
+            storage_key="inventories/inv-3/visual_references/ref-1.jpg",
+        )
+        store = _FakeArtifactStore(
+            {
+                "uploads/aisles/a1/raw/asset-3.jpg": b"asset",
+                "inventories/inv-3/visual_references/ref-1.jpg": b"refdata",
+            }
+        )
+>       ex = _executor("inv-3", [ref], store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:374: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_inventory_id = 'inv-3'
+visual_refs = [InventoryVisualReference(id='ref-1', inventory_id='inv-3', filename='ref.jpg', storage_path='inventories/inv-3/visual...t-a', storage_key='inventories/inv-3/visual_references/ref-1.jpg', content_type=None, file_size_bytes=None, etag=None)]
+artifact_store = <test_v3_job_executor_input_resolution._FakeArtifactStore object at 0x1138ef6f0>
+
+    def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
+        return V3JobExecutor(
+            job_repo=_NoopJobRepo(),
+            aisle_repo=_NoopAisleRepo(),
+>           source_asset_repo=_NoopRepo(),
+                              ^^^^^^^^^^^
+            position_repo=_NoopRepo(),
+            product_record_repo=_NoopRepo(),
+            evidence_repo=_NoopRepo(),
+            clock=_Clock(),
+            inventory_repo=_InventoryRepo(
+                Inventory(
+                    id=tmp_inventory_id,
+                    name="inv",
+                    status=InventoryStatus.DRAFT,
+                    created_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                    updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                )
+            ),
+            inventory_visual_reference_repo=_VisualRepo(visual_refs),
+            artifact_store=artifact_store,
+        )
+E       TypeError: Can't instantiate abstract class _NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:203: TypeError
+_ test_build_pipeline_input_resolves_local_provider_visual_reference_without_bucket _
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_build_pipeline_input_reso2')
+
+    def test_build_pipeline_input_resolves_local_provider_visual_reference_without_bucket(tmp_path: Path) -> None:
+        job_dir = tmp_path / "job-local-ref"
+        job_dir.mkdir(parents=True, exist_ok=True)
+        ref = InventoryVisualReference(
+            id="ref-local",
+            inventory_id="inv-local-ref",
+            filename="ref-local.jpg",
+            storage_path="inventories/inv-local-ref/visual_references/ref-local.jpg",
+            mime_type="image/jpeg",
+            file_size=8,
+            created_at=datetime.now(timezone.utc),
+            storage_provider="local",
+            storage_bucket=None,
+            storage_key="inventories/inv-local-ref/visual_references/ref-local.jpg",
+        )
+        store = _FakeArtifactStore(
+            {
+                "uploads/aisles/a1/raw/asset-local-ref.jpg": b"asset",
+                "inventories/inv-local-ref/visual_references/ref-local.jpg": b"ref-local",
+            }
+        )
+>       ex = _executor("inv-local-ref", [ref], store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:434: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_inventory_id = 'inv-local-ref'
+visual_refs = [InventoryVisualReference(id='ref-local', inventory_id='inv-local-ref', filename='ref-local.jpg', storage_path='invent...e_key='inventories/inv-local-ref/visual_references/ref-local.jpg', content_type=None, file_size_bytes=None, etag=None)]
+artifact_store = <test_v3_job_executor_input_resolution._FakeArtifactStore object at 0x11391c830>
+
+    def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
+        return V3JobExecutor(
+            job_repo=_NoopJobRepo(),
+            aisle_repo=_NoopAisleRepo(),
+>           source_asset_repo=_NoopRepo(),
+                              ^^^^^^^^^^^
+            position_repo=_NoopRepo(),
+            product_record_repo=_NoopRepo(),
+            evidence_repo=_NoopRepo(),
+            clock=_Clock(),
+            inventory_repo=_InventoryRepo(
+                Inventory(
+                    id=tmp_inventory_id,
+                    name="inv",
+                    status=InventoryStatus.DRAFT,
+                    created_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                    updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                )
+            ),
+            inventory_visual_reference_repo=_VisualRepo(visual_refs),
+            artifact_store=artifact_store,
+        )
+E       TypeError: Can't instantiate abstract class _NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:203: TypeError
+______ test_build_pipeline_input_missing_s3_object_fails_with_clear_error ______
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_build_pipeline_input_miss0')
+
+    def test_build_pipeline_input_missing_s3_object_fails_with_clear_error(tmp_path: Path) -> None:
+        job_dir = tmp_path / "job-4"
+        job_dir.mkdir(parents=True, exist_ok=True)
+>       ex = _executor("inv-4", [], _FakeArtifactStore({}))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:477: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_inventory_id = 'inv-4', visual_refs = []
+artifact_store = <test_v3_job_executor_input_resolution._FakeArtifactStore object at 0x1139278a0>
+
+    def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
+        return V3JobExecutor(
+            job_repo=_NoopJobRepo(),
+            aisle_repo=_NoopAisleRepo(),
+>           source_asset_repo=_NoopRepo(),
+                              ^^^^^^^^^^^
+            position_repo=_NoopRepo(),
+            product_record_repo=_NoopRepo(),
+            evidence_repo=_NoopRepo(),
+            clock=_Clock(),
+            inventory_repo=_InventoryRepo(
+                Inventory(
+                    id=tmp_inventory_id,
+                    name="inv",
+                    status=InventoryStatus.DRAFT,
+                    created_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                    updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                )
+            ),
+            inventory_visual_reference_repo=_VisualRepo(visual_refs),
+            artifact_store=artifact_store,
+        )
+E       TypeError: Can't instantiate abstract class _NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:203: TypeError
+______ test_build_pipeline_input_fails_when_source_asset_bucket_mismatch _______
+
+tmp_path = PosixPath('/private/var/folders/xq/993_y9zs5f166wj5nh8x7cpw0000gn/T/pytest-of-nasserelbacha/pytest-8/test_build_pipeline_input_fail0')
+
+    def test_build_pipeline_input_fails_when_source_asset_bucket_mismatch(tmp_path: Path) -> None:
+        job_dir = tmp_path / "job-5"
+        job_dir.mkdir(parents=True, exist_ok=True)
+        store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-5.jpg": b"s3-photo"})
+>       ex = _executor("inv-5", [], store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:508: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_inventory_id = 'inv-5', visual_refs = []
+artifact_store = <test_v3_job_executor_input_resolution._FakeArtifactStore object at 0x113926f10>
+
+    def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
+        return V3JobExecutor(
+            job_repo=_NoopJobRepo(),
+            aisle_repo=_NoopAisleRepo(),
+>           source_asset_repo=_NoopRepo(),
+                              ^^^^^^^^^^^
+            position_repo=_NoopRepo(),
+            product_record_repo=_NoopRepo(),
+            evidence_repo=_NoopRepo(),
+            clock=_Clock(),
+            inventory_repo=_InventoryRepo(
+                Inventory(
+                    id=tmp_inventory_id,
+                    name="inv",
+                    status=InventoryStatus.DRAFT,
+                    created_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                    updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
+                )
+            ),
+            inventory_visual_reference_repo=_VisualRepo(visual_refs),
+            artifact_store=artifact_store,
+        )
+E       TypeError: Can't instantiate abstract class _NoopRepo without an implementation for abstract methods 'delete_by_id', 'get_by_capture_session_item_id'
+
+tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py:203: TypeError
+=========================== short test summary info ============================
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_coordination.py::test_execute_success_invokes_state_runner_and_artifacts
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_coordination.py::test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py::test_build_pipeline_input_downloads_s3_source_asset_to_temp_workspace
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py::test_build_pipeline_input_accepts_sql_mapped_source_asset_with_provider_metadata
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py::test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py::test_build_pipeline_input_resolves_local_provider_source_asset_without_bucket
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py::test_build_pipeline_input_resolves_s3_visual_references_to_temp_files
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py::test_build_pipeline_input_resolves_local_provider_visual_reference_without_bucket
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py::test_build_pipeline_input_missing_s3_object_fails_with_clear_error
+FAILED tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py::test_build_pipeline_input_fails_when_source_asset_bucket_mismatch
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 10 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+10 failed, 6 passed, 1 skipped in 0.35s
