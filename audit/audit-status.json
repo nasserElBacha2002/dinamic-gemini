@@ -1,7 +1,7 @@
 {
   "overall_status": "findings",
   "max_severity": "critical",
-  "generated_at": "2026-04-27T13:48:35+00:00",
+  "generated_at": "2026-04-27T13:50:32+00:00",
   "areas": {
     "backend": {
       "status": "NOT_RUN",
