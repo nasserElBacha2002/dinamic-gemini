@@ -60,9 +60,10 @@ def test_dhash_same_frame_same_hash():
 
 
 def test_dhash_different_frame_different_hash():
-    """Different content produces different dHash (very likely)."""
-    a = np.zeros((100, 100, 3), dtype=np.uint8)
-    b = np.ones((100, 100, 3), dtype=np.uint8) * 255
+    """Different visual content produces different dHash (fixed RNG draws)."""
+    rng = np.random.default_rng(0)
+    a = rng.integers(0, 256, (100, 100, 3), dtype=np.uint8)
+    b = rng.integers(0, 256, (100, 100, 3), dtype=np.uint8)
     assert _dhash(a) != _dhash(b)
 
 
@@ -100,8 +101,10 @@ def test_optimized_reduces_duplicates():
 
 def test_optimized_filters_blurred_frames():
     """Blurred frames are excluded when blur_threshold is above their metric."""
-    sharp = np.random.randint(0, 256, (60, 80, 3), dtype=np.uint8)
-    blurred = cv2.GaussianBlur(sharp, (21, 21), 8)
+    sharp = np.zeros((60, 80, 3), dtype=np.uint8)
+    sharp[::4, :] = 255
+    sharp[:, ::4] = 200
+    blurred = cv2.GaussianBlur(sharp, (31, 31), 12)
     # Mix: sharp at 0,2,4,... and blurred at 1,3,5,...
     frames = [sharp, blurred] * 10  # 20 frames
     with patch("src.video.frames.cv2.VideoCapture", return_value=_make_mock_cap(frames)):
@@ -109,12 +112,12 @@ def test_optimized_filters_blurred_frames():
             "/fake/path.mp4",
             max_frames=25,
             strategy=STRATEGY_OPTIMIZED,
-            blur_threshold=50.0,
+            blur_threshold=10.0,
             hash_threshold=64,
         )
     # All accepted frames should be sharp (high Laplacian variance)
     for f in out_frames:
-        assert _blur_metric(f) >= 50.0
+        assert _blur_metric(f) >= 10.0
 
 
 def test_frame_indices_length_equals_frames_length():

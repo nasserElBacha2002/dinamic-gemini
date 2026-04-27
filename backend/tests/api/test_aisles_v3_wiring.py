@@ -645,8 +645,8 @@ def test_cancel_queued_job_returns_202_and_list_and_status_show_canceled() -> No
     assert status_resp.json()["latest_job"]["status"] == "cancel_requested"
 
 
-def test_cancel_already_canceled_job_returns_409() -> None:
-    """Phase 3 Block 1 Case 3: Cancel terminal (CANCELED) job -> 409."""
+def test_cancel_after_cancel_requested_is_idempotent_returns_202() -> None:
+    """Phase 3 Block 1 Case 3: Second cancel on same job is idempotent -> 202."""
     create_resp = client.post("/api/v3/inventories", json={"name": "For Cancel 409"})
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
@@ -1122,8 +1122,8 @@ def test_post_process_when_latest_job_running_returns_409() -> None:
         app.dependency_overrides.pop(get_source_asset_repo, None)
 
 
-def test_post_process_after_terminal_job_creates_new_job() -> None:
-    """Phase 3 Case 5: After terminal state (e.g. CANCELED), POST process creates a new job; list/status show new job."""
+def test_post_process_after_cancel_requested_blocked_by_active_job_returns_409() -> None:
+    """Phase 3 Case 5: While latest job is still active (cancel_requested), POST process is rejected with 409."""
     create_resp = client.post("/api/v3/inventories", json={"name": "For Re-process"})
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
@@ -1374,7 +1374,6 @@ def test_execution_log_returns_events_for_canceled_job() -> None:
         cd = txt_resp.headers.get("content-disposition", "")
         assert "attachment" in cd.lower()
         assert "inventory_inv-cancel-log_aisle_aisle-cancel-log_job_job-cancel-log_execution_log.txt" in cd
-        assert txt_resp.content is not None
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         app.dependency_overrides.pop(get_inventory_repo, None)

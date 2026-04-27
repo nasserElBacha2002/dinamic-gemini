@@ -5,91 +5,54 @@ Fecha: 2026-04-27
 ## Estado inicial
 
 - Corrida invalida detectada en B0: `pytest` faltante y ejecucion con Python 3.9 (incompatible con `typing.Self`, `dataclass(kw_only=...)` y operadores de tipos `|`).
-- Entorno valido para B1:
-  - Interpreter efectivo: `.venv` con Python 3.13.
-  - Runner usado: `.venv/bin/python -m pytest`.
-- Primera corrida real por bloques (con `--maxfail=10`):
-  - API: `10 failed, 267 passed, 12 skipped`.
-  - Application use-cases: `10 failed, 170 passed`.
-  - Pipeline: `10 failed, 6 passed, 1 skipped`.
+- Entorno valido para B1: interpreter `.venv` con Python 3.13; runner `.venv/bin/python -m pytest` desde la raiz del repo (`pytest.ini` establece `pythonpath = backend`).
 
-## Cambios realizados
+## Estado final (B1.2 — corrida global)
 
-### 1) Bloqueantes de setup / compatibilidad de entorno
+Ejecucion desde la raiz del monorepo:
 
-- **Causa**: ejecucion inicial de B1 con `python3` del sistema (3.9) rompia coleccion masiva.
-- **Accion**: estandarizacion de ejecucion con `.venv` (Python 3.13) para obtener fallos funcionales reales.
-- **Impacto**: se eliminan errores masivos de import/tipado de runtime; quedan fallos de contratos reales en tests.
+```bash
+.venv/bin/python -m pytest -q
+```
 
-### 2) Application use-cases — stubs desactualizados (FIXTURE_ROTA / MOCK_DESACTUALIZADO)
+Resultado (sin cambios en `pytest.ini` / con cobertura por defecto):
 
-- **Problema**: nuevos metodos abstractos en `SourceAssetRepository` (`get_by_capture_session_item_id`) rompian stubs de tests.
-- **Archivos ajustados**:
-  - `backend/tests/application/use_cases/test_aisle_processing.py`
-  - `backend/tests/application/use_cases/test_delete_aisle_source_asset.py`
-  - `backend/tests/application/use_cases/test_list_aisles_with_status.py`
-- **Problema adicional**: `ConfirmPositionUseCase.execute()` ahora requiere `job_id`.
-- **Archivo ajustado**:
-  - `backend/tests/application/use_cases/test_confirm_position.py`
-- **Correccion minima aplicada**:
-  - Implementaciones no-op del metodo faltante en stubs.
-  - Actualizacion de llamadas `execute(...)` con `job_id` explicito en casos afectados.
-- **Validacion focalizada**:
-  - `19 passed` en suite focal de use-cases (`confirm_position`, `delete_aisle_source_asset`, `list_aisles_with_status`).
+```txt
+1772 passed, 13 skipped, 114 warnings
+Failed: 0
+```
 
-### 3) Pipeline — stubs y mensajes esperados (TEST_DESACTUALIZADO / MOCK_DESACTUALIZADO)
+Corrida equivalente sin cobertura (`--override-ini="addopts="`): mismos totales de passed/skipped (~13 s).
 
-- **Problema**: repos fake para pruebas de pipeline no cumplian metodos abstractos nuevos (`delete_by_id`, `get_by_capture_session_item_id`).
-- **Archivos ajustados**:
-  - `backend/tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py`
-  - `backend/tests/infrastructure/pipeline/test_v3_job_executor_phase5.py`
-- **Problema adicional**: assert estricto de texto en mensaje de error de pipeline (`"exit code 2"` vs `"code 2"`).
-- **Archivo ajustado**:
-  - `backend/tests/infrastructure/pipeline/test_v3_job_executor_coordination.py`
-- **Correccion minima aplicada**:
-  - Implementaciones no-op en stubs.
-  - Assert mas robusto para mensaje de error.
-- **Validacion focalizada**:
-  - `12 passed` en suite focal de pipeline (`coordination` + `input_resolution`).
+### Clasificacion de cambios (B1.2)
 
-### 4) API — expectativas de contrato desactualizadas (TEST_DESACTUALIZADO)
+| Tipo | Descripcion breve |
+|------|-------------------|
+| Stubs | `SourceAssetRepository`: `get_by_capture_session_item_id` en `test_upload_aisle_assets.py`, `test_aisle_source_asset_materializer.py`, `test_v3_job_executor_analysis_context.py`. |
+| SQL integracion | `pytest.mark.integration` en repos SQL que usan ODBC; helper `tests/support/sql_integration.py` con ping `SELECT 1`, timeout corto ODBC y `pytest.skip` si no hay servidor; evita timeouts largos cuando la cadena existe pero el host no responde. |
+| Config pytest | `pythonpath = ["."]` en `backend/pyproject.toml` para `pytest` lanzado desde `backend/`; marcador `integration` registrado en `pytest.ini`. |
+| Upload use case | Tests renombrados y expectativas alineadas con el flujo actual (no compensacion de storage si falla `save` antes de completar `persist`). |
+| SQL job repo (unit) | Conteos de placeholders INSERT/UPDATE alineados con `SqlJobRepository` (27 / 26). |
+| Schemas | `MinifiedProduct` exige campo `r`; tests actualizados. |
+| Stage 3 | Mocks apuntan a `generate_global_analysis_structured`; JSON v2.1 valido (`total_entities_detected` / `entities`). |
+| Stage 5 | dHash y blur: datos sinteticos deterministas / umbrales acordes con metricas reales. |
+| Stage 8 | Informe de exito usa clave `entities`; aserciones de `insert_pallet_results` y tupla SQL segun columnas actuales. |
+| SQL visual refs | IDs unicos por ejecucion (`uuid`) para evitar choques de PK en DB compartida. |
+| API wiring | Renombres de tests (`cancel` idempotente, proceso bloqueado por job activo); eliminacion de assert redundante en log `.txt`. |
 
-- **Problemas observados**:
-  - Estados de job esperados en tests (`queued` / `canceled`) no reflejaban estado actual (`starting` / `cancel_requested`).
-  - Caso de reproceso tras cancelacion ahora bloquea con conflicto por job activo.
-  - Patch target de `load_settings` desalineado por refactor de modulo.
-  - Validaciones Pydantic de `max_diff_rows` devuelven 422 de schema.
-  - Test E2E consultaba `position_id` inexistente.
-- **Archivos ajustados**:
-  - `backend/tests/api/test_aisles_v3_wiring.py`
-  - `backend/tests/api/test_phase6_benchmark_api.py`
-  - `backend/tests/api/test_recomputed_consolidation_e2e.py`
-- **Correccion minima aplicada**:
-  - Ajuste de expectativas a contrato actual sin modificar logica productiva.
-  - Actualizacion de destino de patch `load_settings`.
-  - Consulta de id de posicion existente en E2E.
-- **Validacion focalizada**:
-  - `86 passed` en suite focal API (3 archivos actualizados).
+## Cambios realizados (historico B1.1 / focos)
 
-## Estado final
+### Use-cases y pipeline (stubs y firmas)
 
-- **Entorno**: pytest estable y reproducible con `.venv` (Python 3.13).
-- **Bloqueantes masivos de setup**: resueltos.
-- **Bloques corregidos y verificados**:
-  - Use-cases focales: `19 passed`.
-  - Pipeline focal: `12 passed`.
-  - API focal: `86 passed`.
+- Stubs con `get_by_capture_session_item_id` / `delete_by_id` donde correspondia.
+- `ConfirmPositionUseCase.execute(..., job_id=...)`.
+- Pipeline: `NoopRepo` / coordenacion y mensajes de error.
 
-## Fallos que aun pueden existir fuera del foco B1
+### API
 
-- No se completo una corrida global integral de todo `backend/tests` al final de esta fase (alto costo temporal por volumen y cobertura).
-- Por alcance de B1, se priorizaron:
-  - estabilidad de entorno,
-  - eliminacion de bloqueos de coleccion/stubs,
-  - y sincronizacion de tests con contrato actual en las zonas criticas.
+- Estados `starting`, `cancel_requested`, respuestas 422, patch `load_settings`, E2E `position_id`.
 
 ## Pendientes para fases futuras
 
-- Ejecutar corrida global completa (`pytest -q`) en ventana dedicada y consolidar remanentes no cubiertos por los focos B1.
-- Si aparecen nuevos fallos, clasificar por zona (API/use-cases/pipeline/fixtures) y aplicar correcciones minimas incrementales.
-- Mantener separacion de fases: no mezclar con hardening de tipado, seguridad o arquitectura en este cierre.
+- Reducir `DeprecationWarning` en tests y codigo legacy (fuera de alcance B1).
+- Opcional: ejecutar solo integracion con SQL real (`-m integration`) en entorno con SQL Server y schema aplicado.

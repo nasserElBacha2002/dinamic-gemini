@@ -49,7 +49,7 @@ def test_clamp01():
 # ----------------------------
 def test_minified_product_valid():
     """Test de creación de MinifiedProduct válido."""
-    product = MinifiedProduct(n="Leche UAT", q=84, c=0.93, b="Cremigal")
+    product = MinifiedProduct(n="Leche UAT", r="12×7=84", q=84, c=0.93, b="Cremigal")
     assert product.n == "Leche UAT"
     assert product.q == 84
     assert product.c == 0.93
@@ -59,36 +59,36 @@ def test_minified_product_valid():
 def test_minified_product_confidence_clamp():
     """Test de validación de confianza en MinifiedProduct."""
     # Confianza dentro del rango válido
-    product1 = MinifiedProduct(n="Test", q=10, c=0.95)
+    product1 = MinifiedProduct(n="Test", r="counted", q=10, c=0.95)
     assert product1.c == 0.95
     
     # Confianza en los límites
-    product2 = MinifiedProduct(n="Test", q=10, c=0.0)
+    product2 = MinifiedProduct(n="Test", r="counted", q=10, c=0.0)
     assert product2.c == 0.0
     
-    product3 = MinifiedProduct(n="Test", q=10, c=1.0)
+    product3 = MinifiedProduct(n="Test", r="counted", q=10, c=1.0)
     assert product3.c == 1.0
     
     # Valores fuera de rango son rechazados por Pydantic antes del validador
     # (esto es el comportamiento esperado: validación estricta)
     with pytest.raises(ValidationError):
-        MinifiedProduct(n="Test", q=10, c=1.5)
+        MinifiedProduct(n="Test", r="x", q=10, c=1.5)
     
     with pytest.raises(ValidationError):
-        MinifiedProduct(n="Test", q=10, c=-0.1)
+        MinifiedProduct(n="Test", r="x", q=10, c=-0.1)
 
 
 def test_minified_product_negative_boxes():
     """Test que no permite cantidad negativa de cajas."""
     with pytest.raises(ValidationError):
-        MinifiedProduct(n="Test", q=-1, c=0.5)
+        MinifiedProduct(n="Test", r="x", q=-1, c=0.5)
 
 
 def test_minified_pallet_valid():
     """Test de creación de MinifiedPallet válido."""
     products = [
-        MinifiedProduct(n="Producto 1", q=50, c=0.9),
-        MinifiedProduct(n="Producto 2", q=30, c=0.85),
+        MinifiedProduct(n="Producto 1", r="a", q=50, c=0.9),
+        MinifiedProduct(n="Producto 2", r="b", q=30, c=0.85),
     ]
     pallet = MinifiedPallet(id="PALLET_001", p=products)
     assert pallet.id == "PALLET_001"
@@ -97,7 +97,7 @@ def test_minified_pallet_valid():
 
 def test_minified_frame_result_valid():
     """Test de creación de MinifiedFrameResult válido."""
-    products = [MinifiedProduct(n="Producto", q=10, c=0.8)]
+    products = [MinifiedProduct(n="Producto", r="z", q=10, c=0.8)]
     pallets = [MinifiedPallet(id="P001", p=products)]
     result = MinifiedFrameResult(pallets=pallets)
     assert len(result.pallets) == 1
@@ -326,9 +326,10 @@ def test_consolidated_result_valid():
 # ----------------------------
 def test_minified_product_json_serialization():
     """Test de serialización JSON de MinifiedProduct."""
-    product = MinifiedProduct(n="Test", q=10, c=0.8, b="Brand")
+    product = MinifiedProduct(n="Test", r="ok", q=10, c=0.8, b="Brand")
     json_data = product.model_dump()
     assert json_data["n"] == "Test"
+    assert json_data["r"] == "ok"
     assert json_data["q"] == 10
     assert json_data["c"] == 0.8
     assert json_data["b"] == "Brand"
@@ -353,7 +354,7 @@ def test_final_result_json_serialization():
 def test_extra_fields_forbidden():
     """Test que los modelos rechazan campos extra."""
     with pytest.raises(ValidationError):
-        MinifiedProduct(n="Test", q=10, c=0.8, extra_field="not_allowed")
+        MinifiedProduct(n="Test", r="x", q=10, c=0.8, extra_field="not_allowed")
     
     with pytest.raises(ValidationError):
         FinalResult(

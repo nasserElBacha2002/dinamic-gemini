@@ -8,14 +8,19 @@ Skips when DB is not configured. Requires inventory_visual_references table to e
 from __future__ import annotations
 
 import os
+import uuid
+
 import pytest
 
-from src.database.sqlserver import SqlServerClient, now_utc
+from src.database.sqlserver import now_utc
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from src.infrastructure.repositories.sql_inventory_visual_reference_repository import (
     SqlInventoryVisualReferenceRepository,
 )
+from tests.support.sql_integration import sql_server_client_or_skip
+
+pytestmark = pytest.mark.integration
 
 
 def _connection_string() -> str:
@@ -44,10 +49,7 @@ def _connection_string() -> str:
 
 @pytest.fixture(scope="module")
 def sql_client():
-    cs = _connection_string()
-    if not cs:
-        pytest.skip("SQL Server not configured (set SQLSERVER_CONNECTION_STRING or server/database/uid/pwd)")
-    return SqlServerClient(cs)
+    return sql_server_client_or_skip(_connection_string())
 
 
 @pytest.fixture
@@ -79,11 +81,12 @@ def ensure_inventory(inventory_repo):
 def test_sql_save_and_list_by_inventory(ref_repo, ensure_inventory) -> None:
     inventory_id = ensure_inventory
     now = now_utc()
+    ref_id = f"test-v324-ref-{uuid.uuid4().hex[:16]}"
     ref = InventoryVisualReference(
-        id="test-v324-ref-001",
+        id=ref_id,
         inventory_id=inventory_id,
         filename="example.png",
-        storage_path=f"inventories/{inventory_id}/visual_references/test-v324-ref-001.png",
+        storage_path=f"inventories/{inventory_id}/visual_references/{ref_id}.png",
         mime_type="image/png",
         file_size=2048,
         created_at=now,
@@ -107,18 +110,20 @@ def test_sql_list_by_inventory_empty_for_other_inventory(ref_repo, ensure_invent
 def test_sql_multiple_references_same_inventory(ref_repo, ensure_inventory) -> None:
     inventory_id = ensure_inventory
     now = now_utc()
+    created_ids: list[str] = []
     for i in range(2):
+        rid = f"test-v324-multi-{uuid.uuid4().hex[:12]}-{i}"
+        created_ids.append(rid)
         ref = InventoryVisualReference(
-            id=f"test-v324-multi-{i}",
+            id=rid,
             inventory_id=inventory_id,
             filename=f"img{i}.jpg",
-            storage_path=f"inventories/{inventory_id}/visual_references/test-v324-multi-{i}.jpg",
+            storage_path=f"inventories/{inventory_id}/visual_references/{rid}.jpg",
             mime_type="image/jpeg",
             file_size=100 * (i + 1),
             created_at=now,
         )
         ref_repo.create(ref)
     listed = ref_repo.list_by_inventory(inventory_id)
-    ids = [r.id for r in listed if r.id.startswith("test-v324-multi-")]
-    assert len(ids) == 2
-    assert "test-v324-multi-0" in ids and "test-v324-multi-1" in ids
+    ids = [r.id for r in listed]
+    assert set(created_ids).issubset(set(ids))
