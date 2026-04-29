@@ -47,9 +47,8 @@ def _decode_heic_to_bgr(raw: bytes) -> np.ndarray:
     if not _heif_opener_registered:
         pillow_heif.register_heif_opener()
         _heif_opener_registered = True
-    img = Image.open(io.BytesIO(raw))
-    img = img.convert("RGB")
-    arr = np.array(img)
+    pil_rgb: Image.Image = Image.open(io.BytesIO(raw)).convert("RGB")
+    arr = np.array(pil_rgb)
     return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
 
@@ -91,8 +90,8 @@ def decode_image_bytes_or_heic(raw: bytes, src_path: Optional[Path] = None) -> T
         return img, False
     suffix = (src_path.suffix or "").lower() if src_path else ""
     if suffix in HEIC_EXTENSIONS:
-        img = _decode_heic_to_bgr(raw)
-        return img, True
+        bgr = _decode_heic_to_bgr(raw)
+        return bgr, True
     raise ValueError("decoded bytes are not a valid image")
 
 

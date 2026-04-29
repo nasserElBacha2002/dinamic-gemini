@@ -211,11 +211,12 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         if ttl <= 0:
             ttl = self._signed_url_ttl_sec
         try:
-            return self._client.generate_presigned_url(
+            url = self._client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": self._bucket, "Key": object_key},
                 ExpiresIn=ttl,
             )
+            return str(url)
         except Exception as exc:
             logger.exception(
                 "S3 generate_presigned_url failed bucket=%s key=%s ttl=%s",

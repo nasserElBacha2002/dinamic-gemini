@@ -95,7 +95,7 @@ class UpdateProductSkuUseCase:
         )
         product.sku = sku
         if description is not None:
-            product.description = description.strip() or None
+            product.description = description.strip() if description.strip() else ""
         product.updated_at = now
         self._product_record_repo.save(product)
 

@@ -1,5 +1,5 @@
 # Frontend duplication audit
-generated_at: 2026-04-27 14:16:07
+generated_at: 2026-04-29 19:03:13
 
 jscpd no instalado.
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src/features/benchmark/PromoteOperationalDialog.tsx

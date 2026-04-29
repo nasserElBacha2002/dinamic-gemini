@@ -17,7 +17,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import cv2
 import numpy as np
@@ -29,6 +29,7 @@ from openai import (
     OpenAI,
     RateLimitError,
 )
+from openai.types.chat import ChatCompletionUserMessageParam
 
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.errors import LLMProviderError
@@ -171,7 +172,8 @@ def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
         return {}
     model_dump = getattr(u, "model_dump", None)
     if callable(model_dump):
-        return model_dump(exclude_none=True)
+        dumped = model_dump(exclude_none=True)
+        return cast(Dict[str, Any], dumped) if isinstance(dumped, dict) else {}
     out: Dict[str, Any] = {}
     for key in (
         "prompt_tokens",
@@ -283,10 +285,15 @@ class OpenAiSdkAdapter:
             client_kw["base_url"] = base_url
         client = OpenAI(**client_kw)
         t0 = time.perf_counter()
+        model_str: str = str(effective_model).strip()
+        user_message = cast(
+            ChatCompletionUserMessageParam,
+            {"role": "user", "content": content},
+        )
         try:
             completion = client.chat.completions.create(
-                model=effective_model,
-                messages=[{"role": "user", "content": content}],
+                model=model_str,
+                messages=[user_message],
                 response_format={"type": "json_object"},
             )
         except AuthenticationError as e:

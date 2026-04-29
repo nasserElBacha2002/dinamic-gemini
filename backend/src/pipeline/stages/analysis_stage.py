@@ -89,7 +89,9 @@ class AnalysisStage:
             )
             if log.isEnabledFor(logging.DEBUG) and isinstance(ents, list):
                 with_plq = sum(
-                    1 for e in ents if isinstance(e, dict) and e.get("product_label_quantity") is not None
+                    1
+                    for ent in ents
+                    if isinstance(ent, dict) and ent.get("product_label_quantity") is not None
                 )
                 log.debug(
                     "analysis_stage post_normalize: provider=%s entities=%d product_label_quantity_set=%d",
@@ -100,11 +102,11 @@ class AnalysisStage:
                 provider_norm = (result.provider_name or "").strip().lower()
                 if provider_norm == "openai":
                     after_presence: Dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
-                    for e in ents:
-                        if not isinstance(e, dict):
+                    for ent in ents:
+                        if not isinstance(ent, dict):
                             continue
                         for key in _OPENAI_CANONICAL_ENTITY_KEYS:
-                            val = e.get(key)
+                            val = ent.get(key)
                             if val is None:
                                 continue
                             if isinstance(val, str) and not val.strip():

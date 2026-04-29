@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from src.application.errors import ActiveJobExistsError
+from src.application.ports.contracts import ProcessAislePayload
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
@@ -99,7 +100,14 @@ class RetryAisleJobUseCase:
             job_id=command.job_id,
         )
 
-        payload = dict(original_job.payload_json or {})
+        raw_payload = dict(original_job.payload_json or {})
+        aisle_from_job = raw_payload.get("aisle_id")
+        resolved_aisle_id = (
+            aisle_from_job.strip()
+            if isinstance(aisle_from_job, str) and aisle_from_job.strip()
+            else aisle.id
+        )
+        payload: ProcessAislePayload = {"aisle_id": resolved_aisle_id}
         retry_job = self._launch_service.create_and_launch_attempt(
             aisle=aisle,
             payload=payload,

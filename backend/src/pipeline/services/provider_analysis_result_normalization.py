@@ -45,7 +45,7 @@ def build_analysis_result_from_llm_response(
     return AnalysisResult(
         parsed_json=response.parsed_json,
         provider_name=response.provider,
-        provider_metadata=provider_metadata,
-        prompt_composition=prompt_composition,
+        provider_metadata=dict(provider_metadata),
+        prompt_composition=dict(prompt_composition),
         llm_cost_snapshot=llm_cost_snapshot,
     )

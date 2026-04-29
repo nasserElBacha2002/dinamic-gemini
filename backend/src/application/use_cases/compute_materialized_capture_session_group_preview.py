@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
 from src.application.errors import (
     CaptureSessionGroupIntegrityError,
@@ -131,7 +132,7 @@ class MaterializedGroupPreviewItemResult:
     source_asset_id: str
     assignment_status: str
     assignment_reason: str
-    adjusted_capture_time: object | None
+    adjusted_capture_time: datetime | None
     preview_target_position_id: str | None
 
 

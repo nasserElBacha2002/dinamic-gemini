@@ -18,6 +18,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
+    _JobIdFilterUnset,
 )
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
@@ -142,8 +143,9 @@ class RecomputeConsolidatedCountsUseCase:
             qty_by_pos_sku[key] = rec.quantity
 
         updated = 0
+        pos_kw: Union[str, None, _JobIdFilterUnset]
         if job_scope == "all":
-            pos_kw: object | str | None = JOB_ID_FILTER_UNSET
+            pos_kw = JOB_ID_FILTER_UNSET
         elif job_scope == "legacy_null":
             pos_kw = None
         else:

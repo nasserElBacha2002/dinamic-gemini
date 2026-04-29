@@ -34,7 +34,12 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def _status_from_row(raw: object, session_id: str) -> CaptureSessionStatus:
-    s = (raw or "").strip().lower() if raw is not None else ""
+    if raw is None:
+        s = ""
+    elif isinstance(raw, str):
+        s = raw.strip().lower()
+    else:
+        s = str(raw).strip().lower()
     try:
         return CaptureSessionStatus(s)
     except ValueError:

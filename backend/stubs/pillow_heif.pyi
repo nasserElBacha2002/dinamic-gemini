@@ -1,0 +1,3 @@
+"""Minimal stub for pillow_heif (no upstream py.typed)."""
+
+def register_heif_opener() -> None: ...

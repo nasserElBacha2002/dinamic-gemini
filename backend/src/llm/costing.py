@@ -407,8 +407,9 @@ def build_llm_cost_snapshot(
     }
 
     if isinstance(entry, dict):
-        if isinstance(entry.get("currency"), str) and entry.get("currency").strip():
-            pricing_snapshot["billing_currency"] = str(entry.get("currency")).strip()
+        currency_raw = entry.get("currency")
+        if isinstance(currency_raw, str) and currency_raw.strip():
+            pricing_snapshot["billing_currency"] = currency_raw.strip()
         for key in (
             "input_cost_per_million",
             "output_cost_per_million",

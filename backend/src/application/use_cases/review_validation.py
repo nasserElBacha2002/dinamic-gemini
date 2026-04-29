@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Optional
 
 from src.application.errors import (
+    AisleNotFoundError,
     InventoryNotFoundError,
     PositionDeletedError,
     PositionNotFoundError,
@@ -23,6 +24,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
 )
+from src.domain.aisle.entities import Aisle
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 

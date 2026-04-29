@@ -19,11 +19,21 @@ from src.domain.positions.entities import Position
 def position_quantity_from_summary(pos: Position) -> int:
     data = pos.detected_summary_json if isinstance(pos.detected_summary_json, dict) else {}
     raw = data.get("final_quantity")
+    if raw is None:
+        return 1
+    if isinstance(raw, bool):
+        return 1
+    if isinstance(raw, int):
+        return max(0, raw)
+    if isinstance(raw, str):
+        try:
+            return max(0, int(raw.strip(), 10))
+        except (TypeError, ValueError):
+            return 1
     try:
-        value = int(raw)
+        return max(0, int(raw))
     except (TypeError, ValueError):
         return 1
-    return max(0, value)
 
 
 def canonical_internal_code_lower(pos: Position) -> str:

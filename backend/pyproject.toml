@@ -52,6 +52,8 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
+    "types-passlib",
+    "boto3-stubs[s3]>=1.35.0",
     "bandit>=1.7.0",
     "pip-audit>=2.7.0",
     "radon>=6.0.1",
@@ -117,3 +119,5 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
+# Local PEP 561-style stubs for packages without py.typed (see stubs/).
+mypy_path = "stubs"

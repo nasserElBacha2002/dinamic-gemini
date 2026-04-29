@@ -20,7 +20,12 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def _parse_assignment_status(raw: object) -> CaptureSessionGroupAisleAssignmentStatus:
-    s = (raw or "unassigned").strip().lower()
+    if raw is None:
+        s = "unassigned"
+    elif isinstance(raw, str):
+        s = raw.strip().lower() or "unassigned"
+    else:
+        s = str(raw).strip().lower() or "unassigned"
     try:
         return CaptureSessionGroupAisleAssignmentStatus(s)
     except ValueError:

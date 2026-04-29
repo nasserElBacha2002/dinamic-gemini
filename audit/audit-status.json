@@ -1,7 +1,7 @@
 {
   "overall_status": "error",
   "max_severity": "critical",
-  "generated_at": "2026-04-27T17:16:08+00:00",
+  "generated_at": "2026-04-29T22:03:15+00:00",
   "areas": {
     "backend": {
       "status": "ERROR",

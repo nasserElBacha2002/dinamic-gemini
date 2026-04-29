@@ -16,6 +16,10 @@ class ProgressDict(TypedDict):
     percent: int
 
 
+def _default_job_progress() -> ProgressDict:
+    return {"stage": "", "percent": 0}
+
+
 class JobCreateResponse(BaseModel):
     """202 response after creating a job."""
     job_id: str
@@ -28,7 +32,7 @@ class JobStatusResponse(BaseModel):
     """GET /jobs/{job_id} response."""
     job_id: str
     status: str
-    progress: ProgressDict = Field(default_factory=lambda: {"stage": "", "percent": 0})
+    progress: ProgressDict = Field(default_factory=_default_job_progress)
     created_at: str = ""
     execution_time_seconds: Optional[float] = Field(default=None, description="Tiempo de ejecución en segundos (cuando el trabajo ha terminado).")
 
