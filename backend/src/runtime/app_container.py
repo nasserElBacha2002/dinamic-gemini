@@ -38,6 +38,7 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
+from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def reset_app_container_for_tests() -> None:
 class AppContainer:
     """Builds and caches cross-cutting infrastructure dependencies."""
 
-    def __init__(self, settings: "AppSettings") -> None:
+    def __init__(self, settings: AppSettings) -> None:
         self._settings = settings
         self._v3_sql_client: Optional[SqlServerClient] = None
         self._inventory_repo: Optional[InventoryRepository] = None
@@ -91,7 +92,7 @@ class AppContainer:
         self._capture_session_group_repo: Optional[CaptureSessionGroupRepository] = None
 
     @property
-    def settings(self) -> "AppSettings":
+    def settings(self) -> AppSettings:
         return self._settings
 
     @staticmethod

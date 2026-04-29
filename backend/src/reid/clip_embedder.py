@@ -21,7 +21,7 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     n2 = sum(x * x for x in vec2) ** 0.5
     if n1 == 0.0 or n2 == 0.0:
         return 0.0
-    return dot / (n1 * n2)
+    return float(dot / (n1 * n2))
 
 
 def _roi_paths_from_sig(sig: Any) -> List[str]:

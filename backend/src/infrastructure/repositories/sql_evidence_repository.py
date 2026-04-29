@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, cast
 
 from src.application.ports.repositories import EvidenceRepository
 from src.database.sqlserver import SqlServerClient
@@ -20,7 +20,7 @@ def _parse_json(raw: Optional[str], context: str = "") -> Optional[Dict[str, Any
     if not raw or not raw.strip():
         return None
     try:
-        return json.loads(raw)
+        return cast(Dict[str, Any], json.loads(raw))
     except json.JSONDecodeError as e:
         logger.warning("Invalid JSON in %s: %s", context or "evidence", e)
         return None

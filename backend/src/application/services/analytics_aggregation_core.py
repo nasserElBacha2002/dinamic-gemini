@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
-from src.application.dto.analytics_dto import AnalyticsFilters
+from src.application.dto.analytics_dto import AnalyticsFilters, AnalyticsSummaryDTO
 from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.utils.review_queue_derived import (
     position_has_primary_evidence,
@@ -249,9 +249,7 @@ def minutes_from_seconds(seconds: Optional[float]) -> Optional[float]:
     return seconds / 60.0
 
 
-def build_summary_metrics(inputs: SummaryMetricInputs):
-    from src.application.dto.analytics_dto import AnalyticsSummaryDTO
-
+def build_summary_metrics(inputs: SummaryMetricInputs) -> AnalyticsSummaryDTO:
     return AnalyticsSummaryDTO(
         auto_acceptance_rate=ratio_or_none(
             inputs.auto_accepted_positions_count, inputs.reviewed_positions_count

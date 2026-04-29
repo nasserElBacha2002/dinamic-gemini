@@ -26,7 +26,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, cast
 
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
@@ -500,7 +500,7 @@ def load_artifact_content_from_provider_meta(
             key,
             len(data),
         )
-        return data
+        return cast(bytes, data)
 
     def _download_via_tempfile() -> bytes:
         fd, tmp_name = tempfile.mkstemp(prefix="artifact_", suffix=".bin")
@@ -549,7 +549,7 @@ def load_artifact_content_from_provider_meta(
             key,
             len(data),
         )
-        return data
+        return cast(bytes, data)
 
     if hard_max_bytes is not None:
         if size_known is not None:
@@ -661,7 +661,7 @@ def fetch_json_from_durable_meta(
         hard_max_bytes=max_json,
     )
     try:
-        return json.loads(raw.decode("utf-8"))
+        return cast(Dict[str, Any], json.loads(raw.decode("utf-8")))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise StoredArtifactAccessError(
             502,

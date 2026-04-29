@@ -5,7 +5,7 @@ Análisis global de video con una sola llamada a Gemini (hybrid v2.1, Structured
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import numpy as np
 
@@ -65,7 +65,9 @@ class GeminiGlobalAnalyzer:
         if not frames:
             raise ValueError("frames no puede estar vacía")
         run_logger = kwargs.get("logger")
-        log = run_logger if run_logger is not None else logger
+        log: logging.Logger = (
+            run_logger if isinstance(run_logger, logging.Logger) else logger
+        )
         primary_images = [_ndarray_to_pil(f) for f in frames]
         prompt = (
             self._prompt_text
@@ -89,7 +91,7 @@ class GeminiGlobalAnalyzer:
         cleaned = raw.strip()
         save_raw_to_path = kwargs.get("save_raw_to_path")
         if save_raw_to_path is not None:
-            p = Path(save_raw_to_path)
+            p = Path(str(save_raw_to_path))
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(cleaned, encoding="utf-8")
             log.info("Respuesta cruda de Gemini guardada en %s", p)
@@ -115,4 +117,4 @@ class GeminiGlobalAnalyzer:
         except GlobalAnalysisValidationError as e:
             log.warning("Global analysis validation failed: %s", e)
             raise
-        return data
+        return cast(Dict[str, Any], data)

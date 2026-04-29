@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, cast
 
 from src.application.ports.repositories import ProductRecordRepository
 from src.database.sqlserver import SqlServerClient
@@ -58,10 +58,10 @@ def _safe_load_json(raw: object) -> Optional[object]:
         return None
     if isinstance(raw, str) and raw.strip():
         try:
-            return json.loads(raw)
+            return cast(object, json.loads(raw))
         except json.JSONDecodeError:
             return raw
-    return raw
+    return cast(object, raw)
 
 
 class SqlProductRecordRepository(ProductRecordRepository):

@@ -8,7 +8,7 @@ de múltiples frames del mismo pallet/producto en una estimación final robusta.
 import math
 import statistics
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.consolidate.normalize import normalize_product_key
 from src.models.schemas import (
@@ -96,7 +96,7 @@ def consolidate(
     # Metadatos para reconstruir brand/product en el output
     # pallet_id -> product_key -> list of {"brand": ..., "product": ..., "confidence": ...}
     # Guardamos todas las observaciones para elegir la mejor después
-    meta: Dict[str, Dict[str, List[Dict[str, Optional[str]]]]] = defaultdict(
+    meta: Dict[str, Dict[str, List[Dict[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )
     
@@ -216,10 +216,16 @@ def consolidate(
             product_conf_sum: Dict[str, float] = defaultdict(float)
             
             for m in meta_list:
-                brand_counts[m["brand"]] += 1
-                product_counts[m["product"]] += 1
-                brand_conf_sum[m["brand"]] += m["confidence"]
-                product_conf_sum[m["product"]] += m["confidence"]
+                brand_key = m.get("brand")
+                prod_raw = m.get("product")
+                conf_raw = m.get("confidence")
+                conf_val = float(conf_raw) if isinstance(conf_raw, (int, float)) else 0.0
+                prod_key: str = prod_raw if isinstance(prod_raw, str) and prod_raw else "Unknown"
+                if brand_key is not None:
+                    brand_counts[brand_key] += 1
+                    brand_conf_sum[brand_key] += conf_val
+                product_counts[prod_key] += 1
+                product_conf_sum[prod_key] += conf_val
             
             # Elegir brand: más frecuente, o si empate, mayor confianza promedio
             if brand_counts:
@@ -241,7 +247,10 @@ def consolidate(
                     ),
                 )[0]
             else:
-                best_product = meta_list[0]["product"] if meta_list else "Unknown"
+                raw_first = meta_list[0].get("product") if meta_list else None
+                best_product = (
+                    raw_first if isinstance(raw_first, str) and raw_first else "Unknown"
+                )
             
             # Calcular mediana final para stats
             median_est = float(statistics.median(xs_in))

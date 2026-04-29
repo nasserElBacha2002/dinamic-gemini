@@ -114,7 +114,8 @@ addopts = "--cov=src --cov-report=term-missing --cov-report=html"
 # When running from repo root via root pytest.ini, pythonpath is set there.
 
 [tool.mypy]
-python_version = "3.9"
+# Align with runtime features used in-tree (PEP 604 unions, dataclass kw_only, etc.).
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

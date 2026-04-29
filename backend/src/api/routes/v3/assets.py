@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import List, Optional, Union
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
 from src.api.constants.error_wire import (
@@ -127,6 +127,7 @@ def list_aisle_assets(
         return [asset_to_response(a) for a in assets]
     except AisleNotFoundError as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get(
@@ -148,7 +149,7 @@ def get_aisle_asset_file(
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
     resolver: ResultContextResolver = Depends(get_result_context_resolver),
     artifact_storage=Depends(get_artifact_storage),
-) -> Union[FileResponse, RedirectResponse]:
+) -> Response:
     """Serve the reference image/file for an aisle asset. HEIC/HEIF: serves normalized JPG when available (optional job_id)."""
     failure_reason: Optional[AssetFileFailureReason] = None
     try:
@@ -236,6 +237,7 @@ def get_aisle_asset_file(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise
 
 
 @router.get(

@@ -242,6 +242,7 @@ def get_inventory(
         return inventory_to_response(inventory)
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get("/{inventory_id}/metrics", response_model=InventoryMetricsResponse)
@@ -255,6 +256,7 @@ def get_inventory_metrics(
         return InventoryMetricsResponse(**metrics)
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.post(
@@ -354,6 +356,7 @@ def list_inventory_visual_references(
         )
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get("/{inventory_id}/visual-references/{reference_id}/file")
@@ -368,6 +371,7 @@ def get_inventory_visual_reference_file(
         refs = use_case.execute(inventory_id)
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
+        raise
     ref = next((r for r in refs if r.id == reference_id), None)
     # Same VISUAL_REFERENCE_NOT_FOUND contract as ``InventoryVisualReferenceNotFoundError`` via mapper (DELETE/PUT).
     if ref is None:
@@ -388,3 +392,4 @@ def get_inventory_visual_reference_file(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise

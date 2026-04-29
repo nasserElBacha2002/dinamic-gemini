@@ -83,7 +83,7 @@ class HybridInventoryPipeline:
         self,
         video_path: str,
         mode: str = "hybrid",
-        **kwargs: object,
+        **kwargs: Any,
     ) -> PipelineRunResult:
         if mode != "hybrid":
             raise ValueError(f"Invalid mode: {mode!r}; only 'hybrid' is supported as of v2.2.")

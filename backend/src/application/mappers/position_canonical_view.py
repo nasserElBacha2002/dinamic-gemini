@@ -375,10 +375,21 @@ def build_position_canonical_view(
 
     if is_aggregated:
         raw_q = summary_json.get("final_quantity")
-        try:
-            qty = max(0, int(raw_q))
-        except (TypeError, ValueError):
+        qty = 0
+        if isinstance(raw_q, bool):
             qty = 0
+        elif isinstance(raw_q, int):
+            qty = max(0, raw_q)
+        elif isinstance(raw_q, str) and raw_q.strip():
+            try:
+                qty = max(0, int(raw_q.strip(), 10))
+            except ValueError:
+                qty = 0
+        elif raw_q is not None:
+            try:
+                qty = max(0, int(raw_q))
+            except (TypeError, ValueError):
+                qty = 0
         quantity = PositionCanonicalQuantity(
             qty=qty,
             qty_source="consolidated",

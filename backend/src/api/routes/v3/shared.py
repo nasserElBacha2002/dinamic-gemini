@@ -22,6 +22,7 @@ from src.api.errors import review_exception_to_http
 from src.utils.validation import validate_relative_path
 
 from src.api.schemas.aisle_schemas import AisleResponse, AisleJobSummary
+from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 from src.api.schemas.asset_schemas import SourceAssetResponse
 from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary
 from src.api.schemas.inventory_schemas import (
@@ -100,7 +101,7 @@ def _coerce_non_negative_int(value: Any) -> int:
     return 0
 
 
-def _parse_reference_usage_summary(result_json: Any) -> Optional[dict[str, Any]]:
+def _parse_reference_usage_summary(result_json: Any) -> Optional[ReferenceUsageSummary]:
     """Map persisted visual_reference_context into the compact API summary shape."""
     if not isinstance(result_json, dict):
         return None
@@ -124,14 +125,14 @@ def _parse_reference_usage_summary(result_json: Any) -> Optional[dict[str, Any]]
     resolved_count = _coerce_non_negative_int(raw.get("resolved_count"))
     provider_consumed_count = _coerce_non_negative_int(raw.get("provider_consumed_count"))
     resolution_error = raw.get("resolution_error")
-    return {
-        "resolved": bool(raw.get("resolved")),
-        "resolved_count": max(0, resolved_count),
-        "provider_consumed": bool(raw.get("provider_consumed")),
-        "provider_consumed_count": max(0, provider_consumed_count),
-        "reference_ids": reference_ids,
-        "resolution_error": resolution_error[:2048] if isinstance(resolution_error, str) else None,
-    }
+    return ReferenceUsageSummary(
+        resolved=bool(raw.get("resolved")),
+        resolved_count=max(0, resolved_count),
+        provider_consumed=bool(raw.get("provider_consumed")),
+        provider_consumed_count=max(0, provider_consumed_count),
+        reference_ids=reference_ids,
+        resolution_error=resolution_error[:2048] if isinstance(resolution_error, str) else None,
+    )
 
 
 def _try_resolve_normalized_asset_for_job(

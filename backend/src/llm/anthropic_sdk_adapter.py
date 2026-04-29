@@ -33,7 +33,7 @@ import logging
 import random
 import time
 from pathlib import Path
-from typing import Any, Dict, List, NoReturn, Tuple
+from typing import Any, Dict, List, NoReturn, Tuple, cast
 
 import cv2
 import numpy as np
@@ -325,7 +325,7 @@ def _parsed_v21_from_json_text(cleaned: str, *, error_context: Dict[str, Any] | 
             message=str(e),
             details={**ctx, "phase": "schema_validate"},
         ) from e
-    return data
+    return cast(Dict[str, Any], data)
 
 
 def _bgr_to_jpeg_bytes(arr: np.ndarray, max_side: int) -> bytes:
@@ -378,7 +378,8 @@ def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
         return {}
     model_dump = getattr(u, "model_dump", None)
     if callable(model_dump):
-        return model_dump(exclude_none=True)
+        dumped = model_dump(exclude_none=True)
+        return cast(Dict[str, Any], dumped) if isinstance(dumped, dict) else {}
     out: Dict[str, Any] = {}
     for key in (
         "input_tokens",
@@ -503,7 +504,7 @@ class AnthropicSdkAdapter:
                 message = client.messages.create(
                     model=effective_model,
                     max_tokens=max_tokens,
-                    messages=[{"role": "user", "content": content}],
+                    messages=cast(Any, [{"role": "user", "content": content}]),
                 )
                 break
             except Exception as e:

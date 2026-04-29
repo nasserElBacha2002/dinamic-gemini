@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def _sanitize_payload(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, A
     if not payload or not isinstance(payload, dict):
         return None
     try:
-        return _sanitize_payload_value(payload)  # type: ignore[return-value]
+        return cast(Optional[Dict[str, Any]], _sanitize_payload_value(payload))
     except Exception:
         return None
 

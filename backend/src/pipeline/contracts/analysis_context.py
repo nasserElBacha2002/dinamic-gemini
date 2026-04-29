@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, cast
 
 
 @dataclass
@@ -119,5 +119,5 @@ def analysis_context_to_dict(ctx: AnalysisContext) -> Dict[str, Any]:
             return {k: _serialize(v) for k, v in obj.items()}
         return obj
 
-    return _serialize(ctx)
+    return cast(Dict[str, Any], _serialize(ctx))
 

@@ -154,6 +154,7 @@ def _aggregate_aisle_execution_log_payload(
         )
     except (InventoryNotFoundError, AisleNotFoundError) as e:
         reraise_if_mapped(e)
+        raise
 
     log_sources: List[Dict[str, Any]] = []
     streams: List[Tuple[str, datetime, List[Dict[str, Any]]]] = []
@@ -238,6 +239,7 @@ def create_aisle(
         return aisle_to_response(aisle)
     except (InventoryNotFoundError, DuplicateAisleCodeError) as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get("/{inventory_id}/aisles", response_model=PaginatedAisleListResponse)
@@ -292,6 +294,7 @@ def list_aisles(
         )
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.post("/{inventory_id}/aisles/{aisle_id}/process", response_model=ProcessAisleResponse, status_code=202)
@@ -302,7 +305,11 @@ def start_aisle_processing(
     use_case: StartAisleProcessingUseCase = Depends(get_start_aisle_processing_use_case),
 ) -> ProcessAisleResponse:
     try:
-        body = payload or ProcessAisleRequest()
+        body = payload or ProcessAisleRequest(
+            provider_name=None,
+            model_name=None,
+            prompt_key=None,
+        )
         job_id = use_case.execute(
             StartAisleProcessingCommand(
                 inventory_id=inventory_id,
@@ -330,6 +337,7 @@ def get_aisle_status(
         return status_response_from_result(result)
     except AisleNotFoundError as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get(
@@ -356,6 +364,7 @@ def list_aisle_jobs(
         )
     except (InventoryNotFoundError, AisleNotFoundError) as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get(
@@ -478,10 +487,10 @@ def get_aisle_job_detail(
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> JobSummary:
     job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
-    job = stale_reconciler.reconcile(job)
-    if job is None:
+    reconciled = stale_reconciler.reconcile(job)
+    if reconciled is None:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
-    return job_to_summary(job)
+    return job_to_summary(reconciled)
 
 
 @router.get(
@@ -509,6 +518,7 @@ def get_job_execution_log(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise
     payload = build_enriched_execution_log(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
@@ -543,6 +553,7 @@ def get_job_execution_log_txt(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise
     body = build_enriched_execution_log(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
@@ -582,6 +593,7 @@ def get_job_hybrid_report(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise
 
 
 @router.post(

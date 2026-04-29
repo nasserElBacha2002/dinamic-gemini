@@ -12,10 +12,10 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from src.config import load_settings
-from src.jobs.models import JobInput, JobRecord, JobStatus
+from src.jobs.models import JobInput, JobProgress, JobRecord, JobStatus
 from src.utils.validation import validate_job_id
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ def create_job(
             photos_dir=photos_dir,
         ),
         status=JobStatus.QUEUED,
-        progress={"stage": "", "percent": 0},
+        progress=JobProgress(stage="", percent=0),
         output=None,
         error=None,
         created_at=now,
@@ -195,7 +195,7 @@ def claim_next_job(base_path: Path) -> Optional[JobRecord]:
                         metadata=metadata,
                     ),
                     status=JobStatus(claimed_v3.status.value),
-                    progress={"stage": "claimed", "percent": 1},
+                    progress=JobProgress(stage="claimed", percent=1),
                     output=None,
                     error=claimed_v3.error_message,
                     created_at=claimed_v3.created_at.isoformat(),
@@ -258,7 +258,12 @@ def update_job(base_path: Path, job_id: str, **updates: object) -> Optional[JobR
         try:
             if "status" in updates:
                 status_val = data.get("status")
-                status_str = status_val.value if hasattr(status_val, "value") else str(status_val)
+                if status_val is None:
+                    status_str = "unknown"
+                elif hasattr(status_val, "value"):
+                    status_str = str(getattr(status_val, "value"))
+                else:
+                    status_str = str(status_val)
                 progress = data.get("progress") or {}
                 stage = progress.get("stage") if isinstance(progress, dict) else getattr(progress, "stage", None)
                 percent = progress.get("percent") if isinstance(progress, dict) else getattr(progress, "percent", None)
@@ -300,7 +305,7 @@ def get_pallet_results(job_id: str) -> Optional[List[Dict[str, Any]]]:
         return None
     _, pallet_repo, _ = repos
     try:
-        return pallet_repo.get_pallet_results(job_id)
+        return cast(Optional[List[Dict[str, Any]]], pallet_repo.get_pallet_results(job_id))
     except Exception as e:
         logger.warning("DB get_pallet_results failed: %s", e)
         return None

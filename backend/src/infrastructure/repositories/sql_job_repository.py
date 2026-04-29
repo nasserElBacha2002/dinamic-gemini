@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, cast
 
 from src.application.ports.repositories import JobRepository
 from src.application.services.job_stale_reconciler import (
@@ -49,7 +49,7 @@ def _parse_json(raw: Optional[str]) -> Dict[str, Any]:
     if not raw or not raw.strip():
         return {}
     try:
-        return json.loads(raw)
+        return cast(Dict[str, Any], json.loads(raw))
     except json.JSONDecodeError:
         return {}
 
@@ -59,7 +59,7 @@ def _parse_optional_json(raw: Optional[str]) -> Optional[Dict[str, Any]]:
         return None
     try:
         v = json.loads(raw)
-        return v if isinstance(v, dict) else {"value": v}
+        return cast(Dict[str, Any], v if isinstance(v, dict) else {"value": v})
     except json.JSONDecodeError:
         return None
 

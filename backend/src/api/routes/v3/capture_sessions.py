@@ -48,6 +48,12 @@ from src.api.schemas.capture_schemas import (
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.dto.uploaded_file import UploadedFile
+from src.application.use_cases.assign_capture_session_group_to_existing_aisle import (
+    AssignCaptureSessionGroupToExistingAisleUseCase,
+)
+from src.application.use_cases.create_aisle_and_assign_capture_session_group import (
+    CreateAisleAndAssignCaptureSessionGroupUseCase,
+)
 from src.application.errors import CaptureSessionStatusFilterInvalidError
 from src.application.use_cases.cancel_capture_session import CancelCaptureSessionUseCase
 from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase

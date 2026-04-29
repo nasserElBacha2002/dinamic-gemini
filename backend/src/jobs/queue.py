@@ -6,7 +6,7 @@ This module is kept for local compatibility and transitional paths.
 
 import queue
 import threading
-from typing import Optional
+from typing import Optional, cast
 
 # Single global queue; worker consumes from it
 job_queue: queue.Queue = queue.Queue()
@@ -20,6 +20,6 @@ def enqueue(job_id: str) -> None:
 def dequeue(timeout: float = 1.0) -> Optional[str]:
     """Get next job_id or None if empty (block up to timeout seconds)."""
     try:
-        return job_queue.get(timeout=timeout)
+        return cast(Optional[str], job_queue.get(timeout=timeout))
     except queue.Empty:
         return None

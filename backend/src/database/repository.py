@@ -6,7 +6,7 @@ Structured access logs use logger ``dinamic.legacy_sql`` (see ``src/legacy/persi
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from typing_extensions import TypedDict
 
 from src.database.sqlserver import SqlServerClient, now_utc
@@ -61,7 +61,7 @@ def _parse_metadata(raw: Optional[str]) -> Optional[Dict[str, Any]]:
     if not raw or not raw.strip():
         return None
     try:
-        return json.loads(raw)
+        return cast(Dict[str, Any], json.loads(raw))
     except json.JSONDecodeError:
         return None
 
@@ -74,8 +74,8 @@ def _row_to_iso(row: Any, attr: str) -> str:
         s = val.isoformat()
         if getattr(val, "tzinfo", None) is None and "Z" not in s and "+" not in s:
             s = s + "Z"
-        return s.replace("+00:00", "Z")
-    return str(val)
+        return cast(str, s.replace("+00:00", "Z"))
+    return cast(str, str(val))
 
 
 class JobsRepository:
@@ -355,8 +355,12 @@ class JobsRepository:
         msg = getattr(row, "error_message", None)
         if code and msg:
             error_msg = f"{code}: {msg}"
+        elif msg is not None:
+            error_msg = str(msg)
+        elif code is not None:
+            error_msg = str(code)
         else:
-            error_msg = msg or code
+            error_msg = None
         input_type = getattr(row, "input_type", None) or "video"
         input_manifest_path = getattr(row, "input_manifest_path", None)
         photos_dir = getattr(row, "photos_dir", None)

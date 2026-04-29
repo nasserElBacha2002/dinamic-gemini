@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Dict, Optional, Sequence, Union, cast
 
 from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
@@ -29,7 +29,7 @@ def _parse_json(raw: Optional[str], context: str = "") -> Optional[Dict[str, Any
     if not raw or not raw.strip():
         return None
     try:
-        return json.loads(raw)
+        return cast(Dict[str, Any], json.loads(raw))
     except json.JSONDecodeError as e:
         logger.warning("Invalid JSON in %s: %s", context or "position", e)
         return None

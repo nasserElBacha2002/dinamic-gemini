@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional, Self
+from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from typing_extensions import Self
 
 from src.env_settings.parsing import (
     parse_heuristic_resize_max_side,

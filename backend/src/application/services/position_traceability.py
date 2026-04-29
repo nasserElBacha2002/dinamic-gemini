@@ -66,7 +66,8 @@ def enrich_position_traceability_from_report(
         report = _load_hybrid_report_for_traceability(job_id)
         if report is None:
             return None, None, None
-        entities = report.get("entities") or []
+        raw_entities = report.get("entities")
+        entities = raw_entities if isinstance(raw_entities, list) else []
         for ent in entities:
             if not isinstance(ent, dict):
                 continue

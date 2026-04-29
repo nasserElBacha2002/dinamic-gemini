@@ -8,7 +8,7 @@ Responsabilidades:
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ class GeminiClient:
                 return [clean_node(item) for item in obj]
             return obj
             
-        return clean_node(schema)
+        return cast(Dict[Any, Any], clean_node(schema))
 
     def generate_global_analysis_raw(
         self,
