@@ -5,6 +5,7 @@ Monorepo para la **plataforma operativa de inventarios v3**: API REST (FastAPI),
 
 El repositorio incluye además un **CLI de pipeline por vídeo** (`python -m src.app`) orientado a ejecución batch; el flujo principal de producto es la **API v3** + **worker de jobs** + **frontend**.
 
+
 ---
 
 ## Estructura del repositorio
