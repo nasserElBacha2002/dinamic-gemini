@@ -8,7 +8,7 @@ de múltiples frames del mismo pallet/producto en una estimación final robusta.
 import math
 import statistics
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from src.consolidate.normalize import normalize_product_key
 from src.models.schemas import (
@@ -210,9 +210,9 @@ def consolidate(
             # pero priorizamos por confianza y longitud
             
             # Opción 1: Más frecuente (modo)
-            brand_counts: Dict[Optional[str], int] = defaultdict(int)
+            brand_counts: Dict[str, int] = defaultdict(int)
             product_counts: Dict[str, int] = defaultdict(int)
-            brand_conf_sum: Dict[Optional[str], float] = defaultdict(float)
+            brand_conf_sum: Dict[str, float] = defaultdict(float)
             product_conf_sum: Dict[str, float] = defaultdict(float)
             
             for m in meta_list:
@@ -220,10 +220,10 @@ def consolidate(
                 prod_raw = m.get("product")
                 conf_raw = m.get("confidence")
                 conf_val = float(conf_raw) if isinstance(conf_raw, (int, float)) else 0.0
+                brand_name = brand_key if isinstance(brand_key, str) and brand_key else "Unknown"
                 prod_key: str = prod_raw if isinstance(prod_raw, str) and prod_raw else "Unknown"
-                if brand_key is not None:
-                    brand_counts[brand_key] += 1
-                    brand_conf_sum[brand_key] += conf_val
+                brand_counts[brand_name] += 1
+                brand_conf_sum[brand_name] += conf_val
                 product_counts[prod_key] += 1
                 product_conf_sum[prod_key] += conf_val
             

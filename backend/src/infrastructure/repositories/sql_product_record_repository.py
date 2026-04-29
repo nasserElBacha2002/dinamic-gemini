@@ -58,7 +58,8 @@ def _safe_load_json(raw: object) -> Optional[object]:
         return None
     if isinstance(raw, str) and raw.strip():
         try:
-            return cast(object, json.loads(raw))
+            parsed: object = json.loads(raw)
+            return parsed
         except json.JSONDecodeError:
             return raw
     return cast(object, raw)

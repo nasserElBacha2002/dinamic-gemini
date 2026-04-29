@@ -661,13 +661,14 @@ def fetch_json_from_durable_meta(
         hard_max_bytes=max_json,
     )
     try:
-        return cast(Dict[str, Any], json.loads(raw.decode("utf-8")))
+        parsed = json.loads(raw.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise StoredArtifactAccessError(
             502,
             f"{label} payload is not valid JSON.",
             "invalid_json",
         ) from exc
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def load_hybrid_report_json_for_job(

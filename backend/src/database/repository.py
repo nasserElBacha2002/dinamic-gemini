@@ -61,9 +61,10 @@ def _parse_metadata(raw: Optional[str]) -> Optional[Dict[str, Any]]:
     if not raw or not raw.strip():
         return None
     try:
-        return cast(Dict[str, Any], json.loads(raw))
+        parsed = json.loads(raw)
     except json.JSONDecodeError:
         return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def _row_to_iso(row: Any, attr: str) -> str:

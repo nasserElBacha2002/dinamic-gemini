@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence, cast
+from typing import Any, Dict, Optional, Sequence
 
 from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.application.ports.repositories import SourceAssetRepository
@@ -43,10 +43,14 @@ def _parse_metadata(raw: Optional[str]) -> Optional[Dict[str, Any]]:
     if not raw or not raw.strip():
         return None
     try:
-        return cast(Dict[str, Any], json.loads(raw))
+        parsed = json.loads(raw)
     except json.JSONDecodeError as e:
         logger.warning("Invalid metadata_json in source_assets: %s", e)
         return None
+    if not isinstance(parsed, dict):
+        logger.warning("metadata_json root is not an object in source_assets")
+        return None
+    return parsed
 
 
 def _row_to_asset(row) -> SourceAsset:

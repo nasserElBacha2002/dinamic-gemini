@@ -259,7 +259,7 @@ def update_job(base_path: Path, job_id: str, **updates: object) -> Optional[JobR
             if "status" in updates:
                 status_val = data.get("status")
                 if status_val is None:
-                    status_str = "unknown"
+                    status_str = JobStatus.QUEUED.value
                 elif hasattr(status_val, "value"):
                     status_str = str(getattr(status_val, "value"))
                 else:
