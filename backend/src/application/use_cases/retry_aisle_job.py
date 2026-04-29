@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import cast
 
 from src.application.errors import ActiveJobExistsError
 from src.application.ports.contracts import ProcessAislePayload
@@ -107,7 +108,8 @@ class RetryAisleJobUseCase:
             if isinstance(aisle_from_job, str) and aisle_from_job.strip()
             else aisle.id
         )
-        payload: ProcessAislePayload = {"aisle_id": resolved_aisle_id}
+        raw_payload["aisle_id"] = resolved_aisle_id
+        payload = cast(ProcessAislePayload, raw_payload)
         retry_job = self._launch_service.create_and_launch_attempt(
             aisle=aisle,
             payload=payload,

@@ -16,11 +16,12 @@ class ProductRecord:
     id: str
     position_id: str
     sku: str
-    description: str
     detected_quantity: int
     confidence: float
     created_at: datetime
     updated_at: datetime
+    #: Nullable in storage and after review clears whitespace-only input to ``None``.
+    description: Optional[str] = None
     corrected_quantity: Optional[int] = None
     # Quantity provenance (auditable, persisted). Keep as string for DB compatibility.
     # Expected values evolve by phase: detected, inferred, merge_inferred, manual_review,
