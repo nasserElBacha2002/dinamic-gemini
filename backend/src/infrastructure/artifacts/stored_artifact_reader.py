@@ -12,6 +12,7 @@ import logging
 import os
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -57,6 +58,136 @@ def ensure_s3_bucket_matches_configured(meta: Mapping[str, Any], artifact_store:
         )
 
 
+@dataclass(frozen=True)
+class _ArtifactByteFetchParams:
+    """Bundled object-store fetch context (B8.4 — avoids huge nested closures)."""
+
+    artifact_store: Any
+    key: str
+    prov: str
+    bucket_display: str
+    dl_bucket: str | None
+    label: str
+    hard_max_bytes: int | None
+
+
+def _artifact_get_object_bytes(p: _ArtifactByteFetchParams) -> bytes:
+    try:
+        downloaded = p.artifact_store.get_object(p.key)
+    except Exception as exc:
+        logger.exception(
+            "%s durable_fetch_failed mode=get_object provider=%s bucket=%s storage_key=%s",
+            p.label,
+            p.prov,
+            p.bucket_display,
+            p.key,
+        )
+        raise StoredArtifactAccessError(
+            502,
+            f"{p.label} could not be loaded from object storage (missing object or read error).",
+            "durable_fetch_failed",
+        ) from exc
+    data = downloaded.content
+    if p.hard_max_bytes is not None and len(data) > p.hard_max_bytes:
+        raise StoredArtifactAccessError(
+            413,
+            f"{p.label} exceeds configured max load size ({p.hard_max_bytes} bytes).",
+            "payload_too_large",
+        )
+    logger.info(
+        "%s artifact_bytes_loaded mode=get_object provider=%s bucket=%s storage_key=%s bytes=%s",
+        p.label,
+        p.prov,
+        p.bucket_display,
+        p.key,
+        len(data),
+    )
+    return cast(bytes, data)
+
+
+def _artifact_download_bytes_via_temp(p: _ArtifactByteFetchParams) -> bytes:
+    fd, tmp_name = tempfile.mkstemp(prefix="artifact_", suffix=".bin")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        p.artifact_store.download_to_path(p.key, tmp_path, bucket=p.dl_bucket)
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        logger.exception(
+            "%s durable_fetch_failed mode=download_to_path provider=%s bucket=%s storage_key=%s",
+            p.label,
+            p.prov,
+            p.bucket_display,
+            p.key,
+        )
+        raise StoredArtifactAccessError(
+            502,
+            f"{p.label} could not be loaded from object storage (missing object or read error).",
+            "durable_fetch_failed",
+        ) from exc
+    try:
+        on_disk = int(tmp_path.stat().st_size)
+        if p.hard_max_bytes is not None and on_disk > p.hard_max_bytes:
+            logger.info(
+                "%s payload_too_large (on_disk) provider=%s storage_key=%s size=%s max=%s",
+                p.label,
+                p.prov,
+                p.key,
+                on_disk,
+                p.hard_max_bytes,
+            )
+            raise StoredArtifactAccessError(
+                413,
+                f"{p.label} exceeds configured max load size ({p.hard_max_bytes} bytes).",
+                "payload_too_large",
+            )
+        data = tmp_path.read_bytes()
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    logger.info(
+        "%s artifact_bytes_loaded mode=download_temp provider=%s bucket=%s storage_key=%s bytes=%s",
+        p.label,
+        p.prov,
+        p.bucket_display,
+        p.key,
+        len(data),
+    )
+    return cast(bytes, data)
+
+
+def _artifact_fetch_bytes_by_policy(
+    p: _ArtifactByteFetchParams,
+    *,
+    size_known: int | None,
+    mem_threshold: int,
+) -> bytes:
+    """Apply in-memory vs tempfile policy (same branches as pre–B8.4 ``load_artifact_content_from_provider_meta``)."""
+    if p.hard_max_bytes is not None:
+        if size_known is not None:
+            if size_known <= mem_threshold:
+                return _artifact_get_object_bytes(p)
+            return _artifact_download_bytes_via_temp(p)
+        logger.info(
+            "%s json_load size_unknown will_download_then_stat storage_key=%s max=%s",
+            p.label,
+            p.key,
+            p.hard_max_bytes,
+        )
+        return _artifact_download_bytes_via_temp(p)
+
+    if size_known is not None and 0 <= size_known <= mem_threshold:
+        return _artifact_get_object_bytes(p)
+    if size_known is not None and size_known > mem_threshold:
+        return _artifact_download_bytes_via_temp(p)
+
+    logger.warning(
+        "%s object_size_bytes unavailable; using download_temp storage_key=%s",
+        p.label,
+        p.key,
+    )
+    return _artifact_download_bytes_via_temp(p)
+
+
 def load_artifact_content_from_provider_meta(
     meta: Mapping[str, Any],
     *,
@@ -76,6 +207,7 @@ def load_artifact_content_from_provider_meta(
     prov = (meta.get("storage_provider") or "").strip().lower()
     bucket = (meta.get("storage_bucket") or "").strip() or None
     dl_bucket = bucket if prov == "s3" else None
+    bucket_display = bucket or ""
     settings = load_settings()
     mem_threshold = int(settings.artifact_store_max_in_memory_get_bytes)
 
@@ -96,7 +228,7 @@ def load_artifact_content_from_provider_meta(
             "%s payload_too_large (head) provider=%s bucket=%s storage_key=%s size=%s max=%s",
             label,
             prov,
-            bucket or "",
+            bucket_display,
             key,
             size_known,
             hard_max_bytes,
@@ -107,112 +239,20 @@ def load_artifact_content_from_provider_meta(
             "payload_too_large",
         )
 
-    def _get_object_bytes() -> bytes:
-        try:
-            downloaded = artifact_store.get_object(key)
-        except Exception as exc:
-            logger.exception(
-                "%s durable_fetch_failed mode=get_object provider=%s bucket=%s storage_key=%s",
-                label,
-                prov,
-                bucket or "",
-                key,
-            )
-            raise StoredArtifactAccessError(
-                502,
-                f"{label} could not be loaded from object storage (missing object or read error).",
-                "durable_fetch_failed",
-            ) from exc
-        data = downloaded.content
-        if hard_max_bytes is not None and len(data) > hard_max_bytes:
-            raise StoredArtifactAccessError(
-                413,
-                f"{label} exceeds configured max load size ({hard_max_bytes} bytes).",
-                "payload_too_large",
-            )
-        logger.info(
-            "%s artifact_bytes_loaded mode=get_object provider=%s bucket=%s storage_key=%s bytes=%s",
-            label,
-            prov,
-            bucket or "",
-            key,
-            len(data),
-        )
-        return cast(bytes, data)
-
-    def _download_via_tempfile() -> bytes:
-        fd, tmp_name = tempfile.mkstemp(prefix="artifact_", suffix=".bin")
-        os.close(fd)
-        tmp_path = Path(tmp_name)
-        try:
-            artifact_store.download_to_path(key, tmp_path, bucket=dl_bucket)
-        except Exception as exc:
-            tmp_path.unlink(missing_ok=True)
-            logger.exception(
-                "%s durable_fetch_failed mode=download_to_path provider=%s bucket=%s storage_key=%s",
-                label,
-                prov,
-                bucket or "",
-                key,
-            )
-            raise StoredArtifactAccessError(
-                502,
-                f"{label} could not be loaded from object storage (missing object or read error).",
-                "durable_fetch_failed",
-            ) from exc
-        try:
-            on_disk = int(tmp_path.stat().st_size)
-            if hard_max_bytes is not None and on_disk > hard_max_bytes:
-                logger.info(
-                    "%s payload_too_large (on_disk) provider=%s storage_key=%s size=%s max=%s",
-                    label,
-                    prov,
-                    key,
-                    on_disk,
-                    hard_max_bytes,
-                )
-                raise StoredArtifactAccessError(
-                    413,
-                    f"{label} exceeds configured max load size ({hard_max_bytes} bytes).",
-                    "payload_too_large",
-                )
-            data = tmp_path.read_bytes()
-        finally:
-            tmp_path.unlink(missing_ok=True)
-        logger.info(
-            "%s artifact_bytes_loaded mode=download_temp provider=%s bucket=%s storage_key=%s bytes=%s",
-            label,
-            prov,
-            bucket or "",
-            key,
-            len(data),
-        )
-        return cast(bytes, data)
-
-    if hard_max_bytes is not None:
-        if size_known is not None:
-            if size_known <= mem_threshold:
-                return _get_object_bytes()
-            return _download_via_tempfile()
-        logger.info(
-            "%s json_load size_unknown will_download_then_stat storage_key=%s max=%s",
-            label,
-            key,
-            hard_max_bytes,
-        )
-        return _download_via_tempfile()
-
-    if size_known is not None and 0 <= size_known <= mem_threshold:
-        return _get_object_bytes()
-    if size_known is not None and size_known > mem_threshold:
-        return _download_via_tempfile()
-
-    logger.warning(
-        "%s object_size_bytes unavailable; using download_temp storage_key=%s",
-        label,
-        key,
+    fetch_params = _ArtifactByteFetchParams(
+        artifact_store=artifact_store,
+        key=key,
+        prov=prov,
+        bucket_display=bucket_display,
+        dl_bucket=dl_bucket,
+        label=label,
+        hard_max_bytes=hard_max_bytes,
     )
-    return _download_via_tempfile()
+    return _artifact_fetch_bytes_by_policy(
+        fetch_params,
+        size_known=size_known,
+        mem_threshold=mem_threshold,
+    )
 
 
 def cast_mapping(meta: Any) -> Mapping[str, Any]:

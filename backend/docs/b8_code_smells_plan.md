@@ -345,3 +345,50 @@ Re-ejecutar localmente / en CI:
 ### Otros módulos `src/pipeline/`
 
 - Sin cambios en esta PR; siguen candidatos en siguientes PRs B8.3 menores según el mapa §4 (`execution_log.py`, `frame_acquisition_stage.py`, etc.).
+
+---
+
+## B8.4 — Infrastructure (slice implementado)
+
+**Alcance:** `backend/src/infrastructure/` con prioridad en `pipeline/v3_job_executor.py`, `pipeline/v3_report_mapper.py`, `artifacts/stored_artifact_reader.py`. **No** se alteraron consultas SQL, estructura de tablas, contratos de ports, nombres de campos persistidos, ni el formato de respuestas del mapper (solo estructura de código).
+
+### `pipeline/v3_job_executor.py`
+
+| Smell (antes) | Técnica | Cambios realizados | Sin tocar / riesgos |
+|---------------|---------|--------------------|---------------------|
+| PLR0913/0915/0912 en cuerpo de `execute` / monolito | DTOs internos + fases + helper de monitoring | `execute` → `_v3_prepare_dispatch` / `_v3_run_job_body`; dataclasess `_V3PreparedJob`, `_V3PipelineInputRequest`, `_V3HybridRunParams` (incl. `pipeline_video_path` para `str` hacia el runner), `_V3FinalizeAfterPipelineParams`, `_V3RunMonitoringRequest`, `_V3WorkerRuntimeHandles`; `_v3_begin_run_monitoring` extrae log + heartbeat; `run_hybrid_pipeline` recibe `video_path` como `video_path or ""` (alineado al tipo `str` del runner — mismo comportamiento que rutas sin vídeo) | `execute(base_path, job_id)`, orden persist → artifacts → `mark_success`, mensajes de error y `except Exception` en persist/upload **sin cambio de semántica** |
+| PLR0913 en `__init__` | — | Ya documentado con `# noqa: PLR0913` (DI con muchos repos) |
+
+### `pipeline/v3_report_mapper.py`
+
+| Smell (antes) | Técnica | Cambios realizados | Sin tocar / riesgos |
+|---------------|---------|--------------------|---------------------|
+| PLR0912 en `_detected_summary`, PLR2004 (`len == 4`) | Helpers + constante | `_BBOX_COORD_COUNT`; `_summary_merge_bbox_lists`, `_summary_merge_optional_string_projections`, `_summary_merge_filename_and_int_projections`; mismos campos en `detected_summary_json` | Lógica de negocio de cantidades (`_qty_from_entity`) sin cambios |
+| PLR0912/0915 en `map_hybrid_report_to_domain` | Contexto + una entidad por función | `_HybridMapContext`, `_map_single_hybrid_entity`, `_first_bbox_json`; bucle externo solo acumula listas | Firma pública de 7 args conservada; `# noqa: PLR0913` en la entrada pública (contrato estable). `run_dir` sigue en la firma y se asigna a `_` (no se usaba en el cuerpo previo) — **sin** cambio de datos emitidos |
+| PLR0913 (7 args públicos) | `noqa` explícito | Evita romper `persist_aisle_result` y tests que llaman con kwargs |
+
+### `artifacts/stored_artifact_reader.py`
+
+| Smell (antes) | Técnica | Cambios realizados | Sin tocar / riesgos |
+|---------------|---------|--------------------|---------------------|
+| PLR0915 en `load_artifact_content_from_provider_meta` | DTO + funciones de módulo | `_ArtifactByteFetchParams`, `_artifact_get_object_bytes`, `_artifact_download_bytes_via_temp`, `_artifact_fetch_bytes_by_policy` reproducen el mismo árbol de decisión (HEAD, hard_max, mem_threshold, tempfile) | Mensajes HTTP/texto de `StoredArtifactAccessError`, logging y `except Exception` en HEAD/get/download **iguales** |
+
+### `storage/s3_artifact_storage_adapter.py`
+
+| Smell | Técnica | Cambios |
+|-------|---------|--------|
+| PLR (mapa) | Ninguno en este slice | `ruff --select PLR` no reporta en este archivo; sin cambios.
+
+### Validación B8.4
+
+- `ruff check --select PLR` en archivos tocados: OK.
+- `mypy` en `v3_job_executor.py`, `v3_report_mapper.py`, `stored_artifact_reader.py`: OK.
+- `pytest tests/infrastructure/pipeline/test_v3_report_mapper_and_persist.py` y suite `tests/infrastructure/pipeline/test_v3_job_executor_*.py` (phase5, input_resolution, coordination, analysis_context): OK.
+
+### Repositories / otros
+
+- **Sin** refactor masivo de repositories en este slice (prioridad ejecutor + mapper + artifact reader).
+
+### Próximo paso sugerido (B8.5)
+
+- Si el plan global lo define: **B8.5 — LLM / providers** (code smells en capa de llamadas a modelo, prompts ya acotados por contrato), o continuar infrastructure puntual si el mapa PLR marcará algún `Sql*Repository` en un slice menor dedicado.
