@@ -199,7 +199,7 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
     session rows and does not invoke aisle processing.
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         *,
         session_repo: CaptureSessionRepository,
@@ -231,7 +231,7 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             )
         except CaptureSessionGroupIntegrityError:
             raise
-        except Exception:  # noqa: BLE001 — REVISAR_NO_TOCAR: metrics + observability on preview failure
+        except Exception:
             logger.exception(
                 "G6 preview failed inventory_id=%s session_id=%s group_id=%s",
                 inventory_id,

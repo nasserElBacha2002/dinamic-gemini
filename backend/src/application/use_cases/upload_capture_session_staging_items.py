@@ -144,7 +144,7 @@ def _wire_filename(uf: UploadedFile) -> str:
 
 
 class UploadCaptureSessionStagingItemsUseCase:
-    def __init__(  # noqa: PLR0913 — DI + config (B8.2)
+    def __init__(
         self,
         *,
         session_repo: CaptureSessionRepository,
@@ -280,7 +280,7 @@ class UploadCaptureSessionStagingItemsUseCase:
             )
             try:
                 self._artifact_storage.delete_file(b.rel_key)
-            except Exception as cleanup_e:  # noqa: BLE001
+            except Exception as cleanup_e:
                 logger.warning(
                     "capture staging upload: cleanup delete failed key=%s: %s",
                     b.rel_key,
@@ -291,7 +291,7 @@ class UploadCaptureSessionStagingItemsUseCase:
             return
         try:
             self._artifact_storage.delete_file(b.rel_key)
-        except Exception as cleanup_e:  # noqa: BLE001
+        except Exception as cleanup_e:
             logger.warning(
                 "capture staging upload: rollback delete failed key=%s: %s",
                 b.rel_key,

@@ -51,10 +51,9 @@ class AisleReviewLifecycleSync:
                 if aisle.status == AisleStatus.PROCESSED:
                     aisle.mark_in_review(now)
                     changed = True
-            else:
-                if aisle.status in (AisleStatus.PROCESSED, AisleStatus.IN_REVIEW):
-                    aisle.mark_completed(now)
-                    changed = True
+            elif aisle.status in (AisleStatus.PROCESSED, AisleStatus.IN_REVIEW):
+                aisle.mark_completed(now)
+                changed = True
             if changed:
                 self._aisle_repo.save(aisle)
 

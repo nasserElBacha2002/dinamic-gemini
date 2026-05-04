@@ -32,12 +32,12 @@ def _as_nonempty_str(value: Any) -> str | None:
         return None
     if isinstance(value, str):
         s = value.strip()
-        return s if s else None
+        return s or None
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
     try:
         s = str(value).strip()
-        return s if s else None
+        return s or None
     except (TypeError, ValueError, AttributeError):
         return None
 
@@ -331,7 +331,7 @@ def build_enriched_execution_log(
 
 
 # Public envelope: keep explicit kwargs for multi-job aggregated logs (callers / API contract).
-def build_enriched_aisle_aggregated_execution_log(  # noqa: PLR0913
+def build_enriched_aisle_aggregated_execution_log(
     *,
     inventory_id: str,
     aisle_id: str,

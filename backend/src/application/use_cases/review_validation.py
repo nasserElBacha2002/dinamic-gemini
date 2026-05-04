@@ -39,7 +39,7 @@ def _normalize_job_id_param(raw: str | None) -> str | None:
     if raw is None:
         return None
     s = str(raw).strip()
-    return s if s else None
+    return s or None
 
 
 def _storage_job_id_on_position(position: Position) -> str | None:

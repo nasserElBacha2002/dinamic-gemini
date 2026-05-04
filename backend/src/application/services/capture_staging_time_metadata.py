@@ -58,7 +58,7 @@ def _try_exif_datetime(raw_bytes: bytes) -> datetime | None:
         img = Image.open(BytesIO(raw_bytes))
         try:
             exif = img.getexif()
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
         if exif is None:
             return None
@@ -71,7 +71,7 @@ def _try_exif_datetime(raw_bytes: bytes) -> datetime | None:
                 return parsed
     except (UnidentifiedImageError, OSError, ValueError) as e:
         logger.debug("capture time EXIF: skip (%s)", e)
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("capture time EXIF: unexpected error", exc_info=True)
     return None
 

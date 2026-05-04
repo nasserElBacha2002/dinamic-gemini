@@ -213,7 +213,7 @@ def compose_prompt_variant_for_inspection(
 
     try:
         text = compose_hybrid_base(pk, prov, prompt_parity_mode=prompt_parity_mode)
-    except Exception as exc:  # noqa: BLE001 — inspection must stay stable
+    except Exception as exc:
         text = f"<composition error: {exc}>"
     label = f"{pk} · {prov} · parity={prompt_parity_mode}"
     return {
