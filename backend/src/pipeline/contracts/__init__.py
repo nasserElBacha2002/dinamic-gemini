@@ -10,9 +10,9 @@ from src.pipeline.contracts.analysis_context import (
 from src.pipeline.contracts.stage import PipelineStage
 
 __all__ = [
-    "PipelineStage",
     "AnalysisContext",
     "AnalysisImage",
+    "PipelineStage",
     "VisualReferenceContext",
     "analysis_context_from_dict",
     "analysis_context_to_dict",

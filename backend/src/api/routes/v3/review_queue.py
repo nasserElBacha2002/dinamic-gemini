@@ -31,7 +31,7 @@ def _strip_opt(s: str | None) -> str | None:
     if s is None:
         return None
     t = str(s).strip()
-    return t if t else None
+    return t or None
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ class _ReviewQueueRouteQuery:
     page_size: int
 
 
-def _review_queue_query_dep(  # noqa: PLR0913
+def _review_queue_query_dep(
     inventory_id: str | None = Query(None, description="Restrict to aisles in this inventory."),
     aisle_id: str | None = Query(None, description="Restrict to this aisle."),
     min_confidence: float | None = Query(None, ge=0.0, le=1.0),

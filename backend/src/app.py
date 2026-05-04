@@ -158,9 +158,9 @@ def main() -> int:
     output_path.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_hash = hashlib.md5(
-        f"{video_id}_{timestamp}".encode(), usedforsecurity=False
-    ).hexdigest()[:8]
+    run_hash = hashlib.md5(f"{video_id}_{timestamp}".encode(), usedforsecurity=False).hexdigest()[
+        :8
+    ]
     run_id = f"{timestamp}_{run_hash}"
 
     logger = setup_logger(str(output_path), video_id, run_id, console=True)

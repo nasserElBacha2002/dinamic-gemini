@@ -77,7 +77,7 @@ class MaterializeCaptureSessionUseCase:
     final confirmation semantics.
     """
 
-    def __init__(  # noqa: PLR0913 — DI wiring (B8.2)
+    def __init__(
         self,
         *,
         session_repo: CaptureSessionRepository,
@@ -169,7 +169,9 @@ class MaterializeCaptureSessionUseCase:
             )
         return eligible
 
-    def _run_materialize_commit(self, ctx: _MaterializeCommitContext) -> MaterializeCaptureSessionResult:
+    def _run_materialize_commit(
+        self, ctx: _MaterializeCommitContext
+    ) -> MaterializeCaptureSessionResult:
         session = ctx.session
         session_id = ctx.session_id
         idem = ctx.idem
@@ -242,7 +244,7 @@ class MaterializeCaptureSessionUseCase:
             session.updated_at = now
             try:
                 self._session_repo.save(session)
-            except Exception:  # noqa: BLE001 — best-effort rollback; REVISAR_NO_TOCAR B8.2
+            except Exception:
                 logger.warning(
                     "Materialization rollback failed resetting session status session_id=%s",
                     session_id,
@@ -321,14 +323,14 @@ class MaterializeCaptureSessionUseCase:
         for asset in reversed(created_assets):
             try:
                 self._asset_repo.delete_by_id(asset.id)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.warning(
                     "Materialization rollback failed deleting asset row asset_id=%s", asset.id
                 )
         for key in reversed(delete_keys):
             try:
                 self._artifact_storage.delete_file(key)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.warning("Materialization rollback failed deleting file key=%s", key)
 
     def _rollback_item_links(
@@ -339,7 +341,7 @@ class MaterializeCaptureSessionUseCase:
                 item.linked_source_asset_id = None
                 item.updated_at = now
                 self._item_repo.save(item)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.warning(
                     "Materialization rollback failed resetting item link item_id=%s", item.id
                 )

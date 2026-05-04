@@ -13,7 +13,7 @@ from typing import Any
 
 from typing_extensions import TypedDict
 
-from src.application.ports.rollup_contracts import AisleAssetRollup as AisleAssetRollup
+from src.application.ports.rollup_contracts import AisleAssetRollup  # noqa: F401 — public re-export
 from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord

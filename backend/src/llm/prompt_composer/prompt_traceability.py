@@ -159,8 +159,7 @@ def _build_prompt_composition_dict_impl(args: _PromptCompositionBuildArgs) -> di
         ),
         settings_hybrid_prompt_key=(
             str(args.settings_hybrid_prompt_key).strip()
-            if args.settings_hybrid_prompt_key
-            and str(args.settings_hybrid_prompt_key).strip()
+            if args.settings_hybrid_prompt_key and str(args.settings_hybrid_prompt_key).strip()
             else None
         ),
         prompt_version=(

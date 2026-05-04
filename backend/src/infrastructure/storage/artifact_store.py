@@ -79,9 +79,7 @@ class ArtifactStore(ABC):
         """Return object size without reading the body (e.g. S3 head or local stat)."""
 
     @abstractmethod
-    def download_to_path(
-        self, key: str, target_path: Path, *, bucket: str | None = None
-    ) -> None:
+    def download_to_path(self, key: str, target_path: Path, *, bucket: str | None = None) -> None:
         """Download object directly to local path without buffering full content in memory."""
         ...
 

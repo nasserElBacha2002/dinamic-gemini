@@ -21,12 +21,8 @@ from __future__ import annotations
 import logging
 
 from src.env_settings.pipeline_analysis_execution_strings import (
-    STRATEGY_MULTI_PARALLEL as STRATEGY_MULTI_PARALLEL,
-)
-from src.env_settings.pipeline_analysis_execution_strings import (
-    STRATEGY_MULTI_SEQUENTIAL as STRATEGY_MULTI_SEQUENTIAL,
-)
-from src.env_settings.pipeline_analysis_execution_strings import (
+    STRATEGY_MULTI_PARALLEL,  # noqa: F401
+    STRATEGY_MULTI_SEQUENTIAL,  # noqa: F401
     STRATEGY_SINGLE,
     normalize_pipeline_analysis_strategy_value,
 )

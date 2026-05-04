@@ -45,7 +45,9 @@ def test_source_asset_is_heic_mime() -> None:
 
 def test_source_asset_is_heic_suffix() -> None:
     assert source_asset_is_heic(_asset(mime="image/jpeg", orig="a.heic", storage="b")) is True
-    assert source_asset_is_heic(_asset(mime="image/jpeg", orig="a.jpg", storage="in/b.heif")) is True
+    assert (
+        source_asset_is_heic(_asset(mime="image/jpeg", orig="a.jpg", storage="in/b.heif")) is True
+    )
 
 
 def test_source_asset_is_heic_false() -> None:

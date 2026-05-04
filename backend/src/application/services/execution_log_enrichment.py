@@ -32,12 +32,12 @@ def _as_nonempty_str(value: Any) -> str | None:
         return None
     if isinstance(value, str):
         s = value.strip()
-        return s if s else None
+        return s or None
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
     try:
         s = str(value).strip()
-        return s if s else None
+        return s or None
     except (TypeError, ValueError, AttributeError):
         return None
 
@@ -189,9 +189,7 @@ def _available_job_attempt_execution_lists(
     inp: _AvailableJobAttemptExecutionListsInputs,
 ) -> tuple[list[str], list[int], list[str], bool]:
     """Aggregates available ids for UI filters and whether any raw line had job context."""
-    payload_only_job_ids = [
-        extract_event_context(ev.get("payload"))[0] for ev in inp.raw_events
-    ]
+    payload_only_job_ids = [extract_event_context(ev.get("payload"))[0] for ev in inp.raw_events]
     any_event_has_job_id = any(j is not None for j in payload_only_job_ids)
 
     acc_ids = set(j for j in inp.job_ids_seen if j is not None)
@@ -333,7 +331,7 @@ def build_enriched_execution_log(
 
 
 # Public envelope: keep explicit kwargs for multi-job aggregated logs (callers / API contract).
-def build_enriched_aisle_aggregated_execution_log(  # noqa: PLR0913
+def build_enriched_aisle_aggregated_execution_log(
     *,
     inventory_id: str,
     aisle_id: str,

@@ -209,13 +209,13 @@ class PositionSummaryResponse(BaseModel):
         deprecated=True,
         description="Deprecated: system-resolved qty; prefer `quantity.final` for UX line total.",
     )
-    qtySource: _QtySourcePublic = Field(  # noqa: N815
+    qtySource: _QtySourcePublic = Field(  # noqa: N815 — camelCase wire keys (deprecated fields)
         ..., deprecated=True, description="Deprecated: use `quantity.source`."
     )
-    qtyInferenceReason: Optional[str] = Field(  # noqa: N815
+    qtyInferenceReason: Optional[str] = Field(  # noqa: N815 — camelCase wire keys (deprecated fields)
         None, deprecated=True, description="Deprecated: use `quantity.inference_reason`."
     )
-    qtyResolved: Optional[bool] = Field(  # noqa: N815
+    qtyResolved: Optional[bool] = Field(  # noqa: N815 — camelCase wire keys (deprecated fields)
         None, deprecated=True, description="Deprecated: use `quantity.resolved`."
     )
     source_image_id: Optional[str] = Field(

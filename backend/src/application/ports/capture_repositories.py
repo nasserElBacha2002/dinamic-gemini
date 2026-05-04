@@ -47,9 +47,7 @@ class CaptureSessionRepository(ABC):
     def get_by_id(self, session_id: str) -> CaptureSession | None: ...
 
     @abstractmethod
-    def get_by_id_for_inventory(
-        self, session_id: str, inventory_id: str
-    ) -> CaptureSession | None:
+    def get_by_id_for_inventory(self, session_id: str, inventory_id: str) -> CaptureSession | None:
         """Return the session only when it belongs to the given inventory."""
 
     @abstractmethod
@@ -118,9 +116,7 @@ class CaptureSessionGroupRepository(ABC):
         """Number of persisted group rows for the session (including unassigned)."""
 
     @abstractmethod
-    def get_by_id_and_session(
-        self, group_id: str, session_id: str
-    ) -> CaptureSessionGroup | None:
+    def get_by_id_and_session(self, group_id: str, session_id: str) -> CaptureSessionGroup | None:
         """Return the group when it belongs to the session, else None."""
 
     @abstractmethod

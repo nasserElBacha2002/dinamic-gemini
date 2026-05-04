@@ -143,9 +143,7 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
             row = cur.fetchone()
         return _row_to_session(row) if row else None
 
-    def get_by_id_for_inventory(
-        self, session_id: str, inventory_id: str
-    ) -> CaptureSession | None:
+    def get_by_id_for_inventory(self, session_id: str, inventory_id: str) -> CaptureSession | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """

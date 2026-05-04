@@ -170,9 +170,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
                 f"S3 head_object failed for key={object_key!r} bucket={self._bucket!r}"
             ) from exc
 
-    def download_to_path(
-        self, key: str, target_path: Path, *, bucket: str | None = None
-    ) -> None:
+    def download_to_path(self, key: str, target_path: Path, *, bucket: str | None = None) -> None:
         if bucket and bucket != self._bucket:
             raise RuntimeError(
                 f"S3 bucket mismatch for download: record_bucket={bucket!r} configured_bucket={self._bucket!r}"

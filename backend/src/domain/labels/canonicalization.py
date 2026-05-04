@@ -27,4 +27,4 @@ def canonicalize_sku(raw: str | None) -> str | None:
     s = re.sub(r"\s+", " ", s)
     s = re.sub(r"[-_]+", "-", s)
     s = s.strip("- _")
-    return s if s else None
+    return s or None

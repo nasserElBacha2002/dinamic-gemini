@@ -53,9 +53,7 @@ class ResultContextResolver:
         if job.target_type != "aisle" or job.target_id != aisle.id:
             raise JobDoesNotBelongToAisleError(f"Job {job_id} does not belong to aisle {aisle.id}")
 
-    def resolve(
-        self, *, aisle: Aisle, explicit_job_id: str | None
-    ) -> ResolvedAisleResultContext:
+    def resolve(self, *, aisle: Aisle, explicit_job_id: str | None) -> ResolvedAisleResultContext:
         if explicit_job_id is not None and str(explicit_job_id).strip():
             jid = str(explicit_job_id).strip()
             self._assert_job_targets_aisle(job_id=jid, aisle=aisle)

@@ -6,7 +6,6 @@ Priority: position_barcode → generated PALLET_001...
 Duplicate position_barcode: conflict_flag, DUPLICATE_POSITION_BARCODE; no suffix.
 """
 
-
 from src.domain.entity import Entity
 
 

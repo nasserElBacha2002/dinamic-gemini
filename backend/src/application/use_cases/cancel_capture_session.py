@@ -59,7 +59,7 @@ class CancelCaptureSessionUseCase:
                 continue
             try:
                 self._artifact_storage.delete_file(key)
-            except Exception as exc:  # noqa: BLE001 — best-effort cleanup
+            except Exception as exc:
                 logger.warning(
                     "capture_session cancel: staging delete failed session_id=%s item_id=%s key=%s: %s",
                     session_id,

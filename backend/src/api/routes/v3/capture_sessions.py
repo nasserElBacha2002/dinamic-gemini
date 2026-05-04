@@ -92,7 +92,9 @@ from src.application.use_cases.upload_capture_session_staging_items import (
 router = APIRouter()
 
 
-def _capture_session_detail_response(detail: CaptureSessionDetailResult) -> CaptureSessionDetailResponse:
+def _capture_session_detail_response(
+    detail: CaptureSessionDetailResult,
+) -> CaptureSessionDetailResponse:
     return CaptureSessionDetailResponse(
         session=capture_session_to_response(detail.session),
         items=[capture_session_item_to_response(i) for i in detail.items],
@@ -110,7 +112,9 @@ def _materialize_capture_session_http_response(
     )
 
 
-def _staging_upload_batch_response(batch: StagingUploadBatchResult) -> UploadCaptureSessionItemsResponse:
+def _staging_upload_batch_response(
+    batch: StagingUploadBatchResult,
+) -> UploadCaptureSessionItemsResponse:
     return UploadCaptureSessionItemsResponse(
         items=[capture_session_item_to_response(i) for i in batch.items],
         errors=[

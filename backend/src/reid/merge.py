@@ -6,7 +6,6 @@ concatenadas, ordenadas por frame_idx/bbox y deduplicadas por (frame_idx, bbox).
 Track_id del merged = mínimo del componente; salida ordenada determinista.
 """
 
-
 from src.models.schemas import PalletObservation, PalletTrack
 
 

@@ -144,7 +144,7 @@ def _wire_filename(uf: UploadedFile) -> str:
 
 
 class UploadCaptureSessionStagingItemsUseCase:
-    def __init__(  # noqa: PLR0913 — DI + config (B8.2)
+    def __init__(
         self,
         *,
         session_repo: CaptureSessionRepository,
@@ -239,7 +239,9 @@ class UploadCaptureSessionStagingItemsUseCase:
         if len(raw) > self._max_upload_bytes:
             return None, self._error_too_large(fname, file_index)
         digest = hashlib.sha256(raw).hexdigest()
-        if digest in batch_digests or self._item_repo.has_item_with_content_hash(session_id, digest):
+        if digest in batch_digests or self._item_repo.has_item_with_content_hash(
+            session_id, digest
+        ):
             return None, self._error_duplicate_content(fname, file_index)
         return raw, None
 
@@ -278,7 +280,7 @@ class UploadCaptureSessionStagingItemsUseCase:
             )
             try:
                 self._artifact_storage.delete_file(b.rel_key)
-            except Exception as cleanup_e:  # noqa: BLE001
+            except Exception as cleanup_e:
                 logger.warning(
                     "capture staging upload: cleanup delete failed key=%s: %s",
                     b.rel_key,
@@ -289,7 +291,7 @@ class UploadCaptureSessionStagingItemsUseCase:
             return
         try:
             self._artifact_storage.delete_file(b.rel_key)
-        except Exception as cleanup_e:  # noqa: BLE001
+        except Exception as cleanup_e:
             logger.warning(
                 "capture staging upload: rollback delete failed key=%s: %s",
                 b.rel_key,

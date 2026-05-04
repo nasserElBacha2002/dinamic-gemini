@@ -48,6 +48,5 @@ def _apply_status_transition(inv: Inventory, new_status: InventoryStatus, now: d
     if new_status == InventoryStatus.COMPLETED:
         if prev != InventoryStatus.COMPLETED and inv.completed_at is None:
             inv.completed_at = now
-    else:
-        if prev == InventoryStatus.COMPLETED:
-            inv.completed_at = None
+    elif prev == InventoryStatus.COMPLETED:
+        inv.completed_at = None

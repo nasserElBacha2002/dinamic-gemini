@@ -5,7 +5,6 @@ Sort entities before assigning generated pallet_id so that same payload
 always yields same PALLET_001, PALLET_002, ...
 """
 
-
 from src.domain.entity import Entity
 
 

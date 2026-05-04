@@ -254,7 +254,7 @@ class MaterializeCaptureSessionGroupUseCase:
                         "bulk": True,
                     },
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 bulk_group_failures += 1
                 logger.exception(
                     "G5 bulk materialize group failed session_id=%s group_id=%s aisle_id=%s",
@@ -359,7 +359,7 @@ class MaterializeCaptureSessionGroupUseCase:
                     item.updated_at = now
                     try:
                         self._item_repo.save(item)
-                    except Exception:  # noqa: BLE001
+                    except Exception:
                         logger.exception(
                             "G5 item partially failed: existing asset present but item link update failed "
                             "session_id=%s group_id=%s item_id=%s",
@@ -393,7 +393,7 @@ class MaterializeCaptureSessionGroupUseCase:
                 item.updated_at = now
                 try:
                     self._item_repo.save(item)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     logger.exception(
                         "G5 item partially failed: asset created but item update failed session_id=%s group_id=%s item_id=%s",
                         session_id,
@@ -401,7 +401,7 @@ class MaterializeCaptureSessionGroupUseCase:
                         item.id,
                     )
                     failed += 1
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception(
                     "G5 materialize item failed session_id=%s group_id=%s item_id=%s",
                     session_id,

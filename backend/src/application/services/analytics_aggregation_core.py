@@ -462,9 +462,7 @@ def _effective_quantity_for_issue_bucket(
     return qty
 
 
-def issue_bucket_for_position(
-    pos: Position, primary_product: ProductRecord | None = None
-) -> str:
+def issue_bucket_for_position(pos: Position, primary_product: ProductRecord | None = None) -> str:
     """Single primary bucket label for quality patterns (mutually exclusive priority)."""
     if unidentified_product(primary_product):
         return "unidentified_product"

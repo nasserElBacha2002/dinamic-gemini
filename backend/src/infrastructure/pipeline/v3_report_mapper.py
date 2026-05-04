@@ -76,13 +76,20 @@ def _summary_merge_bbox_lists(entity: dict[str, Any], out: dict[str, Any]) -> No
 
 def _summary_merge_optional_string_projections(entity: dict[str, Any], out: dict[str, Any]) -> None:
     """Fallback display fields + traceability (see BUG_INVESTIGATION_POSITIONS_SKU_QUANTITY_NULL)."""
-    for src_key in ("position_barcode", "review_display_label", "source_image_id", "traceability_status"):
+    for src_key in (
+        "position_barcode",
+        "review_display_label",
+        "source_image_id",
+        "traceability_status",
+    ):
         val = entity.get(src_key)
         if val is not None:
             out[src_key] = val if isinstance(val, str) else str(val)
 
 
-def _summary_merge_filename_and_int_projections(entity: dict[str, Any], out: dict[str, Any]) -> None:
+def _summary_merge_filename_and_int_projections(
+    entity: dict[str, Any], out: dict[str, Any]
+) -> None:
     sof = entity.get("source_image_original_filename")
     if sof is not None and isinstance(sof, str) and sof.strip():
         out["source_image_original_filename"] = sof.strip()
@@ -360,11 +367,11 @@ def _map_single_hybrid_entity(
     raw_label_id = str(uuid4())
     entity_uid = entity.get("entity_uid") or position_id
     evidence_path_for_meta = (entity.get("evidence_path") or "").strip()
-    group_key = (
-        f"position:{position_id}:evidence:{evidence_id}" if evidence_id else str(entity_uid)
-    )
+    group_key = f"position:{position_id}:evidence:{evidence_id}" if evidence_id else str(entity_uid)
     sku_raw = (
-        internal_code_raw if internal_code_raw is not None and isinstance(internal_code_raw, str) else None
+        internal_code_raw
+        if internal_code_raw is not None and isinstance(internal_code_raw, str)
+        else None
     )
     raw_label = RawLabel(
         id=raw_label_id,
@@ -392,7 +399,7 @@ def _map_single_hybrid_entity(
     return position, product, evidence, raw_label
 
 
-def map_hybrid_report_to_domain(  # noqa: PLR0913
+def map_hybrid_report_to_domain(
     aisle_id: str,
     report: dict[str, Any],
     run_dir: Path,

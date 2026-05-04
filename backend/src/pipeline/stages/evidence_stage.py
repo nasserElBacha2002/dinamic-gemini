@@ -41,7 +41,7 @@ class EvidenceStage:
         """Call generate_evidence_pack; preserve current artifact layout and paths."""
         job_id = context.job_id
         run_dir = context.run_dir
-        refs: list[str] | None = data.frame_refs if data.frame_refs else None
+        refs: list[str] | None = data.frame_refs or None
         if refs is not None and len(refs) != len(data.frames_nd):
             context.logger.warning(
                 "EvidenceStage: frame_refs length %d != frames_nd %d; ignoring refs for evidence scoping",

@@ -49,7 +49,7 @@ class _ReviewActionDependencies:
     delete_uc: DeletePositionUseCase
 
 
-def get_review_action_dependencies(  # noqa: PLR0913
+def get_review_action_dependencies(
     confirm_uc: ConfirmPositionUseCase = Depends(get_confirm_position_use_case),
     mark_unknown_uc: MarkPositionUnknownUseCase = Depends(get_mark_position_unknown_use_case),
     mark_image_mismatch_uc: MarkPositionImageMismatchUseCase = Depends(
@@ -101,7 +101,9 @@ def _dispatch_review_action(
         handle_update_sku(inventory_id, aisle_id, position_id, body, deps.update_sku_uc)
         return
     if action == ReviewActionType.UPDATE_POSITION_CODE:
-        handle_update_position_code(inventory_id, aisle_id, position_id, body, deps.update_pos_code_uc)
+        handle_update_position_code(
+            inventory_id, aisle_id, position_id, body, deps.update_pos_code_uc
+        )
         return
     if action == ReviewActionType.DELETE_POSITION:
         handle_delete_position(inventory_id, aisle_id, position_id, body.job_id, deps.delete_uc)

@@ -223,9 +223,7 @@ def _build_success_run_metadata(
                 json.dumps(run_metadata, indent=2), encoding="utf-8"
             )
         except OSError as e:
-            logger.warning(
-                "Failed to write run_metadata.json (job_id=%s): %s", context.job_id, e
-            )
+            logger.warning("Failed to write run_metadata.json (job_id=%s): %s", context.job_id, e)
     return run_metadata
 
 
@@ -394,9 +392,7 @@ class HybridInventoryPipeline:
         exec_log: ExecutionLogWriter,
         reporting_input: ReportingStageInput,
     ) -> None:
-        context.check_cancellation(
-            stage="ReportingStage", reason="Job canceled before reporting"
-        )
+        context.check_cancellation(stage="ReportingStage", reason="Job canceled before reporting")
         stage_started = time.monotonic()
         exec_log.info("ReportingStage", "Reporting started")
         context.emit_stage_event(stage="ReportingStage", event="stage.started")
@@ -456,9 +452,7 @@ class HybridInventoryPipeline:
         except (FileNotFoundError, ValueError) as e:
             return _fail_stage(exec_log, context, logger, "InputPreparationStage", e)
 
-        _report_progress(
-            params.progress_callback, logger, context.job_id, "extract_frames", 10
-        )
+        _report_progress(params.progress_callback, logger, context.job_id, "extract_frames", 10)
         try:
             acquired = self._stage_frame_acquisition(context, exec_log, prepared)
         except PipelineCancellationRequestedError:
