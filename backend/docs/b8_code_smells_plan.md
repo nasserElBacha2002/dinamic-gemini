@@ -183,3 +183,52 @@ Re-ejecutar antes de B8.1 para números actualizados tras merges.
 ## 9. Prompt sugerido para iniciar B8.1
 
 > Implementar **B8.1** solo en `backend/src/api/routes/v3/`: reducir `PLR0913` en rutas con muchos parámetros Query/Path agrupando en dataclasses internos o dependencias FastAPI sin cambiar URLs ni schemas; donde `except Exception` solo envuelve `reraise_if_mapped`, marcar **REVISAR_NO_TOCAR** o acotar excepciones **solo** si los tests API y el mapping de errores lo confirman. Entregar PR pequeño por archivo o por subcarpeta (p. ej. `positions.py` + `review_queue.py` primero). Sin Ruff autofix masivo; alinear con `backend/docs/b8_code_smells_plan.md`.
+
+---
+
+## 10. B8.1 — API routes (implementado)
+
+**Objetivo:** Reducir complejidad en endpoints prioritarios sin cambiar contratos HTTP ni comportamiento.
+
+### `positions.py`
+
+| Smell abordado | Técnica | Sin tocar / notas |
+|----------------|---------|-------------------|
+| PLR0913 (muchos params en `list_aisle_positions`) | Query params agrupados en `_ListAislePositionsQuery` vía `Depends(_list_aisle_positions_query_dep)` | Los `Query()` permanecen en la función de dependencia (mismos nombres y descripciones OpenAPI). |
+| PLR0913 / statements en `list_aisle_positions` | Helper `_position_summaries_for_list` | — |
+| PLR0913 en `get_position_detail` | `_PositionDetailQuery` vía `Depends(_position_detail_query_dep)` | — |
+| Statements en detalle | `_build_position_detail_response` | — |
+| `except Exception` + `mapped_http_exception` | Comentario `# REVISAR_NO_TOCAR` | No se estrecharon excepciones (preserva mapeo HTTP). |
+| PLR0913 en `_list_aisle_positions_query_dep` | `# noqa: PLR0913` + comentario | Un `Query()` por parámetro público; aridad fijada por el contrato FastAPI/OpenAPI. |
+
+### `review_queue.py`
+
+| Smell abordado | Técnica | Sin tocar / notas |
+|----------------|---------|-------------------|
+| PLR0913 en `list_review_queue_positions` | `_ReviewQueueRouteQuery` + `Depends(_review_queue_query_dep)`; el handler queda con `use_case` y `rq` | — |
+| Statements | `_to_review_queue_query`, `_review_queue_items` | — |
+| PLR0913 en `_review_queue_query_dep` | `# noqa: PLR0913` + comentario | Misma razón: un parámetro Query por query string documentado. |
+
+### `reviews.py`
+
+| Smell abordado | Técnica | Sin tocar / notas |
+|----------------|---------|-------------------|
+| PLR0913 (muchos `Depends` en `submit_review_action`) | `_ReviewActionDependencies` + `Depends(get_review_action_dependencies)` | — |
+| PLR0911 (múltiples `return` en el handler) | `_dispatch_review_action` conservando la misma cadena if/elif | Comportamiento idéntico. |
+| PLR0913 en `get_review_action_dependencies` | `# noqa: PLR0913` + comentario | Una inyección por use case según DI actual. |
+
+### Archivos no tocados en este slice
+
+- **`capture_sessions.py`**, **`aisles.py`**: dejar para un siguiente PR de B8.1 si se confirma el mismo patrón.
+
+### Validación B8.1
+
+- `ruff check` sobre los tres archivos: **OK**.
+- `mypy` sobre los tres archivos: **OK**.
+- `pytest tests/api`: **documentar** si el entorno local usa Python 3.9 y falla la carga de la app por tipos en `auth/config`; ejecutar en CI / Python ≥ 3.10.
+
+---
+
+## 11. Próximo paso (B8.2)
+
+Continuar en `backend/src/application/` (use cases de capture materialization, `execution_log_enrichment`, etc.) según el mapa del §4, con PRs pequeños y tests de application.
