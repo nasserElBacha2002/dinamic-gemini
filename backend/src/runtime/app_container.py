@@ -37,6 +37,7 @@ from src.application.ports.repositories import (
     SourceAssetRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
+from src.application.ports.stored_artifact_reader import StoredArtifactReader
 from src.application.use_cases.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
@@ -92,6 +93,7 @@ class AppContainer:
         self._capture_session_item_repo: CaptureSessionItemRepository | None = None
         self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = None
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
+        self._stored_artifact_reader: StoredArtifactReader | None = None
 
     @property
     def settings(self) -> AppSettings:
@@ -434,6 +436,18 @@ class AppContainer:
             settings.artifact_storage_legacy_local_read_enabled,
         )
         return self._artifact_storage
+
+    def get_stored_artifact_reader(self) -> StoredArtifactReader:
+        """Hybrid reads for stored job JSON / reports (port adapter; shared by API + worker)."""
+        if self._stored_artifact_reader is not None:
+            return self._stored_artifact_reader
+        from src.infrastructure.artifacts.stored_artifact_reader import DefaultStoredArtifactReader
+
+        self._stored_artifact_reader = DefaultStoredArtifactReader(
+            self.get_job_repo(),
+            self.get_artifact_storage(),
+        )
+        return self._stored_artifact_reader
 
     def get_worker_launch_service(self) -> WorkerLaunchService:
         if self._worker_launch_service is not None:

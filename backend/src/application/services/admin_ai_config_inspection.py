@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Final, NamedTuple
 
 from src.application.services.processing_experiment_catalog import (
     default_model_for_provider,
@@ -61,6 +61,78 @@ _OPTIONAL_NULLABLE_ENTITY_KEYS_V21 = tuple(
 )
 
 
+class _ResponseContractRow(NamedTuple):
+    wire_transport: str
+    promotes_legacy_qty_bbox_aliases: bool
+    claude_product_label_to_internal_code: bool
+    transport_notes: tuple[str, ...]
+
+
+_RESPONSE_CONTRACT_BY_PROVIDER: Final[dict[str, _ResponseContractRow]] = {
+    "gemini": _ResponseContractRow(
+        wire_transport="gemini_native_json",
+        promotes_legacy_qty_bbox_aliases=True,
+        claude_product_label_to_internal_code=False,
+        transport_notes=(
+            "JSON object after model output; validate_global_analysis_structure_v21 on parse.",
+            "Gemini family may promote legacy qty/bbox aliases when canonical fields absent.",
+        ),
+    ),
+    "openai": _ResponseContractRow(
+        wire_transport="openai_chat_json_object",
+        promotes_legacy_qty_bbox_aliases=False,
+        claude_product_label_to_internal_code=False,
+        transport_notes=(
+            "response_format json_object; vision via image_url parts when frames exist.",
+            "Normalization strips non-canonical keys (no blind qty/bbox promotion).",
+        ),
+    ),
+    "claude": _ResponseContractRow(
+        wire_transport="anthropic_messages_text_json",
+        promotes_legacy_qty_bbox_aliases=False,
+        claude_product_label_to_internal_code=True,
+        transport_notes=(
+            "Assistant message text parsed as JSON; hybrid adds contract supplement unless parity on.",
+            "product_label → internal_code only when value matches SKU/code heuristic.",
+        ),
+    ),
+    "deepseek": _ResponseContractRow(
+        wire_transport="openai_compatible_json_object",
+        promotes_legacy_qty_bbox_aliases=False,
+        claude_product_label_to_internal_code=False,
+        transport_notes=(
+            "OpenAI-compatible client; JSON object mode for executed text-only calls.",
+            "Multimodal aisle requests rejected before HTTP (UNSUPPORTED_MULTIMODAL_PROVIDER).",
+        ),
+    ),
+}
+
+_FALLBACK_RESPONSE_CONTRACT: Final[_ResponseContractRow] = _ResponseContractRow(
+    wire_transport="unknown",
+    promotes_legacy_qty_bbox_aliases=False,
+    claude_product_label_to_internal_code=False,
+    transport_notes=(
+        "See validate_global_analysis_structure_v21 and entity_normalizer.",
+    ),
+)
+
+_HYBRID_BASE_MODE_BY_PROVIDER: Final[dict[str, str]] = {
+    "gemini": "default_profile_only",
+    "deepseek": "default_profile_only",
+    "openai": "openai_replacement_unless_parity",
+    "claude": "default_plus_contract_supplement_unless_parity",
+}
+
+_DEFAULT_HYBRID_BASE_MODE: Final[str] = "default_profile_only"
+
+_PARITY_AFFECTS_PROMPT_ASSEMBLY: Final[frozenset[str]] = frozenset({"openai", "claude"})
+
+_MULTIMODAL_CONTEXT_POLICY_BY_PROVIDER: Final[dict[str, str]] = {
+    "deepseek": "reject_images_before_http",
+}
+_DEFAULT_MULTIMODAL_CONTEXT_POLICY: Final[str] = "attach_when_adapter_supports_vision"
+
+
 def _multimodal_supported(provider_key: str) -> bool:
     return provider_key.strip().lower() != "deepseek"
 
@@ -89,47 +161,13 @@ def _canonical_example_json() -> str:
 def _response_contract(provider_key: str) -> dict[str, Any]:
     """Structured contract metadata (minimal prose; UI can expand labels)."""
     fam = resolve_provider_family(provider_key)
-    if provider_key == "gemini":
-        wire = "gemini_native_json"
-        promotes = True
-        claude_map = False
-        notes = [
-            "JSON object after model output; validate_global_analysis_structure_v21 on parse.",
-            "Gemini family may promote legacy qty/bbox aliases when canonical fields absent.",
-        ]
-    elif provider_key == "openai":
-        wire = "openai_chat_json_object"
-        promotes = False
-        claude_map = False
-        notes = [
-            "response_format json_object; vision via image_url parts when frames exist.",
-            "Normalization strips non-canonical keys (no blind qty/bbox promotion).",
-        ]
-    elif provider_key == "claude":
-        wire = "anthropic_messages_text_json"
-        promotes = False
-        claude_map = True
-        notes = [
-            "Assistant message text parsed as JSON; hybrid adds contract supplement unless parity on.",
-            "product_label → internal_code only when value matches SKU/code heuristic.",
-        ]
-    elif provider_key == "deepseek":
-        wire = "openai_compatible_json_object"
-        promotes = False
-        claude_map = False
-        notes = [
-            "OpenAI-compatible client; JSON object mode for executed text-only calls.",
-            "Multimodal aisle requests rejected before HTTP (UNSUPPORTED_MULTIMODAL_PROVIDER).",
-        ]
-    else:
-        wire = "unknown"
-        promotes = False
-        claude_map = False
-        notes = ["See validate_global_analysis_structure_v21 and entity_normalizer."]
+    key = (provider_key or "").strip().lower()
+    row = _RESPONSE_CONTRACT_BY_PROVIDER.get(key, _FALLBACK_RESPONSE_CONTRACT)
+    promotes = row.promotes_legacy_qty_bbox_aliases
 
     return {
         "expects_json": True,
-        "wire_transport": wire,
+        "wire_transport": row.wire_transport,
         "validation_function": "validate_global_analysis_structure_v21",
         "normalization_function": "normalize_llm_response",
         "normalization_family": fam,
@@ -138,7 +176,7 @@ def _response_contract(provider_key: str) -> dict[str, Any]:
             if promotes
             else "defensive_strip_no_blind_promotion"
         ),
-        "claude_product_label_to_internal_code_when_valid": claude_map,
+        "claude_product_label_to_internal_code_when_valid": row.claude_product_label_to_internal_code,
         "required_root_keys": ["total_entities_detected", "entities"],
         "extra_root_keys_policy_short": (
             f"Extra root keys ignored by parser; optional {EXTRACTION_CONTRACT_VERSION_KEY} for audit."
@@ -147,25 +185,18 @@ def _response_contract(provider_key: str) -> dict[str, Any]:
         "canonical_entity_keys": list(CLAUDE_JSON_ENTITY_OUTPUT_KEYS),
         "nullable_optional_entity_keys": list(_OPTIONAL_NULLABLE_ENTITY_KEYS_V21),
         "canonical_example_json": _canonical_example_json(),
-        "transport_notes": notes,
+        "transport_notes": list(row.transport_notes),
     }
 
 
 def _composition_structured(provider_key: str) -> dict[str, Any]:
     """How hybrid base text is assembled — separate from operator instructions."""
-    modes = {
-        "gemini": "default_profile_only",
-        "deepseek": "default_profile_only",
-        "openai": "openai_replacement_unless_parity",
-        "claude": "default_plus_contract_supplement_unless_parity",
-    }
+    key = (provider_key or "").strip().lower()
     return {
-        "hybrid_base_mode": modes.get(provider_key, "default_profile_only"),
-        "parity_mode_affects_prompt_assembly": provider_key in ("openai", "claude"),
-        "multimodal_context_policy": (
-            "reject_images_before_http"
-            if provider_key == "deepseek"
-            else "attach_when_adapter_supports_vision"
+        "hybrid_base_mode": _HYBRID_BASE_MODE_BY_PROVIDER.get(key, _DEFAULT_HYBRID_BASE_MODE),
+        "parity_mode_affects_prompt_assembly": key in _PARITY_AFFECTS_PROMPT_ASSEMBLY,
+        "multimodal_context_policy": _MULTIMODAL_CONTEXT_POLICY_BY_PROVIDER.get(
+            key, _DEFAULT_MULTIMODAL_CONTEXT_POLICY
         ),
     }
 
