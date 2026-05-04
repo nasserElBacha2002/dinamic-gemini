@@ -450,6 +450,18 @@ def compute_processing_success_rate(
     return succeeded / denom
 
 
+def _effective_quantity_for_issue_bucket(
+    pos: Position, primary_product: ProductRecord | None
+) -> int:
+    """Mirror legacy qty resolution inside ``issue_bucket_for_position`` (B8.2)."""
+    view = build_position_canonical_view(pos, primary_product)
+    qty = int(view.quantity.final_display_quantity)
+    if primary_product is None and qty == 0:
+        _, summary_qty = summary_sku_and_detected_quantity(pos)
+        return summary_qty
+    return qty
+
+
 def issue_bucket_for_position(
     pos: Position, primary_product: ProductRecord | None = None
 ) -> str:
@@ -460,18 +472,12 @@ def issue_bucket_for_position(
         return "invalid_traceability"
     if not position_has_primary_evidence(pos):
         return "missing_evidence"
-    view = build_position_canonical_view(pos, primary_product)
-    qty = int(view.quantity.final_display_quantity)
-    if primary_product is None and qty == 0:
-        _, summary_qty = summary_sku_and_detected_quantity(pos)
-        qty = summary_qty
+    qty = _effective_quantity_for_issue_bucket(pos, primary_product)
     if qty == 0:
         return "quantity_zero"
     if is_low_confidence(pos):
         return "low_confidence"
-    if pos.needs_review:
-        return "pending_review"
-    return "ok"
+    return "pending_review" if pos.needs_review else "ok"
 
 
 def most_common_issue_for_counts(counts: dict[str, int]) -> str | None:

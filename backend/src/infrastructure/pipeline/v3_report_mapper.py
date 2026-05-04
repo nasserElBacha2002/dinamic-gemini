@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Explicit sentinels when pipeline does not provide a value (auditable).
 SKU_UNKNOWN = "UNKNOWN"
 EVIDENCE_PATH_NO_ARTIFACT = "no_artifact"
-_ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
+_ACCEPTED_COUNT_STATUSES = frozenset({"COU2NTED", "COUNTED_MANUAL"})
 # Normalized bbox lists from the hybrid report (x1,y1,x2,y2).
 _BBOX_COORD_COUNT = 4
 

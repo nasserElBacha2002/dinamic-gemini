@@ -266,11 +266,48 @@ Continuar en `backend/src/application/` con los use cases pendientes del §4 (`m
 - `pytest tests/application/test_execution_log_enrichment.py`: **OK** (entorno local).
 - Tests que importan dominio con `dataclass(kw_only=True)`: requieren **Python ≥ 3.10**; si `python3` apunta a 3.9, la recolección falla antes de ejecutar aserciones (limitación de entorno, no del diff).
 
-### Archivos de application aún priorizados (no tocados en este slice)
+### Archivos de application priorizados en el slice inicial (§12)
 
-- `use_cases/materialize_capture_session.py`
-- `use_cases/upload_capture_session_staging_items.py`
-- `services/analytics_aggregation_core.py`, `use_cases/list_review_queue.py`, export/detail con deps altos, etc. (mapa §4 B8.2)
+El cierre de hotspots adicionales está documentado en **«B8.2 — Cierre Application»** más abajo.
+
+---
+
+## B8.2 — Cierre Application
+
+**Estado:** **cerrada con deuda controlada** para los cuatro archivos hotspot solicitados; **no** “cero PLR” en todo `src/application/` (~**36** avisos PLR0911/0912/0913/0915 restantes en el paquete tras este cierre, según `ruff check src/application --select PLR0911,PLR0912,PLR0913,PLR0915`). **Ports no modificados.**
+
+### Archivos intervenidos
+
+| Archivo | Smells corregidos (Ruff) | Técnica |
+|---------|--------------------------|---------|
+| `use_cases/materialize_capture_session.py` | PLR0912 / PLR0915 / PLR0913 (`execute`, `__init__`) | `_normalize_idempotency_key`, `_load_session_or_raise`, `_maybe_replay_idempotent`, `_validate_session_and_items_for_materialize`, `_run_materialize_commit(ctx: _MaterializeCommitContext)`; `__init__` con `# noqa: PLR0913` (DI) |
+| `use_cases/upload_capture_session_staging_items.py` | PLR0912 / PLR0915 / PLR0913 | `_StagingBatchAccum`, `_StagingIngestUnit`, `_PersistStagingFailureParams`, `_ItemSaveFailureBundle`, `_preflight_one_upload_file`, `_ingest_one_staging_file`, helpers de error wire; `__init__` `noqa` DI |
+| `use_cases/list_review_queue.py` | PLR0911 (`_position_status_matches`, `_row_matches_query`) | Tabla de filtro de estado; subhelpers `_query_*` y `_row_matches_query` como cadena `all(...)` |
+| `services/analytics_aggregation_core.py` | PLR0911 (`issue_bucket_for_position`) | `_effective_quantity_for_issue_bucket`; último salto `pending_review`/`ok` unificado |
+
+### Smells aceptados como deuda (B9 / slices futuros)
+
+- **`ports/repositories.py`, `ports/capture_repositories.py`:** PLR0913 en interfaces — cambiar firma = romper implementaciones; solo diseño coordinado.
+- **`materialize_capture_session_group.py`, `upload_inventory_visual_references.py`**, export/detail, analytics/listings restantes: PLR según mapa §4.
+- **Use cases CRUD** con 6–7 argumentos en `execute`: patrón Command ya parcial; unificación opcional en B9.
+
+### REVISAR_NO_TOCAR
+
+- **`materialize_capture_session`:** `except Exception` en rollback de estado de sesión tras fallo (BLE001) — best-effort; no alterar semántica de error dominio al llamador.
+- **`upload_capture_session_staging_items`:** capturas amplias en escritura a storage / cleanup / persist — mismos mensajes y ramas de error wire.
+
+### Tests ejecutados
+
+- `pytest tests/application/use_cases/test_list_review_queue.py`
+- `pytest tests/application/test_analytics_phase51.py`
+- `pytest tests/application/use_cases/test_capture_session_materialize_phase4.py`
+- `pytest tests/application/use_cases/test_capture_sessions_sprint2.py`
+- `mypy` en los cuatro archivos modificados: **OK**
+- **Python:** dominio con `dataclass(kw_only=True)` → tests que importan dominio conviene **Python ≥ 3.10** (igual que notas previas de B8.2).
+
+### Estado final B8.2
+
+- **Cierre operativo** del alcance “hotspots application” definido para esta fase; residual PLR en application **catalogado** para B9 / PRs pequeños.
 
 ---
 

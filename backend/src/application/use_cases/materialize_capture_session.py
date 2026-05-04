@@ -54,6 +54,19 @@ class MaterializeCaptureSessionResult:
     replayed: bool
 
 
+@dataclass(frozen=True)
+class _MaterializeCommitContext:
+    """Internal bundle for the materialize transaction (B8.2 PLR0913)."""
+
+    session: CaptureSession
+    session_id: str
+    idem: str
+    inventory_id: str
+    aisle_id: str
+    eligible: list[CaptureSessionItem]
+    prev_status: CaptureSessionStatus
+
+
 class MaterializeCaptureSessionUseCase:
     """Idempotent Phase 4 materialization from staging items to SourceAsset rows.
 
@@ -64,7 +77,7 @@ class MaterializeCaptureSessionUseCase:
     final confirmation semantics.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 — DI wiring (B8.2)
         self,
         *,
         session_repo: CaptureSessionRepository,
@@ -90,30 +103,36 @@ class MaterializeCaptureSessionUseCase:
         )
         self._aisle_repo = aisle_repo
 
-    def execute(
-        self,
-        *,
-        inventory_id: str,
-        aisle_id: str,
-        session_id: str,
-        idempotency_key: str,
-    ) -> MaterializeCaptureSessionResult:
+    def _normalize_idempotency_key(self, idempotency_key: str) -> str:
         idem = (idempotency_key or "").strip()
         if not idem:
             raise CaptureSessionInvalidIdempotencyKeyError("idempotency_key is required")
+        return idem
+
+    def _load_session_or_raise(
+        self, session_id: str, inventory_id: str, aisle_id: str
+    ) -> CaptureSession:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None or session.aisle_id != aisle_id:
             raise CaptureSessionNotFoundError(
                 "Capture session not found for this inventory and aisle."
             )
+        return session
 
+    def _maybe_replay_idempotent(
+        self, session: CaptureSession, session_id: str, idem: str
+    ) -> MaterializeCaptureSessionResult | None:
         prev = self._confirm_repo.get_by_session_and_key(session_id, idem)
-        if prev is not None:
-            created_asset_ids = tuple((prev.outcome_json or {}).get("created_asset_ids", []))
-            return MaterializeCaptureSessionResult(
-                session=session, created_asset_ids=created_asset_ids, replayed=True
-            )
+        if prev is None:
+            return None
+        created_asset_ids = tuple((prev.outcome_json or {}).get("created_asset_ids", []))
+        return MaterializeCaptureSessionResult(
+            session=session, created_asset_ids=created_asset_ids, replayed=True
+        )
 
+    def _validate_session_and_items_for_materialize(
+        self, session: CaptureSession, session_id: str
+    ) -> list[CaptureSessionItem]:
         if session.status == CaptureSessionStatus.CONFIRMING:
             raise CaptureSessionAlreadyMaterializedError(
                 "This capture session is already materialized (confirming)."
@@ -148,7 +167,16 @@ class MaterializeCaptureSessionUseCase:
             raise CaptureSessionMaterializationNotAllowedError(
                 "Materialization requires all imported items to be in proposed assignment status."
             )
+        return eligible
 
+    def _run_materialize_commit(self, ctx: _MaterializeCommitContext) -> MaterializeCaptureSessionResult:
+        session = ctx.session
+        session_id = ctx.session_id
+        idem = ctx.idem
+        inventory_id = ctx.inventory_id
+        aisle_id = ctx.aisle_id
+        eligible = ctx.eligible
+        prev_status = ctx.prev_status
         aisle = require_aisle_scoped_to_inventory(
             self._aisle_repo,
             inventory_id=inventory_id,
@@ -156,7 +184,6 @@ class MaterializeCaptureSessionUseCase:
             detail_style="strict",
         )
         now = self._clock.now()
-        prev_status = session.status
         created_assets: list[SourceAsset] = []
         created_delete_keys: list[str] = []
         linked_items: list[CaptureSessionItem] = []
@@ -215,7 +242,7 @@ class MaterializeCaptureSessionUseCase:
             session.updated_at = now
             try:
                 self._session_repo.save(session)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — best-effort rollback; REVISAR_NO_TOCAR B8.2
                 logger.warning(
                     "Materialization rollback failed resetting session status session_id=%s",
                     session_id,
@@ -232,6 +259,33 @@ class MaterializeCaptureSessionUseCase:
             session=session,
             created_asset_ids=tuple(a.id for a in created_assets),
             replayed=False,
+        )
+
+    def execute(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        session_id: str,
+        idempotency_key: str,
+    ) -> MaterializeCaptureSessionResult:
+        idem = self._normalize_idempotency_key(idempotency_key)
+        session = self._load_session_or_raise(session_id, inventory_id, aisle_id)
+        replay = self._maybe_replay_idempotent(session, session_id, idem)
+        if replay is not None:
+            return replay
+        eligible = self._validate_session_and_items_for_materialize(session, session_id)
+        prev_status = session.status
+        return self._run_materialize_commit(
+            _MaterializeCommitContext(
+                session=session,
+                session_id=session_id,
+                idem=idem,
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                eligible=eligible,
+                prev_status=prev_status,
+            )
         )
 
     def _read_staging_item_as_uploaded_file(self, item: CaptureSessionItem) -> UploadedFile:
