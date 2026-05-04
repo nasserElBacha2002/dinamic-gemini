@@ -6,9 +6,10 @@ v3.2.4 Phase 5: produce run_metadata in memory (visual_reference_context) for jo
 
 import json
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import cv2
 
@@ -43,6 +44,74 @@ class PipelineRunResult:
 
 # Default max frames when hybrid_max_frames is None (kept for test imports)
 HYBRID_MAX_FRAMES = 10000
+
+_REQUIRED_HYBRID_KWARGS: tuple[str, ...] = (
+    "settings",
+    "video_id",
+    "output_path",
+    "run_id",
+    "logger",
+)
+
+
+@dataclass(frozen=True)
+class _HybridRunParams:
+    """Internal keyword bundle for :meth:`HybridInventoryPipeline._run_hybrid` (B8.3: PLR0913)."""
+
+    settings: Settings
+    video_id: str
+    output_path: Path
+    run_id: str
+    logger: Any
+    confidence_threshold: Optional[float] = None
+    progress_callback: Optional[Callable[[str, int], None]] = None
+    job_input: Optional[JobInput] = None
+    analysis_context: Optional[AnalysisContext] = None
+    execution_observer: Any = None
+    pipeline_provider_name: Optional[str] = None
+    job_model_name: Optional[str] = None
+    job_prompt_key: Optional[str] = None
+    job_prompt_version: Optional[str] = None
+    job_prompt_parity_mode: bool = False
+    cancellation_checkpoint: Any = None
+
+
+def _hybrid_run_params_from_kwargs(kwargs: Mapping[str, Any]) -> _HybridRunParams:
+    """Build params from ``process_video(..., **kwargs)``; ignores unknown keys (legacy ``**_``)."""
+    missing = [k for k in _REQUIRED_HYBRID_KWARGS if k not in kwargs]
+    if missing:
+        raise TypeError(
+            "process_video() missing required keyword argument(s): "
+            + ", ".join(repr(k) for k in missing)
+        )
+    return _HybridRunParams(
+        settings=kwargs["settings"],
+        video_id=kwargs["video_id"],
+        output_path=kwargs["output_path"],
+        run_id=kwargs["run_id"],
+        logger=kwargs["logger"],
+        confidence_threshold=kwargs.get("confidence_threshold"),
+        progress_callback=kwargs.get("progress_callback"),
+        job_input=kwargs.get("job_input"),
+        analysis_context=kwargs.get("analysis_context"),
+        execution_observer=kwargs.get("execution_observer"),
+        pipeline_provider_name=kwargs.get("pipeline_provider_name"),
+        job_model_name=kwargs.get("job_model_name"),
+        job_prompt_key=kwargs.get("job_prompt_key"),
+        job_prompt_version=kwargs.get("job_prompt_version"),
+        job_prompt_parity_mode=bool(kwargs.get("job_prompt_parity_mode", False)),
+        cancellation_checkpoint=kwargs.get("cancellation_checkpoint"),
+    )
+
+
+@dataclass(frozen=True)
+class _HybridMidPipelineState:
+    """Snapshot after entity resolution (before evidence/reporting)."""
+
+    prepared: PreparedInput
+    acquired: AcquiredFrames
+    analysis_result: AnalysisStageResult
+    resolved: ResolvedEntities
 
 
 def _ensure_job_input(video_path: str, job_input: Optional[JobInput]) -> JobInput:
@@ -205,7 +274,7 @@ class HybridInventoryPipeline:
     ) -> PipelineRunResult:
         if mode != "hybrid":
             raise ValueError(f"Invalid mode: {mode!r}; only 'hybrid' is supported as of v2.2.")
-        return self._run_hybrid(video_path, **kwargs)
+        return self._run_hybrid(video_path, _hybrid_run_params_from_kwargs(kwargs))
 
     def _stage_input_preparation(
         self, context: RunContext, exec_log: ExecutionLogWriter
@@ -338,56 +407,32 @@ class HybridInventoryPipeline:
             stage="ReportingStage", event="stage.completed", duration_ms=duration_ms
         )
 
-    def _run_hybrid(
-        self,
-        video_path: str,
-        *,
-        settings: Settings,
-        video_id: str,
-        output_path: Path,
-        run_id: str,
-        logger: Any,
-        confidence_threshold: Optional[float] = None,
-        progress_callback: Optional[Callable[[str, int], None]] = None,
-        job_input: Optional[JobInput] = None,
-        analysis_context: Optional[AnalysisContext] = None,
-        execution_observer=None,
-        pipeline_provider_name: Optional[str] = None,
-        job_model_name: Optional[str] = None,
-        job_prompt_key: Optional[str] = None,
-        job_prompt_version: Optional[str] = None,
-        job_prompt_parity_mode: bool = False,
-        cancellation_checkpoint: Any = None,
-        **_: object,
-    ) -> PipelineRunResult:
-        """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5).
-
-        ``job_prompt_parity_mode``: when true, OpenAI hybrid **base** uses the same ``default`` branch
-        as other providers (comparison). V3 jobs set this from ``engine_params_json.prompt_parity_mode``.
-        """
-        execution_id = video_id
-        job_input = _ensure_job_input(video_path, job_input)
-        workspace_path = output_path
-        run_dir = output_path / execution_id / run_id
-        analysis_ctx = _effective_analysis_context(job_input, analysis_context)
+    def _hybrid_begin(
+        self, video_path: str, params: _HybridRunParams
+    ) -> tuple[RunContext, ExecutionLogWriter]:
+        execution_id = params.video_id
+        job_input = _ensure_job_input(video_path, params.job_input)
+        workspace_path = params.output_path
+        run_dir = params.output_path / execution_id / params.run_id
+        analysis_ctx = _effective_analysis_context(job_input, params.analysis_context)
         context = RunContext(
             job_id=execution_id,
-            run_id=run_id,
+            run_id=params.run_id,
             workspace_path=workspace_path,
             run_dir=run_dir,
             job_input=job_input,
-            settings=settings,
-            logger=logger,
-            progress_callback=progress_callback,
+            settings=params.settings,
+            logger=params.logger,
+            progress_callback=params.progress_callback,
             metadata={},
             analysis_context=analysis_ctx,
-            execution_observer=execution_observer,
-            cancellation_checkpoint=cancellation_checkpoint,
-            pipeline_provider_name=pipeline_provider_name,
-            job_model_name=job_model_name,
-            job_prompt_key=job_prompt_key,
-            job_prompt_version=job_prompt_version,
-            job_prompt_parity_mode=job_prompt_parity_mode,
+            execution_observer=params.execution_observer,
+            cancellation_checkpoint=params.cancellation_checkpoint,
+            pipeline_provider_name=params.pipeline_provider_name,
+            job_model_name=params.job_model_name,
+            job_prompt_key=params.job_prompt_key,
+            job_prompt_version=params.job_prompt_version,
+            job_prompt_parity_mode=params.job_prompt_parity_mode,
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)
@@ -395,6 +440,15 @@ class HybridInventoryPipeline:
 
         exec_log.info("Pipeline", "Job started", payload={"job_id": execution_id})
         context.emit_stage_event(stage="Pipeline", event="job.started")
+        return context, exec_log
+
+    def _hybrid_run_through_entity_resolution(
+        self,
+        context: RunContext,
+        exec_log: ExecutionLogWriter,
+        params: _HybridRunParams,
+    ) -> Union[PipelineRunResult, _HybridMidPipelineState]:
+        logger = params.logger
         try:
             prepared = self._stage_input_preparation(context, exec_log)
         except PipelineCancellationRequestedError:
@@ -402,7 +456,9 @@ class HybridInventoryPipeline:
         except (FileNotFoundError, ValueError) as e:
             return _fail_stage(exec_log, context, logger, "InputPreparationStage", e)
 
-        _report_progress(progress_callback, logger, context.job_id, "extract_frames", 10)
+        _report_progress(
+            params.progress_callback, logger, context.job_id, "extract_frames", 10
+        )
         try:
             acquired = self._stage_frame_acquisition(context, exec_log, prepared)
         except PipelineCancellationRequestedError:
@@ -410,7 +466,9 @@ class HybridInventoryPipeline:
         except (ValueError, FileNotFoundError, RuntimeError) as e:
             return _fail_stage(exec_log, context, logger, "FrameAcquisitionStage", e)
 
-        _report_progress(progress_callback, logger, context.job_id, "global_analysis_call", 50)
+        _report_progress(
+            params.progress_callback, logger, context.job_id, "global_analysis_call", 50
+        )
         try:
             analysis_result = self._stage_analysis(context, exec_log, acquired)
         except PipelineCancellationRequestedError:
@@ -425,7 +483,30 @@ class HybridInventoryPipeline:
         except GlobalAnalysisParseError as e:
             return _fail_stage(exec_log, context, logger, "EntityResolutionStage", e)
 
-        _report_progress(progress_callback, logger, context.job_id, "evidence_pack", 85)
+        return _HybridMidPipelineState(
+            prepared=prepared,
+            acquired=acquired,
+            analysis_result=analysis_result,
+            resolved=resolved,
+        )
+
+    def _hybrid_evidence_reporting_finish(
+        self,
+        video_path: str,
+        context: RunContext,
+        exec_log: ExecutionLogWriter,
+        params: _HybridRunParams,
+        mid: _HybridMidPipelineState,
+    ) -> PipelineRunResult:
+        """Evidence → reporting → success metadata (same order and side effects as pre-B8.3)."""
+        prepared = mid.prepared
+        acquired = mid.acquired
+        analysis_result = mid.analysis_result
+        resolved = mid.resolved
+        settings = params.settings
+        logger = params.logger
+
+        _report_progress(params.progress_callback, logger, context.job_id, "evidence_pack", 85)
         try:
             self._stage_evidence(context, exec_log, resolved, acquired)
         except PipelineCancellationRequestedError:
@@ -434,7 +515,7 @@ class HybridInventoryPipeline:
             return _fail_stage(exec_log, context, logger, "EvidenceStage", e)
 
         video_path_for_report = video_path or (
-            f"photos_{video_id}" if prepared.job_input.input_type == "photos" else ""
+            f"photos_{params.video_id}" if prepared.job_input.input_type == "photos" else ""
         )
         reporting_input = ReportingStageInput(
             entities=resolved.entities,
@@ -442,7 +523,7 @@ class HybridInventoryPipeline:
             frame_indices=acquired.metadata.get("frame_indices"),
             video_path_for_report=video_path_for_report,
         )
-        _report_progress(progress_callback, logger, context.job_id, "write_artifacts", 90)
+        _report_progress(params.progress_callback, logger, context.job_id, "write_artifacts", 90)
         if getattr(settings, "debug_save_frames", False):
             _save_frames_sent_to_llm(
                 context.run_dir, acquired.frames_nd, acquired.metadata.get("frame_indices")
@@ -457,5 +538,19 @@ class HybridInventoryPipeline:
         run_metadata = _build_success_run_metadata(context, settings, analysis_result, logger)
         exec_log.info("Pipeline", "Job completed successfully")
         context.emit_stage_event(stage="Pipeline", event="job.succeeded")
-        _report_progress(progress_callback, logger, context.job_id, "done", 100)
+        _report_progress(params.progress_callback, logger, context.job_id, "done", 100)
         return PipelineRunResult(exit_code=0, run_metadata=run_metadata)
+
+    def _run_hybrid(self, video_path: str, params: _HybridRunParams) -> PipelineRunResult:
+        """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5).
+
+        ``job_prompt_parity_mode``: when true, OpenAI hybrid **base** uses the same ``default`` branch
+        as other providers (comparison). V3 jobs set this from ``engine_params_json.prompt_parity_mode``.
+        """
+        context, exec_log = self._hybrid_begin(video_path, params)
+        mid_or_fail = self._hybrid_run_through_entity_resolution(context, exec_log, params)
+        if isinstance(mid_or_fail, PipelineRunResult):
+            return mid_or_fail
+        return self._hybrid_evidence_reporting_finish(
+            video_path, context, exec_log, params, mid_or_fail
+        )

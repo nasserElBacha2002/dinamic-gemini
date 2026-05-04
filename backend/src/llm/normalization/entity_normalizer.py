@@ -41,6 +41,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from collections.abc import Callable
 from typing import Any
 
 from src.llm.normalization.numeric_coercion import normalize_optional_int
@@ -104,16 +105,17 @@ def resolve_provider_family(provider: str) -> str:
     p = (provider or "").strip().lower()
     if not p:
         return "unknown"
-    if p == "test_llm":
-        return "test_llm"
-    if "deepseek" in p:
-        return "deepseek"
-    if "anthropic" in p or "claude" in p:
-        return "claude"
-    if "gemini" in p or p in ("google_genai", "genai"):
-        return "gemini"
-    if "openai" in p or "gpt" in p:
-        return "openai"
+    # Order preserved vs legacy if/elif (B8.5 PLR0911).
+    _rules: tuple[tuple[Callable[[str], bool], str], ...] = (
+        (lambda s: s == "test_llm", "test_llm"),
+        (lambda s: "deepseek" in s, "deepseek"),
+        (lambda s: "anthropic" in s or "claude" in s, "claude"),
+        (lambda s: "gemini" in s or s in ("google_genai", "genai"), "gemini"),
+        (lambda s: "openai" in s or "gpt" in s, "openai"),
+    )
+    for pred, family in _rules:
+        if pred(p):
+            return family
     return "unknown"
 
 

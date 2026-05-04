@@ -19,6 +19,7 @@ from src.llm.normalization.entity_normalizer import (
     EXTRACTION_CONTRACT_VERSION_VALUE,
 )
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.hybrid_inventory_pipeline import _HybridRunParams
 from src.pipeline.ports.analysis_provider import AnalysisResult
 from src.pipeline.run_metadata import RUN_METADATA_KEY_LLM_COST_SNAPSHOT
 from src.pipeline.stages.analysis_stage import AnalysisStage, AnalysisStageResult
@@ -260,11 +261,13 @@ def test_orchestrator_returns_1_on_stage_failure() -> None:
         mock_input.run.side_effect = ValueError("input validation failed")
         result = pipeline._run_hybrid(
             "/dummy/v.mp4",
-            settings=MagicMock(),
-            video_id="j1",
-            output_path=Path("/tmp"),
-            run_id="r1",
-            logger=logger,
+            _HybridRunParams(
+                settings=MagicMock(),
+                video_id="j1",
+                output_path=Path("/tmp"),
+                run_id="r1",
+                logger=logger,
+            ),
         )
     assert result.exit_code == 1
     logger.exception.assert_called()
@@ -318,12 +321,14 @@ def test_pipeline_success_persists_llm_cost_snapshot_from_analysis_stage(tmp_pat
         )
         result = pipeline._run_hybrid(
             "/dummy/v.mp4",
-            settings=settings,
-            video_id="j1",
-            output_path=tmp_path,
-            run_id="r1",
-            logger=logger,
-            job_input=job_input,
+            _HybridRunParams(
+                settings=settings,
+                video_id="j1",
+                output_path=tmp_path,
+                run_id="r1",
+                logger=logger,
+                job_input=job_input,
+            ),
         )
 
     assert result.exit_code == 0
@@ -380,12 +385,14 @@ def test_pipeline_success_tolerates_analysis_result_without_llm_cost_snapshot_at
         )
         result = pipeline._run_hybrid(
             "/dummy/v.mp4",
-            settings=settings,
-            video_id="j1",
-            output_path=tmp_path,
-            run_id="r1",
-            logger=logger,
-            job_input=job_input,
+            _HybridRunParams(
+                settings=settings,
+                video_id="j1",
+                output_path=tmp_path,
+                run_id="r1",
+                logger=logger,
+                job_input=job_input,
+            ),
         )
 
     assert result.exit_code == 0

@@ -16,7 +16,7 @@ class LLMRequest:
     vendor-agnostic (paths, prompt text, optional in-memory frames, optional context images).
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 — stable executor contract (B8.5)
         self,
         job_id: str,
         frames: list[Path],
@@ -52,7 +52,7 @@ class LLMResponse:
     window, not a single HTTP round trip); see adapter implementations.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 — stable executor contract (B8.5)
         self,
         provider: str,
         model: Optional[str],

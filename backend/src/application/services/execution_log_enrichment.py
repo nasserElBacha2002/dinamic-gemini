@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -37,30 +38,30 @@ def _as_nonempty_str(value: Any) -> str | None:
     try:
         s = str(value).strip()
         return s if s else None
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return None
+
+
+def _non_negative_int_or_none(n: int) -> int | None:
+    return n if n >= 0 else None
 
 
 def _as_attempt(value: Any) -> int | None:
-    if value is None:
+    if value is None or isinstance(value, bool):
         return None
-    if isinstance(value, bool):
-        return None
+    out: int | None = None
     if isinstance(value, int):
-        return value if value >= 0 else None
-    if isinstance(value, float) and value.is_integer():
-        iv = int(value)
-        return iv if iv >= 0 else None
-    if isinstance(value, str):
+        out = _non_negative_int_or_none(value)
+    elif isinstance(value, float) and value.is_integer():
+        out = _non_negative_int_or_none(int(value))
+    elif isinstance(value, str):
         t = value.strip()
-        if not t:
-            return None
-        try:
-            iv = int(t)
-            return iv if iv >= 0 else None
-        except ValueError:
-            return None
-    return None
+        if t:
+            try:
+                out = _non_negative_int_or_none(int(t))
+            except ValueError:
+                out = None
+    return out
 
 
 def _execution_id_from_payload(payload: Any) -> str | None:
@@ -143,20 +144,16 @@ def merge_raw_execution_log_events_by_ts(
     return [e[0] for e in entries], [e[1] for e in entries]
 
 
-def _build_enriched_execution_log_core(
-    *,
-    inventory_id: str,
-    aisle_id: str,
-    requested_job_id_out: str | None,
+def _collect_execution_log_event_meta(
     raw_events: list[dict[str, Any]],
     artifact_owner_job_ids: list[str] | None,
-    seed_job_ids: list[str] | None,
-    suppress_requested_job_flags: bool,
-    requested_job_id_for_legacy_flags: str | None,
-) -> dict[str, Any]:
-    if artifact_owner_job_ids is not None and len(artifact_owner_job_ids) != len(raw_events):
-        raise ValueError("artifact_owner_job_ids length must match raw_events")
-
+) -> tuple[
+    list[tuple[str | None, int | None, str | None]],
+    list[str],
+    list[int],
+    list[str],
+]:
+    """First pass: per-event job/attempt/exec ids and dedupe lists for filter dropdowns."""
     per_event_meta: list[tuple[str | None, int | None, str | None]] = []
     job_ids_seen: list[str] = []
     attempts_seen: list[int] = []
@@ -175,22 +172,58 @@ def _build_enriched_execution_log_core(
         if eid is not None:
             exec_ids_seen.append(eid)
 
-    payload_only_job_ids = [extract_event_context(ev.get("payload"))[0] for ev in raw_events]
+    return per_event_meta, job_ids_seen, attempts_seen, exec_ids_seen
+
+
+@dataclass(frozen=True)
+class _AvailableJobAttemptExecutionListsInputs:
+    raw_events: list[dict[str, Any]]
+    seed_job_ids: list[str] | None
+    job_ids_seen: list[str]
+    attempts_seen: list[int]
+    exec_ids_seen: list[str]
+    requested_job_id_for_legacy_flags: str | None
+
+
+def _available_job_attempt_execution_lists(
+    inp: _AvailableJobAttemptExecutionListsInputs,
+) -> tuple[list[str], list[int], list[str], bool]:
+    """Aggregates available ids for UI filters and whether any raw line had job context."""
+    payload_only_job_ids = [
+        extract_event_context(ev.get("payload"))[0] for ev in inp.raw_events
+    ]
     any_event_has_job_id = any(j is not None for j in payload_only_job_ids)
 
-    acc_ids = set(j for j in job_ids_seen if j is not None)
-    if seed_job_ids:
-        acc_ids |= set(seed_job_ids)
+    acc_ids = set(j for j in inp.job_ids_seen if j is not None)
+    if inp.seed_job_ids:
+        acc_ids |= set(inp.seed_job_ids)
     available_job_ids = sorted(acc_ids)
-    req = requested_job_id_for_legacy_flags
+    req = inp.requested_job_id_for_legacy_flags
     if req and req not in available_job_ids:
         available_job_ids = [req, *available_job_ids]
     if not available_job_ids and req:
         available_job_ids = [req]
 
-    available_attempts = sorted(set(attempts_seen))
-    available_execution_ids = sorted(set(exec_ids_seen))
+    available_attempts = sorted(set(inp.attempts_seen))
+    available_execution_ids = sorted(set(inp.exec_ids_seen))
+    return (
+        available_job_ids,
+        available_attempts,
+        available_execution_ids,
+        any_event_has_job_id,
+    )
 
+
+def _build_enriched_event_rows(
+    raw_events: list[dict[str, Any]],
+    per_event_meta: list[tuple[str | None, int | None, str | None]],
+    *,
+    suppress_requested_job_flags: bool,
+    requested_job_id_for_legacy_flags: str | None,
+    any_event_has_job_id: bool,
+) -> list[dict[str, Any]]:
+    """Second pass: API-shaped rows with requested-job flags."""
+    req = requested_job_id_for_legacy_flags
     events_out: list[dict[str, Any]] = []
     for ev, (jid, att, eid) in zip(raw_events, per_event_meta):
         ts = str(ev.get("ts", "") or "")
@@ -217,11 +250,58 @@ def _build_enriched_execution_log_core(
                 "is_requested_job_event": req_flag,
             }
         )
+    return events_out
+
+
+@dataclass(frozen=True)
+class _EnrichedExecutionLogCoreParams:
+    inventory_id: str
+    aisle_id: str
+    requested_job_id_out: str | None
+    raw_events: list[dict[str, Any]]
+    artifact_owner_job_ids: list[str] | None
+    seed_job_ids: list[str] | None
+    suppress_requested_job_flags: bool
+    requested_job_id_for_legacy_flags: str | None
+
+
+def _build_enriched_execution_log_core(params: _EnrichedExecutionLogCoreParams) -> dict[str, Any]:
+    if params.artifact_owner_job_ids is not None and len(params.artifact_owner_job_ids) != len(
+        params.raw_events
+    ):
+        raise ValueError("artifact_owner_job_ids length must match raw_events")
+
+    per_event_meta, job_ids_seen, attempts_seen, exec_ids_seen = _collect_execution_log_event_meta(
+        params.raw_events, params.artifact_owner_job_ids
+    )
+    (
+        available_job_ids,
+        available_attempts,
+        available_execution_ids,
+        any_event_has_job_id,
+    ) = _available_job_attempt_execution_lists(
+        _AvailableJobAttemptExecutionListsInputs(
+            raw_events=params.raw_events,
+            seed_job_ids=params.seed_job_ids,
+            job_ids_seen=job_ids_seen,
+            attempts_seen=attempts_seen,
+            exec_ids_seen=exec_ids_seen,
+            requested_job_id_for_legacy_flags=params.requested_job_id_for_legacy_flags,
+        )
+    )
+
+    events_out = _build_enriched_event_rows(
+        params.raw_events,
+        per_event_meta,
+        suppress_requested_job_flags=params.suppress_requested_job_flags,
+        requested_job_id_for_legacy_flags=params.requested_job_id_for_legacy_flags,
+        any_event_has_job_id=any_event_has_job_id,
+    )
 
     return {
-        "inventory_id": inventory_id,
-        "aisle_id": aisle_id,
-        "requested_job_id": requested_job_id_out,
+        "inventory_id": params.inventory_id,
+        "aisle_id": params.aisle_id,
+        "requested_job_id": params.requested_job_id_out,
         "available_job_ids": available_job_ids,
         "available_attempts": available_attempts,
         "available_execution_ids": available_execution_ids,
@@ -239,18 +319,21 @@ def build_enriched_execution_log(
 ) -> dict[str, Any]:
     """Build API-ready dict for a single-job execution log (existing contract)."""
     return _build_enriched_execution_log_core(
-        inventory_id=inventory_id,
-        aisle_id=aisle_id,
-        requested_job_id_out=requested_job_id,
-        raw_events=raw_events,
-        artifact_owner_job_ids=artifact_owner_job_ids,
-        seed_job_ids=None,
-        suppress_requested_job_flags=False,
-        requested_job_id_for_legacy_flags=requested_job_id,
+        _EnrichedExecutionLogCoreParams(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            requested_job_id_out=requested_job_id,
+            raw_events=raw_events,
+            artifact_owner_job_ids=artifact_owner_job_ids,
+            seed_job_ids=None,
+            suppress_requested_job_flags=False,
+            requested_job_id_for_legacy_flags=requested_job_id,
+        )
     )
 
 
-def build_enriched_aisle_aggregated_execution_log(
+# Public envelope: keep explicit kwargs for multi-job aggregated logs (callers / API contract).
+def build_enriched_aisle_aggregated_execution_log(  # noqa: PLR0913
     *,
     inventory_id: str,
     aisle_id: str,
@@ -262,14 +345,16 @@ def build_enriched_aisle_aggregated_execution_log(
 ) -> dict[str, Any]:
     """Envelope for aisle-level aggregated logs (multi-job). ``requested_job_id`` is null."""
     core = _build_enriched_execution_log_core(
-        inventory_id=inventory_id,
-        aisle_id=aisle_id,
-        requested_job_id_out=None,
-        raw_events=raw_events,
-        artifact_owner_job_ids=artifact_owner_job_ids,
-        seed_job_ids=seed_job_ids,
-        suppress_requested_job_flags=True,
-        requested_job_id_for_legacy_flags=None,
+        _EnrichedExecutionLogCoreParams(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            requested_job_id_out=None,
+            raw_events=raw_events,
+            artifact_owner_job_ids=artifact_owner_job_ids,
+            seed_job_ids=seed_job_ids,
+            suppress_requested_job_flags=True,
+            requested_job_id_for_legacy_flags=None,
+        )
     )
     core["jobs"] = jobs
     core["log_sources"] = log_sources

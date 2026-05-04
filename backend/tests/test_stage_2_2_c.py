@@ -418,7 +418,7 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
 
     # Run pipeline _run_hybrid with mock provider and confirm it loads from bundle (normalized)
     from src.llm.types import LLMResponse
-    from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+    from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, _HybridRunParams
 
     v21_response = {"total_entities_detected": 0, "entities": []}
     logger = MagicMock()
@@ -446,12 +446,14 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
         pipe = HybridInventoryPipeline()
         result = pipe._run_hybrid(
             "",
-            settings=settings,
-            video_id="job_photos",
-            output_path=tmp_path,
-            run_id="run",
-            logger=logger,
-            job_input=job_input,
+            _HybridRunParams(
+                settings=settings,
+                video_id="job_photos",
+                output_path=tmp_path,
+                run_id="run",
+                logger=logger,
+                job_input=job_input,
+            ),
         )
     assert result.exit_code == 0
     # Pipeline loads from bundle (normalized paths) and passes them to the provider

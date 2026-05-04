@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from src.application.services.execution_log_enrichment import (
+    _as_attempt,
     aisle_execution_log_attachment_filename,
     build_enriched_aisle_aggregated_execution_log,
     build_enriched_execution_log,
@@ -30,6 +33,30 @@ def test_extract_attempt_coerces_string() -> None:
     jid, att, eid = extract_event_context({"job_id": "j1", "attempt": "1"})
     assert att == 1
     assert eid is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, None),
+        (True, None),
+        (False, None),
+        (-1, None),
+        (0, 0),
+        (1, 1),
+        (1.0, 1),
+        (1.5, None),
+        ("", None),
+        ("   ", None),
+        ("0", 0),
+        (" 1 ", 1),
+        ("-1", None),
+        ("abc", None),
+    ],
+)
+def test_as_attempt_non_negative_semantics(raw: object, expected: int | None) -> None:
+    """Regression guard for payload ``attempt`` coercion (code review B8.2)."""
+    assert _as_attempt(raw) == expected
 
 
 def test_extract_execution_id_top_level() -> None:
