@@ -9,6 +9,10 @@ from typing import Any
 def normalize_optional_int(value: object) -> int | None:
     """Parse optional quantity-like values from JSON/LLM output into int or None.
 
+    Non-numeric strings (e.g. ``'varios'``, ``'N/A'``) become ``None``: they represent an
+    unreliable or unparseable printed quantity, not a rejectable schema type — downstream still
+    sees only ``int | None`` (never ``str``).
+
     - ``None`` → ``None``
     - ``bool`` → ``None`` (avoid treating ``True`` as ``1``)
     - ``int`` → unchanged
@@ -40,7 +44,12 @@ def normalize_optional_int(value: object) -> int | None:
 
 
 def coerce_v21_product_label_quantities(data: dict[str, Any]) -> None:
-    """In-place: set ``entities[*].product_label_quantity`` to ``int | None`` per :func:`normalize_optional_int`."""
+    """Mutate ``data`` in place: each entity's ``product_label_quantity`` becomes ``int | None``.
+
+    Used by :func:`~src.validation.global_analysis_schema.validate_global_analysis_structure_v21`
+    before strict checks so adapters receive schema-valid shapes. Idempotent with
+    :func:`normalize_optional_int`.
+    """
     entities = data.get("entities")
     if not isinstance(entities, list):
         return

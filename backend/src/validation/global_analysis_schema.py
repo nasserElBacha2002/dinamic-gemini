@@ -1,7 +1,8 @@
 """
 Stage 3 — Strict structural validation for global analysis response.
 
-Validates required keys, types, and constraints. Does not auto-correct.
+v2.1: :func:`validate_global_analysis_structure_v21` first coerces known LLM numeric drift
+(``product_label_quantity``) in place, then enforces types; v1 pallet schema is validate-only.
 """
 
 from typing import Any, Dict
@@ -129,7 +130,8 @@ def validate_global_analysis_structure_v21(data: Dict[str, Any]) -> None:
     if not isinstance(data, dict):
         raise GlobalAnalysisValidationError("Response must be a JSON object")
 
-    # LLMs often emit quantities as strings; coerce before structural checks (B2.4).
+    # B2.4: normalize known LLM numeric drift before strict schema checks (mutates ``data``).
+    # The final contract is still only int | None for product_label_quantity (no strings at check time).
     coerce_v21_product_label_quantities(data)
 
     if "total_entities_detected" not in data:

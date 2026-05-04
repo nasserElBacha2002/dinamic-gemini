@@ -188,6 +188,42 @@ def test_non_gemini_preserves_explicit_product_label_quantity_openai() -> None:
     assert "quantity" not in e
 
 
+def test_b24_normalize_llm_response_string_product_label_quantity_to_int() -> None:
+    """B2.4: OpenAI-style JSON can emit product_label_quantity as a digit string; normalize to int."""
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "product_label_quantity": "3",
+            },
+        ],
+    }
+    out = normalize_llm_response(inp, "openai")
+    assert out["entities"][0]["product_label_quantity"] == 3
+
+
+def test_b24_normalize_llm_response_non_numeric_quantity_string_to_none() -> None:
+    """Unparseable quantity text → None (unreliable printed qty); contract stays int | None only."""
+    inp = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "confidence": 0.9,
+                "has_boxes": True,
+                "product_label_quantity": "varios",
+            },
+        ],
+    }
+    out = normalize_llm_response(inp, "openai")
+    assert out["entities"][0]["product_label_quantity"] is None
+
+
 def test_mixed_openai_prefers_existing_product_label_quantity_over_quantity_alias() -> None:
     inp = {
         "entities": [

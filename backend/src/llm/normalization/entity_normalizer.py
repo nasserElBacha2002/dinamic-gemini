@@ -270,7 +270,9 @@ def _normalize_entity(
     _maybe_capture_extent_bbox(out, provider_family, mapped_accumulator)
     _strip_alias_and_bbox_residuals(out)
 
-    # OpenAI/Gemini may still emit quantity as string until adapter validation; aliases can leave str.
+    # B2.4 second pass (idempotent): adapters already coerce before validate_global_analysis_structure_v21,
+    # but alias promotion (quantity/qty/detected_quantity → product_label_quantity) can copy string values.
+    # Re-normalize so canonical entities always expose int | None before parse_entities / persistence.
     out["product_label_quantity"] = normalize_optional_int(out.get("product_label_quantity"))
 
     _ensure_canonical_entity_keys(out)

@@ -71,6 +71,7 @@ def test_validate_v21_empty_string_quantity_becomes_none() -> None:
 
 
 def test_validate_v21_non_numeric_string_becomes_none_not_schema_error() -> None:
+    """Product decision (B2.4): non-numeric qty text means unparseable → None, not SCHEMA_INVALID."""
     data = {
         "total_entities_detected": 1,
         "entities": [{**_MINIMAL_ENTITY, "product_label_quantity": "varios"}],
