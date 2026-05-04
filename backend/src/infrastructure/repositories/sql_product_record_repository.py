@@ -6,11 +6,16 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import List, Optional, Sequence, cast
+from typing import List, Optional, Sequence
 
 from src.application.ports.repositories import ProductRecordRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.products.entities import ProductRecord
+from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
+
+
+def _description_from_row(raw: object) -> str | None:
+    return optional_nonempty_db_str(raw)
 
 
 def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -29,9 +34,9 @@ def _row_to_product(row) -> ProductRecord:
         raise ValueError("product_records row missing required created_at/updated_at")
     return ProductRecord(
         id=pid,
-        position_id=row.position_id or "",
-        sku=row.sku or "",
-        description=getattr(row, "description", None),
+        position_id=normalize_db_str(getattr(row, "position_id", None)),
+        sku=normalize_db_str(getattr(row, "sku", None)),
+        description=_description_from_row(getattr(row, "description", None)),
         detected_quantity=int(getattr(row, "detected_quantity", 0)),
         corrected_quantity=int(row.corrected_quantity) if getattr(row, "corrected_quantity", None) is not None else None,
         confidence=float(getattr(row, "confidence", 0)),
@@ -56,13 +61,17 @@ def _safe_dump_json(v: object) -> Optional[str]:
 def _safe_load_json(raw: object) -> Optional[object]:
     if raw is None:
         return None
-    if isinstance(raw, str) and raw.strip():
+    if isinstance(raw, str):
+        if not raw.strip():
+            return None
         try:
             parsed: object = json.loads(raw)
             return parsed
         except json.JSONDecodeError:
-            return raw
-    return cast(object, raw)
+            out_raw: object = raw
+            return out_raw
+    out_other: object = raw
+    return out_other
 
 
 class SqlProductRecordRepository(ProductRecordRepository):

@@ -13,6 +13,7 @@ from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, Position
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
+from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,17 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt.replace(tzinfo=timezone.utc)
 
 
-def _parse_json(raw: Optional[str], context: str = "") -> Optional[Dict[str, Any]]:
-    if not raw or not raw.strip():
+def _parse_json(raw: object, context: str = "") -> Optional[Dict[str, Any]]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+    if not text:
         return None
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(text)
     except json.JSONDecodeError as e:
         logger.warning("Invalid JSON in %s: %s", context or "position", e)
         return None
@@ -40,7 +47,13 @@ def _parse_json(raw: Optional[str], context: str = "") -> Optional[Dict[str, Any
 
 
 def _status_from_row(row: Any, position_id: str = "?") -> PositionStatus:
-    s = getattr(row, "status", "detected") or "detected"
+    raw = getattr(row, "status", None)
+    if raw is None:
+        s = "detected"
+    elif isinstance(raw, str):
+        s = raw.strip() or "detected"
+    else:
+        s = str(raw).strip() or "detected"
     try:
         return PositionStatus(s)
     except ValueError:
@@ -74,7 +87,7 @@ def _row_to_position(row: Any) -> Position:
         raise ValueError("positions row missing required created_at/updated_at")
     return Position(
         id=pid,
-        aisle_id=row.aisle_id or "",
+        aisle_id=normalize_db_str(getattr(row, "aisle_id", None)),
         status=_status_from_row(row, pid),
         review_resolution=_review_resolution_from_row(row, pid),
         confidence=float(getattr(row, "confidence", 0)),

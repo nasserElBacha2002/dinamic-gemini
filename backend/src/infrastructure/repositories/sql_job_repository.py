@@ -20,6 +20,7 @@ from src.application.services.job_stale_reconciler import (
 )
 from src.database.sqlserver import SqlServerClient
 from src.domain.jobs.entities import Job, JobStatus
+from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,13 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def _status_from_row(row, job_id: str = "?") -> JobStatus:
-    status_str = getattr(row, "status", "queued") or "queued"
+    raw = getattr(row, "status", None)
+    if raw is None:
+        status_str = "queued"
+    elif isinstance(raw, str):
+        status_str = raw.strip() or "queued"
+    else:
+        status_str = str(raw).strip() or "queued"
     try:
         return JobStatus(status_str)
     except ValueError:
@@ -45,21 +52,33 @@ def _status_from_row(row, job_id: str = "?") -> JobStatus:
         return JobStatus.QUEUED
 
 
-def _parse_json(raw: Optional[str]) -> Dict[str, Any]:
-    if not raw or not raw.strip():
+def _parse_json(raw: object) -> Dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+    if not text:
         return {}
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _parse_optional_json(raw: Optional[str]) -> Optional[Dict[str, Any]]:
-    if not raw or not str(raw).strip():
+def _parse_optional_json(raw: object) -> Optional[Dict[str, Any]]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+    if not text:
         return None
     try:
-        v = json.loads(raw)
+        v = json.loads(text)
     except json.JSONDecodeError:
         return None
     if isinstance(v, dict):
@@ -89,9 +108,9 @@ def _row_to_job(row: Any) -> Job:
         raise ValueError("inventory_jobs row missing required updated_at")
     return Job(
         id=jid,
-        target_type=row.target_type or "",
-        target_id=row.target_id or "",
-        job_type=row.job_type or "",
+        target_type=normalize_db_str(getattr(row, "target_type", None)),
+        target_id=normalize_db_str(getattr(row, "target_id", None)),
+        job_type=normalize_db_str(getattr(row, "job_type", None)),
         status=_status_from_row(row, jid),
         payload_json=_parse_json(getattr(row, "payload_json", None)),
         created_at=created,

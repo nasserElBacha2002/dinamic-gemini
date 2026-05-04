@@ -9,6 +9,7 @@ from src.application.ports.capture_repositories import CaptureSessionGroupReposi
 from src.application.services.capture_group_materialization_state import materialization_state_for_counts
 from src.database.sqlserver import SqlServerClient
 from src.domain.capture.entities import CaptureSessionGroup, CaptureSessionGroupAisleAssignmentStatus
+from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 
 def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -33,14 +34,14 @@ def _parse_assignment_status(raw: object) -> CaptureSessionGroupAisleAssignmentS
 
 
 def _row_to_group(row: object) -> CaptureSessionGroup:
-    gid = (getattr(row, "id", None) or "").strip()
-    sid = (getattr(row, "session_id", None) or "").strip()
+    gid = normalize_db_str(getattr(row, "id", None))
+    sid = normalize_db_str(getattr(row, "session_id", None))
     created = _ensure_utc(getattr(row, "created_at", None))
     if created is None:
         raise ValueError("group.created_at is required")
-    algo = (getattr(row, "algorithm_version", None) or "").strip()
+    algo = normalize_db_str(getattr(row, "algorithm_version", None))
     assigned_raw = getattr(row, "assigned_aisle_id", None)
-    assigned_aisle = (str(assigned_raw).strip() if assigned_raw is not None else None) or None
+    assigned_aisle = optional_nonempty_db_str(assigned_raw)
     assigned_at = _ensure_utc(getattr(row, "assigned_at", None))
     st = _parse_assignment_status(getattr(row, "assignment_status", None))
     return CaptureSessionGroup(
@@ -168,20 +169,20 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
             en = _ensure_utc(getattr(row, "end_time", None))
             if st is None or en is None:
                 continue
-            gid = (getattr(row, "group_id", None) or "").strip()
+            gid = normalize_db_str(getattr(row, "group_id", None))
             if not gid:
                 continue
-            algo = (getattr(row, "algorithm_version", None) or "").strip()
+            algo = normalize_db_str(getattr(row, "algorithm_version", None))
             if not algo:
                 continue
             assigned_aisle_raw = getattr(row, "assigned_aisle_id", None)
-            assigned_aisle = (str(assigned_aisle_raw).strip() if assigned_aisle_raw is not None else None) or None
+            assigned_aisle = optional_nonempty_db_str(assigned_aisle_raw)
             assigned_at = _ensure_utc(getattr(row, "assigned_at", None))
-            ast = (getattr(row, "assignment_status", None) or "unassigned").strip().lower()
+            assignment_status = _parse_assignment_status(getattr(row, "assignment_status", None))
             imported_n = int(getattr(row, "imported_count", 0) or 0)
             linked_n = int(getattr(row, "linked_imported_count", 0) or 0)
             mat_state = materialization_state_for_counts(
-                assignment_status=ast,
+                assignment_status=assignment_status.value,
                 imported_count=imported_n,
                 linked_imported_count=linked_n,
             )
@@ -194,7 +195,7 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
                     end_time=en,
                     algorithm_version=algo,
                     assigned_aisle_id=assigned_aisle,
-                    assignment_status=ast,
+                    assignment_status=assignment_status.value,
                     assigned_at=assigned_at,
                     materialization_state=mat_state,
                 )

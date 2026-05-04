@@ -13,6 +13,7 @@ from src.application.errors import CaptureSessionConfirmLedgerDuplicateError
 from src.application.ports.capture_repositories import CaptureSessionConfirmIdempotencyRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.capture.entities import CaptureSessionConfirmationLedgerEntry
+from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +40,20 @@ def _row_to_entry(row) -> CaptureSessionConfirmationLedgerEntry:
         raise ValueError(f"capture_session_confirmations row {eid!r} missing created_at")
     raw = getattr(row, "outcome_json", None)
     outcome: Optional[Dict[str, Any]] = None
-    if raw and str(raw).strip():
+    raw_s = normalize_db_str(raw) if raw is not None else ""
+    if raw_s:
         try:
-            outcome = json.loads(str(raw))
+            parsed = json.loads(raw_s)
+            outcome = parsed if isinstance(parsed, dict) else None
+            if outcome is None:
+                logger.warning("outcome_json root is not an object for confirmation id=%s", eid)
         except json.JSONDecodeError as err:
             logger.warning("Invalid outcome_json for confirmation id=%s: %s", eid, err)
             outcome = None
     return CaptureSessionConfirmationLedgerEntry(
         id=eid,
-        session_id=getattr(row, "session_id", "") or "",
-        idempotency_key=(getattr(row, "idempotency_key", None) or "").strip(),
+        session_id=normalize_db_str(getattr(row, "session_id", None)),
+        idempotency_key=normalize_db_str(getattr(row, "idempotency_key", None)),
         created_at=created,
         outcome_json=outcome,
     )

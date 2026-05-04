@@ -13,6 +13,7 @@ from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.application.ports.repositories import SourceAssetRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,13 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def _type_from_row(row, asset_id: str = "?") -> SourceAssetType:
-    type_str = getattr(row, "type", "photo") or "photo"
+    raw = getattr(row, "type", None)
+    if raw is None:
+        type_str = "photo"
+    elif isinstance(raw, str):
+        type_str = raw.strip() or "photo"
+    else:
+        type_str = str(raw).strip() or "photo"
     try:
         return SourceAssetType(type_str)
     except ValueError:
@@ -39,11 +46,17 @@ def _type_from_row(row, asset_id: str = "?") -> SourceAssetType:
         return SourceAssetType.PHOTO
 
 
-def _parse_metadata(raw: Optional[str]) -> Optional[Dict[str, Any]]:
-    if not raw or not raw.strip():
+def _parse_metadata(raw: object) -> Optional[Dict[str, Any]]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+    if not text:
         return None
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(text)
     except json.JSONDecodeError as e:
         logger.warning("Invalid metadata_json in source_assets: %s", e)
         return None
@@ -58,31 +71,35 @@ def _row_to_asset(row) -> SourceAsset:
     uploaded = _ensure_utc(getattr(row, "uploaded_at", None))
     if uploaded is None:
         raise ValueError("source_assets row missing required uploaded_at")
-    storage_path = (getattr(row, "storage_path", None) or "").strip()
-    storage_provider_raw = (getattr(row, "storage_provider", None) or "").strip() or None
+    storage_path = normalize_db_str(getattr(row, "storage_path", None))
+    storage_provider_raw = optional_nonempty_db_str(getattr(row, "storage_provider", None))
     storage_key = resolved_storage_key_for_row(
         storage_provider=storage_provider_raw,
         storage_key_raw=getattr(row, "storage_key", None),
         storage_path=storage_path,
     )
     # mime_type: domain/API; content_type: storage metadata (falls back to mime for legacy rows).
-    content_type = (getattr(row, "content_type", None) or "").strip() or (getattr(row, "mime_type", None) or "")
-    cap_item = (getattr(row, "capture_session_item_id", None) or "").strip() or None
+    ct = optional_nonempty_db_str(getattr(row, "content_type", None))
+    if ct:
+        content_type = ct
+    else:
+        content_type = normalize_db_str(getattr(row, "mime_type", None))
+    cap_item = optional_nonempty_db_str(getattr(row, "capture_session_item_id", None))
     return SourceAsset(
         id=aid,
-        aisle_id=row.aisle_id or "",
+        aisle_id=normalize_db_str(getattr(row, "aisle_id", None)),
         type=_type_from_row(row, aid),
-        original_filename=row.original_filename or "",
+        original_filename=normalize_db_str(getattr(row, "original_filename", None)),
         storage_path=storage_path,
-        mime_type=row.mime_type or "application/octet-stream",
+        mime_type=(normalize_db_str(getattr(row, "mime_type", None)) or "application/octet-stream"),
         uploaded_at=uploaded,
         metadata_json=_parse_metadata(getattr(row, "metadata_json", None)),
         storage_provider=storage_provider_raw,
-        storage_bucket=(getattr(row, "storage_bucket", None) or "").strip() or None,
+        storage_bucket=optional_nonempty_db_str(getattr(row, "storage_bucket", None)),
         storage_key=storage_key or None,
         content_type=content_type or None,
         file_size_bytes=getattr(row, "file_size_bytes", None),
-        etag=(getattr(row, "etag", None) or "").strip() or None,
+        etag=optional_nonempty_db_str(getattr(row, "etag", None)),
         capture_session_item_id=cap_item,
     )
 
