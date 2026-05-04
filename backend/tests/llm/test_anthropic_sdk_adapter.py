@@ -15,6 +15,7 @@ from src.llm.anthropic_sdk_adapter import (
     _extract_json_text,
     _extract_text_and_block_meta_from_anthropic_message,
     _first_balanced_json_object,
+    _parsed_v21_from_json_text,
     classify_anthropic_messages_api_error,
 )
 from src.llm.errors import LLMProviderError
@@ -562,3 +563,10 @@ def test_anthropic_adapter_default_prompt_includes_claude_contract_and_json_suff
     assert "VISUAL SEARCH ORDER" in user_text
     assert "PRIMARY VISUAL TARGET" in user_text
     assert "entity count" in user_text
+
+
+def test_parsed_v21_from_json_text_rejects_non_object_root() -> None:
+    """B2.5: Global analysis JSON root must be an object for downstream validation."""
+    with pytest.raises(LLMProviderError) as ei:
+        _parsed_v21_from_json_text("[1, 2, 3]")
+    assert ei.value.code == "INVALID_JSON"

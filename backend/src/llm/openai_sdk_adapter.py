@@ -166,7 +166,11 @@ def _image_to_data_url(obj: Any, max_side: int) -> str:
 
 
 def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
-    """Best-effort ``CompletionUsage`` extraction for ``normalize_usage`` (nested details included)."""
+    """Best-effort ``CompletionUsage`` extraction for ``normalize_usage`` (nested details included).
+
+    B2.5: only trust ``model_dump`` results that are ``dict``; otherwise keep the raw nested object
+    so we never put lists/scalars into the usage map by mistake.
+    """
     u = getattr(completion, "usage", None)
     if u is None:
         return {}
@@ -187,7 +191,8 @@ def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
             continue
         nested_dump = getattr(val, "model_dump", None)
         if callable(nested_dump):
-            out[key] = nested_dump(exclude_none=True)
+            nd = nested_dump(exclude_none=True)
+            out[key] = nd if isinstance(nd, dict) else val
         else:
             out[key] = val
     return out
@@ -352,7 +357,7 @@ class OpenAiSdkAdapter:
 
         cleaned = _extract_json_text(raw_text)
         try:
-            data = json.loads(cleaned)
+            parsed = json.loads(cleaned)
         except json.JSONDecodeError as e:
             logger.warning("%s global analysis: invalid JSON: %s", v.log_label, e)
             raise LLMProviderError(
@@ -360,6 +365,14 @@ class OpenAiSdkAdapter:
                 message=f"Invalid JSON: {e}",
                 details={"provider": prov},
             ) from e
+        if not isinstance(parsed, dict):
+            logger.warning("%s global analysis: JSON root is not an object", v.log_label)
+            raise LLMProviderError(
+                code="INVALID_JSON",
+                message="Global analysis response must be a JSON object",
+                details={"provider": prov},
+            )
+        data: Dict[str, Any] = parsed
 
         if logger.isEnabledFor(logging.DEBUG):
             entities_raw = data.get("entities")

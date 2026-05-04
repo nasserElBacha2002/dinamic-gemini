@@ -293,7 +293,7 @@ def _parsed_v21_from_json_text(cleaned: str, *, error_context: Dict[str, Any] | 
     if error_context:
         ctx.update(error_context)
     try:
-        data = json.loads(cleaned)
+        parsed = json.loads(cleaned)
     except json.JSONDecodeError as e:
         logger.warning(
             "Claude global analysis: response_parse invalid JSON model=%s preview=%r err=%s",
@@ -306,6 +306,13 @@ def _parsed_v21_from_json_text(cleaned: str, *, error_context: Dict[str, Any] | 
             message=f"Invalid JSON: {e}",
             details={**ctx, "parse_failure": str(e)},
         ) from e
+    if not isinstance(parsed, dict):
+        raise LLMProviderError(
+            code="INVALID_JSON",
+            message="Global analysis response must be a JSON object",
+            details={**ctx, "parse_failure": "root_not_object"},
+        )
+    data = parsed
 
     total = data.get("total_entities_detected")
     entities = data.get("entities") or []
@@ -372,7 +379,10 @@ def _image_to_jpeg_bytes(obj: Any, max_side: int) -> bytes:
 
 
 def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
-    """Serialize Anthropic ``Usage`` (cache read/create, server tools) for costing normalization."""
+    """Serialize Anthropic ``Usage`` (cache read/create, server tools) for costing normalization.
+
+    B2.5: nested ``model_dump`` must return a ``dict`` to be stored; otherwise the raw value is kept.
+    """
     u = getattr(message, "usage", None)
     if u is None:
         return {}
@@ -395,7 +405,8 @@ def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
             continue
         nested_dump = getattr(val, "model_dump", None)
         if callable(nested_dump):
-            out[key] = nested_dump(exclude_none=True)
+            nd = nested_dump(exclude_none=True)
+            out[key] = nd if isinstance(nd, dict) else val
         else:
             out[key] = val
     return out

@@ -96,10 +96,14 @@ class GeminiGlobalAnalyzer:
             p.write_text(cleaned, encoding="utf-8")
             log.info("Respuesta cruda de Gemini guardada en %s", p)
         try:
-            data = json.loads(cleaned)
+            parsed = json.loads(cleaned)
         except json.JSONDecodeError as e:
             log.warning("Global analysis parsing failed (invalid JSON): %s", e)
             raise GlobalAnalysisParsingError(f"Invalid JSON: {e}") from e
+        if not isinstance(parsed, dict):
+            raise GlobalAnalysisParsingError("Global analysis response must be a JSON object")
+
+        data = parsed
 
         # Normalize Gemini count mismatch: trust len(entities) as source of truth (deterministic, auditable)
         total = data.get("total_entities_detected")

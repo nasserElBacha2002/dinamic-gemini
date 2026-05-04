@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from anthropic.types import Message, Usage
 
@@ -33,3 +34,19 @@ def test_anthropic_message_usage_dict_matches_active_sdk_shape() -> None:
 def test_anthropic_message_usage_dict_empty_when_no_usage() -> None:
     message = SimpleNamespace(usage=None)
     assert _anthropic_message_usage_dict(message) == {}
+
+
+def test_anthropic_message_usage_nested_model_dump_non_dict_falls_back() -> None:
+    """B2.5: nested usage fields with broken model_dump stay as raw objects."""
+    nested = MagicMock()
+    nested.model_dump = MagicMock(return_value="not-a-dict")
+    u = SimpleNamespace(
+        model_dump=None,
+        input_tokens=12,
+        output_tokens=7,
+        cache_creation=nested,
+    )
+    message = SimpleNamespace(usage=u)
+    d = _anthropic_message_usage_dict(message)
+    assert d["input_tokens"] == 12
+    assert d["cache_creation"] is nested

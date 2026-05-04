@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from openai.types.chat import ChatCompletion
 from openai.types.completion_usage import CompletionTokensDetails, CompletionUsage, PromptTokensDetails
@@ -35,3 +36,21 @@ def test_openai_completion_usage_dict_matches_active_sdk_shape() -> None:
 def test_openai_completion_usage_dict_empty_when_no_usage() -> None:
     completion = SimpleNamespace(usage=None)
     assert _openai_completion_usage_dict(completion) == {}
+
+
+def test_openai_completion_usage_nested_model_dump_non_dict_falls_back() -> None:
+    """B2.5: nested SDK objects may return non-dict from model_dump; keep raw object for costing."""
+    nested = MagicMock()
+    nested.model_dump = MagicMock(return_value=[])
+    u = SimpleNamespace(
+        model_dump=None,
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        prompt_tokens_details=nested,
+        completion_tokens_details=None,
+    )
+    completion = SimpleNamespace(usage=u)
+    d = _openai_completion_usage_dict(completion)
+    assert d["prompt_tokens"] == 10
+    assert d["prompt_tokens_details"] is nested

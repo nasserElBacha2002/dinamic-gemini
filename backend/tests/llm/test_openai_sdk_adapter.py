@@ -220,6 +220,33 @@ def test_openai_sdk_adapter_maps_invalid_json() -> None:
         assert ei.value.code == "INVALID_JSON"
 
 
+def test_openai_sdk_adapter_rejects_json_array_root() -> None:
+    """B2.5: valid JSON but non-object root must map to INVALID_JSON (pipeline expects dict)."""
+    adapter = OpenAiSdkAdapter()
+    settings = _settings_openai()
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content="[]"))]
+    mock_completion.usage = None
+
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=[],
+        prompt="p",
+        schema_version="v2.1",
+        metadata={},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+
+    with patch("src.llm.openai_sdk_adapter.OpenAI") as client_cls:
+        client_inst = MagicMock()
+        client_inst.chat.completions.create.return_value = mock_completion
+        client_cls.return_value = client_inst
+        with pytest.raises(LLMProviderError) as ei:
+            adapter.execute(req, settings)
+        assert ei.value.code == "INVALID_JSON"
+
+
 def test_extract_json_text_strips_markdown_fence() -> None:
     raw = '```json\n{"total_entities_detected": 0, "entities": []}\n```'
     t = _extract_json_text(raw)
