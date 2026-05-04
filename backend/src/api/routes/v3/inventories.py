@@ -55,7 +55,12 @@ from src.application.errors import (
     InventoryNotFoundError,
     InventoryVisualReferenceNotFoundError,
 )
-from src.application.ports.contracts import InventoryTableQuery
+from src.application.services.inventory_table_query_params import (
+    build_inventory_table_query_from_route_params,
+)
+from src.application.services.inventory_visual_reference_lookup import (
+    select_visual_reference_by_id,
+)
 from src.application.services.processing_experiment_catalog import (
     default_model_for_provider,
     default_prompt_key,
@@ -81,6 +86,7 @@ from src.application.use_cases.upload_inventory_visual_references import (
 )
 from src.config import load_settings
 from src.domain.inventory.entities import InventoryProcessingMode
+from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.providers.definitions import PIPELINE_PROVIDER_SPECS
 
@@ -89,6 +95,19 @@ from .shared import inventory_list_item_to_response, inventory_to_response
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _visual_reference_to_response(
+    ref: InventoryVisualReference,
+) -> InventoryVisualReferenceResponse:
+    return InventoryVisualReferenceResponse(
+        id=ref.id,
+        inventory_id=ref.inventory_id,
+        filename=ref.filename,
+        mime_type=ref.mime_type,
+        file_size=ref.file_size,
+        created_at=ref.created_at,
+    )
 
 
 async def _to_uploaded_visual_reference_files(
@@ -158,9 +177,9 @@ def list_inventories(
     **Contract:** returns a **paginated object** (`items`, `page`, `page_size`, `total_items`,
     `total_pages`), not a JSON array. This is an intentional breaking change from the pre–1.4 array body.
     """
-    q = InventoryTableQuery(
-        search=search.strip() if search and search.strip() else None,
-        status=status.strip() if status and str(status).strip() else None,
+    q = build_inventory_table_query_from_route_params(
+        search=search,
+        status=status,
         sort_by=sort_by,
         sort_dir=sort_dir,
         page=page,
@@ -286,17 +305,7 @@ async def upload_inventory_visual_references(
     try:
         created = use_case.execute(inventory_id, uploaded)
         return UploadInventoryVisualReferencesResponse(
-            items=[
-                InventoryVisualReferenceResponse(
-                    id=ref.id,
-                    inventory_id=ref.inventory_id,
-                    filename=ref.filename,
-                    mime_type=ref.mime_type,
-                    file_size=ref.file_size,
-                    created_at=ref.created_at,
-                )
-                for ref in created
-            ]
+            items=[_visual_reference_to_response(ref) for ref in created]
         )
     except Exception as e:
         reraise_if_mapped(e)
@@ -333,14 +342,7 @@ async def replace_inventory_visual_reference(
     uploaded = await _to_uploaded_visual_reference_files([file])
     try:
         updated = use_case.execute(inventory_id, reference_id, uploaded[0])
-        return InventoryVisualReferenceResponse(
-            id=updated.id,
-            inventory_id=updated.inventory_id,
-            filename=updated.filename,
-            mime_type=updated.mime_type,
-            file_size=updated.file_size,
-            created_at=updated.created_at,
-        )
+        return _visual_reference_to_response(updated)
     except Exception as e:
         reraise_if_mapped(e)
         raise
@@ -360,17 +362,7 @@ def list_inventory_visual_references(
     try:
         refs = use_case.execute(inventory_id)
         return InventoryVisualReferenceListResponse(
-            items=[
-                InventoryVisualReferenceResponse(
-                    id=ref.id,
-                    inventory_id=ref.inventory_id,
-                    filename=ref.filename,
-                    mime_type=ref.mime_type,
-                    file_size=ref.file_size,
-                    created_at=ref.created_at,
-                )
-                for ref in refs
-            ]
+            items=[_visual_reference_to_response(ref) for ref in refs]
         )
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
@@ -392,7 +384,7 @@ def get_inventory_visual_reference_file(
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
         raise
-    ref = next((r for r in refs if r.id == reference_id), None)
+    ref = select_visual_reference_by_id(refs, reference_id)
     # Same VISUAL_REFERENCE_NOT_FOUND contract as ``InventoryVisualReferenceNotFoundError`` via mapper (DELETE/PUT).
     if ref is None:
         raise StructuredApiHttpError(

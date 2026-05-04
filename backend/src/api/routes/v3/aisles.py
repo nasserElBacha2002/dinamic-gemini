@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
@@ -73,14 +72,18 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
-from src.application.ports.contracts import AisleTableQuery
+from src.application.services.aisle_aggregated_execution_log import (
+    AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
+    aggregate_aisle_execution_log_payload,
+)
+from src.application.services.aisle_table_query_params import (
+    build_aisle_table_query_from_route_params,
+)
 from src.application.services.execution_log_enrichment import (
     aisle_execution_log_attachment_filename,
-    build_enriched_aisle_aggregated_execution_log,
     build_enriched_execution_log,
     execution_log_attachment_filename,
     format_execution_log_plaintext,
-    merge_raw_execution_log_events_by_ts,
 )
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
@@ -130,47 +133,32 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT = 500
 
-
-def _job_to_execution_log_row(job: Job) -> dict[str, Any]:
-    return {
-        "job_id": job.id,
-        "provider_name": job.provider_name,
-        "model_name": job.model_name,
-        "prompt_key": job.prompt_key,
-        "prompt_version": job.prompt_version,
-        "execution_id": job.execution_id,
-    }
-
-
-def _aggregate_aisle_execution_log_payload(
+def _build_aisle_aggregated_execution_log_body(
+    *,
     inventory_id: str,
     aisle_id: str,
-    *,
     list_jobs_uc: ListAisleJobsUseCase,
     artifact_storage: Any,
 ) -> dict[str, Any]:
+    """List jobs then merge per-job execution logs (artifact reads remain in API layer)."""
     try:
         result = list_jobs_uc.execute(
             ListAisleJobsCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
-                limit=_AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
+                limit=AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
             )
         )
     except (InventoryNotFoundError, AisleNotFoundError) as e:
         reraise_if_mapped(e)
         raise
 
-    log_sources: list[dict[str, Any]] = []
-    streams: list[tuple[str, datetime, list[dict[str, Any]]]] = []
-
-    for job in result.jobs:
+    def try_read_events(job: Job) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
         src: dict[str, Any] = {"job_id": job.id, "status": "ok", "detail": None}
         try:
             raw = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
-            streams.append((job.id, job.created_at, raw))
+            return raw, src
         except StoredArtifactAccessError as e:
             if int(e.status_code) == 404:
                 src["status"] = "missing"
@@ -183,23 +171,19 @@ def _aggregate_aisle_execution_log_payload(
                 e.reason_code,
                 e.detail,
             )
+            return None, src
         except Exception as e:
             src["status"] = "error"
             src["detail"] = str(e)[:2048]
             logger.exception("aisle_execution_log_unexpected job_id=%s", job.id)
-        log_sources.append(src)
+            return None, src
 
-    merged_events, owners = merge_raw_execution_log_events_by_ts(streams)
-    seed_ids = [j.id for j in result.jobs]
-    jobs_meta = [_job_to_execution_log_row(j) for j in result.jobs]
-    return build_enriched_aisle_aggregated_execution_log(
+    return aggregate_aisle_execution_log_payload(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
-        raw_events=merged_events,
-        artifact_owner_job_ids=owners,
-        seed_job_ids=seed_ids,
-        jobs=jobs_meta,
-        log_sources=log_sources,
+        jobs=result.jobs,
+        try_read_events=try_read_events,
+        logger=logger,
     )
 
 
@@ -272,9 +256,9 @@ def list_aisles(
     `total_pages`), not a JSON array. Intentional breaking change from the pre–1.4 array body.
     """
     try:
-        q = AisleTableQuery(
-            search=search.strip() if search and search.strip() else None,
-            status=status.strip() if status and str(status).strip() else None,
+        q = build_aisle_table_query_from_route_params(
+            search=search,
+            status=status,
             sort_by=sort_by,
             sort_dir=sort_dir,
             page=page,
@@ -390,9 +374,9 @@ def get_aisle_aggregated_execution_log(
     artifact_storage=Depends(get_artifact_storage),
 ) -> AisleExecutionLogResponse:
     """Merge execution logs from all jobs listed for this aisle (up to limit); per-job read failures are non-fatal."""
-    body = _aggregate_aisle_execution_log_payload(
-        inventory_id,
-        aisle_id,
+    body = _build_aisle_aggregated_execution_log_body(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
         list_jobs_uc=list_jobs_uc,
         artifact_storage=artifact_storage,
     )
@@ -410,9 +394,9 @@ def get_aisle_aggregated_execution_log_txt(
     artifact_storage=Depends(get_artifact_storage),
 ) -> Response:
     """Plain-text merged execution log for all aisle jobs (UTF-8 download)."""
-    body = _aggregate_aisle_execution_log_payload(
-        inventory_id,
-        aisle_id,
+    body = _build_aisle_aggregated_execution_log_body(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
         list_jobs_uc=list_jobs_uc,
         artifact_storage=artifact_storage,
     )

@@ -50,7 +50,12 @@ from src.application.mappers.position_canonical_view import (
     build_position_canonical_view,
 )
 from src.application.ports.contracts import InventoryListItem
-from src.application.services.position_traceability import reset_traceability_cache_for_tests
+from src.application.services.inventory_primary_execution_config import (
+    primary_execution_config_for_inventory,
+)
+from src.application.services.reference_usage_from_job_result import (
+    parse_reference_usage_from_result_json,
+)
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
@@ -63,13 +68,12 @@ from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
-from src.domain.inventory.entities import Inventory, InventoryProcessingMode
+from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
-from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 from src.utils.validation import validate_relative_path
 
 logger = logging.getLogger(__name__)
@@ -79,58 +83,18 @@ _NORMALIZED_SUBDIR = "input_photos_normalized"
 _HEIC_EXTENSIONS = (".heic", ".heif")
 
 
-def _coerce_non_negative_int(value: Any) -> int:
-    """Best-effort int parsing for persisted metadata; invalid values fall back to 0."""
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return max(0, value)
-    if isinstance(value, float):
-        if value != value:
-            return 0
-        return max(0, int(value))
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return 0
-        try:
-            return max(0, int(stripped))
-        except ValueError:
-            return 0
-    return 0
-
-
 def _parse_reference_usage_summary(result_json: Any) -> ReferenceUsageSummary | None:
     """Map persisted visual_reference_context into the compact API summary shape."""
-    if not isinstance(result_json, dict):
+    fields = parse_reference_usage_from_result_json(result_json)
+    if fields is None:
         return None
-    raw = result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
-    if not isinstance(raw, dict):
-        return None
-
-    reference_ids: list[str] = []
-    reference_ids_raw = raw.get("reference_ids")
-    if isinstance(reference_ids_raw, list):
-        seen: set[str] = set()
-        for item in reference_ids_raw:
-            if not isinstance(item, str):
-                continue
-            ref_id = item.strip()
-            if not ref_id or ref_id in seen:
-                continue
-            seen.add(ref_id)
-            reference_ids.append(ref_id)
-
-    resolved_count = _coerce_non_negative_int(raw.get("resolved_count"))
-    provider_consumed_count = _coerce_non_negative_int(raw.get("provider_consumed_count"))
-    resolution_error = raw.get("resolution_error")
     return ReferenceUsageSummary(
-        resolved=bool(raw.get("resolved")),
-        resolved_count=max(0, resolved_count),
-        provider_consumed=bool(raw.get("provider_consumed")),
-        provider_consumed_count=max(0, provider_consumed_count),
-        reference_ids=reference_ids,
-        resolution_error=resolution_error[:2048] if isinstance(resolution_error, str) else None,
+        resolved=fields.resolved,
+        resolved_count=fields.resolved_count,
+        provider_consumed=fields.provider_consumed,
+        provider_consumed_count=fields.provider_consumed_count,
+        reference_ids=fields.reference_ids,
+        resolution_error=fields.resolution_error,
     )
 
 
@@ -460,32 +424,24 @@ def handle_delete_position(
         )
 
 
-def _primary_execution_config_from_inventory(
-    inv: Inventory,
-) -> PrimaryExecutionConfigResponse | None:
-    """Expose primary config only when the snapshot is complete (no empty-string placeholders)."""
-    if inv.processing_mode != InventoryProcessingMode.PRODUCTION:
-        return None
-    pn = (inv.primary_provider_name or "").strip()
-    pm = (inv.primary_model_name or "").strip()
-    pk = (inv.primary_prompt_key or "").strip()
-    if not pn or not pm or not pk:
-        return None
-    return PrimaryExecutionConfigResponse(
-        provider_name=pn,
-        model_name=pm,
-        prompt_key=pk,
-        prompt_version=inv.primary_prompt_version,
-    )
-
-
 def inventory_to_response(inv: Inventory) -> InventoryResponse:
+    pec = primary_execution_config_for_inventory(inv)
+    primary_execution_config = (
+        PrimaryExecutionConfigResponse(
+            provider_name=pec.provider_name,
+            model_name=pec.model_name,
+            prompt_key=pec.prompt_key,
+            prompt_version=pec.prompt_version,
+        )
+        if pec is not None
+        else None
+    )
     return InventoryResponse(
         id=inv.id,
         name=inv.name,
         status=inv.status.value,
         processing_mode=inv.processing_mode.value,
-        primary_execution_config=_primary_execution_config_from_inventory(inv),
+        primary_execution_config=primary_execution_config,
         created_at=inv.created_at,
         updated_at=inv.updated_at,
     )
@@ -785,8 +741,3 @@ def review_to_response(r: ReviewAction) -> ReviewActionResponse:
 
 def heic_extensions() -> tuple[str, ...]:
     return _HEIC_EXTENSIONS
-
-
-def _reset_traceability_cache_for_tests() -> None:
-    """Delegate to :func:`reset_traceability_cache_for_tests` (backward-compatible name for tests)."""
-    reset_traceability_cache_for_tests()

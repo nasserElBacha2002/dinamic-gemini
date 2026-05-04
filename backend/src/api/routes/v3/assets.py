@@ -38,13 +38,16 @@ from src.api.services.v3_stored_artifact_access import (
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import AisleNotFoundError
 from src.application.services.result_context_resolver import ResultContextResolver
+from src.application.services.source_asset_heic import (
+    select_source_asset_by_id,
+    source_asset_is_heic,
+)
 from src.application.use_cases.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
 from src.config import load_settings
-from src.domain.assets.entities import SourceAsset
 
-from .shared import asset_to_response, heic_extensions, resolve_normalized_asset_path
+from .shared import asset_to_response, resolve_normalized_asset_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -164,7 +167,7 @@ def get_aisle_asset_file(
             asset_id,
         )
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY)
-    asset = next((a for a in assets if a.id == asset_id), None)
+    asset = select_source_asset_by_id(assets, asset_id)
     if asset is None:
         failure_reason = AssetFileFailureReason.ASSET_NOT_FOUND
         logger.warning(
@@ -176,18 +179,8 @@ def get_aisle_asset_file(
         )
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_ASSET_NOT_FOUND)
 
-    def _asset_is_heic(a: SourceAsset) -> bool:
-        mt = (a.mime_type or "").lower()
-        if mt in ("image/heic", "image/heif"):
-            return True
-        if Path(a.storage_path or "").suffix.lower() in heic_extensions():
-            return True
-        if Path(a.original_filename or "").suffix.lower() in heic_extensions():
-            return True
-        return False
-
     # HEIC/HEIF: serve normalized JPEG from local pipeline output when available (unchanged contract).
-    if _asset_is_heic(asset):
+    if source_asset_is_heic(asset):
         try:
             aisle_row = use_case.get_validated_aisle(inventory_id, aisle_id)
         except AisleNotFoundError:
@@ -267,7 +260,7 @@ def get_aisle_asset_image_display_url(
             asset_id,
         )
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY)
-    asset = next((a for a in assets if a.id == asset_id), None)
+    asset = select_source_asset_by_id(assets, asset_id)
     if asset is None:
         logger.warning(
             "Asset image-display-url: asset_not_found inventory_id=%s aisle_id=%s asset_id=%s",
@@ -277,17 +270,7 @@ def get_aisle_asset_image_display_url(
         )
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_ASSET_NOT_FOUND)
 
-    def _asset_is_heic(a: SourceAsset) -> bool:
-        mt = (a.mime_type or "").lower()
-        if mt in ("image/heic", "image/heif"):
-            return True
-        if Path(a.storage_path or "").suffix.lower() in heic_extensions():
-            return True
-        if Path(a.original_filename or "").suffix.lower() in heic_extensions():
-            return True
-        return False
-
-    if _asset_is_heic(asset):
+    if source_asset_is_heic(asset):
         try:
             aisle_row = use_case.get_validated_aisle(inventory_id, aisle_id)
         except AisleNotFoundError:
@@ -310,11 +293,7 @@ def get_aisle_asset_image_display_url(
         )
         if normalized_path is not None:
             # Same strategy as local/legacy: client must GET /file, which serves the normalized JPEG.
-            return SourceAssetImageDisplayUrlResponse(
-                image_url=None,
-                requires_authenticated_fetch=True,
-                display_strategy="authenticated_file_fetch",
-            )
+            return _source_asset_image_display_response(image_url=None, need_fetch=True)
         logger.warning(
             "Asset image-display-url: heic_preview_unavailable asset_id=%s request_job_id=%s",
             asset_id,
