@@ -52,6 +52,7 @@ def _sanitize_payload_value(value: Any, *, key: str | None = None) -> Any:
         s = str(value)
         return s[:_PAYLOAD_STRING_MAX] if len(s) > _PAYLOAD_STRING_MAX else s
     except Exception:
+        # OK: sanitize must never raise; unknown objects become a placeholder string.
         return "<non-serializable>"
 
 
@@ -62,6 +63,7 @@ def _sanitize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     try:
         return cast(Optional[dict[str, Any]], _sanitize_payload_value(payload))
     except Exception:
+        # OK: empty payload on unexpected sanitize failure (caller treats None as no payload).
         return None
 
 

@@ -198,6 +198,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             "CASE WHEN p.status IN (N'reviewed', N'corrected') OR "
             "(p.status = N'detected' AND p.needs_review = 0) THEN 1 ELSE 0 END"
         )
+        # B608 FP-P: WHERE/skeleton built from internal fragments + constants (SQL_IN_*); bind params use "?".
         sql_positions = f"""
             SELECT
               COUNT(*) AS total_positions,
@@ -215,7 +216,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             INNER JOIN aisles a ON a.id = p.aisle_id
             INNER JOIN inventories i ON i.id = a.inventory_id
             WHERE {where_pos}
-        """
+        """  # nosec B608
         sql_reviews = f"""
             SELECT
               COUNT(*) AS reviewed_positions,
@@ -247,7 +248,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               ) ra
               GROUP BY ra.position_id
             ) t
-        """
+        """  # nosec B608
         sq_params = list(params)
         list(params)
         rev_params = list(ra_params)
@@ -268,12 +269,13 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             _append_inventory_aisle_filters(job_proc_conditions, job_proc_params, filters)
         _append_job_finished_at_time_filters(job_proc_conditions, job_proc_params, filters)
         job_proc_where = " AND ".join(job_proc_conditions)
+        # B608 DC: job_proc_where is AND of fixed predicates; only filter values are "?" (see _append_*).
         sql_avg_job_processing = f"""
             SELECT AVG(CAST(DATEDIFF_BIG(SECOND, j.started_at, j.finished_at) AS float)) AS avg_sec
             FROM inventory_jobs j
             {job_join}
             WHERE {job_proc_where}
-        """
+        """  # nosec B608
 
         positions_in_scope = 0
         processed_positions_count = 0
@@ -360,6 +362,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             join = "INNER JOIN aisles a ON a.id = j.target_id INNER JOIN inventories i ON i.id = a.inventory_id"
             _append_inventory_aisle_filters(conditions, params, filters)
         where_j = " AND ".join(conditions)
+        # B608 DC: where_j is internal predicates; dates/ids are always passed as "?" in params.
         sql = f"""
             SELECT
               SUM(CASE WHEN j.status = N'succeeded' THEN 1 ELSE 0 END) AS ok_n,
@@ -367,7 +370,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             FROM inventory_jobs j
             {join}
             WHERE {where_j}
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             row = cur.fetchone()
@@ -401,7 +404,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             WHERE {where_ra}
             GROUP BY CONVERT(date, ra.created_at)
             ORDER BY d
-        """
+        """  # nosec B608
 
         cond_j = [
             "j.target_type = N'aisle'",
@@ -429,7 +432,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             WHERE {where_j}
             GROUP BY CONVERT(date, j.updated_at)
             ORDER BY d
-        """
+        """  # nosec B608
 
         reviewed_by_day: dict[date, tuple[int, int]] = {}
         with self._client.cursor() as cur:
@@ -540,7 +543,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             WHERE {where_scope}
             GROUP BY i.id, i.name, i.created_at
             ORDER BY i.name ASC
-        """
+        """  # nosec B608
         rows_out: list[InventoryPerformanceRowDTO] = []
         with self._client.cursor() as cur:
             cur.execute(sql, params)
@@ -643,7 +646,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               ) ra
               GROUP BY ra.position_id
             ) t
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, prm)
             row = cur.fetchone()
@@ -676,7 +679,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             INNER JOIN aisles a ON a.id = j.target_id
             INNER JOIN inventories i ON i.id = a.inventory_id
             WHERE {where_sql}
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             row = cur.fetchone()
@@ -726,7 +729,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             WHERE {where_scope}
             GROUP BY a.id, a.code, i.id, i.name
             ORDER BY (SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END)) DESC, total_results DESC
-        """
+        """  # nosec B608
         labels = [
             ("iss_unidentified_product", "Unidentified product"),
             ("iss_invalid", "Invalid traceability"),
@@ -800,7 +803,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 WHERE {where_scope}
             ) t
             GROUP BY bucket
-        """
+        """  # nosec B608
         display = {
             "unidentified_product": "Unidentified product",
             "invalid_traceability": "Invalid traceability",
@@ -878,7 +881,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_DELETE_POSITION} THEN 1 ELSE 0 END) AS deleted_count,
               COUNT(DISTINCT CASE WHEN action_type IN ({SQL_IN_REVIEWED_POSITIONS_ACTIONS}) THEN position_id END) AS reviewed_positions_count
             FROM scoped_actions
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             row = cur.fetchone()

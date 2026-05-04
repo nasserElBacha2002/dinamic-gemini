@@ -102,6 +102,28 @@ Cada fila = un disparo Bandit B608. Clasificación: **FP-P** = FALSO_POSITIVO_PA
 
 **DoD B3.2:** job repo + migraciones ajustados; analytics revisado muestralmente; backlog actualizado; sin CI/hooks; sin cambio de semántica de negocio.
 
+### B3.3 — Refinamiento B608 + excepciones (2026-05-04)
+
+**Objetivo:** Documentar FP-P/DC en SQL dinámico seguro (`# nosec B608` solo en cierre de f-string, sin inyectar texto en SQL), revisar B110 en jobs/pipeline/sqlserver, sin refactor grande ni CI/hooks.
+
+| Tipo | Archivo | Acción | Resultado |
+|------|---------|--------|-----------|
+| B608 | `backend/src/infrastructure/repositories/sql_job_repository.py` | Constante `_JOB_SELECT_FIELDS` documentada; `# nosec B608` en cierre de literales f-string (listados/TOP/CTE) donde Bandit disparaba | **OK** · `bandit -r …/sql_job_repository.py` sin hallazgos |
+| B608 | `backend/src/infrastructure/repositories/sql_analytics_repository.py` | Comentarios FP-P/DC en `get_summary` / `_processing_success_rate_sql`; `# nosec B608` en cierre de **12** bloques `sql_*` / `f"""` | **OK** · `bandit -r …/sql_analytics_repository.py` sin hallazgos |
+| B110 | `backend/src/database/sqlserver.py` | `rollback`/`close`: comentario + `except Exception:  # nosec B110` (cierre best-effort; no enmascarar el error original) | **OK** |
+| B110 | `backend/src/jobs/worker.py` | Error al insertar evento `ERROR` tras fallo de job: `logger.warning(..., exc_info=True)` | **OK** |
+| B110 | `backend/src/jobs/job_store.py` | `get_job` FS: `except` acotado + log debug/warning según tipo | **OK** |
+| B110 | `backend/src/jobs/dev_reset_local_jobs.py` | Lectura JSON acotada; escritura `job.json`: log warning en fallo | **OK** |
+| B110 | `backend/src/jobs/worker_bootstrap.py` | Comentarios en checkpoints/fail persist (best-effort + archivo de diagnóstico) | **OK** |
+| B110 | `backend/src/pipeline/hybrid_inventory_pipeline.py` | Fallo en `progress_callback`: `logger.warning(..., exc_info=True)` | **OK** |
+| B110 | `backend/src/pipeline/execution_log.py` | Comentarios en sanitización que debe ser infalible | **OK** |
+
+**Bandit (alcance ampliado usuario + `sqlserver.py`):** sin B608/B110 en rutas tocadas; la corrida sobre `src/jobs`, `src/pipeline` y `sqlserver` puede seguir reportando otras reglas (p. ej. **B101** `assert` en `multi_provider_analysis_execution.py`) — fuera del alcance B3.3.
+
+**Pytest:** `test_sql_job_repository.py`, `test_sql_job_scope_predicates.py`, `test_migration_service.py`, `test_sql_analytics_repository.py` — OK.
+
+**DoD B3.3:** ruido B608 reducido en dos repos SQL principales; excepciones revisadas en puntos críticos; backlog actualizado; sin cambio funcional de negocio intencional.
+
 ---
 
 ## Críticos

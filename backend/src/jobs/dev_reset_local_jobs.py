@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import shutil
 from collections.abc import Iterable
 from pathlib import Path
 
 from src.config import load_settings
+
+logger = logging.getLogger(__name__)
 
 NON_TERMINAL = ("queued", "running", "cancel_requested")
 
@@ -29,7 +32,8 @@ def _iter_local_non_terminal_job_dirs(output_dir: Path) -> Iterable[str]:
             continue
         try:
             data = json.loads(job_file.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            # Skip unreadable dirs while scanning (non-fatal for dry-run / reset).
             continue
         status = str(data.get("status") or "").strip().lower()
         if status in NON_TERMINAL:
@@ -115,8 +119,8 @@ def main() -> None:
                 job_file.write_text(
                     json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
-            except Exception:
-                pass
+            except (OSError, TypeError, ValueError) as e:
+                logger.warning("[dev-reset] could not update job.json for %s: %s", jid, e)
 
     purge_ids = set(sql_ids) | set(fs_ids)
     removed_dirs = (

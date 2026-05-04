@@ -158,7 +158,11 @@ def get_job(base_path: Path, job_id: str) -> Optional[JobRecord]:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return JobRecord.model_validate(data)
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        logger.debug("get_job: unreadable job.json (job_id=%s): %s", job_id, e)
+        return None
+    except Exception as e:
+        logger.warning("get_job: failed to parse JobRecord from FS (job_id=%s): %s", job_id, e)
         return None
 
 
