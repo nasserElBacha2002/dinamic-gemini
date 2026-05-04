@@ -271,3 +271,42 @@ Continuar en `backend/src/application/` con los use cases pendientes del §4 (`m
 - `use_cases/materialize_capture_session.py`
 - `use_cases/upload_capture_session_staging_items.py`
 - `services/analytics_aggregation_core.py`, `use_cases/list_review_queue.py`, export/detail con deps altos, etc. (mapa §4 B8.2)
+
+---
+
+## B8.2 — Correcciones post code review
+
+Post revisión del slice B8.2 (`execution_log_enrichment`, `compute_materialized_capture_session_group_preview`): validaciones puntuales **sin** cambiar comportamiento, **sin** tocar `application/ports/`, y **sin** alterar firmas públicas de use cases.
+
+### `_as_attempt` (`execution_log_enrichment.py`)
+
+- **Validación:** La implementación actual (bool explícito antes que `int`, enteros/floats enteros no negativos, strings parseables a entero ≥ 0) reproduce la tabla solicitada en revisión: `None`/bool → `None`; `-1`/`"-1"` → `None`; `0`/`1`/`"0"`/`" 1 "` → valores esperados; `1.0` → `1`; `1.5` → `None`; `""`/`"   "`/`"abc"` → `None`.
+- **Código productivo:** Sin cambios en esta corrección (semántica ya correcta).
+- **Tests:** Añadidos en `backend/tests/application/test_execution_log_enrichment.py`: `test_as_attempt_non_negative_semantics` (parametrizado) cubre la tabla anterior; los tests existentes (`test_extract_event_context_from_payload`, `test_extract_attempt_coerces_string`) siguen cubriendo el camino vía `extract_event_context`.
+
+### `except Exception` en `execute` (G6 preview)
+
+- **Validación:** El bloque `except Exception` **no** silencia errores: llama a `logger.exception(...)`, registra métrica de fallo (`record_preview(failed=True)`), emite evento de observabilidad (`emit_capture_flow_event` con `RESULT_FAILED`), y **re-lanza** con `raise` al final. `CaptureSessionGroupIntegrityError` se re-lanza antes sin pasar por este bloque.
+- **Decisión:** Se **mantiene** `noqa: BLE001` y el comentario **REVISAR_NO_TOCAR** por diseño: capa de observabilidad uniforme ante fallos inesperados sin alterar el tipo de excepción vista por el llamador.
+- **Código productivo:** Sin cambios.
+
+### `# noqa: PLR0913` en `__init__` del use case G6
+
+- **Justificación:** El constructor modela **inyección explícita** de repositorios (`CaptureSessionRepository`, `CaptureSessionGroupRepository`, etc.) y `preview_max_positions`. Agrupar repositorios en un objeto “context” artificial solo para bajar aridad **no** aporta claridad en este slice, **no** modifica ports ni el grafo DI, y mantener parámetros nombrados facilita tests y wiring explícito.
+- **Decisión:** Mantener `noqa: PLR0913` en el `__init__` sin cambios de firma.
+- **Código productivo:** Sin cambios.
+
+### Contratos y alcance
+
+- **Ports:** No modificados en esta corrección.
+- **Contratos públicos:** `execute(...)`, `build_enriched_execution_log`, etc. sin cambios.
+
+### Validación ejecutada (post corrección)
+
+Re-ejecutar localmente / en CI:
+
+- `ruff check` sobre los dos módulos application del slice.
+- `mypy` sobre los mismos.
+- `pytest backend/tests/application/test_execution_log_enrichment.py` (desde `backend/`: `pytest tests/application/test_execution_log_enrichment.py`).
+
+**Python:** Si el intérprete es **< 3.10**, los tests que importan dominio con `dataclass(kw_only=True)` pueden fallar en **colección**; el test de `_as_attempt` no depende de dominio y debe pasar en cualquier versión soportada por el proyecto.
