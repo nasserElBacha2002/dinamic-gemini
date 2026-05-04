@@ -34,6 +34,15 @@ from src.env_settings.sqlserver_resolution import (
     resolve_sqlserver_connection_config,
     sqlserver_configuration_error_message,
 )
+from src.env_settings.sqlserver_resolution import (
+    remap_sqlserver_connection_string_server_if_needed as remap_sqlserver_connection_string_server_if_needed,
+)
+from src.env_settings.sqlserver_resolution import (
+    remap_sqlserver_server_for_container_if_needed as remap_sqlserver_server_for_container_if_needed,
+)
+from src.env_settings.sqlserver_resolution import (
+    resolve_sqlserver_effective_connection_string as resolve_sqlserver_effective_connection_string,
+)
 
 # backend/src/config.py -> parents[1] == backend/, parents[2] == repo root
 _CONFIG_FILE = Path(__file__).resolve()

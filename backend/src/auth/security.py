@@ -33,7 +33,7 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
     if not plain_password or not password_hash:
         return False
     try:
-        return _PWD_CONTEXT.verify(plain_password, password_hash)
+        return bool(_PWD_CONTEXT.verify(plain_password, password_hash))
     except Exception:
         # Invalid hash formats or unsupported schemes should fail closed.
         return False

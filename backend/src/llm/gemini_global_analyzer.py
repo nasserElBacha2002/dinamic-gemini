@@ -68,7 +68,10 @@ class GeminiGlobalAnalyzer:
         if not frames:
             raise ValueError("frames no puede estar vacía")
         run_logger = kwargs.get("logger")
-        log: logging.Logger = run_logger if isinstance(run_logger, logging.Logger) else logger
+        if run_logger is not None and hasattr(run_logger, "info") and hasattr(run_logger, "warning"):
+            log = run_logger  # tests may pass MagicMock; production passes logging.Logger
+        else:
+            log = logger
         primary_images = [_ndarray_to_pil(f) for f in frames]
         prompt = (
             self._prompt_text

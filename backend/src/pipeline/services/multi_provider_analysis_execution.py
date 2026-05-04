@@ -28,6 +28,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from typing import Callable
 
+from src.env_settings.pipeline_analysis_execution_strings import (
+    STRATEGY_MULTI_PARALLEL,
+    STRATEGY_MULTI_SEQUENTIAL,
+)
 from src.llm.errors import LLMProviderError
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.multi_provider_trace_types import (
@@ -38,10 +42,6 @@ from src.pipeline.contracts.multi_provider_trace_types import (
     MultiProviderRunRowSkipped,
 )
 from src.pipeline.ports.analysis_provider import AnalysisResult
-from src.pipeline.services.provider_analysis_execution_config import (
-    STRATEGY_MULTI_PARALLEL,
-    STRATEGY_MULTI_SEQUENTIAL,
-)
 from src.pipeline.services.provider_result_aggregator import (
     attach_multi_provider_trace,
     model_label_from_analysis_result,
