@@ -310,3 +310,38 @@ Re-ejecutar localmente / en CI:
 - `pytest backend/tests/application/test_execution_log_enrichment.py` (desde `backend/`: `pytest tests/application/test_execution_log_enrichment.py`).
 
 **Python:** Si el intérprete es **< 3.10**, los tests que importan dominio con `dataclass(kw_only=True)` pueden fallar en **colección**; el test de `_as_attempt` no depende de dominio y debe pasar en cualquier versión soportada por el proyecto.
+
+---
+
+## B8.3 — Pipeline (slice implementado)
+
+**Alcance:** `backend/src/pipeline/` con prioridad en `stages/analysis_stage.py` (revisión) y `hybrid_inventory_pipeline.py` (refactor). **No** se modificaron prompts, providers, orden de etapas, contratos con application, ni schemas de salida.
+
+### `stages/analysis_stage.py`
+
+| Smell (B8.0 / Ruff) | Técnica | Cambios |
+|---------------------|---------|--------|
+| PLR0912/0913/0915 (mapa) | Ninguna en este slice | `ruff --select PLR0911,PLR0912,PLR0913,PLR0915` no reporta en este archivo: el módulo ya separa logging (`_log_*`), conteos y un `run()` breve. **No** se extrajo lógica adicional para no tocar el hot path del provider sin beneficio medible. |
+| Riesgo | — | Partir `run()` en más helpers añadiría indirección cerca de `AnalysisProvider.analyze` sin reducir complejidad estructural real. |
+
+### `hybrid_inventory_pipeline.py`
+
+| Smell (antes) | Técnica | Cambios realizados | Sin tocar / riesgos |
+|---------------|---------|--------------------|---------------------|
+| PLR0913, PLR0911, PLR0912, PLR0915 en `_run_hybrid` | DTO interno + fases | `@dataclass(frozen=True) _HybridRunParams` agrupa kwargs; `_hybrid_run_params_from_kwargs` (desde `process_video(**kwargs)`) valida claves requeridas e ignora desconocidas; `_hybrid_begin`, `_hybrid_run_through_entity_resolution`, `_hybrid_evidence_reporting_finish` conservan el mismo orden de etapas y los mismos `try`/`except` por stage | `process_video(video_path, mode=..., **kwargs)` **sin cambio** para llamadores; `_run_hybrid(video_path, params)` es método interno — tests que llamaban `_run_hybrid` con kwargs explícitos actualizados a `_HybridRunParams(...)` |
+| Contrato | — | `PipelineRunResult`, `_fail_stage`, `_fail_analysis_stage_llm`, helpers de progreso y metadatos sin cambio de semántica |
+
+### Tests
+
+- Actualizados los que invocaban `_run_hybrid` con kwargs: `tests/test_stage_c_stages.py`, `tests/test_frames_2_2_b.py`, `tests/test_stage_2_2_c.py`, `tests/test_stage_2_2_d_llm_provider.py`, `tests/test_e2e_v2_2.py` (import de `_HybridRunParams`).
+
+### Validación B8.3
+
+- `ruff check` (PLR y reglas estándar en archivos tocados): OK tras ajuste de imports (`collections.abc.Mapping`).
+- `mypy src/pipeline/hybrid_inventory_pipeline.py`: OK.
+- `pytest` sobre tests de pipeline **sin** `test_e2e_v2_2.py`: OK (44 tests en la corrida de referencia).
+- **`tests/test_e2e_v2_2.py`:** en intérpretes **< 3.10** pueden fallar en **EvidenceStage** por `int.bit_count()` (uso en `src/evidence/scoring.py` / `src/video/frames.py`) — **no** introducido por B8.3; ejecutar E2E en **Python ≥ 3.10** o corregir compatibilidad de `bit_count` fuera de este slice.
+
+### Otros módulos `src/pipeline/`
+
+- Sin cambios en esta PR; siguen candidatos en siguientes PRs B8.3 menores según el mapa §4 (`execution_log.py`, `frame_acquisition_stage.py`, etc.).

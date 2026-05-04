@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from src.jobs.job_store import create_job, get_job
-from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, _HybridRunParams
 
 # Paths to fixtures (relative to repo root)
 FIXTURES_V21 = Path(__file__).resolve().parent / "fixtures" / "v2_1"
@@ -79,12 +79,14 @@ def run_pipeline_sync(
     video_path = getattr(job_input, "video_path", "") or ""
     result = pipeline._run_hybrid(
         video_path,
-        settings=settings,
-        video_id=job_id,
-        output_path=output_dir,
-        run_id=run_id,
-        logger=logger,
-        job_input=job_input,
+        _HybridRunParams(
+            settings=settings,
+            video_id=job_id,
+            output_path=output_dir,
+            run_id=run_id,
+            logger=logger,
+            job_input=job_input,
+        ),
     )
     return result.exit_code
 
