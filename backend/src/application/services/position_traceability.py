@@ -9,9 +9,18 @@ from __future__ import annotations
 
 import logging
 
+from src.application.ports.stored_artifact_reader import StoredArtifactReader
 from src.domain.positions.entities import Position
 
 logger = logging.getLogger(__name__)
+
+_stored_artifact_reader: StoredArtifactReader | None = None
+
+
+def set_traceability_stored_artifact_reader(reader: StoredArtifactReader | None) -> None:
+    """Wiring only (API/worker startup). Decouples this module from :mod:`src.runtime`."""
+    global _stored_artifact_reader
+    _stored_artifact_reader = reader
 
 _TRACEABILITY_CACHE: dict[str, tuple[str | None, str | None, str | None]] = {}
 _TRACEABILITY_REPORTS_LOADED: set[str] = set()
@@ -29,9 +38,10 @@ def _maybe_evict_traceability_cache() -> None:
 
 
 def _load_hybrid_report_for_traceability(job_id: str) -> dict[str, object] | None:
-    from src.runtime.v3_deps import get_stored_artifact_reader
-
-    return get_stored_artifact_reader().load_hybrid_report_json_for_job(job_id)
+    reader = _stored_artifact_reader
+    if reader is None:
+        return None
+    return reader.load_hybrid_report_json_for_job(job_id)
 
 
 def enrich_position_traceability_from_report(

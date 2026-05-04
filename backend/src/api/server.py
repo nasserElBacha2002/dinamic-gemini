@@ -194,6 +194,13 @@ def _worker_thread_fn() -> None:
 @app.on_event("startup")
 def start_worker() -> None:
     """Run schema compatibility guard and start optional worker."""
+    from src.application.services.position_traceability import (
+        set_traceability_stored_artifact_reader,
+    )
+    from src.runtime.v3_deps import get_stored_artifact_reader
+
+    set_traceability_stored_artifact_reader(get_stored_artifact_reader())
+
     _git_sha = (os.environ.get("GIT_SHA") or "").strip()
     if _git_sha:
         logger.info("API startup deploy_git_sha=%s", _git_sha)

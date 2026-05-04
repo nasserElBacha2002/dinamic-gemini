@@ -4,7 +4,7 @@ Unit tests for inventory visual reference storage path convention — v3.2.4.
 
 from __future__ import annotations
 
-from src.infrastructure.storage.inventory_visual_reference_paths import (
+from src.application.utils.inventory_visual_reference_paths import (
     DEFAULT_EXT,
     extension_from_mime_type,
     visual_reference_storage_path,

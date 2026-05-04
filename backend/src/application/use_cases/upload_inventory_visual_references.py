@@ -34,10 +34,8 @@ from src.application.ports.repositories import (
     InventoryVisualReferenceRepository,
 )
 from src.application.ports.services import ArtifactStorage
+from src.application.utils.inventory_visual_reference_paths import visual_reference_storage_path
 from src.domain.inventory.visual_reference import InventoryVisualReference
-from src.infrastructure.storage.inventory_visual_reference_paths import (
-    visual_reference_storage_path,
-)
 
 logger = logging.getLogger(__name__)
 
