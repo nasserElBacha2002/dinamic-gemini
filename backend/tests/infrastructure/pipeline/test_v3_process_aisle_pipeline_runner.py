@@ -13,6 +13,10 @@ import pytest
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.visual_reference import InventoryVisualReference
+from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
+    V3ProcessAislePipelineRunner,
+    resolve_visual_reference_paths,
+)
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
@@ -20,10 +24,6 @@ from src.pipeline.contracts.analysis_context import (
     analysis_context_to_dict,
 )
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
-from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
-    V3ProcessAislePipelineRunner,
-    resolve_visual_reference_paths,
-)
 
 
 def test_build_pipeline_input_rejects_multi_video_or_mixed_video_sets() -> None:
@@ -163,9 +163,11 @@ def test_run_hybrid_pipeline_delegates_to_process_video_with_executor_kwds() -> 
         video_path="",
         mode="hybrid",
         input_type="photos",
-        metadata={"analysis_context": analysis_context_to_dict(
-            AnalysisContext(primary_evidence=[], visual_references=[], instructions=[])
-        )},
+        metadata={
+            "analysis_context": analysis_context_to_dict(
+                AnalysisContext(primary_evidence=[], visual_references=[], instructions=[])
+            )
+        },
     )
     ac = AnalysisContext(primary_evidence=[], visual_references=[], instructions=[])
 

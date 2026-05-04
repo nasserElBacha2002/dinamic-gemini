@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List
 
 import pytest
+
 from src.application.ports.repositories import (
     AisleRepository,
     FinalCountRepository,
@@ -15,6 +15,8 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     RawLabelRepository,
 )
+from src.application.services.final_count_builder import FinalCountBuilder
+from src.application.services.label_normalization import LabelNormalizationService
 from src.application.use_cases.backfill_legacy_aisles import (
     BackfillLegacyAislesCommand,
     BackfillLegacyAislesUseCase,
@@ -33,12 +35,14 @@ from src.domain.products.entities import ProductRecord
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
-from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
+from src.infrastructure.repositories.memory_normalized_label_repository import (
+    MemoryNormalizedLabelRepository,
+)
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
-from src.application.services.final_count_builder import FinalCountBuilder
-from src.application.services.label_normalization import LabelNormalizationService
 
 
 def _make_recompute_uc(
@@ -146,7 +150,9 @@ def test_backfill_one_inventory_recomputes_all_aisles() -> None:
     uc = BackfillLegacyAislesUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
-        recompute_uc=_make_recompute_uc(raw_repo, norm_repo, final_repo, product_repo, position_repo),
+        recompute_uc=_make_recompute_uc(
+            raw_repo, norm_repo, final_repo, product_repo, position_repo
+        ),
     )
     result = uc.execute(BackfillLegacyAislesCommand(inventory_id=inv.id))
 
@@ -154,7 +160,7 @@ def test_backfill_one_inventory_recomputes_all_aisles() -> None:
     assert result.total_aisles_recomputed == 2
     assert result.total_failures == 0
     # One final record per aisle.
-    finals: List[object] = list(final_repo.list_for_scope(inv.id, a1.id)) + list(
+    finals: list[object] = list(final_repo.list_for_scope(inv.id, a1.id)) + list(
         final_repo.list_for_scope(inv.id, a2.id)
     )
     assert len(finals) == 2
@@ -216,7 +222,9 @@ def test_backfill_explicit_aisle_list_only_targets_those_aisles() -> None:
     uc = BackfillLegacyAislesUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
-        recompute_uc=_make_recompute_uc(raw_repo, norm_repo, final_repo, product_repo, position_repo),
+        recompute_uc=_make_recompute_uc(
+            raw_repo, norm_repo, final_repo, product_repo, position_repo
+        ),
     )
     result = uc.execute(BackfillLegacyAislesCommand(aisle_ids=[a1.id]))
 
@@ -233,7 +241,9 @@ class _FailingRecompute(RecomputeConsolidatedCountsUseCase):
     def __init__(self, fail_aisle_id: str) -> None:
         self._fail_aisle_id = fail_aisle_id
 
-    def execute(self, command: RecomputeConsolidatedCountsCommand) -> RecomputeConsolidatedCountsResult:  # type: ignore[override]
+    def execute(
+        self, command: RecomputeConsolidatedCountsCommand
+    ) -> RecomputeConsolidatedCountsResult:  # type: ignore[override]
         if command.aisle_id == self._fail_aisle_id:
             raise RuntimeError("synthetic failure")
         return RecomputeConsolidatedCountsResult(
@@ -366,7 +376,7 @@ def test_backfill_invalid_explicit_aisle_reports_failure() -> None:
 
 def test_backfill_invalid_inventory_raises_value_error() -> None:
     """Invalid inventory id must fail explicitly, not be treated as '0 aisles' success."""
-    now = datetime.now(timezone.utc)
+    datetime.now(timezone.utc)
     inv_repo: InventoryRepository = MemoryInventoryRepository()
     aisle_repo: AisleRepository = MemoryAisleRepository()
 
@@ -404,5 +414,3 @@ def test_backfill_command_rejects_ambiguous_targeting_modes() -> None:
     # inventory_id and all_aisles=True set → ambiguous.
     with pytest.raises(ValueError):
         uc.execute(BackfillLegacyAislesCommand(inventory_id=inv.id, all_aisles=True))
-
-

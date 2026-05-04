@@ -8,17 +8,21 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_artifact_storage
-from src.api.server import app
 from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
     CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
 )
+from src.api.server import app
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_capture_session_group_repository import (
     MemoryCaptureSessionGroupRepository,
 )
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.runtime.app_container import reset_app_container_for_tests
@@ -81,16 +85,21 @@ def test_patch_clock_offset_and_preview_flow(memory_capture_s3: MemoryPositionRe
             corrected_position_code="R1",
         )
     )
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     up = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/items",
         files=[("files", ("a.jpg", b"payload-s3-unique", "image/jpeg"))],
     )
     assert up.status_code == 201, up.text
     assert up.json()["items"][0].get("effective_capture_time") is not None
-    assert client.post(
-        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/close",
-    ).status_code == 200
+    assert (
+        client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/close",
+        ).status_code
+        == 200
+    )
     pr = client.patch(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/clock-offset",
         json={"clock_offset_seconds": 120},
@@ -110,7 +119,9 @@ def test_patch_clock_offset_and_preview_flow(memory_capture_s3: MemoryPositionRe
 
 def test_preview_before_close_409(memory_capture_s3: MemoryPositionRepository) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     assert (
         client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/items",
@@ -127,11 +138,12 @@ def test_preview_before_close_409(memory_capture_s3: MemoryPositionRepository) -
 
 def test_invalid_clock_offset_422(memory_capture_s3: MemoryPositionRepository) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     r = client.patch(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/clock-offset",
         json={"clock_offset_seconds": 99999999},
     )
     assert r.status_code == 422
     assert r.json()["code"] == CAPTURE_SESSION_INVALID_CLOCK_OFFSET
-

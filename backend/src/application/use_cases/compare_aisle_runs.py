@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 from src.application.errors import (
     BenchmarkCompareJobsMustDifferError,
@@ -11,9 +11,14 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.contracts import PositionListQuery
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository, PositionRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    JobRepository,
+    PositionRepository,
+)
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.inventory_processing_mode import (
     require_test_inventory_for_experimental_features,
 )
@@ -61,11 +66,9 @@ class CompareAisleRunsUseCase:
         if job is None:
             raise JobNotFoundError(f"Job not found: {job_id}")
         if job.target_type != "aisle" or job.target_id != aisle_id:
-            raise JobDoesNotBelongToAisleError(
-                f"Job {job_id} is not scoped to aisle {aisle_id}"
-            )
+            raise JobDoesNotBelongToAisleError(f"Job {job_id} is not scoped to aisle {aisle_id}")
 
-    def _fetch_raw(self, aisle_id: str, job_id: str) -> tuple[List[Any], bool]:
+    def _fetch_raw(self, aisle_id: str, job_id: str) -> tuple[list[Any], bool]:
         """Load up to ``positions_aisle_raw_cap`` raw rows for the job slice.
 
         Returns ``(rows, raw_load_hit_cap)`` where ``raw_load_hit_cap`` is True when the fetched
@@ -121,9 +124,7 @@ class CompareAisleRunsUseCase:
         metrics_a = aggregate_metrics(cons_a, raw_fetched=len(raw_a))
         metrics_b = aggregate_metrics(cons_b, raw_fetched=len(raw_b))
         diff = compute_compare_diff(sig_a, sig_b)
-        diff_rows, diff_trunc = build_compare_diff_rows(
-            sig_a, sig_b, max_rows=self._diff_row_cap
-        )
+        diff_rows, diff_trunc = build_compare_diff_rows(sig_a, sig_b, max_rows=self._diff_row_cap)
 
         return {
             "inventory_id": command.inventory_id,

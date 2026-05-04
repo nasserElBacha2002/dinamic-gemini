@@ -14,7 +14,6 @@ from src.jobs.worker_bootstrap import (
     fail_v3_job_bootstrap,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -161,13 +160,16 @@ def main(argv: list[str] | None = None) -> None:
                 error_message=str(exc),
                 substep="single_job_mode_failed",
             )
-            logger.exception("Worker single-job mode failed before completion (job_id=%s)", args.job_id)
+            logger.exception(
+                "Worker single-job mode failed before completion (job_id=%s)", args.job_id
+            )
             raise
         return
     _log_storage_provider()
     _log_sql_worker_health()
     _run_job, worker_loop = _import_worker_runtime()
     worker_loop(base_path)
+
 
 if __name__ == "__main__":
     main()

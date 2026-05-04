@@ -6,12 +6,12 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Match, Optional, Tuple
+from re import Match
 
-_sqlserver_driver_cache: Optional[str] = None
+_sqlserver_driver_cache: str | None = None
 
 # Prefer exact Microsoft ODBC names when installed (deterministic vs substring scan order).
-_KNOWN_SQLSERVER_ODBC_DRIVERS: Tuple[str, ...] = (
+_KNOWN_SQLSERVER_ODBC_DRIVERS: tuple[str, ...] = (
     "ODBC Driver 18 for SQL Server",
     "ODBC Driver 17 for SQL Server",
     "ODBC Driver 13 for SQL Server",
@@ -36,7 +36,7 @@ def _get_available_sqlserver_driver() -> str:
     return _sqlserver_driver_cache
 
 
-def _pick_odbc_driver_for_split_config(env_driver: str) -> Tuple[str, str]:
+def _pick_odbc_driver_for_split_config(env_driver: str) -> tuple[str, str]:
     """Pick ODBC driver for split-var mode. Returns (driver_name, resolution_source_label)."""
     explicit = env_driver.strip()
     if explicit:
@@ -131,7 +131,7 @@ def remap_sqlserver_connection_string_server_if_needed(connection_string: str) -
     return _ODBC_SERVER_KW_RE.sub(repl, connection_string)
 
 
-def odbc_connection_string_server_keyword_value(connection_string: str) -> Optional[str]:
+def odbc_connection_string_server_keyword_value(connection_string: str) -> str | None:
     """Parse SERVER=… from an ODBC string for safe logging (no credentials)."""
     m = _ODBC_SERVER_KW_RE.search(connection_string)
     return m.group(2).strip() if m else None
@@ -145,14 +145,14 @@ class SqlServerConnectionResolution:
     """``connection_string`` | ``split_env`` | ``unset`` | ``incomplete_split``."""
 
     connection_string: str
-    missing_env_vars: Tuple[str, ...] = ()
-    driver_resolution: Optional[str] = None
+    missing_env_vars: tuple[str, ...] = ()
+    driver_resolution: str | None = None
     """How the ODBC driver was chosen for split mode (e.g. ``SQLSERVER_DRIVER``, ``installed_odbc_preference``)."""
 
-    hint: Optional[str] = None
+    hint: str | None = None
     """Actionable message when ``connection_string`` is empty (safe for logs / JSON)."""
 
-    sql_server_connect_target: Optional[str] = None
+    sql_server_connect_target: str | None = None
     """``SERVER=`` value used after Docker loopback remapping (safe for logs; no credentials)."""
 
 
@@ -162,7 +162,7 @@ class SqlServerConfigurationError(ValueError):
     def __init__(
         self,
         message: str,
-        missing_env_vars: Tuple[str, ...] = (),
+        missing_env_vars: tuple[str, ...] = (),
         *,
         config_mode: str = "",
     ) -> None:
@@ -255,7 +255,7 @@ def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
     )
 
 
-def resolve_sqlserver_effective_connection_string() -> Tuple[str, Tuple[str, ...]]:
+def resolve_sqlserver_effective_connection_string() -> tuple[str, tuple[str, ...]]:
     """Backward-compatible: ``(connection_string, missing_env_var_names)`` from :func:`resolve_sqlserver_connection_config`."""
     r = resolve_sqlserver_connection_config()
     return r.connection_string, r.missing_env_vars

@@ -28,7 +28,9 @@ def test_pipeline_hybrid_does_not_import_gemini_sdk():
     assert hasattr(reg, "resolve_llm_executor"), "Registry must expose LLM executor resolution"
 
 
-def test_hybrid_pipeline_e2e_patched_executor_no_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hybrid_pipeline_e2e_patched_executor_no_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Hybrid path uses patched ``resolve_llm_executor_for_context`` + fixture JSON; no network."""
     from tests.support.llm_executor_harness import patch_offline_hybrid_json_fixture
 

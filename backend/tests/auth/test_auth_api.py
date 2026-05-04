@@ -10,7 +10,6 @@ from src.api.server import app
 from src.auth.security import create_access_token
 from src.config import reload_settings
 
-
 _PWD_CONTEXT = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
@@ -65,7 +64,9 @@ def test_auth_refresh_issues_new_tokens_and_rotates_refresh():
     # Old refresh token is now invalid.
     refresh_r2 = client.post("/auth/refresh", json={"refresh_token": old_refresh})
     assert refresh_r2.status_code == 401
-    assert refresh_r2.json() == {"error": {"code": "UNAUTHORIZED", "message": "Authentication required."}}
+    assert refresh_r2.json() == {
+        "error": {"code": "UNAUTHORIZED", "message": "Authentication required."}
+    }
 
 
 def test_auth_logout_revokes_refresh_token():
@@ -87,7 +88,9 @@ def test_auth_logout_revokes_refresh_token():
     # Logged-out refresh token cannot be used anymore.
     refresh_r = client.post("/auth/refresh", json={"refresh_token": refresh})
     assert refresh_r.status_code == 401
-    assert refresh_r.json() == {"error": {"code": "UNAUTHORIZED", "message": "Authentication required."}}
+    assert refresh_r.json() == {
+        "error": {"code": "UNAUTHORIZED", "message": "Authentication required."}
+    }
 
 
 def test_auth_login_invalid_credentials():
@@ -199,4 +202,3 @@ def test_auth_jairo_disabled_when_primary_admin_env_missing(monkeypatch: pytest.
     client = TestClient(app)
     r = client.post("/auth/login", json={"username": "Jairo", "password": "solo-jairo"})
     assert r.status_code == 401
-

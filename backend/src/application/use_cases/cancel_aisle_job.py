@@ -98,4 +98,3 @@ class CancelAisleJobUseCase:
             job.error_message = "Job cancellation requested"
         self._job_repo.save(job)
         return job
-

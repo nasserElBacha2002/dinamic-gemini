@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
 import src.config as config_module
-from src.database.repository import JobsRepository, PalletResultsRepository, JobEventsRepository
+from src.database.repository import JobEventsRepository, JobsRepository, PalletResultsRepository
 from src.jobs import job_store
 from src.legacy.persistence_observability import (
     reset_legacy_sql_bridge_bypassed_flag_for_tests,
@@ -18,7 +18,7 @@ from src.legacy.persistence_observability import (
 
 @dataclass
 class _FakeCursor:
-    row: Optional[Any] = None
+    row: Any | None = None
     execute_calls: int = 0
     last_query: str = ""
 
@@ -37,7 +37,7 @@ class _FakeCursor:
 
 
 class _FakeClient:
-    def __init__(self, row: Optional[Any] = None) -> None:
+    def __init__(self, row: Any | None = None) -> None:
         self._cursor = _FakeCursor(row=row)
 
     def cursor(self):
@@ -132,7 +132,9 @@ def test_get_job_still_queries_when_writes_disabled(monkeypatch: pytest.MonkeyPa
     assert client._cursor.execute_calls >= 1
 
 
-def test_claim_next_queued_job_returns_none_when_writes_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_claim_next_queued_job_returns_none_when_writes_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("LEGACY_STAGE8_SQL_WRITES_DISABLED", "true")
     config_module._settings = None
     client = _FakeClient()
@@ -141,7 +143,9 @@ def test_claim_next_queued_job_returns_none_when_writes_disabled(monkeypatch: py
     assert client._cursor.execute_calls == 0
 
 
-def test_insert_pallet_results_skipped_when_writes_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_insert_pallet_results_skipped_when_writes_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("LEGACY_STAGE8_SQL_WRITES_DISABLED", "true")
     config_module._settings = None
     client = _FakeClient()

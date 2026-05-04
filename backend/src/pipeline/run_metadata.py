@@ -9,7 +9,7 @@ executor to persist into job.result_json.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
@@ -29,7 +29,7 @@ RUN_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
 RUN_METADATA_KEY_LLM_COST_SNAPSHOT = "llm_cost_snapshot"
 
 
-def default_empty_block() -> Dict[str, Any]:
+def default_empty_block() -> dict[str, Any]:
     """Canonical empty visual_reference_context for no-reference jobs (consistent shape)."""
     return {
         "resolved": False,
@@ -40,10 +40,10 @@ def default_empty_block() -> Dict[str, Any]:
     }
 
 
-def _sanitize_reference_ids(refs: List[Any]) -> List[str]:
+def _sanitize_reference_ids(refs: list[Any]) -> list[str]:
     """Extract non-empty reference_id strings and deduplicate preserving order."""
     seen: set[str] = set()
-    out: List[str] = []
+    out: list[str] = []
     for r in refs:
         if not isinstance(r, dict) or not r.get("reference_id"):
             continue
@@ -54,11 +54,11 @@ def _sanitize_reference_ids(refs: List[Any]) -> List[str]:
     return out
 
 
-def _reference_ids_from_context(ctx: Optional[AnalysisContext]) -> List[str]:
+def _reference_ids_from_context(ctx: AnalysisContext | None) -> list[str]:
     """Extract sanitized reference_ids from formal AnalysisContext."""
     if not ctx or not ctx.visual_references:
         return []
-    ids: List[str] = []
+    ids: list[str] = []
     seen: set[str] = set()
     for ref in ctx.visual_references:
         rid = (ref.reference_id or "").strip()
@@ -68,11 +68,11 @@ def _reference_ids_from_context(ctx: Optional[AnalysisContext]) -> List[str]:
     return ids
 
 
-def _reference_ids_from_provider_metadata(meta: Dict[str, Any]) -> List[str]:
+def _reference_ids_from_provider_metadata(meta: dict[str, Any]) -> list[str]:
     raw_ids = meta.get(PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS)
     if not isinstance(raw_ids, list):
         return []
-    out: List[str] = []
+    out: list[str] = []
     seen: set[str] = set()
     for item in raw_ids:
         rid = str(item).strip() if item is not None else ""
@@ -83,9 +83,9 @@ def _reference_ids_from_provider_metadata(meta: Dict[str, Any]) -> List[str]:
 
 
 def build_visual_reference_context(
-    analysis_context: Optional[Union[AnalysisContext, Dict[str, Any]]],
-    provider_metadata: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
+    analysis_context: AnalysisContext | dict[str, Any] | None,
+    provider_metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
     """
     Build the job-level visual_reference_context block from resolved context and provider result.
 
@@ -93,11 +93,13 @@ def build_visual_reference_context(
     Enforces consistency: resolved_count = len(reference_ids), provider_consumed_count in [0, resolved_count],
     and provider_consumed false => provider_consumed_count = 0.
     """
-    ctx: Optional[AnalysisContext] = None
+    ctx: AnalysisContext | None = None
     if isinstance(analysis_context, dict):
         ctx = analysis_context_from_dict(analysis_context)
-        context_reference_ids = _reference_ids_from_context(ctx) if ctx else _sanitize_reference_ids(
-            (analysis_context or {}).get("visual_references", [])
+        context_reference_ids = (
+            _reference_ids_from_context(ctx)
+            if ctx
+            else _sanitize_reference_ids((analysis_context or {}).get("visual_references", []))
         )
     else:
         ctx = analysis_context
@@ -139,11 +141,11 @@ def build_visual_reference_context(
 
 
 def build_run_metadata(
-    analysis_context: Optional[Union[AnalysisContext, Dict[str, Any]]],
-    provider_metadata: Optional[Dict[str, Any]],
-    prompt_composition: Optional[Dict[str, Any]] = None,
-    llm_cost_snapshot: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    analysis_context: AnalysisContext | dict[str, Any] | None,
+    provider_metadata: dict[str, Any] | None,
+    prompt_composition: dict[str, Any] | None = None,
+    llm_cost_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Build the full run metadata dict (for in-memory propagation to executor).
     Contains visual_reference_context for job-level traceability.
@@ -152,7 +154,7 @@ def build_run_metadata(
     ``result_json`` matches the analysis call exactly.
     Omitted when ``None`` for backward compatibility.
     """
-    out: Dict[str, Any] = {
+    out: dict[str, Any] = {
         RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: build_visual_reference_context(
             analysis_context, provider_metadata
         ),

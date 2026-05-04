@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from src.application.errors import InventoryNotFoundError
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.domain.jobs.entities import Job
 
 
@@ -45,9 +45,7 @@ class ListAisleJobsUseCase:
             aisle_id=command.aisle_id,
             detail_style="merged",
         )
-        jobs = self._job_repo.list_jobs_for_target(
-            "aisle", command.aisle_id, limit=command.limit
-        )
+        jobs = self._job_repo.list_jobs_for_target("aisle", command.aisle_id, limit=command.limit)
         return ListAisleJobsResult(
             jobs=jobs,
             operational_job_id=aisle.operational_job_id,

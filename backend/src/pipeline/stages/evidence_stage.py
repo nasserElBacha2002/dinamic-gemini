@@ -7,7 +7,7 @@ Preserves current artifact layout and evidence paths; does not integrate Artifac
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -20,18 +20,18 @@ from src.pipeline.context.run_context import RunContext
 class EvidenceStageInput:
     """Input for EvidenceStage: resolved entities plus frames/metadata from acquisition (orchestrator assembles)."""
 
-    entities: List[Entity]
-    frames_nd: List[np.ndarray]
-    metadata: Dict[str, Any]
+    entities: list[Entity]
+    frames_nd: list[np.ndarray]
+    metadata: dict[str, Any]
     #: Aligned with ``frames_nd`` (same length); image_id per photo or video frame ref — required for photo traceability.
-    frame_refs: List[str] = field(default_factory=list)
+    frame_refs: list[str] = field(default_factory=list)
 
 
 @dataclass
 class EvidenceArtifacts:
     """Output of EvidenceStage: evidence written; entities mutated with evidence_path/evidence_localization."""
 
-    evidence_index: Dict[str, Any]
+    evidence_index: dict[str, Any]
 
 
 class EvidenceStage:
@@ -41,7 +41,7 @@ class EvidenceStage:
         """Call generate_evidence_pack; preserve current artifact layout and paths."""
         job_id = context.job_id
         run_dir = context.run_dir
-        refs: Optional[List[str]] = data.frame_refs if data.frame_refs else None
+        refs: list[str] | None = data.frame_refs if data.frame_refs else None
         if refs is not None and len(refs) != len(data.frames_nd):
             context.logger.warning(
                 "EvidenceStage: frame_refs length %d != frames_nd %d; ignoring refs for evidence scoping",

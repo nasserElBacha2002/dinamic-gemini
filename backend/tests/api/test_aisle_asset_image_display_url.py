@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,11 +17,11 @@ from src.api.dependencies import (
 )
 from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
 from src.api.server import app
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
-from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.application.services.result_context_resolver import ResultContextResolver
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
@@ -97,10 +97,14 @@ def _patch_display_settings(monkeypatch: pytest.MonkeyPatch, output_dir: Path) -
         },
     )()
     monkeypatch.setattr("src.api.routes.v3.assets.load_settings", lambda: fake_settings)
-    monkeypatch.setattr("src.api.services.v3_stored_artifact_access.load_settings", lambda: fake_settings)
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings", lambda: fake_settings
+    )
 
 
-def test_image_display_url_s3_returns_presigned_strategy(admin_auth, monkeypatch, tmp_path: Path) -> None:
+def test_image_display_url_s3_returns_presigned_strategy(
+    admin_auth, monkeypatch, tmp_path: Path
+) -> None:
     inv_id, aisle_id, asset_id = "inv-s3", "aisle-s3", "asset-s3-1"
     now = datetime.now(timezone.utc)
     asset = SourceAsset(
@@ -136,7 +140,9 @@ def test_image_display_url_s3_returns_presigned_strategy(admin_auth, monkeypatch
         app.dependency_overrides.pop(get_artifact_storage, None)
 
 
-def test_image_display_url_local_returns_authenticated_fetch_strategy(admin_auth, monkeypatch, tmp_path: Path) -> None:
+def test_image_display_url_local_returns_authenticated_fetch_strategy(
+    admin_auth, monkeypatch, tmp_path: Path
+) -> None:
     inv_id, aisle_id, asset_id = "inv-loc", "aisle-loc", "asset-loc-1"
     now = datetime.now(timezone.utc)
     (tmp_path / "v3_uploads" / "keys").mkdir(parents=True, exist_ok=True)
@@ -219,7 +225,9 @@ def test_image_display_url_legacy_row_returns_authenticated_fetch_when_file_exis
         app.dependency_overrides.pop(get_artifact_storage, None)
 
 
-def test_image_display_url_local_missing_file_returns_404(admin_auth, monkeypatch, tmp_path: Path) -> None:
+def test_image_display_url_local_missing_file_returns_404(
+    admin_auth, monkeypatch, tmp_path: Path
+) -> None:
     inv_id, aisle_id, asset_id = "inv-bad", "aisle-bad", "asset-bad-1"
     now = datetime.now(timezone.utc)
     (tmp_path / "v3_uploads").mkdir(parents=True, exist_ok=True)

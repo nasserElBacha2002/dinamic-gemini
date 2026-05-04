@@ -4,14 +4,19 @@ Gating temporal y espacial para candidatos Re-ID (Sprint 6B).
 US-6B.3: generate_candidates con gap en frames y centroides normalizados (cx, cy en 0..1).
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Optional
 
 from src.reid.signature import TrackSignature
 
 
 def _gap_frames(sa: TrackSignature, sb: TrackSignature) -> Optional[int]:
     """Gap en frames entre dos tracks. None si faltan start/end."""
-    if sa.start_frame is None or sa.end_frame is None or sb.start_frame is None or sb.end_frame is None:
+    if (
+        sa.start_frame is None
+        or sa.end_frame is None
+        or sb.start_frame is None
+        or sb.end_frame is None
+    ):
         return None
     # A termina antes de que B empiece
     if sa.end_frame <= sb.start_frame:
@@ -24,8 +29,8 @@ def _gap_frames(sa: TrackSignature, sb: TrackSignature) -> Optional[int]:
 
 
 def _spatial_ok(
-    end_centroid: Tuple[float, float],
-    start_centroid: Tuple[float, float],
+    end_centroid: tuple[float, float],
+    start_centroid: tuple[float, float],
     dx_max: float,
     dy_max: float,
 ) -> bool:
@@ -37,11 +42,11 @@ def _spatial_ok(
 
 
 def generate_candidates(
-    signatures: Dict[str, TrackSignature],
+    signatures: dict[str, TrackSignature],
     max_gap_frames: int = 240,
     dx_max: float = 0.20,
     dy_max: float = 0.25,
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """Genera pares (track_id_a, track_id_b) candidatos a merge por gating temporal y espacial.
 
     - Temporal: 0 <= gap_frames <= max_gap_frames (gap = distancia entre end de uno y start del otro).
@@ -69,8 +74,8 @@ def generate_candidates(
     # Pre-filtro por ventana temporal si n grande (considera start y end para reducir falsos negativos)
     if n > 500:
         bucket_size = max(1, max_gap_frames * 2)
-        by_start: Dict[int, List[str]] = {}
-        by_end: Dict[int, List[str]] = {}
+        by_start: dict[int, list[str]] = {}
+        by_end: dict[int, list[str]] = {}
         for tid in ids:
             sig = signatures[tid]
             if sig.start_frame is not None:
@@ -103,8 +108,8 @@ def generate_candidates(
     else:
         id_pairs_to_check = [(ids[i], ids[j]) for i in range(n) for j in range(i + 1, n)]
 
-    out: List[Tuple[str, str]] = []
-    for (tid_a, tid_b) in id_pairs_to_check:
+    out: list[tuple[str, str]] = []
+    for tid_a, tid_b in id_pairs_to_check:
         sa = signatures[tid_a]
         sb = signatures[tid_b]
         gap = _gap_frames(sa, sb)
@@ -113,14 +118,23 @@ def generate_candidates(
         if gap < 0 or gap > max_gap_frames:
             continue
 
-        if sa.start_centroid is None or sa.end_centroid is None or sb.start_centroid is None or sb.end_centroid is None:
+        if (
+            sa.start_centroid is None
+            or sa.end_centroid is None
+            or sb.start_centroid is None
+            or sb.end_centroid is None
+        ):
             continue
 
         if gap == 0:
             ok = _spatial_ok(sa.end_centroid, sb.start_centroid, dx_max, dy_max) and _spatial_ok(
                 sb.end_centroid, sa.start_centroid, dx_max, dy_max
             )
-        elif sa.end_frame is not None and sb.start_frame is not None and sa.end_frame <= sb.start_frame:
+        elif (
+            sa.end_frame is not None
+            and sb.start_frame is not None
+            and sa.end_frame <= sb.start_frame
+        ):
             ok = _spatial_ok(sa.end_centroid, sb.start_centroid, dx_max, dy_max)
         else:
             ok = _spatial_ok(sb.end_centroid, sa.start_centroid, dx_max, dy_max)

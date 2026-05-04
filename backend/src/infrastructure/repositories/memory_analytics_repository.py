@@ -11,14 +11,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import timezone
-from typing import Dict, List, Optional
 
 from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
 from src.application.dto.analytics_dto import (
+    AisleIssueRowDTO,
     AnalyticsFilters,
     AnalyticsSummaryDTO,
     AnalyticsTrendsDTO,
-    AisleIssueRowDTO,
     InventoryPerformanceRowDTO,
     ManualInterventionBreakdownDTO,
     ManualInterventionCategoryDTO,
@@ -34,29 +33,28 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     ReviewActionRepository,
 )
-from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.analytics_aggregation_core import (
+    InventoryMetricInputs,
+    SummaryMetricInputs,
+    active_position,
     build_inventory_metric_rates,
     build_summary_metrics,
     compute_average_processing_time_seconds,
     compute_manual_intervention_breakdown,
     compute_processing_success_rate,
     compute_review_outcome_counts,
-    correction_action,
     day_span_inclusive,
+    is_invalid_traceability,
+    is_low_confidence,
     issue_bucket_for_position,
     most_common_issue_for_counts,
     position_in_scope,
-    settling_action,
-    active_position,
-    is_invalid_traceability,
-    is_low_confidence,
-    unidentified_product,
     processed_position,
     review_action_in_period,
-    InventoryMetricInputs,
-    SummaryMetricInputs,
+    settling_action,
+    unidentified_product,
 )
+from src.application.services.display_primary_product import select_display_primary_product
 from src.domain.jobs.entities import JobStatus
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 from src.domain.products.entities import ProductRecord
@@ -81,8 +79,8 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
 
     def _primary_by_position(
         self,
-        positions: Dict[str, Position],
-    ) -> Dict[str, Optional[ProductRecord]]:
+        positions: dict[str, Position],
+    ) -> dict[str, ProductRecord | None]:
         """Resolve display-primary product once per position set."""
         return {
             pid: select_display_primary_product(self._product_record_repo.list_by_position(pid))
@@ -91,11 +89,11 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
 
     def _collect(
         self, filters: AnalyticsFilters
-    ) -> tuple[Dict[str, Position], Dict[str, str], Dict[str, str], List]:
+    ) -> tuple[dict[str, Position], dict[str, str], dict[str, str], list]:
         """Positions in scope, aisle->inventory, position_id->aisle_id, all review actions."""
-        aisle_to_inventory: Dict[str, str] = {}
-        position_to_aisle: Dict[str, str] = {}
-        positions: Dict[str, Position] = {}
+        aisle_to_inventory: dict[str, str] = {}
+        position_to_aisle: dict[str, str] = {}
+        positions: dict[str, Position] = {}
         inventories = self._inventory_repo.list_all()
         for inv in inventories:
             if filters.inventory_id and inv.id != filters.inventory_id:
@@ -112,7 +110,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     if not position_in_scope(pos, aisle.id, inv.id, aisle_to_inventory, filters):
                         continue
                     positions[pos.id] = pos
-        actions: List = []
+        actions: list = []
         from src.infrastructure.repositories.memory_review_action_repository import (  # noqa: PLC0415
             MemoryReviewActionRepository,
         )
@@ -128,7 +126,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         return positions, aisle_to_inventory, position_to_aisle, actions
 
     def get_summary(self, filters: AnalyticsFilters) -> AnalyticsSummaryDTO:
-        notes: List[str] = []
+        notes: list[str] = []
         positions, aisle_to_inv, pos_to_aisle, actions = self._collect(filters)
         active = {pid: p for pid, p in positions.items() if active_position(p)}
         primary_by_position = self._primary_by_position(active)
@@ -204,7 +202,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         )
         pids = set(positions.keys())
 
-        by_day_rev: Dict[str, List] = defaultdict(list)
+        by_day_rev: dict[str, list] = defaultdict(list)
         for ra in actions:
             if ra.position_id not in pids or not settling_action(ra):
                 continue
@@ -213,21 +211,24 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             d = ra.created_at.date().isoformat()
             by_day_rev[d].append(ra)
 
-        reviewed_series: List[TrendPointDTO] = []
-        correction_series: List[TrendPointDTO] = []
+        reviewed_series: list[TrendPointDTO] = []
+        correction_series: list[TrendPointDTO] = []
         for d in sorted(by_day_rev.keys()):
             day_actions = by_day_rev[d]
             outcomes = compute_review_outcome_counts(day_actions, None, None)
             s = outcomes.settling_actions_count
             reviewed_series.append(
-                TrendPointDTO(period=d, reviewed_results=s, correction_rate=None, processing_success_rate=None)
+                TrendPointDTO(
+                    period=d, reviewed_results=s, correction_rate=None, processing_success_rate=None
+                )
             )
             correction_series.append(
                 TrendPointDTO(
                     period=d,
                     reviewed_results=s,
                     correction_rate=(
-                        outcomes.manually_corrected_positions_count / outcomes.reviewed_positions_count
+                        outcomes.manually_corrected_positions_count
+                        / outcomes.reviewed_positions_count
                         if outcomes.reviewed_positions_count
                         else None
                     ),
@@ -235,7 +236,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 )
             )
 
-        proc_series: List[TrendPointDTO] = []
+        proc_series: list[TrendPointDTO] = []
         jobs_list = list(self._job_repo.list_all_jobs())
         _, aisle_to_inv, _, _ = self._collect(filters)
         allowed_aisles = set(aisle_to_inv.keys())
@@ -243,7 +244,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             allowed_aisles &= {filters.aisle_id}
         from src.application.services.analytics_aggregation_core import _ts_in_range
 
-        by_day_job: Dict[str, list] = defaultdict(lambda: [0, 0])
+        by_day_job: dict[str, list] = defaultdict(lambda: [0, 0])
         for j in jobs_list:
             if j.target_type != "aisle" or j.target_id not in allowed_aisles:
                 continue
@@ -277,8 +278,10 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             processing_success_over_time=proc_series,
         )
 
-    def get_inventory_performance(self, filters: AnalyticsFilters) -> List[InventoryPerformanceRowDTO]:
-        out: List[InventoryPerformanceRowDTO] = []
+    def get_inventory_performance(
+        self, filters: AnalyticsFilters
+    ) -> list[InventoryPerformanceRowDTO]:
+        out: list[InventoryPerformanceRowDTO] = []
         for inv in self._inventory_repo.list_all():
             if filters.inventory_id and inv.id != filters.inventory_id:
                 continue
@@ -300,14 +303,14 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 continue
             processed_n = sum(1 for p in active_list if processed_position(p))
             invalid_n = sum(
-                1
-                for p in active_list
-                if is_invalid_traceability(p, primary_by_position.get(p.id))
+                1 for p in active_list if is_invalid_traceability(p, primary_by_position.get(p.id))
             )
             conf_vals = [p.confidence for p in active_list]
             avg_conf = sum(conf_vals) / len(conf_vals) if conf_vals else None
 
-            review_outcomes = compute_review_outcome_counts(actions, filters.date_from, filters.date_to)
+            review_outcomes = compute_review_outcome_counts(
+                actions, filters.date_from, filters.date_to
+            )
 
             aisle_ids = {a.id for a in aisles}
             jobs_list = list(self._job_repo.list_all_jobs())
@@ -326,7 +329,9 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                     manually_corrected_positions_count=review_outcomes.manually_corrected_positions_count,
                     operator_marked_unknown_positions_count=review_outcomes.operator_marked_unknown_positions_count,
                     unidentified_product_positions_count=sum(
-                        1 for p in active_list if unidentified_product(primary_by_position.get(p.id))
+                        1
+                        for p in active_list
+                        if unidentified_product(primary_by_position.get(p.id))
                     ),
                     invalid_traceability_positions_count=invalid_n,
                     avg_confidence=avg_conf,
@@ -335,7 +340,11 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 )
             )
 
-            created = inv.created_at if inv.created_at.tzinfo else inv.created_at.replace(tzinfo=timezone.utc)
+            created = (
+                inv.created_at
+                if inv.created_at.tzinfo
+                else inv.created_at.replace(tzinfo=timezone.utc)
+            )
             out.append(
                 InventoryPerformanceRowDTO(
                     inventory_id=inv.id,
@@ -362,12 +371,12 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             )
         return sorted(out, key=lambda r: r.inventory_name.lower())
 
-    def get_aisle_issues(self, filters: AnalyticsFilters) -> List[AisleIssueRowDTO]:
-        rows: List[AisleIssueRowDTO] = []
+    def get_aisle_issues(self, filters: AnalyticsFilters) -> list[AisleIssueRowDTO]:
+        rows: list[AisleIssueRowDTO] = []
         positions, _, pos_to_aisle, _ = self._collect(filters)
         primary_by_position = self._primary_by_position(positions)
-        by_aisle: Dict[str, List[Position]] = {}
-        meta: Dict[str, tuple] = {}
+        by_aisle: dict[str, list[Position]] = {}
+        meta: dict[str, tuple] = {}
         for inv in self._inventory_repo.list_all():
             if filters.inventory_id and inv.id != filters.inventory_id:
                 continue
@@ -395,18 +404,17 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             manual_corrections_c = sum(
                 1
                 for p in plist
-                if p.review_resolution in (
+                if p.review_resolution
+                in (
                     PositionReviewResolution.QTY_CORRECTED,
                     PositionReviewResolution.SKU_CORRECTED,
                 )
             )
             invalid_tr = sum(
-                1
-                for p in plist
-                if is_invalid_traceability(p, primary_by_position.get(p.id))
+                1 for p in plist if is_invalid_traceability(p, primary_by_position.get(p.id))
             )
             low_conf = sum(1 for p in plist if is_low_confidence(p))
-            bucket_counts: Dict[str, int] = {}
+            bucket_counts: dict[str, int] = {}
             for p in plist:
                 b = issue_bucket_for_position(p, primary_by_position.get(p.id))
                 bucket_counts[b] = bucket_counts.get(b, 0) + 1
@@ -431,10 +439,10 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             )
         return sorted(rows, key=lambda r: (-r.needs_review_count, -r.total_results))
 
-    def get_quality_patterns(self, filters: AnalyticsFilters) -> List[QualityPatternRowDTO]:
+    def get_quality_patterns(self, filters: AnalyticsFilters) -> list[QualityPatternRowDTO]:
         positions, _, _, _ = self._collect(filters)
         primary_by_position = self._primary_by_position(positions)
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         for p in positions.values():
             if not active_position(p):
                 continue
@@ -459,7 +467,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             "pending_review": "needs_review flag set",
             "ok": "Did not match higher-priority buckets",
         }
-        out: List[QualityPatternRowDTO] = []
+        out: list[QualityPatternRowDTO] = []
         for b, c in sorted(counts.items(), key=lambda x: -x[1]):
             pct = (c / total) if total else None
             out.append(
@@ -483,7 +491,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         )
         denominator = breakdown.intervention_positions_count
 
-        def pct(count: int) -> Optional[float]:
+        def pct(count: int) -> float | None:
             return (count / denominator) if denominator else None
 
         return ManualInterventionBreakdownDTO(

@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 
 from src.application.errors import CaptureSessionInvalidStateError, CaptureSessionNotFoundError
-from src.application.ports.capture_repositories import CaptureSessionItemRepository, CaptureSessionRepository
+from src.application.ports.capture_repositories import (
+    CaptureSessionItemRepository,
+    CaptureSessionRepository,
+)
 from src.application.ports.clock import Clock
 from src.application.ports.services import ArtifactStorage
 from src.domain.capture.entities import CaptureSession, CaptureSessionStatus
@@ -27,12 +30,18 @@ class CancelCaptureSessionUseCase:
         self._artifact_storage = artifact_storage
         self._clock = clock
 
-    def execute(self, *, inventory_id: str, session_id: str, aisle_id: str | None = None) -> CaptureSession:
+    def execute(
+        self, *, inventory_id: str, session_id: str, aisle_id: str | None = None
+    ) -> CaptureSession:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
-            raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
+            raise CaptureSessionNotFoundError(
+                "Capture session not found for this inventory and aisle."
+            )
         if aisle_id is not None and session.aisle_id != aisle_id:
-            raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
+            raise CaptureSessionNotFoundError(
+                "Capture session not found for this inventory and aisle."
+            )
         if session.status == CaptureSessionStatus.CONFIRMED:
             raise CaptureSessionInvalidStateError("Cannot cancel a confirmed capture session.")
         if session.status == CaptureSessionStatus.CANCELLED:

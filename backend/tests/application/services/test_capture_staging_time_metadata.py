@@ -9,7 +9,9 @@ import pytest
 from PIL import Image
 
 from src.application.services import capture_staging_time_metadata as staging_time_mod
-from src.application.services.capture_staging_time_metadata import PillowCaptureStagingTimeMetadataExtractor
+from src.application.services.capture_staging_time_metadata import (
+    PillowCaptureStagingTimeMetadataExtractor,
+)
 from src.domain.capture.entities import CaptureTimeSource
 
 

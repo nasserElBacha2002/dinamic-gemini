@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from src.application.errors import CaptureSessionNotFoundError
 from src.application.ports.capture_repositories import (
@@ -22,7 +22,9 @@ class GetCaptureSessionGroupsUseCase:
         self._session_repo = session_repo
         self._group_repo = group_repo
 
-    def execute(self, *, inventory_id: str, session_id: str) -> Sequence[CaptureSessionGroupSummary]:
+    def execute(
+        self, *, inventory_id: str, session_id: str
+    ) -> Sequence[CaptureSessionGroupSummary]:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
             raise CaptureSessionNotFoundError(

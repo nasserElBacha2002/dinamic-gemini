@@ -16,7 +16,9 @@ def test_ensure_schema_compatibility_marks_incompatible_when_behind(monkeypatch)
         pass
 
     monkeypatch.setattr(migration_service, "_ensure_migration_table", lambda _client: None)
-    monkeypatch.setattr(migration_service, "_fetch_last_applied_version", lambda _client, _svc: "0002")
+    monkeypatch.setattr(
+        migration_service, "_fetch_last_applied_version", lambda _client, _svc: "0002"
+    )
 
     status = migration_service.ensure_schema_compatibility(
         client=DummyClient(),
@@ -37,12 +39,20 @@ def test_get_migration_status_lists_pending(monkeypatch):
         migration_service,
         "_list_migration_files",
         lambda: [
-            migration_service.MigrationFile("0001", "baseline", migration_service.Path("a.sql"), "x"),
-            migration_service.MigrationFile("0002", "add_jobs", migration_service.Path("b.sql"), "y"),
+            migration_service.MigrationFile(
+                "0001", "baseline", migration_service.Path("a.sql"), "x"
+            ),
+            migration_service.MigrationFile(
+                "0002", "add_jobs", migration_service.Path("b.sql"), "y"
+            ),
         ],
     )
-    monkeypatch.setattr(migration_service, "_fetch_applied_versions", lambda _client, _svc: ["0001"])
-    monkeypatch.setattr(migration_service, "_fetch_last_applied_version", lambda _client, _svc: "0001")
+    monkeypatch.setattr(
+        migration_service, "_fetch_applied_versions", lambda _client, _svc: ["0001"]
+    )
+    monkeypatch.setattr(
+        migration_service, "_fetch_last_applied_version", lambda _client, _svc: "0001"
+    )
 
     status = migration_service.get_migration_status(client=DummyClient(), service="inventory-api")
     assert status.pending_versions == ["0002"]

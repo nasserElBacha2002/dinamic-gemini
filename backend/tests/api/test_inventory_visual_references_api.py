@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -47,7 +45,9 @@ def _auth_headers() -> dict[str, str]:
 
 
 def _create_inventory() -> str:
-    resp = client.post("/api/v3/inventories", json={"name": "Inv with refs"}, headers=_auth_headers())
+    resp = client.post(
+        "/api/v3/inventories", json={"name": "Inv with refs"}, headers=_auth_headers()
+    )
     assert resp.status_code == 201
     return resp.json()["id"]
 
@@ -122,7 +122,10 @@ def test_upload_inventory_visual_references_zero_byte_file_returns_422() -> None
         headers=_auth_headers(),
     )
     assert resp.status_code == 422
-    assert "zero-byte" in resp.json().get("detail", "").lower() or "empty" in resp.json().get("detail", "").lower()
+    assert (
+        "zero-byte" in resp.json().get("detail", "").lower()
+        or "empty" in resp.json().get("detail", "").lower()
+    )
 
 
 def test_upload_inventory_visual_references_max_exceeded_returns_400() -> None:
@@ -283,7 +286,9 @@ def test_visual_reference_file_endpoint_signed_url_handles_prefixed_persisted_ke
     monkeypatch.setenv("ARTIFACT_S3_BUCKET", "bucket-x")
     monkeypatch.setenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", "555")
     reload_settings()
-    app.dependency_overrides[get_artifact_storage] = lambda: StubSignedUrlArtifactStorage(return_prefixed_key=True)
+    app.dependency_overrides[get_artifact_storage] = lambda: StubSignedUrlArtifactStorage(
+        return_prefixed_key=True
+    )
     try:
         inventory_id = _create_inventory()
         files = [("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))]
@@ -347,4 +352,3 @@ def test_visual_reference_file_endpoint_falls_back_to_local_when_legacy_enabled(
         monkeypatch.delenv("ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED", raising=False)
         monkeypatch.delenv("OUTPUT_DIR", raising=False)
         reload_settings()
-

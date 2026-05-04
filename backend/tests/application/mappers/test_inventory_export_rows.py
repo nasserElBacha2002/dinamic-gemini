@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from src.application.mappers.inventory_export_rows import _field_sort_key, export_position_sort_key
 from src.domain.positions.entities import Position, PositionStatus
 
-
 NOW = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 

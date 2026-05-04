@@ -25,8 +25,9 @@ import json
 import logging
 import os
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, cast
 
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
@@ -152,7 +153,7 @@ def _legacy_v3_uploads_resolved_file_path(*, storage_path: str) -> Path:
 def presigned_s3_get_url_for_provider_key(
     *,
     storage_key: str,
-    storage_bucket: Optional[str],
+    storage_bucket: str | None,
     artifact_store: Any,
 ) -> str:
     """Generate a presigned GET URL for S3-backed ``storage_key`` (after bucket validation)."""
@@ -204,7 +205,7 @@ def serve_provider_artifact_response(
     media_type: str,
     storage_provider: str,
     storage_key: str,
-    storage_bucket: Optional[str],
+    storage_bucket: str | None,
     artifact_store: Any,
 ) -> Response:
     """Return redirect (S3) or FileResponse (local) for a provider-backed object."""
@@ -318,7 +319,7 @@ def resolve_source_asset_image_display(
     asset: Any,
     *,
     artifact_store: Any,
-) -> tuple[Optional[str], bool]:
+) -> tuple[str | None, bool]:
     """Resolve how the SPA should display a non-HEIC source asset image.
 
     Returns ``(image_url, requires_authenticated_fetch)``:
@@ -415,7 +416,7 @@ def load_artifact_content_from_provider_meta(
     *,
     artifact_store: Any,
     label: str,
-    hard_max_bytes: Optional[int] = None,
+    hard_max_bytes: int | None = None,
 ) -> bytes:
     """Load raw bytes using provider metadata.
 
@@ -441,7 +442,7 @@ def load_artifact_content_from_provider_meta(
     settings = load_settings()
     mem_threshold = int(settings.artifact_store_max_in_memory_get_bytes)
 
-    size_known: Optional[int] = None
+    size_known: int | None = None
     try:
         size_known = int(artifact_store.object_size_bytes(key, bucket=dl_bucket))
     except Exception as head_exc:
@@ -500,7 +501,7 @@ def load_artifact_content_from_provider_meta(
             key,
             len(data),
         )
-        return data
+        return cast(bytes, data)
 
     def _download_via_tempfile() -> bytes:
         fd, tmp_name = tempfile.mkstemp(prefix="artifact_", suffix=".bin")
@@ -549,7 +550,7 @@ def load_artifact_content_from_provider_meta(
             key,
             len(data),
         )
-        return data
+        return cast(bytes, data)
 
     if hard_max_bytes is not None:
         if size_known is not None:
@@ -581,7 +582,7 @@ def read_execution_log_events_for_job(
     job: Any,
     *,
     artifact_store: Any,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     settings = load_settings()
     rj = getattr(job, "result_json", None) or {}
     durable = rj.get("durable_artifacts") or {}
@@ -651,7 +652,7 @@ def fetch_json_from_durable_meta(
     *,
     artifact_store: Any,
     label: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     settings = load_settings()
     max_json = int(settings.artifact_store_max_json_load_bytes)
     raw = load_artifact_content_from_provider_meta(
@@ -661,22 +662,23 @@ def fetch_json_from_durable_meta(
         hard_max_bytes=max_json,
     )
     try:
-        return json.loads(raw.decode("utf-8"))
+        parsed = json.loads(raw.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise StoredArtifactAccessError(
             502,
             f"{label} payload is not valid JSON.",
             "invalid_json",
         ) from exc
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def load_hybrid_report_json_for_job(
     job_id: str,
     *,
-    job: Optional[Any] = None,
+    job: Any | None = None,
     job_repo: Any,
     artifact_store: Any,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Load hybrid_report dict: durable metadata first, then legacy disk when allowed.
 
     Used for best-effort enrichment (returns None on failure). For strict API semantics use
@@ -735,7 +737,7 @@ def load_hybrid_report_json_for_api(
     job: Any,
     *,
     artifact_store: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Strict load for GET hybrid-report: durable required when present and complete; else legacy."""
     settings = load_settings()
     job_id = getattr(job, "id", "")

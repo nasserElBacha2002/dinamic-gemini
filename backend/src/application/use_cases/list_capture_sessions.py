@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Sequence
 
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.capture_repositories import CaptureSessionRepository
@@ -38,12 +38,12 @@ class ListCaptureSessionsUseCase:
         self,
         inventory_id: str,
         *,
-        aisle_id: Optional[str] = None,
-        statuses: Optional[Sequence[CaptureSessionStatus]] = None,
-        created_from: Optional[datetime] = None,
-        created_to: Optional[datetime] = None,
+        aisle_id: str | None = None,
+        statuses: Sequence[CaptureSessionStatus] | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
         page: int = 1,
-        page_size: Optional[int] = None,
+        page_size: int | None = None,
     ) -> ListCaptureSessionsResult:
         if self._inventory_repo.get_by_id(inventory_id) is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")

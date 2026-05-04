@@ -7,9 +7,9 @@ SQL implementations land in a later sprint; use cases must depend only on these 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Sequence
 
 from src.domain.capture.entities import (
     CaptureSession,
@@ -31,9 +31,9 @@ class CaptureSessionGroupSummary:
     start_time: datetime
     end_time: datetime
     algorithm_version: str
-    assigned_aisle_id: Optional[str] = None
+    assigned_aisle_id: str | None = None
     assignment_status: str = "unassigned"
-    assigned_at: Optional[datetime] = None
+    assigned_at: datetime | None = None
     #: G7 derived operator state: ``unassigned`` | ``assigned`` | ``materialized`` | ``partially_materialized``.
     materialization_state: str = "unassigned"
 
@@ -44,11 +44,12 @@ class CaptureSessionRepository(ABC):
         """Insert or update a capture session."""
 
     @abstractmethod
-    def get_by_id(self, session_id: str) -> Optional[CaptureSession]:
-        ...
+    def get_by_id(self, session_id: str) -> CaptureSession | None: ...
 
     @abstractmethod
-    def get_by_id_for_inventory(self, session_id: str, inventory_id: str) -> Optional[CaptureSession]:
+    def get_by_id_for_inventory(
+        self, session_id: str, inventory_id: str
+    ) -> CaptureSession | None:
         """Return the session only when it belongs to the given inventory."""
 
     @abstractmethod
@@ -60,10 +61,10 @@ class CaptureSessionRepository(ABC):
         self,
         inventory_id: str,
         *,
-        aisle_id: Optional[str] = None,
-        statuses: Optional[Sequence[CaptureSessionStatus]] = None,
-        created_from: Optional[datetime] = None,
-        created_to: Optional[datetime] = None,
+        aisle_id: str | None = None,
+        statuses: Sequence[CaptureSessionStatus] | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
         page: int = 1,
         page_size: int = 25,
     ) -> tuple[Sequence[CaptureSession], int]:
@@ -72,19 +73,18 @@ class CaptureSessionRepository(ABC):
 
 class CaptureSessionItemRepository(ABC):
     @abstractmethod
-    def save(self, item: CaptureSessionItem) -> None:
-        ...
+    def save(self, item: CaptureSessionItem) -> None: ...
 
     @abstractmethod
-    def get_by_id(self, item_id: str) -> Optional[CaptureSessionItem]:
-        ...
+    def get_by_id(self, item_id: str) -> CaptureSessionItem | None: ...
 
     @abstractmethod
-    def list_by_session(self, session_id: str) -> Sequence[CaptureSessionItem]:
-        ...
+    def list_by_session(self, session_id: str) -> Sequence[CaptureSessionItem]: ...
 
     @abstractmethod
-    def list_by_session_and_group_id(self, session_id: str, group_id: str) -> Sequence[CaptureSessionItem]:
+    def list_by_session_and_group_id(
+        self, session_id: str, group_id: str
+    ) -> Sequence[CaptureSessionItem]:
         """Items in the session belonging to the given temporal group (``group_id``)."""
 
     @abstractmethod
@@ -118,7 +118,9 @@ class CaptureSessionGroupRepository(ABC):
         """Number of persisted group rows for the session (including unassigned)."""
 
     @abstractmethod
-    def get_by_id_and_session(self, group_id: str, session_id: str) -> Optional[CaptureSessionGroup]:
+    def get_by_id_and_session(
+        self, group_id: str, session_id: str
+    ) -> CaptureSessionGroup | None:
         """Return the group when it belongs to the session, else None."""
 
     @abstractmethod
@@ -136,8 +138,7 @@ class CaptureSessionConfirmIdempotencyRepository(ABC):
     @abstractmethod
     def get_by_session_and_key(
         self, session_id: str, idempotency_key: str
-    ) -> Optional[CaptureSessionConfirmationLedgerEntry]:
-        ...
+    ) -> CaptureSessionConfirmationLedgerEntry | None: ...
 
     @abstractmethod
     def insert(self, entry: CaptureSessionConfirmationLedgerEntry) -> None:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from src.domain.assets.entities import SourceAsset
 from src.domain.inventory.visual_reference import InventoryVisualReference
@@ -13,7 +12,9 @@ logger = logging.getLogger(__name__)
 class WorkerInputArtifactResolver:
     """Resolve durable artifact metadata into temporary local files for worker execution."""
 
-    def __init__(self, artifact_store, *, legacy_base: Path, legacy_local_read_enabled: bool) -> None:
+    def __init__(
+        self, artifact_store, *, legacy_base: Path, legacy_local_read_enabled: bool
+    ) -> None:
         self._artifact_store = artifact_store
         self._legacy_base = legacy_base.resolve()
         self._legacy_local_read_enabled = bool(legacy_local_read_enabled)
@@ -33,7 +34,7 @@ class WorkerInputArtifactResolver:
         self,
         *,
         provider: str,
-        bucket: Optional[str],
+        bucket: str | None,
         key: str,
         target_path: Path,
         label: str,
@@ -93,12 +94,18 @@ class WorkerInputArtifactResolver:
         key = (asset.storage_key or "").strip()
         if provider or key or bucket:
             if not provider:
-                raise RuntimeError(f"source asset {asset.id}: storage_key is set but storage_provider is missing")
+                raise RuntimeError(
+                    f"source asset {asset.id}: storage_key is set but storage_provider is missing"
+                )
             if provider == "s3":
                 if not bucket:
-                    raise RuntimeError(f"source asset {asset.id}: storage_provider={provider} but storage_bucket is missing")
+                    raise RuntimeError(
+                        f"source asset {asset.id}: storage_provider={provider} but storage_bucket is missing"
+                    )
                 if not key:
-                    raise RuntimeError(f"source asset {asset.id}: storage_provider={provider} but storage_key is missing")
+                    raise RuntimeError(
+                        f"source asset {asset.id}: storage_provider={provider} but storage_key is missing"
+                    )
                 return self._download_provider_key(
                     provider=provider,
                     bucket=bucket,
@@ -142,7 +149,7 @@ class WorkerInputArtifactResolver:
         self,
         reference_id: str,
         *,
-        reference_record: Optional[InventoryVisualReference],
+        reference_record: InventoryVisualReference | None,
         source_path: str,
         target_path: Path,
     ) -> Path:
@@ -184,7 +191,9 @@ class WorkerInputArtifactResolver:
                     target_path,
                     label=f"visual reference {reference_id}",
                 )
-            raise RuntimeError(f"visual reference {reference_id}: unsupported storage_provider={provider}")
+            raise RuntimeError(
+                f"visual reference {reference_id}: unsupported storage_provider={provider}"
+            )
         if not self._legacy_local_read_enabled:
             raise RuntimeError(
                 f"visual reference {reference_id}: provider metadata absent and legacy local fallback is disabled"

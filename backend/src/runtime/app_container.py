@@ -12,7 +12,7 @@ import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, TypeVar
+from typing import TypeVar
 
 from src.application.ports.analytics_repository import AnalyticsRepository
 from src.application.ports.capture_repositories import (
@@ -37,17 +37,20 @@ from src.application.ports.repositories import (
     SourceAssetRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
-from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
+from src.application.use_cases.recompute_consolidated_counts import (
+    RecomputeConsolidatedCountsUseCase,
+)
+from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
 
 logger = logging.getLogger(__name__)
 
 _RepoT = TypeVar("_RepoT")
 
-_container: Optional["AppContainer"] = None
+_container: AppContainer | None = None
 
 
-def get_app_container() -> "AppContainer":
+def get_app_container() -> AppContainer:
     """Return the process-wide application container (lazy-initialized)."""
     global _container
     if _container is None:
@@ -66,32 +69,34 @@ def reset_app_container_for_tests() -> None:
 class AppContainer:
     """Builds and caches cross-cutting infrastructure dependencies."""
 
-    def __init__(self, settings: "AppSettings") -> None:
+    def __init__(self, settings: AppSettings) -> None:
         self._settings = settings
-        self._v3_sql_client: Optional[SqlServerClient] = None
-        self._inventory_repo: Optional[InventoryRepository] = None
-        self._aisle_repo: Optional[AisleRepository] = None
-        self._job_repo: Optional[JobRepository] = None
-        self._asset_repo: Optional[SourceAssetRepository] = None
-        self._visual_reference_repo: Optional[InventoryVisualReferenceRepository] = None
-        self._position_repo: Optional[PositionRepository] = None
-        self._product_record_repo: Optional[ProductRecordRepository] = None
-        self._evidence_repo: Optional[EvidenceRepository] = None
-        self._review_action_repo: Optional[ReviewActionRepository] = None
-        self._metrics_calculator: Optional[MetricsCalculator] = None
-        self._raw_label_repo: Optional[RawLabelRepository] = None
-        self._normalized_label_repo: Optional[NormalizedLabelRepository] = None
-        self._final_count_repo: Optional[FinalCountRepository] = None
-        self._artifact_storage: Optional[ArtifactStorage] = None
-        self._worker_launch_service: Optional[WorkerLaunchService] = None
-        self._analytics_repo: Optional[AnalyticsRepository] = None
-        self._capture_session_repo: Optional[CaptureSessionRepository] = None
-        self._capture_session_item_repo: Optional[CaptureSessionItemRepository] = None
-        self._capture_session_confirm_repo: Optional[CaptureSessionConfirmIdempotencyRepository] = None
-        self._capture_session_group_repo: Optional[CaptureSessionGroupRepository] = None
+        self._v3_sql_client: SqlServerClient | None = None
+        self._inventory_repo: InventoryRepository | None = None
+        self._aisle_repo: AisleRepository | None = None
+        self._job_repo: JobRepository | None = None
+        self._asset_repo: SourceAssetRepository | None = None
+        self._visual_reference_repo: InventoryVisualReferenceRepository | None = None
+        self._position_repo: PositionRepository | None = None
+        self._product_record_repo: ProductRecordRepository | None = None
+        self._evidence_repo: EvidenceRepository | None = None
+        self._review_action_repo: ReviewActionRepository | None = None
+        self._metrics_calculator: MetricsCalculator | None = None
+        self._raw_label_repo: RawLabelRepository | None = None
+        self._normalized_label_repo: NormalizedLabelRepository | None = None
+        self._final_count_repo: FinalCountRepository | None = None
+        self._artifact_storage: ArtifactStorage | None = None
+        self._worker_launch_service: WorkerLaunchService | None = None
+        self._analytics_repo: AnalyticsRepository | None = None
+        self._capture_session_repo: CaptureSessionRepository | None = None
+        self._capture_session_item_repo: CaptureSessionItemRepository | None = None
+        self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = (
+            None
+        )
+        self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
 
     @property
-    def settings(self) -> "AppSettings":
+    def settings(self) -> AppSettings:
         return self._settings
 
     @staticmethod
@@ -101,7 +106,8 @@ class AppContainer:
 
     def _v3_db_enabled(self) -> bool:
         return bool(
-            getattr(self._settings, "sqlserver_enabled", False) and self._settings.sqlserver_effective_connection_string
+            getattr(self._settings, "sqlserver_enabled", False)
+            and self._settings.sqlserver_effective_connection_string
         )
 
     def _get_v3_sql_client(self) -> SqlServerClient:
@@ -149,12 +155,16 @@ class AppContainer:
             return self._inventory_repo
 
         def _sql(client: SqlServerClient) -> InventoryRepository:
-            from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
+            from src.infrastructure.repositories.sql_inventory_repository import (
+                SqlInventoryRepository,
+            )
 
             return SqlInventoryRepository(client)
 
         def _memory() -> InventoryRepository:
-            from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+            from src.infrastructure.repositories.memory_inventory_repository import (
+                MemoryInventoryRepository,
+            )
 
             return MemoryInventoryRepository()
 
@@ -176,7 +186,9 @@ class AppContainer:
             return SqlAisleRepository(client)
 
         def _memory() -> AisleRepository:
-            from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+            from src.infrastructure.repositories.memory_aisle_repository import (
+                MemoryAisleRepository,
+            )
 
             return MemoryAisleRepository()
 
@@ -215,12 +227,16 @@ class AppContainer:
             return self._asset_repo
 
         def _sql(client: SqlServerClient) -> SourceAssetRepository:
-            from src.infrastructure.repositories.sql_source_asset_repository import SqlSourceAssetRepository
+            from src.infrastructure.repositories.sql_source_asset_repository import (
+                SqlSourceAssetRepository,
+            )
 
             return SqlSourceAssetRepository(client)
 
         def _memory() -> SourceAssetRepository:
-            from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+            from src.infrastructure.repositories.memory_source_asset_repository import (
+                MemorySourceAssetRepository,
+            )
 
             return MemorySourceAssetRepository()
 
@@ -263,12 +279,16 @@ class AppContainer:
             return self._position_repo
 
         def _sql(client: SqlServerClient) -> PositionRepository:
-            from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
+            from src.infrastructure.repositories.sql_position_repository import (
+                SqlPositionRepository,
+            )
 
             return SqlPositionRepository(client)
 
         def _memory() -> PositionRepository:
-            from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+            from src.infrastructure.repositories.memory_position_repository import (
+                MemoryPositionRepository,
+            )
 
             return MemoryPositionRepository()
 
@@ -285,12 +305,16 @@ class AppContainer:
             return self._product_record_repo
 
         def _sql(client: SqlServerClient) -> ProductRecordRepository:
-            from src.infrastructure.repositories.sql_product_record_repository import SqlProductRecordRepository
+            from src.infrastructure.repositories.sql_product_record_repository import (
+                SqlProductRecordRepository,
+            )
 
             return SqlProductRecordRepository(client)
 
         def _memory() -> ProductRecordRepository:
-            from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+            from src.infrastructure.repositories.memory_product_record_repository import (
+                MemoryProductRecordRepository,
+            )
 
             return MemoryProductRecordRepository()
 
@@ -307,12 +331,16 @@ class AppContainer:
             return self._evidence_repo
 
         def _sql(client: SqlServerClient) -> EvidenceRepository:
-            from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
+            from src.infrastructure.repositories.sql_evidence_repository import (
+                SqlEvidenceRepository,
+            )
 
             return SqlEvidenceRepository(client)
 
         def _memory() -> EvidenceRepository:
-            from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
+            from src.infrastructure.repositories.memory_evidence_repository import (
+                MemoryEvidenceRepository,
+            )
 
             return MemoryEvidenceRepository()
 
@@ -329,12 +357,16 @@ class AppContainer:
             return self._review_action_repo
 
         def _sql(client: SqlServerClient) -> ReviewActionRepository:
-            from src.infrastructure.repositories.sql_review_action_repository import SqlReviewActionRepository
+            from src.infrastructure.repositories.sql_review_action_repository import (
+                SqlReviewActionRepository,
+            )
 
             return SqlReviewActionRepository(client)
 
         def _memory() -> ReviewActionRepository:
-            from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+            from src.infrastructure.repositories.memory_review_action_repository import (
+                MemoryReviewActionRepository,
+            )
 
             return MemoryReviewActionRepository()
 
@@ -369,10 +401,14 @@ class AppContainer:
         settings = self._settings
         provider = (settings.artifact_storage_provider or "local").strip().lower()
         if provider == "s3":
-            from src.infrastructure.storage.s3_artifact_storage_adapter import S3ArtifactStorageAdapter
+            from src.infrastructure.storage.s3_artifact_storage_adapter import (
+                S3ArtifactStorageAdapter,
+            )
 
             if not settings.artifact_s3_bucket:
-                raise RuntimeError("ARTIFACT_S3_BUCKET is required when ARTIFACT_STORAGE_PROVIDER=s3")
+                raise RuntimeError(
+                    "ARTIFACT_S3_BUCKET is required when ARTIFACT_STORAGE_PROVIDER=s3"
+                )
             self._artifact_storage = S3ArtifactStorageAdapter(
                 bucket=settings.artifact_s3_bucket,
                 region=settings.artifact_s3_region or None,
@@ -404,7 +440,9 @@ class AppContainer:
     def get_worker_launch_service(self) -> WorkerLaunchService:
         if self._worker_launch_service is not None:
             return self._worker_launch_service
-        from src.infrastructure.services.on_demand_worker_launch_service import OnDemandWorkerLaunchService
+        from src.infrastructure.services.on_demand_worker_launch_service import (
+            OnDemandWorkerLaunchService,
+        )
 
         self._worker_launch_service = OnDemandWorkerLaunchService()
         return self._worker_launch_service
@@ -414,12 +452,16 @@ class AppContainer:
             return self._raw_label_repo
 
         def _sql(client: SqlServerClient) -> RawLabelRepository:
-            from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+            from src.infrastructure.repositories.sql_raw_label_repository import (
+                SqlRawLabelRepository,
+            )
 
             return SqlRawLabelRepository(client)
 
         def _memory() -> RawLabelRepository:
-            from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+            from src.infrastructure.repositories.memory_raw_label_repository import (
+                MemoryRawLabelRepository,
+            )
 
             return MemoryRawLabelRepository()
 
@@ -436,12 +478,16 @@ class AppContainer:
             return self._normalized_label_repo
 
         def _sql(client: SqlServerClient) -> NormalizedLabelRepository:
-            from src.infrastructure.repositories.sql_normalized_label_repository import SqlNormalizedLabelRepository
+            from src.infrastructure.repositories.sql_normalized_label_repository import (
+                SqlNormalizedLabelRepository,
+            )
 
             return SqlNormalizedLabelRepository(client)
 
         def _memory() -> NormalizedLabelRepository:
-            from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
+            from src.infrastructure.repositories.memory_normalized_label_repository import (
+                MemoryNormalizedLabelRepository,
+            )
 
             return MemoryNormalizedLabelRepository()
 
@@ -458,12 +504,16 @@ class AppContainer:
             return self._final_count_repo
 
         def _sql(client: SqlServerClient) -> FinalCountRepository:
-            from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
+            from src.infrastructure.repositories.sql_final_count_repository import (
+                SqlFinalCountRepository,
+            )
 
             return SqlFinalCountRepository(client)
 
         def _memory() -> FinalCountRepository:
-            from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
+            from src.infrastructure.repositories.memory_final_count_repository import (
+                MemoryFinalCountRepository,
+            )
 
             return MemoryFinalCountRepository()
 
@@ -479,7 +529,9 @@ class AppContainer:
         if self._analytics_repo is not None:
             return self._analytics_repo
 
-        from src.infrastructure.repositories.memory_analytics_repository import MemoryAnalyticsRepository
+        from src.infrastructure.repositories.memory_analytics_repository import (
+            MemoryAnalyticsRepository,
+        )
         from src.infrastructure.repositories.sql_analytics_repository import SqlAnalyticsRepository
 
         def _sql(client: SqlServerClient) -> AnalyticsRepository:
@@ -507,8 +559,12 @@ class AppContainer:
         if self._capture_session_repo is not None:
             return self._capture_session_repo
 
-        from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
-        from src.infrastructure.repositories.sql_capture_session_repository import SqlCaptureSessionRepository
+        from src.infrastructure.repositories.memory_capture_session_repository import (
+            MemoryCaptureSessionRepository,
+        )
+        from src.infrastructure.repositories.sql_capture_session_repository import (
+            SqlCaptureSessionRepository,
+        )
 
         def _sql(client: SqlServerClient) -> CaptureSessionRepository:
             return SqlCaptureSessionRepository(client)
@@ -531,7 +587,9 @@ class AppContainer:
         from src.infrastructure.repositories.memory_capture_session_item_repository import (
             MemoryCaptureSessionItemRepository,
         )
-        from src.infrastructure.repositories.sql_capture_session_item_repository import SqlCaptureSessionItemRepository
+        from src.infrastructure.repositories.sql_capture_session_item_repository import (
+            SqlCaptureSessionItemRepository,
+        )
 
         def _sql(client: SqlServerClient) -> CaptureSessionItemRepository:
             return SqlCaptureSessionItemRepository(client)

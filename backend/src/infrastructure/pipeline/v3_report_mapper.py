@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from src.domain.evidence.entities import Evidence, EvidenceType
@@ -41,18 +41,19 @@ _ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
 @dataclass
 class MappedAisleResult:
     """Result of mapping a hybrid report to v3 domain for one aisle. v3.2.3: includes raw_labels."""
-    positions: List[Position]
-    product_records: List[ProductRecord]
-    evidences: List[Evidence]
-    raw_labels: List[RawLabel]
+
+    positions: list[Position]
+    product_records: list[ProductRecord]
+    evidences: list[Evidence]
+    raw_labels: list[RawLabel]
 
 
-def _needs_review_from_entity(entity: Dict[str, Any]) -> bool:
+def _needs_review_from_entity(entity: dict[str, Any]) -> bool:
     status = (entity.get("count_status") or "").strip().upper()
     return status in ("NEEDS_REVIEW", "NOT_COUNTABLE", "INVALID_STRUCTURE") or status == ""
 
 
-def _confidence_from_entity(entity: Dict[str, Any]) -> tuple[float, bool]:
+def _confidence_from_entity(entity: dict[str, Any]) -> tuple[float, bool]:
     """Return (confidence, confidence_was_missing). Missing or invalid -> 0.0 and needs_review."""
     raw = entity.get("confidence")
     if raw is None:
@@ -64,13 +65,13 @@ def _confidence_from_entity(entity: Dict[str, Any]) -> tuple[float, bool]:
         return 0.0, True
 
 
-def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str, Any]:
+def _detected_summary(entity: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any]:
     """Build detected_summary_json for traceability; include audit flags for missing/invalid data.
 
     Includes position_barcode and review_display_label so the list API can show a sku fallback
     when internal_code is missing (aligns with derive_review_display_label: internal_code else position_barcode).
     """
-    out: Dict[str, Any] = {
+    out: dict[str, Any] = {
         "entity_uid": entity.get("entity_uid"),
         "entity_type": entity.get("entity_type"),
         "pallet_id": entity.get("pallet_id"),
@@ -121,7 +122,9 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
     return out
 
 
-def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tuple[int, Dict[str, Any]]:
+def _qty_from_entity(
+    entity: dict[str, Any], *, has_valid_evidence: bool
+) -> tuple[int, dict[str, Any]]:
     """Resolve final qty + provenance for one report entity (v3.2.2).
 
     ``final_quantity`` in the hybrid report is always emitted (often ``null`` when count_status left
@@ -215,7 +218,9 @@ def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tup
         # Secondary projection in detected_summary_json; ProductRecord is authoritative.
         "qty_final": res.qty_final,
         "qty_source": source_value,
-        "qty_inference_reason": res.qty_inference_reason.value if res.qty_inference_reason else None,
+        "qty_inference_reason": res.qty_inference_reason.value
+        if res.qty_inference_reason
+        else None,
         "raw_qty": res.raw_qty,
         "qty_parse_status": res.qty_parse_status.value,
         "qty_origin_field": origin,
@@ -226,7 +231,7 @@ def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tup
 
 def map_hybrid_report_to_domain(
     aisle_id: str,
-    report: Dict[str, Any],
+    report: dict[str, Any],
     run_dir: Path,
     run_id: str,
     job_id: str,
@@ -240,10 +245,10 @@ def map_hybrid_report_to_domain(
     Storage paths for evidence are stored as relative to output root: job_id/run_id/evidence_path.
     inventory_id: required for raw_labels scope when provided.
     """
-    positions: List[Position] = []
-    product_records: List[ProductRecord] = []
-    evidences: List[Evidence] = []
-    raw_labels: List[RawLabel] = []
+    positions: list[Position] = []
+    product_records: list[ProductRecord] = []
+    evidences: list[Evidence] = []
+    raw_labels: list[RawLabel] = []
 
     entities = report.get("entities") or []
     for entity in entities:
@@ -266,7 +271,11 @@ def map_hybrid_report_to_domain(
         has_valid_evidence = not evidence_path_missing
 
         internal_code_raw = entity.get("internal_code")
-        if internal_code_raw is not None and isinstance(internal_code_raw, str) and internal_code_raw.strip():
+        if (
+            internal_code_raw is not None
+            and isinstance(internal_code_raw, str)
+            and internal_code_raw.strip()
+        ):
             sku = internal_code_raw.strip()
         else:
             sku = SKU_UNKNOWN
@@ -280,7 +289,7 @@ def map_hybrid_report_to_domain(
             "invalid",
         )
 
-        audit: Dict[str, Any] = {}
+        audit: dict[str, Any] = {}
         if confidence_missing:
             audit["confidence_missing"] = True
         if internal_code_missing:
@@ -323,7 +332,7 @@ def map_hybrid_report_to_domain(
         )
         product_records.append(product)
 
-        ev_frame: Optional[int] = None
+        ev_frame: int | None = None
         raw_efi = entity.get("evidence_primary_frame_index")
         if raw_efi is not None:
             try:
@@ -331,7 +340,7 @@ def map_hybrid_report_to_domain(
             except (TypeError, ValueError):
                 ev_frame = None
 
-        bbox_json: Optional[Dict[str, Any]] = None
+        bbox_json: dict[str, Any] | None = None
         for bbox_key in ("extent_bbox", "product_label_bbox", "position_label_bbox"):
             bb = entity.get(bbox_key)
             if isinstance(bb, list) and len(bb) == 4:
@@ -357,8 +366,14 @@ def map_hybrid_report_to_domain(
         raw_label_id = str(uuid4())
         entity_uid = entity.get("entity_uid") or position_id
         evidence_path_rel = (entity.get("evidence_path") or "").strip()
-        group_key = f"position:{position_id}:evidence:{evidence_id}" if evidence_id else str(entity_uid)
-        sku_raw = internal_code_raw if internal_code_raw is not None and isinstance(internal_code_raw, str) else None
+        group_key = (
+            f"position:{position_id}:evidence:{evidence_id}" if evidence_id else str(entity_uid)
+        )
+        sku_raw = (
+            internal_code_raw
+            if internal_code_raw is not None and isinstance(internal_code_raw, str)
+            else None
+        )
         raw_labels.append(
             RawLabel(
                 id=raw_label_id,
@@ -372,8 +387,12 @@ def map_hybrid_report_to_domain(
                 source_reference=entity.get("entity_uid"),
                 sku_raw=sku_raw.strip() if sku_raw and sku_raw.strip() else None,
                 sku_candidate=sku_raw.strip() if sku_raw and sku_raw.strip() else None,
-                product_name_raw=entity.get("review_display_label") if isinstance(entity.get("review_display_label"), str) else None,
-                detected_text=entity.get("internal_code") if isinstance(entity.get("internal_code"), str) else None,
+                product_name_raw=entity.get("review_display_label")
+                if isinstance(entity.get("review_display_label"), str)
+                else None,
+                detected_text=entity.get("internal_code")
+                if isinstance(entity.get("internal_code"), str)
+                else None,
                 confidence=confidence,
                 metadata={"entity_uid": entity_uid, "evidence_path": evidence_path_rel},
                 created_at=now,

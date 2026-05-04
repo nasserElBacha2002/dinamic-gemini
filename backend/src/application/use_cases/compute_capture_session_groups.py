@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime
-from typing import List, Sequence
 from uuid import uuid4
 
 from src.application.errors import (
@@ -20,17 +20,17 @@ from src.application.ports.capture_repositories import (
 )
 from src.application.ports.clock import Clock
 from src.application.services.capture_flow_observability import (
-    emit_capture_flow_event,
-    get_capture_flow_metrics,
     LOG_OP_G3_COMPUTE_GROUPS,
     RESULT_SUCCESS,
+    emit_capture_flow_event,
+    get_capture_flow_metrics,
 )
 from src.domain.capture.entities import (
+    CaptureSession,
     CaptureSessionGroup,
     CaptureSessionItem,
     CaptureSessionItemImportStatus,
     CaptureSessionStatus,
-    CaptureSession,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,9 @@ class ComputeCaptureSessionGroupsUseCase:
         self._clock = clock
         self._max_gap = max(1, int(max_time_gap_seconds))
 
-    def execute(self, *, inventory_id: str, session_id: str) -> Sequence[CaptureSessionGroupSummary]:
+    def execute(
+        self, *, inventory_id: str, session_id: str
+    ) -> Sequence[CaptureSessionGroupSummary]:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
             raise CaptureSessionNotFoundError(
@@ -82,7 +84,8 @@ class ComputeCaptureSessionGroupsUseCase:
         qualifying = [
             i
             for i in all_items
-            if i.import_status == CaptureSessionItemImportStatus.IMPORTED and i.effective_capture_time is not None
+            if i.import_status == CaptureSessionItemImportStatus.IMPORTED
+            and i.effective_capture_time is not None
         ]
         if not qualifying:
             raise CaptureSessionNoItemsForGroupingError(_MSG_GROUPING_NO_QUALIFYING_ITEMS)
@@ -94,7 +97,7 @@ class ComputeCaptureSessionGroupsUseCase:
 
         self._clear_previous_assignments(session_id, all_items, now)
 
-        summaries: List[CaptureSessionGroupSummary] = []
+        summaries: list[CaptureSessionGroupSummary] = []
         for idx, cluster in enumerate(clusters, start=1):
             gid = str(uuid4())
             group = CaptureSessionGroup(
@@ -156,11 +159,13 @@ class ComputeCaptureSessionGroupsUseCase:
                 "Temporal grouping is not allowed for cancelled, failed, or confirmed capture sessions."
             )
 
-    def _cluster_by_gap(self, sorted_items: Sequence[CaptureSessionItem]) -> List[List[CaptureSessionItem]]:
+    def _cluster_by_gap(
+        self, sorted_items: Sequence[CaptureSessionItem]
+    ) -> list[list[CaptureSessionItem]]:
         if not sorted_items:
             return []
-        clusters: List[List[CaptureSessionItem]] = []
-        cur: List[CaptureSessionItem] = [sorted_items[0]]
+        clusters: list[list[CaptureSessionItem]] = []
+        cur: list[CaptureSessionItem] = [sorted_items[0]]
         for i in range(1, len(sorted_items)):
             prev = sorted_items[i - 1]
             item = sorted_items[i]

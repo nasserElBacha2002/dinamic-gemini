@@ -1,7 +1,5 @@
 """Unit tests for SKU canonicalization — v3.2.3."""
 
-import pytest
-
 from src.domain.labels.canonicalization import canonicalize_sku
 
 

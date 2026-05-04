@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 import pytest
 
 from src.application.errors import (
-    AisleNotFoundError,
-    InventoryNotFoundError,
-    PositionNotFoundError,
     ProductNotFoundError,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
@@ -32,10 +29,10 @@ class FixedClock:
 
 
 class StubInventoryRepo:
-    def __init__(self, inv: Optional[Inventory] = None) -> None:
+    def __init__(self, inv: Inventory | None = None) -> None:
         self._store = {} if inv is None else {inv.id: inv}
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def save(self, inventory: Inventory) -> None:
@@ -46,10 +43,10 @@ class StubInventoryRepo:
 
 
 class StubAisleRepo:
-    def __init__(self, aisle: Optional[Aisle] = None) -> None:
+    def __init__(self, aisle: Aisle | None = None) -> None:
         self._store = {} if aisle is None else {aisle.id: aisle}
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def save(self, aisle: Aisle) -> None:
@@ -60,10 +57,10 @@ class StubAisleRepo:
 
 
 class StubPositionRepo:
-    def __init__(self, position: Optional[Position] = None) -> None:
+    def __init__(self, position: Position | None = None) -> None:
         self._store = {} if position is None else {position.id: position}
 
-    def get_by_id(self, position_id: str) -> Optional[Position]:
+    def get_by_id(self, position_id: str) -> Position | None:
         return self._store.get(position_id)
 
     def save(self, position: Position) -> None:
@@ -75,10 +72,10 @@ class StubPositionRepo:
 
 
 class StubProductRepo:
-    def __init__(self, product: Optional[ProductRecord] = None) -> None:
+    def __init__(self, product: ProductRecord | None = None) -> None:
         self._store = {} if product is None else {product.id: product}
 
-    def get_by_id(self, product_id: str) -> Optional[ProductRecord]:
+    def get_by_id(self, product_id: str) -> ProductRecord | None:
         return self._store.get(product_id)
 
     def save(self, product: ProductRecord) -> None:
@@ -171,14 +168,25 @@ def test_update_sku_empty_sku_raises() -> None:
     inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
     aisle = Aisle("aisle-1", "inv-1", "A01", AisleStatus.CREATED, now, now)
     position = Position(
-        id="pos-1", aisle_id="aisle-1", status=PositionStatus.DETECTED,
-        confidence=0.9, needs_review=True, primary_evidence_id=None,
-        created_at=now, updated_at=now,
+        id="pos-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
     )
     product = ProductRecord(
-        id="prod-1", position_id="pos-1", sku="X", description=None,
-        detected_quantity=1, corrected_quantity=None, confidence=0.9,
-        created_at=now, updated_at=now,
+        id="prod-1",
+        position_id="pos-1",
+        sku="X",
+        description=None,
+        detected_quantity=1,
+        corrected_quantity=None,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
     )
     inv_repo = StubInventoryRepo(inv)
     aisle_repo = StubAisleRepo(aisle)
@@ -202,14 +210,25 @@ def test_update_sku_product_not_in_position_raises() -> None:
     inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
     aisle = Aisle("aisle-1", "inv-1", "A01", AisleStatus.CREATED, now, now)
     position = Position(
-        id="pos-1", aisle_id="aisle-1", status=PositionStatus.DETECTED,
-        confidence=0.9, needs_review=True, primary_evidence_id=None,
-        created_at=now, updated_at=now,
+        id="pos-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
     )
     product = ProductRecord(
-        id="prod-1", position_id="other-pos", sku="X", description=None,
-        detected_quantity=1, corrected_quantity=None, confidence=0.9,
-        created_at=now, updated_at=now,
+        id="prod-1",
+        position_id="other-pos",
+        sku="X",
+        description=None,
+        detected_quantity=1,
+        corrected_quantity=None,
+        confidence=0.9,
+        created_at=now,
+        updated_at=now,
     )
     inv_repo = StubInventoryRepo(inv)
     aisle_repo = StubAisleRepo(aisle)

@@ -17,7 +17,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -29,6 +29,7 @@ from openai import (
     OpenAI,
     RateLimitError,
 )
+from openai.types.chat import ChatCompletionUserMessageParam
 
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.errors import LLMProviderError
@@ -87,7 +88,7 @@ class OpenAiCompatibleVendorConfig:
     raw_response_filename: str
     log_label: str
     settings_base_url_attr: str
-    default_base_url: Optional[str]
+    default_base_url: str | None
 
 
 _OPENAI_VENDOR = OpenAiCompatibleVendorConfig(
@@ -164,15 +165,21 @@ def _image_to_data_url(obj: Any, max_side: int) -> str:
     return _pil_to_jpeg_data_url(obj, max_side)
 
 
-def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
-    """Best-effort ``CompletionUsage`` extraction for ``normalize_usage`` (nested details included)."""
+def _openai_completion_usage_dict(completion: Any) -> dict[str, Any]:
+    """Extract OpenAI completion usage as a plain ``dict`` for ``normalize_usage``.
+
+    Top-level ``usage.model_dump()`` must return a ``dict`` or the result is empty. For nested
+    fields (e.g. token details), only ``dict`` results from ``model_dump`` are stored; non-dict
+    dumps are omitted so usage snapshots remain JSON-serializable (no raw SDK objects).
+    """
     u = getattr(completion, "usage", None)
     if u is None:
         return {}
     model_dump = getattr(u, "model_dump", None)
     if callable(model_dump):
-        return model_dump(exclude_none=True)
-    out: Dict[str, Any] = {}
+        dumped = model_dump(exclude_none=True)
+        return cast(dict[str, Any], dumped) if isinstance(dumped, dict) else {}
+    out: dict[str, Any] = {}
     for key in (
         "prompt_tokens",
         "completion_tokens",
@@ -185,7 +192,9 @@ def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
             continue
         nested_dump = getattr(val, "model_dump", None)
         if callable(nested_dump):
-            out[key] = nested_dump(exclude_none=True)
+            nd = nested_dump(exclude_none=True)
+            if isinstance(nd, dict):
+                out[key] = nd
         else:
             out[key] = val
     return out
@@ -194,7 +203,7 @@ def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
 class OpenAiSdkAdapter:
     """OpenAI Chat Completions (vision) + json_object; maps failures to ``LLMProviderError``."""
 
-    def __init__(self, vendor_config: Optional[OpenAiCompatibleVendorConfig] = None) -> None:
+    def __init__(self, vendor_config: OpenAiCompatibleVendorConfig | None = None) -> None:
         self._v = vendor_config or _OPENAI_VENDOR
 
     def execute(self, request: LLMRequest, settings: Any) -> LLMResponse:
@@ -211,14 +220,16 @@ class OpenAiSdkAdapter:
         meta = request.metadata or {}
         prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
         job_model = (meta.get(v.model_metadata_key) or "").strip()
-        default_m = (getattr(settings, v.settings_model_attr, "") or v.default_model_if_settings_empty).strip()
+        default_m = (
+            getattr(settings, v.settings_model_attr, "") or v.default_model_if_settings_empty
+        ).strip()
         effective_model = job_model or default_m
 
         timeout = float(getattr(settings, v.settings_timeout_attr, 120.0))
         max_side = int(getattr(settings, v.settings_max_side_attr, 2048))
 
         if request.frames_nd and len(request.frames_nd) > 0:
-            frames_nd: List[np.ndarray] = [np.asarray(f) for f in request.frames_nd]
+            frames_nd: list[np.ndarray] = [np.asarray(f) for f in request.frames_nd]
         else:
             frames_nd = []
             for p in request.frames:
@@ -257,7 +268,7 @@ class OpenAiSdkAdapter:
             _OPENAI_CANONICAL_ENTITY_KEYS,
         )
 
-        content: List[Dict[str, Any]] = [{"type": "text", "text": prompt_text}]
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
         ctx_imgs = list(request.context_images) if request.context_images else []
         for im in ctx_imgs:
             url = _image_to_data_url(im, max_side)
@@ -274,19 +285,24 @@ class OpenAiSdkAdapter:
             len(frames_nd),
         )
 
-        base_url: Optional[str] = None
+        base_url: str | None = None
         if v.settings_base_url_attr:
             raw_u = (getattr(settings, v.settings_base_url_attr, "") or "").strip()
             base_url = raw_u or v.default_base_url
-        client_kw: Dict[str, Any] = {"api_key": api_key, "timeout": timeout}
+        client_kw: dict[str, Any] = {"api_key": api_key, "timeout": timeout}
         if base_url:
             client_kw["base_url"] = base_url
         client = OpenAI(**client_kw)
         t0 = time.perf_counter()
+        model_str: str = str(effective_model).strip()
+        user_message = cast(
+            ChatCompletionUserMessageParam,
+            {"role": "user", "content": content},
+        )
         try:
             completion = client.chat.completions.create(
-                model=effective_model,
-                messages=[{"role": "user", "content": content}],
+                model=model_str,
+                messages=[user_message],
                 response_format={"type": "json_object"},
             )
         except AuthenticationError as e:
@@ -345,7 +361,7 @@ class OpenAiSdkAdapter:
 
         cleaned = _extract_json_text(raw_text)
         try:
-            data = json.loads(cleaned)
+            parsed = json.loads(cleaned)
         except json.JSONDecodeError as e:
             logger.warning("%s global analysis: invalid JSON: %s", v.log_label, e)
             raise LLMProviderError(
@@ -353,11 +369,19 @@ class OpenAiSdkAdapter:
                 message=f"Invalid JSON: {e}",
                 details={"provider": prov},
             ) from e
+        if not isinstance(parsed, dict):
+            logger.warning("%s global analysis: JSON root is not an object", v.log_label)
+            raise LLMProviderError(
+                code="INVALID_JSON",
+                message="Global analysis response must be a JSON object",
+                details={"provider": prov},
+            )
+        data: dict[str, Any] = parsed
 
         if logger.isEnabledFor(logging.DEBUG):
             entities_raw = data.get("entities")
             if isinstance(entities_raw, list):
-                before_presence: Dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
+                before_presence: dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
                 for ent in entities_raw:
                     if not isinstance(ent, dict):
                         continue
@@ -377,7 +401,11 @@ class OpenAiSdkAdapter:
 
         total = data.get("total_entities_detected")
         entities = data.get("entities") or []
-        if isinstance(entities, list) and isinstance(total, (int, float)) and total != len(entities):
+        if (
+            isinstance(entities, list)
+            and isinstance(total, (int, float))
+            and total != len(entities)
+        ):
             logger.warning(
                 "%s count mismatch: total_entities_detected=%s vs len(entities)=%d; normalizing",
                 v.log_label,

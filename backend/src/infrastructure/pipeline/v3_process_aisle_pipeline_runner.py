@@ -10,15 +10,17 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple
+from typing import Any, Callable, Optional
 
 from src.application.ports.repositories import InventoryVisualReferenceRepository
-from src.config import Settings
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
+from src.config import Settings
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.visual_reference import InventoryVisualReference
+from src.infrastructure.pipeline.input_artifact_resolver import WorkerInputArtifactResolver
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
@@ -32,19 +34,18 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
 from src.pipeline.run_metadata import build_visual_reference_context
-from src.infrastructure.pipeline.input_artifact_resolver import WorkerInputArtifactResolver
 
 logger = logging.getLogger(__name__)
 
 # Callback shapes passed through to :meth:`HybridInventoryPipeline.process_video` (unchanged contract).
-ExecutionObserver = Callable[[str, Optional[str], str, Optional[Dict[str, Any]]], None]
+ExecutionObserver = Callable[[str, Optional[str], str, Optional[dict[str, Any]]], None]
 CancellationCheckpoint = Callable[[str, Optional[str], str], None]
 
 
 def visual_reference_failure_metadata(
-    analysis_context: Optional[AnalysisContext],
+    analysis_context: AnalysisContext | None,
     error_message: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     # No provider run: explicit zero consumption so the block does not list context reference_ids
     # as "resolved" for this failed job (resolution never reached the provider).
     block = build_visual_reference_context(
@@ -133,7 +134,7 @@ class V3ProcessAislePipelineRunner:
         inventory_id: str,
         run_id: str,
         legacy_local_read_enabled: bool,
-    ) -> Tuple[JobInput, str]:
+    ) -> tuple[JobInput, str]:
         """Return (JobInput, video_path). video_path used as first arg to process_video."""
         input_assets_dir = job_dir / run_id / "input_assets"
         visual_refs_dir = job_dir / run_id / "visual_references"
@@ -143,8 +144,7 @@ class V3ProcessAislePipelineRunner:
             legacy_local_read_enabled=legacy_local_read_enabled,
         )
         single_video = (
-            len(assets) == 1
-            and getattr(assets[0], "type", None) == SourceAssetType.VIDEO
+            len(assets) == 1 and getattr(assets[0], "type", None) == SourceAssetType.VIDEO
         )
         # Validate/classify asset shape first so we do not resolve visual references for unsupported sets.
         has_video_asset = any(getattr(a, "type", None) == SourceAssetType.VIDEO for a in assets)
@@ -187,12 +187,14 @@ class V3ProcessAislePipelineRunner:
             dst = photos_dir / stored
             resolver.resolve_source_asset(asset, dst)
             # Expose image_id (asset.id) so pipeline/LLM use it as source_image_id; enables reference-image view.
-            photos_list.append({
-                "index": i + 1,  # 1-based for load_job_images_from_manifest
-                "image_id": asset.id,
-                "original_filename": asset.original_filename,
-                "stored_filename": stored,
-            })
+            photos_list.append(
+                {
+                    "index": i + 1,  # 1-based for load_job_images_from_manifest
+                    "image_id": asset.id,
+                    "original_filename": asset.original_filename,
+                    "stored_filename": stored,
+                }
+            )
 
         manifest_path = job_dir / "input_manifest.json"
         manifest = {
@@ -229,10 +231,10 @@ class V3ProcessAislePipelineRunner:
         log: logging.Logger,
         execution_observer: ExecutionObserver,
         cancellation_checkpoint: CancellationCheckpoint,
-        pipeline_provider_name: Optional[str],
-        job_model_name: Optional[str],
-        job_prompt_key: Optional[str],
-        job_prompt_version: Optional[str],
+        pipeline_provider_name: str | None,
+        job_model_name: str | None,
+        job_prompt_key: str | None,
+        job_prompt_version: str | None,
         job_prompt_parity_mode: bool,
     ) -> PipelineRunResult:
         """Invoke ``process_video`` (hybrid mode) with the same arguments the executor used."""

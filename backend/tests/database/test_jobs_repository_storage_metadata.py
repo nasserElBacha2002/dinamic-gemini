@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from src.database.repository import JobsRepository
 
 
 @dataclass
 class _FakeCursor:
-    row: Optional[Any]
+    row: Any | None
     last_query: str = ""
     last_params: tuple[Any, ...] = ()
 
@@ -27,7 +27,7 @@ class _FakeCursor:
 
 
 class _FakeClient:
-    def __init__(self, row: Optional[Any]) -> None:
+    def __init__(self, row: Any | None) -> None:
         self._cursor = _FakeCursor(row=row)
 
     def cursor(self):
@@ -99,4 +99,3 @@ def test_jobs_repository_get_job_falls_back_to_legacy_paths_when_provider_fields
     assert output["report_json_path"] == "legacy/report.json"
     assert output["report_json_storage_key"] == "legacy/report.json"
     assert output["report_csv_storage_key"] == "legacy/report.csv"
-

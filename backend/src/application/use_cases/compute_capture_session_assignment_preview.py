@@ -9,7 +9,10 @@ See ``capture_assignment_preview`` module docstring.
 from __future__ import annotations
 
 from src.application.errors import CaptureSessionNotFoundError, CaptureSessionPreviewNotAllowedError
-from src.application.ports.capture_repositories import CaptureSessionItemRepository, CaptureSessionRepository
+from src.application.ports.capture_repositories import (
+    CaptureSessionItemRepository,
+    CaptureSessionRepository,
+)
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
 from src.application.services.capture_assignment_preview import compute_item_preview_outcomes
@@ -42,7 +45,9 @@ class ComputeCaptureSessionAssignmentPreviewUseCase:
     def execute(self, *, inventory_id: str, aisle_id: str, session_id: str) -> CaptureSession:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None or session.aisle_id != aisle_id:
-            raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
+            raise CaptureSessionNotFoundError(
+                "Capture session not found for this inventory and aisle."
+            )
         if session.status not in _PREVIEW_ALLOWED:
             raise CaptureSessionPreviewNotAllowedError(
                 "Assignment preview is only allowed when the session is ready_for_review or assignment_proposed."
@@ -80,4 +85,3 @@ class ComputeCaptureSessionAssignmentPreviewUseCase:
         session.updated_at = now
         self._session_repo.save(session)
         return session
-

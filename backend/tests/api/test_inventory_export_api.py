@@ -112,7 +112,9 @@ def test_export_csv_headers_only_inventory_with_aisle_no_positions(client_v3: Te
     assert rows == []
 
 
-def test_export_csv_technical_mode_uses_technical_headers_and_filename(client_v3: TestClient) -> None:
+def test_export_csv_technical_mode_uses_technical_headers_and_filename(
+    client_v3: TestClient,
+) -> None:
     create = client_v3.post("/api/v3/inventories", json={"name": "Technical export"})
     assert create.status_code == 201
     inv_id = create.json()["id"]

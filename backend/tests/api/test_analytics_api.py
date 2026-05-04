@@ -121,7 +121,9 @@ class _StubAnalyticsService:
 def test_analytics_summary_response_keeps_legacy_fields_and_adds_phase2_fields():
     app.dependency_overrides[get_current_admin] = _fake_admin
     aisle_repo = MemoryAisleRepository()
-    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(aisle_repo)
+    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(
+        aisle_repo
+    )
     app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
     try:
         client = TestClient(app)
@@ -148,7 +150,9 @@ def test_analytics_summary_response_keeps_legacy_fields_and_adds_phase2_fields()
 def test_analytics_inventory_performance_response_adds_phase2_fields_without_removing_legacy_fields():
     app.dependency_overrides[get_current_admin] = _fake_admin
     aisle_repo = MemoryAisleRepository()
-    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(aisle_repo)
+    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(
+        aisle_repo
+    )
     app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
     try:
         client = TestClient(app)
@@ -176,7 +180,9 @@ def test_analytics_inventory_performance_response_adds_phase2_fields_without_rem
 def test_manual_intervention_breakdown_exposes_unknown_and_keeps_invalid_explicit():
     app.dependency_overrides[get_current_admin] = _fake_admin
     aisle_repo = MemoryAisleRepository()
-    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(aisle_repo)
+    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(
+        aisle_repo
+    )
     app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
     try:
         client = TestClient(app)
@@ -203,7 +209,9 @@ def test_analytics_summary_returns_422_when_aisle_does_not_belong_to_inventory()
     now = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
     aisle_repo = MemoryAisleRepository()
     aisle_repo.save(Aisle("aisle-x", "inv-other", "A1", AisleStatus.CREATED, now, now))
-    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(aisle_repo)
+    app.dependency_overrides[get_analytics_query_service] = lambda: _StubAnalyticsService(
+        aisle_repo
+    )
     app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
     try:
         client = TestClient(app)

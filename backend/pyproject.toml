@@ -52,6 +52,8 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
+    "types-passlib",
+    "boto3-stubs[s3]>=1.35.0",
     "bandit>=1.7.0",
     "pip-audit>=2.7.0",
     "radon>=6.0.1",
@@ -99,6 +101,8 @@ include = '\.pyi?$'
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]
 
@@ -112,8 +116,11 @@ addopts = "--cov=src --cov-report=term-missing --cov-report=html"
 # When running from repo root via root pytest.ini, pythonpath is set there.
 
 [tool.mypy]
-python_version = "3.9"
+# Align with runtime features used in-tree (PEP 604 unions, dataclass kw_only, etc.).
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
+# Local PEP 561-style stubs for packages without py.typed (see stubs/).
+mypy_path = "stubs"

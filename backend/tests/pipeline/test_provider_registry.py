@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.llm.anthropic_sdk_adapter import AnthropicSdkAdapter
-from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
 from src.llm.deepseek_sdk_adapter import DeepSeekSdkAdapter
+from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
 from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.pipeline.providers.registry import (
     UnknownPipelineProviderError,

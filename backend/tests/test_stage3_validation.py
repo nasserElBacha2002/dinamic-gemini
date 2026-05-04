@@ -19,7 +19,6 @@ from src.exceptions.global_analysis_exceptions import (
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.validation.global_analysis_schema import validate_global_analysis_structure
 
-
 VALID_PAYLOAD = {
     "total_pallets_detected": 2,
     "pallets": [

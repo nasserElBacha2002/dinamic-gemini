@@ -8,6 +8,7 @@ Skips when DB is not configured. Requires v3 schema (inventories table) to be ap
 from __future__ import annotations
 
 import os
+
 import pytest
 
 from src.database.sqlserver import now_utc
@@ -32,6 +33,7 @@ def _connection_string() -> str:
         if not driver:
             try:
                 import pyodbc
+
                 for d in pyodbc.drivers():
                     if "SQL Server" in d:
                         driver = d
@@ -85,7 +87,9 @@ def test_sql_inventory_repository_list_all_includes_saved(repo: SqlInventoryRepo
     assert "test-epica2-002" in ids
 
 
-def test_sql_inventory_repository_get_by_id_missing_returns_none(repo: SqlInventoryRepository) -> None:
+def test_sql_inventory_repository_get_by_id_missing_returns_none(
+    repo: SqlInventoryRepository,
+) -> None:
     assert repo.get_by_id("nonexistent-id-xyz") is None
 
 

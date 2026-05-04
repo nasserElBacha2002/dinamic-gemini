@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class JobStatus(str, Enum):
@@ -34,28 +34,28 @@ class Job:
     target_id: str
     job_type: str
     status: JobStatus
-    payload_json: Dict[str, Any]
+    payload_json: dict[str, Any]
     created_at: datetime
     updated_at: datetime
-    result_json: Optional[Dict[str, Any]] = None
-    error_message: Optional[str] = None
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    last_heartbeat_at: Optional[datetime] = None
-    cancel_requested_at: Optional[datetime] = None
-    current_stage: Optional[str] = None
-    current_substep: Optional[str] = None
-    current_step_started_at: Optional[datetime] = None
+    result_json: dict[str, Any] | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
+    cancel_requested_at: datetime | None = None
+    current_stage: str | None = None
+    current_substep: str | None = None
+    current_step_started_at: datetime | None = None
     attempt_count: int = 1
     # Immediate previous attempt in a linear retry chain. Null on the original attempt.
-    retry_of_job_id: Optional[str] = None
-    failure_code: Optional[str] = None
-    failure_message: Optional[str] = None
-    execution_id: Optional[str] = None
+    retry_of_job_id: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
+    execution_id: str | None = None
     # Phase 1 — transitional indexed metadata for future multi-provider work; not a runtime provider abstraction.
-    provider_name: Optional[str] = None
-    model_name: Optional[str] = None
-    prompt_key: Optional[str] = None
-    engine_params_json: Optional[Dict[str, Any]] = None
+    provider_name: str | None = None
+    model_name: str | None = None
+    prompt_key: str | None = None
+    engine_params_json: dict[str, Any] | None = None
     #: Resolved prompt profile version / schema tag for audit (e.g. ``global_v21@v2.1``).
-    prompt_version: Optional[str] = None
+    prompt_version: str | None = None

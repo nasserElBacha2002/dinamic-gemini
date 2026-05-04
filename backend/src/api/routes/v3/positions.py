@@ -2,34 +2,33 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, Query
 
 from src.api.dependencies import (
-    get_list_aisle_positions_use_case,
     get_get_position_detail_use_case,
+    get_list_aisle_positions_use_case,
 )
+from src.api.errors import mapped_http_exception
+from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.schemas.position_schemas import (
-    EvidenceResponse,
     PositionDetailResponse,
     PositionListResponse,
     PositionRunContextResponse,
 )
-from src.api.schemas.listing_schemas import compute_total_pages
-from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
-from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
+from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.services.display_primary_product import select_display_primary_product
-
-from src.api.errors import mapped_http_exception
+from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
+from src.application.use_cases.list_aisle_positions import (
+    ListAislePositionsCommand,
+    ListAislePositionsUseCase,
+)
 
 from .shared import (
-    position_to_summary,
-    technical_snapshot_from_view,
     evidence_to_response,
+    position_to_summary,
     review_to_response,
+    technical_snapshot_from_view,
 )
-from src.application.mappers.position_canonical_view import build_position_canonical_view
 
 router = APIRouter()
 
@@ -39,10 +38,18 @@ def list_aisle_positions(
     inventory_id: str,
     aisle_id: str,
     use_case: ListAislePositionsUseCase = Depends(get_list_aisle_positions_use_case),
-    status: Optional[str] = Query(None, description="Filter by position status (e.g. detected, reviewed)."),
-    needs_review: Optional[bool] = Query(None, description="When set, only positions with this needs_review flag."),
-    min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="Minimum confidence (inclusive)."),
-    sku_filter: Optional[str] = Query(None, description="Substring match against product SKU for this aisle."),
+    status: str | None = Query(
+        None, description="Filter by position status (e.g. detected, reviewed)."
+    ),
+    needs_review: bool | None = Query(
+        None, description="When set, only positions with this needs_review flag."
+    ),
+    min_confidence: float | None = Query(
+        None, ge=0.0, le=1.0, description="Minimum confidence (inclusive)."
+    ),
+    sku_filter: str | None = Query(
+        None, description="Substring match against product SKU for this aisle."
+    ),
     page: int = Query(1, ge=1, description="1-based page index after optional SKU consolidation."),
     page_size: int = Query(
         25,
@@ -66,7 +73,7 @@ def list_aisle_positions(
             "consolidated aisle results."
         ),
     ),
-    job_id: Optional[str] = Query(
+    job_id: str | None = Query(
         None,
         description=(
             "Optional inventory job id. Omitted: operational_job_id if set; else legacy null-job rows "
@@ -103,9 +110,7 @@ def list_aisle_positions(
         result = use_case.execute(cmd)
         summaries = []
         for p, primary in zip(result.positions, result.primary_products):
-            corrected_quantity = (
-                primary.corrected_quantity if primary is not None else None
-            )
+            corrected_quantity = primary.corrected_quantity if primary is not None else None
             summaries.append(
                 position_to_summary(
                     p,
@@ -139,7 +144,7 @@ def get_position_detail(
     inventory_id: str,
     aisle_id: str,
     position_id: str,
-    job_id: Optional[str] = Query(
+    job_id: str | None = Query(
         None,
         description="Optional; must match resolved result context for this position (Phase 2).",
     ),
@@ -207,5 +212,3 @@ def get_position_detail(
         if mapped is not None:
             raise mapped
         raise
-
-

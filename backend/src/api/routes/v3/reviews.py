@@ -6,31 +6,31 @@ from fastapi import APIRouter, Depends
 
 from src.api.dependencies import (
     get_confirm_position_use_case,
-    get_mark_position_unknown_use_case,
+    get_delete_position_use_case,
     get_mark_position_image_mismatch_use_case,
+    get_mark_position_unknown_use_case,
+    get_update_position_code_use_case,
     get_update_product_quantity_use_case,
     get_update_product_sku_use_case,
-    get_update_position_code_use_case,
-    get_delete_position_use_case,
 )
 from src.api.schemas.position_schemas import ReviewActionRequest
-from src.domain.reviews.entities import ReviewActionType
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
-from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
-from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
-from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
-from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
+from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
+from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
+from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
+from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
+from src.domain.reviews.entities import ReviewActionType
 
 from .shared import (
     handle_confirm,
-    handle_mark_unknown,
+    handle_delete_position,
     handle_mark_image_mismatch,
+    handle_mark_unknown,
+    handle_update_position_code,
     handle_update_quantity,
     handle_update_sku,
-    handle_update_position_code,
-    handle_delete_position,
 )
 
 router = APIRouter()
@@ -50,7 +50,9 @@ def submit_review_action(
     mark_image_mismatch_uc: MarkPositionImageMismatchUseCase = Depends(
         get_mark_position_image_mismatch_use_case
     ),
-    update_quantity_uc: UpdateProductQuantityUseCase = Depends(get_update_product_quantity_use_case),
+    update_quantity_uc: UpdateProductQuantityUseCase = Depends(
+        get_update_product_quantity_use_case
+    ),
     update_sku_uc: UpdateProductSkuUseCase = Depends(get_update_product_sku_use_case),
     update_pos_code_uc: UpdatePositionCodeUseCase = Depends(get_update_position_code_use_case),
     delete_uc: DeletePositionUseCase = Depends(get_delete_position_use_case),

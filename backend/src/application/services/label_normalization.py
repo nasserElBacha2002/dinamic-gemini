@@ -8,7 +8,6 @@ Transforms raw labels into normalized labels: canonicalize SKU, partition by
 from __future__ import annotations
 
 from datetime import timezone
-from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from src.domain.labels.canonicalization import canonicalize_sku
@@ -16,7 +15,9 @@ from src.domain.labels.entities import NormalizedLabel, RawLabel
 from src.domain.labels.merge import MergeDecision, MergeRuleEngine
 
 
-def _partition_key(label: RawLabel, canonical: Optional[str]) -> Tuple[str, str, Optional[str], str, Optional[str]]:
+def _partition_key(
+    label: RawLabel, canonical: str | None
+) -> tuple[str, str, str | None, str, str | None]:
     return (
         label.inventory_id,
         label.aisle_id,
@@ -34,9 +35,9 @@ class LabelNormalizationService:
 
     def normalize(
         self,
-        raw_labels: List[RawLabel],
+        raw_labels: list[RawLabel],
         now_factory=None,
-    ) -> List[NormalizedLabel]:
+    ) -> list[NormalizedLabel]:
         """
         Partition raw labels by (inventory_id, aisle_id, position_id, group_key, canonical_sku),
         evaluate merge per partition, produce normalized labels with traceability.
@@ -45,13 +46,13 @@ class LabelNormalizationService:
 
         now = (now_factory or (lambda: datetime.now(timezone.utc)))()
 
-        partitions: Dict[Tuple[str, str, Optional[str], str, Optional[str]], List[RawLabel]] = {}
+        partitions: dict[tuple[str, str, str | None, str, str | None], list[RawLabel]] = {}
         for label in raw_labels:
             canonical = canonicalize_sku(label.sku_candidate or label.sku_raw)
             key = _partition_key(label, canonical)
             partitions.setdefault(key, []).append(label)
 
-        result: List[NormalizedLabel] = []
+        result: list[NormalizedLabel] = []
         for part_labels in partitions.values():
             decision = self._engine.evaluate(part_labels)
             if decision.should_merge:
@@ -65,7 +66,7 @@ class LabelNormalizationService:
 
     def _build_merged(
         self,
-        labels: List[RawLabel],
+        labels: list[RawLabel],
         decision: MergeDecision,
         now,
     ) -> NormalizedLabel:

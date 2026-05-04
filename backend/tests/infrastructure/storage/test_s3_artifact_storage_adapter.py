@@ -18,7 +18,7 @@ class _FakeS3Client:
     def __init__(self) -> None:
         self._objects = {}
 
-    def upload_fileobj(self, Fileobj, Bucket: str, Key: str, ExtraArgs: dict):
+    def upload_fileobj(self, Fileobj, Bucket: str, Key: str, ExtraArgs: dict):  # noqa: N803
         body = Fileobj.read()
         self._objects[(Bucket, Key)] = {
             "body": body,
@@ -27,7 +27,7 @@ class _FakeS3Client:
         }
         return None
 
-    def get_object(self, Bucket: str, Key: str):
+    def get_object(self, Bucket: str, Key: str):  # noqa: N803
         obj = self._objects[(Bucket, Key)]
         return {
             "Body": _FakeBody(obj["body"]),
@@ -36,20 +36,20 @@ class _FakeS3Client:
             "ETag": '"etag-1"',
         }
 
-    def delete_object(self, Bucket: str, Key: str):
+    def delete_object(self, Bucket: str, Key: str):  # noqa: N803
         self._objects.pop((Bucket, Key), None)
         return {}
 
-    def head_object(self, Bucket: str, Key: str):
+    def head_object(self, Bucket: str, Key: str):  # noqa: N803
         if (Bucket, Key) not in self._objects:
             raise RuntimeError("not found")
         body = self._objects[(Bucket, Key)]["body"]
         return {"ContentLength": len(body), "ETag": '"etag-1"'}
 
-    def generate_presigned_url(self, op: str, Params: dict, ExpiresIn: int) -> str:
+    def generate_presigned_url(self, op: str, Params: dict, ExpiresIn: int) -> str:  # noqa: N803
         return f"https://example.test/{Params['Bucket']}/{Params['Key']}?ttl={ExpiresIn}"
 
-    def download_fileobj(self, Bucket: str, Key: str, Fileobj):
+    def download_fileobj(self, Bucket: str, Key: str, Fileobj):  # noqa: N803
         obj = self._objects[(Bucket, Key)]
         Fileobj.write(obj["body"])
 
@@ -99,14 +99,18 @@ def test_s3_adapter_delete_round_trip_with_save_file_result() -> None:
     assert adapter.object_exists(key) is False
 
 
-def test_s3_adapter_generate_signed_url_accepts_already_prefixed_key_without_double_prefix() -> None:
+def test_s3_adapter_generate_signed_url_accepts_already_prefixed_key_without_double_prefix() -> (
+    None
+):
     s3 = _FakeS3Client()
     adapter = S3ArtifactStorageAdapter(
         bucket="bucket-a",
         prefix="v3",
         s3_client=s3,
     )
-    url = adapter.generate_signed_url("v3/inventories/inv-1/visual_references/r1.jpg", expires_in_sec=120)
+    url = adapter.generate_signed_url(
+        "v3/inventories/inv-1/visual_references/r1.jpg", expires_in_sec=120
+    )
     assert "bucket-a/v3/inventories/inv-1/visual_references/r1.jpg" in url
     assert "bucket-a/v3/v3/inventories" not in url
 
@@ -119,7 +123,9 @@ def test_s3_adapter_delete_accepts_already_prefixed_key_without_double_prefix() 
         s3_client=s3,
     )
     # Seed object using full physical key.
-    s3.upload_fileobj(BytesIO(b"abc"), Bucket="bucket-a", Key="v3/uploads/aisles/a1/raw/x.jpg", ExtraArgs={})
+    s3.upload_fileobj(
+        BytesIO(b"abc"), Bucket="bucket-a", Key="v3/uploads/aisles/a1/raw/x.jpg", ExtraArgs={}
+    )
     assert adapter.object_exists("v3/uploads/aisles/a1/raw/x.jpg") is True
     adapter.delete_object("v3/uploads/aisles/a1/raw/x.jpg")
     assert adapter.object_exists("v3/uploads/aisles/a1/raw/x.jpg") is False

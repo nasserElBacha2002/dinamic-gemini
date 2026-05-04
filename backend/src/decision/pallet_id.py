@@ -6,7 +6,6 @@ Priority: position_barcode → generated PALLET_001...
 Duplicate position_barcode: conflict_flag, DUPLICATE_POSITION_BARCODE; no suffix.
 """
 
-from typing import List
 
 from src.domain.entity import Entity
 
@@ -16,7 +15,7 @@ def _has_position_barcode(e: Entity) -> bool:
     return bool(e.position_barcode and e.position_barcode.strip())
 
 
-def resolve_pallet_id(entities: List[Entity]) -> None:
+def resolve_pallet_id(entities: list[Entity]) -> None:
     """Resolve pallet_id and pallet_id_method for each entity. Mutates in place.
 
     Priority:

@@ -19,17 +19,18 @@ from src.application.use_cases.export_inventory_results import (
     ExportAisleResultsCsvUseCase,
     ExportInventoryResultsUseCase,
 )
-from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
-from src.domain.positions.entities import Position, PositionStatus
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
-
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 
 NOW = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
 NOW_EARLY = datetime(2026, 3, 15, 10, 0, 0, tzinfo=timezone.utc)
@@ -193,7 +194,11 @@ def test_export_csv_sorting_is_type_safe_for_mixed_position_codes() -> None:
             primary_evidence_id=None,
             created_at=NOW,
             updated_at=NOW,
-            detected_summary_json={"internal_code": "SKU-10", "final_quantity": 1, "pallet_id": "10"},
+            detected_summary_json={
+                "internal_code": "SKU-10",
+                "final_quantity": 1,
+                "pallet_id": "10",
+            },
         ),
         Position(
             id="p-a1",
@@ -204,7 +209,11 @@ def test_export_csv_sorting_is_type_safe_for_mixed_position_codes() -> None:
             primary_evidence_id=None,
             created_at=NOW,
             updated_at=NOW,
-            detected_summary_json={"internal_code": "SKU-A1", "final_quantity": 1, "pallet_id": "A1"},
+            detected_summary_json={
+                "internal_code": "SKU-A1",
+                "final_quantity": 1,
+                "pallet_id": "A1",
+            },
         ),
         Position(
             id="p-2",
@@ -215,7 +224,11 @@ def test_export_csv_sorting_is_type_safe_for_mixed_position_codes() -> None:
             primary_evidence_id=None,
             created_at=NOW,
             updated_at=NOW,
-            detected_summary_json={"internal_code": "SKU-2", "final_quantity": 1, "position_barcode": "2"},
+            detected_summary_json={
+                "internal_code": "SKU-2",
+                "final_quantity": 1,
+                "position_barcode": "2",
+            },
         ),
         Position(
             id="p-b2",
@@ -226,7 +239,11 @@ def test_export_csv_sorting_is_type_safe_for_mixed_position_codes() -> None:
             primary_evidence_id=None,
             created_at=NOW,
             updated_at=NOW,
-            detected_summary_json={"internal_code": "SKU-B2", "final_quantity": 1, "entity_uid": "B2"},
+            detected_summary_json={
+                "internal_code": "SKU-B2",
+                "final_quantity": 1,
+                "entity_uid": "B2",
+            },
         ),
     ]
     uc = _uc(inv=inv, aisles=[aisle], positions=positions)

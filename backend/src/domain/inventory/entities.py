@@ -13,7 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 
 class InventoryStatus(str, Enum):
@@ -36,12 +35,12 @@ class Inventory:
     status: InventoryStatus
     created_at: datetime
     updated_at: datetime
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
     processing_mode: InventoryProcessingMode = InventoryProcessingMode.PRODUCTION
-    primary_provider_name: Optional[str] = None
-    primary_model_name: Optional[str] = None
-    primary_prompt_key: Optional[str] = None
-    primary_prompt_version: Optional[str] = None
+    primary_provider_name: str | None = None
+    primary_model_name: str | None = None
+    primary_prompt_key: str | None = None
+    primary_prompt_version: str | None = None
 
     def mark_processing(self, now: datetime) -> None:
         self.status = InventoryStatus.PROCESSING

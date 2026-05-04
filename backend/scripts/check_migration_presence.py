@@ -22,7 +22,7 @@ import argparse
 import re
 import subprocess
 import sys
-from typing import Iterable, List
+from collections.abc import Iterable
 
 # Any change under this prefix whose path ends with ``.sql`` satisfies the migration requirement.
 MIGRATION_SQL_PREFIX = "backend/src/database/migrations/versions/"
@@ -100,7 +100,7 @@ def _diff_text_looks_schema_affecting(diff_text: str) -> bool:
     return _DDL_PATTERN.search(diff_text) is not None
 
 
-def _git_changed_files(base_ref: str, head_ref: str) -> List[str]:
+def _git_changed_files(base_ref: str, head_ref: str) -> list[str]:
     proc = subprocess.run(
         ["git", "diff", "--name-only", f"{base_ref}...{head_ref}"],
         check=True,
@@ -142,7 +142,9 @@ def _any_predicate(paths: Iterable[str], pred) -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate migration presence when schema-affecting code changes.")
+    parser = argparse.ArgumentParser(
+        description="Validate migration presence when schema-affecting code changes."
+    )
     parser.add_argument("--base-ref", required=True)
     parser.add_argument("--head-ref", required=True)
     args = parser.parse_args()
@@ -154,7 +156,7 @@ def main() -> int:
 
     migration_sql_changed = _any_predicate(changed_files, _is_migration_sql)
 
-    schema_sensitive_hits: List[str] = []
+    schema_sensitive_hits: list[str] = []
     for p in changed_files:
         if _is_ignored_path(p) or _is_migration_sql(p):
             continue
@@ -168,7 +170,9 @@ def main() -> int:
         print("Schema-affecting changes and migration SQL updates detected; check passed.")
         return 0
 
-    print("ERROR: Schema-affecting code changed but no migration file under versions/ was added/updated.")
+    print(
+        "ERROR: Schema-affecting code changed but no migration file under versions/ was added/updated."
+    )
     print(f"Expected at least one *.sql under: {MIGRATION_SQL_PREFIX}")
     print("Triggering files:")
     for path in schema_sensitive_hits:

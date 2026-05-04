@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 import pyodbc
 
@@ -17,11 +17,12 @@ from src.domain.capture.entities import (
     CaptureSessionItemImportStatus,
     CaptureTimeSource,
 )
+from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -30,7 +31,12 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def _import_status_from_row(raw: object, item_id: str) -> CaptureSessionItemImportStatus:
-    s = (raw or "").strip().lower() if raw is not None else ""
+    if raw is None:
+        s = ""
+    elif isinstance(raw, str):
+        s = raw.strip().lower()
+    else:
+        s = str(raw).strip().lower()
     try:
         return CaptureSessionItemImportStatus(s)
     except ValueError:
@@ -39,15 +45,22 @@ def _import_status_from_row(raw: object, item_id: str) -> CaptureSessionItemImpo
 
 
 def _assignment_status_from_row(raw: object, item_id: str) -> CaptureSessionItemAssignmentStatus:
-    s = (raw or "").strip().lower() if raw is not None else ""
+    if raw is None:
+        s = ""
+    elif isinstance(raw, str):
+        s = raw.strip().lower()
+    else:
+        s = str(raw).strip().lower()
     try:
         return CaptureSessionItemAssignmentStatus(s)
     except ValueError:
-        logger.warning("Invalid capture_session_items.assignment_status: %r for id=%s", raw, item_id)
+        logger.warning(
+            "Invalid capture_session_items.assignment_status: %r for id=%s", raw, item_id
+        )
         return CaptureSessionItemAssignmentStatus.PENDING
 
 
-def _time_source_from_row(raw: object) -> Optional[CaptureTimeSource]:
+def _time_source_from_row(raw: object) -> CaptureTimeSource | None:
     if raw is None or not str(raw).strip():
         return None
     try:
@@ -71,23 +84,27 @@ def _row_to_item(row) -> CaptureSessionItem:
         raise ValueError(f"capture_session_items row {iid!r} missing updated_at")
     return CaptureSessionItem(
         id=iid,
-        session_id=getattr(row, "session_id", "") or "",
-        staging_storage_key=(getattr(row, "staging_storage_key", None) or "").strip(),
+        session_id=normalize_db_str(getattr(row, "session_id", None)),
+        staging_storage_key=normalize_db_str(getattr(row, "staging_storage_key", None)),
         import_status=_import_status_from_row(getattr(row, "import_status", None), iid),
         assignment_status=_assignment_status_from_row(getattr(row, "assignment_status", None), iid),
         updated_at=updated,
-        content_hash=(getattr(row, "content_hash", None) or "").strip() or None,
+        content_hash=optional_nonempty_db_str(getattr(row, "content_hash", None)),
         effective_capture_time=_ensure_utc(getattr(row, "effective_capture_time", None)),
         time_source=_time_source_from_row(getattr(row, "time_source", None)),
         time_confidence=getattr(row, "time_confidence", None),
-        linked_source_asset_id=(getattr(row, "linked_source_asset_id", None) or "").strip() or None,
-        last_error_code=(getattr(row, "last_error_code", None) or "").strip() or None,
-        last_error_detail=(getattr(row, "last_error_detail", None) or "").strip() or None,
-        original_filename=(getattr(row, "original_filename", None) or "").strip() or None,
+        linked_source_asset_id=optional_nonempty_db_str(
+            getattr(row, "linked_source_asset_id", None)
+        ),
+        last_error_code=optional_nonempty_db_str(getattr(row, "last_error_code", None)),
+        last_error_detail=optional_nonempty_db_str(getattr(row, "last_error_detail", None)),
+        original_filename=optional_nonempty_db_str(getattr(row, "original_filename", None)),
         adjusted_capture_time=_ensure_utc(getattr(row, "adjusted_capture_time", None)),
-        assignment_reason=(getattr(row, "assignment_reason", None) or "").strip() or None,
-        preview_target_position_id=(getattr(row, "preview_target_position_id", None) or "").strip() or None,
-        group_id=(getattr(row, "group_id", None) or "").strip() or None,
+        assignment_reason=optional_nonempty_db_str(getattr(row, "assignment_reason", None)),
+        preview_target_position_id=optional_nonempty_db_str(
+            getattr(row, "preview_target_position_id", None)
+        ),
+        group_id=optional_nonempty_db_str(getattr(row, "group_id", None)),
     )
 
 
@@ -174,7 +191,7 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                         ) from exc
                     raise
 
-    def get_by_id(self, item_id: str) -> Optional[CaptureSessionItem]:
+    def get_by_id(self, item_id: str) -> CaptureSessionItem | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -210,7 +227,9 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
             rows = cur.fetchall()
         return tuple(_row_to_item(r) for r in rows)
 
-    def list_by_session_and_group_id(self, session_id: str, group_id: str) -> Sequence[CaptureSessionItem]:
+    def list_by_session_and_group_id(
+        self, session_id: str, group_id: str
+    ) -> Sequence[CaptureSessionItem]:
         gid = (group_id or "").strip()
         with self._client.cursor() as cur:
             cur.execute(

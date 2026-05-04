@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Dict, Optional, Sequence
 
 import pytest
 
@@ -15,15 +15,16 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
-from src.application.ports.repositories import InventoryRepository, InventoryVisualReferenceRepository
+from src.application.ports.repositories import (
+    InventoryRepository,
+    InventoryVisualReferenceRepository,
+)
 from src.application.ports.services import ArtifactStorage
-from src.application.ports.clock import Clock
 from src.application.use_cases.upload_inventory_visual_references import (
-    ALLOWED_MIME_TYPES,
-    ListInventoryVisualReferencesUseCase,
     MAX_REFERENCES_PER_INVENTORY,
-    UploadInventoryVisualReferencesUseCase,
+    ListInventoryVisualReferencesUseCase,
     UploadedVisualReferenceFile,
+    UploadInventoryVisualReferencesUseCase,
 )
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.inventory.visual_reference import InventoryVisualReference
@@ -40,12 +41,12 @@ class FixedClock:
 
 class StubInventoryRepo(InventoryRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Inventory] = {}
+        self._store: dict[str, Inventory] = {}
 
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
@@ -54,9 +55,9 @@ class StubInventoryRepo(InventoryRepository):
 
 class StubVisualReferenceRepo(InventoryVisualReferenceRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, InventoryVisualReference] = {}
+        self._store: dict[str, InventoryVisualReference] = {}
 
-    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
         return self._store.get(reference_id)
 
     def create(self, reference: InventoryVisualReference) -> None:
@@ -171,8 +172,12 @@ def test_upload_inventory_visual_references_creates_references_and_writes_files(
     assert created[1].file_size == 8
     assert all(r.storage_provider == "s3" for r in created)
     assert all(r.storage_bucket == "bucket-b" for r in created)
-    assert all((r.storage_key or "").startswith("inventories/inv-1/visual_references/") for r in created)
-    assert all((r.storage_path or "").startswith("inventories/inv-1/visual_references/") for r in created)
+    assert all(
+        (r.storage_key or "").startswith("inventories/inv-1/visual_references/") for r in created
+    )
+    assert all(
+        (r.storage_path or "").startswith("inventories/inv-1/visual_references/") for r in created
+    )
     assert len(storage._written) == 2
     paths = [p for (p, _, _) in storage._written]
     assert paths[0].startswith("inventories/inv-1/visual_references/")
@@ -263,7 +268,9 @@ def test_upload_inventory_visual_references_respects_max_references_per_inventor
         ref_repo.create(ref)
 
     files = [UploadedVisualReferenceFile("extra.jpg", BytesIO(b"x"), "image/jpeg", size=1)]
-    with pytest.raises(MaxInventoryVisualReferencesExceededError, match="Maximum visual references exceeded"):
+    with pytest.raises(
+        MaxInventoryVisualReferencesExceededError, match="Maximum visual references exceeded"
+    ):
         use_case.execute("inv-1", files)
 
 
@@ -390,7 +397,9 @@ def test_list_inventory_visual_references_returns_ordered_references() -> None:
     assert [r.id for r in result] == ["r0", "r1", "r2"]
 
 
-def test_list_inventory_visual_references_ordering_deterministic_by_id_when_created_at_ties() -> None:
+def test_list_inventory_visual_references_ordering_deterministic_by_id_when_created_at_ties() -> (
+    None
+):
     """When created_at is equal, order by id ASC for full determinism."""
     now = datetime(2025, 3, 10, 12, 0, 0, tzinfo=timezone.utc)
     inv_repo = StubInventoryRepo()
@@ -418,7 +427,7 @@ def test_list_inventory_visual_references_ordering_deterministic_by_id_when_crea
 
 
 def test_list_inventory_visual_references_inventory_not_found() -> None:
-    now = datetime(2025, 3, 10, 12, 0, 0, tzinfo=timezone.utc)
+    datetime(2025, 3, 10, 12, 0, 0, tzinfo=timezone.utc)
     inv_repo = StubInventoryRepo()
     ref_repo = StubVisualReferenceRepo()
 
@@ -429,4 +438,3 @@ def test_list_inventory_visual_references_inventory_not_found() -> None:
 
     with pytest.raises(InventoryNotFoundError):
         use_case.execute("inv-unknown")
-

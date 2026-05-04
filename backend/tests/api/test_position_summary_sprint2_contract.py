@@ -94,7 +94,11 @@ def test_product_block_legacy_no_primary() -> None:
         primary_evidence_id="ev",
         created_at=now,
         updated_at=now,
-        detected_summary_json={"internal_code": "LEG", "final_quantity": 4, "count_status": "COUNTED"},
+        detected_summary_json={
+            "internal_code": "LEG",
+            "final_quantity": 4,
+            "count_status": "COUNTED",
+        },
     )
     r = position_to_summary(p, primary_product=None)
     assert r.product.identity_source == "summary_technical"

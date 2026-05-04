@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from src.llm.errors import LLMProviderError
 from src.llm.normalization.entity_normalizer import normalize_llm_response
+from src.pipeline.context.run_context import RunContext
 from src.pipeline.ports.analysis_provider import AnalysisProvider, AnalysisResult
 from src.pipeline.stages.frame_acquisition_stage import AcquiredFrames
-from src.pipeline.context.run_context import RunContext
 
 _OPENAI_CANONICAL_ENTITY_KEYS: tuple[str, ...] = (
     "source_image_id",
@@ -31,13 +31,13 @@ _OPENAI_CANONICAL_ENTITY_KEYS: tuple[str, ...] = (
 class AnalysisStageResult:
     """Output of AnalysisStage: parsed analysis payload for entity resolution."""
 
-    parsed_json: Dict[str, Any]
+    parsed_json: dict[str, Any]
     provider_name: str
-    provider_metadata: Optional[Dict[str, Any]] = None
+    provider_metadata: dict[str, Any] | None = None
     # Phase 6: pass-through of AnalysisResult.prompt_composition for run_metadata persistence.
-    prompt_composition: Optional[Dict[str, Any]] = None
+    prompt_composition: dict[str, Any] | None = None
     # Phase 9: pass-through of provider-agnostic usage+pricing snapshot for run_metadata persistence.
-    llm_cost_snapshot: Optional[Dict[str, Any]] = None
+    llm_cost_snapshot: dict[str, Any] | None = None
 
 
 class AnalysisStage:
@@ -89,7 +89,9 @@ class AnalysisStage:
             )
             if log.isEnabledFor(logging.DEBUG) and isinstance(ents, list):
                 with_plq = sum(
-                    1 for e in ents if isinstance(e, dict) and e.get("product_label_quantity") is not None
+                    1
+                    for ent in ents
+                    if isinstance(ent, dict) and ent.get("product_label_quantity") is not None
                 )
                 log.debug(
                     "analysis_stage post_normalize: provider=%s entities=%d product_label_quantity_set=%d",
@@ -99,12 +101,12 @@ class AnalysisStage:
                 )
                 provider_norm = (result.provider_name or "").strip().lower()
                 if provider_norm == "openai":
-                    after_presence: Dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
-                    for e in ents:
-                        if not isinstance(e, dict):
+                    after_presence: dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
+                    for ent in ents:
+                        if not isinstance(ent, dict):
                             continue
                         for key in _OPENAI_CANONICAL_ENTITY_KEYS:
-                            val = e.get(key)
+                            val = ent.get(key)
                             if val is None:
                                 continue
                             if isinstance(val, str) and not val.strip():

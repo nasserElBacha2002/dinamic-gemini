@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Tuple
+from typing import Any
 
-from src.application.services.operational_execution_config_resolver import OperationalExecutionConfigResolver
+from src.application.services.operational_execution_config_resolver import (
+    OperationalExecutionConfigResolver,
+)
 from src.domain.inventory.entities import Inventory
 
 logger = logging.getLogger(__name__)
 
 
-def effective_production_processing_keys(inventory: Inventory, settings: Any) -> Tuple[str, str, str]:
+def effective_production_processing_keys(
+    inventory: Inventory, settings: Any
+) -> tuple[str, str, str]:
     """Use persisted primary snapshot, filling any missing piece from the operational resolver.
 
     Logs a **warning** when the inventory snapshot is incomplete and resolver fallback is used
     (includes inventory id and which snapshot fields were missing).
     """
-    missing_snapshot: List[str] = []
+    missing_snapshot: list[str] = []
     p_raw = (inventory.primary_provider_name or "").strip()
     m_raw = (inventory.primary_model_name or "").strip()
     pk_raw = (inventory.primary_prompt_key or "").strip()
@@ -45,5 +49,7 @@ def effective_production_processing_keys(inventory: Inventory, settings: Any) ->
         model = (baseline.model_name or "").strip()
     prompt_key = (pk_raw or baseline.prompt_key).strip()
     if not provider or not prompt_key:
-        raise ValueError("Production inventory missing effective provider or prompt after resolution")
+        raise ValueError(
+            "Production inventory missing effective provider or prompt after resolution"
+        )
     return provider, model, prompt_key

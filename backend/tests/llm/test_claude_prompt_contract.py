@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base, compose_hybrid_base_from_settings
-from src.pipeline.provider_keys import normalize_pipeline_provider_key
+from src.llm.prompt_composer.hybrid_assembly import (
+    compose_hybrid_base,
+    compose_hybrid_base_from_settings,
+)
 from src.llm.prompt_composer.hybrid_profiles import (
     CLAUDE_CONTRACT_MARKER,
     CLAUDE_FORBIDDEN_JSON_KEYS,
@@ -15,6 +17,7 @@ from src.llm.prompt_composer.hybrid_profiles import (
     build_claude_json_output_instruction_suffix,
     claude_forbidden_json_keys_csv,
 )
+from src.pipeline.provider_keys import normalize_pipeline_provider_key
 
 
 def test_compose_hybrid_base_claude_includes_canonical_entity_fields() -> None:
@@ -89,7 +92,9 @@ def test_claude_contract_emphasizes_explicit_product_label_quantity_and_bbox() -
     # Explicit-only quantity; not entity/pallet count
     assert "product_label_quantity" in text
     assert "position/location label" in text or "location label" in text
-    assert "one PALLET entity" in text or "one pallet entity" in text.lower() or "PALLET row" in text
+    assert (
+        "one PALLET entity" in text or "one pallet entity" in text.lower() or "PALLET row" in text
+    )
     assert "NULLABILITY" in text or "null" in text.lower()
     # product_label_bbox tight vs pallet/scene
     assert "product_label_bbox" in text

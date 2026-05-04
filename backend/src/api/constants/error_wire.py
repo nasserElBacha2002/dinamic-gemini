@@ -33,9 +33,7 @@ HTTP_DETAIL_JOB_NOT_FOUND = "Job not found"
 HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED = "Only format=csv is supported"
 HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED = "At least one file is required"
 HTTP_DETAIL_ASSET_NOT_FOUND = "Asset not found"
-HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION = (
-    "Cannot modify aisle source assets while a job is queued, starting, running, or cancel requested for this aisle"
-)
+HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION = "Cannot modify aisle source assets while a job is queued, starting, running, or cancel requested for this aisle"
 # Structured Category B — 409 ``detail`` (aisle/process cannot proceed with current persisted state).
 HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING = (
     "This aisle has no source assets; upload media before starting processing."
@@ -51,7 +49,9 @@ HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY = "Job not found or does not belong to th
 HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED = "Empty or zero-byte files are not allowed"
 
 # Analytics query validation (v3 analytics routes).
-HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO = "date_from must be on or before date_to"
+HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO = (
+    "date_from must be on or before date_to"
+)
 
 # Admin AI inspection (v3 admin routes).
 HTTP_DETAIL_ADMIN_AI_UNKNOWN_PROMPT_PROFILE_COMBINATION = (
@@ -68,9 +68,7 @@ HTTP_DETAIL_REVIEW_POSITION_CODE_REQUIRED_FOR_UPDATE_POSITION_CODE = (
 )
 
 # Aisle benchmark / execution export (mutually exclusive query params).
-HTTP_DETAIL_EXPORT_PROVIDE_EXACTLY_ONE_OF_RUN_OR_COMPARE_JOBS = (
-    "Provide exactly one of: run_job_id (single-run export) or both job_a_id and job_b_id (compare export)."
-)
+HTTP_DETAIL_EXPORT_PROVIDE_EXACTLY_ONE_OF_RUN_OR_COMPARE_JOBS = "Provide exactly one of: run_job_id (single-run export) or both job_a_id and job_b_id (compare export)."
 
 # Review POST dispatch — fixed prefix before dynamic ``action_type`` repr (``reviews.py``).
 HTTP_DETAIL_REVIEW_UNKNOWN_ACTION_TYPE_PREFIX = "Unknown action_type: "
@@ -83,7 +81,9 @@ HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND = "Capture session not found"
 HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS = (
     "An open capture session already exists for this aisle; close or cancel it first."
 )
-HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE = "Capture session is not in a valid state for this operation"
+HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE = (
+    "Capture session is not in a valid state for this operation"
+)
 HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS = (
     "This capture session does not accept new staging uploads"
 )
@@ -111,7 +111,9 @@ HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING = (
     "(requires imported items with effective_capture_time). The response detail states which case applies."
 )
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_FOUND = "Capture session group not found for this session."
-HTTP_DETAIL_CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED = "This capture session group is already assigned to an aisle."
+HTTP_DETAIL_CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED = (
+    "This capture session group is already assigned to an aisle."
+)
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED = (
     "Aisle assignment to capture session groups is not allowed in the current session state."
 )
@@ -127,6 +129,4 @@ HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW = (
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW = (
     "Materialize this capture session group before preview."
 )
-HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION = (
-    "Capture session group data consistency check failed; retry is not recommended until data is reviewed."
-)
+HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION = "Capture session group data consistency check failed; retry is not recommended until data is reviewed."

@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-
 LOG_OP_G3_COMPUTE_GROUPS = "G3_compute_groups"
 LOG_OP_G4_ASSIGN_GROUP_EXISTING_AISLE = "G4_assign_group_existing_aisle"
 LOG_OP_G4_ASSIGN_GROUP_CREATE_AISLE = "G4_assign_group_create_aisle"
@@ -108,13 +107,9 @@ class CaptureFlowMetricsRegistry:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             mg = self.materialization_group_runs_with_items
-            avg_items = (
-                round(self.materialization_imported_items_total / mg, 4) if mg else 0.0
-            )
+            avg_items = round(self.materialization_imported_items_total / mg, 4) if mg else 0.0
             mat = self.materializations_total
-            avg_assets = (
-                round(self.materialization_asset_created_total / mat, 4) if mat else 0.0
-            )
+            avg_assets = round(self.materialization_asset_created_total / mat, 4) if mat else 0.0
             return {
                 "materializations_total": self.materializations_total,
                 "previews_total": self.previews_total,

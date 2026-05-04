@@ -7,7 +7,6 @@ Verifica:
 - Manejo de errores y retry
 """
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -82,6 +81,7 @@ def test_generate_global_analysis_structured_success():
         client = GeminiClient(api_key="test_key")
         images = [MagicMock()]
         from src.models.schemas import GlobalEntityResponseV21
+
         result = client.generate_global_analysis_structured(
             images, "Analyze", GlobalEntityResponseV21
         )
@@ -93,6 +93,7 @@ def test_generate_global_analysis_structured_empty_images():
     with patch("src.llm.gemini_client.genai.Client", return_value=MagicMock()):
         client = GeminiClient(api_key="test_key")
         from src.models.schemas import GlobalEntityResponseV21
+
         with pytest.raises(ValueError, match="no puede estar vacía"):
             client.generate_global_analysis_structured([], "prompt", GlobalEntityResponseV21)
 

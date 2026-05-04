@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
 
 from src.domain.labels.canonicalization import canonicalize_sku
 from src.domain.labels.entities import RawLabel
@@ -34,18 +33,18 @@ class MergeDecision:
     rule_name: str
     reason: str
     review_required: bool
-    confidence: Optional[float] = None
+    confidence: float | None = None
 
 
-def _canonical_for_label(label: RawLabel) -> Optional[str]:
+def _canonical_for_label(label: RawLabel) -> str | None:
     return canonicalize_sku(label.sku_candidate or label.sku_raw)
 
 
-def _evidence_id(label: RawLabel) -> Optional[str]:
+def _evidence_id(label: RawLabel) -> str | None:
     return label.evidence_id if label.evidence_id and str(label.evidence_id).strip() else None
 
 
-def _product_names_conflict(labels: List[RawLabel]) -> bool:
+def _product_names_conflict(labels: list[RawLabel]) -> bool:
     """True if we have conflicting product_name_raw that suggests different products."""
     names = set()
     for lb in labels:
@@ -55,7 +54,7 @@ def _product_names_conflict(labels: List[RawLabel]) -> bool:
     return len(names) > 1
 
 
-def _confidences_inconsistent(labels: List[RawLabel]) -> bool:
+def _confidences_inconsistent(labels: list[RawLabel]) -> bool:
     """True if confidence spread suggests ambiguity (e.g. one high, one very low)."""
     if len(labels) < 2:
         return False
@@ -72,7 +71,7 @@ class MergeRuleEngine:
     Returns a single MergeDecision for the whole partition.
     """
 
-    def evaluate(self, partition: List[RawLabel]) -> MergeDecision:
+    def evaluate(self, partition: list[RawLabel]) -> MergeDecision:
         """
         partition: raw labels already grouped by (inventory_id, aisle_id, position_id, group_key, canonical_sku).
         Caller must not pass empty partition.
@@ -97,7 +96,8 @@ class MergeRuleEngine:
                 should_merge=False,
                 rule_name=MergeRule.NO_MERGE_SINGLE_LABEL.value,
                 reason="single_label",
-                review_required=partition[0].confidence is not None and partition[0].confidence < 0.5,
+                review_required=partition[0].confidence is not None
+                and partition[0].confidence < 0.5,
                 confidence=partition[0].confidence,
             )
 

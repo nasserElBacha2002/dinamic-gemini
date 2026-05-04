@@ -4,9 +4,10 @@ Contract tests for v3.0 application ports (Documento técnico §9.1, §9.2).
 Verifies that stub implementations satisfy repository and service ABCs.
 """
 
-from io import BytesIO
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
 from datetime import datetime
+from io import BytesIO
+from typing import Any, Optional
 
 from src.application.ports.repositories import (
     AisleRepository,
@@ -22,13 +23,12 @@ from src.application.ports.services import (
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 
-
 # --- Repository stubs ---
 
 
 class StubInventoryRepository(InventoryRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Inventory] = {}
+        self._store: dict[str, Inventory] = {}
 
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
@@ -42,7 +42,7 @@ class StubInventoryRepository(InventoryRepository):
 
 class StubAisleRepository(AisleRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Aisle] = {}
+        self._store: dict[str, Aisle] = {}
 
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
@@ -108,19 +108,19 @@ class StubArtifactStorage(ArtifactStorage):
 
 class StubJobQueue(JobQueue):
     def __init__(self) -> None:
-        self.enqueued: List[str] = []
+        self.enqueued: list[str] = []
 
     def enqueue(self, job_id: str) -> None:
         self.enqueued.append(job_id)
 
 
 class StubAnalysisProvider(AnalysisProvider):
-    def analyze_aisle(self, aisle_id: str, asset_paths: List[str]) -> Dict[str, Any]:
+    def analyze_aisle(self, aisle_id: str, asset_paths: list[str]) -> dict[str, Any]:
         return {"positions": [], "aisle_id": aisle_id}
 
 
 class StubMetricsCalculator(MetricsCalculator):
-    def calculate_inventory_metrics(self, inventory_id: str) -> Dict[str, Any]:
+    def calculate_inventory_metrics(self, inventory_id: str) -> dict[str, Any]:
         return {
             "total_reviewed_positions": 0,
             "auto_accepted_positions": 0,
@@ -132,8 +132,8 @@ class StubMetricsCalculator(MetricsCalculator):
 
 class StubResultMapper(ResultMapper):
     def map_analysis_to_positions(
-        self, aisle_id: str, analysis_result: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, aisle_id: str, analysis_result: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         return analysis_result.get("positions", [])
 
 

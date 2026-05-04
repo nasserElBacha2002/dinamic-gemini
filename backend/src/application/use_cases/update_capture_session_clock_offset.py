@@ -7,12 +7,15 @@ from src.application.errors import (
     CaptureSessionInvalidStateError,
     CaptureSessionNotFoundError,
 )
-from src.application.ports.capture_repositories import CaptureSessionItemRepository, CaptureSessionRepository
+from src.application.ports.capture_repositories import (
+    CaptureSessionItemRepository,
+    CaptureSessionRepository,
+)
 from src.application.ports.clock import Clock
 from src.domain.capture.entities import (
     CaptureSession,
-    CaptureSessionItemImportStatus,
     CaptureSessionItemAssignmentStatus,
+    CaptureSessionItemImportStatus,
     CaptureSessionStatus,
 )
 
@@ -42,14 +45,18 @@ class UpdateCaptureSessionClockOffsetUseCase:
         self._min_off = int(min_offset_seconds)
         self._max_off = int(max_offset_seconds)
 
-    def execute(self, *, inventory_id: str, aisle_id: str, session_id: str, clock_offset_seconds: int) -> CaptureSession:
+    def execute(
+        self, *, inventory_id: str, aisle_id: str, session_id: str, clock_offset_seconds: int
+    ) -> CaptureSession:
         if clock_offset_seconds < self._min_off or clock_offset_seconds > self._max_off:
             raise CaptureSessionInvalidClockOffsetError(
                 f"clock_offset_seconds must be between {self._min_off} and {self._max_off} inclusive"
             )
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None or session.aisle_id != aisle_id:
-            raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
+            raise CaptureSessionNotFoundError(
+                "Capture session not found for this inventory and aisle."
+            )
         if session.status in _BLOCKED_STATUSES:
             raise CaptureSessionInvalidStateError(
                 "Clock offset cannot be updated for this capture session state."
@@ -71,4 +78,3 @@ class UpdateCaptureSessionClockOffsetUseCase:
             self._item_repo.save(it)
         self._session_repo.save(session)
         return session
-

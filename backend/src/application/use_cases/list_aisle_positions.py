@@ -13,10 +13,9 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, DefaultDict, List, Optional, Tuple
+from typing import Any
 
 from src.application.errors import InventoryNotFoundError
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import (
     AisleRepository,
@@ -24,6 +23,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
 )
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.position_sku_consolidation import (
     canonical_internal_code_lower,
@@ -41,17 +41,17 @@ logger = logging.getLogger(__name__)
 class ListAislePositionsCommand:
     inventory_id: str
     aisle_id: str
-    status: Optional[str] = None
-    needs_review: Optional[bool] = None
-    min_confidence: Optional[float] = None
-    sku_filter: Optional[str] = None
+    status: str | None = None
+    needs_review: bool | None = None
+    min_confidence: float | None = None
+    sku_filter: str | None = None
     page: int = 1
     page_size: int = 25
     sort_by: str = "created_at"
     """Post-consolidation: created_at | updated_at | confidence | sku | quantity | photo_sequence"""
     sort_dir: str = "asc"
     #: Optional override; omitted uses Result Context Resolver (operational / legacy).
-    job_id: Optional[str] = None
+    job_id: str | None = None
     #: When False, skip SKU merge (photo-accurate review rows). Ignored when ``sort_by`` is
     #: ``photo_sequence`` (merge is always off for that mode).
     consolidate_by_sku: bool = True
@@ -62,18 +62,18 @@ class ListAislePositionsResult:
     positions: tuple[Position, ...]
     #: Display-primary product per ``positions`` row (same length and order as ``positions``).
     #: Invariant: ``len(primary_products) == len(positions)`` (enforced when building results).
-    primary_products: tuple[Optional[ProductRecord], ...]
+    primary_products: tuple[ProductRecord | None, ...]
     total_items: int
     page: int
     page_size: int
     raw_fetch_truncated: bool
-    resolved_job_id: Optional[str]
+    resolved_job_id: str | None
     """Effective slice: ``None`` = legacy null-job rows."""
     result_context_source: str
     """explicit | operational | legacy"""
 
 
-def _sort_key_tuple(p: Position, sort_by: str) -> Tuple:
+def _sort_key_tuple(p: Position, sort_by: str) -> tuple:
     sb = (sort_by or "created_at").strip().lower()
     if sb == "updated_at":
         return (p.updated_at, p.id)
@@ -89,7 +89,7 @@ def _sort_key_tuple(p: Position, sort_by: str) -> Tuple:
     return (p.created_at, p.id)
 
 
-def _photo_review_sort_key(p: Position) -> Tuple[Any, ...]:
+def _photo_review_sort_key(p: Position) -> tuple[Any, ...]:
     """Stable order: manifest photo sequence, then filename, image id, position code, id."""
     s = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
     raw_seq = s.get("source_image_sequence")
@@ -113,17 +113,17 @@ def _photo_review_sort_key(p: Position) -> Tuple[Any, ...]:
 
 
 def _display_primaries_for_page_rows(
-    page_rows: List[Position],
+    page_rows: list[Position],
     product_record_repo: ProductRecordRepository,
-) -> tuple[Optional[ProductRecord], ...]:
+) -> tuple[ProductRecord | None, ...]:
     """Load display-primary products for the paginated slice (one batch query; order matches ``page_rows``)."""
     if not page_rows:
         return ()
     batch = product_record_repo.list_by_position_ids([p.id for p in page_rows])
-    by_position: DefaultDict[str, List[ProductRecord]] = defaultdict(list)
+    by_position: defaultdict[str, list[ProductRecord]] = defaultdict(list)
     for pr in batch:
         by_position[pr.position_id].append(pr)
-    primaries: List[Optional[ProductRecord]] = []
+    primaries: list[ProductRecord | None] = []
     for p in page_rows:
         primaries.append(select_display_primary_product(by_position.get(p.id, ())))
     if len(primaries) != len(page_rows):

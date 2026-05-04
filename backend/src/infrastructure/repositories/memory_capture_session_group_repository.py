@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Dict
-
 from src.application.ports.capture_repositories import (
     CaptureSessionGroupRepository,
     CaptureSessionGroupSummary,
     CaptureSessionItemRepository,
 )
-from src.application.services.capture_group_materialization_state import materialization_state_for_counts
+from src.application.services.capture_group_materialization_state import (
+    materialization_state_for_counts,
+)
 from src.domain.capture.entities import (
     CaptureSessionGroup,
     CaptureSessionItem,
@@ -25,7 +25,7 @@ class MemoryCaptureSessionGroupRepository(CaptureSessionGroupRepository):
     """Uses ``item_repo`` to build summaries so counts match assigned items in tests."""
 
     def __init__(self, item_repo: CaptureSessionItemRepository) -> None:
-        self._groups: Dict[str, CaptureSessionGroup] = {}
+        self._groups: dict[str, CaptureSessionGroup] = {}
         self._item_repo = item_repo
 
     def delete_all_for_session(self, session_id: str) -> None:
@@ -64,7 +64,9 @@ class MemoryCaptureSessionGroupRepository(CaptureSessionGroupRepository):
             times = [_sort_time(i) for i in members if _sort_time(i) is not None]
             if not times:
                 continue
-            imported = [i for i in members if i.import_status == CaptureSessionItemImportStatus.IMPORTED]
+            imported = [
+                i for i in members if i.import_status == CaptureSessionItemImportStatus.IMPORTED
+            ]
             linked_imported = sum(1 for i in imported if (i.linked_source_asset_id or "").strip())
             mat_state = materialization_state_for_counts(
                 assignment_status=g.assignment_status.value,

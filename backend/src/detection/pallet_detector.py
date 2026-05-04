@@ -5,7 +5,7 @@ Modos: stub (sin detecciones), heuristic (OpenCV sin ML), synthetic (2 bboxes fi
 Opción A (MVP): heuristic o YOLO+clustering. Opción B: detector entrenado.
 """
 
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
@@ -20,7 +20,7 @@ def detect_pallets_per_frame(
     conf_threshold: float = 0.5,
     use_synthetic: bool = False,
     settings: Optional["Settings"] = None,
-) -> List[BBox]:
+) -> list[BBox]:
     """Detecta pallets en un frame y devuelve bboxes con confianza.
 
     Args:
@@ -50,6 +50,7 @@ def detect_pallets_per_frame(
     mode = (settings.detector_mode or "stub").strip().lower() if settings else "stub"
     if mode == "heuristic" and settings is not None:
         from src.detection.heuristic_detector import detect_pallets_heuristic
+
         bboxes = detect_pallets_heuristic(
             frame,
             min_area_ratio=settings.heuristic_min_area_ratio,

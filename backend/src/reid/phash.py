@@ -5,14 +5,14 @@ US-6B.4: filter_with_phash filtra por distancia Hamming <= max_dist entre ROIs d
 """
 
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import imagehash
 
 logger = logging.getLogger(__name__)
 
 
-def _roi_phashes_from_sig(sig: Any) -> List[str]:
+def _roi_phashes_from_sig(sig: Any) -> list[str]:
     """Extrae lista de roi_phashes (hex) de una firma; vacía si no hay o no aplica."""
     if sig is None:
         return []
@@ -26,10 +26,10 @@ def _roi_phashes_from_sig(sig: Any) -> List[str]:
 
 
 def filter_with_phash(
-    candidates: List[Tuple[str, str]],
-    signatures: Dict[str, Any],
+    candidates: list[tuple[str, str]],
+    signatures: dict[str, Any],
     max_dist: int = 10,
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """Filtra candidatos por distancia Hamming de pHash entre ROIs del par.
 
     Para cada par (track_id_a, track_id_b):
@@ -46,8 +46,8 @@ def filter_with_phash(
     Returns:
         Sublista de pares que pasan el filtro, en el mismo orden que candidates.
     """
-    result: List[Tuple[str, str]] = []
-    for (tid_a, tid_b) in candidates:
+    result: list[tuple[str, str]] = []
+    for tid_a, tid_b in candidates:
         try:
             if tid_a not in signatures or tid_b not in signatures:
                 continue

@@ -13,7 +13,7 @@ authoritative totals today — see ADR ``docs/adr/inventory-v3-canonical-fields.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, Tuple
+from typing import Any, Literal, Optional
 
 from src.application.services.position_traceability import enrich_position_traceability_from_report
 from src.domain.positions.entities import Position
@@ -36,10 +36,10 @@ _QtySourcePublic = Literal[
     "unknown",
     "consolidated",
 ]
-_QtyContract = Tuple[int, _QtySourcePublic, Optional[str], Optional[bool]]
+_QtyContract = tuple[int, _QtySourcePublic, Optional[str], Optional[bool]]
 
 
-def parse_summary_quantity(raw: object) -> Optional[int]:
+def parse_summary_quantity(raw: object) -> int | None:
     if raw is None:
         return None
     if isinstance(raw, (int, float)):
@@ -57,7 +57,7 @@ def parse_summary_quantity(raw: object) -> Optional[int]:
     return None
 
 
-def summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str], int]:
+def summary_sku_and_quantity_from_position(p: Position) -> tuple[str | None, int]:
     """SKU + quantity from ``detected_summary_json`` only (legacy / technical snapshot path)."""
     j = p.detected_summary_json
     if not j or not isinstance(j, dict):
@@ -67,14 +67,14 @@ def summary_sku_and_quantity_from_position(p: Position) -> tuple[Optional[str], 
     if sku_raw is not None and isinstance(sku_raw, str) and sku_raw.strip():
         sku = sku_raw.strip()
     if sku is None:
-        fallback = (
-            j.get("review_display_label")
-            or j.get("position_barcode")
-            or j.get("pallet_id")
-        )
+        fallback = j.get("review_display_label") or j.get("position_barcode") or j.get("pallet_id")
         if fallback is not None and isinstance(fallback, str) and fallback.strip():
             sku = fallback.strip()
-    q_raw = j.get("final_quantity") if j.get("final_quantity") is not None else j.get("product_label_quantity")
+    q_raw = (
+        j.get("final_quantity")
+        if j.get("final_quantity") is not None
+        else j.get("product_label_quantity")
+    )
     qty = parse_summary_quantity(q_raw)
     return sku, qty if qty is not None else 0
 
@@ -115,7 +115,12 @@ def resolve_qty_contract_from_position_legacy(p: Position, *, has_evidence: bool
             "inferred" if qty_source.strip() == QtySource.INFERRED.value else "detected"
         )
         resolved = qty_is_resolved if isinstance(qty_is_resolved, bool) else None
-        return (int(qty_final), api_source, (str(qty_reason) if qty_reason is not None else None), resolved)
+        return (
+            int(qty_final),
+            api_source,
+            (str(qty_reason) if qty_reason is not None else None),
+            resolved,
+        )
 
     if "final_quantity" in j and j.get("final_quantity") is not None:
         raw = j.get("final_quantity")
@@ -154,24 +159,31 @@ def resolve_qty_contract_from_position_legacy(p: Position, *, has_evidence: bool
         allow_zero_as_valid=allow_zero,
     )
     api_source = "inferred" if res.qty_source == QtySource.INFERRED else "detected"
-    return (res.qty_final, api_source, (res.qty_inference_reason.value if res.qty_inference_reason else None), res.is_resolved)
+    return (
+        res.qty_final,
+        api_source,
+        (res.qty_inference_reason.value if res.qty_inference_reason else None),
+        res.is_resolved,
+    )
 
 
 def _traceability_from_position(
     p: Position,
-) -> tuple[Optional[str], Optional[str], Optional[str], Optional[int], Optional[int]]:
+) -> tuple[str | None, str | None, str | None, int | None, int | None]:
     summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
-    source_image_id: Optional[str] = summary_json.get("source_image_id") or None
-    traceability_status: Optional[str] = summary_json.get("traceability_status") or None
-    source_image_original_filename: Optional[str] = summary_json.get("source_image_original_filename") or None
-    source_image_sequence: Optional[int] = None
+    source_image_id: str | None = summary_json.get("source_image_id") or None
+    traceability_status: str | None = summary_json.get("traceability_status") or None
+    source_image_original_filename: str | None = (
+        summary_json.get("source_image_original_filename") or None
+    )
+    source_image_sequence: int | None = None
     raw_seq = summary_json.get("source_image_sequence")
     if raw_seq is not None:
         try:
             source_image_sequence = int(raw_seq)
         except (TypeError, ValueError):
             source_image_sequence = None
-    primary_evidence_frame_index: Optional[int] = None
+    primary_evidence_frame_index: int | None = None
     raw_efi = summary_json.get("evidence_primary_frame_index")
     if raw_efi is not None:
         try:
@@ -179,10 +191,14 @@ def _traceability_from_position(
         except (TypeError, ValueError):
             primary_evidence_frame_index = None
     if summary_json.get("entity_uid") and (
-        source_image_id is None or traceability_status is None or source_image_original_filename is None
+        source_image_id is None
+        or traceability_status is None
+        or source_image_original_filename is None
     ):
         # Lazy import avoids circular import with api.routes.v3.shared at module load.
-        sid_from_report, ts_from_report, sof_from_report = enrich_position_traceability_from_report(p)
+        sid_from_report, ts_from_report, sof_from_report = enrich_position_traceability_from_report(
+            p
+        )
         if source_image_id is None and sid_from_report is not None:
             source_image_id = sid_from_report
         if traceability_status is None and ts_from_report is not None:
@@ -202,9 +218,9 @@ IdentitySource = Literal["primary_product", "summary_technical", "summary_aggreg
 
 
 def _effective_corrected_quantity(
-    corrected_quantity: Optional[int],
-    primary_product: Optional[ProductRecord],
-) -> Optional[int]:
+    corrected_quantity: int | None,
+    primary_product: ProductRecord | None,
+) -> int | None:
     """Prefer explicit ``corrected_quantity`` from ``position_to_summary``; else primary row."""
     if corrected_quantity is not None:
         return corrected_quantity
@@ -214,9 +230,9 @@ def _effective_corrected_quantity(
 
 
 def _canonical_display_label(
-    technical_snapshot: Optional[Dict[str, Any]],
-    primary_product: Optional[ProductRecord],
-) -> Optional[str]:
+    technical_snapshot: dict[str, Any] | None,
+    primary_product: ProductRecord | None,
+) -> str | None:
     """Operator-facing label: primary ``description`` when non-empty; else ``review_display_label`` from snapshot."""
     if primary_product is not None:
         d = (primary_product.description or "").strip()
@@ -229,7 +245,7 @@ def _canonical_display_label(
     return None
 
 
-def _canonical_barcode(technical_snapshot: Optional[Dict[str, Any]]) -> Optional[str]:
+def _canonical_barcode(technical_snapshot: dict[str, Any] | None) -> str | None:
     """``position_barcode`` from technical snapshot when present (no inference)."""
     snap = technical_snapshot if isinstance(technical_snapshot, dict) else {}
     b = snap.get("position_barcode")
@@ -238,7 +254,7 @@ def _canonical_barcode(technical_snapshot: Optional[Dict[str, Any]]) -> Optional
     return None
 
 
-def _final_display_quantity(corrected_quantity: Optional[int], system_qty: int) -> int:
+def _final_display_quantity(corrected_quantity: int | None, system_qty: int) -> int:
     """Operator-visible line quantity: correction when set, else system-resolved qty (CSV ``final_quantity`` rule)."""
     if corrected_quantity is not None:
         return max(0, int(corrected_quantity))
@@ -253,11 +269,11 @@ class PositionCanonicalProduct:
     (Sprint 2 — no extra ``primary_product`` pass-through in :func:`position_to_summary`).
     """
 
-    primary_product_id: Optional[str]
-    public_sku: Optional[str]
+    primary_product_id: str | None
+    public_sku: str | None
     identity_source: IdentitySource
-    display_label: Optional[str]
-    barcode: Optional[str]
+    display_label: str | None
+    barcode: str | None
 
 
 @dataclass(frozen=True)
@@ -270,29 +286,29 @@ class PositionCanonicalQuantity:
 
     qty: int
     qty_source: _QtySourcePublic
-    qty_inference_reason: Optional[str]
-    qty_resolved: Optional[bool]
+    qty_inference_reason: str | None
+    qty_resolved: bool | None
     detected_quantity: int
     is_aggregated: bool
-    corrected_quantity: Optional[int]
+    corrected_quantity: int | None
     final_display_quantity: int
 
 
 @dataclass(frozen=True)
 class PositionCanonicalTraceability:
-    source_image_id: Optional[str]
-    traceability_status: Optional[str]
-    source_image_original_filename: Optional[str]
-    source_image_sequence: Optional[int]
-    primary_evidence_frame_index: Optional[int]
+    source_image_id: str | None
+    traceability_status: str | None
+    source_image_original_filename: str | None
+    source_image_sequence: int | None
+    primary_evidence_frame_index: int | None
 
 
 @dataclass(frozen=True)
 class PositionCanonicalReview:
     status: str
-    review_resolution: Optional[str]
+    review_resolution: str | None
     needs_review: bool
-    primary_evidence_id: Optional[str]
+    primary_evidence_id: str | None
     has_evidence: bool
 
 
@@ -331,14 +347,14 @@ class PositionCanonicalView:
     traceability: PositionCanonicalTraceability
     review: PositionCanonicalReview
     position_code: str
-    technical_snapshot: Optional[Dict[str, Any]]
+    technical_snapshot: dict[str, Any] | None
 
 
 def build_position_canonical_view(
     p: Position,
-    primary_product: Optional[ProductRecord] = None,
+    primary_product: ProductRecord | None = None,
     *,
-    corrected_quantity: Optional[int] = None,
+    corrected_quantity: int | None = None,
 ) -> PositionCanonicalView:
     """Build :class:`PositionCanonicalView` with explicit source priority (ADR + plan Sprint 1)."""
     effective_corrected = _effective_corrected_quantity(corrected_quantity, primary_product)
@@ -360,11 +376,7 @@ def build_position_canonical_view(
     pos_code = resolve_effective_position_code(p)
     review = PositionCanonicalReview(
         status=p.status.value,
-        review_resolution=(
-            p.review_resolution.value
-            if p.review_resolution is not None
-            else None
-        ),
+        review_resolution=(p.review_resolution.value if p.review_resolution is not None else None),
         needs_review=p.needs_review,
         primary_evidence_id=p.primary_evidence_id,
         has_evidence=has_evidence,
@@ -375,10 +387,21 @@ def build_position_canonical_view(
 
     if is_aggregated:
         raw_q = summary_json.get("final_quantity")
-        try:
-            qty = max(0, int(raw_q))
-        except (TypeError, ValueError):
+        qty = 0
+        if isinstance(raw_q, bool):
             qty = 0
+        elif isinstance(raw_q, int):
+            qty = max(0, raw_q)
+        elif isinstance(raw_q, str) and raw_q.strip():
+            try:
+                qty = max(0, int(raw_q.strip(), 10))
+            except ValueError:
+                qty = 0
+        elif raw_q is not None:
+            try:
+                qty = max(0, int(raw_q))
+            except (TypeError, ValueError):
+                qty = 0
         quantity = PositionCanonicalQuantity(
             qty=qty,
             qty_source="consolidated",
@@ -416,7 +439,11 @@ def build_position_canonical_view(
             qty_resolved = None
         detected_quantity = qty
         rec_sku = primary_product.sku
-        sku_display = str(rec_sku).strip() if rec_sku is not None and str(rec_sku).strip() != "" else summary_sku
+        sku_display = (
+            str(rec_sku).strip()
+            if rec_sku is not None and str(rec_sku).strip() != ""
+            else summary_sku
+        )
         product = PositionCanonicalProduct(
             primary_product_id=primary_product.id,
             public_sku=sku_display,
@@ -443,7 +470,9 @@ def build_position_canonical_view(
             technical_snapshot=snap,
         )
 
-    qty, qty_source, qty_reason, qty_resolved = resolve_qty_contract_from_position_legacy(p, has_evidence=has_evidence)
+    qty, qty_source, qty_reason, qty_resolved = resolve_qty_contract_from_position_legacy(
+        p, has_evidence=has_evidence
+    )
     product = PositionCanonicalProduct(
         primary_product_id=None,
         public_sku=summary_sku,

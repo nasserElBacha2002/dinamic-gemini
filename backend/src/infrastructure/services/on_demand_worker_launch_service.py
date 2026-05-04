@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
-from pathlib import Path
-import json
 import shlex
 import subprocess
 import sys
 import time
 import uuid
+from pathlib import Path
 
 from src.application.ports.services import WorkerLaunchService
 from src.config import load_settings
@@ -102,7 +102,11 @@ class OnDemandWorkerLaunchService(WorkerLaunchService):
                 raise RuntimeError(
                     "WORKER_ON_DEMAND_COMMAND must be valid JSON array or a shell-style command string"
                 ) from exc
-            if not isinstance(parsed, list) or not parsed or not all(isinstance(item, str) and item for item in parsed):
+            if (
+                not isinstance(parsed, list)
+                or not parsed
+                or not all(isinstance(item, str) and item for item in parsed)
+            ):
                 raise RuntimeError(
                     "WORKER_ON_DEMAND_COMMAND JSON value must be a non-empty array of strings"
                 )

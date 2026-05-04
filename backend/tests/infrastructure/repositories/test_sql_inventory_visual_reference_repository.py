@@ -36,6 +36,7 @@ def _connection_string() -> str:
         if not driver:
             try:
                 import pyodbc
+
                 for d in pyodbc.drivers():
                     if "SQL Server" in d:
                         driver = d
@@ -66,6 +67,7 @@ def ref_repo(sql_client):
 def ensure_inventory(inventory_repo):
     """Ensure an inventory exists for FK; use a dedicated test id to avoid clashes."""
     from src.domain.inventory.entities import Inventory, InventoryStatus
+
     now = now_utc()
     inv = Inventory(
         id="test-v324-inv-ref",

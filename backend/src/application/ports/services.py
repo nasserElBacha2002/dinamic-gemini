@@ -8,7 +8,7 @@ MetricsCalculator: compute inventory metrics. ResultMapper: map pipeline output 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, BinaryIO, Dict, List
+from typing import BinaryIO
 
 from src.application.ports.contracts import (
     AnalysisResultPayload,
@@ -21,8 +21,7 @@ class ArtifactStorage(ABC):
     """Port for saving uploaded files (e.g. photos/videos). Returns storage path or URL."""
 
     @abstractmethod
-    def save_file(self, path: str, file_obj: BinaryIO, content_type: str) -> str:
-        ...
+    def save_file(self, path: str, file_obj: BinaryIO, content_type: str) -> str: ...
 
     @abstractmethod
     def delete_file(self, path: str) -> None:
@@ -60,16 +59,14 @@ class AnalysisProvider(ABC):
     """Port for running analysis on an aisle's assets. Returns result per §9.4 (AnalysisResultPayload)."""
 
     @abstractmethod
-    def analyze_aisle(self, aisle_id: str, asset_paths: List[str]) -> AnalysisResultPayload:
-        ...
+    def analyze_aisle(self, aisle_id: str, asset_paths: list[str]) -> AnalysisResultPayload: ...
 
 
 class MetricsCalculator(ABC):
     """Port for computing inventory metrics per Documento técnico §9.6. Returns InventoryMetricsResult."""
 
     @abstractmethod
-    def calculate_inventory_metrics(self, inventory_id: str) -> InventoryMetricsResult:
-        ...
+    def calculate_inventory_metrics(self, inventory_id: str) -> InventoryMetricsResult: ...
 
 
 class ResultMapper(ABC):
@@ -81,6 +78,6 @@ class ResultMapper(ABC):
     @abstractmethod
     def map_analysis_to_positions(
         self, aisle_id: str, analysis_result: AnalysisResultPayload
-    ) -> List[MappedPositionPayload]:
+    ) -> list[MappedPositionPayload]:
         """Return list of position payloads (each may include products and evidence refs)."""
         ...

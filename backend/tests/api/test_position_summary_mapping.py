@@ -2,15 +2,17 @@
 
 from datetime import datetime, timezone
 
-import pytest
-
 from src.api.routes.v3.shared import (
     position_to_summary as _position_to_summary,
+)
+from src.api.routes.v3.shared import (
     technical_snapshot_from_view,
 )
-from src.application.mappers.position_canonical_view import build_position_canonical_view
-from src.application.mappers.position_canonical_view import summary_sku_and_quantity_from_position
 from src.api.schemas.position_schemas import PositionSummaryResponse
+from src.application.mappers.position_canonical_view import (
+    build_position_canonical_view,
+    summary_sku_and_quantity_from_position,
+)
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 
@@ -370,7 +372,11 @@ def test_position_to_summary_omits_legacy_snapshot_when_include_technical_false(
         primary_evidence_id=None,
         created_at=now,
         updated_at=now,
-        detected_summary_json={"entity_uid": "job_s3_E1", "internal_code": "SKU-S3", "final_quantity": 2},
+        detected_summary_json={
+            "entity_uid": "job_s3_E1",
+            "internal_code": "SKU-S3",
+            "final_quantity": 2,
+        },
     )
     resp = _position_to_summary(p, include_technical_snapshot=False)
     assert resp.detected_summary_json is None

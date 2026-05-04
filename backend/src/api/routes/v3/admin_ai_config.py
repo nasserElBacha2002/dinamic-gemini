@@ -6,12 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.api.constants.error_wire import HTTP_DETAIL_ADMIN_AI_UNKNOWN_PROMPT_PROFILE_COMBINATION
 from src.api.constants.route_paths import API_V3_ADMIN_ROUTER_PREFIX
+from src.api.schemas.admin_ai_config_schemas import (
+    AdminAiComposedPromptResponse,
+    AdminAiConfigResponse,
+)
 from src.application.services.admin_ai_config_inspection import (
     build_admin_ai_config_payload,
     compose_prompt_variant_for_inspection,
 )
 from src.auth.dependencies import require_ai_config_inspection_user
-from src.api.schemas.admin_ai_config_schemas import AdminAiComposedPromptResponse, AdminAiConfigResponse
 from src.config import load_settings
 
 router = APIRouter(
@@ -32,7 +35,9 @@ def get_admin_ai_config() -> AdminAiConfigResponse:
 def get_admin_ai_config_composed_prompt(
     prompt_key: str = Query(..., min_length=1, description="Registered hybrid profile key."),
     pipeline_provider_key: str = Query(..., min_length=1, description="Pipeline provider key."),
-    prompt_parity_mode: bool = Query(False, description="OpenAI-only parity flag; must be false for other providers."),
+    prompt_parity_mode: bool = Query(
+        False, description="OpenAI-only parity flag; must be false for other providers."
+    ),
 ) -> AdminAiComposedPromptResponse:
     """Lazy composed hybrid base text for one variant (keeps main payload small)."""
     raw = compose_prompt_variant_for_inspection(

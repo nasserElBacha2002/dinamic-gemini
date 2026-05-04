@@ -38,7 +38,5 @@ def require_aisle_scoped_to_inventory(
             )
         return aisle
     if aisle is None or aisle.inventory_id != inventory_id:
-        raise AisleNotFoundError(
-            f"Aisle {aisle_id} does not belong to inventory {inventory_id}"
-        )
+        raise AisleNotFoundError(f"Aisle {aisle_id} does not belong to inventory {inventory_id}")
     return aisle

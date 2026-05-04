@@ -6,12 +6,12 @@ LOW_CONFIDENCE_THRESHOLD matches review_queue_derived / frontend reviewThreshold
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Sequence, Tuple
 
 from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
-from src.application.dto.analytics_dto import AnalyticsFilters
+from src.application.dto.analytics_dto import AnalyticsFilters, AnalyticsSummaryDTO
 from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.utils.review_queue_derived import (
     position_has_primary_evidence,
@@ -19,7 +19,7 @@ from src.application.utils.review_queue_derived import (
     traceability_normalized,
 )
 from src.domain.jobs.entities import Job, JobStatus
-from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
+from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
@@ -43,12 +43,12 @@ class SummaryMetricInputs:
     operator_marked_unknown_positions_count: int
     unidentified_product_positions_count: int
     invalid_traceability_positions_count: int
-    processing_success_rate: Optional[float]
-    average_processing_time_seconds: Optional[float]
-    settling_actions_per_day: Optional[float]
+    processing_success_rate: float | None
+    average_processing_time_seconds: float | None
+    settling_actions_per_day: float | None
     settling_actions_count: int
     period_day_count: int
-    notes: List[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -61,9 +61,9 @@ class InventoryMetricInputs:
     operator_marked_unknown_positions_count: int
     unidentified_product_positions_count: int
     invalid_traceability_positions_count: int
-    avg_confidence: Optional[float]
-    processing_success_rate: Optional[float]
-    average_processing_time_seconds: Optional[float]
+    avg_confidence: float | None
+    processing_success_rate: float | None
+    average_processing_time_seconds: float | None
 
 
 @dataclass(frozen=True)
@@ -78,10 +78,10 @@ class ManualInterventionBreakdown:
     deleted_count: int
     unknown_available: bool
     invalid_available: bool
-    notes: List[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
-def day_span_inclusive(date_from: Optional[datetime], date_to: Optional[datetime]) -> int:
+def day_span_inclusive(date_from: datetime | None, date_to: datetime | None) -> int:
     if date_from is None or date_to is None:
         return 1
     df = date_from.date()
@@ -89,7 +89,7 @@ def day_span_inclusive(date_from: Optional[datetime], date_to: Optional[datetime
     return max(1, (dt - df).days + 1)
 
 
-def _ts_in_range(ts: datetime, date_from: Optional[datetime], date_to: Optional[datetime]) -> bool:
+def _ts_in_range(ts: datetime, date_from: datetime | None, date_to: datetime | None) -> bool:
     t = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
     if date_from is not None:
         f = date_from if date_from.tzinfo else date_from.replace(tzinfo=timezone.utc)
@@ -106,7 +106,7 @@ def position_in_scope(
     pos: Position,
     aisle_id: str,
     inventory_id: str,
-    aisle_to_inventory: Dict[str, str],
+    aisle_to_inventory: dict[str, str],
     filters: AnalyticsFilters,
 ) -> bool:
     """Entity scope only (inventory/aisle). Date range does NOT gate position-state metrics."""
@@ -121,7 +121,7 @@ def active_position(pos: Position) -> bool:
     return pos.status != PositionStatus.DELETED
 
 
-def is_invalid_traceability(pos: Position, primary_product: Optional[ProductRecord] = None) -> bool:
+def is_invalid_traceability(pos: Position, primary_product: ProductRecord | None = None) -> bool:
     view = build_position_canonical_view(pos, primary_product)
     status = (view.traceability.traceability_status or "").strip().lower()
     if status:
@@ -151,7 +151,7 @@ def unknown_action(ra: ReviewAction) -> bool:
     return ra.action_type == ReviewActionType.MARK_UNKNOWN
 
 
-def unidentified_product(primary_product: Optional[ProductRecord]) -> bool:
+def unidentified_product(primary_product: ProductRecord | None) -> bool:
     if primary_product is None:
         return False
     return (primary_product.sku or "").strip().upper() == "UNKNOWN"
@@ -159,17 +159,17 @@ def unidentified_product(primary_product: Optional[ProductRecord]) -> bool:
 
 def review_action_in_period(
     ra: ReviewAction,
-    date_from: Optional[datetime],
-    date_to: Optional[datetime],
+    date_from: datetime | None,
+    date_to: datetime | None,
 ) -> bool:
     return _ts_in_range(ra.created_at, date_from, date_to)
 
 
 def aggregate_settling_metrics(
     actions: Sequence[ReviewAction],
-    date_from: Optional[datetime],
-    date_to: Optional[datetime],
-) -> Tuple[int, int, int]:
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> tuple[int, int, int]:
     """Returns (settling_count, confirm_count, correction_count) in period."""
     settling = 0
     confirms = 0
@@ -194,8 +194,8 @@ def processed_position(pos: Position) -> bool:
 
 def compute_review_outcome_counts(
     actions: Sequence[ReviewAction],
-    date_from: Optional[datetime],
-    date_to: Optional[datetime],
+    date_from: datetime | None,
+    date_to: datetime | None,
 ) -> ReviewOutcomeCounts:
     """Unique reviewed-position counts plus backward-compatible settling action count.
 
@@ -206,7 +206,7 @@ def compute_review_outcome_counts(
 
     This intentionally keeps ``manual_correction_rate`` narrow (quantity + SKU only).
     """
-    latest_by_position: Dict[str, ReviewAction] = {}
+    latest_by_position: dict[str, ReviewAction] = {}
     settling_actions_count = 0
     for ra in sorted(actions, key=lambda x: (x.created_at, x.id)):
         if not review_action_in_period(ra, date_from, date_to):
@@ -237,21 +237,19 @@ def compute_review_outcome_counts(
     )
 
 
-def ratio_or_none(numerator: int, denominator: int) -> Optional[float]:
+def ratio_or_none(numerator: int, denominator: int) -> float | None:
     if denominator <= 0:
         return None
     return numerator / denominator
 
 
-def minutes_from_seconds(seconds: Optional[float]) -> Optional[float]:
+def minutes_from_seconds(seconds: float | None) -> float | None:
     if seconds is None:
         return None
     return seconds / 60.0
 
 
-def build_summary_metrics(inputs: SummaryMetricInputs):
-    from src.application.dto.analytics_dto import AnalyticsSummaryDTO
-
+def build_summary_metrics(inputs: SummaryMetricInputs) -> AnalyticsSummaryDTO:
     return AnalyticsSummaryDTO(
         auto_acceptance_rate=ratio_or_none(
             inputs.auto_accepted_positions_count, inputs.reviewed_positions_count
@@ -276,7 +274,9 @@ def build_summary_metrics(inputs: SummaryMetricInputs):
         ),
         processing_success_rate=inputs.processing_success_rate,
         average_processing_time_seconds=inputs.average_processing_time_seconds,
-        average_processing_time_minutes=minutes_from_seconds(inputs.average_processing_time_seconds),
+        average_processing_time_minutes=minutes_from_seconds(
+            inputs.average_processing_time_seconds
+        ),
         settling_actions_per_day=inputs.settling_actions_per_day,
         notes=list(inputs.notes),
         period_day_count=inputs.period_day_count,
@@ -290,7 +290,9 @@ def build_summary_metrics(inputs: SummaryMetricInputs):
 
 def build_inventory_metric_rates(inputs: InventoryMetricInputs) -> dict:
     return {
-        "review_rate": ratio_or_none(inputs.reviewed_positions_count, inputs.total_positions_in_scope),
+        "review_rate": ratio_or_none(
+            inputs.reviewed_positions_count, inputs.total_positions_in_scope
+        ),
         "correction_rate": ratio_or_none(
             inputs.manually_corrected_positions_count, inputs.reviewed_positions_count
         ),
@@ -314,21 +316,23 @@ def build_inventory_metric_rates(inputs: InventoryMetricInputs) -> dict:
         ),
         "avg_confidence": inputs.avg_confidence,
         "processing_success_rate": inputs.processing_success_rate,
-        "average_processing_time_minutes": minutes_from_seconds(inputs.average_processing_time_seconds),
+        "average_processing_time_minutes": minutes_from_seconds(
+            inputs.average_processing_time_seconds
+        ),
     }
 
 
 def compute_manual_intervention_breakdown(
     actions: Sequence[ReviewAction],
-    date_from: Optional[datetime],
-    date_to: Optional[datetime],
+    date_from: datetime | None,
+    date_to: datetime | None,
 ) -> ManualInterventionBreakdown:
     """Mutually exclusive current persisted intervention categories by latest action in period.
 
     Unknown becomes available once persisted as a terminal review resolution. Invalid remains
     unavailable until modeled separately from delete_position.
     """
-    latest_by_position: Dict[str, ReviewAction] = {}
+    latest_by_position: dict[str, ReviewAction] = {}
     reviewed_positions: set[str] = set()
     intervention_positions: set[str] = set()
     for ra in sorted(actions, key=lambda x: (x.created_at, x.id)):
@@ -386,17 +390,17 @@ def compute_manual_intervention_breakdown(
 
 def compute_average_processing_time_seconds(
     jobs: Sequence[Job],
-    date_from: Optional[datetime],
-    date_to: Optional[datetime],
-    allowed_aisle_ids: Optional[set] = None,
-) -> Optional[float]:
+    date_from: datetime | None,
+    date_to: datetime | None,
+    allowed_aisle_ids: set | None = None,
+) -> float | None:
     """Mean ``finished_at - started_at`` (seconds) for terminal aisle jobs completed in period.
 
     Uses ``finished_at`` for the date window. Includes succeeded, failed, and canceled jobs with
     both timestamps and a non-negative duration.
     """
     terminal = {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELED}
-    durations: List[float] = []
+    durations: list[float] = []
     for j in jobs:
         if j.target_type != "aisle":
             continue
@@ -420,10 +424,10 @@ def compute_average_processing_time_seconds(
 
 def compute_processing_success_rate(
     jobs: Sequence[Job],
-    date_from: Optional[datetime],
-    date_to: Optional[datetime],
-    allowed_aisle_ids: Optional[set] = None,
-) -> Optional[float]:
+    date_from: datetime | None,
+    date_to: datetime | None,
+    allowed_aisle_ids: set | None = None,
+) -> float | None:
     """succeeded / (succeeded + failed) for aisle jobs with terminal outcome in period."""
     succeeded = 0
     failed = 0
@@ -446,7 +450,9 @@ def compute_processing_success_rate(
     return succeeded / denom
 
 
-def issue_bucket_for_position(pos: Position, primary_product: Optional[ProductRecord] = None) -> str:
+def issue_bucket_for_position(
+    pos: Position, primary_product: ProductRecord | None = None
+) -> str:
     """Single primary bucket label for quality patterns (mutually exclusive priority)."""
     if unidentified_product(primary_product):
         return "unidentified_product"
@@ -468,7 +474,7 @@ def issue_bucket_for_position(pos: Position, primary_product: Optional[ProductRe
     return "ok"
 
 
-def most_common_issue_for_counts(counts: Dict[str, int]) -> Optional[str]:
+def most_common_issue_for_counts(counts: dict[str, int]) -> str | None:
     labels = {
         "invalid_traceability": "Invalid traceability",
         "unidentified_product": "Unidentified product",
@@ -478,7 +484,9 @@ def most_common_issue_for_counts(counts: Dict[str, int]) -> Optional[str]:
         "pending_review": "Pending review",
     }
     skip = {"ok"}
-    ranked = sorted(((k, v) for k, v in counts.items() if k not in skip and v > 0), key=lambda x: -x[1])
+    ranked = sorted(
+        ((k, v) for k, v in counts.items() if k not in skip and v > 0), key=lambda x: -x[1]
+    )
     if not ranked:
         return None
     return labels.get(ranked[0][0], ranked[0][0])

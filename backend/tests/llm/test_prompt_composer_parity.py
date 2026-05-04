@@ -15,13 +15,17 @@ import pytest
 from src.jobs.image_identity import JobImage
 from src.llm.prompt_composer.composer import HybridPromptComposer, default_hybrid_composer
 from src.llm.prompt_composer.enrichments import enrich_prompt_with_image_ids
-from src.llm.prompts import (
-    enrich_prompt_with_image_ids as enrich_prompt_with_image_ids_facade,
-    enrich_prompt_with_product_label_association as product_label_facade,
-    get_hybrid_prompt,
-)
 from src.llm.prompt_composer.enrichments import (
     enrich_prompt_with_product_label_association as product_label_direct,
+)
+from src.llm.prompts import (
+    enrich_prompt_with_image_ids as enrich_prompt_with_image_ids_facade,
+)
+from src.llm.prompts import (
+    enrich_prompt_with_product_label_association as product_label_facade,
+)
+from src.llm.prompts import (
+    get_hybrid_prompt,
 )
 
 
@@ -75,7 +79,9 @@ def test_gemini_and_unknown_vendor_match_default_variant() -> None:
 def test_get_hybrid_prompt_matches_composer_for_matrix() -> None:
     for profile in ("global_v21", "global_v21_b", "unknown_xyz"):
         for pk in (None, "gemini", "openai", "unknown_vendor"):
-            assert get_hybrid_prompt(profile, pk) == default_hybrid_composer.compose_base(profile, pk)
+            assert get_hybrid_prompt(profile, pk) == default_hybrid_composer.compose_base(
+                profile, pk
+            )
 
 
 def test_new_composer_instance_matches_singleton() -> None:

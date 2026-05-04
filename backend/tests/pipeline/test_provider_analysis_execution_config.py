@@ -26,7 +26,10 @@ def test_normalize_multi_fallback_alias() -> None:
 
 
 def test_validate_strategy_accepts_multi_fallback() -> None:
-    assert validate_pipeline_analysis_strategy_for_settings("multi_fallback") == STRATEGY_MULTI_SEQUENTIAL
+    assert (
+        validate_pipeline_analysis_strategy_for_settings("multi_fallback")
+        == STRATEGY_MULTI_SEQUENTIAL
+    )
 
 
 def test_validate_strategy_rejects_unknown() -> None:

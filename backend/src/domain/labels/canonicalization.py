@@ -8,10 +8,9 @@ No fuzzy/semantic matching.
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 
-def canonicalize_sku(raw: Optional[str]) -> Optional[str]:
+def canonicalize_sku(raw: str | None) -> str | None:
     """
     Normalize SKU for merge comparison.
 

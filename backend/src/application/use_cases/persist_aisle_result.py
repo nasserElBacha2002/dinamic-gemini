@@ -21,8 +21,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
+from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
@@ -30,7 +30,6 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     RawLabelRepository,
 )
-from src.application.ports.clock import Clock
 from src.application.use_cases.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
     RecomputeConsolidatedCountsUseCase,
@@ -56,9 +55,9 @@ class PersistAisleResultUseCase:
         product_record_repo: ProductRecordRepository,
         evidence_repo: EvidenceRepository,
         clock: Clock,
-        aisle_repo: Optional[AisleRepository] = None,
-        raw_label_repo: Optional[RawLabelRepository] = None,
-        recompute_consolidated_uc: Optional[RecomputeConsolidatedCountsUseCase] = None,
+        aisle_repo: AisleRepository | None = None,
+        raw_label_repo: RawLabelRepository | None = None,
+        recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
     ) -> None:
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
@@ -71,7 +70,9 @@ class PersistAisleResultUseCase:
     def execute(self, command: PersistAisleResultCommand) -> None:
         now = self._clock.now()
         if self._aisle_repo is None:
-            raise ValueError("PersistAisleResultUseCase requires AisleRepository for v3.2.3 consolidation")
+            raise ValueError(
+                "PersistAisleResultUseCase requires AisleRepository for v3.2.3 consolidation"
+            )
         aisle = self._aisle_repo.get_by_id(command.aisle_id)
         if aisle is None:
             raise ValueError(f"Aisle not found while persisting results: {command.aisle_id}")
@@ -110,7 +111,9 @@ class PersistAisleResultUseCase:
             persisted_products = 0
             persisted_evidences = 0
             skipped_unknown_zero = 0
-            for position, product, evidence in zip(mapped.positions, mapped.product_records, mapped.evidences):
+            for position, product, evidence in zip(
+                mapped.positions, mapped.product_records, mapped.evidences
+            ):
                 final_quantity = product.detected_quantity
                 if not should_persist_detected_position(product.sku, final_quantity):
                     skipped_unknown_zero += 1
@@ -137,13 +140,29 @@ class PersistAisleResultUseCase:
                 skipped_unknown_zero,
                 persisted_positions,
             )
-            logger.debug("PersistAisleResult: saved %d positions for aisle %s", persisted_positions, command.aisle_id)
-            logger.debug("PersistAisleResult: saved %d product_records for aisle %s", persisted_products, command.aisle_id)
-            logger.debug("PersistAisleResult: saved %d evidences for aisle %s", persisted_evidences, command.aisle_id)
+            logger.debug(
+                "PersistAisleResult: saved %d positions for aisle %s",
+                persisted_positions,
+                command.aisle_id,
+            )
+            logger.debug(
+                "PersistAisleResult: saved %d product_records for aisle %s",
+                persisted_products,
+                command.aisle_id,
+            )
+            logger.debug(
+                "PersistAisleResult: saved %d evidences for aisle %s",
+                persisted_evidences,
+                command.aisle_id,
+            )
 
             if self._raw_label_repo and mapped.raw_labels:
                 self._raw_label_repo.save_many(mapped.raw_labels)
-                logger.debug("PersistAisleResult: saved %d raw_labels for aisle %s", len(mapped.raw_labels), command.aisle_id)
+                logger.debug(
+                    "PersistAisleResult: saved %d raw_labels for aisle %s",
+                    len(mapped.raw_labels),
+                    command.aisle_id,
+                )
 
             if self._recompute_uc and inventory_id and self._raw_label_repo:
                 result = self._recompute_uc.execute(
@@ -164,11 +183,16 @@ class PersistAisleResultUseCase:
                     result.product_records_updated,
                 )
         except Exception as e:
-            logger.exception("PersistAisleResult failed for aisle %s job %s: %s", command.aisle_id, command.job_id, e)
+            logger.exception(
+                "PersistAisleResult failed for aisle %s job %s: %s",
+                command.aisle_id,
+                command.job_id,
+                e,
+            )
             raise
 
 
-def should_persist_detected_position(sku: Optional[str], final_quantity: Optional[int]) -> bool:
+def should_persist_detected_position(sku: str | None, final_quantity: int | None) -> bool:
     """
     Persist all detections except the explicitly non-actionable case:
     unknown/empty SKU with exactly zero final quantity.

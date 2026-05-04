@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 
 class AisleStatus(str, Enum):
@@ -34,10 +33,10 @@ class Aisle:
     created_at: datetime
     updated_at: datetime
     #: Canonical inventory_jobs row for default result reads (Phase 2); NULL = legacy aisle (null job_id rows).
-    operational_job_id: Optional[str] = None
-    error_code: Optional[str] = None
-    error_message: Optional[str] = None
-    retryable: Optional[bool] = None
+    operational_job_id: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    retryable: bool | None = None
 
     def mark_assets_uploaded(self, now: datetime) -> None:
         self.status = AisleStatus.ASSETS_UPLOADED
@@ -81,9 +80,9 @@ class Aisle:
     def mark_failed(
         self,
         now: datetime,
-        error_code: Optional[str] = None,
-        error_message: Optional[str] = None,
-        retryable: Optional[bool] = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        retryable: bool | None = None,
     ) -> None:
         self.status = AisleStatus.FAILED
         self.updated_at = now

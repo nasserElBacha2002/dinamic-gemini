@@ -8,7 +8,7 @@ Image identity is stored only in the manifest; no separate DB table for Epic A.
 import json
 import logging
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any
 
 from src.io.sanitize import photo_stored_filename
 from src.jobs.image_identity import generate_image_id
@@ -23,6 +23,7 @@ def _validate_image_bytes(raw: bytes) -> str:
     try:
         import cv2
         import numpy as np
+
         nparr = np.frombuffer(raw, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
@@ -34,10 +35,10 @@ def _validate_image_bytes(raw: bytes) -> str:
 
 async def persist_photos_from_uploads(
     job_dir: Path,
-    uploads: List[Any],
+    uploads: list[Any],
     max_total_bytes: int,
     chunk_size: int = 1024 * 1024,
-) -> Tuple[dict, str, str]:
+) -> tuple[dict, str, str]:
     """Read uploads (UploadFile-like), validate as images, write to job_dir/run/input_photos/, write manifest.
 
     Each item in uploads must have .filename and .read() (e.g. Starlette UploadFile).
@@ -52,11 +53,11 @@ async def persist_photos_from_uploads(
     input_photos_dir = run_dir / "input_photos"
     input_photos_dir.mkdir(parents=True, exist_ok=True)
     total_bytes = 0
-    manifest_photos: List[dict] = []
+    manifest_photos: list[dict] = []
     for i, upload in enumerate(uploads, start=1):
         if not hasattr(upload, "read") or not callable(getattr(upload, "read")):
             raise ValueError("each photo must be a file upload")
-        chunks: List[bytes] = []
+        chunks: list[bytes] = []
         size_so_far = 0
         while True:
             chunk = await upload.read(chunk_size)
@@ -64,16 +65,12 @@ async def persist_photos_from_uploads(
                 break
             size_so_far += len(chunk)
             if size_so_far > max_total_bytes:
-                raise ValueError(
-                    f"total photo bytes exceed limit ({max_total_bytes})"
-                )
+                raise ValueError(f"total photo bytes exceed limit ({max_total_bytes})")
             chunks.append(chunk)
         raw = b"".join(chunks)
         total_bytes += len(raw)
         if total_bytes > max_total_bytes:
-            raise ValueError(
-                f"total photo bytes ({total_bytes}) exceed limit ({max_total_bytes})"
-            )
+            raise ValueError(f"total photo bytes ({total_bytes}) exceed limit ({max_total_bytes})")
         err = _validate_image_bytes(raw)
         if err:
             raise ValueError(err)
@@ -84,14 +81,16 @@ async def persist_photos_from_uploads(
         out_path = input_photos_dir / stored_name
         out_path.write_bytes(raw)
         # index and upload_order are 1-based (i from enumerate(uploads, start=1))
-        manifest_photos.append({
-            "index": i,
-            "upload_order": i,
-            "image_id": generate_image_id(i),
-            "original_filename": original_filename,
-            "stored_filename": stored_name,
-            "bytes": len(raw),
-        })
+        manifest_photos.append(
+            {
+                "index": i,
+                "upload_order": i,
+                "image_id": generate_image_id(i),
+                "original_filename": original_filename,
+                "stored_filename": stored_name,
+                "bytes": len(raw),
+            }
+        )
     # Epic 3.1.A: backend-generated image_ids must be unique within the job
     image_ids = [m["image_id"] for m in manifest_photos]
     if len(image_ids) != len(set(image_ids)):

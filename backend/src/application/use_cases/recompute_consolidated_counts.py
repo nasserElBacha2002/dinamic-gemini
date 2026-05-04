@@ -12,16 +12,16 @@ from dataclasses import dataclass
 from typing import Literal, Union
 
 from src.application.ports.repositories import (
-    FinalCountRepository,
     JOB_ID_FILTER_UNSET,
+    FinalCountRepository,
     NormalizedLabelRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
+    _JobIdFilterUnset,
 )
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
-from src.domain.labels.merge import MergeRuleEngine
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +70,18 @@ class RecomputeConsolidatedCountsUseCase:
         self._normalization = normalization_service
         self._builder = final_count_builder
 
-    def execute(self, command: RecomputeConsolidatedCountsCommand) -> RecomputeConsolidatedCountsResult:
+    def execute(
+        self, command: RecomputeConsolidatedCountsCommand
+    ) -> RecomputeConsolidatedCountsResult:
         inv_id = command.inventory_id
         aisle_id = command.aisle_id
         label_job_kw = self._label_job_kw(command.job_scope)
 
         raw_labels = list(self._raw_repo.list_for_scope(inv_id, aisle_id, **label_job_kw))
         if not raw_labels:
-            logger.debug("RecomputeConsolidatedCounts: no raw labels for scope %s/%s", inv_id, aisle_id)
+            logger.debug(
+                "RecomputeConsolidatedCounts: no raw labels for scope %s/%s", inv_id, aisle_id
+            )
             self._normalized_repo.replace_for_scope(inv_id, aisle_id, **label_job_kw)
             self._final_repo.replace_for_scope(inv_id, aisle_id, **label_job_kw)
             return RecomputeConsolidatedCountsResult(
@@ -142,8 +146,9 @@ class RecomputeConsolidatedCountsUseCase:
             qty_by_pos_sku[key] = rec.quantity
 
         updated = 0
+        pos_kw: str | None | _JobIdFilterUnset
         if job_scope == "all":
-            pos_kw: object | str | None = JOB_ID_FILTER_UNSET
+            pos_kw = JOB_ID_FILTER_UNSET
         elif job_scope == "legacy_null":
             pos_kw = None
         else:
@@ -159,12 +164,9 @@ class RecomputeConsolidatedCountsUseCase:
                 explicit_qty_from_record = (
                     str(getattr(prod, "qty_parse_status", "") or "").strip() == "valid_positive"
                 )
-                has_authoritative_qty = (
-                    old_qty > 0
-                    and (
-                        explicit_qty_from_record
-                        or old_src in {"detected", "label_explicit", "ocr", "llm_extracted"}
-                    )
+                has_authoritative_qty = old_qty > 0 and (
+                    explicit_qty_from_record
+                    or old_src in {"detected", "label_explicit", "ocr", "llm_extracted"}
                 )
                 if prod.corrected_quantity is not None:
                     logger.info(

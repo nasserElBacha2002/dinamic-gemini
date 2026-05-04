@@ -19,10 +19,14 @@ from src.domain.labels.entities import RawLabel
 from src.domain.labels.merge import MergeRuleEngine
 from src.domain.products.entities import ProductRecord
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
-from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
-from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+from src.infrastructure.repositories.memory_normalized_label_repository import (
+    MemoryNormalizedLabelRepository,
+)
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
+from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
 
 
 def _raw(
@@ -65,11 +69,13 @@ def test_recompute_duplicate_raw_same_group_does_not_inflate():
     now = datetime.now(timezone.utc)
     pos_id = "pos-1"
     # 3 raw labels same SKU same group (same evidence)
-    raw_repo.save_many([
-        _raw("r1", pos_id, "g1", "ev1", "SKU-X"),
-        _raw("r2", pos_id, "g1", "ev1", "SKU-X"),
-        _raw("r3", pos_id, "g1", "ev1", "SKU-X"),
-    ])
+    raw_repo.save_many(
+        [
+            _raw("r1", pos_id, "g1", "ev1", "SKU-X"),
+            _raw("r2", pos_id, "g1", "ev1", "SKU-X"),
+            _raw("r3", pos_id, "g1", "ev1", "SKU-X"),
+        ]
+    )
     # One product record with authoritative explicit quantity: must be preserved.
     prod = ProductRecord(
         id="prod-1",
@@ -151,10 +157,12 @@ def test_recompute_updates_only_non_authoritative_products():
     pos_id = "pos-1"
 
     # Two raw duplicates => final quantity 1 for SKU-X
-    raw_repo.save_many([
-        _raw("r1", pos_id, "g1", "ev1", "SKU-X"),
-        _raw("r2", pos_id, "g1", "ev1", "SKU-X"),
-    ])
+    raw_repo.save_many(
+        [
+            _raw("r1", pos_id, "g1", "ev1", "SKU-X"),
+            _raw("r2", pos_id, "g1", "ev1", "SKU-X"),
+        ]
+    )
 
     # Explicit authoritative record must be preserved.
     product_repo.save(
@@ -227,7 +235,11 @@ def test_recompute_updates_only_non_authoritative_products():
         normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
         final_count_builder=FinalCountBuilder(),
     )
-    res = uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=True))
+    res = uc.execute(
+        RecomputeConsolidatedCountsCommand(
+            inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=True
+        )
+    )
     assert res.final_count == 1
 
     assert product_repo.get_by_id("p1").detected_quantity == 31
@@ -286,7 +298,11 @@ def test_merge_inferred_allowed_when_explicit_missing():
         normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
         final_count_builder=FinalCountBuilder(),
     )
-    uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=True))
+    uc.execute(
+        RecomputeConsolidatedCountsCommand(
+            inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=True
+        )
+    )
     updated = product_repo.get_by_id("p-m1")
     assert updated is not None
     assert updated.detected_quantity == 1
@@ -301,9 +317,11 @@ def test_recompute_same_scope_idempotent():
     product_repo = MemoryProductRecordRepository()
     position_repo = MemoryPositionRepository()
 
-    raw_repo.save_many([
-        _raw("r1", "pos1", "g1", "ev1", "SKU-A"),
-    ])
+    raw_repo.save_many(
+        [
+            _raw("r1", "pos1", "g1", "ev1", "SKU-A"),
+        ]
+    )
 
     now = datetime.now(timezone.utc)
     from src.domain.positions.entities import Position, PositionStatus
@@ -332,11 +350,19 @@ def test_recompute_same_scope_idempotent():
         final_count_builder=FinalCountBuilder(),
     )
 
-    uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=False))
+    uc.execute(
+        RecomputeConsolidatedCountsCommand(
+            inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=False
+        )
+    )
     n1 = len(list(norm_repo.list_for_scope("inv1", "aisle1")))
     f1 = len(list(final_repo.list_for_scope("inv1", "aisle1")))
 
-    uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=False))
+    uc.execute(
+        RecomputeConsolidatedCountsCommand(
+            inventory_id="inv1", aisle_id="aisle1", apply_to_product_records=False
+        )
+    )
     n2 = len(list(norm_repo.list_for_scope("inv1", "aisle1")))
     f2 = len(list(final_repo.list_for_scope("inv1", "aisle1")))
 

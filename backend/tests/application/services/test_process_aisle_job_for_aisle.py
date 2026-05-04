@@ -7,7 +7,6 @@ mapping remains stable.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, Optional
 
 import pytest
 
@@ -19,10 +18,10 @@ from src.domain.jobs.entities import Job, JobStatus
 
 
 class _JobRepoStub:
-    def __init__(self, jobs: Dict[str, Job]) -> None:
+    def __init__(self, jobs: dict[str, Job]) -> None:
         self._jobs = jobs
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
 
@@ -51,9 +50,7 @@ def test_require_process_aisle_job_missing_raises_with_stable_message() -> None:
         AisleNotFoundError,
         match=r"^Job missing-id not found for aisle aisle-1$",
     ):
-        require_process_aisle_job_for_aisle(
-            repo, job_id="missing-id", aisle_id="aisle-1"
-        )
+        require_process_aisle_job_for_aisle(repo, job_id="missing-id", aisle_id="aisle-1")
 
 
 def test_require_process_aisle_job_wrong_target_raises_with_stable_message() -> None:
@@ -65,9 +62,7 @@ def test_require_process_aisle_job_wrong_target_raises_with_stable_message() -> 
         require_process_aisle_job_for_aisle(repo, job_id="j1", aisle_id="aisle-1")
 
 
-def test_require_process_aisle_job_wrong_type_raises_value_error_with_stable_message() -> (
-    None
-):
+def test_require_process_aisle_job_wrong_type_raises_value_error_with_stable_message() -> None:
     repo = _JobRepoStub({"j1": _job(job_id="j1", job_type="other_job")})
     with pytest.raises(
         ValueError,

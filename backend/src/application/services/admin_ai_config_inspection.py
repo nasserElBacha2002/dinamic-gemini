@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from src.application.services.processing_experiment_catalog import (
     default_model_for_provider,
@@ -25,8 +25,8 @@ from src.llm.normalization.entity_normalizer import (
     resolve_provider_family,
 )
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base
-from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
 from src.llm.prompt_composer.hybrid_profiles import CLAUDE_JSON_ENTITY_OUTPUT_KEYS
+from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.providers.definitions import (
     PIPELINE_PROVIDER_SPECS,
@@ -42,7 +42,7 @@ _GLOBAL_INSTRUCTIONS_NOTE = (
 )
 
 # Short provider-facing notes for the **instructions** section only (runtime / SDK behavior).
-_PROVIDER_INSTRUCTION_NOTES: Dict[str, str] = {
+_PROVIDER_INSTRUCTION_NOTES: dict[str, str] = {
     "gemini": "Native Gemini SDK; hybrid base uses the `default` profile branch only.",
     "openai": "Chat Completions + vision; `openai` replacement fragment when parity mode is off.",
     "claude": "Anthropic Messages + vision; JSON entity contract supplement when parity mode is off.",
@@ -78,7 +78,7 @@ def _canonical_example_json() -> str:
         "product_label_bbox": None,
         "product_label_quantity": None,
     }
-    obj: Dict[str, Any] = {
+    obj: dict[str, Any] = {
         EXTRACTION_CONTRACT_VERSION_KEY: EXTRACTION_CONTRACT_VERSION_VALUE,
         "total_entities_detected": 1,
         "entities": [sample_entity],
@@ -86,7 +86,7 @@ def _canonical_example_json() -> str:
     return json.dumps(obj, indent=2)
 
 
-def _response_contract(provider_key: str) -> Dict[str, Any]:
+def _response_contract(provider_key: str) -> dict[str, Any]:
     """Structured contract metadata (minimal prose; UI can expand labels)."""
     fam = resolve_provider_family(provider_key)
     if provider_key == "gemini":
@@ -151,7 +151,7 @@ def _response_contract(provider_key: str) -> Dict[str, Any]:
     }
 
 
-def _composition_structured(provider_key: str) -> Dict[str, Any]:
+def _composition_structured(provider_key: str) -> dict[str, Any]:
     """How hybrid base text is assembled — separate from operator instructions."""
     modes = {
         "gemini": "default_profile_only",
@@ -163,19 +163,21 @@ def _composition_structured(provider_key: str) -> Dict[str, Any]:
         "hybrid_base_mode": modes.get(provider_key, "default_profile_only"),
         "parity_mode_affects_prompt_assembly": provider_key in ("openai", "claude"),
         "multimodal_context_policy": (
-            "reject_images_before_http" if provider_key == "deepseek" else "attach_when_adapter_supports_vision"
+            "reject_images_before_http"
+            if provider_key == "deepseek"
+            else "attach_when_adapter_supports_vision"
         ),
     }
 
 
-def iter_prompt_variant_summaries() -> List[Dict[str, Any]]:
+def iter_prompt_variant_summaries() -> list[dict[str, Any]]:
     """Metadata only — no composed prompt text (keeps overview payload small)."""
     reg_profiles = sorted(registered_hybrid_prompt_keys())
     reg_providers = sorted(registered_pipeline_provider_keys_from_definitions())
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for pk in reg_profiles:
         for prov in reg_providers:
-            parity_modes: List[bool] = [False]
+            parity_modes: list[bool] = [False]
             if prov == "openai":
                 parity_modes.append(True)
             for parity in parity_modes:
@@ -195,14 +197,14 @@ def compose_prompt_variant_for_inspection(
     prompt_key: str,
     pipeline_provider_key: str,
     prompt_parity_mode: bool,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     On-demand composed prompt for admin inspection. Returns None if the tuple is not in the
     registered inspection matrix (same rules as variant summaries).
     """
     pk = prompt_key.strip()
     prov = pipeline_provider_key.strip().lower()
-    allowed_profiles: Set[str] = set(registered_hybrid_prompt_keys())
+    allowed_profiles: set[str] = set(registered_hybrid_prompt_keys())
     allowed_providers = set(registered_pipeline_provider_keys_from_definitions())
     if pk not in allowed_profiles or prov not in allowed_providers:
         return None
@@ -223,29 +225,31 @@ def compose_prompt_variant_for_inspection(
     }
 
 
-def build_admin_ai_config_payload(settings: Settings) -> Dict[str, Any]:
+def build_admin_ai_config_payload(settings: Settings) -> dict[str, Any]:
     """Structured, secret-free payload for GET admin AI config (no composed prompt bodies)."""
     now = datetime.now(timezone.utc)
     default_pipeline = normalize_pipeline_provider_key(None, settings)
     hybrid_prompt = str(getattr(settings, "hybrid_prompt", "") or "global_v21").strip()
     prompt_version = getattr(settings, "prompt_version", None)
-    pv_opt = prompt_version.strip() if isinstance(prompt_version, str) and prompt_version.strip() else None
+    pv_opt = (
+        prompt_version.strip()
+        if isinstance(prompt_version, str) and prompt_version.strip()
+        else None
+    )
 
     summaries = iter_prompt_variant_summaries()
-    variants_by_provider: Dict[str, List[Dict[str, Any]]] = {}
+    variants_by_provider: dict[str, list[dict[str, Any]]] = {}
     for row in summaries:
         prov = row["pipeline_provider_key"]
         variants_by_provider.setdefault(prov, []).append(row)
 
-    providers_out: List[Dict[str, Any]] = []
+    providers_out: list[dict[str, Any]] = []
     for spec in sorted(PIPELINE_PROVIDER_SPECS, key=lambda s: s.key):
         key = spec.key
         pairs = models_for_provider(key, settings)
         dm = default_model_for_provider(key, settings)
         cred = credential_configured(spec, settings)
-        models_list = [
-            {"id": mid, "label": lab, "is_default": mid == dm} for mid, lab in pairs
-        ]
+        models_list = [{"id": mid, "label": lab, "is_default": mid == dm} for mid, lab in pairs]
         providers_out.append(
             {
                 "key": key,

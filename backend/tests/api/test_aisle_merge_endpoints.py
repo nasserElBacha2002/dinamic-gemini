@@ -75,8 +75,8 @@ def test_get_merge_results_endpoint_returns_rows() -> None:
             )
 
     app.dependency_overrides[get_current_admin] = _fake_admin
-    app.dependency_overrides[get_get_aisle_merge_results_use_case] = (
-        lambda: StubGetMergeResultsUseCase()
+    app.dependency_overrides[get_get_aisle_merge_results_use_case] = lambda: (
+        StubGetMergeResultsUseCase()
     )
     try:
         client = TestClient(app)
@@ -90,4 +90,3 @@ def test_get_merge_results_endpoint_returns_rows() -> None:
         assert data["result_job_id"] is None
     finally:
         app.dependency_overrides.clear()
-

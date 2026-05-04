@@ -16,16 +16,16 @@ Materialization is delegated to :class:`src.application.services.aisle_source_as
 from __future__ import annotations
 
 import logging
-from typing import List, Sequence
+from collections.abc import Sequence
 
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import EmptyUploadError
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
-from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
+from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.assets.entities import SourceAsset
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class UploadAisleAssetsUseCase:
         inventory_id: str,
         aisle_id: str,
         files: Sequence[UploadedFile],
-    ) -> List[SourceAsset]:
+    ) -> list[SourceAsset]:
         if not files:
             raise EmptyUploadError("At least one file is required")
         aisle = require_aisle_scoped_to_inventory(
@@ -70,8 +70,8 @@ class UploadAisleAssetsUseCase:
             detail_style="strict",
         )
         now = self._clock.now()
-        created: List[SourceAsset] = []
-        written_paths: List[str] = []
+        created: list[SourceAsset] = []
+        written_paths: list[str] = []
         n_files = len(files)
         logger.info("Uploading %d file(s) to aisle %s", n_files, aisle_id)
         try:
@@ -103,7 +103,9 @@ class UploadAisleAssetsUseCase:
                 try:
                     self._artifact_storage.delete_file(p)
                 except Exception as cleanup_e:
-                    logger.warning("Rollback cleanup failed for aisle asset file %s: %s", p, cleanup_e)
+                    logger.warning(
+                        "Rollback cleanup failed for aisle asset file %s: %s", p, cleanup_e
+                    )
             logger.exception(
                 "Aisle asset upload failed aisle_id=%s uploaded_count=%d attempted_count=%d",
                 aisle_id,

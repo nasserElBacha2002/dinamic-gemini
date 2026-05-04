@@ -15,7 +15,7 @@ once here (step 4 of the Phase 5 flow).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from src.jobs.image_identity import load_job_images_from_manifest
 from src.llm.prompt_composer.enrichments import (
@@ -34,12 +34,14 @@ from src.llm.prompt_composer.prompt_traceability import (
     COMPOSITION_STEP_RESOLVE_PROFILE,
     build_prompt_composition_dict,
 )
-from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
 
 
-def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple[str, Dict[str, Any]]:
+def build_hybrid_analysis_prompt_with_traceability(
+    context: RunContext,
+) -> tuple[str, dict[str, Any]]:
     """
     Same prompt text as legacy assembly, plus JSON-serializable composition metadata (Phase 6).
 
@@ -49,7 +51,7 @@ def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple
     ``LLMRequest.metadata`` (see ``apply_execution_layer_to_composition``).
     """
     settings = context.settings
-    steps: list[Dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
     profile = resolve_hybrid_profile_name(
         job_prompt_key=getattr(context, "job_prompt_key", None),
         settings=settings,
@@ -60,7 +62,10 @@ def build_hybrid_analysis_prompt_with_traceability(context: RunContext) -> Tuple
         settings,
     )
     steps.append(
-        {"step": COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER, "pipeline_provider_key": effective_provider}
+        {
+            "step": COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER,
+            "pipeline_provider_key": effective_provider,
+        }
     )
     parity = bool(getattr(context, "job_prompt_parity_mode", False))
     if parity:
@@ -124,10 +129,12 @@ def build_hybrid_analysis_prompt_text(context: RunContext) -> str:
     return build_hybrid_analysis_prompt_with_traceability(context)[0]
 
 
-def resolve_analysis_context_for_run(context: RunContext) -> Optional[AnalysisContext]:
+def resolve_analysis_context_for_run(context: RunContext) -> AnalysisContext | None:
     """Return typed AnalysisContext from RunContext or legacy JobInput.metadata."""
-    analysis_context: Optional[AnalysisContext] = getattr(context, "analysis_context", None)
+    analysis_context: AnalysisContext | None = getattr(context, "analysis_context", None)
     job_input = getattr(context, "job_input", None)
     if analysis_context is None and job_input and getattr(job_input, "metadata", None):
-        analysis_context = analysis_context_from_dict((job_input.metadata or {}).get("analysis_context"))
+        analysis_context = analysis_context_from_dict(
+            (job_input.metadata or {}).get("analysis_context")
+        )
     return analysis_context

@@ -15,7 +15,7 @@ registry — ``registered_pipeline_provider_keys()`` is derived from this module
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final, Optional, Tuple
+from typing import Any, Final
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ class PipelineProviderSpec:
     default_model_fallback: str
 
 
-PIPELINE_PROVIDER_SPECS: Final[Tuple[PipelineProviderSpec, ...]] = (
+PIPELINE_PROVIDER_SPECS: Final[tuple[PipelineProviderSpec, ...]] = (
     PipelineProviderSpec(
         key="gemini",
         label="Gemini",
@@ -81,7 +81,7 @@ PIPELINE_PROVIDER_SPECS: Final[Tuple[PipelineProviderSpec, ...]] = (
 _SPECS_BY_KEY: Final[dict[str, PipelineProviderSpec]] = {s.key: s for s in PIPELINE_PROVIDER_SPECS}
 
 
-def pipeline_provider_spec(key: str) -> Optional[PipelineProviderSpec]:
+def pipeline_provider_spec(key: str) -> PipelineProviderSpec | None:
     return _SPECS_BY_KEY.get((key or "").strip().lower())
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 
 
 @dataclass
@@ -15,4 +15,4 @@ class UploadedFile:
     file_obj: BinaryIO
     content_type: str
     #: Optional last-modified instant in UTC (Sprint 3 capture time precedence: file mtime).
-    last_modified_at: Optional[datetime] = None
+    last_modified_at: datetime | None = None

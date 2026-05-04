@@ -11,12 +11,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Protocol
 
 import numpy as np
 
 from src.pipeline.context.run_context import RunContext
-
 
 # v3.2.4 Phase 4: provider capability flags
 PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE = "visual_references_available"
@@ -49,12 +48,12 @@ class AnalysisResult:
     logs use a redacted subset.
     """
 
-    parsed_json: Dict[str, Any]
+    parsed_json: dict[str, Any]
     provider_name: str
-    provider_metadata: Optional[Dict[str, Any]] = None
-    prompt_composition: Optional[Dict[str, Any]] = None
+    provider_metadata: dict[str, Any] | None = None
+    prompt_composition: dict[str, Any] | None = None
     #: Provider-agnostic usage+pricing+computed-cost snapshot for one analysis call.
-    llm_cost_snapshot: Optional[Dict[str, Any]] = None
+    llm_cost_snapshot: dict[str, Any] | None = None
 
 
 class AnalysisProvider(Protocol):
@@ -67,10 +66,10 @@ class AnalysisProvider(Protocol):
     def analyze(
         self,
         context: RunContext,
-        frames_nd: List[np.ndarray],
-        frame_paths: List[Path],
-        frame_refs: List[str],
-        metadata: Dict[str, Any],
+        frames_nd: list[np.ndarray],
+        frame_paths: list[Path],
+        frame_refs: list[str],
+        metadata: dict[str, Any],
     ) -> AnalysisResult:
         """
         Run global analysis; return parsed v2.1 JSON and provider name.

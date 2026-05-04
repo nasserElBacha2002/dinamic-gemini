@@ -7,13 +7,12 @@ Quantity = count of normalized labels per (position, sku). Propagates review_req
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
 from uuid import uuid4
 
 from src.domain.labels.entities import FinalCountRecord, NormalizedLabel
 
 
-def _group_key(nl: NormalizedLabel) -> Tuple[str, str, Optional[str], Optional[str]]:
+def _group_key(nl: NormalizedLabel) -> tuple[str, str, str | None, str | None]:
     """
     Grouping key for final count.
 
@@ -27,7 +26,7 @@ def _group_key(nl: NormalizedLabel) -> Tuple[str, str, Optional[str], Optional[s
     return (nl.inventory_id, nl.aisle_id, nl.position_id, nl.canonical_sku)
 
 
-def _explanation_summary(labels: List[NormalizedLabel]) -> str:
+def _explanation_summary(labels: list[NormalizedLabel]) -> str:
     parts = []
     n = len(labels)
     if n == 1:
@@ -47,16 +46,15 @@ class FinalCountBuilder:
 
     def build(
         self,
-        normalized_labels: List[NormalizedLabel],
+        normalized_labels: list[NormalizedLabel],
         now_factory=None,
-    ) -> List[FinalCountRecord]:
+    ) -> list[FinalCountRecord]:
         """
         Group by (inventory_id, aisle_id, position_id, canonical_sku or per-label id when sku is None).
         One FinalCountRecord per group with quantity = len(group), normalized_label_ids, explanation.
         """
-        from datetime import datetime
+        from datetime import datetime, timezone
 
-        from datetime import timezone
         now = (now_factory or (lambda: datetime.now(timezone.utc)))()
 
         groups: dict = {}
@@ -64,7 +62,7 @@ class FinalCountBuilder:
             key = _group_key(nl)
             groups.setdefault(key, []).append(nl)
 
-        result: List[FinalCountRecord] = []
+        result: list[FinalCountRecord] = []
         for (inv_id, aisle_id, pos_id, sku), group in groups.items():
             quantity = len(group)
             review_required = any(nl.review_required for nl in group)

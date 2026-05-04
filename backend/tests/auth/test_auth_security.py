@@ -46,4 +46,3 @@ def test_token_roundtrip_and_expiration():
         assert False, "expected ExpiredSignatureError"
     except jwt.ExpiredSignatureError:
         pass
-

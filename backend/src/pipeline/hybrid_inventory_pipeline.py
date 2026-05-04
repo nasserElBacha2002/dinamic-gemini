@@ -5,34 +5,32 @@ v3.2.4 Phase 5: produce run_metadata in memory (visual_reference_context) for jo
 """
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
-import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Optional
 
 import cv2
-import numpy as np
 
 from src.config import Settings
 from src.jobs.models import JobInput
 from src.llm.errors import LLMProviderError
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError
 from src.pipeline.context.run_context import RunContext
-from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
+from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.providers.registry import default_analysis_provider
-from src.pipeline.stages.input_preparation_stage import InputPreparationStage, PreparedInput
-from src.pipeline.stages.frame_acquisition_stage import FrameAcquisitionStage, AcquiredFrames
+from src.pipeline.run_metadata import (
+    build_run_metadata,
+)
 from src.pipeline.stages.analysis_stage import AnalysisStage
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage
 from src.pipeline.stages.evidence_stage import EvidenceStage, EvidenceStageInput
+from src.pipeline.stages.frame_acquisition_stage import AcquiredFrames, FrameAcquisitionStage
+from src.pipeline.stages.input_preparation_stage import InputPreparationStage, PreparedInput
 from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageInput
-from src.pipeline.run_metadata import (
-    RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
-    build_run_metadata,
-)
 
 
 @dataclass
@@ -40,7 +38,8 @@ class PipelineRunResult:
     """Result of a pipeline run. Phase 5: run_metadata propagated in memory for job persistence."""
 
     exit_code: int
-    run_metadata: Optional[Dict[str, Any]] = None
+    run_metadata: Optional[dict[str, Any]] = None
+
 
 # Default max frames when hybrid_max_frames is None (kept for test imports)
 HYBRID_MAX_FRAMES = 10000
@@ -56,7 +55,11 @@ def _save_frames_sent_to_llm(
         return
     out_dir = run_dir / "frames_sent"
     out_dir.mkdir(parents=True, exist_ok=True)
-    indices = frame_indices if frame_indices is not None and len(frame_indices) == len(frames) else list(range(len(frames)))
+    indices = (
+        frame_indices
+        if frame_indices is not None and len(frame_indices) == len(frames)
+        else list(range(len(frames)))
+    )
     for i, (frame, idx) in enumerate(zip(frames, indices)):
         path = out_dir / f"frame_{idx:06d}.jpg"
         if not cv2.imwrite(str(path), frame):
@@ -83,7 +86,7 @@ class HybridInventoryPipeline:
         self,
         video_path: str,
         mode: str = "hybrid",
-        **kwargs: object,
+        **kwargs: Any,
     ) -> PipelineRunResult:
         if mode != "hybrid":
             raise ValueError(f"Invalid mode: {mode!r}; only 'hybrid' is supported as of v2.2.")
@@ -125,7 +128,9 @@ class HybridInventoryPipeline:
         # Compatibility fallback: parse from job_input.metadata['analysis_context'] if present.
         if analysis_context is None:
             raw_ctx = (getattr(job_input, "metadata", None) or {}).get("analysis_context")
-            analysis_context = analysis_context_from_dict(raw_ctx) if isinstance(raw_ctx, dict) else None
+            analysis_context = (
+                analysis_context_from_dict(raw_ctx) if isinstance(raw_ctx, dict) else None
+            )
         context = RunContext(
             job_id=execution_id,
             run_id=run_id,
@@ -174,7 +179,9 @@ class HybridInventoryPipeline:
         exec_log.info("Pipeline", "Job started", payload={"job_id": execution_id})
         context.emit_stage_event(stage="Pipeline", event="job.started")
         try:
-            context.check_cancellation(stage="InputPreparationStage", reason="Job canceled before input preparation")
+            context.check_cancellation(
+                stage="InputPreparationStage", reason="Job canceled before input preparation"
+            )
             stage_started = time.monotonic()
             exec_log.info("InputPreparationStage", "Input preparation started")
             context.emit_stage_event(stage="InputPreparationStage", event="stage.started")
@@ -193,13 +200,19 @@ class HybridInventoryPipeline:
 
         _report("extract_frames", 10)
         try:
-            context.check_cancellation(stage="FrameAcquisitionStage", reason="Job canceled before frame acquisition")
+            context.check_cancellation(
+                stage="FrameAcquisitionStage", reason="Job canceled before frame acquisition"
+            )
             stage_started = time.monotonic()
             exec_log.info("FrameAcquisitionStage", "Frame acquisition started")
             context.emit_stage_event(stage="FrameAcquisitionStage", event="stage.started")
             acquired: AcquiredFrames = self._frame_acquisition_stage.run(context, prepared)
             duration_ms = int((time.monotonic() - stage_started) * 1000)
-            exec_log.info("FrameAcquisitionStage", "Frame acquisition completed", payload={"frames": len(acquired.frames_nd)})
+            exec_log.info(
+                "FrameAcquisitionStage",
+                "Frame acquisition completed",
+                payload={"frames": len(acquired.frames_nd)},
+            )
             context.emit_stage_event(
                 stage="FrameAcquisitionStage",
                 event="stage.completed",
@@ -220,11 +233,15 @@ class HybridInventoryPipeline:
             analysis_result = self._analysis_stage.run(context, acquired)
             duration_ms = int((time.monotonic() - stage_started) * 1000)
             exec_log.info("AnalysisStage", "LLM analysis succeeded")
-            context.emit_stage_event(stage="AnalysisStage", event="stage.completed", duration_ms=duration_ms)
+            context.emit_stage_event(
+                stage="AnalysisStage", event="stage.completed", duration_ms=duration_ms
+            )
         except PipelineCancellationRequestedError:
             raise
         except LLMProviderError as e:
-            exec_log.error("AnalysisStage", f"LLM analysis failed: {e}", payload={"error": str(e)[:500]})
+            exec_log.error(
+                "AnalysisStage", f"LLM analysis failed: {e}", payload={"error": str(e)[:500]}
+            )
             context.emit_stage_event(
                 stage="AnalysisStage",
                 event="stage.failed",
@@ -236,7 +253,9 @@ class HybridInventoryPipeline:
             return PipelineRunResult(exit_code=1, run_metadata=None)
 
         try:
-            context.check_cancellation(stage="EntityResolutionStage", reason="Job canceled before entity resolution")
+            context.check_cancellation(
+                stage="EntityResolutionStage", reason="Job canceled before entity resolution"
+            )
             stage_started = time.monotonic()
             exec_log.info("EntityResolutionStage", "Entity resolution started")
             context.emit_stage_event(stage="EntityResolutionStage", event="stage.started")
@@ -255,7 +274,9 @@ class HybridInventoryPipeline:
 
         _report("evidence_pack", 85)
         try:
-            context.check_cancellation(stage="EvidenceStage", reason="Job canceled before evidence generation")
+            context.check_cancellation(
+                stage="EvidenceStage", reason="Job canceled before evidence generation"
+            )
             stage_started = time.monotonic()
             exec_log.info("EvidenceStage", "Evidence generation started")
             context.emit_stage_event(stage="EvidenceStage", event="stage.started")
@@ -268,7 +289,9 @@ class HybridInventoryPipeline:
             self._evidence_stage.run(context, evidence_input)
             duration_ms = int((time.monotonic() - stage_started) * 1000)
             exec_log.info("EvidenceStage", "Evidence generation completed")
-            context.emit_stage_event(stage="EvidenceStage", event="stage.completed", duration_ms=duration_ms)
+            context.emit_stage_event(
+                stage="EvidenceStage", event="stage.completed", duration_ms=duration_ms
+            )
         except PipelineCancellationRequestedError:
             raise
         except Exception as e:
@@ -285,16 +308,22 @@ class HybridInventoryPipeline:
         )
         _report("write_artifacts", 90)
         if getattr(settings, "debug_save_frames", False):
-            _save_frames_sent_to_llm(context.run_dir, acquired.frames_nd, acquired.metadata.get("frame_indices"))
+            _save_frames_sent_to_llm(
+                context.run_dir, acquired.frames_nd, acquired.metadata.get("frame_indices")
+            )
         try:
-            context.check_cancellation(stage="ReportingStage", reason="Job canceled before reporting")
+            context.check_cancellation(
+                stage="ReportingStage", reason="Job canceled before reporting"
+            )
             stage_started = time.monotonic()
             exec_log.info("ReportingStage", "Reporting started")
             context.emit_stage_event(stage="ReportingStage", event="stage.started")
             self._reporting_stage.run(context, reporting_input)
             duration_ms = int((time.monotonic() - stage_started) * 1000)
             exec_log.info("ReportingStage", "Reporting completed")
-            context.emit_stage_event(stage="ReportingStage", event="stage.completed", duration_ms=duration_ms)
+            context.emit_stage_event(
+                stage="ReportingStage", event="stage.completed", duration_ms=duration_ms
+            )
         except PipelineCancellationRequestedError:
             raise
         except Exception as e:
@@ -313,7 +342,9 @@ class HybridInventoryPipeline:
         # That is unrelated to prompt_composition["prompt_version"] (Phase 7 optional logical label).
         provider = (analysis_result.provider_name or "").strip() or None
         run_metadata["provider"] = provider
-        prompt_key = getattr(context, "job_prompt_key", None) or getattr(settings, "hybrid_prompt", None)
+        prompt_key = getattr(context, "job_prompt_key", None) or getattr(
+            settings, "hybrid_prompt", None
+        )
         if prompt_key is not None and str(prompt_key).strip():
             pk = str(prompt_key).strip()
             run_metadata["prompt_key"] = pk
@@ -325,7 +356,9 @@ class HybridInventoryPipeline:
                     json.dumps(run_metadata, indent=2), encoding="utf-8"
                 )
             except OSError as e:
-                logger.warning("Failed to write run_metadata.json (job_id=%s): %s", context.job_id, e)
+                logger.warning(
+                    "Failed to write run_metadata.json (job_id=%s): %s", context.job_id, e
+                )
         exec_log.info("Pipeline", "Job completed successfully")
         context.emit_stage_event(stage="Pipeline", event="job.succeeded")
         _report("done", 100)

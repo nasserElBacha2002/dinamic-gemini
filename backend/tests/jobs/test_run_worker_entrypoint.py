@@ -7,7 +7,7 @@ from types import SimpleNamespace
 sys.modules.setdefault("cv2", SimpleNamespace())
 sys.modules.setdefault("numpy", SimpleNamespace())
 
-from src.jobs import run_worker
+from src.jobs import run_worker  # noqa: E402
 
 
 def test_run_worker_main_uses_settings_output_dir(monkeypatch) -> None:
@@ -44,7 +44,9 @@ def test_run_worker_main_runs_single_job_when_job_id_is_provided(monkeypatch) ->
         run_worker,
         "_import_worker_runtime",
         lambda: (
-            lambda _base, job_id, execution_id=None: captured.update(job_id=job_id, execution_id=execution_id),
+            lambda _base, job_id, execution_id=None: captured.update(
+                job_id=job_id, execution_id=execution_id
+            ),
             lambda _base: (_ for _ in ()).throw(AssertionError("worker_loop should not run")),
         ),
     )
@@ -71,7 +73,9 @@ def test_run_worker_main_uses_sys_argv_when_argv_is_none(monkeypatch) -> None:
         run_worker,
         "_import_worker_runtime",
         lambda: (
-            lambda _base, job_id, execution_id=None: captured.update(job_id=job_id, execution_id=execution_id),
+            lambda _base, job_id, execution_id=None: captured.update(
+                job_id=job_id, execution_id=execution_id
+            ),
             lambda _base: (_ for _ in ()).throw(AssertionError("worker_loop should not run")),
         ),
     )
@@ -111,7 +115,9 @@ def test_run_worker_main_emits_bootstrap_events_and_checkpoint_for_single_job(mo
         run_worker,
         "_import_worker_runtime",
         lambda: (
-            lambda _base, job_id, execution_id=None: captured.update(job_id=job_id, execution_id=execution_id),
+            lambda _base, job_id, execution_id=None: captured.update(
+                job_id=job_id, execution_id=execution_id
+            ),
             lambda _base: None,
         ),
     )
@@ -167,4 +173,3 @@ def test_run_worker_main_marks_failed_when_single_job_bootstrap_raises(monkeypat
     assert captured["execution_id"] == "exec-123"
     assert captured["substep"] == "single_job_mode_failed"
     assert captured["error_message"] == "boom"
-

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 
-def parse_max_frames_to_send() -> Optional[int]:
+def parse_max_frames_to_send() -> int | None:
     """None = sin límite (procesar todo el video). Solo límite si se define explícitamente."""
     raw = os.getenv("MAX_FRAMES_TO_SEND", "").strip()
     if raw in ("", "0"):
@@ -18,7 +17,7 @@ def parse_max_frames_to_send() -> Optional[int]:
         return None
 
 
-def parse_hybrid_max_frames() -> Optional[int]:
+def parse_hybrid_max_frames() -> int | None:
     """None o vacío = sin límite en modo hybrid. Valor válido 1..10000."""
     raw = (os.getenv("HYBRID_MAX_FRAMES") or "").strip()
     if raw in ("", "0"):
@@ -30,7 +29,7 @@ def parse_hybrid_max_frames() -> Optional[int]:
         return None
 
 
-def parse_time_limit_sec() -> Optional[float]:
+def parse_time_limit_sec() -> float | None:
     raw = os.getenv("TIME_LIMIT_SEC", "").strip()
     if not raw:
         return None
@@ -41,7 +40,7 @@ def parse_time_limit_sec() -> Optional[float]:
         return None
 
 
-def parse_heuristic_resize_max_side() -> Optional[int]:
+def parse_heuristic_resize_max_side() -> int | None:
     """0 o vacío → None; valor válido → int. Evita ValueError si env está vacío."""
     raw = os.getenv("HEURISTIC_RESIZE_MAX_SIDE", "0").strip()
     if not raw:
@@ -53,7 +52,7 @@ def parse_heuristic_resize_max_side() -> Optional[int]:
         return None
 
 
-def parse_photos_max_single_bytes() -> Optional[int]:
+def parse_photos_max_single_bytes() -> int | None:
     """Unset or empty → None; else int (e.g. 10*1024*1024)."""
     raw = (os.getenv("PHOTOS_MAX_SINGLE_BYTES") or "").strip()
     if not raw:

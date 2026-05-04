@@ -6,10 +6,9 @@ import logging
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
-from typing import List, Optional, Union
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi.responses import FileResponse
 
 from src.api.constants.error_wire import (
     HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
@@ -18,34 +17,34 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
     HTTP_DETAIL_PREVIEW_NOT_AVAILABLE_FOR_IMAGE,
 )
-from src.api.errors import reraise_if_mapped
-from src.config import load_settings
 from src.api.dependencies import (
     get_artifact_storage,
     get_delete_aisle_source_asset_use_case,
     get_list_aisle_assets_use_case,
-    get_upload_aisle_assets_use_case,
     get_result_context_resolver,
+    get_upload_aisle_assets_use_case,
+)
+from src.api.errors import reraise_if_mapped
+from src.api.schemas.asset_schemas import (
+    SourceAssetImageDisplayUrlResponse,
+    SourceAssetResponse,
+    UploadAisleAssetsResponse,
 )
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     resolve_source_asset_file_response,
     resolve_source_asset_image_display,
 )
-from src.api.schemas.asset_schemas import (
-    SourceAssetImageDisplayUrlResponse,
-    SourceAssetResponse,
-    UploadAisleAssetsResponse,
-)
+from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import AisleNotFoundError
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
-from src.application.dto.uploaded_file import UploadedFile
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
+from src.config import load_settings
 from src.domain.assets.entities import SourceAsset
 
-from .shared import asset_to_response, resolve_normalized_asset_path, heic_extensions
+from .shared import asset_to_response, heic_extensions, resolve_normalized_asset_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,7 +52,7 @@ router = APIRouter()
 
 def _source_asset_image_display_response(
     *,
-    image_url: Optional[str],
+    image_url: str | None,
     need_fetch: bool,
 ) -> SourceAssetImageDisplayUrlResponse:
     """Build API model; ``need_fetch`` must be true when ``image_url`` is None."""
@@ -72,6 +71,7 @@ def _source_asset_image_display_response(
 
 class AssetFileFailureReason(str, Enum):
     """Internal reason for asset file endpoint returning 404 or failure. Used for logging and observability."""
+
     AISLE_NOT_FOUND = "aisle_not_found"
     ASSET_NOT_FOUND = "asset_not_found"
     FILE_NOT_FOUND = "file_not_found"
@@ -87,13 +87,13 @@ class AssetFileFailureReason(str, Enum):
 async def upload_aisle_assets(
     inventory_id: str,
     aisle_id: str,
-    files: List[UploadFile] = File(..., description="One or more image or video files"),
+    files: list[UploadFile] = File(..., description="One or more image or video files"),
     use_case: UploadAisleAssetsUseCase = Depends(get_upload_aisle_assets_use_case),
 ) -> UploadAisleAssetsResponse:
     """Upload one or more assets (photos/videos) to an aisle. Aisle transitions to assets_uploaded."""
     if not files:
         raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
-    uploaded: List[UploadedFile] = []
+    uploaded: list[UploadedFile] = []
     for u in files:
         if not u.filename and not getattr(u, "content_type", None):
             continue
@@ -115,18 +115,19 @@ async def upload_aisle_assets(
         raise
 
 
-@router.get("/{inventory_id}/aisles/{aisle_id}/assets", response_model=List[SourceAssetResponse])
+@router.get("/{inventory_id}/aisles/{aisle_id}/assets", response_model=list[SourceAssetResponse])
 def list_aisle_assets(
     inventory_id: str,
     aisle_id: str,
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
-) -> List[SourceAssetResponse]:
+) -> list[SourceAssetResponse]:
     """List source assets for an aisle."""
     try:
         assets = use_case.execute(inventory_id, aisle_id)
         return [asset_to_response(a) for a in assets]
     except AisleNotFoundError as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get(
@@ -138,7 +139,7 @@ def get_aisle_asset_file(
     inventory_id: str,
     aisle_id: str,
     asset_id: str,
-    job_id: Optional[str] = Query(
+    job_id: str | None = Query(
         None,
         description=(
             "Optional inventory job id for HEIC normalized preview; must match a run for this aisle. "
@@ -148,9 +149,9 @@ def get_aisle_asset_file(
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
     resolver: ResultContextResolver = Depends(get_result_context_resolver),
     artifact_storage=Depends(get_artifact_storage),
-) -> Union[FileResponse, RedirectResponse]:
+) -> Response:
     """Serve the reference image/file for an aisle asset. HEIC/HEIF: serves normalized JPG when available (optional job_id)."""
-    failure_reason: Optional[AssetFileFailureReason] = None
+    failure_reason: AssetFileFailureReason | None = None
     try:
         assets = use_case.execute(inventory_id, aisle_id)
     except AisleNotFoundError:
@@ -236,6 +237,7 @@ def get_aisle_asset_file(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise
 
 
 @router.get(
@@ -246,7 +248,7 @@ def get_aisle_asset_image_display_url(
     inventory_id: str,
     aisle_id: str,
     asset_id: str,
-    job_id: Optional[str] = Query(
+    job_id: str | None = Query(
         None,
         description="Optional job id to align HEIC preview with the /file endpoint (resolver semantics).",
     ),
@@ -324,7 +326,9 @@ def get_aisle_asset_image_display_url(
         )
 
     try:
-        image_url, need_fetch = resolve_source_asset_image_display(asset, artifact_store=artifact_storage)
+        image_url, need_fetch = resolve_source_asset_image_display(
+            asset, artifact_store=artifact_storage
+        )
     except StoredArtifactAccessError as e:
         logger.warning(
             "Asset image-display-url resolution failed: %s asset_id=%s reason=%s",

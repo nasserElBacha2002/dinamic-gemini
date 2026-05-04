@@ -10,12 +10,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from src.decision.processing_mode import assign_processing_mode
 from src.domain.pallet import Pallet
-from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, HYBRID_MAX_FRAMES
+from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 from src.reporting.artifacts import write_csv, write_json
+
+
 def test_assign_processing_mode_label_when_has_label_and_code_and_quantity():
     """Pallet with has_label, internal_code, quantity → source=label, final_quantity=quantity."""
     pallet = Pallet(
@@ -116,7 +117,12 @@ def test_hybrid_pipeline_writes_hybrid_report_json_and_csv():
     }
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model=None, latency_ms=0, parsed_json=sample_v21, raw_text=None, usage=None,
+        provider="gemini",
+        model=None,
+        latency_ms=0,
+        parsed_json=sample_v21,
+        raw_text=None,
+        usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,

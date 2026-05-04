@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from src.pipeline.providers.definitions import (
     PIPELINE_PROVIDER_SPECS,
     registered_pipeline_provider_keys_from_definitions,

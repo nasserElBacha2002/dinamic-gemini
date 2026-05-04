@@ -145,7 +145,15 @@ def test_excess_items_unassigned() -> None:
         ),
     )
     out = compute_item_preview_outcomes(items=items, positions=positions, clock_offset_seconds=0)
-    proposed = [k for k, v in out.items() if v.assignment_status == CaptureSessionItemAssignmentStatus.PROPOSED]
-    unassigned = [k for k, v in out.items() if v.assignment_status == CaptureSessionItemAssignmentStatus.UNASSIGNED]
+    proposed = [
+        k
+        for k, v in out.items()
+        if v.assignment_status == CaptureSessionItemAssignmentStatus.PROPOSED
+    ]
+    unassigned = [
+        k
+        for k, v in out.items()
+        if v.assignment_status == CaptureSessionItemAssignmentStatus.UNASSIGNED
+    ]
     assert len(proposed) == 1
     assert len(unassigned) == 2

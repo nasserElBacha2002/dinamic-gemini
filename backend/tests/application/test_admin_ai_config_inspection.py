@@ -39,7 +39,12 @@ def test_build_admin_ai_config_stable_shape_and_no_secret_attrs() -> None:
     assert isinstance(gemini["prompt_variant_summaries"], list)
     assert len(gemini["prompt_variant_summaries"]) >= 1
     for row in gemini["prompt_variant_summaries"]:
-        assert set(row.keys()) == {"prompt_key", "pipeline_provider_key", "prompt_parity_mode", "variant_label"}
+        assert set(row.keys()) == {
+            "prompt_key",
+            "pipeline_provider_key",
+            "prompt_parity_mode",
+            "variant_label",
+        }
     assert "response_contract" in gemini
     assert gemini["response_contract"]["expects_json"] is True
     assert "total_entities_detected" in gemini["response_contract"]["canonical_example_json"]
@@ -112,7 +117,9 @@ def test_build_payload_empty_provider_registry() -> None:
     s.processing_deepseek_models = "deepseek-chat"
     s.deepseek_model = "deepseek-chat"
 
-    with patch("src.application.services.admin_ai_config_inspection.PIPELINE_PROVIDER_SPECS", tuple()):
+    with patch(
+        "src.application.services.admin_ai_config_inspection.PIPELINE_PROVIDER_SPECS", tuple()
+    ):
         payload = build_admin_ai_config_payload(s)
     assert payload["providers"] == []
 
@@ -135,12 +142,15 @@ def test_build_payload_provider_with_no_models() -> None:
     s.processing_deepseek_models = "deepseek-chat"
     s.deepseek_model = "deepseek-chat"
 
-    with patch(
-        "src.application.services.admin_ai_config_inspection.models_for_provider",
-        return_value=[],
-    ), patch(
-        "src.application.services.admin_ai_config_inspection.default_model_for_provider",
-        return_value=None,
+    with (
+        patch(
+            "src.application.services.admin_ai_config_inspection.models_for_provider",
+            return_value=[],
+        ),
+        patch(
+            "src.application.services.admin_ai_config_inspection.default_model_for_provider",
+            return_value=None,
+        ),
     ):
         payload = build_admin_ai_config_payload(s)
     gemini = next(p for p in payload["providers"] if p["key"] == "gemini")

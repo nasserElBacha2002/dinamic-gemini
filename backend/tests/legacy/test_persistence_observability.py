@@ -23,14 +23,19 @@ def test_classify_v3_api_module() -> None:
 
 
 def test_classify_v3_application_module() -> None:
-    assert classify_stage8_access_path_kind("src.application.use_cases.list_aisle_positions") == "v3_application"
+    assert (
+        classify_stage8_access_path_kind("src.application.use_cases.list_aisle_positions")
+        == "v3_application"
+    )
 
 
 def test_classify_unknown_module() -> None:
     assert classify_stage8_access_path_kind(None) == "unknown"
 
 
-def test_legacy_sql_repositories_materialized_logs_once_per_process(caplog: pytest.LogCaptureFixture) -> None:
+def test_legacy_sql_repositories_materialized_logs_once_per_process(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     reset_legacy_sql_repositories_materialization_flag()
     reset_legacy_sql_bridge_bypassed_flag_for_tests()
     caplog.set_level(logging.INFO, logger="dinamic.legacy_sql")

@@ -21,8 +21,12 @@ from __future__ import annotations
 import logging
 
 from src.env_settings.pipeline_analysis_execution_strings import (
-    STRATEGY_MULTI_PARALLEL,
-    STRATEGY_MULTI_SEQUENTIAL,
+    STRATEGY_MULTI_PARALLEL as STRATEGY_MULTI_PARALLEL,
+)
+from src.env_settings.pipeline_analysis_execution_strings import (
+    STRATEGY_MULTI_SEQUENTIAL as STRATEGY_MULTI_SEQUENTIAL,
+)
+from src.env_settings.pipeline_analysis_execution_strings import (
     STRATEGY_SINGLE,
     normalize_pipeline_analysis_strategy_value,
 )
@@ -90,7 +94,9 @@ def build_ordered_provider_keys(
 
     Unknown extra tokens are skipped with a warning (deterministic, no silent wrong-vendor runs).
     """
-    primary = PipelineProviderResolver.effective_provider_key(context.pipeline_provider_name, settings)
+    primary = PipelineProviderResolver.effective_provider_key(
+        context.pipeline_provider_name, settings
+    )
     known = registered_pipeline_provider_keys()
     extras = effective_extra_provider_keys(context, settings)
     ordered_extras: list[str] = []

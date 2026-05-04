@@ -15,8 +15,7 @@ Phase 2 implements:
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
-from typing import Dict, Optional
-
+from typing import Optional
 from uuid import uuid4
 
 from fastapi import status
@@ -67,8 +66,8 @@ class RefreshTokenRecord:
     replaced_by_token_id: str | None = None
 
 
-_REFRESH_TOKENS: Dict[str, RefreshTokenRecord] = {}
-_REFRESH_TOKENS_BY_HASH: Dict[str, str] = {}
+_REFRESH_TOKENS: dict[str, RefreshTokenRecord] = {}
+_REFRESH_TOKENS_BY_HASH: dict[str, str] = {}
 
 
 def _now_utc() -> datetime:
@@ -110,7 +109,9 @@ def _find_refresh_record(refresh_token: str) -> RefreshTokenRecord | None:
     return _REFRESH_TOKENS.get(rec_id)
 
 
-def _revoke_token_record(rec: RefreshTokenRecord, *, replaced_by: RefreshTokenRecord | None = None) -> None:
+def _revoke_token_record(
+    rec: RefreshTokenRecord, *, replaced_by: RefreshTokenRecord | None = None
+) -> None:
     now = _now_utc()
     rec.revoked_at = now
     if replaced_by is not None:
@@ -135,7 +136,9 @@ def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[
     submitted_pw = command.password or ""
 
     if _primary_admin_credentials_configured(s):
-        if submitted_user == s.admin_username and verify_password(submitted_pw, s.admin_password_hash):
+        if submitted_user == s.admin_username and verify_password(
+            submitted_pw, s.admin_password_hash
+        ):
             return AuthUser(id="admin", username=s.admin_username, role="administrator")
 
     # Jairo is an add-on only: requires a fully configured primary admin (Policy A).
@@ -145,7 +148,9 @@ def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[
         and submitted_user == _JAIRO_LOGIN_USERNAME
         and verify_password(submitted_pw, s.jairo_password_hash)
     ):
-        return AuthUser(id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator")
+        return AuthUser(
+            id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator"
+        )
 
     return None
 
@@ -154,7 +159,9 @@ def _auth_user_from_principal_id(principal_id: str, context: AuthContext) -> Aut
     """Rebuild AuthUser for refresh/logout flows from stored principal id."""
     s = context.settings
     if principal_id == _JAIRO_PRINCIPAL_ID:
-        return AuthUser(id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator")
+        return AuthUser(
+            id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator"
+        )
     return AuthUser(id="admin", username=s.admin_username, role="administrator")
 
 
@@ -251,4 +258,3 @@ def logout_session(refresh_token: str | None, context: AuthContext) -> None:
     if rec is None:
         return
     _revoke_token_record(rec)
-

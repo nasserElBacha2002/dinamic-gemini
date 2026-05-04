@@ -6,8 +6,8 @@ parity with SQL persistence is by domain shape, not column-level mapping.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Dict, Optional, Sequence
 
 from src.application.errors import OpenCaptureSessionExistsError
 from src.application.ports.capture_repositories import CaptureSessionRepository
@@ -24,7 +24,7 @@ _TERMINAL_OPEN_BLOCK = frozenset(
 
 class MemoryCaptureSessionRepository(CaptureSessionRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, CaptureSession] = {}
+        self._store: dict[str, CaptureSession] = {}
 
     @staticmethod
     def _is_open_for_unique_policy(s: CaptureSession) -> bool:
@@ -52,10 +52,12 @@ class MemoryCaptureSessionRepository(CaptureSessionRepository):
                     )
         self._store[session.id] = session
 
-    def get_by_id(self, session_id: str) -> Optional[CaptureSession]:
+    def get_by_id(self, session_id: str) -> CaptureSession | None:
         return self._store.get(session_id)
 
-    def get_by_id_for_inventory(self, session_id: str, inventory_id: str) -> Optional[CaptureSession]:
+    def get_by_id_for_inventory(
+        self, session_id: str, inventory_id: str
+    ) -> CaptureSession | None:
         s = self._store.get(session_id)
         if s is None or s.inventory_id != inventory_id:
             return None
@@ -77,10 +79,10 @@ class MemoryCaptureSessionRepository(CaptureSessionRepository):
         self,
         inventory_id: str,
         *,
-        aisle_id: Optional[str] = None,
-        statuses: Optional[Sequence[CaptureSessionStatus]] = None,
-        created_from: Optional[datetime] = None,
-        created_to: Optional[datetime] = None,
+        aisle_id: str | None = None,
+        statuses: Sequence[CaptureSessionStatus] | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
         page: int = 1,
         page_size: int = 25,
     ) -> tuple[Sequence[CaptureSession], int]:

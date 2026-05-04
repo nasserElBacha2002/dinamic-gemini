@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from pydantic import BaseModel, Field
 
 from src.api.schemas.listing_schemas import PageMeta
@@ -31,4 +29,4 @@ class ReviewQueueListResponse(PageMeta):
     """GET /api/v3/review-queue/positions — filter/sort/pagination + workload summary."""
 
     summary: ReviewQueueSummaryResponse
-    items: List[ReviewQueueItemResponse]
+    items: list[ReviewQueueItemResponse]

@@ -18,9 +18,11 @@ from src.application.use_cases.compute_materialized_capture_session_group_previe
     ComputeMaterializedCaptureSessionGroupPreviewUseCase,
     _classify_g6_preview_status,
 )
-from src.application.use_cases.materialize_capture_session_group import MaterializeCaptureSessionGroupUseCase
-from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.application.use_cases.materialize_capture_session_group import (
+    MaterializeCaptureSessionGroupUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.capture.entities import (
     CaptureSession,
     CaptureSessionGroup,
@@ -33,12 +35,20 @@ from src.domain.capture.entities import (
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
-from src.infrastructure.repositories.memory_capture_session_group_repository import MemoryCaptureSessionGroupRepository
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_group_repository import (
+    MemoryCaptureSessionGroupRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+from src.infrastructure.repositories.memory_source_asset_repository import (
+    MemorySourceAssetRepository,
+)
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 
 
@@ -260,7 +270,9 @@ def test_classify_g6_preview_status_explicit_contract() -> None:
     )
 
 
-def test_preview_metadata_scoped_asset_without_resolvable_item_is_empty_and_stable(tmp_path) -> None:
+def test_preview_metadata_scoped_asset_without_resolvable_item_is_empty_and_stable(
+    tmp_path,
+) -> None:
     """Metadata matches session+group but no joinable item → no rows; trace count stays on filtered assets."""
     c = _base_ctx(tmp_path)
     now = c["clock"].now()
@@ -399,7 +411,9 @@ def test_preview_assigned_materialized_succeeds(tmp_path) -> None:
                 corrected_position_code=code,
             )
         )
-    c["mat_uc"].materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    c["mat_uc"].materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     r1 = c["preview_uc"].execute(
         inventory_id=c["inv_id"],
         session_id=c["session_id"],
@@ -443,7 +457,9 @@ def test_preview_filters_other_group_assets_on_same_aisle(tmp_path) -> None:
             group_id=c["group_id"],
         )
     )
-    c["mat_uc"].materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    c["mat_uc"].materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
 
     noise_id = str(uuid4())
     c["asset_repo"].save(
@@ -507,7 +523,9 @@ def test_preview_empty_when_materialized_only_non_imported_items(tmp_path) -> No
             group_id=c["group_id"],
         )
     )
-    c["mat_uc"].materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    c["mat_uc"].materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     row = c["item_repo"].get_by_id(item_id)
     assert row is not None
     row.import_status = CaptureSessionItemImportStatus.IMPORT_FAILED
@@ -558,7 +576,9 @@ def test_preview_partial_when_materialization_incomplete(tmp_path) -> None:
             group_id=c["group_id"],
         )
     )
-    c["mat_uc"].materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    c["mat_uc"].materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     c["position_repo"].save(
         Position(
             id=str(uuid4()),

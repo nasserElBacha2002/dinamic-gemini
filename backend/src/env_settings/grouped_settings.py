@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from typing_extensions import Self
 
 from src.env_settings.parsing import (
     parse_heuristic_resize_max_side,
@@ -20,6 +20,7 @@ from src.env_settings.pipeline_analysis_execution_strings import (
 )
 from src.env_settings.sqlserver_resolution import default_sqlserver_connection_string
 
+
 class LlmProviderSettings(BaseModel):
     model_config = {"extra": "forbid"}
 
@@ -29,9 +30,7 @@ class LlmProviderSettings(BaseModel):
         description="API key de Gemini. Requerida para usar el servicio.",
     )
     gemini_model_name: str = Field(
-        default_factory=lambda: os.getenv(
-            "GEMINI_MODEL_NAME", "gemini-2.0-flash-exp"
-        ),
+        default_factory=lambda: os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash-exp"),
         description="Nombre del modelo de Gemini a usar.",
     )
     gemini_max_retries: int = Field(
@@ -55,8 +54,8 @@ class LlmProviderSettings(BaseModel):
         default_factory=lambda: (os.getenv("LLM_PRICING_CATALOG_JSON", "") or "").strip(),
         description=(
             "JSON catalog for provider/model pricing snapshots used to compute call cost. "
-            "Shape: {\"version\": \"...\", \"currency\": \"USD\", \"entries\": [{\"provider\": \"openai\", "
-            "\"model\": \"gpt-4o\", \"input_cost_per_million\": 5, \"output_cost_per_million\": 15, ...}]}. "
+            'Shape: {"version": "...", "currency": "USD", "entries": [{"provider": "openai", '
+            '"model": "gpt-4o", "input_cost_per_million": 5, "output_cost_per_million": 15, ...}]}. '
             "Env: LLM_PRICING_CATALOG_JSON."
         ),
     )
@@ -92,7 +91,9 @@ class LlmProviderSettings(BaseModel):
         description="Anthropic API key for Claude (pipeline provider claude). Env: ANTHROPIC_API_KEY.",
     )
     anthropic_model: str = Field(
-        default_factory=lambda: (os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514") or "claude-sonnet-4-20250514").strip(),
+        default_factory=lambda: (
+            os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514") or "claude-sonnet-4-20250514"
+        ).strip(),
         description="Default Claude model id when job omits model_name. Env: ANTHROPIC_MODEL.",
     )
     anthropic_request_timeout_sec: float = Field(
@@ -140,8 +141,8 @@ class LlmProviderSettings(BaseModel):
             "`prompt_version`, which is an optional traceability label only."
         ),
     )
-    prompt_version: Optional[str] = Field(
-        default_factory=lambda: ((os.getenv("PROMPT_VERSION") or "").strip() or None),
+    prompt_version: str | None = Field(
+        default_factory=lambda: (os.getenv("PROMPT_VERSION") or "").strip() or None,
         description=(
             "Phase 7 — **traceability only**: optional logical label copied into "
             "`prompt_composition['prompt_version']` for audit and future comparison (e.g. v1, experiment-A). "
@@ -163,8 +164,7 @@ class LlmProviderSettings(BaseModel):
     )
     processing_openai_models: str = Field(
         default_factory=lambda: (
-            os.getenv("PROCESSING_OPENAI_MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo")
-            or "gpt-4o"
+            os.getenv("PROCESSING_OPENAI_MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo") or "gpt-4o"
         ),
         description="Comma-separated OpenAI model ids for processing-provider-options / POST /process. Env: PROCESSING_OPENAI_MODELS.",
     )
@@ -184,13 +184,16 @@ class LlmProviderSettings(BaseModel):
         description="DeepSeek API key (pipeline provider deepseek). Env: DEEPSEEK_API_KEY.",
     )
     deepseek_model: str = Field(
-        default_factory=lambda: (os.getenv("DEEPSEEK_MODEL", "deepseek-chat") or "deepseek-chat").strip(),
+        default_factory=lambda: (
+            os.getenv("DEEPSEEK_MODEL", "deepseek-chat") or "deepseek-chat"
+        ).strip(),
         description="Default DeepSeek model id when job omits model_name. Env: DEEPSEEK_MODEL.",
     )
     deepseek_api_base_url: str = Field(
         default_factory=lambda: (
-            (os.getenv("DEEPSEEK_API_BASE_URL", "https://api.deepseek.com") or "https://api.deepseek.com").strip()
-        ),
+            os.getenv("DEEPSEEK_API_BASE_URL", "https://api.deepseek.com")
+            or "https://api.deepseek.com"
+        ).strip(),
         description="OpenAI-compatible API base URL for DeepSeek. Env: DEEPSEEK_API_BASE_URL.",
     )
     deepseek_request_timeout_sec: float = Field(
@@ -210,8 +213,7 @@ class LlmProviderSettings(BaseModel):
     )
     processing_deepseek_models: str = Field(
         default_factory=lambda: (
-            os.getenv("PROCESSING_DEEPSEEK_MODELS", "deepseek-chat")
-            or "deepseek-chat"
+            os.getenv("PROCESSING_DEEPSEEK_MODELS", "deepseek-chat") or "deepseek-chat"
         ),
         description=(
             "Comma-separated DeepSeek model ids for processing-provider-options (text-only Chat API; "
@@ -219,9 +221,11 @@ class LlmProviderSettings(BaseModel):
         ),
     )
     pipeline_analysis_execution_strategy: str = Field(
-        default_factory=lambda: (os.getenv("PIPELINE_ANALYSIS_EXECUTION_STRATEGY", "single") or "single")
-        .strip()
-        .lower(),
+        default_factory=lambda: (
+            (os.getenv("PIPELINE_ANALYSIS_EXECUTION_STRATEGY", "single") or "single")
+            .strip()
+            .lower()
+        ),
         description=(
             "Phase 4 — hybrid analysis provider strategy: single (default); multi_parallel "
             "(all listed providers must succeed); multi_sequential or multi_fallback (alias) "
@@ -230,7 +234,9 @@ class LlmProviderSettings(BaseModel):
         ),
     )
     pipeline_analysis_extra_provider_keys: str = Field(
-        default_factory=lambda: (os.getenv("PIPELINE_ANALYSIS_EXTRA_PROVIDER_KEYS", "") or "").strip(),
+        default_factory=lambda: (
+            os.getenv("PIPELINE_ANALYSIS_EXTRA_PROVIDER_KEYS", "") or ""
+        ).strip(),
         description=(
             "Phase 4 — comma-separated extra logical pipeline providers after the job/settings primary "
             "(e.g. openai,claude). Used when strategy is multi_parallel or multi_sequential. "
@@ -269,7 +275,7 @@ class PipelineVisionSettings(BaseModel):
         le=60.0,
         description="Frames por segundo a extraer del video (0.1 a 60).",
     )
-    max_frames_to_send: Optional[int] = Field(
+    max_frames_to_send: int | None = Field(
         default_factory=parse_max_frames_to_send,
         description="Máximo de frames a enviar a Gemini (None = sin límite). Env: MAX_FRAMES_TO_SEND ('' o '0' = sin límite).",
     )
@@ -279,11 +285,11 @@ class PipelineVisionSettings(BaseModel):
         le=1000,
         description="Cada cuántos frames tomar tras la selección (1 = todos). Acelera videos largos sin truncar por error.",
     )
-    time_limit_sec: Optional[float] = Field(
+    time_limit_sec: float | None = Field(
         default_factory=parse_time_limit_sec,
         description="Procesar solo frames con timestamp_seconds <= este valor. Env: TIME_LIMIT_SEC. None = sin límite.",
     )
-    hybrid_max_frames: Optional[int] = Field(
+    hybrid_max_frames: int | None = Field(
         default_factory=parse_hybrid_max_frames,
         description="Máximo de frames representativos en modo hybrid (None = sin límite). Env: HYBRID_MAX_FRAMES ('' o '0' = sin límite, 1..10000).",
     )
@@ -314,7 +320,9 @@ class PipelineVisionSettings(BaseModel):
         description="Modo del detector: stub, heuristic, synthetic. Env: DETECTOR_MODE.",
     )
     use_synthetic_detection: bool = Field(
-        default_factory=lambda: os.getenv("USE_SYNTHETIC_DETECTION", "").strip().lower() in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("USE_SYNTHETIC_DETECTION", "").strip().lower() in ("1", "true", "yes")
+        ),
         description="Si True, el detector devuelve 2 bboxes fijos por frame (para probar pipeline sin modelo). Env: USE_SYNTHETIC_DETECTION.",
     )
     detection_conf_threshold: float = Field(
@@ -324,7 +332,7 @@ class PipelineVisionSettings(BaseModel):
         description="Umbral de confianza para detección de pallets (0 a 1).",
     )
     # Heuristic detector (detector_mode=heuristic)
-    heuristic_resize_max_side: Optional[int] = Field(
+    heuristic_resize_max_side: int | None = Field(
         default_factory=lambda: parse_heuristic_resize_max_side(),
         description="Si > 0, redimensionar frame antes de detección heurística (lado mayor). 0 = no resize. Env: HEURISTIC_RESIZE_MAX_SIDE.",
     )
@@ -429,7 +437,10 @@ class PipelineVisionSettings(BaseModel):
         description="Si dos vistas están muy cerca en tiempo y sus bboxes tienen IoU > este valor, se descarta una. 0 = desactivado. Env: VIEW_SELECTION_MAX_IOU_SUPPRESS.",
     )
     view_selection_enable_diversity: bool = Field(
-        default_factory=lambda: os.getenv("VIEW_SELECTION_ENABLE_DIVERSITY", "true").strip().lower() in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("VIEW_SELECTION_ENABLE_DIVERSITY", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
         description="Usar selección en 2 fases (anchors + greedy diversidad) con phash/centroid dedup. Env: VIEW_SELECTION_ENABLE_DIVERSITY.",
     )
     view_selection_phash_near_dup_thr: int = Field(
@@ -457,13 +468,17 @@ class PipelineVisionSettings(BaseModel):
         description="Peso del bonus de diversidad en fase greedy (0.35 = 35%%). Env: VIEW_SELECTION_DIVERSITY_WEIGHT.",
     )
     debug_view_selection: bool = Field(
-        default_factory=lambda: os.getenv("DEBUG_VIEW_SELECTION", "false").strip().lower() in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("DEBUG_VIEW_SELECTION", "false").strip().lower() in ("1", "true", "yes")
+        ),
         description="Incluir view_selection_debug en pipeline_debug y reasons en manifest. Env: DEBUG_VIEW_SELECTION.",
     )
 
     # Sprint 6B: Re-ID (optional, default off)
     reid_enabled: bool = Field(
-        default_factory=lambda: os.getenv("REID_ENABLED", "false").strip().lower() in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("REID_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+        ),
         description="Activar Re-ID (pHash/CLIP + DSU merge) después de tracking, antes de view selection. Env: REID_ENABLED.",
     )
     reid_signature_k: int = Field(
@@ -505,7 +520,7 @@ class PipelineVisionSettings(BaseModel):
 
     @field_validator("max_frames_to_send")
     @classmethod
-    def validate_max_frames_to_send(cls, v: Optional[int]) -> Optional[int]:
+    def validate_max_frames_to_send(cls, v: int | None) -> int | None:
         if v is None or v == 0:
             return None
         if v < 1 or v > 10000:
@@ -551,8 +566,9 @@ class ApiRuntimeSettings(BaseModel):
         description="API key for server auth (header X-API-Key). Empty = no auth (dev only).",
     )
     embedded_worker_enabled: bool = Field(
-        default_factory=lambda: os.getenv("EMBEDDED_WORKER_ENABLED", "true").strip().lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("EMBEDDED_WORKER_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+        ),
         description=(
             "Enable the embedded background worker thread inside API process. "
             "Default true for local/dev; disable in production when running dedicated worker service. "
@@ -585,11 +601,14 @@ class ApiRuntimeSettings(BaseModel):
         ),
     )
 
+
 class ArtifactStorageSettings(BaseModel):
     model_config = {"extra": "forbid"}
 
     artifact_storage_provider: str = Field(
-        default_factory=lambda: (os.getenv("ARTIFACT_STORAGE_PROVIDER", "local") or "local").strip().lower(),
+        default_factory=lambda: (
+            (os.getenv("ARTIFACT_STORAGE_PROVIDER", "local") or "local").strip().lower()
+        ),
         description="Artifact storage provider: local | s3. Env: ARTIFACT_STORAGE_PROVIDER.",
     )
     artifact_s3_bucket: str = Field(
@@ -611,15 +630,19 @@ class ArtifactStorageSettings(BaseModel):
         description="Signed URL TTL in seconds for S3 artifact URLs. Env: ARTIFACT_S3_SIGNED_URL_TTL_SEC.",
     )
     artifact_storage_legacy_local_read_enabled: bool = Field(
-        default_factory=lambda: os.getenv("ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED", "true").strip().lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
         description=(
             "During migration, allow legacy local-path reads for records without provider metadata. "
             "Env: ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED."
         ),
     )
     artifact_store_max_in_memory_get_bytes: int = Field(
-        default_factory=lambda: int(os.getenv("ARTIFACT_STORE_MAX_IN_MEMORY_GET_BYTES", str(8 * 1024 * 1024))),
+        default_factory=lambda: int(
+            os.getenv("ARTIFACT_STORE_MAX_IN_MEMORY_GET_BYTES", str(8 * 1024 * 1024))
+        ),
         ge=64 * 1024,
         le=512 * 1024 * 1024,
         description=(
@@ -628,7 +651,9 @@ class ArtifactStorageSettings(BaseModel):
         ),
     )
     artifact_store_max_json_load_bytes: int = Field(
-        default_factory=lambda: int(os.getenv("ARTIFACT_STORE_MAX_JSON_LOAD_BYTES", str(32 * 1024 * 1024))),
+        default_factory=lambda: int(
+            os.getenv("ARTIFACT_STORE_MAX_JSON_LOAD_BYTES", str(32 * 1024 * 1024))
+        ),
         ge=64 * 1024,
         le=512 * 1024 * 1024,
         description=(
@@ -672,20 +697,25 @@ class LimitsAndSchemaSettings(BaseModel):
         description="Max upload file size in MB (1 to 2048).",
     )
     db_schema_guard_enabled: bool = Field(
-        default_factory=lambda: os.getenv("DB_SCHEMA_GUARD_ENABLED", "true").strip().lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("DB_SCHEMA_GUARD_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+        ),
         description="Enable schema compatibility checks at startup/readiness. Env: DB_SCHEMA_GUARD_ENABLED.",
     )
     db_schema_guard_block_startup: bool = Field(
-        default_factory=lambda: os.getenv("DB_SCHEMA_GUARD_BLOCK_STARTUP", "true").strip().lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("DB_SCHEMA_GUARD_BLOCK_STARTUP", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
         description="Fail app startup when schema is incompatible. Env: DB_SCHEMA_GUARD_BLOCK_STARTUP.",
     )
     db_schema_service_name: str = Field(
-        default_factory=lambda: (os.getenv("DB_SCHEMA_SERVICE_NAME", "inventory-api") or "inventory-api").strip(),
+        default_factory=lambda: (
+            os.getenv("DB_SCHEMA_SERVICE_NAME", "inventory-api") or "inventory-api"
+        ).strip(),
         description="Logical service key used in schema_migrations. Env: DB_SCHEMA_SERVICE_NAME.",
     )
-    db_schema_required_version: Optional[str] = Field(
+    db_schema_required_version: str | None = Field(
         default_factory=lambda: (os.getenv("DB_SCHEMA_REQUIRED_VERSION") or "").strip() or None,
         description="Optional required schema version override. If unset, latest local migration version is required.",
     )
@@ -695,7 +725,7 @@ class LimitsAndSchemaSettings(BaseModel):
         le=3600,
         description="Lock timeout for migration execution in seconds. Env: DB_SCHEMA_MIGRATION_LOCK_TIMEOUT_SEC.",
     )
-    deployment_id: Optional[str] = Field(
+    deployment_id: str | None = Field(
         default_factory=lambda: (os.getenv("DEPLOYMENT_ID") or "").strip() or None,
         description="Deployment identifier used to annotate migration history. Env: DEPLOYMENT_ID.",
     )
@@ -721,7 +751,9 @@ class LimitsAndSchemaSettings(BaseModel):
         description="Max page size for GET .../capture-sessions. Env: V3_CAPTURE_SESSION_LIST_MAX_PAGE_SIZE.",
     )
     v3_capture_staging_storage_prefix: str = Field(
-        default_factory=lambda: (os.getenv("V3_CAPTURE_STAGING_STORAGE_PREFIX", "capture/staging") or "capture/staging").strip(),
+        default_factory=lambda: (
+            os.getenv("V3_CAPTURE_STAGING_STORAGE_PREFIX", "capture/staging") or "capture/staging"
+        ).strip(),
         description=(
             "Relative prefix under artifact storage for capture staging blobs (not aisle SourceAsset paths). "
             "Env: V3_CAPTURE_STAGING_STORAGE_PREFIX."
@@ -785,7 +817,9 @@ class PhotosInputSettings(BaseModel):
 
     # Stage 2.2.A — Photos input (create job with N photos instead of video)
     enable_photos_input: bool = Field(
-        default_factory=lambda: os.getenv("ENABLE_PHOTOS_INPUT", "true").strip().lower() in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("ENABLE_PHOTOS_INPUT", "true").strip().lower() in ("1", "true", "yes")
+        ),
         description="If False, POST with input_type=photos returns 422. Env: ENABLE_PHOTOS_INPUT (default true).",
     )
     max_photos_per_job: int = Field(
@@ -814,7 +848,9 @@ class PhotosInputSettings(BaseModel):
         description="JPEG quality (1-100) for normalized photos. Env: PHOTO_JPEG_QUALITY.",
     )
     photos_keep_originals: bool = Field(
-        default_factory=lambda: os.getenv("PHOTOS_KEEP_ORIGINALS", "false").strip().lower() in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("PHOTOS_KEEP_ORIGINALS", "false").strip().lower() in ("1", "true", "yes")
+        ),
         description="If true, keep originals in input_photos (normalized still written). Env: PHOTOS_KEEP_ORIGINALS.",
     )
     photos_min_side: int = Field(
@@ -823,17 +859,20 @@ class PhotosInputSettings(BaseModel):
         le=2048,
         description="Min side (px) for photos; smaller images fail. Env: PHOTOS_MIN_SIDE.",
     )
-    photos_max_single_bytes: Optional[int] = Field(
+    photos_max_single_bytes: int | None = Field(
         default_factory=lambda: parse_photos_max_single_bytes(),
         description="Max bytes per single original photo (optional). Env: PHOTOS_MAX_SINGLE_BYTES. Unset = no limit.",
     )
+
 
 class DatabasePersistenceSettings(BaseModel):
     model_config = {"extra": "forbid"}
 
     # Stage 8 — SQL Server persistence (optional). Credentials only from env.
     sqlserver_enabled: bool = Field(
-        default_factory=lambda: os.getenv("SQLSERVER_ENABLED", "true").strip().lower() in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("SQLSERVER_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+        ),
         description="Use SQL Server as source of truth for jobs, pallet_results, job_events. Default True; set to false to use only filesystem.",
     )
     sqlserver_connection_string: str = Field(
@@ -850,8 +889,10 @@ class DatabasePersistenceSettings(BaseModel):
     )
     # Phase 14.1 — Legacy Stage-8 SQL (`jobs` / `pallet_results` / `job_events`) soft freeze (optional).
     legacy_stage8_sql_writes_disabled: bool = Field(
-        default_factory=lambda: os.getenv("LEGACY_STAGE8_SQL_WRITES_DISABLED", "").strip().lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("LEGACY_STAGE8_SQL_WRITES_DISABLED", "").strip().lower()
+            in ("1", "true", "yes")
+        ),
         description=(
             "When true, block INSERT/UPDATE-style operations in ``src.database.repository`` for legacy "
             "Stage-8 tables; reads still run. Default false (unset) preserves historical behavior. "
@@ -859,8 +900,10 @@ class DatabasePersistenceSettings(BaseModel):
         ),
     )
     legacy_stage8_sql_bridge_disabled: bool = Field(
-        default_factory=lambda: os.getenv("LEGACY_STAGE8_SQL_BRIDGE_DISABLED", "").strip().lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("LEGACY_STAGE8_SQL_BRIDGE_DISABLED", "").strip().lower()
+            in ("1", "true", "yes")
+        ),
         description=(
             "When true, ``job_store._db_repos()`` returns None (no legacy SQL repo materialization); "
             "FS and in-memory queue fallbacks apply. Stronger than ``legacy_stage8_sql_writes_disabled``. "
@@ -868,17 +911,20 @@ class DatabasePersistenceSettings(BaseModel):
         ),
     )
 
+
 class DebugRuntimeSettings(BaseModel):
     model_config = {"extra": "forbid"}
 
     debug_save_frames: bool = Field(
-        default_factory=lambda: os.getenv("DEBUG_SAVE_FRAMES", "false").lower()
-        in ("true", "1", "yes"),
+        default_factory=lambda: (
+            os.getenv("DEBUG_SAVE_FRAMES", "false").lower() in ("true", "1", "yes")
+        ),
         description="Si es True, guarda los frames procesados para debug.",
     )
     debug_log_full_analysis_prompt: bool = Field(
-        default_factory=lambda: os.getenv("DEBUG_LOG_FULL_ANALYSIS_PROMPT", "false").lower()
-        in ("true", "1", "yes"),
+        default_factory=lambda: (
+            os.getenv("DEBUG_LOG_FULL_ANALYSIS_PROMPT", "false").lower() in ("true", "1", "yes")
+        ),
         description=(
             "Phase 6: when True, execution_log includes full analysis prompt_text on "
             "'Analysis request prepared'. Default False (hash + length only)."
@@ -918,7 +964,9 @@ class AuthSettings(BaseModel):
         description="Access token lifetime in minutes for admin access (default 15). Env: AUTH_TOKEN_EXPIRES_MINUTES.",
     )
     auth_refresh_token_expires_minutes: int = Field(
-        default_factory=lambda: int(os.getenv("AUTH_REFRESH_TOKEN_EXPIRES_MINUTES", str(30 * 24 * 60))),
+        default_factory=lambda: int(
+            os.getenv("AUTH_REFRESH_TOKEN_EXPIRES_MINUTES", str(30 * 24 * 60))
+        ),
         ge=1,
         le=60 * 24 * 365,
         description="Refresh token lifetime in minutes for admin sessions (default 30 days). Env: AUTH_REFRESH_TOKEN_EXPIRES_MINUTES.",
@@ -983,5 +1031,3 @@ class ConsolidationSettings(BaseModel):
         le=1.0,
         description="Mínima confianza final para no descartar producto fantasma (0 a 1).",
     )
-
-

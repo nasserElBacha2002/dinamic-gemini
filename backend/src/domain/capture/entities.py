@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class CaptureSessionStatus(str, Enum):
@@ -61,12 +61,12 @@ class CaptureSessionGroupAisleAssignmentStatus(str, Enum):
 class CaptureSession:
     id: str
     inventory_id: str
-    aisle_id: Optional[str]
+    aisle_id: str | None
     status: CaptureSessionStatus
     created_at: datetime
     updated_at: datetime
-    opened_at: Optional[datetime] = None
-    closed_at: Optional[datetime] = None
+    opened_at: datetime | None = None
+    closed_at: datetime | None = None
     #: Seconds added to each item's ``effective_capture_time`` for preview ordering (Sprint 3).
     clock_offset_seconds: int = 0
 
@@ -81,9 +81,11 @@ class CaptureSessionGroup:
     created_at: datetime
     algorithm_version: str
     #: G4 — aisle this group is staged for (materialization in G5); null until assigned.
-    assigned_aisle_id: Optional[str] = None
-    assignment_status: CaptureSessionGroupAisleAssignmentStatus = CaptureSessionGroupAisleAssignmentStatus.UNASSIGNED
-    assigned_at: Optional[datetime] = None
+    assigned_aisle_id: str | None = None
+    assignment_status: CaptureSessionGroupAisleAssignmentStatus = (
+        CaptureSessionGroupAisleAssignmentStatus.UNASSIGNED
+    )
+    assigned_at: datetime | None = None
 
 
 @dataclass
@@ -94,22 +96,22 @@ class CaptureSessionItem:
     import_status: CaptureSessionItemImportStatus
     assignment_status: CaptureSessionItemAssignmentStatus
     updated_at: datetime
-    content_hash: Optional[str] = None
-    effective_capture_time: Optional[datetime] = None
-    time_source: Optional[CaptureTimeSource] = None
-    time_confidence: Optional[float] = None
-    linked_source_asset_id: Optional[str] = None
-    last_error_code: Optional[str] = None
-    last_error_detail: Optional[str] = None
-    original_filename: Optional[str] = None
+    content_hash: str | None = None
+    effective_capture_time: datetime | None = None
+    time_source: CaptureTimeSource | None = None
+    time_confidence: float | None = None
+    linked_source_asset_id: str | None = None
+    last_error_code: str | None = None
+    last_error_detail: str | None = None
+    original_filename: str | None = None
     #: ``effective_capture_time`` + session offset at last preview (UTC); null until preview.
-    adjusted_capture_time: Optional[datetime] = None
+    adjusted_capture_time: datetime | None = None
     #: Human-readable deterministic preview outcome (Sprint 3).
-    assignment_reason: Optional[str] = None
+    assignment_reason: str | None = None
     #: Aisle ``positions.id`` when preview proposes a unique slot; null otherwise.
-    preview_target_position_id: Optional[str] = None
+    preview_target_position_id: str | None = None
     #: G3 temporal group; null until ``ComputeCaptureSessionGroups`` runs (or after clear).
-    group_id: Optional[str] = None
+    group_id: str | None = None
 
 
 @dataclass
@@ -120,4 +122,4 @@ class CaptureSessionConfirmationLedgerEntry:
     session_id: str
     idempotency_key: str
     created_at: datetime
-    outcome_json: Optional[Dict[str, Any]] = None
+    outcome_json: dict[str, Any] | None = None

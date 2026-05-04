@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -12,6 +12,7 @@ SourceAssetImageDisplayStrategy = Literal["presigned_url", "authenticated_file_f
 
 class SourceAssetResponse(BaseModel):
     """Single source asset in list or upload response."""
+
     id: str
     aisle_id: str
     type: str
@@ -19,7 +20,7 @@ class SourceAssetResponse(BaseModel):
     storage_path: str
     mime_type: str
     uploaded_at: datetime
-    file_size_bytes: Optional[int] = Field(
+    file_size_bytes: int | None = Field(
         default=None,
         description="Byte size when known from storage metadata (may be null for legacy rows).",
     )
@@ -27,6 +28,7 @@ class SourceAssetResponse(BaseModel):
 
 class UploadAisleAssetsResponse(BaseModel):
     """Response for POST .../aisles/{aisle_id}/assets."""
+
     assets: list[SourceAssetResponse]
 
 
@@ -51,7 +53,7 @@ class SourceAssetImageDisplayUrlResponse(BaseModel):
     ``requires_authenticated_fetch`` is ``True`` iff ``display_strategy == authenticated_file_fetch``.
     """
 
-    image_url: Optional[str] = Field(
+    image_url: str | None = Field(
         default=None,
         description="HTTPS presigned URL when strategy is presigned_url; null when client must use /file.",
     )
@@ -78,5 +80,7 @@ class SourceAssetImageDisplayUrlResponse(BaseModel):
             if self.image_url is not None:
                 raise ValueError("authenticated_file_fetch requires image_url=None")
             if not self.requires_authenticated_fetch:
-                raise ValueError("authenticated_file_fetch requires requires_authenticated_fetch=True")
+                raise ValueError(
+                    "authenticated_file_fetch requires requires_authenticated_fetch=True"
+                )
         return self

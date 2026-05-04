@@ -24,7 +24,7 @@ this module stays pure string resolution.
 
 from __future__ import annotations
 
-from typing import Dict, Final, Optional, Union
+from typing import Final
 
 from src.llm.prompt_composer.hybrid_profiles import PROMPTS
 
@@ -36,7 +36,7 @@ def _normalized_key_for_claude_hybrid_supplement(raw: str) -> str:
     return raw
 
 
-def _hybrid_default_text(entry: Union[str, Dict[str, str]]) -> Optional[str]:
+def _hybrid_default_text(entry: str | dict[str, str]) -> str | None:
     """Return the default-branch hybrid string with trailing whitespace stripped (matches ``compose_base``)."""
     if isinstance(entry, str):
         return entry.rstrip()
@@ -45,7 +45,7 @@ def _hybrid_default_text(entry: Union[str, Dict[str, str]]) -> Optional[str]:
     return None
 
 
-HYBRID_PROMPTS: Final[Dict[str, str]] = {
+HYBRID_PROMPTS: Final[dict[str, str]] = {
     k: dv for k, v in PROMPTS.items() if (dv := _hybrid_default_text(v)) is not None
 }
 
@@ -56,8 +56,8 @@ def registered_hybrid_prompt_keys() -> frozenset[str]:
 
 
 def resolve_hybrid_entry_for_provider(
-    entry: Union[str, Dict[str, str]],
-    provider_key: Optional[str],
+    entry: str | dict[str, str],
+    provider_key: str | None,
     *,
     prompt_parity_mode: bool = False,
 ) -> str:
@@ -90,9 +90,7 @@ def resolve_hybrid_entry_for_provider(
         if isinstance(entry.get("default"), str):
             default_text = str(entry["default"]).rstrip()
             use_openai_overlay = (
-                pk == "openai"
-                and not prompt_parity_mode
-                and isinstance(entry.get("openai"), str)
+                pk == "openai" and not prompt_parity_mode and isinstance(entry.get("openai"), str)
             )
             if use_openai_overlay:
                 return str(entry["openai"]).rstrip()

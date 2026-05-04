@@ -23,9 +23,7 @@ class ResolveAisleJobForInventoryReadUseCase:
         if job is None:
             raise JobNotFoundError(f"Job not found: {job_id}")
         if job.target_type != "aisle" or job.target_id != aisle_id:
-            raise JobDoesNotBelongToAisleError(
-                f"Job {job_id} is not scoped to aisle {aisle_id}"
-            )
+            raise JobDoesNotBelongToAisleError(f"Job {job_id} is not scoped to aisle {aisle_id}")
         require_aisle_scoped_to_inventory(
             self._aisle_repo,
             inventory_id=inventory_id,

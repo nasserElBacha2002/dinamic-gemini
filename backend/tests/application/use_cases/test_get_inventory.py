@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
+
+import pytest
 
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import InventoryRepository
@@ -19,7 +20,7 @@ class StubInventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:

@@ -13,15 +13,14 @@ import cv2
 import numpy as np
 import pytest
 
+from src.frames.sources.photos_source import PhotosFrameSource
 from src.jobs.image_identity import (
     JobImage,
     generate_image_id,
     load_job_images_from_manifest,
 )
-from src.llm.prompts import enrich_prompt_with_image_ids, get_hybrid_prompt
-from src.frames.sources.photos_source import PhotosFrameSource
 from src.jobs.models import JobInput
-
+from src.llm.prompts import enrich_prompt_with_image_ids, get_hybrid_prompt
 
 # ---------- generate_image_id ----------
 
@@ -60,8 +59,18 @@ def test_load_job_images_from_manifest_with_image_id(tmp_path):
     manifest = {
         "input_type": "photos",
         "photos": [
-            {"index": 1, "image_id": "img_001", "original_filename": "a.jpg", "stored_filename": "0001_a.jpg"},
-            {"index": 2, "image_id": "img_002", "original_filename": "b.jpg", "stored_filename": "0002_b.jpg"},
+            {
+                "index": 1,
+                "image_id": "img_001",
+                "original_filename": "a.jpg",
+                "stored_filename": "0001_a.jpg",
+            },
+            {
+                "index": 2,
+                "image_id": "img_002",
+                "original_filename": "b.jpg",
+                "stored_filename": "0002_b.jpg",
+            },
         ],
     }
     path = tmp_path / "input_manifest.json"
@@ -84,7 +93,12 @@ def test_load_job_images_from_manifest_skips_entries_without_image_id(tmp_path):
         "input_type": "photos",
         "photos": [
             {"index": 1, "original_filename": "a.jpg", "stored_filename": "0001_a.jpg"},
-            {"index": 2, "image_id": "img_002", "original_filename": "b.jpg", "stored_filename": "0002_b.jpg"},
+            {
+                "index": 2,
+                "image_id": "img_002",
+                "original_filename": "b.jpg",
+                "stored_filename": "0002_b.jpg",
+            },
         ],
     }
     path = tmp_path / "input_manifest.json"
@@ -115,8 +129,18 @@ def test_load_job_images_from_manifest_upload_order_1based(tmp_path):
     manifest = {
         "input_type": "photos",
         "photos": [
-            {"index": 0, "image_id": "img_001", "original_filename": "a.jpg", "stored_filename": "0001_a.jpg"},
-            {"index": 0, "image_id": "img_002", "original_filename": "b.jpg", "stored_filename": "0002_b.jpg"},
+            {
+                "index": 0,
+                "image_id": "img_001",
+                "original_filename": "a.jpg",
+                "stored_filename": "0001_a.jpg",
+            },
+            {
+                "index": 0,
+                "image_id": "img_002",
+                "original_filename": "b.jpg",
+                "stored_filename": "0002_b.jpg",
+            },
         ],
     }
     path = tmp_path / "input_manifest.json"
@@ -132,8 +156,18 @@ def test_load_job_images_from_manifest_skips_duplicate_image_id(tmp_path):
     manifest = {
         "input_type": "photos",
         "photos": [
-            {"index": 1, "image_id": "img_001", "original_filename": "a.jpg", "stored_filename": "0001_a.jpg"},
-            {"index": 2, "image_id": "img_001", "original_filename": "b.jpg", "stored_filename": "0002_b.jpg"},
+            {
+                "index": 1,
+                "image_id": "img_001",
+                "original_filename": "a.jpg",
+                "stored_filename": "0001_a.jpg",
+            },
+            {
+                "index": 2,
+                "image_id": "img_001",
+                "original_filename": "b.jpg",
+                "stored_filename": "0002_b.jpg",
+            },
         ],
     }
     path = tmp_path / "input_manifest.json"
@@ -175,6 +209,7 @@ def test_enrich_prompt_with_image_ids_empty_list_returns_unchanged():
 def test_persist_photos_from_uploads_writes_image_id_in_manifest(tmp_path):
     """persist_photos_from_uploads writes image_id per photo in manifest."""
     import asyncio
+
     from src.api.photos_handler import persist_photos_from_uploads
 
     img = np.zeros((64, 64, 3), dtype=np.uint8)
@@ -281,8 +316,8 @@ def test_photos_frame_source_fallback_when_no_image_id(tmp_path):
 
 def test_gemini_provider_uses_request_prompt_when_provided():
     """When request.prompt is non-empty, GeminiProvider passes it to the analyzer."""
-    from src.llm.types import LLMRequest, LLMResponse
     from src.llm.providers.gemini_provider import GeminiProvider
+    from src.llm.types import LLMRequest
 
     settings = MagicMock()
     settings.gemini_api_key = "test-key"
@@ -322,8 +357,8 @@ def test_gemini_provider_uses_request_prompt_when_provided():
 
 def test_gemini_provider_fallback_to_hybrid_prompt_when_request_prompt_empty():
     """When request.prompt is empty, GeminiProvider uses get_hybrid_prompt()."""
-    from src.llm.types import LLMRequest
     from src.llm.providers.gemini_provider import GeminiProvider
+    from src.llm.types import LLMRequest
 
     settings = MagicMock()
     settings.gemini_api_key = "test-key"

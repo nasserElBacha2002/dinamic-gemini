@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 import pytest
 
@@ -31,10 +31,10 @@ class FixedClock:
 
 
 class StubInventoryRepo:
-    def __init__(self, inv: Optional[Inventory] = None) -> None:
+    def __init__(self, inv: Inventory | None = None) -> None:
         self._store = {} if inv is None else {inv.id: inv}
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def save(self, inventory: Inventory) -> None:
@@ -45,10 +45,10 @@ class StubInventoryRepo:
 
 
 class StubAisleRepo:
-    def __init__(self, aisle: Optional[Aisle] = None) -> None:
+    def __init__(self, aisle: Aisle | None = None) -> None:
         self._store = {} if aisle is None else {aisle.id: aisle}
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def save(self, aisle: Aisle) -> None:
@@ -57,7 +57,7 @@ class StubAisleRepo:
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for a in self._store.values():
             if a.inventory_id == inventory_id and a.code == code:
                 return a
@@ -65,10 +65,10 @@ class StubAisleRepo:
 
 
 class StubPositionRepo:
-    def __init__(self, position: Optional[Position] = None) -> None:
+    def __init__(self, position: Position | None = None) -> None:
         self._store = {} if position is None else {position.id: position}
 
-    def get_by_id(self, position_id: str) -> Optional[Position]:
+    def get_by_id(self, position_id: str) -> Position | None:
         return self._store.get(position_id)
 
     def save(self, position: Position) -> None:
@@ -261,7 +261,14 @@ def test_confirm_position_already_deleted_raises() -> None:
 def test_confirm_position_succeeds_when_request_job_matches_run_scoped_row() -> None:
     """Run-scoped position: request job_id must match storage row (operational pointer ignored)."""
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now, processing_mode=InventoryProcessingMode.PRODUCTION)
+    inv = Inventory(
+        "inv-1",
+        "WH",
+        InventoryStatus.DRAFT,
+        now,
+        now,
+        processing_mode=InventoryProcessingMode.PRODUCTION,
+    )
     aisle = Aisle(
         "aisle-1",
         "inv-1",

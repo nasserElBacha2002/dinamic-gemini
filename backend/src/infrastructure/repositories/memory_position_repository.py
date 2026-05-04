@@ -4,7 +4,7 @@ In-memory implementation of PositionRepository — v3.0 Épica 6.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence, Union
+from collections.abc import Sequence
 
 from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
@@ -13,26 +13,26 @@ from src.domain.positions.entities import Position
 
 class MemoryPositionRepository(PositionRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Position] = {}
+        self._store: dict[str, Position] = {}
 
     def save(self, position: Position) -> None:
         self._store[position.id] = position
 
-    def get_by_id(self, position_id: str) -> Optional[Position]:
+    def get_by_id(self, position_id: str) -> Position | None:
         return self._store.get(position_id)
 
     def list_by_aisle(
         self,
         aisle_id: str,
-        status: Optional[str] = None,
-        needs_review: Optional[bool] = None,
-        min_confidence: Optional[float] = None,
-        sku_filter: Optional[str] = None,
+        status: str | None = None,
+        needs_review: bool | None = None,
+        min_confidence: float | None = None,
+        sku_filter: str | None = None,
         page: int = 1,
         page_size: int = 25,
         sort_by: str = "created_at",
         sort_dir: str = "asc",
-        job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET,
+        job_id: str | None | object = JOB_ID_FILTER_UNSET,
     ) -> Sequence[Position]:
         # sku_filter is not supported in-memory (no product_record data); all positions for aisle are returned.
         positions = [p for p in self._store.values() if p.aisle_id == aisle_id]
@@ -64,10 +64,10 @@ class MemoryPositionRepository(PositionRepository):
         return positions[start : start + page_size]
 
     def list_by_aisle_query(
-        self, aisle_id: str, query: Optional[PositionListQuery] = None
+        self, aisle_id: str, query: PositionListQuery | None = None
     ) -> Sequence[Position]:
         q = query or PositionListQuery()
-        repo_job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET
+        repo_job_id: str | None | object = JOB_ID_FILTER_UNSET
         if q.job_id is not POSITION_LIST_JOB_ID_UNSET:
             repo_job_id = q.job_id
         return self.list_by_aisle(

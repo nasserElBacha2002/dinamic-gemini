@@ -22,8 +22,9 @@ double-prefixing.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, MutableMapping
 from pathlib import Path
-from typing import Any, Dict, Mapping, MutableMapping
+from typing import Any
 
 from src.infrastructure.storage.artifact_store import ArtifactStore, StoredArtifact
 
@@ -63,7 +64,7 @@ def worker_output_storage_keys(job_id: str, run_segment: str) -> Mapping[str, st
     }
 
 
-def stored_artifact_to_dict(stored: StoredArtifact) -> Dict[str, Any]:
+def stored_artifact_to_dict(stored: StoredArtifact) -> dict[str, Any]:
     return {
         "storage_provider": stored.storage_provider,
         "storage_bucket": stored.storage_bucket,
@@ -80,14 +81,14 @@ def publish_worker_durable_artifacts(
     job_id: str,
     run_segment: str,
     run_dir: Path,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     """Upload durable artifacts from run_dir. Raises if a required file is missing or upload fails.
 
     Optional ``hybrid_report.csv`` is uploaded only when present (pipeline always generates it in normal runs).
     """
     keys = worker_output_storage_keys(job_id, run_segment)
     run_dir = Path(run_dir)
-    out: Dict[str, Dict[str, Any]] = {}
+    out: dict[str, dict[str, Any]] = {}
 
     specs: list[tuple[str, Path, str, bool]] = [
         (

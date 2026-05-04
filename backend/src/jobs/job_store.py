@@ -12,10 +12,10 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional, cast
 
 from src.config import load_settings
-from src.jobs.models import JobInput, JobRecord, JobStatus
+from src.jobs.models import JobInput, JobProgress, JobRecord, JobStatus
 from src.utils.validation import validate_job_id
 
 logger = logging.getLogger(__name__)
@@ -29,11 +29,13 @@ def _sqlserver_effective_cs(settings: object) -> str:
     return (getattr(settings, "sqlserver_connection_string", "") or "").strip()
 
 
-def _db_repos() -> Optional[Tuple[Any, Any, Any]]:
+def _db_repos() -> Optional[tuple[Any, Any, Any]]:
     """Return (jobs_repo, pallet_repo, events_repo) when SQL Server enabled and configured; else None."""
     try:
         settings = load_settings()
-        if not getattr(settings, "sqlserver_enabled", False) or not _sqlserver_effective_cs(settings):
+        if not getattr(settings, "sqlserver_enabled", False) or not _sqlserver_effective_cs(
+            settings
+        ):
             return None
         if getattr(settings, "legacy_stage8_sql_bridge_disabled", False):
             from src.legacy.persistence_observability import (
@@ -44,8 +46,12 @@ def _db_repos() -> Optional[Tuple[Any, Any, Any]]:
                 reason="LEGACY_STAGE8_SQL_BRIDGE_DISABLED",
             )
             return None
+        from src.database.repository import (
+            JobEventsRepository,
+            JobsRepository,
+            PalletResultsRepository,
+        )
         from src.database.sqlserver import SqlServerClient
-        from src.database.repository import JobsRepository, PalletResultsRepository, JobEventsRepository
         from src.legacy.persistence_observability import (
             log_legacy_sql_repositories_materialized_once_per_process,
         )
@@ -76,7 +82,7 @@ def create_job(
     video_path: str = "",
     mode: str = "hybrid",
     confidence_threshold: float = 0.70,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: Optional[dict[str, Any]] = None,
     video_filename: Optional[str] = None,
     input_type: str = "video",
     input_manifest_path: Optional[str] = None,
@@ -86,6 +92,7 @@ def create_job(
     Stage 2.2.A: for photos jobs, video_path='', input_type='photos', input_manifest_path and photos_dir set."""
     job_id = validate_job_id(job_id)
     from datetime import datetime
+
     now = datetime.utcnow().isoformat() + "Z"
     record = JobRecord(
         job_id=job_id,
@@ -99,7 +106,7 @@ def create_job(
             photos_dir=photos_dir,
         ),
         status=JobStatus.QUEUED,
-        progress={"stage": "", "percent": 0},
+        progress=JobProgress(stage="", percent=0),
         output=None,
         error=None,
         created_at=now,
@@ -162,7 +169,9 @@ def claim_next_job(base_path: Path) -> Optional[JobRecord]:
     Local legacy fallback (only when SQL mode is disabled): in-memory queue + get_job().
     """
     settings = load_settings()
-    db_claim_configured = bool(getattr(settings, "sqlserver_enabled", False) and _sqlserver_effective_cs(settings))
+    db_claim_configured = bool(
+        getattr(settings, "sqlserver_enabled", False) and _sqlserver_effective_cs(settings)
+    )
     # Preferred v3 source: inventory_jobs via v3 JobRepository claim.
     try:
         from src.runtime.v3_deps import get_job_repo
@@ -195,7 +204,7 @@ def claim_next_job(base_path: Path) -> Optional[JobRecord]:
                         metadata=metadata,
                     ),
                     status=JobStatus(claimed_v3.status.value),
-                    progress={"stage": "claimed", "percent": 1},
+                    progress=JobProgress(stage="claimed", percent=1),
                     output=None,
                     error=claimed_v3.error_message,
                     created_at=claimed_v3.created_at.isoformat(),
@@ -219,7 +228,9 @@ def claim_next_job(base_path: Path) -> Optional[JobRecord]:
             return None
     if db_claim_configured:
         # SQL mode is expected but claim infrastructure is unavailable.
-        logger.error("SQL worker mode configured but DB repositories are unavailable; cannot claim queued jobs")
+        logger.error(
+            "SQL worker mode configured but DB repositories are unavailable; cannot claim queued jobs"
+        )
         return None
 
     # Legacy/local fallback only (non-distributed).
@@ -245,6 +256,7 @@ def update_job(base_path: Path, job_id: str, **updates: object) -> Optional[JobR
     if record is None:
         return None
     from datetime import datetime
+
     data = record.model_dump()
     for k, v in updates.items():
         if k in JobRecord.model_fields:
@@ -258,15 +270,38 @@ def update_job(base_path: Path, job_id: str, **updates: object) -> Optional[JobR
         try:
             if "status" in updates:
                 status_val = data.get("status")
-                status_str = status_val.value if hasattr(status_val, "value") else str(status_val)
+                if status_val is None:
+                    status_str = JobStatus.QUEUED.value
+                elif hasattr(status_val, "value"):
+                    status_str = str(getattr(status_val, "value"))
+                else:
+                    status_str = str(status_val)
                 progress = data.get("progress") or {}
-                stage = progress.get("stage") if isinstance(progress, dict) else getattr(progress, "stage", None)
-                percent = progress.get("percent") if isinstance(progress, dict) else getattr(progress, "percent", None)
-                jobs_repo.update_job_status(job_id, status_str, progress_stage=stage, progress_percent=percent)
+                stage = (
+                    progress.get("stage")
+                    if isinstance(progress, dict)
+                    else getattr(progress, "stage", None)
+                )
+                percent = (
+                    progress.get("percent")
+                    if isinstance(progress, dict)
+                    else getattr(progress, "percent", None)
+                )
+                jobs_repo.update_job_status(
+                    job_id, status_str, progress_stage=stage, progress_percent=percent
+                )
             elif "progress" in updates:
                 progress = data.get("progress") or {}
-                stage = progress.get("stage", "") if isinstance(progress, dict) else getattr(progress, "stage", "")
-                percent = progress.get("percent", 0) if isinstance(progress, dict) else getattr(progress, "percent", 0)
+                stage = (
+                    progress.get("stage", "")
+                    if isinstance(progress, dict)
+                    else getattr(progress, "stage", "")
+                )
+                percent = (
+                    progress.get("percent", 0)
+                    if isinstance(progress, dict)
+                    else getattr(progress, "percent", 0)
+                )
                 jobs_repo.update_job_progress(job_id, stage, percent)
             if "error" in updates and updates.get("error"):
                 err = str(updates["error"])
@@ -293,26 +328,26 @@ def _write_record(path: Path, record: JobRecord) -> None:
         raise
 
 
-def get_pallet_results(job_id: str) -> Optional[List[Dict[str, Any]]]:
+def get_pallet_results(job_id: str) -> Optional[list[dict[str, Any]]]:
     """When SQL Server enabled, return pallet_results for job_id from DB; else None (caller should use report file)."""
     repos = _db_repos()
     if repos is None:
         return None
     _, pallet_repo, _ = repos
     try:
-        return pallet_repo.get_pallet_results(job_id)
+        return cast(Optional[list[dict[str, Any]]], pallet_repo.get_pallet_results(job_id))
     except Exception as e:
         logger.warning("DB get_pallet_results failed: %s", e)
         return None
 
 
-def list_artifacts(base_path: Path, job_id: str) -> List[str]:
+def list_artifacts(base_path: Path, job_id: str) -> list[str]:
     """List artifact filenames under output/<job_id>/ (sanitized; no path traversal)."""
     job_id = validate_job_id(job_id)
     job_dir = _job_dir(base_path, job_id)
     if not job_dir.exists() or not job_dir.is_dir():
         return []
-    out: List[str] = []
+    out: list[str] = []
     try:
         for p in job_dir.rglob("*"):
             if p.is_file():

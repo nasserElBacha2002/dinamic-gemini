@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import List, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -18,12 +18,12 @@ from src.domain.capture.entities import CaptureSession, CaptureSessionItem
 class CaptureSessionResponse(BaseModel):
     id: str
     inventory_id: str
-    aisle_id: Optional[str] = None
+    aisle_id: str | None = None
     status: str
     created_at: datetime
     updated_at: datetime
-    opened_at: Optional[datetime] = None
-    closed_at: Optional[datetime] = None
+    opened_at: datetime | None = None
+    closed_at: datetime | None = None
     clock_offset_seconds: int = 0
 
 
@@ -33,18 +33,18 @@ class CaptureSessionItemResponse(BaseModel):
     staging_storage_key: str
     import_status: str
     assignment_status: str
-    content_hash: Optional[str] = None
-    effective_capture_time: Optional[datetime] = None
-    time_source: Optional[str] = None
-    time_confidence: Optional[float] = None
-    adjusted_capture_time: Optional[datetime] = None
-    assignment_reason: Optional[str] = None
-    preview_target_position_id: Optional[str] = None
-    linked_source_asset_id: Optional[str] = None
-    last_error_code: Optional[str] = None
-    last_error_detail: Optional[str] = None
-    original_filename: Optional[str] = None
-    group_id: Optional[str] = None
+    content_hash: str | None = None
+    effective_capture_time: datetime | None = None
+    time_source: str | None = None
+    time_confidence: float | None = None
+    adjusted_capture_time: datetime | None = None
+    assignment_reason: str | None = None
+    preview_target_position_id: str | None = None
+    linked_source_asset_id: str | None = None
+    last_error_code: str | None = None
+    last_error_detail: str | None = None
+    original_filename: str | None = None
+    group_id: str | None = None
     updated_at: datetime
 
 
@@ -56,17 +56,19 @@ class CaptureSessionGroupSummaryResponse(BaseModel):
     end_time: datetime
     algorithm_version: str
     assignment_status: str = "unassigned"
-    assigned_aisle_id: Optional[str] = None
-    assigned_at: Optional[datetime] = None
+    assigned_aisle_id: str | None = None
+    assigned_at: datetime | None = None
     #: G7 derived: ``unassigned`` | ``assigned`` | ``materialized`` | ``partially_materialized``.
     materialization_state: str = "unassigned"
 
 
 class CaptureSessionGroupsListResponse(BaseModel):
-    groups: List[CaptureSessionGroupSummaryResponse] = Field(default_factory=list)
+    groups: list[CaptureSessionGroupSummaryResponse] = Field(default_factory=list)
 
 
-def capture_session_groups_to_response(summaries: Sequence[CaptureSessionGroupSummary]) -> CaptureSessionGroupsListResponse:
+def capture_session_groups_to_response(
+    summaries: Sequence[CaptureSessionGroupSummary],
+) -> CaptureSessionGroupsListResponse:
     return CaptureSessionGroupsListResponse(
         groups=[
             CaptureSessionGroupSummaryResponse(
@@ -100,23 +102,25 @@ class CreateAisleFromCaptureGroupRequest(BaseModel):
 
 class CaptureSessionDetailResponse(BaseModel):
     session: CaptureSessionResponse
-    items: List[CaptureSessionItemResponse]
+    items: list[CaptureSessionItemResponse]
 
 
 class PaginatedCaptureSessionListResponse(PageMeta):
-    items: List[CaptureSessionResponse]
+    items: list[CaptureSessionResponse]
 
 
 class CaptureSessionStagingUploadFileError(BaseModel):
     filename: str
     code: str
     detail: str
-    file_index: int = Field(ge=0, description="Index into the multipart files list for this request.")
+    file_index: int = Field(
+        ge=0, description="Index into the multipart files list for this request."
+    )
 
 
 class UploadCaptureSessionItemsResponse(BaseModel):
-    items: List[CaptureSessionItemResponse] = Field(default_factory=list)
-    errors: List[CaptureSessionStagingUploadFileError] = Field(default_factory=list)
+    items: list[CaptureSessionItemResponse] = Field(default_factory=list)
+    errors: list[CaptureSessionStagingUploadFileError] = Field(default_factory=list)
 
 
 class CaptureSessionClockOffsetUpdateRequest(BaseModel):
@@ -162,8 +166,8 @@ class MaterializedGroupPreviewItemResponse(BaseModel):
     source_asset_id: str
     assignment_status: str
     assignment_reason: str
-    adjusted_capture_time: Optional[datetime] = None
-    preview_target_position_id: Optional[str] = None
+    adjusted_capture_time: datetime | None = None
+    preview_target_position_id: str | None = None
 
 
 class MaterializedGroupPreviewSummaryResponse(BaseModel):
@@ -180,11 +184,11 @@ class MaterializedCaptureSessionGroupPreviewResponse(BaseModel):
     group_id: str
     aisle_id: str
     source_asset_count: int
-    source_asset_ids: List[str] = Field(default_factory=list)
+    source_asset_ids: list[str] = Field(default_factory=list)
     preview_status: str
     #: G7 operator-facing state for HTTP 200 responses (mirrors ``preview_status``).
     preview_operator_state: str
-    items: List[MaterializedGroupPreviewItemResponse] = Field(default_factory=list)
+    items: list[MaterializedGroupPreviewItemResponse] = Field(default_factory=list)
     summary: MaterializedGroupPreviewSummaryResponse
 
 

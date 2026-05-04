@@ -8,26 +8,22 @@
 - Max images limit respected
 """
 
-import json
 import tempfile
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from src.domain.entity import Entity
 from src.evidence.evidence_pack import (
     EVIDENCE_LOCALIZED,
     EVIDENCE_UNLOCALIZED,
+    _crop_bbox,
+    _select_overview_frames,
     generate_evidence_pack,
     parse_bbox_to_pixels,
-    _select_overview_frames,
-    _select_best_crop_candidates,
-    _crop_bbox,
 )
 from src.evidence.paths import entity_evidence_path, slug
 from src.evidence.scoring import dedupe_by_hash, dedupe_indexed_by_hash, score_frame_sharpness
-
 
 # --- scoring ---
 
@@ -193,8 +189,14 @@ def test_evidence_generation_localized():
     assert len(ent_idx["evidence"]["overview"]) > 0
     for p in ent_idx["evidence"]["overview"]:
         assert p.startswith("evidence/") and "/" in p and p.endswith(".jpg")
-    assert "position_label_best" in ent_idx["evidence"] or "position_label_candidates" in ent_idx["evidence"]
-    assert "product_label_best" in ent_idx["evidence"] or "product_label_candidates" in ent_idx["evidence"]
+    assert (
+        "position_label_best" in ent_idx["evidence"]
+        or "position_label_candidates" in ent_idx["evidence"]
+    )
+    assert (
+        "product_label_best" in ent_idx["evidence"]
+        or "product_label_candidates" in ent_idx["evidence"]
+    )
 
     entity_dir = run_dir / "evidence" / slug(entity.entity_uid)
     assert entity_dir.exists()
@@ -228,8 +230,14 @@ def test_evidence_generation_unlocalized():
     ent_idx = index["entities"][0]
     assert ent_idx["evidence_localization"] == EVIDENCE_UNLOCALIZED
     assert "overview" in ent_idx["evidence"]
-    assert ent_idx["evidence"].get("position_label_best") is None or "position_label_best" not in ent_idx["evidence"]
-    assert ent_idx["evidence"].get("product_label_best") is None or "product_label_best" not in ent_idx["evidence"]
+    assert (
+        ent_idx["evidence"].get("position_label_best") is None
+        or "position_label_best" not in ent_idx["evidence"]
+    )
+    assert (
+        ent_idx["evidence"].get("product_label_best") is None
+        or "product_label_best" not in ent_idx["evidence"]
+    )
 
 
 def test_evidence_unlocalized_when_bbox_invalid():
@@ -265,7 +273,10 @@ def test_evidence_unlocalized_when_bbox_degenerate():
     assert entity.evidence_localization == EVIDENCE_UNLOCALIZED
     assert "overview" in index["entities"][0]["evidence"]
     assert index["entities"][0]["evidence"].get("position_label_best") is None
-    assert "position_label_candidates" not in index["entities"][0]["evidence"] or not index["entities"][0]["evidence"]["position_label_candidates"]
+    assert (
+        "position_label_candidates" not in index["entities"][0]["evidence"]
+        or not index["entities"][0]["evidence"]["position_label_candidates"]
+    )
 
 
 # --- evidence_index.json structure ---
@@ -342,6 +353,7 @@ def test_evidence_max_images_respected(monkeypatch):
     monkeypatch.setenv("EVIDENCE_K_OVERVIEW", "10")
     # Reload so config picks new env
     import src.config
+
     src.config.reload_settings()
 
     run_dir = Path(tempfile.mkdtemp())
@@ -374,13 +386,17 @@ def test_evidence_max_images_respected(monkeypatch):
 
 def test_jobs_result_prefer_report_mode():
     """Merge report metadata: prefer report['mode'] when present (legacy v1 result semantics)."""
-    def _merge(report: dict, job_id: str, status: str, mode: str, confidence_threshold: float) -> dict:
+
+    def _merge(
+        report: dict, job_id: str, status: str, mode: str, confidence_threshold: float
+    ) -> dict:
         out = dict(report)
         out["job_id"] = job_id
         out["status"] = status
         out["mode"] = report.get("mode") or mode
         out["confidence_threshold"] = confidence_threshold
         return out
+
     report = {"mode": "hybrid_v2.1", "summary": {}, "entities": []}
     out = _merge(report, "job_1", "succeeded", "hybrid", 0.7)
     assert out["mode"] == "hybrid_v2.1"

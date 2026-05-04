@@ -6,17 +6,11 @@ report/API/CSV use review_display_label; API also returns product_display_label 
 empty/legacy handling.
 """
 
-import json
-from pathlib import Path
-
-import pytest
-
 from src.domain.entity import Entity
 from src.llm.prompts import enrich_prompt_with_product_label_association, get_hybrid_prompt
 from src.reporting.artifacts import write_report_csv
 from src.reporting.display_label import derive_review_display_label
 from src.reporting.hybrid_report import build_hybrid_report
-
 
 # ---------- Centralized derivation helper ----------
 
@@ -71,7 +65,8 @@ def test_enrich_prompt_with_product_label_association_adds_block():
 
 def test_enriched_prompt_used_at_adapter_layer():
     """Pipeline adapter builds prompt with explicit enrichment (integration point)."""
-    from src.llm.prompts import get_hybrid_prompt, enrich_prompt_with_product_label_association
+    from src.llm.prompts import enrich_prompt_with_product_label_association, get_hybrid_prompt
+
     base = get_hybrid_prompt("global_v21")
     enriched = enrich_prompt_with_product_label_association(base)
     assert "PRODUCT AND LABEL ASSOCIATION" in enriched
@@ -153,9 +148,26 @@ def test_write_report_csv_includes_review_display_label_column(tmp_path):
     """CSV has review_display_label column; value derived via helper."""
     report = {
         "entities": [
-            {"entity_uid": "e1", "internal_code": "SKU1", "pallet_id": "P1", "entity_type": "PALLET", "count_status": "COUNTED"},
-            {"entity_uid": "e2", "position_barcode": "BC2", "pallet_id": "P2", "entity_type": "PALLET", "count_status": "COUNTED"},
-            {"entity_uid": "e3", "pallet_id": "P3", "entity_type": "PALLET", "count_status": "COUNTED"},
+            {
+                "entity_uid": "e1",
+                "internal_code": "SKU1",
+                "pallet_id": "P1",
+                "entity_type": "PALLET",
+                "count_status": "COUNTED",
+            },
+            {
+                "entity_uid": "e2",
+                "position_barcode": "BC2",
+                "pallet_id": "P2",
+                "entity_type": "PALLET",
+                "count_status": "COUNTED",
+            },
+            {
+                "entity_uid": "e3",
+                "pallet_id": "P3",
+                "entity_type": "PALLET",
+                "count_status": "COUNTED",
+            },
         ],
     }
     path = tmp_path / "out.csv"

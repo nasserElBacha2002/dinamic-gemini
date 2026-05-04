@@ -1,27 +1,31 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
 
 import pytest
 
 from src.application.errors import PositionResultContextMismatchError
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
-from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.domain.jobs.entities import Job, JobStatus
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
-from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
+from src.infrastructure.repositories.memory_review_action_repository import (
+    MemoryReviewActionRepository,
+)
 
 
 def test_get_position_detail_uses_consolidated_representative_for_group_member() -> None:

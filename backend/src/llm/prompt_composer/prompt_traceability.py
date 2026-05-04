@@ -36,9 +36,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -102,21 +103,21 @@ class PromptCompositionMetadata:
     profile_name: str
     pipeline_provider_key: str
     resolved_llm_provider_key: str
-    model_name: Optional[str]
-    job_prompt_key: Optional[str]
-    settings_hybrid_prompt_key: Optional[str]
-    prompt_version: Optional[str]
+    model_name: str | None
+    job_prompt_key: str | None
+    settings_hybrid_prompt_key: str | None
+    prompt_version: str | None
     prompt_parity_mode: bool
-    llm_identity: Optional[Dict[str, Any]]
+    llm_identity: dict[str, Any] | None
     base_prompt_text: str
     final_prompt_text: str
-    enrichments_applied: List[str]
-    composition_steps: List[Dict[str, Any]]
+    enrichments_applied: list[str]
+    composition_steps: list[dict[str, Any]]
     prompt_hash: str
     base_prompt_hash: str
     timestamp: str
 
-    def to_json_dict(self) -> Dict[str, Any]:
+    def to_json_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -127,15 +128,15 @@ def build_prompt_composition_dict(
     base_prompt_text: str,
     final_prompt_text: str,
     enrichments_applied: Sequence[str],
-    composition_steps: Sequence[Dict[str, Any]],
-    job_prompt_key: Optional[str],
-    settings_hybrid_prompt_key: Optional[str],
-    prompt_version: Optional[str] = None,
+    composition_steps: Sequence[dict[str, Any]],
+    job_prompt_key: str | None,
+    settings_hybrid_prompt_key: str | None,
+    prompt_version: str | None = None,
     prompt_parity_mode: bool = False,
     resolved_llm_provider_key: str = "",
-    model_name: Optional[str] = None,
-    timestamp: Optional[str] = None,
-) -> Dict[str, Any]:
+    model_name: str | None = None,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
     """
     Build the **prompt-construction** portion of ``prompt_composition`` (hashes from prompt strings).
 
@@ -154,7 +155,9 @@ def build_prompt_composition_dict(
         pipeline_provider_key=pipeline_provider_key,
         resolved_llm_provider_key=(resolved_llm_provider_key or "").strip().lower(),
         model_name=(str(model_name).strip() if model_name and str(model_name).strip() else None),
-        job_prompt_key=(str(job_prompt_key).strip() if job_prompt_key and str(job_prompt_key).strip() else None),
+        job_prompt_key=(
+            str(job_prompt_key).strip() if job_prompt_key and str(job_prompt_key).strip() else None
+        ),
         settings_hybrid_prompt_key=(
             str(settings_hybrid_prompt_key).strip()
             if settings_hybrid_prompt_key and str(settings_hybrid_prompt_key).strip()
@@ -178,13 +181,13 @@ def build_prompt_composition_dict(
     return meta.to_json_dict()
 
 
-def validate_prompt_composition_dict(meta: Mapping[str, Any]) -> List[str]:
+def validate_prompt_composition_dict(meta: Mapping[str, Any]) -> list[str]:
     """
     Return human-readable validation errors; empty list means invariants hold.
 
     Lightweight structural checks plus SHA-256 consistency and enrichment/base/final alignment.
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     sv = meta.get("schema_version")
     if not isinstance(sv, str) or not sv.strip():
@@ -231,11 +234,11 @@ def validate_prompt_composition_dict(meta: Mapping[str, Any]) -> List[str]:
 
 
 def apply_execution_layer_to_composition(
-    composition: Dict[str, Any],
+    composition: dict[str, Any],
     *,
     resolved_llm_provider_key: str,
-    model_name: Optional[str],
-) -> Dict[str, Any]:
+    model_name: str | None,
+) -> dict[str, Any]:
     """
     Shallow-copy ``composition`` and set **execution-layer** fields.
 
@@ -259,7 +262,7 @@ def prompt_composition_summary_for_execution_log(
     full_composition: Mapping[str, Any],
     *,
     final_prompt_char_len: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Redacted subset of ``prompt_composition`` for execution logs (no full prompt bodies).
 
@@ -268,7 +271,7 @@ def prompt_composition_summary_for_execution_log(
     """
     base_text = full_composition.get("base_prompt_text")
     base_len = len(base_text) if isinstance(base_text, str) else 0
-    out: Dict[str, Any] = {
+    out: dict[str, Any] = {
         "schema_version": full_composition.get("schema_version"),
         "profile_name": full_composition.get("profile_name"),
         "pipeline_provider_key": full_composition.get("pipeline_provider_key"),

@@ -18,7 +18,9 @@ def test_build_command_defaults_to_current_python(monkeypatch: pytest.MonkeyPatc
     assert command[1:] == ["-m", "src.jobs.run_worker"]
 
 
-def test_build_command_accepts_json_array_for_paths_with_spaces(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_command_accepts_json_array_for_paths_with_spaces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     expected = ["/Users/me/My Env/bin/python", "-m", "src.jobs.run_worker"]
     monkeypatch.setenv("WORKER_ON_DEMAND_COMMAND", json.dumps(expected))
 
@@ -32,7 +34,7 @@ def test_build_command_keeps_shell_style_string_for_backward_compatibility(
 ) -> None:
     monkeypatch.setenv(
         "WORKER_ON_DEMAND_COMMAND",
-        "\"/Users/me/My Env/bin/python\" -m src.jobs.run_worker",
+        '"/Users/me/My Env/bin/python" -m src.jobs.run_worker',
     )
 
     command = OnDemandWorkerLaunchService()._build_command()
@@ -114,4 +116,6 @@ def test_launch_writes_process_spawn_observed_to_launch_log(
     launch_log = tmp_path / "job-123" / "worker-launch.log"
     contents = launch_log.read_text(encoding="utf-8")
     assert f"launch_requested execution_id={execution_id} job_id=job-123" in contents
-    assert f"process_spawn_observed execution_id={execution_id} job_id=job-123 pid=45678" in contents
+    assert (
+        f"process_spawn_observed execution_id={execution_id} job_id=job-123 pid=45678" in contents
+    )

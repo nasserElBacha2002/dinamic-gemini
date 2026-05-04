@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.config import Settings, load_settings, reload_settings, get_settings
+from src.config import Settings, get_settings, load_settings, reload_settings
 
 
 # ----------------------------
@@ -65,7 +65,7 @@ def test_settings_from_env():
         "FRAME_STRIDE": "5",
         "TIME_LIMIT_SEC": "60.5",
     }
-    
+
     with patch.dict(os.environ, env_vars, clear=True):
         settings = Settings()
         assert settings.gemini_api_key == "test_api_key_123"
@@ -94,11 +94,11 @@ def test_extract_fps_validation():
     # Valor válido
     settings = Settings(extract_fps=1.5)
     assert settings.extract_fps == 1.5
-    
+
     # Valor fuera de rango (muy bajo)
     with pytest.raises(Exception):  # ValidationError de Pydantic
         Settings(extract_fps=0.05)
-    
+
     # Valor fuera de rango (muy alto)
     with pytest.raises(Exception):
         Settings(extract_fps=100.0)
@@ -132,11 +132,11 @@ def test_resize_max_side_validation():
     # Valor válido
     settings = Settings(resize_max_side=1920)
     assert settings.resize_max_side == 1920
-    
+
     # Valor fuera de rango (muy bajo)
     with pytest.raises(Exception):
         Settings(resize_max_side=100)
-    
+
     # Valor fuera de rango (muy alto)
     with pytest.raises(Exception):
         Settings(resize_max_side=5000)
@@ -191,12 +191,12 @@ def test_debug_save_frames_boolean():
         {"DEBUG_SAVE_FRAMES": "yes"},
         {"DEBUG_SAVE_FRAMES": "YES"},
     ]
-    
+
     for env_var in env_vars_true:
         with patch.dict(os.environ, env_var, clear=True):
             settings = Settings()
             assert settings.debug_save_frames is True
-    
+
     env_vars_false = [
         {"DEBUG_SAVE_FRAMES": "false"},
         {"DEBUG_SAVE_FRAMES": "False"},
@@ -204,7 +204,7 @@ def test_debug_save_frames_boolean():
         {"DEBUG_SAVE_FRAMES": "no"},
         {},
     ]
-    
+
     for env_var in env_vars_false:
         with patch.dict(os.environ, env_var, clear=True):
             settings = Settings()
@@ -237,13 +237,13 @@ def test_ensure_output_dir():
     with tempfile.TemporaryDirectory() as tmpdir:
         output_path = Path(tmpdir) / "new_output_dir"
         settings = Settings(output_dir=str(output_path))
-        
+
         # El directorio no debería existir inicialmente
         assert not output_path.exists()
-        
+
         # Crear el directorio
         created_path = settings.ensure_output_dir()
-        
+
         # Verificar que se creó
         assert output_path.exists()
         assert output_path.is_dir()
@@ -255,10 +255,10 @@ def test_ensure_output_dir_existing():
     """Test que ensure_output_dir no falla si el directorio ya existe."""
     with tempfile.TemporaryDirectory() as tmpdir:
         settings = Settings(output_dir=tmpdir)
-        
+
         # El directorio ya existe
         assert Path(tmpdir).exists()
-        
+
         # No debería fallar
         created_path = settings.ensure_output_dir()
         # Comparar paths resueltos para evitar problemas con symlinks
@@ -273,7 +273,7 @@ def test_load_settings():
     with patch.dict(os.environ, {}, clear=True):
         settings1 = load_settings()
         settings2 = load_settings()
-        
+
         # Debería retornar la misma instancia (cached)
         assert settings1 is settings2
 
@@ -282,20 +282,21 @@ def test_reload_settings():
     """Test de la función reload_settings."""
     # Limpiar la instancia global primero
     import src.config
+
     src.config._settings = None
-    
+
     # Cargar configuración inicial
     settings1 = load_settings()
     initial_fps = settings1.extract_fps
-    
+
     # Recargar configuración (debería crear nueva instancia)
     settings2 = reload_settings()
-    
+
     # Debería ser una nueva instancia
     assert settings2 is not settings1
     # Debería tener los mismos valores (mismo entorno)
     assert settings2.extract_fps == initial_fps
-    
+
     # Limpiar para otros tests
     src.config._settings = None
 

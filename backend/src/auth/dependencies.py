@@ -7,9 +7,9 @@ is intended to be reused in Phase 3 when protecting the v3 route surface.
 
 from __future__ import annotations
 
+import jwt
 from fastapi import Depends, Request, status
 
-import jwt
 from src.auth.errors import AuthHttpError
 from src.auth.schemas import AuthError, AuthUser
 from src.auth.security import decode_access_token

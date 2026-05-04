@@ -5,8 +5,6 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
 from src.pipeline.execution_log import (
     ExecutionLogWriter,
     _sanitize_payload,
@@ -97,7 +95,7 @@ def test_read_execution_log_empty_file_returns_empty_list():
 def test_read_execution_log_bytes_parses_valid_and_skips_invalid_lines():
     content = (
         b'{"ts":"2025-01-01T00:00:00Z","stage":"S1","level":"info","message":"ok"}\n'
-        b'not json\n'
+        b"not json\n"
         b'{"ts":"2025-01-01T00:00:01Z","stage":"S2","level":"error","message":"fail"}\n'
     )
     events = read_execution_log_bytes(content)

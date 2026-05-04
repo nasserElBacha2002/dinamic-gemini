@@ -21,16 +21,21 @@ def test_apply_job_model_name_sets_vendor_specific_keys() -> None:
 
 def test_apply_job_model_name_empty_returns_none_and_does_not_mutate() -> None:
     meta: dict = {"existing": 1}
-    assert apply_job_model_name_to_llm_request_metadata(
-        resolved_provider_key="gemini",
-        job_model_name=None,
-        metadata=meta,
-    ) is None
+    assert (
+        apply_job_model_name_to_llm_request_metadata(
+            resolved_provider_key="gemini",
+            job_model_name=None,
+            metadata=meta,
+        )
+        is None
+    )
     assert "gemini_model_name" not in meta
     assert meta == {"existing": 1}
 
 
-def test_apply_job_model_name_unknown_provider_key_returns_model_without_metadata_mutation() -> None:
+def test_apply_job_model_name_unknown_provider_key_returns_model_without_metadata_mutation() -> (
+    None
+):
     """Unregistered logical keys still expose the job model for composition but skip legacy keys."""
     meta: dict = {}
     out = apply_job_model_name_to_llm_request_metadata(

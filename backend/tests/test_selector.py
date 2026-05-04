@@ -69,7 +69,7 @@ def test_select_views_per_track_diversity_drops_similar_views():
     observations = [
         _obs(10, 0.9, (100, 100, 200, 200)),
         _obs(11, 0.85, (100, 100, 200, 200)),  # mismo bbox, frame muy cercano
-        _obs(50, 0.8, (300, 100, 400, 200)),   # bbox distinto
+        _obs(50, 0.8, (300, 100, 400, 200)),  # bbox distinto
     ]
     track = PalletTrack(track_id="0", observations=observations, start_frame=10, end_frame=50)
 
@@ -93,7 +93,11 @@ def test_select_views_per_track_empty_returns_empty():
     """Track sin observaciones → lista vacía."""
     track = PalletTrack(track_id="0", observations=[], start_frame=0, end_frame=0)
     views, _ = select_views_per_track(
-        track, min_views=3, target_views=4, max_views=5, blur_percentile=0.25,
+        track,
+        min_views=3,
+        target_views=4,
+        max_views=5,
+        blur_percentile=0.25,
         enable_diversity=False,
     )
     assert views == []
@@ -106,8 +110,7 @@ def test_select_views_per_track_segments_cover_full_range_no_empty():
     """
     n_obs = 12
     observations = [
-        _obs(i * 10, 0.5 + (i % 3) * 0.1, (i * 5, 10, i * 5 + 50, 60))
-        for i in range(n_obs)
+        _obs(i * 10, 0.5 + (i % 3) * 0.1, (i * 5, 10, i * 5 + 50, 60)) for i in range(n_obs)
     ]
     track = PalletTrack(track_id="0", observations=observations, start_frame=0, end_frame=110)
 
@@ -137,7 +140,8 @@ def test_select_views_per_track_can_return_fewer_than_min_views_after_diversity(
     """
     # Varias observaciones muy similares (mismo bbox, frames cercanos)
     observations = [
-        _obs(i, 0.8, (0, 0, 100, 100)) for i in range(0, 15, 2)  # frames 0,2,4,...,14
+        _obs(i, 0.8, (0, 0, 100, 100))
+        for i in range(0, 15, 2)  # frames 0,2,4,...,14
     ]
     track = PalletTrack(track_id="0", observations=observations, start_frame=0, end_frame=14)
 
@@ -184,8 +188,12 @@ def test_selector_avoids_near_duplicate_phash():
             _obs(0, 0.8, (0, 0, 50, 50), roi_path=dup_paths[0]),
             _obs(10, 0.8, (0, 0, 50, 50), roi_path=dup_paths[1]),
             _obs(20, 0.8, (0, 0, 50, 50), roi_path=dup_paths[2]),
-            _obs(40, 0.95, (0, 0, 50, 50), roi_path=distinct_paths[0]),  # más clara para ganar en mid
-            _obs(60, 0.95, (0, 0, 50, 50), roi_path=distinct_paths[1]),  # más clara para ganar en late
+            _obs(
+                40, 0.95, (0, 0, 50, 50), roi_path=distinct_paths[0]
+            ),  # más clara para ganar en mid
+            _obs(
+                60, 0.95, (0, 0, 50, 50), roi_path=distinct_paths[1]
+            ),  # más clara para ganar en late
         ]
         track = PalletTrack(track_id="0", observations=observations, start_frame=0, end_frame=60)
 
@@ -206,14 +214,15 @@ def test_selector_avoids_near_duplicate_phash():
         selected_paths = [v.roi_path for v in views]
         distinct_selected = [p for p in selected_paths if p in distinct_paths]
         # Debe incluir al menos 2 vistas de las distintas (no 3 near-duplicates del mismo grupo)
-        assert len(distinct_selected) >= 2, "Selector should prefer distinct views over 3 phash near-duplicates"
+        assert len(distinct_selected) >= 2, (
+            "Selector should prefer distinct views over 3 phash near-duplicates"
+        )
 
 
 def test_selector_picks_anchors_across_time():
     """Con enable_diversity=True, las vistas incluyen al menos 2 anchors con separación temporal."""
     observations = [
-        _obs(i * 10, 0.7 + (i % 3) * 0.05, (i * 2, 10, i * 2 + 60, 70))
-        for i in range(11)
+        _obs(i * 10, 0.7 + (i % 3) * 0.05, (i * 2, 10, i * 2 + 60, 70)) for i in range(11)
     ]
     track = PalletTrack(track_id="0", observations=observations, start_frame=0, end_frame=100)
 

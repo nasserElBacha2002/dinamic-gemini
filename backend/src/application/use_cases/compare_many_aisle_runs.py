@@ -12,9 +12,16 @@ from src.application.errors import (
     JobNotFoundError,
 )
 from src.application.ports.contracts import PositionListQuery
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository, PositionRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    JobRepository,
+    PositionRepository,
+)
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
-from src.application.services.inventory_processing_mode import require_test_inventory_for_experimental_features
+from src.application.services.inventory_processing_mode import (
+    require_test_inventory_for_experimental_features,
+)
 from src.application.use_cases.benchmark_compare_support import (
     aggregate_metrics,
     build_compare_diff_rows,
@@ -72,7 +79,9 @@ class CompareManyAisleRunsUseCase:
         self._position_repo = position_repo
         self._raw_cap = max(1, int(positions_aisle_raw_cap))
 
-    def _normalize_and_validate_selection(self, command: CompareManyAisleRunsCommand) -> tuple[list[str], str]:
+    def _normalize_and_validate_selection(
+        self, command: CompareManyAisleRunsCommand
+    ) -> tuple[list[str], str]:
         normalized_job_ids = [str(job_id).strip() for job_id in command.job_ids]
         baseline = (command.baseline_job_id or "").strip()
         if any(not job_id for job_id in normalized_job_ids):
@@ -88,7 +97,9 @@ class CompareManyAisleRunsUseCase:
         if not baseline:
             raise BenchmarkCompareManyInvalidSelectionError("baseline_job_id is required.")
         if baseline not in normalized_job_ids:
-            raise BenchmarkCompareManyInvalidSelectionError("baseline_job_id must be one of job_ids.")
+            raise BenchmarkCompareManyInvalidSelectionError(
+                "baseline_job_id must be one of job_ids."
+            )
         return normalized_job_ids, baseline
 
     def _validate_job(self, job_id: str, aisle_id: str) -> Job:
@@ -129,7 +140,9 @@ class CompareManyAisleRunsUseCase:
 
     def _resolve_baseline(self, job_ids: list[str], baseline_job_id: str) -> tuple[str, list[str]]:
         if baseline_job_id not in job_ids:
-            raise BenchmarkCompareManyInvalidSelectionError("baseline_job_id must be one of job_ids.")
+            raise BenchmarkCompareManyInvalidSelectionError(
+                "baseline_job_id must be one of job_ids."
+            )
         targets = [job_id for job_id in job_ids if job_id != baseline_job_id]
         return baseline_job_id, targets
 
@@ -148,9 +161,11 @@ class CompareManyAisleRunsUseCase:
                 target_metrics.consolidated_positions - baseline_metrics.consolidated_positions
             ),
             "unknown_internal_code_diff": (
-                target_metrics.unknown_internal_code_count - baseline_metrics.unknown_internal_code_count
+                target_metrics.unknown_internal_code_count
+                - baseline_metrics.unknown_internal_code_count
             ),
-            "needs_review_diff": target_metrics.needs_review_count - baseline_metrics.needs_review_count,
+            "needs_review_diff": target_metrics.needs_review_count
+            - baseline_metrics.needs_review_count,
             "execution_time_delta": (
                 None if b_dur is None or t_dur is None else float(t_dur - b_dur)
             ),
@@ -158,7 +173,11 @@ class CompareManyAisleRunsUseCase:
 
     def execute(self, command: CompareManyAisleRunsCommand) -> dict[str, Any]:
         job_ids, baseline_job_id = self._normalize_and_validate_selection(command)
-        diff_row_cap = self._effective_diff_row_cap(command.max_diff_rows) if command.include_diff_rows else None
+        diff_row_cap = (
+            self._effective_diff_row_cap(command.max_diff_rows)
+            if command.include_diff_rows
+            else None
+        )
         baseline_job_id, target_job_ids = self._resolve_baseline(job_ids, baseline_job_id)
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
@@ -254,8 +273,12 @@ class CompareManyAisleRunsUseCase:
 
         total_quantities = [run_data[job_id].metrics.total_quantity for job_id in job_ids]
         needs_review_counts = [run_data[job_id].metrics.needs_review_count for job_id in job_ids]
-        consolidated_counts = [run_data[job_id].metrics.consolidated_positions for job_id in job_ids]
-        unknown_counts = [run_data[job_id].metrics.unknown_internal_code_count for job_id in job_ids]
+        consolidated_counts = [
+            run_data[job_id].metrics.consolidated_positions for job_id in job_ids
+        ]
+        unknown_counts = [
+            run_data[job_id].metrics.unknown_internal_code_count for job_id in job_ids
+        ]
 
         durations = [job_execution_duration_seconds(run_data[jid].job) for jid in job_ids]
         dvals_non_null = [float(d) for d in durations if d is not None]

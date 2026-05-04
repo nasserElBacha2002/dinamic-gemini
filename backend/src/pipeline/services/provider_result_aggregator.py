@@ -13,8 +13,9 @@ does not rank providers by confidence, cost, or agreement — that would be futu
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any, Dict, Optional, Sequence
+from typing import Any
 
 from src.pipeline.contracts.multi_provider_trace_types import MultiProviderExecutionTrace
 from src.pipeline.ports.analysis_provider import (
@@ -23,7 +24,7 @@ from src.pipeline.ports.analysis_provider import (
 )
 
 
-def model_label_from_analysis_result(result: AnalysisResult) -> Optional[str]:
+def model_label_from_analysis_result(result: AnalysisResult) -> str | None:
     """Best-effort model id for trace rows (prompt composition preferred, then cost snapshot)."""
     comp = result.prompt_composition or {}
     mn = comp.get("model_name")
@@ -58,6 +59,6 @@ def attach_multi_provider_trace(
     ``trace`` follows :class:`~src.pipeline.contracts.multi_provider_trace_types.MultiProviderExecutionTrace`
     (plain ``dict`` at runtime, JSON-serializable).
     """
-    meta: Dict[str, Any] = dict(primary.provider_metadata or {})
+    meta: dict[str, Any] = dict(primary.provider_metadata or {})
     meta[PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION] = trace
     return replace(primary, provider_metadata=meta)

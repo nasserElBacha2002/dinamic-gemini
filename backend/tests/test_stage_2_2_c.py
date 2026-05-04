@@ -37,7 +37,8 @@ def test_normalization_resizes_large_image(tmp_path):
     dst = tmp_path / "normalized.jpg"
 
     metrics = normalize_photo_file(
-        src, dst,
+        src,
+        dst,
         max_side=1280,
         jpeg_quality=85,
         min_side=320,
@@ -63,7 +64,8 @@ def test_normalization_keeps_small_image_dimensions(tmp_path):
     dst = tmp_path / "normalized.jpg"
 
     metrics = normalize_photo_file(
-        src, dst,
+        src,
+        dst,
         max_side=1280,
         jpeg_quality=85,
         min_side=64,
@@ -86,7 +88,8 @@ def test_normalization_rejects_too_small_image(tmp_path):
 
     with pytest.raises(ValueError, match="below minimum side"):
         normalize_photo_file(
-            src, dst,
+            src,
+            dst,
             max_side=1280,
             jpeg_quality=85,
             min_side=320,
@@ -140,8 +143,18 @@ def test_manifest_updated_with_metrics_and_normalized_paths(tmp_path):
         "total_photos": 2,
         "total_bytes_original": 0,
         "photos": [
-            {"index": 1, "original_filename": "a.jpg", "stored_filename": "0001_a.jpg", "bytes": 100},
-            {"index": 2, "original_filename": "b.jpg", "stored_filename": "0002_b.jpg", "bytes": 100},
+            {
+                "index": 1,
+                "original_filename": "a.jpg",
+                "stored_filename": "0001_a.jpg",
+                "bytes": 100,
+            },
+            {
+                "index": 2,
+                "original_filename": "b.jpg",
+                "stored_filename": "0002_b.jpg",
+                "bytes": 100,
+            },
         ],
     }
     (run_dir / "input_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -323,7 +336,9 @@ def test_photos_source_raises_on_unsafe_manifest_path():
     from src.frames.sources.photos_source import PhotosFrameSource
 
     run_dir = Path("/tmp/run")
-    job_input = JobInput(video_path="", input_type="photos", input_manifest_path="../../../etc/passwd")
+    job_input = JobInput(
+        video_path="", input_type="photos", input_manifest_path="../../../etc/passwd"
+    )
     source = PhotosFrameSource()
     with pytest.raises(ValueError, match="must not contain"):
         source.get_frames("j", run_dir, job_input)
@@ -417,7 +432,12 @@ def test_integration_photos_job_pipeline_uses_normalized_paths(tmp_path):
 
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
+        provider="gemini",
+        model=None,
+        latency_ms=0,
+        parsed_json=v21_response,
+        raw_text=None,
+        usage=None,
     )
     with patch(
         "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",

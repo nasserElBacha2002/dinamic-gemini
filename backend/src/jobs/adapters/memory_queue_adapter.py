@@ -4,8 +4,6 @@ InMemoryJobQueue — implements JobQueue by delegating to the current queue modu
 
 from __future__ import annotations
 
-from typing import Optional
-
 from src.jobs.queue import dequeue as queue_dequeue
 from src.jobs.queue import enqueue as queue_enqueue
 
@@ -21,5 +19,5 @@ class InMemoryJobQueue:
     def enqueue(self, job_id: str) -> None:
         queue_enqueue(job_id)
 
-    def dequeue(self, timeout: float = 1.0) -> Optional[str]:
+    def dequeue(self, timeout: float = 1.0) -> str | None:
         return queue_dequeue(timeout=timeout)

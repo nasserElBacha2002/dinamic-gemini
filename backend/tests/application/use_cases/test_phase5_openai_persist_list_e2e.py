@@ -7,8 +7,15 @@ from pathlib import Path
 
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
-from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
-from src.application.use_cases.persist_aisle_result import PersistAisleResultCommand, PersistAisleResultUseCase
+from src.application.use_cases.list_aisle_positions import (
+    ListAislePositionsCommand,
+    ListAislePositionsUseCase,
+)
+from src.application.use_cases.persist_aisle_result import (
+    PersistAisleResultCommand,
+    PersistAisleResultUseCase,
+)
+from src.decision.count_status import assign_count_status
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
@@ -17,9 +24,12 @@ from src.infrastructure.repositories.memory_evidence_repository import MemoryEvi
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
-from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
-from src.decision.count_status import assign_count_status
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
+from src.infrastructure.repositories.memory_review_action_repository import (
+    MemoryReviewActionRepository,
+)
 from src.llm.normalization.entity_normalizer import normalize_llm_response
 from src.parsing.global_analysis_parser import parse_entities
 from src.reporting.hybrid_report import build_hybrid_report
@@ -147,7 +157,9 @@ def test_openai_normalize_persist_list_detail_job_metadata_and_slice_isolation()
     )
 
     default_list = list_uc.execute(
-        ListAislePositionsCommand(inventory_id="inv-e2e", aisle_id="aisle-e2e", page=1, page_size=50)
+        ListAislePositionsCommand(
+            inventory_id="inv-e2e", aisle_id="aisle-e2e", page=1, page_size=50
+        )
     )
     assert default_list.result_context_source == "operational"
     assert default_list.resolved_job_id == "job-openai-a"

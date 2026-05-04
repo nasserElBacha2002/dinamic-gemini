@@ -8,13 +8,13 @@ and worker bootstrap without duplicating construction logic.
 
 from __future__ import annotations
 
-from src.application.ports.clock import Clock
 from src.application.ports.capture_repositories import (
     CaptureSessionConfirmIdempotencyRepository,
     CaptureSessionGroupRepository,
     CaptureSessionItemRepository,
     CaptureSessionRepository,
 )
+from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
@@ -29,7 +29,7 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
     SourceAssetRepository,
 )
-from src.application.ports.services import MetricsCalculator
+from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.runtime.app_container import get_app_container
 
 
@@ -82,7 +82,7 @@ def get_artifact_store():
     return get_app_container().get_artifact_storage()
 
 
-def get_worker_launch_service():
+def get_worker_launch_service() -> WorkerLaunchService:
     return get_app_container().get_worker_launch_service()
 
 

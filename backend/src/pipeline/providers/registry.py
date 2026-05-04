@@ -30,7 +30,7 @@ constructed without injection. The LLM vendor is chosen at execute time via the 
 
 from __future__ import annotations
 
-from typing import Any, Final, Optional
+from typing import Any, Final
 
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor

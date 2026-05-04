@@ -11,12 +11,11 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+from src.llm.prompt_composer.prompt_traceability import sha256_utf8
 from src.llm.types import LLMResponse
 from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 from src.pipeline.context.run_context import RunContext
-from src.llm.prompt_composer.prompt_traceability import sha256_utf8
 from src.pipeline.execution_log import ExecutionLogWriter, read_execution_log_file
-from src.pipeline.services.hybrid_analysis_prompt import build_hybrid_analysis_prompt_with_traceability
 from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
@@ -24,13 +23,19 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
     ProviderCapabilities,
 )
+from src.pipeline.services.hybrid_analysis_prompt import (
+    build_hybrid_analysis_prompt_with_traceability,
+)
 from tests.support.llm_executor_harness import HARNESS_LOGICAL_PROVIDER_KEY
 
 
 @pytest.fixture(autouse=True)
 def _patch_default_hybrid_llm_executor(monkeypatch: pytest.MonkeyPatch) -> None:
     """Phase 2: default tests use ``TestLLMExecutor`` (vendor-agnostic resolved key)."""
-    from tests.support.llm_executor_harness import TestLLMExecutor, patch_hybrid_resolve_llm_executor
+    from tests.support.llm_executor_harness import (
+        TestLLMExecutor,
+        patch_hybrid_resolve_llm_executor,
+    )
 
     patch_hybrid_resolve_llm_executor(monkeypatch, TestLLMExecutor())
 
@@ -143,7 +148,11 @@ def test_hybrid_strategy_non_capable_with_refs_in_context() -> None:
             "analysis_context": {
                 "primary_evidence": [],
                 "visual_references": [
-                    {"reference_id": "r1", "source_path": "inventories/inv1/visual_references/r1.jpg", "mime_type": "image/jpeg"},
+                    {
+                        "reference_id": "r1",
+                        "source_path": "inventories/inv1/visual_references/r1.jpg",
+                        "mime_type": "image/jpeg",
+                    },
                 ],
                 "instructions": ["Use refs as context."],
             },
@@ -269,7 +278,9 @@ def test_hybrid_strategy_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     )
 
     info_calls = context.execution_log.info.call_args_list
-    prepared_call = next((call for call in info_calls if call.args[1] == "Analysis request prepared"), None)
+    prepared_call = next(
+        (call for call in info_calls if call.args[1] == "Analysis request prepared"), None
+    )
     assert prepared_call is not None
     payload = prepared_call.kwargs["payload"]
     assert payload["event_type"] == "analysis_request"
@@ -291,7 +302,9 @@ def test_hybrid_strategy_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     assert "resolved_path" not in payload["visual_reference_attachments"][0]
 
 
-def test_hybrid_strategy_execution_log_hashes_prompt_when_debug_full_prompt_disabled(tmp_path: Path) -> None:
+def test_hybrid_strategy_execution_log_hashes_prompt_when_debug_full_prompt_disabled(
+    tmp_path: Path,
+) -> None:
     """Phase 6: default execution_log omits full prompt_text; includes SHA-256 and length."""
     import cv2
 
@@ -328,7 +341,11 @@ def test_hybrid_strategy_execution_log_hashes_prompt_when_debug_full_prompt_disa
     )
 
     prepared_call = next(
-        (call for call in context.execution_log.info.call_args_list if call.args[1] == "Analysis request prepared"),
+        (
+            call
+            for call in context.execution_log.info.call_args_list
+            if call.args[1] == "Analysis request prepared"
+        ),
         None,
     )
     assert prepared_call is not None
@@ -371,7 +388,14 @@ def test_hybrid_strategy_logs_unresolved_visual_reference_without_counting_it_as
         metadata={"frame_count": 1},
     )
 
-    prepared_call = next((call for call in context.execution_log.info.call_args_list if call.args[1] == "Analysis request prepared"), None)
+    prepared_call = next(
+        (
+            call
+            for call in context.execution_log.info.call_args_list
+            if call.args[1] == "Analysis request prepared"
+        ),
+        None,
+    )
     assert prepared_call is not None
     payload = prepared_call.kwargs["payload"]
     assert payload["attachment_summary"]["visual_reference_count"] == 0
@@ -383,7 +407,9 @@ def test_hybrid_strategy_logs_unresolved_visual_reference_without_counting_it_as
     assert result.provider_metadata[PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS] == []
 
 
-def test_hybrid_strategy_persists_structured_request_event_to_execution_log_file(tmp_path: Path) -> None:
+def test_hybrid_strategy_persists_structured_request_event_to_execution_log_file(
+    tmp_path: Path,
+) -> None:
     import cv2
 
     ref_full = tmp_path / "reference-image.jpg"
@@ -421,7 +447,9 @@ def test_hybrid_strategy_persists_structured_request_event_to_execution_log_file
     )
 
     events = read_execution_log_file(run_dir / "execution_log.jsonl")
-    prepared_event = next((event for event in events if event.get("message") == "Analysis request prepared"), None)
+    prepared_event = next(
+        (event for event in events if event.get("message") == "Analysis request prepared"), None
+    )
     assert prepared_event is not None
     payload = prepared_event["payload"]
     assert payload["event_type"] == "analysis_request"
@@ -469,7 +497,9 @@ def test_openai_job_model_name_passed_in_llm_request_metadata(tmp_path: Path) ->
 
 def test_prepare_hybrid_llm_visual_bundle_instructions_only() -> None:
     """Phase 6 — visual bundle helper keeps instruction assembly separate from LLM request build."""
-    from src.pipeline.adapters.hybrid_global_analysis_strategy import _prepare_hybrid_llm_visual_bundle
+    from src.pipeline.adapters.hybrid_global_analysis_strategy import (
+        _prepare_hybrid_llm_visual_bundle,
+    )
     from src.pipeline.contracts.analysis_context import AnalysisContext
 
     ctx = AnalysisContext(
@@ -489,7 +519,9 @@ def test_prepare_hybrid_llm_visual_bundle_instructions_only() -> None:
 
 
 def test_prepare_hybrid_llm_visual_bundle_no_context() -> None:
-    from src.pipeline.adapters.hybrid_global_analysis_strategy import _prepare_hybrid_llm_visual_bundle
+    from src.pipeline.adapters.hybrid_global_analysis_strategy import (
+        _prepare_hybrid_llm_visual_bundle,
+    )
 
     vb = _prepare_hybrid_llm_visual_bundle(
         supports_visual_reference_context=True,

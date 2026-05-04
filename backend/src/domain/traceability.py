@@ -11,7 +11,7 @@ Diagnostic policy (Epic 3.1.C):
 """
 
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any
 
 from src.domain.entity import Entity
 
@@ -33,7 +33,7 @@ TRACEABILITY_UNVALIDATED = TraceabilityStatus.UNVALIDATED.value
 
 
 def apply_traceability_validation(
-    entities: List[Entity],
+    entities: list[Entity],
     valid_image_ids: frozenset[str],
 ) -> None:
     """Set traceability_status and traceability_warning on each entity in place.
@@ -80,7 +80,7 @@ ALL_TRACEABILITY_STATUSES = (
 )
 
 
-def compute_traceability_summary(entities: List[Entity]) -> Dict[str, int]:
+def compute_traceability_summary(entities: list[Entity]) -> dict[str, int]:
     """Compute job-level traceability counts for review and audit.
 
     Returns a dict with keys: total_entities, valid, missing, invalid, unvalidated.
@@ -90,7 +90,7 @@ def compute_traceability_summary(entities: List[Entity]) -> Dict[str, int]:
     ensures backward compatibility with pre-3.1.B jobs and avoids inflating
     "invalid" when the field is absent or non-standard.
     """
-    counts: Dict[str, int] = {
+    counts: dict[str, int] = {
         "total_entities": len(entities),
         "valid": 0,
         "missing": 0,
@@ -114,14 +114,14 @@ def compute_traceability_summary(entities: List[Entity]) -> Dict[str, int]:
 
 
 def compute_traceability_summary_from_entity_dicts(
-    entity_dicts: List[Dict[str, Any]],
-) -> Dict[str, int]:
+    entity_dicts: list[dict[str, Any]],
+) -> dict[str, int]:
     """Compute traceability summary from report-style entity dicts (no Domain Entity needed).
 
     Same counts and legacy/unknown policy as compute_traceability_summary.
     Use from API or report layer when only dict payloads are available.
     """
-    counts: Dict[str, int] = {
+    counts: dict[str, int] = {
         "total_entities": len(entity_dicts),
         "valid": 0,
         "missing": 0,

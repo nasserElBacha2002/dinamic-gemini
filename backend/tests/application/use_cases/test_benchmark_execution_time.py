@@ -52,9 +52,9 @@ def test_job_execution_duration_seconds_none_when_inverted_range() -> None:
 
 def test_job_execution_duration_seconds_happy_path() -> None:
     t0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    assert job_execution_duration_seconds(_job(started_at=t0, finished_at=t0 + timedelta(seconds=12.4))) == pytest.approx(
-        12.4
-    )
+    assert job_execution_duration_seconds(
+        _job(started_at=t0, finished_at=t0 + timedelta(seconds=12.4))
+    ) == pytest.approx(12.4)
 
 
 def test_format_execution_duration_human_subminute() -> None:

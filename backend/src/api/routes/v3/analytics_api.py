@@ -3,36 +3,39 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.api.constants.error_wire import HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO,
+)
 from src.api.constants.route_paths import API_V3_ANALYTICS_ROUTER_PREFIX
-from src.application.dto.analytics_dto import AnalyticsFilters
-from src.api.errors import mapped_http_exception
-from src.application.services.analytics_query_service import AnalyticsQueryService
-from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
-from src.auth.dependencies import get_current_admin
-
 from src.api.dependencies import (
     get_analytics_query_service,
     get_compare_aisle_runs_use_case,
 )
-from src.api.schemas.benchmark_schemas import AisleBenchmarkCompareResponse
+from src.api.errors import mapped_http_exception
 from src.api.schemas.analytics_schemas import (
-    ManualInterventionBreakdownResponse,
-    ManualInterventionCategoryResponse,
-    AnalyticsSummaryResponse,
-    AnalyticsTrendsResponse,
     AisleIssueListResponse,
     AisleIssueRowResponse,
+    AnalyticsSummaryResponse,
+    AnalyticsTrendsResponse,
     InventoryPerformanceListResponse,
     InventoryPerformanceRowResponse,
+    ManualInterventionBreakdownResponse,
+    ManualInterventionCategoryResponse,
     QualityPatternListResponse,
     QualityPatternRowResponse,
     TrendPointResponse,
 )
+from src.api.schemas.benchmark_schemas import AisleBenchmarkCompareResponse
+from src.application.dto.analytics_dto import AnalyticsFilters
+from src.application.services.analytics_query_service import AnalyticsQueryService
+from src.application.use_cases.compare_aisle_runs import (
+    CompareAisleRunsCommand,
+    CompareAisleRunsUseCase,
+)
+from src.auth.dependencies import get_current_admin
 
 router = APIRouter(
     prefix=API_V3_ANALYTICS_ROUTER_PREFIX,
@@ -42,9 +45,9 @@ router = APIRouter(
 
 
 def _range_to_datetimes(
-    date_from: Optional[date],
-    date_to: Optional[date],
-) -> tuple[Optional[datetime], Optional[datetime]]:
+    date_from: date | None,
+    date_to: date | None,
+) -> tuple[datetime | None, datetime | None]:
     df = None
     if date_from is not None:
         df = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
@@ -52,15 +55,17 @@ def _range_to_datetimes(
     if date_to is not None:
         dt = datetime.combine(date_to, time(23, 59, 59, 999999), tzinfo=timezone.utc)
     if df is not None and dt is not None and df > dt:
-        raise HTTPException(status_code=422, detail=HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO)
+        raise HTTPException(
+            status_code=422, detail=HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO
+        )
     return df, dt
 
 
 def _filters(
-    date_from: Optional[date],
-    date_to: Optional[date],
-    inventory_id: Optional[str],
-    aisle_id: Optional[str],
+    date_from: date | None,
+    date_to: date | None,
+    inventory_id: str | None,
+    aisle_id: str | None,
 ) -> AnalyticsFilters:
     df, dt = _range_to_datetimes(date_from, date_to)
     inv = inventory_id.strip() if inventory_id and inventory_id.strip() else None
@@ -70,10 +75,10 @@ def _filters(
 
 def _analytics_filters_validated(
     svc: AnalyticsQueryService,
-    date_from: Optional[date],
-    date_to: Optional[date],
-    inventory_id: Optional[str],
-    aisle_id: Optional[str],
+    date_from: date | None,
+    date_to: date | None,
+    inventory_id: str | None,
+    aisle_id: str | None,
 ) -> AnalyticsFilters:
     f = _filters(date_from, date_to, inventory_id, aisle_id)
     try:
@@ -89,10 +94,10 @@ def _analytics_filters_validated(
 @router.get("/summary", response_model=AnalyticsSummaryResponse)
 def analytics_summary(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    date_from: Optional[date] = Query(None),
-    date_to: Optional[date] = Query(None),
-    inventory_id: Optional[str] = Query(None),
-    aisle_id: Optional[str] = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    inventory_id: str | None = Query(None),
+    aisle_id: str | None = Query(None),
 ) -> AnalyticsSummaryResponse:
     """Return additive KPIs for the analytics dashboard.
 
@@ -137,10 +142,10 @@ def analytics_summary(
 @router.get("/trends", response_model=AnalyticsTrendsResponse)
 def analytics_trends(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    date_from: Optional[date] = Query(None),
-    date_to: Optional[date] = Query(None),
-    inventory_id: Optional[str] = Query(None),
-    aisle_id: Optional[str] = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    inventory_id: str | None = Query(None),
+    aisle_id: str | None = Query(None),
 ) -> AnalyticsTrendsResponse:
     f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     t = svc.trends(f)
@@ -166,10 +171,10 @@ def analytics_trends(
 @router.get("/inventories", response_model=InventoryPerformanceListResponse)
 def analytics_inventories(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    date_from: Optional[date] = Query(None),
-    date_to: Optional[date] = Query(None),
-    inventory_id: Optional[str] = Query(None),
-    aisle_id: Optional[str] = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    inventory_id: str | None = Query(None),
+    aisle_id: str | None = Query(None),
 ) -> InventoryPerformanceListResponse:
     f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     rows = svc.inventory_performance(f)
@@ -205,10 +210,10 @@ def analytics_inventories(
 @router.get("/aisles", response_model=AisleIssueListResponse)
 def analytics_aisles(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    date_from: Optional[date] = Query(None),
-    date_to: Optional[date] = Query(None),
-    inventory_id: Optional[str] = Query(None),
-    aisle_id: Optional[str] = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    inventory_id: str | None = Query(None),
+    aisle_id: str | None = Query(None),
 ) -> AisleIssueListResponse:
     f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     rows = svc.aisle_issues(f)
@@ -238,10 +243,10 @@ def analytics_aisles(
 @router.get("/quality", response_model=QualityPatternListResponse)
 def analytics_quality(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    date_from: Optional[date] = Query(None),
-    date_to: Optional[date] = Query(None),
-    inventory_id: Optional[str] = Query(None),
-    aisle_id: Optional[str] = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    inventory_id: str | None = Query(None),
+    aisle_id: str | None = Query(None),
 ) -> QualityPatternListResponse:
     f = _analytics_filters_validated(svc, date_from, date_to, inventory_id, aisle_id)
     rows = svc.quality_patterns(f)
@@ -261,10 +266,10 @@ def analytics_quality(
 @router.get("/manual-interventions", response_model=ManualInterventionBreakdownResponse)
 def analytics_manual_interventions(
     svc: AnalyticsQueryService = Depends(get_analytics_query_service),
-    date_from: Optional[date] = Query(None),
-    date_to: Optional[date] = Query(None),
-    inventory_id: Optional[str] = Query(None),
-    aisle_id: Optional[str] = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    inventory_id: str | None = Query(None),
+    aisle_id: str | None = Query(None),
 ) -> ManualInterventionBreakdownResponse:
     """Return current persisted manual intervention categories for the analytics scope.
 

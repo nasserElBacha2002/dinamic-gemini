@@ -16,8 +16,9 @@ best-effort removed via ArtifactStorage.delete_file to minimize partial artifact
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, BinaryIO, List, Sequence
+from typing import Any, BinaryIO
 from uuid import uuid4
 
 from src.application.errors import (
@@ -28,10 +29,15 @@ from src.application.errors import (
     ZeroByteFileError,
 )
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import InventoryRepository, InventoryVisualReferenceRepository
+from src.application.ports.repositories import (
+    InventoryRepository,
+    InventoryVisualReferenceRepository,
+)
 from src.application.ports.services import ArtifactStorage
 from src.domain.inventory.visual_reference import InventoryVisualReference
-from src.infrastructure.storage.inventory_visual_reference_paths import visual_reference_storage_path
+from src.infrastructure.storage.inventory_visual_reference_paths import (
+    visual_reference_storage_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +89,7 @@ class UploadInventoryVisualReferencesUseCase:
         self,
         inventory_id: str,
         files: Sequence[UploadedVisualReferenceFile],
-    ) -> List[InventoryVisualReference]:
+    ) -> list[InventoryVisualReference]:
         if not files:
             raise EmptyUploadError("At least one file is required")
         inventory = self._inventory_repo.get_by_id(inventory_id)
@@ -104,11 +110,13 @@ class UploadInventoryVisualReferencesUseCase:
                 raise ZeroByteFileError("Empty or zero-byte files are not allowed")
             mime = _normalize_mime(f.content_type)
             if mime not in ALLOWED_MIME_TYPES:
-                raise UnsupportedAssetTypeError(f"Unsupported image content type for visual reference: {f.content_type}")
+                raise UnsupportedAssetTypeError(
+                    f"Unsupported image content type for visual reference: {f.content_type}"
+                )
 
         now = self._clock.now()
-        created: List[InventoryVisualReference] = []
-        written_paths: List[str] = []
+        created: list[InventoryVisualReference] = []
+        written_paths: list[str] = []
         logger.info(
             "Uploading %d visual reference(s) for inventory %s (existing=%d, max=%d)",
             len(files),
@@ -228,4 +236,3 @@ class ListInventoryVisualReferencesUseCase:
         if inventory is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
         return self._reference_repo.list_by_inventory(inventory_id)
-

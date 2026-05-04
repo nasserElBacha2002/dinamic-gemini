@@ -10,12 +10,11 @@ import cv2
 import numpy as np
 import pytest
 
-from src.frames.types import FramesBundle
 from src.frames.sources.factory import get_frame_source
 from src.frames.sources.photos_source import PhotosFrameSource
 from src.frames.sources.video_source import VideoFrameSource
+from src.frames.types import FramesBundle
 from src.jobs.models import JobInput
-
 
 # ---------- Factory ----------
 
@@ -67,7 +66,9 @@ def test_video_frame_source_returns_frames_bundle(tmp_path):
     assert len(bundle.frames) == len(bundle.frame_refs)
     # VideoFrameSource writes to .frames_extract_* only (pipeline writes frames_sent when debug_save_frames)
     assert not (run_dir / "frames_sent").exists()
-    extract_dirs = [d for d in run_dir.iterdir() if d.is_dir() and d.name.startswith(".frames_extract_")]
+    extract_dirs = [
+        d for d in run_dir.iterdir() if d.is_dir() and d.name.startswith(".frames_extract_")
+    ]
     assert len(extract_dirs) == 1
     for p in bundle.frames:
         assert p.exists()
@@ -249,7 +250,12 @@ def test_pipeline_runs_with_photos_frames(tmp_path):
 
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
+        provider="gemini",
+        model=None,
+        latency_ms=0,
+        parsed_json=v21_response,
+        raw_text=None,
+        usage=None,
     )
     with patch(
         "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
@@ -292,8 +298,8 @@ def test_pipeline_truncates_frames_to_hybrid_max_frames(tmp_path):
     v21_response = {"total_entities_detected": 0, "entities": []}
 
     from src.llm.types import LLMResponse
-    from src.pipeline.stages.frame_acquisition_stage import HYBRID_MAX_FRAMES_LOAD_CAP
     from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+    from src.pipeline.stages.frame_acquisition_stage import HYBRID_MAX_FRAMES_LOAD_CAP
 
     logger = MagicMock()
     settings = MagicMock()
@@ -311,7 +317,12 @@ def test_pipeline_truncates_frames_to_hybrid_max_frames(tmp_path):
 
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model=None, latency_ms=0, parsed_json=v21_response, raw_text=None, usage=None,
+        provider="gemini",
+        model=None,
+        latency_ms=0,
+        parsed_json=v21_response,
+        raw_text=None,
+        usage=None,
     )
     with patch(
         "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",

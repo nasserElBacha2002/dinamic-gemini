@@ -6,7 +6,7 @@ Returns all inventories from the repository. No filters in this slice.
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from src.application.ports.repositories import InventoryRepository
 from src.domain.inventory.entities import Inventory

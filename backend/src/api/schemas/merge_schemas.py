@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -34,15 +34,15 @@ class MergeResultItemResponse(BaseModel):
     sku: Optional[str]
     product_name: Optional[str]
     merged_quantity: int
-    normalized_label_ids: List[str]
+    normalized_label_ids: list[str]
     review_required: bool
     explanation_summary: Optional[str]
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     created_at: str
 
 
 class MergeResultsResponse(BaseModel):
-    results: List[MergeResultItemResponse]
+    results: list[MergeResultItemResponse]
     result_job_id: Optional[str] = Field(
         None, description="Effective job slice; null means legacy null-job final_count rows."
     )
@@ -50,4 +50,3 @@ class MergeResultsResponse(BaseModel):
         ...,
         description="explicit | operational | legacy — how result_job_id was resolved.",
     )
-

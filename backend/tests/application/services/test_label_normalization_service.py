@@ -2,8 +2,6 @@
 
 from datetime import datetime, timezone
 
-import pytest
-
 from src.application.services.label_normalization import LabelNormalizationService
 from src.domain.labels.entities import RawLabel
 from src.domain.labels.merge import MergeRuleEngine

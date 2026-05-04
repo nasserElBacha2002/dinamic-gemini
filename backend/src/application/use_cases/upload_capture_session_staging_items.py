@@ -132,9 +132,13 @@ class UploadCaptureSessionStagingItemsUseCase:
             )
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
-            raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
+            raise CaptureSessionNotFoundError(
+                "Capture session not found for this inventory and aisle."
+            )
         if aisle_id is not None and session.aisle_id != aisle_id:
-            raise CaptureSessionNotFoundError("Capture session not found for this inventory and aisle.")
+            raise CaptureSessionNotFoundError(
+                "Capture session not found for this inventory and aisle."
+            )
         if not _session_accepts_uploads(session):
             raise CaptureSessionNotAcceptingUploadsError(
                 "This capture session does not accept new staging uploads."
@@ -216,7 +220,9 @@ class UploadCaptureSessionStagingItemsUseCase:
             rel_key = f"{self._staging_prefix}/{inventory_id}/{session_id}/{item_id}_{safe}"
             bio = BytesIO(raw)
             try:
-                self._artifact_storage.save_file(rel_key, bio, uf.content_type or "application/octet-stream")
+                self._artifact_storage.save_file(
+                    rel_key, bio, uf.content_type or "application/octet-stream"
+                )
             except Exception:
                 logger.exception(
                     "capture staging upload: storage write failed session_id=%s item_id=%s key=%s",
@@ -268,7 +274,11 @@ class UploadCaptureSessionStagingItemsUseCase:
                     try:
                         self._artifact_storage.delete_file(rel_key)
                     except Exception as cleanup_e:  # noqa: BLE001
-                        logger.warning("capture staging upload: cleanup delete failed key=%s: %s", rel_key, cleanup_e)
+                        logger.warning(
+                            "capture staging upload: cleanup delete failed key=%s: %s",
+                            rel_key,
+                            cleanup_e,
+                        )
                     batch_digests.discard(digest)
                     errors.append(
                         StagingUploadFileError(
@@ -282,7 +292,11 @@ class UploadCaptureSessionStagingItemsUseCase:
                 try:
                     self._artifact_storage.delete_file(rel_key)
                 except Exception as cleanup_e:  # noqa: BLE001
-                    logger.warning("capture staging upload: rollback delete failed key=%s: %s", rel_key, cleanup_e)
+                    logger.warning(
+                        "capture staging upload: rollback delete failed key=%s: %s",
+                        rel_key,
+                        cleanup_e,
+                    )
                 fail = CaptureSessionItem(
                     id=item_id,
                     session_id=session_id,
@@ -301,7 +315,9 @@ class UploadCaptureSessionStagingItemsUseCase:
                 self._item_repo.save(fail)
                 created.append(fail)
                 logger.exception(
-                    "capture staging upload: item persist failed session_id=%s item_id=%s", session_id, item_id
+                    "capture staging upload: item persist failed session_id=%s item_id=%s",
+                    session_id,
+                    item_id,
                 )
                 continue
 

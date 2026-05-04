@@ -14,13 +14,13 @@ import numpy as np
 import pytest
 
 from src.domain.pallet import Pallet
+from src.fallback import select_fallback_frames
 from src.fallback.fallback_policy import DEFAULT_CONFIDENCE_THRESHOLD, should_trigger_fallback
 from src.fallback.visual_fallback_analyzer import (
     FALLBACK_COUNT_PROMPT,
     VisualFallbackAnalyzer,
     VisualFallbackError,
 )
-from src.fallback import select_fallback_frames
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
 
@@ -78,7 +78,9 @@ def test_should_trigger_fallback_label_missing_quantity_trigger():
 def test_visual_fallback_analyzer_returns_count_and_confidence():
     """Mocked client returns valid JSON → count_visible_boxes returns (count, confidence)."""
     mock_client = MagicMock()
-    mock_client.generate_global_analysis_raw.return_value = '{"estimated_count": 12, "confidence": 0.83}'
+    mock_client.generate_global_analysis_raw.return_value = (
+        '{"estimated_count": 12, "confidence": 0.83}'
+    )
     analyzer = VisualFallbackAnalyzer(mock_client)
     frames = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
@@ -140,7 +142,12 @@ def test_hybrid_one_global_plus_n_fallback_and_final_quantity_updated():
     }
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model=None, latency_ms=0, parsed_json=global_v21, raw_text=None, usage=None,
+        provider="gemini",
+        model=None,
+        latency_ms=0,
+        parsed_json=global_v21,
+        raw_text=None,
+        usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
@@ -203,7 +210,12 @@ def test_hybrid_high_confidence_no_fallback_calls():
     }
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model=None, latency_ms=0, parsed_json=global_v21, raw_text=None, usage=None,
+        provider="gemini",
+        model=None,
+        latency_ms=0,
+        parsed_json=global_v21,
+        raw_text=None,
+        usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
@@ -215,7 +227,7 @@ def test_hybrid_high_confidence_no_fallback_calls():
         mock_extract.return_value = (dummy_frames, {"fps": 30.0, "frame_indices": list(range(5))})
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
-            result = HybridInventoryPipeline().process_video(
+            HybridInventoryPipeline().process_video(
                 "/some/video.mp4",
                 mode="hybrid",
                 settings=mock_settings,
@@ -281,7 +293,12 @@ def test_metrics_attempts_increment_and_total_calls_on_fallback_error():
     }
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model=None, latency_ms=0, parsed_json=global_v21, raw_text=None, usage=None,
+        provider="gemini",
+        model=None,
+        latency_ms=0,
+        parsed_json=global_v21,
+        raw_text=None,
+        usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,

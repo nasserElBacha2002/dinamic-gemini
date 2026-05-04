@@ -11,7 +11,9 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
-from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsResult
+from src.application.use_cases.recompute_consolidated_counts import (
+    RecomputeConsolidatedCountsResult,
+)
 from src.application.use_cases.run_aisle_merge import (
     RunAisleMergeCommand,
     RunAisleMergeUseCase,

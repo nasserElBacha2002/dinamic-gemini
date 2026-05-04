@@ -1,6 +1,6 @@
 """Stage 2.2.D — LLM provider errors."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 class LLMProviderError(Exception):
@@ -10,7 +10,7 @@ class LLMProviderError(Exception):
         self,
         code: str,
         message: str,
-        details: Optional[Dict[str, Any]] = None,
+        details: Optional[dict[str, Any]] = None,
     ):
         self.code = code
         self.message = message

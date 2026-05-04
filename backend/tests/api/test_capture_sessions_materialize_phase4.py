@@ -21,10 +21,16 @@ from src.infrastructure.repositories.memory_capture_session_confirm_idempotency_
 from src.infrastructure.repositories.memory_capture_session_group_repository import (
     MemoryCaptureSessionGroupRepository,
 )
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+from src.infrastructure.repositories.memory_source_asset_repository import (
+    MemorySourceAssetRepository,
+)
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.runtime.app_container import reset_app_container_for_tests
 from src.runtime.v3_deps import (
@@ -44,7 +50,7 @@ def materialize_capture_ctx(tmp_path: Path):
     reset_app_container_for_tests()
     sr = MemoryCaptureSessionRepository()
     ir = MemoryCaptureSessionItemRepository()
-    gr = MemoryCaptureSessionGroupRepository(ir)
+    MemoryCaptureSessionGroupRepository(ir)
     pr = MemoryPositionRepository()
     ar = MemorySourceAssetRepository()
     cr = MemoryCaptureSessionConfirmIdempotencyRepository()
@@ -75,7 +81,9 @@ def _create_inv_aisle() -> tuple[str, str]:
     return inv_id, r2.json()["id"]
 
 
-def _build_assignment_proposed_session(inv_id: str, aisle_id: str, position_repo: MemoryPositionRepository) -> str:
+def _build_assignment_proposed_session(
+    inv_id: str, aisle_id: str, position_repo: MemoryPositionRepository
+) -> str:
     t = datetime(2026, 5, 1, 12, 0, 0, tzinfo=timezone.utc)
     position_repo.save(
         Position(
@@ -90,23 +98,32 @@ def _build_assignment_proposed_session(inv_id: str, aisle_id: str, position_repo
             corrected_position_code="A1",
         )
     )
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     up = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/items",
         files=[("files", ("a.jpg", b"payload-materialize", "image/jpeg"))],
     )
     assert up.status_code == 201, up.text
     assert (
-        client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/close").status_code == 200
+        client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/close"
+        ).status_code
+        == 200
     )
-    pv = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/preview-assignment")
+    pv = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/preview-assignment"
+    )
     assert pv.status_code == 200, pv.text
     return sid
 
 
 def test_materialize_happy_path_and_retry_same_key(materialize_capture_ctx) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = _build_assignment_proposed_session(inv_id, aisle_id, materialize_capture_ctx["position_repo"])
+    sid = _build_assignment_proposed_session(
+        inv_id, aisle_id, materialize_capture_ctx["position_repo"]
+    )
     first = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/materialize",
         json={"idempotency_key": "k-1"},
@@ -136,7 +153,9 @@ def test_materialize_happy_path_and_retry_same_key(materialize_capture_ctx) -> N
 
 def test_materialize_different_key_after_success_returns_conflict(materialize_capture_ctx) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = _build_assignment_proposed_session(inv_id, aisle_id, materialize_capture_ctx["position_repo"])
+    sid = _build_assignment_proposed_session(
+        inv_id, aisle_id, materialize_capture_ctx["position_repo"]
+    )
     assert (
         client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/materialize",
@@ -154,8 +173,13 @@ def test_materialize_different_key_after_success_returns_conflict(materialize_ca
 
 def test_materialize_missing_or_invalid_idempotency_key(materialize_capture_ctx) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = _build_assignment_proposed_session(inv_id, aisle_id, materialize_capture_ctx["position_repo"])
-    missing = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/materialize", json={})
+    sid = _build_assignment_proposed_session(
+        inv_id, aisle_id, materialize_capture_ctx["position_repo"]
+    )
+    missing = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/materialize",
+        json={},
+    )
     assert missing.status_code == 422
     blank = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/materialize",
@@ -166,7 +190,9 @@ def test_materialize_missing_or_invalid_idempotency_key(materialize_capture_ctx)
 
 def test_materialize_invalid_session_state(materialize_capture_ctx) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     r = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/materialize",
         json={"idempotency_key": "nope"},

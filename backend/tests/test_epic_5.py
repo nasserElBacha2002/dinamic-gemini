@@ -6,23 +6,17 @@ Corrections-scoped: public path helper, legacy behavior (new reports only), CSV 
 video job (no map), entity with source_image_id not in map.
 """
 
-import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from src.domain.entity import Entity
 from src.jobs.models import JobInput
 from src.jobs.photos_paths import photos_dir_relative_for_manifest, resolve_manifest_path
-from src.jobs.job_store import create_job, update_job
-from src.jobs.models import JobOutput, JobStatus
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageInput
 from src.reporting.artifacts import write_report_csv
 from src.reporting.hybrid_report import build_hybrid_report
-
 
 # ---------- build_hybrid_report source_image_original_filename ----------
 
@@ -56,7 +50,9 @@ def test_photos_dir_relative_for_manifest_custom():
 def test_no_private_helper_in_reporting_stage():
     """ReportingStage must use public path helpers from jobs.photos_paths, not private helpers from photos_source."""
     import inspect
+
     import src.pipeline.stages.reporting_stage as reporting_stage_module
+
     source = inspect.getsource(reporting_stage_module)
     assert "photos_paths" in source and "resolve_manifest_path" in source
     assert "photos_source" not in source

@@ -6,6 +6,14 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
+    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+)
 from src.api.dependencies import (
     get_compare_aisle_runs_use_case,
     get_get_aisle_processing_status_use_case,
@@ -16,37 +24,32 @@ from src.api.dependencies import (
     get_resolve_aisle_job_for_inventory_read_use_case,
     get_start_aisle_processing_use_case,
 )
-from src.api.errors.error_mapping import mapped_http_exception, reraise_if_mapped, review_exception_to_http
-from src.api.constants.error_wire import (
-    HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
-    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
-    HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+from src.api.errors.error_mapping import (
+    mapped_http_exception,
+    reraise_if_mapped,
+    review_exception_to_http,
 )
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
     AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
     AISLE_NOT_FOUND,
+    AISLE_NOT_FOUND_FOR_ASSIGNMENT,
     ANALYTICS_SCOPE_VALIDATION_FAILED,
     BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
-    AISLE_NOT_FOUND_FOR_ASSIGNMENT,
     CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
     CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
-    CAPTURE_SESSION_GROUP_NOT_FOUND,
+    CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
     CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
     CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
+    CAPTURE_SESSION_GROUP_NOT_FOUND,
     CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
-    CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
     CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
     CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
     CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
     CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
     EMPTY_UPLOAD,
-    INVENTORY_NOT_FOUND,
     INTERNAL_SERVER_ERROR,
+    INVENTORY_NOT_FOUND,
     JOB_NOT_FOUND,
     JOB_NOT_IN_AISLE_SCOPE,
     JOB_PROMOTION_NOT_ALLOWED,
@@ -58,20 +61,21 @@ from src.api.errors.structured_api_http import (
     StructuredApiHttpError,
 )
 from src.api.server import app
+from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 from src.application.errors import (
     ActiveJobExistsError,
     AisleNotFoundError,
+    AisleNotFoundForAssignmentError,
     AnalyticsScopeValidationError,
     BenchmarkCompareJobsMustDifferError,
-    AisleNotFoundForAssignmentError,
     CaptureSessionGroupAlreadyAssignedError,
     CaptureSessionGroupAssignmentNotAllowedError,
-    CaptureSessionGroupNotFoundError,
+    CaptureSessionGroupingNotAllowedError,
+    CaptureSessionGroupIntegrityError,
     CaptureSessionGroupNotAssignedForMaterializationError,
     CaptureSessionGroupNotAssignedForPreviewError,
+    CaptureSessionGroupNotFoundError,
     CaptureSessionGroupNotMaterializedForPreviewError,
-    CaptureSessionGroupIntegrityError,
-    CaptureSessionGroupingNotAllowedError,
     CaptureSessionInvalidClockOffsetError,
     CaptureSessionNoItemsForGroupingError,
     CaptureSessionPreviewNotAllowedError,
@@ -88,7 +92,6 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
-from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 
 
 def test_mapped_http_exception_job_scope_returns_404() -> None:
@@ -184,13 +187,31 @@ def test_mapped_inventory_not_found() -> None:
 @pytest.mark.parametrize(
     "exc,expected_detail,expected_code",
     [
-        (AisleNotFoundError(), "Aisle not found or does not belong to this inventory", AISLE_NOT_FOUND),
-        (PositionNotFoundError(), "Position not found or does not belong to this aisle", POSITION_NOT_FOUND),
-        (ProductNotFoundError(), "Product not found or does not belong to this position", PRODUCT_NOT_FOUND),
-        (InventoryVisualReferenceNotFoundError(), "Visual reference not found", VISUAL_REFERENCE_NOT_FOUND),
+        (
+            AisleNotFoundError(),
+            "Aisle not found or does not belong to this inventory",
+            AISLE_NOT_FOUND,
+        ),
+        (
+            PositionNotFoundError(),
+            "Position not found or does not belong to this aisle",
+            POSITION_NOT_FOUND,
+        ),
+        (
+            ProductNotFoundError(),
+            "Product not found or does not belong to this position",
+            PRODUCT_NOT_FOUND,
+        ),
+        (
+            InventoryVisualReferenceNotFoundError(),
+            "Visual reference not found",
+            VISUAL_REFERENCE_NOT_FOUND,
+        ),
     ],
 )
-def test_mapped_stable_not_found_details(exc: Exception, expected_detail: str, expected_code: str) -> None:
+def test_mapped_stable_not_found_details(
+    exc: Exception, expected_detail: str, expected_code: str
+) -> None:
     http = mapped_http_exception(exc)
     assert http is not None
     assert isinstance(http, StructuredApiHttpError)
@@ -262,7 +283,11 @@ def test_job_not_found_non_canonical_message_maps_to_stable_detail() -> None:
 @pytest.mark.parametrize(
     "exc,expected_code,status",
     [
-        (ActiveJobExistsError("Aisle a already has an active job (status=QUEUED)"), ACTIVE_JOB_EXISTS, 409),
+        (
+            ActiveJobExistsError("Aisle a already has an active job (status=QUEUED)"),
+            ACTIVE_JOB_EXISTS,
+            409,
+        ),
         (
             JobPromotionNotAllowedError("Only succeeded jobs can be promoted (status=FAILED)"),
             JOB_PROMOTION_NOT_ALLOWED,
@@ -315,7 +340,9 @@ def test_mapped_active_job_exists_non_canonical_detail_is_generic() -> None:
 
 def test_mapped_no_source_assets_for_processing_is_structured_409() -> None:
     http = mapped_http_exception(
-        NoSourceAssetsForAisleProcessingError("No source assets for aisle x; upload media before processing.")
+        NoSourceAssetsForAisleProcessingError(
+            "No source assets for aisle x; upload media before processing."
+        )
     )
     assert isinstance(http, StructuredApiHttpError)
     assert http.status_code == 409
@@ -334,10 +361,30 @@ def test_mapped_job_promotion_not_allowed_non_canonical_detail_is_generic() -> N
     "exc,status,expected_code,expected_detail",
     [
         (InventoryNotFoundError(), 404, INVENTORY_NOT_FOUND, "Inventory not found"),
-        (AisleNotFoundError(), 404, AISLE_NOT_FOUND, "Aisle not found or does not belong to this inventory"),
-        (PositionNotFoundError(), 404, POSITION_NOT_FOUND, "Position not found or does not belong to this aisle"),
-        (ProductNotFoundError(), 404, PRODUCT_NOT_FOUND, "Product not found or does not belong to this position"),
-        (InventoryVisualReferenceNotFoundError(), 404, VISUAL_REFERENCE_NOT_FOUND, "Visual reference not found"),
+        (
+            AisleNotFoundError(),
+            404,
+            AISLE_NOT_FOUND,
+            "Aisle not found or does not belong to this inventory",
+        ),
+        (
+            PositionNotFoundError(),
+            404,
+            POSITION_NOT_FOUND,
+            "Position not found or does not belong to this aisle",
+        ),
+        (
+            ProductNotFoundError(),
+            404,
+            PRODUCT_NOT_FOUND,
+            "Product not found or does not belong to this position",
+        ),
+        (
+            InventoryVisualReferenceNotFoundError(),
+            404,
+            VISUAL_REFERENCE_NOT_FOUND,
+            "Visual reference not found",
+        ),
         (JobNotFoundError("Job not found: z1"), 404, JOB_NOT_FOUND, "Job not found: z1"),
         (
             JobDoesNotBelongToAisleError("Job zz does not belong to aisle aa"),
@@ -547,7 +594,9 @@ def test_get_aisle_status_aisle_not_found_returns_structured_json() -> None:
 
     app.dependency_overrides[get_get_aisle_processing_status_use_case] = lambda: _MissingAisle()
     try:
-        r = TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/inv-1/aisles/aisle-1/status")
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/api/v3/inventories/inv-1/aisles/aisle-1/status"
+        )
         assert r.status_code == 404
         assert r.json() == {
             "code": AISLE_NOT_FOUND,
@@ -697,7 +746,9 @@ def test_get_aisle_job_detail_job_not_found_is_category_c_detail_only() -> None:
         def execute(self, inventory_id: str, aisle_id: str, job_id: str) -> None:
             raise JobNotFoundError("Job not found: internal-id-must-not-leak")
 
-    app.dependency_overrides[get_resolve_aisle_job_for_inventory_read_use_case] = lambda: _MissingJob()
+    app.dependency_overrides[get_resolve_aisle_job_for_inventory_read_use_case] = lambda: (
+        _MissingJob()
+    )
     try:
         r = TestClient(app, raise_server_exceptions=False).get(
             "/api/v3/inventories/inv-1/aisles/aisle-1/jobs/job-missing"
@@ -735,11 +786,15 @@ def test_structured_handler_emits_code_and_detail() -> None:
 
     @mini.exception_handler(StructuredApiHttpError)
     async def _structured(_request, exc: StructuredApiHttpError):
-        return JSONResponse(status_code=exc.status_code, content={"code": exc.error_code, "detail": exc.detail})
+        return JSONResponse(
+            status_code=exc.status_code, content={"code": exc.error_code, "detail": exc.detail}
+        )
 
     @mini.get("/s")
     def _structured_route():
-        raise StructuredApiHttpError(404, error_code=INVENTORY_NOT_FOUND, detail="Inventory not found")
+        raise StructuredApiHttpError(
+            404, error_code=INVENTORY_NOT_FOUND, detail="Inventory not found"
+        )
 
     r = TestClient(mini, raise_server_exceptions=False).get("/s")
     assert r.status_code == 404

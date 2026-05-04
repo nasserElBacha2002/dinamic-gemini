@@ -17,13 +17,14 @@ from src.application.ports.repositories import AisleRepository, PositionReposito
 from src.application.ports.services import MetricsCalculator
 from src.domain.positions.entities import PositionStatus
 
-
 # Terminal statuses: positions that have been through manual review (Documento técnico §9.6).
-_TERMINAL_STATUSES = frozenset({
-    PositionStatus.REVIEWED.value,
-    PositionStatus.CORRECTED.value,
-    PositionStatus.DELETED.value,
-})
+_TERMINAL_STATUSES = frozenset(
+    {
+        PositionStatus.REVIEWED.value,
+        PositionStatus.CORRECTED.value,
+        PositionStatus.DELETED.value,
+    }
+)
 
 
 class InventoryMetricsService(MetricsCalculator):
@@ -42,9 +43,15 @@ class InventoryMetricsService(MetricsCalculator):
         reviewed_positions = [p for p in positions if p.status.value in _TERMINAL_STATUSES]
         total_reviewed = len(reviewed_positions)
 
-        auto_accepted = sum(1 for p in reviewed_positions if p.status.value == PositionStatus.REVIEWED.value)
-        corrected = sum(1 for p in reviewed_positions if p.status.value == PositionStatus.CORRECTED.value)
-        deleted = sum(1 for p in reviewed_positions if p.status.value == PositionStatus.DELETED.value)
+        auto_accepted = sum(
+            1 for p in reviewed_positions if p.status.value == PositionStatus.REVIEWED.value
+        )
+        corrected = sum(
+            1 for p in reviewed_positions if p.status.value == PositionStatus.CORRECTED.value
+        )
+        deleted = sum(
+            1 for p in reviewed_positions if p.status.value == PositionStatus.DELETED.value
+        )
 
         if total_reviewed > 0:
             success_rate = round(auto_accepted / total_reviewed * 100, 2)

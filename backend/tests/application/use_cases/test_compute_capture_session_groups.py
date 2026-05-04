@@ -24,8 +24,12 @@ from src.domain.capture.entities import (
 from src.infrastructure.repositories.memory_capture_session_group_repository import (
     MemoryCaptureSessionGroupRepository,
 )
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 
 UTC = timezone.utc
 

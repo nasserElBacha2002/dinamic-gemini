@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 
@@ -23,10 +23,10 @@ def attachment_name_from_path(path: Path) -> str:
 
 
 def build_primary_evidence_attachments(
-    frame_paths: List[Path],
-    frame_refs: List[str],
-) -> List[Dict[str, Any]]:
-    attachments: List[Dict[str, Any]] = []
+    frame_paths: list[Path],
+    frame_refs: list[str],
+) -> list[dict[str, Any]]:
+    attachments: list[dict[str, Any]] = []
     for index, path in enumerate(frame_paths):
         ref = frame_refs[index] if index < len(frame_refs) else ""
         attachments.append(
@@ -45,7 +45,9 @@ def load_pil_from_path(path: Path) -> Any:  # PIL.Image.Image | None
     try:
         from PIL import Image
     except ImportError:
-        raise ImportError("Pillow required for visual reference loading. Install with: pip install pillow")
+        raise ImportError(
+            "Pillow required for visual reference loading. Install with: pip install pillow"
+        )
     img = cv2.imread(str(path))
     if img is None:
         return None
@@ -54,16 +56,16 @@ def load_pil_from_path(path: Path) -> Any:  # PIL.Image.Image | None
 
 
 def prepare_visual_reference_inputs(
-    analysis_context: Optional[AnalysisContext],
+    analysis_context: AnalysisContext | None,
     *,
     job_id: str,
-) -> tuple[List[Any], List[Dict[str, Any]], List[str]]:
+) -> tuple[list[Any], list[dict[str, Any]], list[str]]:
     if not analysis_context or not analysis_context.visual_references:
         return [], [], []
 
-    loaded_images: List[Any] = []
-    attachments: List[Dict[str, Any]] = []
-    resolved_reference_ids: List[str] = []
+    loaded_images: list[Any] = []
+    attachments: list[dict[str, Any]] = []
+    resolved_reference_ids: list[str] = []
     for index, ref in enumerate(analysis_context.visual_references):
         source_path = (ref.source_path or "").strip()
         resolved_path = (ref.resolved_path or "").strip() or None

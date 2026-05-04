@@ -1,7 +1,7 @@
 """v3.0 Processing API schemas (process, status)."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -48,7 +48,7 @@ class ProcessingProviderOptionItem(BaseModel):
         description="native — pipeline providers use native SDK executors.",
     )
     description: Optional[str] = None
-    models: List[ProcessingModelOption] = Field(default_factory=list)
+    models: list[ProcessingModelOption] = Field(default_factory=list)
     default_model: Optional[str] = Field(
         None, description="Default model id for this provider when model_name is omitted."
     )
@@ -59,17 +59,19 @@ class ProcessingProviderOptionsResponse(BaseModel):
 
     default_provider_key: str
     default_prompt_key: str
-    prompt_profiles: List[ProcessingPromptOptionItem] = Field(default_factory=list)
-    providers: List[ProcessingProviderOptionItem] = Field(default_factory=list)
+    prompt_profiles: list[ProcessingPromptOptionItem] = Field(default_factory=list)
+    providers: list[ProcessingProviderOptionItem] = Field(default_factory=list)
 
 
 class ProcessAisleResponse(BaseModel):
     """Response for POST .../aisles/{aisle_id}/process."""
+
     job_id: str
 
 
 class JobSummary(BaseModel):
     """Summary of latest job for an aisle."""
+
     id: str
     status: str
     created_at: datetime
@@ -98,16 +100,18 @@ class JobSummary(BaseModel):
 
 class AisleStatusResponse(BaseModel):
     """Response for GET .../aisles/{aisle_id}/status."""
+
     aisle: AisleResponse
     latest_job: Optional[JobSummary] = None
     operational_job_id: Optional[str] = None
-    recent_jobs: List[JobSummary] = Field(default_factory=list)
+    recent_jobs: list[JobSummary] = Field(default_factory=list)
 
 
 class AisleJobsListResponse(BaseModel):
     """Response for GET .../aisles/{aisle_id}/jobs (Phase 2 run browser)."""
+
     operational_job_id: Optional[str] = None
-    jobs: List[JobSummary] = Field(default_factory=list)
+    jobs: list[JobSummary] = Field(default_factory=list)
 
 
 class ExecutionLogEvent(BaseModel):
@@ -135,10 +139,10 @@ class ExecutionLogResponse(BaseModel):
     inventory_id: str
     aisle_id: str
     requested_job_id: str
-    available_job_ids: List[str] = Field(default_factory=list)
-    available_attempts: List[int] = Field(default_factory=list)
-    available_execution_ids: List[str] = Field(default_factory=list)
-    events: List[ExecutionLogEvent] = Field(default_factory=list)
+    available_job_ids: list[str] = Field(default_factory=list)
+    available_attempts: list[int] = Field(default_factory=list)
+    available_execution_ids: list[str] = Field(default_factory=list)
+    events: list[ExecutionLogEvent] = Field(default_factory=list)
 
 
 class ExecutionLogJobInfo(BaseModel):
@@ -166,10 +170,9 @@ class AisleExecutionLogResponse(BaseModel):
     inventory_id: str
     aisle_id: str
     requested_job_id: Optional[str] = None
-    available_job_ids: List[str] = Field(default_factory=list)
-    available_attempts: List[int] = Field(default_factory=list)
-    available_execution_ids: List[str] = Field(default_factory=list)
-    jobs: List[ExecutionLogJobInfo] = Field(default_factory=list)
-    log_sources: List[ExecutionLogSourceInfo] = Field(default_factory=list)
-    events: List[ExecutionLogEvent] = Field(default_factory=list)
-
+    available_job_ids: list[str] = Field(default_factory=list)
+    available_attempts: list[int] = Field(default_factory=list)
+    available_execution_ids: list[str] = Field(default_factory=list)
+    jobs: list[ExecutionLogJobInfo] = Field(default_factory=list)
+    log_sources: list[ExecutionLogSourceInfo] = Field(default_factory=list)
+    events: list[ExecutionLogEvent] = Field(default_factory=list)

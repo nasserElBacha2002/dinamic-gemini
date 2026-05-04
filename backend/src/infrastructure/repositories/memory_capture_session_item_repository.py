@@ -6,8 +6,8 @@ etc.); same object round-trips as SQL row mapping.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Dict, Optional, Sequence
 
 from src.application.errors import CaptureSessionDuplicateItemContentError
 from src.application.ports.capture_repositories import CaptureSessionItemRepository
@@ -16,7 +16,7 @@ from src.domain.capture.entities import CaptureSessionItem, CaptureSessionItemIm
 
 class MemoryCaptureSessionItemRepository(CaptureSessionItemRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, CaptureSessionItem] = {}
+        self._store: dict[str, CaptureSessionItem] = {}
 
     def save(self, item: CaptureSessionItem) -> None:
         h = (item.content_hash or "").strip()
@@ -32,7 +32,7 @@ class MemoryCaptureSessionItemRepository(CaptureSessionItemRepository):
                     )
         self._store[item.id] = item
 
-    def get_by_id(self, item_id: str) -> Optional[CaptureSessionItem]:
+    def get_by_id(self, item_id: str) -> CaptureSessionItem | None:
         return self._store.get(item_id)
 
     def list_by_session(self, session_id: str) -> Sequence[CaptureSessionItem]:
@@ -40,7 +40,9 @@ class MemoryCaptureSessionItemRepository(CaptureSessionItemRepository):
         rows.sort(key=lambda i: (i.updated_at, i.id))
         return tuple(rows)
 
-    def list_by_session_and_group_id(self, session_id: str, group_id: str) -> Sequence[CaptureSessionItem]:
+    def list_by_session_and_group_id(
+        self, session_id: str, group_id: str
+    ) -> Sequence[CaptureSessionItem]:
         gid = (group_id or "").strip()
         rows = [
             i
@@ -74,7 +76,8 @@ class MemoryCaptureSessionItemRepository(CaptureSessionItemRepository):
         if not h:
             return False
         return any(
-            i.session_id == session_id and (i.content_hash or "").strip() == h for i in self._store.values()
+            i.session_id == session_id and (i.content_hash or "").strip() == h
+            for i in self._store.values()
         )
 
     def count_items_with_import_status(
