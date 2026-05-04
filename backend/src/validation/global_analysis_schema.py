@@ -7,6 +7,7 @@ Validates required keys, types, and constraints. Does not auto-correct.
 from typing import Any, Dict
 
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
+from src.llm.normalization.numeric_coercion import coerce_v21_product_label_quantities
 
 
 def validate_global_analysis_structure(data: Dict[str, Any]) -> None:
@@ -128,6 +129,9 @@ def validate_global_analysis_structure_v21(data: Dict[str, Any]) -> None:
     if not isinstance(data, dict):
         raise GlobalAnalysisValidationError("Response must be a JSON object")
 
+    # LLMs often emit quantities as strings; coerce before structural checks (B2.4).
+    coerce_v21_product_label_quantities(data)
+
     if "total_entities_detected" not in data:
         raise GlobalAnalysisValidationError("Missing required key: total_entities_detected")
     if "entities" not in data:
@@ -189,14 +193,10 @@ def validate_global_analysis_structure_v21(data: Dict[str, Any]) -> None:
             )
 
         qty = e.get("product_label_quantity")
-        if qty is not None:
-            if not isinstance(qty, int):
-                try:
-                    int(qty)
-                except (TypeError, ValueError):
-                    raise GlobalAnalysisValidationError(
-                        f"{prefix}.product_label_quantity must be int or null, got {type(qty).__name__!r}"
-                    )
+        if qty is not None and not isinstance(qty, int):
+            raise GlobalAnalysisValidationError(
+                f"{prefix}.product_label_quantity must be int or null, got {type(qty).__name__!r}"
+            )
 
         if "has_boxes" not in e:
             raise GlobalAnalysisValidationError(f"{prefix} missing 'has_boxes'")

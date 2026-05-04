@@ -43,6 +43,8 @@ import logging
 import re
 from typing import Any, Dict, List
 
+from src.llm.normalization.numeric_coercion import normalize_optional_int
+
 logger = logging.getLogger("llm.normalization")
 
 # Root-level marker for audit / future migrations; extra keys are ignored by ``parse_entities``.
@@ -267,6 +269,9 @@ def _normalize_entity(
     _maybe_promote_openai_internal_code_alias(out, provider_family, mapped_accumulator)
     _maybe_capture_extent_bbox(out, provider_family, mapped_accumulator)
     _strip_alias_and_bbox_residuals(out)
+
+    # OpenAI/Gemini may still emit quantity as string until adapter validation; aliases can leave str.
+    out["product_label_quantity"] = normalize_optional_int(out.get("product_label_quantity"))
 
     _ensure_canonical_entity_keys(out)
     return out
