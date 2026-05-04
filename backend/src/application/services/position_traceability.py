@@ -14,13 +14,20 @@ from src.domain.positions.entities import Position
 
 logger = logging.getLogger(__name__)
 
-_stored_artifact_reader: StoredArtifactReader | None = None
+
+class _TraceabilityContext:
+    """Holds wiring-time dependency for hybrid-report reads (API/worker startup)."""
+
+    def __init__(self, reader: StoredArtifactReader | None) -> None:
+        self.reader = reader
+
+
+_context = _TraceabilityContext(reader=None)
 
 
 def set_traceability_stored_artifact_reader(reader: StoredArtifactReader | None) -> None:
     """Wiring only (API/worker startup). Decouples this module from :mod:`src.runtime`."""
-    global _stored_artifact_reader
-    _stored_artifact_reader = reader
+    _context.reader = reader
 
 _TRACEABILITY_CACHE: dict[str, tuple[str | None, str | None, str | None]] = {}
 _TRACEABILITY_REPORTS_LOADED: set[str] = set()
@@ -38,8 +45,15 @@ def _maybe_evict_traceability_cache() -> None:
 
 
 def _load_hybrid_report_for_traceability(job_id: str) -> dict[str, object] | None:
-    reader = _stored_artifact_reader
+    """
+    Best-effort traceability enrichment.
+
+    If no StoredArtifactReader is configured (e.g. during tests or partial runtime),
+    the function returns None without raising.
+    """
+    reader = _context.reader
     if reader is None:
+        logger.debug("Traceability reader not configured; skipping enrichment")
         return None
     return reader.load_hybrid_report_json_for_job(job_id)
 
