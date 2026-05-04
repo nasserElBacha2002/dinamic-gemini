@@ -37,7 +37,7 @@ def test_resize_image_smaller():
     """Test que no redimensiona si la imagen ya es más pequeña."""
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
     resized = resize_image(frame, max_side=200)
-    
+
     assert resized.shape == frame.shape
     assert np.array_equal(resized, frame)
 
@@ -46,11 +46,11 @@ def test_resize_image_larger():
     """Test de redimensionado cuando la imagen es más grande."""
     frame = np.zeros((2000, 1000, 3), dtype=np.uint8)
     resized = resize_image(frame, max_side=1280)
-    
+
     # El lado más largo debería ser 1280
     h, w = resized.shape[:2]
     assert max(h, w) == 1280
-    
+
     # Debería mantener aspect ratio
     original_ratio = 2000 / 1000
     new_ratio = h / w
@@ -61,7 +61,7 @@ def test_resize_image_portrait():
     """Test de redimensionado de imagen vertical."""
     frame = np.zeros((2000, 500, 3), dtype=np.uint8)
     resized = resize_image(frame, max_side=1280)
-    
+
     h, w = resized.shape[:2]
     assert h == 1280
     assert w < 1280
@@ -71,7 +71,7 @@ def test_resize_image_landscape():
     """Test de redimensionado de imagen horizontal."""
     frame = np.zeros((500, 2000, 3), dtype=np.uint8)
     resized = resize_image(frame, max_side=1280)
-    
+
     h, w = resized.shape[:2]
     assert w == 1280
     assert h < 1280
@@ -80,10 +80,10 @@ def test_resize_image_landscape():
 def test_resize_image_invalid_max_side():
     """Test que se lanza error si max_side es inválido."""
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
-    
+
     with pytest.raises(ValueError):
         resize_image(frame, max_side=0)
-    
+
     with pytest.raises(ValueError):
         resize_image(frame, max_side=-1)
 
@@ -91,7 +91,7 @@ def test_resize_image_invalid_max_side():
 def test_resize_image_empty_frame():
     """Test que se lanza error si el frame está vacío."""
     frame = np.array([])
-    
+
     with pytest.raises(ValueError):
         resize_image(frame, max_side=1280)
 
@@ -100,10 +100,10 @@ def test_apply_roi_valid():
     """Test de aplicación de ROI válida."""
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
     frame[10:30, 20:40] = 255  # Marcar región
-    
+
     roi = (20, 10, 20, 20)  # x, y, width, height
     cropped = apply_roi(frame, roi)
-    
+
     assert cropped.shape == (20, 20, 3)
     assert np.all(cropped == 255)
 
@@ -111,15 +111,15 @@ def test_apply_roi_valid():
 def test_apply_roi_invalid():
     """Test que se lanza error si ROI es inválida."""
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
-    
+
     # ROI fuera de límites
     with pytest.raises(ValueError):
         apply_roi(frame, (0, 0, 200, 100))
-    
+
     # Coordenadas negativas
     with pytest.raises(ValueError):
         apply_roi(frame, (-1, 0, 50, 50))
-    
+
     # Dimensiones inválidas
     with pytest.raises(ValueError):
         apply_roi(frame, (0, 0, 0, 50))
@@ -128,9 +128,9 @@ def test_apply_roi_invalid():
 def test_compress_image():
     """Test de compresión de imagen."""
     frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-    
+
     compressed = compress_image(frame, quality=85)
-    
+
     assert isinstance(compressed, bytes)
     assert len(compressed) > 0
 
@@ -138,10 +138,10 @@ def test_compress_image():
 def test_compress_image_invalid_quality():
     """Test que se lanza error si quality es inválido."""
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
-    
+
     with pytest.raises(ValueError):
         compress_image(frame, quality=150)
-    
+
     with pytest.raises(ValueError):
         compress_image(frame, quality=-1)
 
@@ -151,11 +151,11 @@ def test_save_and_load_frame():
     with tempfile.TemporaryDirectory() as tmpdir:
         frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
         output_path = Path(tmpdir) / "test_frame.jpg"
-        
+
         # Guardar
         saved_path = save_frame(frame, str(output_path), quality=85)
         assert Path(saved_path).exists()
-        
+
         # Cargar
         loaded = load_frame(saved_path)
         assert loaded.shape == frame.shape
@@ -168,13 +168,13 @@ def test_save_frame_creates_directory():
     with tempfile.TemporaryDirectory() as tmpdir:
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
         output_path = Path(tmpdir) / "new_dir" / "test_frame.jpg"
-        
+
         # El directorio no existe
         assert not output_path.parent.exists()
-        
+
         # Guardar debería crear el directorio
         save_frame(frame, str(output_path))
-        
+
         assert output_path.exists()
         assert output_path.parent.exists()
 
@@ -189,26 +189,26 @@ def test_extract_frame_from_video():
     """Test de extracción de frame específico de video."""
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
         tmp_path = tmp.name
-    
+
     try:
         # Crear video simple
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(tmp_path, fourcc, 30.0, (640, 480))
-        
+
         # Escribir frames con colores diferentes
         for i in range(10):
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
             frame[:] = (i * 25, 0, 0)  # Diferente color por frame
             out.write(frame)
-        
+
         out.release()
-        
+
         # Extraer frame específico
         frame = extract_frame_from_video(tmp_path, frame_idx=5)
-        
+
         assert frame is not None
         assert frame.shape == (480, 640, 3)
-    
+
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -219,9 +219,9 @@ def test_extract_frame_from_video():
 def test_select_frames_all():
     """Test de selección de todos los frames (default)."""
     frames = [FrameRef(frame_idx=i, timestamp_seconds=i * 0.1) for i in range(20)]
-    
+
     selected = select_frames(frames, strategy="all")
-    
+
     assert len(selected) == 20
     assert len(selected) == len(frames)
     assert selected[0].frame_idx == 0
@@ -231,15 +231,13 @@ def test_select_frames_all():
 def test_select_frames_empty():
     """Test con lista vacía."""
     selected = select_frames([], strategy="all")
-    
+
     assert len(selected) == 0
 
 
 def test_select_frames_invalid_strategy():
     """Test que se lanza error si strategy no es 'all' (Bloque 8)."""
-    frames = [
-        FrameRef(frame_idx=i, timestamp_seconds=i * 0.1) for i in range(10)
-    ]
+    frames = [FrameRef(frame_idx=i, timestamp_seconds=i * 0.1) for i in range(10)]
     with pytest.raises(ValueError, match="Única estrategia válida: 'all'"):
         select_frames(frames, strategy="invalid")
 
@@ -248,42 +246,42 @@ def test_prepare_frames_for_api():
     """Test de preparación de frames para API."""
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
         video_path = tmp_video.name
-    
+
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
             # Crear video simple
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             out = cv2.VideoWriter(video_path, fourcc, 30.0, (640, 480))
-            
+
             for i in range(10):
                 frame = np.zeros((480, 640, 3), dtype=np.uint8)
                 out.write(frame)
-            
+
             out.release()
-            
+
             # Crear referencias a frames
             frames = [
                 FrameRef(frame_idx=i, timestamp_seconds=i * 0.1, width=640, height=480)
                 for i in range(5)
             ]
-            
+
             # Preparar frames
             image_paths, run_id = prepare_frames_for_api(
                 frames, video_path, tmpdir, resize_max_side=320, video_id="TEST"
             )
-            
+
             assert len(image_paths) == 5
             assert all(Path(p).exists() for p in image_paths)
             assert run_id is not None
             assert len(run_id) > 0
-            
+
             # Verificar que las imágenes se guardaron en el directorio correcto
             # Estructura: tmpdir/TEST/<run_id>/frames/
             run_dir = Path(tmpdir) / "TEST" / run_id
             frames_dir = run_dir / "frames"
             assert frames_dir.exists()
             assert len(list(frames_dir.glob("*.jpg"))) == 5
-        
+
         finally:
             Path(video_path).unlink(missing_ok=True)
 
@@ -291,7 +289,7 @@ def test_prepare_frames_for_api():
 def test_prepare_frames_for_api_empty():
     """Test con lista vacía de frames."""
     image_paths, run_id = prepare_frames_for_api([], "video.mp4", "output")
-    
+
     assert len(image_paths) == 0
     assert run_id == ""
 
@@ -313,9 +311,7 @@ def test_filter_similar_frames_fast_single_open():
             out.write(frame)
         out.release()
 
-        frames = [
-            FrameRef(frame_idx=i, timestamp_seconds=i / 30.0) for i in range(0, 15, 2)
-        ]
+        frames = [FrameRef(frame_idx=i, timestamp_seconds=i / 30.0) for i in range(0, 15, 2)]
         filtered = filter_similar_frames_fast(
             frames, video_path, similarity_threshold=0.95, sample_size=32
         )

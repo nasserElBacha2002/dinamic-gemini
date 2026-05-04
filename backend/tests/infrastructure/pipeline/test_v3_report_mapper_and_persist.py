@@ -12,7 +12,6 @@ from src.application.use_cases.persist_aisle_result import (
     PersistAisleResultUseCase,
     should_persist_detected_position,
 )
-from src.domain.evidence.entities import Evidence
 from src.domain.positions.entities import PositionStatus
 from src.infrastructure.pipeline.v3_report_mapper import (
     MappedAisleResult,

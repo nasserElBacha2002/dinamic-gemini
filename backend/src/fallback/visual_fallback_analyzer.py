@@ -6,7 +6,6 @@ Uses 3–5 frames, minimal JSON prompt, strict validation.
 
 import json
 import re
-from typing import List, Tuple
 
 import numpy as np
 
@@ -31,6 +30,7 @@ class VisualFallbackError(Exception):
 def _frame_to_pil(frame: np.ndarray):
     """BGR (OpenCV) to PIL RGB."""
     import cv2
+
     try:
         from PIL import Image
     except ImportError:
@@ -52,7 +52,7 @@ def _strip_json(text: str) -> str:
     return text
 
 
-def _validate_fallback_response(data: dict) -> Tuple[int, float]:
+def _validate_fallback_response(data: dict) -> tuple[int, float]:
     """Validate and return (estimated_count, confidence). Raises VisualFallbackError on failure."""
     if not isinstance(data, dict):
         raise VisualFallbackError("Fallback response must be a JSON object")
@@ -63,11 +63,15 @@ def _validate_fallback_response(data: dict) -> Tuple[int, float]:
     try:
         count = int(data["estimated_count"])
     except (TypeError, ValueError):
-        raise VisualFallbackError(f"estimated_count must be integer, got {type(data['estimated_count']).__name__!r}")
+        raise VisualFallbackError(
+            f"estimated_count must be integer, got {type(data['estimated_count']).__name__!r}"
+        )
     try:
         conf = float(data["confidence"])
     except (TypeError, ValueError):
-        raise VisualFallbackError(f"confidence must be number, got {type(data['confidence']).__name__!r}")
+        raise VisualFallbackError(
+            f"confidence must be number, got {type(data['confidence']).__name__!r}"
+        )
     if not (0 <= conf <= 1):
         raise VisualFallbackError(f"confidence must be in [0, 1], got {conf}")
     if count < 0:
@@ -81,7 +85,7 @@ class VisualFallbackAnalyzer:
     def __init__(self, client: GeminiClient) -> None:
         self.client = client
 
-    def count_visible_boxes(self, frames: List[np.ndarray]) -> Tuple[int, float]:
+    def count_visible_boxes(self, frames: list[np.ndarray]) -> tuple[int, float]:
         """Perform a small Gemini call to count visible boxes on the pallet.
 
         Uses at most FALLBACK_MAX_FRAMES frames. Returns (estimated_count, confidence).

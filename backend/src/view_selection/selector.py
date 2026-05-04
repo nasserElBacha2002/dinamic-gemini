@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -24,7 +24,7 @@ def _bbox_area(bbox: tuple[int, int, int, int]) -> int:
     return max(0, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]))
 
 
-def _bbox_center(bbox: tuple[int, int, int, int]) -> Tuple[float, float]:
+def _bbox_center(bbox: tuple[int, int, int, int]) -> tuple[float, float]:
     """Centro del bbox (cx, cy)."""
     return ((bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0)
 
@@ -44,15 +44,16 @@ def _bbox_iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> flo
     return inter / union if union > 0 else 0.0
 
 
-def _phash_for_roi(roi_path: Optional[str], cache: Dict[str, Optional[str]]) -> Optional[str]:
+def _phash_for_roi(roi_path: str | None, cache: dict[str, str | None]) -> str | None:
     """Calcula pHash del ROI; cache por path. Retorna None si no hay path o falla."""
     if not roi_path or not roi_path.strip():
         return None
     if roi_path in cache:
         return cache[roi_path]
     try:
-        from PIL import Image
         import imagehash
+        from PIL import Image
+
         p = Path(roi_path)
         if not p.exists():
             cache[roi_path] = None
@@ -68,12 +69,13 @@ def _phash_for_roi(roi_path: Optional[str], cache: Dict[str, Optional[str]]) -> 
         return None
 
 
-def _phash_dist_hex(h1: Optional[str], h2: Optional[str]) -> int:
+def _phash_dist_hex(h1: str | None, h2: str | None) -> int:
     """Distancia Hamming entre dos hashes hex; 64 si alguno es None."""
     if h1 is None or h2 is None:
         return 64
     try:
         import imagehash
+
         a, b = imagehash.hex_to_hash(h1), imagehash.hex_to_hash(h2)
         return int(a - b)
     except Exception:
@@ -82,9 +84,9 @@ def _phash_dist_hex(h1: Optional[str], h2: Optional[str]) -> int:
 
 def _centroid_normalized(
     bbox: tuple[int, int, int, int],
-    frame_width: Optional[int],
-    frame_height: Optional[int],
-) -> Tuple[float, float]:
+    frame_width: int | None,
+    frame_height: int | None,
+) -> tuple[float, float]:
     """Centroide normalizado (cx, cy) en [0,1]. Si no hay dimensiones válidas, usa fallback."""
     cx, cy = _bbox_center(bbox)
     if (
@@ -107,7 +109,7 @@ def _segment_select_views(
     blur_percentile: float,
     min_frame_gap_diversity: int,
     max_iou_suppress: float,
-) -> List[PalletObservation]:
+) -> list[PalletObservation]:
     """Algoritmo original por segmentos temporales (cuando enable_diversity=False)."""
     if not track.observations:
         return []
@@ -124,7 +126,7 @@ def _segment_select_views(
     if k >= n:
         return filtered[:max_views]
     step = n / k
-    selected: List[PalletObservation] = []
+    selected: list[PalletObservation] = []
     for seg in range(k):
         j_start = int(seg * step)
         j_end = int((seg + 1) * step)
@@ -154,13 +156,14 @@ def _segment_select_views(
         selected.sort(key=lambda o: o.frame_idx)
     if max_iou_suppress > 0 and min_frame_gap_diversity >= 0 and len(selected) > 1:
         selected.sort(key=lambda o: o.frame_idx)
-        kept: List[PalletObservation] = []
+        kept: list[PalletObservation] = []
         for cand in selected:
             too_similar = False
             for kk in kept:
-                if abs(cand.frame_idx - kk.frame_idx) <= min_frame_gap_diversity and _bbox_iou(
-                    cand.bbox, kk.bbox
-                ) > max_iou_suppress:
+                if (
+                    abs(cand.frame_idx - kk.frame_idx) <= min_frame_gap_diversity
+                    and _bbox_iou(cand.bbox, kk.bbox) > max_iou_suppress
+                ):
                     too_similar = True
                     break
             if not too_similar:
@@ -177,28 +180,34 @@ def _diversity_select_views(
     blur_percentile: float,
     min_frame_gap_diversity: int,
     max_iou_suppress: float,
-    frame_width: Optional[int],
-    frame_height: Optional[int],
+    frame_width: int | None,
+    frame_height: int | None,
     phash_near_dup_thr: int,
     centroid_near_dup_thr: float,
     anchor_window_frames: int,
     diversity_weight: float,
     return_debug: bool,
-    phash_cache: Dict[str, Optional[str]],
-) -> Tuple[List[PalletObservation], Optional[Dict[str, Any]]]:
+    phash_cache: dict[str, str | None],
+) -> tuple[list[PalletObservation], dict[str, Any] | None]:
     """Selección en 2 fases: anchors (early/mid/late) + greedy diversidad con phash/centroid dedup."""
     if not track.observations:
-        return [], None if not return_debug else {"candidates": [], "selected": [], "discarded_reasons_count": {}}
+        return [], None if not return_debug else {
+            "candidates": [],
+            "selected": [],
+            "discarded_reasons_count": {},
+        }
 
     # 1) Candidatos con features
     blur_scores = [o.blur_score if o.blur_score is not None else 0.0 for o in track.observations]
-    threshold = float(np.quantile(blur_scores, blur_percentile) if len(blur_scores) > 1 else blur_scores[0])
+    threshold = float(
+        np.quantile(blur_scores, blur_percentile) if len(blur_scores) > 1 else blur_scores[0]
+    )
     valid_obs = [o for o in track.observations if (o.blur_score or 0.0) >= threshold]
     if not valid_obs:
         valid_obs = list(track.observations)
     valid_obs.sort(key=lambda o: o.frame_idx)
 
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     for o in valid_obs:
         if not o.roi_path:
             continue
@@ -206,22 +215,39 @@ def _diversity_select_views(
         centroid = _centroid_normalized(o.bbox, frame_width, frame_height)
         w, h = max(1, o.bbox[2] - o.bbox[0]), max(1, o.bbox[3] - o.bbox[1])
         aspect_ratio = w / h
-        phash_hex = _phash_for_roi(o.roi_path, phash_cache) if return_debug or diversity_weight > 0 else None
-        candidates.append({
-            "obs": o,
-            "frame_idx": o.frame_idx,
-            "roi_path": o.roi_path,
-            "blur": o.blur_score or 0.0,
-            "area": area,
-            "centroid": centroid,
-            "aspect_ratio": aspect_ratio,
-            "phash": phash_hex,
-        })
+        phash_hex = (
+            _phash_for_roi(o.roi_path, phash_cache)
+            if return_debug or diversity_weight > 0
+            else None
+        )
+        candidates.append(
+            {
+                "obs": o,
+                "frame_idx": o.frame_idx,
+                "roi_path": o.roi_path,
+                "blur": o.blur_score or 0.0,
+                "area": area,
+                "centroid": centroid,
+                "aspect_ratio": aspect_ratio,
+                "phash": phash_hex,
+            }
+        )
 
     if not candidates:
-        return [], None if not return_debug else {"candidates": [], "selected": [], "discarded_reasons_count": {"no_roi": len(valid_obs)}}
+        return [], None if not return_debug else {
+            "candidates": [],
+            "selected": [],
+            "discarded_reasons_count": {"no_roi": len(valid_obs)},
+        }
 
-    discarded_reasons_count: Dict[str, int] = {"no_roi": len(valid_obs) - len(candidates), "too_blurry": 0, "near_dup_phash": 0, "near_dup_centroid": 0, "fails_gap": 0, "other": 0}
+    discarded_reasons_count: dict[str, int] = {
+        "no_roi": len(valid_obs) - len(candidates),
+        "too_blurry": 0,
+        "near_dup_phash": 0,
+        "near_dup_centroid": 0,
+        "fails_gap": 0,
+        "other": 0,
+    }
     blurs = [c["blur"] for c in candidates]
     areas = [c["area"] for c in candidates]
     b_min, b_max = min(blurs), max(blurs)
@@ -236,10 +262,9 @@ def _diversity_select_views(
     n_cand = len(candidates)
 
     # 2) Fase 1: anchors (early, mid, late)
-    selected: List[Dict[str, Any]] = []
-    selected_obs: List[PalletObservation] = []
-    reasons: Dict[int, str] = {}
-    window = anchor_window_frames
+    selected: list[dict[str, Any]] = []
+    selected_obs: list[PalletObservation] = []
+    reasons: dict[int, str] = {}
     anchor_positions = []
     if n_cand >= 3:
         for name, frac_start, frac_end in [
@@ -249,13 +274,19 @@ def _diversity_select_views(
         ]:
             low = f_min + (f_max - f_min) * frac_start
             high = f_min + (f_max - f_min) * frac_end
-            in_window = [c for c in candidates if low <= c["frame_idx"] <= high and c["obs"] not in selected_obs]
+            in_window = [
+                c
+                for c in candidates
+                if low <= c["frame_idx"] <= high and c["obs"] not in selected_obs
+            ]
             if not in_window:
                 continue
             best = max(in_window, key=lambda c: c["base_score"])
             # tie-break: prefer one within ±window of segment center
             center_f = (low + high) / 2
-            in_window.sort(key=lambda c: (c["base_score"], -abs(c["frame_idx"] - center_f)), reverse=True)
+            in_window.sort(
+                key=lambda c: (c["base_score"], -abs(c["frame_idx"] - center_f)), reverse=True
+            )
             best = in_window[0]
             if best["obs"] not in selected_obs:
                 best["reason"] = f"anchor_{name}"
@@ -329,11 +360,14 @@ def _diversity_select_views(
     # Apply max_iou_suppress / min_frame_gap on final list (same as segment-based)
     selected_obs.sort(key=lambda o: o.frame_idx)
     if max_iou_suppress > 0 and min_frame_gap_diversity >= 0 and len(selected_obs) > 1:
-        kept: List[PalletObservation] = []
+        kept: list[PalletObservation] = []
         for cand in selected_obs:
             too_similar = False
             for kk in kept:
-                if abs(cand.frame_idx - kk.frame_idx) <= min_frame_gap_diversity and _bbox_iou(cand.bbox, kk.bbox) > max_iou_suppress:
+                if (
+                    abs(cand.frame_idx - kk.frame_idx) <= min_frame_gap_diversity
+                    and _bbox_iou(cand.bbox, kk.bbox) > max_iou_suppress
+                ):
                     too_similar = True
                     break
             if not too_similar:
@@ -345,7 +379,7 @@ def _diversity_select_views(
     if not return_debug:
         return out, None
 
-    debug: Dict[str, Any] = {
+    debug: dict[str, Any] = {
         "candidates": [
             {
                 "frame_idx": c["frame_idx"],
@@ -382,16 +416,16 @@ def select_views_per_track(
     blur_percentile: float = 0.25,
     min_frame_gap_diversity: int = 3,
     max_iou_suppress: float = 0.8,
-    frame_width: Optional[int] = None,
-    frame_height: Optional[int] = None,
+    frame_width: int | None = None,
+    frame_height: int | None = None,
     enable_diversity: bool = True,
     phash_near_dup_thr: int = 4,
     centroid_near_dup_thr: float = 0.03,
     anchor_window_frames: int = 15,
     diversity_weight: float = 0.35,
     return_debug: bool = False,
-    phash_cache: Optional[Dict[str, Optional[str]]] = None,
-) -> Tuple[List[PalletObservation], Optional[Dict[str, Any]]]:
+    phash_cache: dict[str, str | None] | None = None,
+) -> tuple[list[PalletObservation], dict[str, Any] | None]:
     """Selecciona las mejores vistas por track para enviar a Gemini.
 
     Con enable_diversity=True (default): selección en 2 fases (anchors early/mid/late
@@ -403,8 +437,13 @@ def select_views_per_track(
     """
     if not enable_diversity:
         views = _segment_select_views(
-            track, min_views, target_views, max_views,
-            blur_percentile, min_frame_gap_diversity, max_iou_suppress,
+            track,
+            min_views,
+            target_views,
+            max_views,
+            blur_percentile,
+            min_frame_gap_diversity,
+            max_iou_suppress,
         )
         return (views, None)
 

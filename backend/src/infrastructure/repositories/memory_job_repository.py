@@ -7,7 +7,7 @@ get_latest_by_target orders by updated_at DESC, then created_at DESC.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence
+from collections.abc import Sequence
 
 from src.application.ports.repositories import JobRepository
 from src.domain.jobs.entities import Job, JobStatus
@@ -15,15 +15,15 @@ from src.domain.jobs.entities import Job, JobStatus
 
 class MemoryJobRepository(JobRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Job] = {}
+        self._store: dict[str, Job] = {}
 
     def save(self, job: Job) -> None:
         self._store[job.id] = job
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return self._store.get(job_id)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         candidates = [
             j
             for j in self._store.values()
@@ -49,20 +49,18 @@ class MemoryJobRepository(JobRepository):
     def list_all_jobs(self) -> Sequence[Job]:
         return list(self._store.values())
 
-    def claim_next_queued_job(self) -> Optional[Job]:
+    def claim_next_queued_job(self) -> Job | None:
         candidates = [j for j in self._store.values() if j.status == JobStatus.QUEUED]
         if not candidates:
             return None
         candidates.sort(key=lambda j: (j.created_at, j.id))
         return candidates[0]
 
-    def get_latest_by_targets(
-        self, target_type: str, target_ids: Sequence[str]
-    ) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         if not target_ids:
             return {}
         id_set = frozenset(target_ids)
-        by_target: Dict[str, Job] = {}
+        by_target: dict[str, Job] = {}
         for j in self._store.values():
             if j.target_type != target_type or j.target_id not in id_set:
                 continue

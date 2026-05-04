@@ -29,7 +29,9 @@ def test_valid_construction() -> None:
     assert ref.file_size == 123
 
 
-@pytest.mark.parametrize("field_name", ["id", "inventory_id", "filename", "storage_path", "mime_type"])
+@pytest.mark.parametrize(
+    "field_name", ["id", "inventory_id", "filename", "storage_path", "mime_type"]
+)
 def test_empty_string_fields_rejected(field_name: str) -> None:
     kwargs = dict(
         id="ref-1",
@@ -69,4 +71,3 @@ def test_missing_created_at_rejected() -> None:
             file_size=1,
             created_at=None,  # type: ignore[arg-type]
         )
-

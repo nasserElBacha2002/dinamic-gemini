@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
-import pytest
 
 from src.video.frames import (
     STRATEGY_OPTIMIZED,
@@ -152,9 +151,7 @@ def test_uniform_strategy_unchanged_behavior():
 def test_optimized_fallback_when_too_few_after_filter():
     """If filtering leaves too few frames, fallback adds uniform samples (min 10)."""
     # All frames very blurry so Phase B accepts none; fallback should add frames
-    blurred = cv2.GaussianBlur(
-        np.random.randint(0, 256, (50, 50, 3), dtype=np.uint8), (31, 31), 10
-    )
+    blurred = cv2.GaussianBlur(np.random.randint(0, 256, (50, 50, 3), dtype=np.uint8), (31, 31), 10)
     frames = [blurred] * 25
     with patch("src.video.frames.cv2.VideoCapture", return_value=_make_mock_cap(frames)):
         out_frames, meta = extract_representative_frames(

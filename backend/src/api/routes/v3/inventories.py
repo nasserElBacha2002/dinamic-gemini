@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -19,15 +18,9 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
     HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
 )
-from src.api.errors import reraise_if_mapped
-from src.api.errors.structured_api_http import StructuredApiHttpError, VISUAL_REFERENCE_NOT_FOUND
-from src.api.services.v3_stored_artifact_access import (
-    StoredArtifactAccessError,
-    resolve_visual_reference_file_response,
-)
 from src.api.dependencies import (
-    get_create_inventory_use_case,
     get_artifact_storage,
+    get_create_inventory_use_case,
     get_delete_inventory_visual_reference_use_case,
     get_export_inventory_results_use_case,
     get_get_inventory_metrics_use_case,
@@ -37,6 +30,8 @@ from src.api.dependencies import (
     get_replace_inventory_visual_reference_use_case,
     get_upload_inventory_visual_references_use_case,
 )
+from src.api.errors import reraise_if_mapped
+from src.api.errors.structured_api_http import VISUAL_REFERENCE_NOT_FOUND, StructuredApiHttpError
 from src.api.schemas.inventory_schemas import (
     CreateInventoryRequest,
     InventoryMetricsResponse,
@@ -45,42 +40,49 @@ from src.api.schemas.inventory_schemas import (
     InventoryVisualReferenceResponse,
     UploadInventoryVisualReferencesResponse,
 )
+from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
 from src.api.schemas.processing_schemas import (
     ProcessingModelOption,
     ProcessingPromptOptionItem,
     ProcessingProviderOptionItem,
     ProcessingProviderOptionsResponse,
 )
+from src.api.services.v3_stored_artifact_access import (
+    StoredArtifactAccessError,
+    resolve_visual_reference_file_response,
+)
+from src.application.errors import (
+    InventoryNotFoundError,
+    InventoryVisualReferenceNotFoundError,
+)
+from src.application.ports.contracts import InventoryTableQuery
 from src.application.services.processing_experiment_catalog import (
     default_model_for_provider,
     default_prompt_key,
     models_for_provider,
     prompt_profile_catalog,
 )
-from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
-from src.application.ports.contracts import InventoryTableQuery
-from src.application.errors import (
-    InventoryNotFoundError,
-    InventoryVisualReferenceNotFoundError,
+from src.application.use_cases.create_inventory import (
+    CreateInventoryCommand,
+    CreateInventoryUseCase,
 )
-from src.application.use_cases.manage_inventory_visual_references import (
-    DeleteInventoryVisualReferenceUseCase,
-    ReplaceInventoryVisualReferenceUseCase,
-)
-from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
-from src.domain.inventory.entities import InventoryProcessingMode
 from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
+from src.application.use_cases.manage_inventory_visual_references import (
+    DeleteInventoryVisualReferenceUseCase,
+    ReplaceInventoryVisualReferenceUseCase,
+)
 from src.application.use_cases.upload_inventory_visual_references import (
     ListInventoryVisualReferencesUseCase,
-    UploadInventoryVisualReferencesUseCase,
     UploadedVisualReferenceFile,
+    UploadInventoryVisualReferencesUseCase,
 )
 from src.config import load_settings
-from src.pipeline.providers.definitions import PIPELINE_PROVIDER_SPECS
+from src.domain.inventory.entities import InventoryProcessingMode
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
+from src.pipeline.providers.definitions import PIPELINE_PROVIDER_SPECS
 
 from .shared import inventory_list_item_to_response, inventory_to_response
 
@@ -89,11 +91,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _to_uploaded_visual_reference_files(files: List[UploadFile]) -> List[UploadedVisualReferenceFile]:
+async def _to_uploaded_visual_reference_files(
+    files: list[UploadFile],
+) -> list[UploadedVisualReferenceFile]:
     """Convert request files to use-case DTOs. Fails clearly on invalid or malformed input."""
     if not files:
         raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
-    result: List[UploadedVisualReferenceFile] = []
+    result: list[UploadedVisualReferenceFile] = []
     for i, u in enumerate(files):
         has_name = bool(u.filename and u.filename.strip())
         has_type = bool(getattr(u, "content_type", None) and str(u.content_type).strip())
@@ -105,7 +109,9 @@ async def _to_uploaded_visual_reference_files(files: List[UploadFile]) -> List[U
         content = await u.read()
         size = len(content)
         if size <= 0:
-            raise HTTPException(status_code=422, detail=HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED)
+            raise HTTPException(
+                status_code=422, detail=HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED
+            )
         result.append(
             UploadedVisualReferenceFile(
                 original_filename=(u.filename or "file").strip(),
@@ -126,17 +132,19 @@ def create_inventory(
 ) -> InventoryResponse:
     """Create a new inventory (v3.0)."""
     mode = InventoryProcessingMode(payload.processing_mode)
-    inventory = use_case.execute(
-        CreateInventoryCommand(name=payload.name, processing_mode=mode)
-    )
+    inventory = use_case.execute(CreateInventoryCommand(name=payload.name, processing_mode=mode))
     return inventory_to_response(inventory)
 
 
 @router.get("/", response_model=PaginatedInventoryListResponse)
 def list_inventories(
     use_case: ListInventoryListItemsUseCase = Depends(get_list_inventory_list_items_use_case),
-    search: Optional[str] = Query(None, description="Case-insensitive substring on inventory name."),
-    status: Optional[str] = Query(None, description="Exact inventory status (wire value, e.g. draft)."),
+    search: str | None = Query(
+        None, description="Case-insensitive substring on inventory name."
+    ),
+    status: str | None = Query(
+        None, description="Exact inventory status (wire value, e.g. draft)."
+    ),
     sort_by: str = Query(
         "created_at",
         description="name | created_at | updated_at | status | last_activity_at | pending_review_count | aisles_count",
@@ -179,7 +187,7 @@ def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
         ProcessingPromptOptionItem(key=k, label=lab, description=desc)
         for k, lab, desc in prompt_profile_catalog()
     ]
-    items: List[ProcessingProviderOptionItem] = []
+    items: list[ProcessingProviderOptionItem] = []
     for spec in sorted(PIPELINE_PROVIDER_SPECS, key=lambda s: s.key):
         key = spec.key
         mode = "native"
@@ -207,7 +215,9 @@ def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
 @router.get("/{inventory_id}/export")
 def export_inventory_results(
     inventory_id: str,
-    export_format: str = Query("csv", alias="format", description="Export format (only csv supported)."),
+    export_format: str = Query(
+        "csv", alias="format", description="Export format (only csv supported)."
+    ),
     technical: bool = Query(
         False,
         description="When true, export the technical snapshot CSV instead of the operational contract CSV.",
@@ -266,8 +276,10 @@ def get_inventory_metrics(
 )
 async def upload_inventory_visual_references(
     inventory_id: str,
-    files: List[UploadFile] = File(..., description="One or more image files"),
-    use_case: UploadInventoryVisualReferencesUseCase = Depends(get_upload_inventory_visual_references_use_case),
+    files: list[UploadFile] = File(..., description="One or more image files"),
+    use_case: UploadInventoryVisualReferencesUseCase = Depends(
+        get_upload_inventory_visual_references_use_case
+    ),
 ) -> UploadInventoryVisualReferencesResponse:
     """Upload one or more visual reference images for an inventory."""
     uploaded = await _to_uploaded_visual_reference_files(files)
@@ -295,7 +307,9 @@ async def upload_inventory_visual_references(
 def delete_inventory_visual_reference(
     inventory_id: str,
     reference_id: str,
-    use_case: DeleteInventoryVisualReferenceUseCase = Depends(get_delete_inventory_visual_reference_use_case),
+    use_case: DeleteInventoryVisualReferenceUseCase = Depends(
+        get_delete_inventory_visual_reference_use_case
+    ),
 ) -> Response:
     try:
         use_case.execute(inventory_id, reference_id)
@@ -312,7 +326,9 @@ async def replace_inventory_visual_reference(
     inventory_id: str,
     reference_id: str,
     file: UploadFile = File(..., description="Replacement image file"),
-    use_case: ReplaceInventoryVisualReferenceUseCase = Depends(get_replace_inventory_visual_reference_use_case),
+    use_case: ReplaceInventoryVisualReferenceUseCase = Depends(
+        get_replace_inventory_visual_reference_use_case
+    ),
 ) -> InventoryVisualReferenceResponse:
     uploaded = await _to_uploaded_visual_reference_files([file])
     try:
@@ -336,7 +352,9 @@ async def replace_inventory_visual_reference(
 )
 def list_inventory_visual_references(
     inventory_id: str,
-    use_case: ListInventoryVisualReferencesUseCase = Depends(get_list_inventory_visual_references_use_case),
+    use_case: ListInventoryVisualReferencesUseCase = Depends(
+        get_list_inventory_visual_references_use_case
+    ),
 ) -> InventoryVisualReferenceListResponse:
     """List visual references for an inventory (ordered by created_at ASC, id ASC)."""
     try:
@@ -363,7 +381,9 @@ def list_inventory_visual_references(
 def get_inventory_visual_reference_file(
     inventory_id: str,
     reference_id: str,
-    use_case: ListInventoryVisualReferencesUseCase = Depends(get_list_inventory_visual_references_use_case),
+    use_case: ListInventoryVisualReferencesUseCase = Depends(
+        get_list_inventory_visual_references_use_case
+    ),
     artifact_storage=Depends(get_artifact_storage),
 ) -> Response:
     """Resolve a visual reference file URL/stream for operators and UI."""

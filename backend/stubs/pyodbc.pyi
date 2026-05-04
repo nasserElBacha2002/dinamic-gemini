@@ -1,6 +1,7 @@
 """Minimal typing shim for pyodbc (binary wheel without py.typed)."""
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 class IntegrityError(Exception): ...
 

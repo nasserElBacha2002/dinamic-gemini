@@ -55,7 +55,9 @@ def test_explicit_job_valid() -> None:
 
 def test_explicit_job_missing_raises() -> None:
     with pytest.raises(JobNotFoundError):
-        ResultContextResolver(MemoryJobRepository()).resolve(aisle=_aisle(), explicit_job_id="missing")
+        ResultContextResolver(MemoryJobRepository()).resolve(
+            aisle=_aisle(), explicit_job_id="missing"
+        )
 
 
 def test_explicit_job_wrong_aisle_raises() -> None:
@@ -88,7 +90,9 @@ def test_operational_job_wrong_aisle_raises() -> None:
 
 
 def test_legacy_fallback() -> None:
-    r = ResultContextResolver(MemoryJobRepository()).resolve(aisle=_aisle(op_job=None), explicit_job_id=None)
+    r = ResultContextResolver(MemoryJobRepository()).resolve(
+        aisle=_aisle(op_job=None), explicit_job_id=None
+    )
     assert r.job_id_for_slice is None
     assert r.source == "legacy"
 
@@ -128,9 +132,7 @@ def test_legacy_wins_when_legacy_row_exists_alongside_job_scoped() -> None:
     jobs = MemoryJobRepository()
     jobs.save(_job("js-1"))
     pos = MemoryPositionRepository()
-    pos.save(
-        Position("pl", "a1", PositionStatus.DETECTED, 0.9, True, None, now, now, job_id=None)
-    )
+    pos.save(Position("pl", "a1", PositionStatus.DETECTED, 0.9, True, None, now, now, job_id=None))
     pos.save(
         Position("pj", "a1", PositionStatus.DETECTED, 0.9, True, None, now, now, job_id="js-1")
     )
@@ -157,9 +159,7 @@ def test_multiple_succeeded_jobs_without_operational_still_resolve_legacy_slice(
     jobs.save(j_ok)
     jobs.save(j_fail)
     pos = MemoryPositionRepository()
-    pos.save(
-        Position("p1", "a1", PositionStatus.DETECTED, 0.9, True, None, t1, t1, job_id="jo")
-    )
+    pos.save(Position("p1", "a1", PositionStatus.DETECTED, 0.9, True, None, t1, t1, job_id="jo"))
     r = ResultContextResolver(jobs, pos).resolve(aisle=_aisle(), explicit_job_id=None)
     assert r.source == "legacy"
     assert r.job_id_for_slice is None

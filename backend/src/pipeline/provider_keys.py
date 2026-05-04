@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 def normalize_pipeline_provider_key(
-    provider_name: Optional[str],
+    provider_name: str | None,
     settings: Any,
 ) -> str:
     """

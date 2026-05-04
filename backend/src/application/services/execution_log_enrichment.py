@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -26,7 +26,7 @@ def sanitize_execution_log_filename_segment(segment: str) -> str:
     return cleaned[:200]
 
 
-def _as_nonempty_str(value: Any) -> Optional[str]:
+def _as_nonempty_str(value: Any) -> str | None:
     if value is None:
         return None
     if isinstance(value, str):
@@ -41,7 +41,7 @@ def _as_nonempty_str(value: Any) -> Optional[str]:
         return None
 
 
-def _as_attempt(value: Any) -> Optional[int]:
+def _as_attempt(value: Any) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool):
@@ -63,7 +63,7 @@ def _as_attempt(value: Any) -> Optional[int]:
     return None
 
 
-def _execution_id_from_payload(payload: Any) -> Optional[str]:
+def _execution_id_from_payload(payload: Any) -> str | None:
     if not isinstance(payload, dict):
         return None
     eid = _as_nonempty_str(payload.get("execution_id"))
@@ -77,7 +77,7 @@ def _execution_id_from_payload(payload: Any) -> Optional[str]:
 
 def extract_event_context(
     payload: Any,
-) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+) -> tuple[str | None, int | None, str | None]:
     """Return (job_id, attempt, execution_id) from a log event payload."""
     if not isinstance(payload, dict):
         return None, None, None
@@ -88,7 +88,7 @@ def extract_event_context(
 
 
 def _is_requested_job_event(
-    event_job_id: Optional[str],
+    event_job_id: str | None,
     requested_job_id: str,
     any_event_has_job_id: bool,
 ) -> bool:
@@ -99,7 +99,7 @@ def _is_requested_job_event(
     return not any_event_has_job_id
 
 
-def parse_ts_sort_key(ts_val: Any) -> Tuple[int, float, str]:
+def parse_ts_sort_key(ts_val: Any) -> tuple[int, float, str]:
     """Return (quality, epoch_seconds_or_0, raw) for global ordering. Lower sorts earlier.
 
     quality: 0 = parsed timestamp, 1 = missing/empty ts, 2 = unparseable string.
@@ -118,15 +118,15 @@ def parse_ts_sort_key(ts_val: Any) -> Tuple[int, float, str]:
 
 
 def merge_raw_execution_log_events_by_ts(
-    job_streams: List[Tuple[str, datetime, List[Dict[str, Any]]]],
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+    job_streams: list[tuple[str, datetime, list[dict[str, Any]]]],
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Merge per-job streams into one list ordered by event timestamp (stable).
 
     ``job_streams`` items are ``(job_id, job_created_at, events in original file order)``.
     Tie-break when timestamps compare equal: older job first (smaller ``created_at``),
     then ``job_id``, then line index within the file.
     """
-    entries: List[Tuple[Dict[str, Any], str, int, datetime]] = []
+    entries: list[tuple[dict[str, Any], str, int, datetime]] = []
     for job_id, created_at, events in job_streams:
         for line_idx, ev in enumerate(events):
             entries.append((ev, job_id, line_idx, created_at))
@@ -147,20 +147,20 @@ def _build_enriched_execution_log_core(
     *,
     inventory_id: str,
     aisle_id: str,
-    requested_job_id_out: Optional[str],
-    raw_events: List[Dict[str, Any]],
-    artifact_owner_job_ids: Optional[List[str]],
-    seed_job_ids: Optional[List[str]],
+    requested_job_id_out: str | None,
+    raw_events: list[dict[str, Any]],
+    artifact_owner_job_ids: list[str] | None,
+    seed_job_ids: list[str] | None,
     suppress_requested_job_flags: bool,
-    requested_job_id_for_legacy_flags: Optional[str],
-) -> Dict[str, Any]:
+    requested_job_id_for_legacy_flags: str | None,
+) -> dict[str, Any]:
     if artifact_owner_job_ids is not None and len(artifact_owner_job_ids) != len(raw_events):
         raise ValueError("artifact_owner_job_ids length must match raw_events")
 
-    per_event_meta: List[Tuple[Optional[str], Optional[int], Optional[str]]] = []
-    job_ids_seen: List[str] = []
-    attempts_seen: List[int] = []
-    exec_ids_seen: List[str] = []
+    per_event_meta: list[tuple[str | None, int | None, str | None]] = []
+    job_ids_seen: list[str] = []
+    attempts_seen: list[int] = []
+    exec_ids_seen: list[str] = []
 
     for i, ev in enumerate(raw_events):
         payload = ev.get("payload")
@@ -191,7 +191,7 @@ def _build_enriched_execution_log_core(
     available_attempts = sorted(set(attempts_seen))
     available_execution_ids = sorted(set(exec_ids_seen))
 
-    events_out: List[Dict[str, Any]] = []
+    events_out: list[dict[str, Any]] = []
     for ev, (jid, att, eid) in zip(raw_events, per_event_meta):
         ts = str(ev.get("ts", "") or "")
         stage = str(ev.get("stage", "") or "")
@@ -234,9 +234,9 @@ def build_enriched_execution_log(
     inventory_id: str,
     aisle_id: str,
     requested_job_id: str,
-    raw_events: List[Dict[str, Any]],
-    artifact_owner_job_ids: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    raw_events: list[dict[str, Any]],
+    artifact_owner_job_ids: list[str] | None = None,
+) -> dict[str, Any]:
     """Build API-ready dict for a single-job execution log (existing contract)."""
     return _build_enriched_execution_log_core(
         inventory_id=inventory_id,
@@ -254,12 +254,12 @@ def build_enriched_aisle_aggregated_execution_log(
     *,
     inventory_id: str,
     aisle_id: str,
-    raw_events: List[Dict[str, Any]],
-    artifact_owner_job_ids: List[str],
-    seed_job_ids: List[str],
-    jobs: List[Dict[str, Any]],
-    log_sources: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    raw_events: list[dict[str, Any]],
+    artifact_owner_job_ids: list[str],
+    seed_job_ids: list[str],
+    jobs: list[dict[str, Any]],
+    log_sources: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Envelope for aisle-level aggregated logs (multi-job). ``requested_job_id`` is null."""
     core = _build_enriched_execution_log_core(
         inventory_id=inventory_id,
@@ -293,12 +293,12 @@ def aisle_execution_log_attachment_filename(inventory_id: str, aisle_id: str) ->
     return f"inventory_{inv}_aisle_{aisle}_execution_log.txt"
 
 
-def format_execution_log_plaintext(enriched_events: List[Dict[str, Any]]) -> str:
+def format_execution_log_plaintext(enriched_events: list[dict[str, Any]]) -> str:
     """
     Human-readable export: one header line, message line, optional payload line per entry;
     entries separated by a blank line.
     """
-    blocks: List[str] = []
+    blocks: list[str] = []
     for ev in enriched_events:
         ts = ev.get("ts") or ""
         stage = ev.get("stage") or ""

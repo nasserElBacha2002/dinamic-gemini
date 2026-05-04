@@ -36,8 +36,7 @@ def test_admin_ai_config_returns_200_for_username_admin() -> None:
     keys = {p["key"] for p in body["providers"]}
     assert keys == {"gemini", "openai", "claude", "deepseek"}
     assert any(
-        p["key"] == "deepseek"
-        and p["capabilities"]["multimodal_aisle_analysis_supported"] is False
+        p["key"] == "deepseek" and p["capabilities"]["multimodal_aisle_analysis_supported"] is False
         for p in body["providers"]
     )
     assert isinstance(body["prompt_catalog"], list)
@@ -74,7 +73,9 @@ def test_admin_ai_config_403_when_principal_is_secondary_jairo() -> None:
     assert err.get("code") == "FORBIDDEN"
 
 
-def test_admin_ai_config_200_when_primary_principal_even_if_login_username_not_literal_admin() -> None:
+def test_admin_ai_config_200_when_primary_principal_even_if_login_username_not_literal_admin() -> (
+    None
+):
     """Primary principal is keyed by ``AuthUser.id``; visible username may differ from 'admin'."""
     app.dependency_overrides[get_current_admin] = lambda: AuthUser(
         id="admin", username="ops-admin", role="administrator"

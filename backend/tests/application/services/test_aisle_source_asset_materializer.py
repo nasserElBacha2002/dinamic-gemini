@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Dict, Optional, Sequence
 
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.ports.contracts import AisleAssetRollup
-from src.application.ports.repositories import AisleRepository, InventoryRepository, SourceAssetRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    SourceAssetRepository,
+)
+from src.application.ports.services import ArtifactStorage
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.ports.services import ArtifactStorage
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -32,7 +36,7 @@ class StubInventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._inv = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._inv if self._inv.id == inventory_id else None
 
     def list_all(self) -> Sequence[Inventory]:
@@ -47,36 +51,36 @@ class StubAisleRepo(AisleRepository):
     def save(self, aisle: Aisle) -> None:
         self.saved.append(aisle)
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._aisle if self._aisle.id == aisle_id else None
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [self._aisle] if self._aisle.inventory_id == inventory_id else []
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         return None
 
 
 class StubAssetRepo(SourceAssetRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, SourceAsset] = {}
+        self._store: dict[str, SourceAsset] = {}
 
     def save(self, asset: SourceAsset) -> None:
         self._store[asset.id] = asset
 
-    def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
+    def get_by_id(self, asset_id: str) -> SourceAsset | None:
         return self._store.get(asset_id)
 
     def delete_by_id(self, asset_id: str) -> bool:
         return self._store.pop(asset_id, None) is not None
 
-    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
         return None
 
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return [a for a in self._store.values() if a.aisle_id == aisle_id]
 
-    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
         return {}
 
 

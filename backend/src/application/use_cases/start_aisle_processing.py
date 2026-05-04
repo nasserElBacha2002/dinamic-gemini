@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
-from src.application.errors import ActiveJobExistsError, InventoryNotFoundError, NoSourceAssetsForAisleProcessingError
+from src.application.errors import (
+    ActiveJobExistsError,
+    InventoryNotFoundError,
+    NoSourceAssetsForAisleProcessingError,
+)
 from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.repositories import (
     AisleRepository,
@@ -51,9 +54,7 @@ def _require_no_active_process_job_for_aisle(
     aisle_id: str,
 ) -> None:
     """Raise if an aisle-target job is already in a state that blocks a new start."""
-    latest = stale_reconciler.reconcile(
-        job_repo.get_latest_by_target("aisle", aisle_id)
-    )
+    latest = stale_reconciler.reconcile(job_repo.get_latest_by_target("aisle", aisle_id))
     if latest is not None and latest.status in _START_BLOCKING_JOB_STATUSES:
         raise ActiveJobExistsError(
             f"Aisle {aisle_id} already has an active job (status={latest.status.value})"
@@ -66,19 +67,19 @@ class StartAisleProcessingCommand:
     aisle_id: str
     #: When true (API route), load inventory and resolve execution keys from inventory + requests.
     resolve_execution_keys: bool = False
-    requested_provider_name: Optional[str] = None
-    requested_model_name: Optional[str] = None
-    requested_prompt_key: Optional[str] = None
+    requested_provider_name: str | None = None
+    requested_model_name: str | None = None
+    requested_prompt_key: str | None = None
     #: Used only when ``resolve_execution_keys`` is false (e.g. unit tests with pre-resolved keys).
     pipeline_provider_key: str = "gemini"
-    model_name: Optional[str] = None
+    model_name: str | None = None
     prompt_key: str = "global_v21"
 
 
 def _materialize_execution_keys_for_start(
     inventory_repo: InventoryRepository,
     command: StartAisleProcessingCommand,
-) -> Tuple[str, Optional[str], str]:
+) -> tuple[str, str | None, str]:
     """Resolve provider/model/prompt for a start-process command (Phase 9/10).
 
     When ``command.resolve_execution_keys`` is false, returns the command's pre-set keys.

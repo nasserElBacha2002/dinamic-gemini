@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class EvidenceType(str, Enum):
@@ -28,16 +28,16 @@ class Evidence:
     type: EvidenceType
     storage_path: str
     is_primary: bool
-    source_asset_id: Optional[str] = None
-    frame_index: Optional[int] = None
-    timestamp_ms: Optional[int] = None
-    bbox_json: Optional[Dict[str, Any]] = None
-    quality_score: Optional[float] = None
+    source_asset_id: str | None = None
+    frame_index: int | None = None
+    timestamp_ms: int | None = None
+    bbox_json: dict[str, Any] | None = None
+    quality_score: float | None = None
     # storage_path: legacy-relative path; storage_key: canonical ArtifactStore key when using a provider.
-    storage_provider: Optional[str] = None
-    storage_bucket: Optional[str] = None
-    storage_key: Optional[str] = None
+    storage_provider: str | None = None
+    storage_bucket: str | None = None
+    storage_key: str | None = None
     # HTTP/storage Content-Type for this artifact (no separate mime_type on Evidence).
-    content_type: Optional[str] = None
-    file_size_bytes: Optional[int] = None
-    etag: Optional[str] = None
+    content_type: str | None = None
+    file_size_bytes: int | None = None
+    etag: str | None = None

@@ -12,22 +12,22 @@ import pytest
 from pydantic import ValidationError
 
 from src.models.schemas import (
-    clamp01,
-    MinifiedProduct,
-    MinifiedPallet,
-    MinifiedFrameResult,
-    VideoMetadata,
-    FrameRef,
-    ProductEstimate,
-    PalletEstimate,
-    FinalResult,
-    LLMProductObservation,
-    LLMPalletObservation,
-    LLMFrameResult,
-    ConsolidationStats,
-    ConsolidatedProduct,
     ConsolidatedPallet,
+    ConsolidatedProduct,
     ConsolidatedResult,
+    ConsolidationStats,
+    FinalResult,
+    FrameRef,
+    LLMFrameResult,
+    LLMPalletObservation,
+    LLMProductObservation,
+    MinifiedFrameResult,
+    MinifiedPallet,
+    MinifiedProduct,
+    PalletEstimate,
+    ProductEstimate,
+    VideoMetadata,
+    clamp01,
 )
 
 
@@ -61,19 +61,19 @@ def test_minified_product_confidence_clamp():
     # Confianza dentro del rango válido
     product1 = MinifiedProduct(n="Test", r="counted", q=10, c=0.95)
     assert product1.c == 0.95
-    
+
     # Confianza en los límites
     product2 = MinifiedProduct(n="Test", r="counted", q=10, c=0.0)
     assert product2.c == 0.0
-    
+
     product3 = MinifiedProduct(n="Test", r="counted", q=10, c=1.0)
     assert product3.c == 1.0
-    
+
     # Valores fuera de rango son rechazados por Pydantic antes del validador
     # (esto es el comportamiento esperado: validación estricta)
     with pytest.raises(ValidationError):
         MinifiedProduct(n="Test", r="x", q=10, c=1.5)
-    
+
     with pytest.raises(ValidationError):
         MinifiedProduct(n="Test", r="x", q=10, c=-0.1)
 
@@ -177,11 +177,11 @@ def test_product_estimate_confidence_clamp():
     # Confianza dentro del rango válido
     product = ProductEstimate(product="Test", estimated_boxes=10, confidence=0.85)
     assert product.confidence == 0.85
-    
+
     # Valores fuera de rango son rechazados por Pydantic
     with pytest.raises(ValidationError):
         ProductEstimate(product="Test", estimated_boxes=10, confidence=2.0)
-    
+
     with pytest.raises(ValidationError):
         ProductEstimate(product="Test", estimated_boxes=10, confidence=-0.1)
 
@@ -213,9 +213,7 @@ def test_final_result_with_summary():
     products = [ProductEstimate(product="Test", estimated_boxes=10, confidence=0.8)]
     pallets = [PalletEstimate(pallet_id="P001", products=products)]
     summary = {"frames_processed": 10, "time_seconds": 5.5}
-    result = FinalResult(
-        video_id="VID_001", pallets=pallets, processing_summary=summary
-    )
+    result = FinalResult(video_id="VID_001", pallets=pallets, processing_summary=summary)
     assert result.processing_summary == summary
 
 
@@ -299,9 +297,7 @@ def test_consolidated_product_valid():
 def test_consolidated_pallet_valid():
     """Test de creación de ConsolidatedPallet válido."""
     products = [
-        ConsolidatedProduct(
-            product="Test", estimated_boxes=10, confidence=0.8, evidence_frames=2
-        ),
+        ConsolidatedProduct(product="Test", estimated_boxes=10, confidence=0.8, evidence_frames=2),
     ]
     pallet = ConsolidatedPallet(pallet_id="P001", products=products)
     assert pallet.pallet_id == "P001"
@@ -311,9 +307,7 @@ def test_consolidated_pallet_valid():
 def test_consolidated_result_valid():
     """Test de creación de ConsolidatedResult válido."""
     products = [
-        ConsolidatedProduct(
-            product="Test", estimated_boxes=10, confidence=0.8, evidence_frames=2
-        ),
+        ConsolidatedProduct(product="Test", estimated_boxes=10, confidence=0.8, evidence_frames=2),
     ]
     pallets = [ConsolidatedPallet(pallet_id="P001", products=products)]
     result = ConsolidatedResult(video_id="VID_001", pallets=pallets)
@@ -355,7 +349,7 @@ def test_extra_fields_forbidden():
     """Test que los modelos rechazan campos extra."""
     with pytest.raises(ValidationError):
         MinifiedProduct(n="Test", r="x", q=10, c=0.8, extra_field="not_allowed")
-    
+
     with pytest.raises(ValidationError):
         FinalResult(
             video_id="VID_001",

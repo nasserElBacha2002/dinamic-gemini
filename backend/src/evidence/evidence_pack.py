@@ -7,7 +7,7 @@ When bbox missing or invalid: evidence_localization = UNLOCALIZED, overview only
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import cv2
 import numpy as np
@@ -26,10 +26,10 @@ EVIDENCE_UNLOCALIZED = "UNLOCALIZED"
 def _resolve_entity_source_frame_indices(
     entity: Entity,
     *,
-    frame_refs: Optional[List[str]],
-    metadata: Dict[str, Any],
+    frame_refs: Optional[list[str]],
+    metadata: dict[str, Any],
     num_frames: int,
-) -> List[int]:
+) -> list[int]:
     """Indices into ``frames`` that belong to this entity's source only.
 
     For **photos** jobs, only frames whose ``frame_refs[i]`` matches ``entity.source_image_id`` are
@@ -63,10 +63,10 @@ def _resolve_entity_source_frame_indices(
 
 
 def parse_bbox_to_pixels(
-    bbox: Optional[List[float]],
+    bbox: Optional[list[float]],
     frame_w: int,
     frame_h: int,
-) -> Optional[Tuple[int, int, int, int]]:
+) -> Optional[tuple[int, int, int, int]]:
     """Convert bbox to pixel coords (x1, y1, x2, y2). Clamped, x2>x1, y2>y1.
 
     - If all coords <= 1.0: treat as normalized [0..1].
@@ -94,7 +94,7 @@ def parse_bbox_to_pixels(
     return (x1_px, y1_px, x2_px, y2_px)
 
 
-def _crop_bbox(frame: np.ndarray, bbox: List[float]) -> Optional[np.ndarray]:
+def _crop_bbox(frame: np.ndarray, bbox: list[float]) -> Optional[np.ndarray]:
     """Crop frame to bbox (normalized or pixel). Returns None if invalid."""
     h, w = frame.shape[:2]
     px = parse_bbox_to_pixels(bbox, w, h)
@@ -105,10 +105,10 @@ def _crop_bbox(frame: np.ndarray, bbox: List[float]) -> Optional[np.ndarray]:
 
 
 def _select_overview_frames(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     k: int,
     hash_threshold: int = 10,
-) -> List[Tuple[int, np.ndarray]]:
+) -> list[tuple[int, np.ndarray]]:
     """Select up to k best (sharpest, set-deduped) frames. Returns list of (index, frame)."""
     if not frames or k <= 0:
         return []
@@ -119,13 +119,13 @@ def _select_overview_frames(
 
 
 def _select_best_crop_candidates(
-    frames: List[np.ndarray],
-    bbox: List[float],
+    frames: list[np.ndarray],
+    bbox: list[float],
     k: int,
     hash_threshold: int = 8,
-) -> List[Tuple[int, np.ndarray]]:
+) -> list[tuple[int, np.ndarray]]:
     """Crop bbox from each frame, score by sharpness, set-dedupe, return up to k (index, crop)."""
-    crops: List[Tuple[int, np.ndarray, float]] = []
+    crops: list[tuple[int, np.ndarray, float]] = []
     for i, frame in enumerate(frames):
         crop = _crop_bbox(frame, bbox)
         if crop is not None and crop.size > 0:
@@ -138,11 +138,11 @@ def _select_best_crop_candidates(
 def generate_evidence_pack(
     job_id: str,
     run_dir: Path,
-    frames: List[np.ndarray],
-    metadata: Dict[str, Any],
-    entities: List[Entity],
-    frame_refs: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    frames: list[np.ndarray],
+    metadata: dict[str, Any],
+    entities: list[Entity],
+    frame_refs: Optional[list[str]] = None,
+) -> dict[str, Any]:
     """Generate evidence pack per entity and write run/evidence/ and run/evidence_index.json.
 
     - Overview: sharpness + dedupe, limit K_OVERVIEW.
@@ -168,7 +168,7 @@ def generate_evidence_pack(
     evidence_root.mkdir(parents=True, exist_ok=True)
 
     num_frames = len(frames)
-    index_entities: List[Dict[str, Any]] = []
+    index_entities: list[dict[str, Any]] = []
 
     for entity in entities:
         entity_dir = entity_evidence_path(run_dir, entity.entity_uid)
@@ -209,9 +209,7 @@ def generate_evidence_pack(
         )
         localized = bool(entity_frames) and (has_pos_bbox or has_prod_bbox)
 
-        overview_list = (
-            _select_overview_frames(entity_frames, k_overview) if entity_frames else []
-        )
+        overview_list = _select_overview_frames(entity_frames, k_overview) if entity_frames else []
         primary_local_idx: Optional[int] = None
         if localized and has_pos_bbox and entity.position_label_bbox:
             pos_pick = _select_best_crop_candidates(
@@ -228,8 +226,10 @@ def generate_evidence_pack(
         if primary_local_idx is None and overview_list:
             primary_local_idx = overview_list[0][0]
 
-        if primary_local_idx is not None and src_indices and 0 <= primary_local_idx < len(
-            src_indices
+        if (
+            primary_local_idx is not None
+            and src_indices
+            and 0 <= primary_local_idx < len(src_indices)
         ):
             entity.evidence_primary_frame_index = src_indices[primary_local_idx]
         elif src_indices:
@@ -239,7 +239,7 @@ def generate_evidence_pack(
 
         entity.evidence_localization = EVIDENCE_LOCALIZED if localized else EVIDENCE_UNLOCALIZED
 
-        evidence: Dict[str, Any] = {"overview": []}
+        evidence: dict[str, Any] = {"overview": []}
         image_count = 0
         path_prefix = rel_evidence_dir
 
@@ -273,7 +273,9 @@ def generate_evidence_pack(
                             evidence["position_label_candidates"] = []
                         evidence["position_label_candidates"].append(rel_path)
                         image_count += 1
-                if "position_label_best" not in evidence and evidence.get("position_label_candidates"):
+                if "position_label_best" not in evidence and evidence.get(
+                    "position_label_candidates"
+                ):
                     evidence["position_label_best"] = evidence["position_label_candidates"][0]
 
             # 3) Product label crops
@@ -294,20 +296,24 @@ def generate_evidence_pack(
                             evidence["product_label_candidates"] = []
                         evidence["product_label_candidates"].append(rel_path)
                         image_count += 1
-                if "product_label_best" not in evidence and evidence.get("product_label_candidates"):
+                if "product_label_best" not in evidence and evidence.get(
+                    "product_label_candidates"
+                ):
                     evidence["product_label_best"] = evidence["product_label_candidates"][0]
         else:
             # UNLOCALIZED: label fields absent in index
             pass
 
-        index_entities.append({
-            "entity_uid": entity.entity_uid,
-            "pallet_id": entity.pallet_id,
-            "entity_type": entity.entity_type,
-            "count_status": entity.count_status,
-            "evidence_localization": entity.evidence_localization,
-            "evidence": evidence,
-        })
+        index_entities.append(
+            {
+                "entity_uid": entity.entity_uid,
+                "pallet_id": entity.pallet_id,
+                "entity_type": entity.entity_type,
+                "count_status": entity.count_status,
+                "evidence_localization": entity.evidence_localization,
+                "evidence": evidence,
+            }
+        )
 
     index = {
         "job_id": job_id,

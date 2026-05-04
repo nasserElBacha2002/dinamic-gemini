@@ -23,9 +23,7 @@ def require_process_aisle_job_for_aisle(
     if job is None:
         raise AisleNotFoundError(f"Job {job_id} not found for aisle {aisle_id}")
     if job.target_type != "aisle" or job.target_id != aisle_id:
-        raise AisleNotFoundError(
-            f"Job {job_id} does not belong to aisle {aisle_id}"
-        )
+        raise AisleNotFoundError(f"Job {job_id} does not belong to aisle {aisle_id}")
     if job.job_type != "process_aisle":
         raise ValueError(f"Job {job_id} is not a process_aisle job")
     return job

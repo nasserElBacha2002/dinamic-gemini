@@ -26,9 +26,7 @@ def validate_job_id(job_id: Optional[str]) -> str:
     if ".." in s or "/" in s or "\\" in s:
         raise ValueError("job_id must not contain '..', '/', or '\\'")
     if not _SAFE_ID_PATTERN.fullmatch(s):
-        raise ValueError(
-            "job_id must contain only letters, digits, underscore, and hyphen"
-        )
+        raise ValueError("job_id must contain only letters, digits, underscore, and hyphen")
     return s
 
 
@@ -46,9 +44,7 @@ def validate_entity_uid(entity_uid: Optional[str]) -> str:
     if ".." in s or "/" in s or "\\" in s:
         raise ValueError("entity_uid must not contain '..', '/', or '\\'")
     if not _SAFE_ID_PATTERN.fullmatch(s):
-        raise ValueError(
-            "entity_uid must contain only letters, digits, underscore, and hyphen"
-        )
+        raise ValueError("entity_uid must contain only letters, digits, underscore, and hyphen")
     return s
 
 

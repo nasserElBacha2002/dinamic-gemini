@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, Query
 
 from src.api.constants.route_paths import API_V3_REVIEW_QUEUE_ROUTER_PREFIX
-from src.auth.dependencies import get_current_admin
-
 from src.api.dependencies import get_list_review_queue_use_case
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.schemas.review_queue_schemas import (
@@ -18,6 +14,7 @@ from src.api.schemas.review_queue_schemas import (
 )
 from src.application.ports.contracts import ReviewQueueQuery
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
+from src.auth.dependencies import get_current_admin
 
 from .shared import position_to_summary
 
@@ -28,7 +25,7 @@ router = APIRouter(
 )
 
 
-def _strip_opt(s: Optional[str]) -> Optional[str]:
+def _strip_opt(s: str | None) -> str | None:
     if s is None:
         return None
     t = str(s).strip()
@@ -38,21 +35,21 @@ def _strip_opt(s: Optional[str]) -> Optional[str]:
 @router.get("/positions", response_model=ReviewQueueListResponse)
 def list_review_queue_positions(
     use_case: ListReviewQueueUseCase = Depends(get_list_review_queue_use_case),
-    inventory_id: Optional[str] = Query(None, description="Restrict to aisles in this inventory."),
-    aisle_id: Optional[str] = Query(None, description="Restrict to this aisle."),
-    min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0),
-    max_confidence: Optional[float] = Query(None, ge=0.0, le=1.0),
-    traceability: Optional[str] = Query(
+    inventory_id: str | None = Query(None, description="Restrict to aisles in this inventory."),
+    aisle_id: str | None = Query(None, description="Restrict to this aisle."),
+    min_confidence: float | None = Query(None, ge=0.0, le=1.0),
+    max_confidence: float | None = Query(None, ge=0.0, le=1.0),
+    traceability: str | None = Query(
         None,
         description="valid | missing | invalid | unvalidated",
     ),
-    has_evidence: Optional[bool] = Query(None),
-    qty_zero: Optional[bool] = Query(None),
-    sku_contains: Optional[str] = Query(
+    has_evidence: bool | None = Query(None),
+    qty_zero: bool | None = Query(None),
+    sku_contains: str | None = Query(
         None,
         description="Case-insensitive substring on canonical display SKU (snapshot fallback only when needed).",
     ),
-    position_status: Optional[str] = Query(
+    position_status: str | None = Query(
         None,
         description="detected | reviewed | corrected | deleted | confirmed (reviewed or corrected).",
     ),

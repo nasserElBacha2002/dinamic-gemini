@@ -37,7 +37,9 @@ class MultiProviderRunRowError(TypedDict):
     message: str
 
 
-MultiProviderRunRow = Union[MultiProviderRunRowOk, MultiProviderRunRowSkipped, MultiProviderRunRowError]
+MultiProviderRunRow = Union[
+    MultiProviderRunRowOk, MultiProviderRunRowSkipped, MultiProviderRunRowError
+]
 
 
 class MultiProviderExecutionTrace(TypedDict):

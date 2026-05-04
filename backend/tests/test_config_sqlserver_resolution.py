@@ -83,7 +83,9 @@ def test_no_sql_config_returns_empty_tuple(monkeypatch: pytest.MonkeyPatch) -> N
     assert cfg.mode == "unset"
 
 
-def test_split_without_odbc_driver_env_reports_sqlserver_driver(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_split_without_odbc_driver_env_reports_sqlserver_driver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SQLSERVER_SERVER", "s")
     monkeypatch.setenv("SQLSERVER_DATABASE", "d")
     monkeypatch.setenv("SQLSERVER_UID", "u")
@@ -97,7 +99,9 @@ def test_split_without_odbc_driver_env_reports_sqlserver_driver(monkeypatch: pyt
     assert missing == ("SQLSERVER_DRIVER",)
 
 
-def test_require_unset_includes_config_mode_and_preflight_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_require_unset_includes_config_mode_and_preflight_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     with pytest.raises(SqlServerConfigurationError) as exc:
         load_settings().require_sqlserver_connection_string()
     assert exc.value.config_mode == "unset"
@@ -117,7 +121,10 @@ def test_docker_loopback_server_remapped_to_host_gateway(
     monkeypatch.setattr("src.env_settings.sqlserver_resolution._dockerenv_present", lambda: True)
     monkeypatch.delenv("SQLSERVER_DOCKER_HOST", raising=False)
     assert remap_sqlserver_server_for_container_if_needed("localhost") == "host.docker.internal"
-    assert remap_sqlserver_server_for_container_if_needed("127.0.0.1,1433") == "host.docker.internal,1433"
+    assert (
+        remap_sqlserver_server_for_container_if_needed("127.0.0.1,1433")
+        == "host.docker.internal,1433"
+    )
 
 
 def test_docker_loopback_respects_sqlserver_docker_host(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -161,7 +168,9 @@ def test_connection_string_mode_remapped_in_docker(monkeypatch: pytest.MonkeyPat
     assert cfg.sql_server_connect_target == "host.docker.internal,1433"
 
 
-def test_remap_connection_string_helper_idempotent_off_docker(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remap_connection_string_helper_idempotent_off_docker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr("src.env_settings.sqlserver_resolution._dockerenv_present", lambda: False)
     s = "DRIVER={x};SERVER=localhost;DATABASE=d;"
     assert remap_sqlserver_connection_string_server_if_needed(s) == s

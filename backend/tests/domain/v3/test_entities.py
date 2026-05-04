@@ -10,7 +10,6 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 
-
 # --- Inventory ---
 
 

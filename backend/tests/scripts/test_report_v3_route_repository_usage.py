@@ -20,6 +20,4 @@ def test_report_v3_route_repository_usage_exits_zero_with_no_route_repo_injectio
     )
     assert proc.returncode == 0, proc.stderr
     out = proc.stdout
-    assert (
-        "(no Depends(get_*_repo) matches — v3 routes are clean at this layer.)" in out
-    )
+    assert "(no Depends(get_*_repo) matches — v3 routes are clean at this layer.)" in out

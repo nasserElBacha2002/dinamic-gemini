@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 import threading
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
@@ -25,37 +25,38 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     SourceAssetRepository,
 )
-from src.application.use_cases.persist_aisle_result import (
-    PersistAisleResultCommand,
-    PersistAisleResultUseCase,
+from src.application.services.aisle_analysis_context_builder import (
+    AisleAnalysisContextBuilder,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.inventory_visual_reference_resolver import (
     InventoryVisualReferenceResolver,
 )
 from src.application.services.job_engine_params import coerce_prompt_parity_mode
-from src.application.services.aisle_analysis_context_builder import (
-    AisleAnalysisContextBuilder,
+from src.application.use_cases.persist_aisle_result import (
+    PersistAisleResultCommand,
+    PersistAisleResultUseCase,
 )
-from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
+from src.application.use_cases.recompute_consolidated_counts import (
+    RecomputeConsolidatedCountsUseCase,
+)
 from src.config import load_settings
-from src.domain.aisle.entities import Aisle
-from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.entities import JobStatus
+from src.infrastructure.pipeline.v3_execution_artifacts_service import V3ExecutionArtifactsService
+from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
+from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
+    V3ProcessAislePipelineRunner,
+    visual_reference_failure_metadata,
+)
+from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    DEFAULT_V3_WORKER_RUN_SEGMENT,
+)
 from src.io.logging import setup_logger
+from src.jobs.worker_bootstrap import append_worker_bootstrap_event, checkpoint_v3_job_bootstrap
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
-from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
-    DEFAULT_V3_WORKER_RUN_SEGMENT,
-)
-from src.infrastructure.pipeline.v3_execution_artifacts_service import V3ExecutionArtifactsService
-from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
-from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
-    visual_reference_failure_metadata,
-    V3ProcessAislePipelineRunner,
-)
-from src.jobs.worker_bootstrap import append_worker_bootstrap_event, checkpoint_v3_job_bootstrap
 from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 logger = logging.getLogger(__name__)
@@ -155,7 +156,9 @@ class V3JobExecutor:
             self._state.cancel_job(job, "Job canceled before execution", now=self._clock.now())
             return True
         if job.status != JobStatus.STARTING:
-            logger.warning("v3 job %s invalid status for execution (status=%s), skip", job_id, job.status.value)
+            logger.warning(
+                "v3 job %s invalid status for execution (status=%s), skip", job_id, job.status.value
+            )
             return True
 
         payload = job.payload_json or {}
@@ -224,7 +227,7 @@ class V3JobExecutor:
             str(v3_base),
         )
 
-        analysis_context: Optional[AnalysisContext] = None
+        analysis_context: AnalysisContext | None = None
         try:
             analysis_context = self._pipeline_runner.build_analysis_context(aisle)
             job_input, video_path = self._pipeline_runner.build_pipeline_input(
@@ -256,9 +259,11 @@ class V3JobExecutor:
                 job = self._job_repo.get_by_id(job_id)
                 if job is not None:
                     result_json = dict(job.result_json or {})
-                    result_json[RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT] = visual_reference_failure_metadata(
-                        analysis_context,
-                        str(e),
+                    result_json[RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT] = (
+                        visual_reference_failure_metadata(
+                            analysis_context,
+                            str(e),
+                        )
                     )
                     job.result_json = result_json
                     self._job_repo.save(job)
@@ -287,7 +292,11 @@ class V3JobExecutor:
         )
 
         stop_heartbeat = threading.Event()
-        cancel_event_emitted: Dict[str, bool] = {"requested": False, "detected": False, "cancelled": False}
+        cancel_event_emitted: dict[str, bool] = {
+            "requested": False,
+            "detected": False,
+            "cancelled": False,
+        }
 
         def heartbeat_loop() -> None:
             while not stop_heartbeat.wait(self._heartbeat_interval_sec):
@@ -304,17 +313,21 @@ class V3JobExecutor:
                     event="job.heartbeat",
                 )
 
-        heartbeat_thread = threading.Thread(target=heartbeat_loop, name=f"job-heartbeat-{job_id}", daemon=True)
+        heartbeat_thread = threading.Thread(
+            target=heartbeat_loop, name=f"job-heartbeat-{job_id}", daemon=True
+        )
         heartbeat_thread.start()
 
-        def execution_observer(stage: str, substep: Optional[str], event: str, details: Optional[Dict[str, Any]]) -> None:
+        def execution_observer(
+            stage: str, substep: str | None, event: str, details: dict[str, Any] | None
+        ) -> None:
             self._state.update_runtime_status(
                 job_id,
                 stage=stage,
                 substep=substep,
             )
 
-        def cancellation_checkpoint(stage: str, substep: Optional[str], reason: str) -> None:
+        def cancellation_checkpoint(stage: str, substep: str | None, reason: str) -> None:
             self._state.raise_if_cancellation_requested(
                 job_id,
                 exec_log=exec_log,
@@ -428,7 +441,11 @@ class V3JobExecutor:
                 )
                 exec_log.info("Persist", "Persist completed")
             except Exception as persist_e:
-                exec_log.error("Persist", f"Persist failed: {persist_e}", payload={"error": str(persist_e)[:500]})
+                exec_log.error(
+                    "Persist",
+                    f"Persist failed: {persist_e}",
+                    payload={"error": str(persist_e)[:500]},
+                )
                 # Record stage-prefixed failure in job/aisle state so diagnosability is explicit (Phase 4).
                 # Do not re-raise: we have recorded the failure and return normally.
                 self._state.fail_job_and_aisle(job_id, aisle, f"Persist: {persist_e}")

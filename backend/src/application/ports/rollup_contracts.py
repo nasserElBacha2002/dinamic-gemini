@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -18,4 +17,4 @@ class AisleAssetRollup:
     """Per-aisle upload summary for GET /inventories/{id}/aisles (batch, no N+1)."""
 
     count: int
-    last_uploaded_at: Optional[datetime]
+    last_uploaded_at: datetime | None

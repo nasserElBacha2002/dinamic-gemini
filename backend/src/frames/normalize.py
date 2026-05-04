@@ -13,10 +13,12 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 import cv2
 import numpy as np
+
+from src.utils.validation import validate_relative_path  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +75,9 @@ def decode_image_bytes(raw: bytes) -> np.ndarray:
     return img
 
 
-def decode_image_bytes_or_heic(raw: bytes, src_path: Optional[Path] = None) -> Tuple[np.ndarray, bool]:
+def decode_image_bytes_or_heic(
+    raw: bytes, src_path: Optional[Path] = None
+) -> tuple[np.ndarray, bool]:
     """Decode image bytes to BGR ndarray. Tries OpenCV first; for .heic/.heif uses pillow-heif.
 
     Returns:
@@ -116,9 +120,7 @@ def normalize_image(
     h, w = img.shape[:2]
     min_side_val = int(min_side) if isinstance(min_side, (int, float)) else None
     if min_side_val is not None and (w < min_side_val or h < min_side_val):
-        raise ValueError(
-            f"image size {w}x{h} is below minimum side {min_side_val}"
-        )
+        raise ValueError(f"image size {w}x{h} is below minimum side {min_side_val}")
     max_side_val = int(max_side) if isinstance(max_side, (int, float)) else 1280
     longest = max(w, h)
     if longest <= max_side_val:
@@ -148,8 +150,8 @@ def encode_jpeg(img: np.ndarray, quality: int) -> bytes:
     return buf.tobytes()
 
 
-# Re-export so callers that import from frames.normalize keep working
-from src.utils.validation import validate_relative_path  # noqa: F401
+# validate_relative_path re-exported for callers that import from frames.normalize
+
 
 def normalize_photo_file(
     src_path: Path,
@@ -158,7 +160,7 @@ def normalize_photo_file(
     jpeg_quality: int,
     min_side: Optional[int] = None,
     max_single_bytes: Optional[int] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Read photo from src_path, normalize (resize + JPEG), write to dst_path.
 
     Args:
@@ -180,16 +182,16 @@ def normalize_photo_file(
     src_path = Path(src_path)
     dst_path = Path(dst_path)
     if dst_path.suffix.lower() not in (".jpg", ".jpeg"):
-        raise ValueError(f"normalized output path must be .jpg/.jpeg for pipeline safety: {dst_path}")
+        raise ValueError(
+            f"normalized output path must be .jpg/.jpeg for pipeline safety: {dst_path}"
+        )
     if not src_path.is_file():
         raise FileNotFoundError(f"photo file not found: {src_path}")
 
     raw = src_path.read_bytes()
     original_bytes = len(raw)
     if max_single_bytes is not None and original_bytes > max_single_bytes:
-        raise ValueError(
-            f"photo size {original_bytes} bytes exceeds limit {max_single_bytes}"
-        )
+        raise ValueError(f"photo size {original_bytes} bytes exceeds limit {max_single_bytes}")
     img, converted_from_heic = decode_image_bytes_or_heic(raw, src_path)
     h, w = img.shape[:2]
 
@@ -269,8 +271,10 @@ def normalize_photos_for_job(
 
     photos_list = manifest.get("photos") or []
     current_snapshot = _normalization_config_snapshot(settings)
-    if photos_list and photos_use_normalized(run_dir, manifest) and _normalization_snapshot_matches(
-        manifest.get("normalization"), current_snapshot
+    if (
+        photos_list
+        and photos_use_normalized(run_dir, manifest)
+        and _normalization_snapshot_matches(manifest.get("normalization"), current_snapshot)
     ):
         return
 
@@ -358,12 +362,14 @@ def normalize_photos_for_job(
     )
 
 
-def _normalization_config_snapshot(settings: Any) -> Dict[str, Any]:
+def _normalization_config_snapshot(settings: Any) -> dict[str, Any]:
     """Build manifest snapshot of normalization config (values as int for comparison)."""
+
     def _int_val(val: Any, default: int) -> int:
         if isinstance(val, (int, float)):
             return int(val)
         return default
+
     return {
         "resize_max_side": _int_val(getattr(settings, "photo_resize_max_side", 1280), 1280),
         "jpeg_quality": _int_val(getattr(settings, "photo_jpeg_quality", 85), 85),
@@ -372,7 +378,7 @@ def _normalization_config_snapshot(settings: Any) -> Dict[str, Any]:
 
 
 def _normalization_snapshot_matches(
-    snapshot: Optional[Dict[str, Any]], current: Dict[str, Any]
+    snapshot: Optional[dict[str, Any]], current: dict[str, Any]
 ) -> bool:
     """Return True if snapshot (from manifest) matches current config (same keys and values)."""
     if not snapshot or not isinstance(snapshot, dict):
@@ -383,7 +389,7 @@ def _normalization_snapshot_matches(
     return True
 
 
-def _write_manifest_atomic(manifest_path: Path, manifest: Dict[str, Any]) -> None:
+def _write_manifest_atomic(manifest_path: Path, manifest: dict[str, Any]) -> None:
     """Write manifest JSON atomically (temp file then replace). fd closed via fdopen."""
     manifest_path = Path(manifest_path)
     fd, tmp = tempfile.mkstemp(
@@ -400,7 +406,7 @@ def _write_manifest_atomic(manifest_path: Path, manifest: Dict[str, Any]) -> Non
         raise
 
 
-def photos_use_normalized(run_dir: Path, manifest: Dict[str, Any]) -> bool:
+def photos_use_normalized(run_dir: Path, manifest: dict[str, Any]) -> bool:
     """Return True if all photos have stored_normalized_filename and normalized dir exists."""
     photos_list = manifest.get("photos") or []
     if not photos_list:

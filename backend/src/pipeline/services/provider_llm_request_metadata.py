@@ -12,7 +12,8 @@ a single neutral field (deferred; would require adapter refactors).
 
 from __future__ import annotations
 
-from typing import Any, Final, Mapping, MutableMapping, Optional
+from collections.abc import Mapping, MutableMapping
+from typing import Any, Final
 
 # Canonical map: normalized pipeline provider key → ``LLMRequest.metadata`` key adapters read.
 _LEGACY_VENDOR_MODEL_METADATA_KEY: Final[Mapping[str, str]] = {
@@ -23,7 +24,7 @@ _LEGACY_VENDOR_MODEL_METADATA_KEY: Final[Mapping[str, str]] = {
 }
 
 
-def _strip_job_model_name(job_model_name: Optional[str]) -> Optional[str]:
+def _strip_job_model_name(job_model_name: str | None) -> str | None:
     jm = str(job_model_name).strip() if job_model_name and str(job_model_name).strip() else None
     return jm
 
@@ -31,9 +32,9 @@ def _strip_job_model_name(job_model_name: Optional[str]) -> Optional[str]:
 def apply_job_model_name_to_llm_request_metadata(
     *,
     resolved_provider_key: str,
-    job_model_name: Optional[str],
+    job_model_name: str | None,
     metadata: MutableMapping[str, Any],
-) -> Optional[str]:
+) -> str | None:
     """
     Compatibility: when ``job_model_name`` is set, write the legacy per-vendor model key on ``metadata``.
 

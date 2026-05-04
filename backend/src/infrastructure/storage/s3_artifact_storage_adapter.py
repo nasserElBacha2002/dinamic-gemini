@@ -6,10 +6,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 
 from src.application.ports.services import ArtifactStorage
-from src.infrastructure.storage.artifact_store import ArtifactDownload, ArtifactStore, StoredArtifact
+from src.infrastructure.storage.artifact_store import (
+    ArtifactDownload,
+    ArtifactStore,
+    StoredArtifact,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +33,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         *,
         bucket: str,
         prefix: str = "",
-        region: Optional[str] = None,
+        region: str | None = None,
         signed_url_ttl_sec: int = 900,
         s3_client=None,
     ) -> None:
@@ -86,7 +90,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
 
     def put_object(self, key: str, file_obj: BinaryIO, content_type: str) -> StoredArtifact:
         object_key = self._client_key(key)
-        size: Optional[int] = None
+        size: int | None = None
         try:
             cur = file_obj.tell()
             file_obj.seek(0, 2)
@@ -151,7 +155,7 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             etag=(result.get("ETag") or "").strip('"') or None,
         )
 
-    def object_size_bytes(self, key: str, *, bucket: Optional[str] = None) -> int:
+    def object_size_bytes(self, key: str, *, bucket: str | None = None) -> int:
         if bucket and bucket != self._bucket:
             raise RuntimeError(
                 f"S3 bucket mismatch for head_object: record_bucket={bucket!r} configured_bucket={self._bucket!r}"
@@ -166,7 +170,9 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
                 f"S3 head_object failed for key={object_key!r} bucket={self._bucket!r}"
             ) from exc
 
-    def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
+    def download_to_path(
+        self, key: str, target_path: Path, *, bucket: str | None = None
+    ) -> None:
         if bucket and bucket != self._bucket:
             raise RuntimeError(
                 f"S3 bucket mismatch for download: record_bucket={bucket!r} configured_bucket={self._bucket!r}"

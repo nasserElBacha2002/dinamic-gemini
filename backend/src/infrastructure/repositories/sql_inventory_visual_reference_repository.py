@@ -7,8 +7,8 @@ Persists InventoryVisualReference entities. Requires inventory_visual_references
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 from src.application.ports.repositories import InventoryVisualReferenceRepository
 from src.database.sqlserver import SqlServerClient
@@ -18,7 +18,7 @@ from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_f
 logger = logging.getLogger(__name__)
 
 
-def _to_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _to_utc(dt: datetime | None) -> datetime | None:
     """Normalize datetime to timezone-aware UTC.
 
     - Naive datetimes are assumed to be UTC and get tzinfo=UTC.

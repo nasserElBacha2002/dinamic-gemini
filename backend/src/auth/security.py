@@ -10,7 +10,7 @@ Phase 2 implements:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any
 from uuid import uuid4
 
 import jwt
@@ -81,7 +81,7 @@ def create_access_token(
     exp_dt = now_dt + timedelta(minutes=expires_minutes)
     exp = int(exp_dt.timestamp())
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "sub": subject,
         "principal_id": principal_id,
         "username": username,
@@ -96,7 +96,8 @@ def create_access_token(
         token = token.decode("utf-8")
     return token
 
-def decode_access_token(token: str, *, secret: str) -> Dict[str, Any]:
+
+def decode_access_token(token: str, *, secret: str) -> dict[str, Any]:
     """
     Decode and validate a previously issued access token.
 
@@ -119,4 +120,3 @@ def decode_access_token(token: str, *, secret: str) -> Dict[str, Any]:
     if not isinstance(decoded, dict):
         raise jwt.InvalidTokenError("invalid token payload")
     return decoded
-

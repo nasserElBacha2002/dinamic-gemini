@@ -8,8 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
-from src.application.services.operational_execution_config_resolver import OperationalPrimaryExecutionConfig
-from src.application.services.production_inventory_processing import effective_production_processing_keys
+from src.application.services.operational_execution_config_resolver import (
+    OperationalPrimaryExecutionConfig,
+)
+from src.application.services.production_inventory_processing import (
+    effective_production_processing_keys,
+)
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 
 _NOW = datetime(2026, 1, 2, tzinfo=timezone.utc)
@@ -35,7 +39,9 @@ def _inv(
     )
 
 
-@patch("src.application.services.production_inventory_processing.OperationalExecutionConfigResolver")
+@patch(
+    "src.application.services.production_inventory_processing.OperationalExecutionConfigResolver"
+)
 def test_full_snapshot_no_fallback_warning(mock_cls, caplog: pytest.LogCaptureFixture) -> None:
     mock_cls.return_value.resolve.return_value = OperationalPrimaryExecutionConfig(
         provider_name="resolver-p",
@@ -49,8 +55,12 @@ def test_full_snapshot_no_fallback_warning(mock_cls, caplog: pytest.LogCaptureFi
     assert "production_inventory_snapshot_incomplete" not in caplog.text
 
 
-@patch("src.application.services.production_inventory_processing.OperationalExecutionConfigResolver")
-def test_partial_snapshot_logs_and_fills_from_resolver(mock_cls, caplog: pytest.LogCaptureFixture) -> None:
+@patch(
+    "src.application.services.production_inventory_processing.OperationalExecutionConfigResolver"
+)
+def test_partial_snapshot_logs_and_fills_from_resolver(
+    mock_cls, caplog: pytest.LogCaptureFixture
+) -> None:
     mock_cls.return_value.resolve.return_value = OperationalPrimaryExecutionConfig(
         provider_name="fill-p",
         model_name="fill-m",

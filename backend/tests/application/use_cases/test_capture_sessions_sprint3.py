@@ -16,14 +16,20 @@ from src.application.errors import (
     CaptureSessionPreviewNotAllowedError,
 )
 from src.application.ports.clock import Clock
-from src.application.services.capture_staging_time_metadata import PillowCaptureStagingTimeMetadataExtractor
+from src.application.services.capture_staging_time_metadata import (
+    PillowCaptureStagingTimeMetadataExtractor,
+)
 from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase
 from src.application.use_cases.compute_capture_session_assignment_preview import (
     ComputeCaptureSessionAssignmentPreviewUseCase,
 )
 from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
-from src.application.use_cases.update_capture_session_clock_offset import UpdateCaptureSessionClockOffsetUseCase
-from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
+from src.application.use_cases.update_capture_session_clock_offset import (
+    UpdateCaptureSessionClockOffsetUseCase,
+)
+from src.application.use_cases.upload_capture_session_staging_items import (
+    UploadCaptureSessionStagingItemsUseCase,
+)
 from src.domain.capture.entities import (
     CaptureSession,
     CaptureSessionItem,
@@ -34,8 +40,12 @@ from src.domain.capture.entities import (
 )
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
@@ -180,7 +190,9 @@ def test_preview_moves_session_and_offset_invalidates(tmp_path) -> None:
         min_offset_seconds=-86400,
         max_offset_seconds=86400,
     )
-    off_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, clock_offset_seconds=3600)
+    off_uc.execute(
+        inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, clock_offset_seconds=3600
+    )
     sess = session_repo.get_by_id(s.id)
     assert sess is not None
     assert sess.clock_offset_seconds == 3600
@@ -229,7 +241,9 @@ def test_clock_offset_out_of_range() -> None:
         max_offset_seconds=10,
     )
     with pytest.raises(CaptureSessionInvalidClockOffsetError):
-        off_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, clock_offset_seconds=99)
+        off_uc.execute(
+            inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, clock_offset_seconds=99
+        )
 
 
 def test_clock_offset_blocked_after_cancel(tmp_path) -> None:
@@ -261,7 +275,9 @@ def test_clock_offset_blocked_after_cancel(tmp_path) -> None:
         max_offset_seconds=86400,
     )
     with pytest.raises(CaptureSessionInvalidStateError):
-        off_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, clock_offset_seconds=0)
+        off_uc.execute(
+            inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, clock_offset_seconds=0
+        )
 
 
 def test_memory_repositories_roundtrip_sprint3_session_and_item_fields() -> None:

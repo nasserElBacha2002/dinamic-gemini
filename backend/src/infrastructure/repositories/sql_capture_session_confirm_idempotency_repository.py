@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pyodbc
 
@@ -18,7 +18,7 @@ from src.infrastructure.repositories.db_row_text import normalize_db_str
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -39,7 +39,7 @@ def _row_to_entry(row) -> CaptureSessionConfirmationLedgerEntry:
     if created is None:
         raise ValueError(f"capture_session_confirmations row {eid!r} missing created_at")
     raw = getattr(row, "outcome_json", None)
-    outcome: Optional[Dict[str, Any]] = None
+    outcome: dict[str, Any] | None = None
     raw_s = normalize_db_str(raw) if raw is not None else ""
     if raw_s:
         try:
@@ -65,7 +65,7 @@ class SqlCaptureSessionConfirmIdempotencyRepository(CaptureSessionConfirmIdempot
 
     def get_by_session_and_key(
         self, session_id: str, idempotency_key: str
-    ) -> Optional[CaptureSessionConfirmationLedgerEntry]:
+    ) -> CaptureSessionConfirmationLedgerEntry | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -82,7 +82,9 @@ class SqlCaptureSessionConfirmIdempotencyRepository(CaptureSessionConfirmIdempot
         created = _ensure_utc(entry.created_at)
         if created is None:
             raise ValueError("CaptureSessionConfirmationLedgerEntry.created_at is required")
-        outcome_str = json.dumps(entry.outcome_json, ensure_ascii=False) if entry.outcome_json else None
+        outcome_str = (
+            json.dumps(entry.outcome_json, ensure_ascii=False) if entry.outcome_json else None
+        )
         with self._client.cursor() as cur:
             try:
                 cur.execute(

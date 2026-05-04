@@ -11,11 +11,10 @@ backward-compatible alias for ``AppSettings``.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
+
 from src.env_settings.grouped_settings import (
     ApiRuntimeSettings,
     ArtifactStorageSettings,
@@ -32,12 +31,7 @@ from src.env_settings.grouped_settings import (
 )
 from src.env_settings.sqlserver_resolution import (
     SqlServerConfigurationError,
-    SqlServerConnectionResolution,
-    odbc_connection_string_server_keyword_value,
-    remap_sqlserver_connection_string_server_if_needed,
-    remap_sqlserver_server_for_container_if_needed,
     resolve_sqlserver_connection_config,
-    resolve_sqlserver_effective_connection_string,
     sqlserver_configuration_error_message,
 )
 
@@ -127,7 +121,7 @@ class AppSettings(
 # ---------------------------------------------------------------------------
 Settings = AppSettings
 
-_settings: Optional[AppSettings] = None
+_settings: AppSettings | None = None
 
 
 def load_settings() -> AppSettings:

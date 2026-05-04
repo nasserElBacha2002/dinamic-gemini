@@ -9,11 +9,10 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from src.config import load_settings
-
 
 NON_TERMINAL = ("queued", "running", "cancel_requested")
 
@@ -55,7 +54,9 @@ def _reset_sql_jobs(apply: bool) -> tuple[int, list[str]]:
                 WHERE status IN ('queued', 'running', 'cancel_requested')
                 """
             )
-            ids = [str(getattr(r, "id", "")) for r in (cur.fetchall() or []) if getattr(r, "id", None)]
+            ids = [
+                str(getattr(r, "id", "")) for r in (cur.fetchall() or []) if getattr(r, "id", None)
+            ]
             if apply and ids:
                 cur.execute(
                     """
@@ -111,12 +112,16 @@ def main() -> None:
                 data = json.loads(job_file.read_text(encoding="utf-8"))
                 data["status"] = "failed"
                 data["error"] = "Local dev reset: non-terminal job reset"
-                job_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                job_file.write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
             except Exception:
                 pass
 
     purge_ids = set(sql_ids) | set(fs_ids)
-    removed_dirs = _purge_output_dirs(output_dir, purge_ids, apply=args.apply) if args.purge_output else 0
+    removed_dirs = (
+        _purge_output_dirs(output_dir, purge_ids, apply=args.apply) if args.purge_output else 0
+    )
 
     mode = "APPLY" if args.apply else "DRY-RUN"
     print(f"[dev-reset] mode={mode}")

@@ -38,6 +38,6 @@ def test_attach_multi_provider_trace_merges_metadata() -> None:
     out = attach_multi_provider_trace(base, trace={"strategy_effective": "multi_parallel"})
     assert out.provider_metadata is not None
     assert out.provider_metadata["visual_reference_count"] == 0
-    assert out.provider_metadata[PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION]["strategy_effective"] == (
-        "multi_parallel"
-    )
+    assert out.provider_metadata[PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION][
+        "strategy_effective"
+    ] == ("multi_parallel")

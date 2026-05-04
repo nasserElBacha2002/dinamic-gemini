@@ -6,15 +6,15 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from src.api.server import app
-from src.auth.dependencies import get_current_admin
-from src.auth.schemas import AuthUser
 from src.api.dependencies import (
-    get_inventory_repo,
     get_aisle_repo,
+    get_inventory_repo,
     get_position_repo,
     get_product_record_repo,
 )
+from src.api.server import app
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
@@ -22,7 +22,9 @@ from src.domain.products.entities import ProductRecord
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 
 
 def _fake_admin() -> AuthUser:
@@ -362,4 +364,3 @@ def test_list_aisle_positions_normal_non_duplicate_positions_unchanged() -> None
         assert by_sku["SKU-B"] == 3
     finally:
         app.dependency_overrides.clear()
-

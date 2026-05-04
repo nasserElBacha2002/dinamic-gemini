@@ -9,12 +9,15 @@ import pytest
 from src.application.errors import (
     AisleNotFoundError,
     BenchmarkCompareJobsMustDifferError,
+    BenchmarkRequiresTestInventoryError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
-    BenchmarkRequiresTestInventoryError,
 )
-from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
+from src.application.use_cases.compare_aisle_runs import (
+    CompareAisleRunsCommand,
+    CompareAisleRunsUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
-from src.infrastructure.repositories.sql_normalized_label_repository import SqlNormalizedLabelRepository
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET
+from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
+from src.infrastructure.repositories.sql_normalized_label_repository import (
+    SqlNormalizedLabelRepository,
+)
 from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
 from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
 

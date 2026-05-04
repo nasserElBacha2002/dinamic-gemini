@@ -41,7 +41,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from src.llm.normalization.numeric_coercion import normalize_optional_int
 
@@ -60,9 +60,15 @@ _ALIAS_PROMOTE_FAMILIES = frozenset({"gemini", "test_llm"})
 # ``unknown`` is intentionally excluded — unrecognized providers must not inherit OpenAI semantics.
 _OPENAI_FAMILY_CONSERVATIVE_ALIASES = frozenset({"openai"})
 _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES = frozenset({"deepseek"})
-_CONSERVATIVE_QTY_PROMOTE_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
-_EXTENT_BBOX_FROM_GENERIC_BBOX_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
-_INTERNAL_CODE_ALIAS_PROMOTE_FAMILIES = _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
+_CONSERVATIVE_QTY_PROMOTE_FAMILIES = (
+    _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
+)
+_EXTENT_BBOX_FROM_GENERIC_BBOX_FAMILIES = (
+    _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
+)
+_INTERNAL_CODE_ALIAS_PROMOTE_FAMILIES = (
+    _OPENAI_FAMILY_CONSERVATIVE_ALIASES | _DEEPSEEK_FAMILY_CONSERVATIVE_ALIASES
+)
 
 _ALIAS_KEYS: tuple[str, ...] = ("quantity", "qty", "detected_quantity")
 _OPENAI_INTERNAL_CODE_ALIAS_KEYS: tuple[str, ...] = ("product_label", "label", "product_code")
@@ -128,7 +134,7 @@ def _safe_str(v: Any) -> str | None:
     return s if s else None
 
 
-def _apply_claude_vendor_fields(entity: Dict[str, Any], mapped: List[str]) -> None:
+def _apply_claude_vendor_fields(entity: dict[str, Any], mapped: list[str]) -> None:
     """Map Claude OCR-style keys into canonical fields; drop vendor-only text."""
     if entity.get("internal_code") in (None, "") and entity.get("product_label") is not None:
         mapped_code = _safe_str(entity.get("product_label"))
@@ -143,7 +149,7 @@ def _apply_claude_vendor_fields(entity: Dict[str, Any], mapped: List[str]) -> No
     entity.pop("position_label", None)
 
 
-def _promote_quantity_bbox_aliases(entity: Dict[str, Any], mapped: List[str]) -> None:
+def _promote_quantity_bbox_aliases(entity: dict[str, Any], mapped: list[str]) -> None:
     if entity.get("product_label_quantity") is None:
         for alt in _ALIAS_KEYS:
             if alt not in entity:
@@ -161,7 +167,7 @@ def _promote_quantity_bbox_aliases(entity: Dict[str, Any], mapped: List[str]) ->
             mapped.append("bbox->product_label_bbox")
 
 
-def _strip_alias_and_bbox_residuals(entity: Dict[str, Any]) -> None:
+def _strip_alias_and_bbox_residuals(entity: dict[str, Any]) -> None:
     """Drop quantity/bbox vendor keys after promotion or conservative path (never leak to parser)."""
     for alt in _ALIAS_KEYS:
         entity.pop(alt, None)
@@ -179,9 +185,9 @@ def _safe_positive_int_qty(val: Any) -> int | None:
 
 
 def _maybe_promote_conservative_quantity_alias(
-    entity: Dict[str, Any],
+    entity: dict[str, Any],
     provider_family: str,
-    mapped: List[str],
+    mapped: list[str],
 ) -> None:
     """If canonical qty is unset, map a positive vendor qty alias (OpenAI-style PALLET payloads)."""
     if provider_family not in _CONSERVATIVE_QTY_PROMOTE_FAMILIES:
@@ -199,9 +205,9 @@ def _maybe_promote_conservative_quantity_alias(
 
 
 def _maybe_promote_openai_internal_code_alias(
-    entity: Dict[str, Any],
+    entity: dict[str, Any],
     provider_family: str,
-    mapped: List[str],
+    mapped: list[str],
 ) -> None:
     """OpenAI/DeepSeek conservative fallback: map label-like aliases to canonical ``internal_code``."""
     if provider_family not in _INTERNAL_CODE_ALIAS_PROMOTE_FAMILIES:
@@ -222,16 +228,19 @@ def _maybe_promote_openai_internal_code_alias(
 
 
 def _maybe_capture_extent_bbox(
-    entity: Dict[str, Any],
+    entity: dict[str, Any],
     provider_family: str,
-    mapped: List[str],
+    mapped: list[str],
 ) -> None:
     """Preserve vendor ``bbox`` as ``extent_bbox`` when no specialized label bbox exists."""
     if provider_family not in _EXTENT_BBOX_FROM_GENERIC_BBOX_FAMILIES:
         return
     if entity.get("extent_bbox") is not None:
         return
-    if entity.get("product_label_bbox") is not None or entity.get("position_label_bbox") is not None:
+    if (
+        entity.get("product_label_bbox") is not None
+        or entity.get("position_label_bbox") is not None
+    ):
         return
     raw = entity.get("bbox")
     if not isinstance(raw, list) or len(raw) != 4:
@@ -244,7 +253,7 @@ def _maybe_capture_extent_bbox(
     mapped.append("bbox->extent_bbox")
 
 
-def _ensure_canonical_entity_keys(entity: Dict[str, Any]) -> None:
+def _ensure_canonical_entity_keys(entity: dict[str, Any]) -> None:
     for key in _CANONICAL_ENTITY_KEYS:
         if key not in entity:
             if key == "has_boxes":
@@ -254,10 +263,10 @@ def _ensure_canonical_entity_keys(entity: Dict[str, Any]) -> None:
 
 
 def _normalize_entity(
-    entity: Dict[str, Any],
+    entity: dict[str, Any],
     provider_family: str,
-    mapped_accumulator: List[str],
-) -> Dict[str, Any]:
+    mapped_accumulator: list[str],
+) -> dict[str, Any]:
     out = dict(entity)
 
     if provider_family == "claude":
@@ -303,8 +312,8 @@ def normalize_llm_response(parsed_json: dict, provider: str) -> dict:
         return out
 
     family = resolve_provider_family(provider)
-    mapped_all: List[str] = []
-    new_entities: List[Any] = []
+    mapped_all: list[str] = []
+    new_entities: list[Any] = []
     for ent in entities:
         if isinstance(ent, dict):
             new_entities.append(_normalize_entity(ent, family, mapped_all))

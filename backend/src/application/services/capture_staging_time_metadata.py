@@ -16,11 +16,13 @@ import logging
 import re
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Optional
 
 from PIL import Image, UnidentifiedImageError
 
-from src.application.ports.capture_staging_time import CaptureStagingTimeMetadataExtractor, ExtractedCaptureStagingTime
+from src.application.ports.capture_staging_time import (
+    CaptureStagingTimeMetadataExtractor,
+    ExtractedCaptureStagingTime,
+)
 from src.domain.capture.entities import CaptureTimeSource
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ def _ensure_utc(dt: datetime) -> datetime:
     return dt.replace(tzinfo=timezone.utc)
 
 
-def _parse_exif_datetime_string(raw: str) -> Optional[datetime]:
+def _parse_exif_datetime_string(raw: str) -> datetime | None:
     s = (raw or "").strip()
     if not s:
         return None
@@ -51,7 +53,7 @@ def _parse_exif_datetime_string(raw: str) -> Optional[datetime]:
         return None
 
 
-def _try_exif_datetime(raw_bytes: bytes) -> Optional[datetime]:
+def _try_exif_datetime(raw_bytes: bytes) -> datetime | None:
     try:
         img = Image.open(BytesIO(raw_bytes))
         try:
@@ -81,7 +83,9 @@ class PillowCaptureStagingTimeMetadataExtractor(CaptureStagingTimeMetadataExtrac
     ``raw_bytes`` with Pillow regardless of MIME (call sites already validate capture media).
     """
 
-    def __init__(self, *, confidence_exif: float, confidence_mtime: float, confidence_fallback: float) -> None:
+    def __init__(
+        self, *, confidence_exif: float, confidence_mtime: float, confidence_fallback: float
+    ) -> None:
         self._c_exif = float(confidence_exif)
         self._c_mtime = float(confidence_mtime)
         self._c_fb = float(confidence_fallback)
@@ -92,7 +96,7 @@ class PillowCaptureStagingTimeMetadataExtractor(CaptureStagingTimeMetadataExtrac
         raw_bytes: bytes,
         media_content_type: str,
         ingest_clock: datetime,
-        source_mtime_utc: Optional[datetime] = None,
+        source_mtime_utc: datetime | None = None,
     ) -> ExtractedCaptureStagingTime:
         _ = media_content_type  # Port / future MIME-aware paths; Sprint 3 Pillow probes bytes only.
         ingest = _ensure_utc(ingest_clock)
@@ -114,4 +118,3 @@ class PillowCaptureStagingTimeMetadataExtractor(CaptureStagingTimeMetadataExtrac
             time_source=CaptureTimeSource.FALLBACK_CLOCK,
             time_confidence=self._c_fb,
         )
-

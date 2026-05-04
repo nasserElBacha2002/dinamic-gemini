@@ -36,4 +36,3 @@ def test_get_get_aisle_merge_results_use_case_uses_injected_final_count_repo() -
         result_context_resolver=ResultContextResolver(job_repo),
     )
     assert getattr(uc, "_final_count_repo") is final_repo
-

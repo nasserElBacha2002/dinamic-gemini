@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import (
     InventoryRepository,
@@ -23,7 +21,7 @@ class InventoryVisualReferenceResolver:
         self._inventory_repo = inventory_repo
         self._reference_repo = reference_repo
 
-    def resolve_for_inventory(self, inventory_id: str) -> List[VisualReferenceContext]:
+    def resolve_for_inventory(self, inventory_id: str) -> list[VisualReferenceContext]:
         inventory = self._inventory_repo.get_by_id(inventory_id)
         if inventory is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
@@ -39,4 +37,3 @@ class InventoryVisualReferenceResolver:
             )
             for r in refs
         ]
-

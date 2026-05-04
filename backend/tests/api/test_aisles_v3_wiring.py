@@ -9,20 +9,21 @@ import pytest
 from fastapi.testclient import TestClient
 
 import src.config as config_mod
-from src.api.server import app
 from src.api.dependencies import (
-    get_artifact_storage,
+    get_aisle_job_launch_service,
     get_aisle_repo,
+    get_artifact_storage,
     get_evidence_repo,
     get_inventory_repo,
     get_job_repo,
-    get_aisle_job_launch_service,
     get_job_stale_reconciler,
     get_position_repo,
     get_product_record_repo,
     get_review_action_repo,
     get_source_asset_repo,
 )
+from src.api.errors.structured_api_http import AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING
+from src.api.server import app
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
@@ -36,10 +37,15 @@ from src.infrastructure.repositories.memory_evidence_repository import MemoryEvi
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
-from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
-from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
-from src.api.errors.structured_api_http import AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
+from src.infrastructure.repositories.memory_review_action_repository import (
+    MemoryReviewActionRepository,
+)
+from src.infrastructure.repositories.memory_source_asset_repository import (
+    MemorySourceAssetRepository,
+)
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 client = TestClient(app)
@@ -130,7 +136,10 @@ def test_post_aisle_duplicate_code_returns_409() -> None:
         json={"code": "DUP-1"},
     )
     assert response.status_code == 409
-    assert "duplicate" in response.json()["detail"].lower() or "already exists" in response.json()["detail"].lower()
+    assert (
+        "duplicate" in response.json()["detail"].lower()
+        or "already exists" in response.json()["detail"].lower()
+    )
 
 
 def test_get_aisles_inventory_not_found_returns_404() -> None:
@@ -258,7 +267,9 @@ def test_post_process_with_explicit_gemini_provider_persisted_on_status() -> Non
     try:
         opts = client.get("/api/v3/inventories/processing-provider-options")
         assert opts.status_code == 200
-        gemini_default = next(p for p in opts.json()["providers"] if p["key"] == "gemini")["default_model"]
+        gemini_default = next(p for p in opts.json()["providers"] if p["key"] == "gemini")[
+            "default_model"
+        ]
 
         create_resp = client.post(
             "/api/v3/inventories",
@@ -437,7 +448,9 @@ def test_get_aisle_status_returns_aisle_and_latest_job() -> None:
     data2 = response2.json()
     assert data2["latest_job"] is not None
     assert data2["latest_job"]["status"] == "starting"
-    assert "created_at" in data2["latest_job"], "aisle status latest_job must expose created_at (Phase 2 Block 2)"
+    assert "created_at" in data2["latest_job"], (
+        "aisle status latest_job must expose created_at (Phase 2 Block 2)"
+    )
     assert data2["aisle"]["status"] == "queued"
 
 
@@ -447,8 +460,14 @@ def test_status_and_list_expose_reference_usage_summary_from_job_result_json() -
     aisle_repo = MemoryAisleRepository()
     job_repo = MemoryJobRepository()
 
-    inv_repo.save(Inventory("inv-reference-usage", "Reference Usage", InventoryStatus.DRAFT, now, now))
-    aisle_repo.save(Aisle("aisle-reference-usage", "inv-reference-usage", "RU-01", AisleStatus.PROCESSED, now, now))
+    inv_repo.save(
+        Inventory("inv-reference-usage", "Reference Usage", InventoryStatus.DRAFT, now, now)
+    )
+    aisle_repo.save(
+        Aisle(
+            "aisle-reference-usage", "inv-reference-usage", "RU-01", AisleStatus.PROCESSED, now, now
+        )
+    )
     job_repo.save(
         Job(
             id="job-reference-usage",
@@ -478,7 +497,9 @@ def test_status_and_list_expose_reference_usage_summary_from_job_result_json() -
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     try:
         c = TestClient(app)
-        status_resp = c.get("/api/v3/inventories/inv-reference-usage/aisles/aisle-reference-usage/status")
+        status_resp = c.get(
+            "/api/v3/inventories/inv-reference-usage/aisles/aisle-reference-usage/status"
+        )
         assert status_resp.status_code == 200
         status_data = status_resp.json()
         assert status_data["latest_job"]["reference_usage"] == {
@@ -493,7 +514,10 @@ def test_status_and_list_expose_reference_usage_summary_from_job_result_json() -
         list_resp = c.get("/api/v3/inventories/inv-reference-usage/aisles")
         assert list_resp.status_code == 200
         list_item = list_resp.json()["items"][0]
-        assert list_item["latest_job"]["reference_usage"] == status_data["latest_job"]["reference_usage"]
+        assert (
+            list_item["latest_job"]["reference_usage"]
+            == status_data["latest_job"]["reference_usage"]
+        )
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         app.dependency_overrides.pop(get_inventory_repo, None)
@@ -507,8 +531,12 @@ def test_reference_usage_summary_tolerates_malformed_persisted_counts() -> None:
     aisle_repo = MemoryAisleRepository()
     job_repo = MemoryJobRepository()
 
-    inv_repo.save(Inventory("inv-malformed-usage", "Malformed Usage", InventoryStatus.DRAFT, now, now))
-    aisle_repo.save(Aisle("aisle-malformed-usage", "inv-malformed-usage", "MU-01", AisleStatus.FAILED, now, now))
+    inv_repo.save(
+        Inventory("inv-malformed-usage", "Malformed Usage", InventoryStatus.DRAFT, now, now)
+    )
+    aisle_repo.save(
+        Aisle("aisle-malformed-usage", "inv-malformed-usage", "MU-01", AisleStatus.FAILED, now, now)
+    )
     job_repo.save(
         Job(
             id="job-malformed-usage",
@@ -538,7 +566,9 @@ def test_reference_usage_summary_tolerates_malformed_persisted_counts() -> None:
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     try:
         c = TestClient(app)
-        response = c.get("/api/v3/inventories/inv-malformed-usage/aisles/aisle-malformed-usage/status")
+        response = c.get(
+            "/api/v3/inventories/inv-malformed-usage/aisles/aisle-malformed-usage/status"
+        )
         assert response.status_code == 200
         usage = response.json()["latest_job"]["reference_usage"]
         assert usage == {
@@ -574,7 +604,9 @@ def test_list_aisles_latest_job_includes_created_at() -> None:
     aisles = list_resp.json()["items"]
     assert len(aisles) == 1
     assert aisles[0]["latest_job"] is not None
-    assert "created_at" in aisles[0]["latest_job"], "aisle list latest_job must expose created_at (Phase 2 Block 2)"
+    assert "created_at" in aisles[0]["latest_job"], (
+        "aisle list latest_job must expose created_at (Phase 2 Block 2)"
+    )
 
 
 def test_list_and_status_latest_job_created_at_aligned() -> None:
@@ -738,7 +770,9 @@ def test_get_job_detail_returns_operational_metadata() -> None:
     job_repo = MemoryJobRepository()
 
     inv_repo.save(Inventory("inv-job-detail", "Job Detail", InventoryStatus.DRAFT, now, now))
-    aisle_repo.save(Aisle("aisle-job-detail", "inv-job-detail", "JD-01", AisleStatus.PROCESSING, now, now))
+    aisle_repo.save(
+        Aisle("aisle-job-detail", "inv-job-detail", "JD-01", AisleStatus.PROCESSING, now, now)
+    )
     job_repo.save(
         Job(
             id="job-job-detail",
@@ -767,7 +801,9 @@ def test_get_job_detail_returns_operational_metadata() -> None:
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     try:
         c = TestClient(app)
-        response = c.get("/api/v3/inventories/inv-job-detail/aisles/aisle-job-detail/jobs/job-job-detail")
+        response = c.get(
+            "/api/v3/inventories/inv-job-detail/aisles/aisle-job-detail/jobs/job-job-detail"
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "cancel_requested"
@@ -791,7 +827,9 @@ def test_get_job_detail_applies_same_stale_reconciliation_as_status() -> None:
     job_repo = MemoryJobRepository()
 
     inv_repo.save(Inventory("inv-job-stale", "Job Stale", InventoryStatus.DRAFT, now, now))
-    aisle_repo.save(Aisle("aisle-job-stale", "inv-job-stale", "JS-01", AisleStatus.PROCESSING, now, now))
+    aisle_repo.save(
+        Aisle("aisle-job-stale", "inv-job-stale", "JS-01", AisleStatus.PROCESSING, now, now)
+    )
     job_repo.save(
         Job(
             id="job-job-stale",
@@ -827,7 +865,9 @@ def test_get_job_detail_applies_same_stale_reconciliation_as_status() -> None:
     app.dependency_overrides[get_job_stale_reconciler] = lambda: StubStaleReconciler()
     try:
         c = TestClient(app)
-        job_resp = c.get("/api/v3/inventories/inv-job-stale/aisles/aisle-job-stale/jobs/job-job-stale")
+        job_resp = c.get(
+            "/api/v3/inventories/inv-job-stale/aisles/aisle-job-stale/jobs/job-job-stale"
+        )
         status_resp = c.get("/api/v3/inventories/inv-job-stale/aisles/aisle-job-stale/status")
         assert job_resp.status_code == 200
         assert status_resp.status_code == 200
@@ -940,7 +980,9 @@ def test_retry_endpoint_returns_409_for_non_retryable_status() -> None:
     job_repo = MemoryJobRepository()
 
     inv_repo.save(Inventory("inv-retry-409", "Retry 409", InventoryStatus.DRAFT, now, now))
-    aisle_repo.save(Aisle("aisle-retry-409", "inv-retry-409", "RT-02", AisleStatus.PROCESSING, now, now))
+    aisle_repo.save(
+        Aisle("aisle-retry-409", "inv-retry-409", "RT-02", AisleStatus.PROCESSING, now, now)
+    )
     job_repo.save(
         Job(
             id="job-running",
@@ -960,7 +1002,9 @@ def test_retry_endpoint_returns_409_for_non_retryable_status() -> None:
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     try:
         c = TestClient(app)
-        response = c.post("/api/v3/inventories/inv-retry-409/aisles/aisle-retry-409/jobs/job-running/retry")
+        response = c.post(
+            "/api/v3/inventories/inv-retry-409/aisles/aisle-retry-409/jobs/job-running/retry"
+        )
         assert response.status_code == 409
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
@@ -976,7 +1020,9 @@ def test_retry_endpoint_returns_409_for_older_terminal_attempt_when_newer_retry_
     job_repo = MemoryJobRepository()
 
     inv_repo.save(Inventory("inv-retry-old", "Retry Old", InventoryStatus.DRAFT, now, now))
-    aisle_repo.save(Aisle("aisle-retry-old", "inv-retry-old", "RT-OLD", AisleStatus.FAILED, now, now))
+    aisle_repo.save(
+        Aisle("aisle-retry-old", "inv-retry-old", "RT-OLD", AisleStatus.FAILED, now, now)
+    )
     job_repo.save(
         Job(
             id="job-old",
@@ -1012,7 +1058,9 @@ def test_retry_endpoint_returns_409_for_older_terminal_attempt_when_newer_retry_
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     try:
         c = TestClient(app)
-        response = c.post("/api/v3/inventories/inv-retry-old/aisles/aisle-retry-old/jobs/job-old/retry")
+        response = c.post(
+            "/api/v3/inventories/inv-retry-old/aisles/aisle-retry-old/jobs/job-old/retry"
+        )
         assert response.status_code == 409
         assert "latest retryable terminal attempt is job-newer" in response.json()["detail"]
     finally:
@@ -1029,7 +1077,9 @@ def test_status_and_job_detail_expose_retry_lineage() -> None:
     job_repo = MemoryJobRepository()
 
     inv_repo.save(Inventory("inv-retry-lineage", "Retry Lineage", InventoryStatus.DRAFT, now, now))
-    aisle_repo.save(Aisle("aisle-retry-lineage", "inv-retry-lineage", "RT-03", AisleStatus.QUEUED, now, now))
+    aisle_repo.save(
+        Aisle("aisle-retry-lineage", "inv-retry-lineage", "RT-03", AisleStatus.QUEUED, now, now)
+    )
     job_repo.save(
         Job(
             id="job-retry-lineage",
@@ -1051,8 +1101,12 @@ def test_status_and_job_detail_expose_retry_lineage() -> None:
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     try:
         c = TestClient(app)
-        status_resp = c.get("/api/v3/inventories/inv-retry-lineage/aisles/aisle-retry-lineage/status")
-        detail_resp = c.get("/api/v3/inventories/inv-retry-lineage/aisles/aisle-retry-lineage/jobs/job-retry-lineage")
+        status_resp = c.get(
+            "/api/v3/inventories/inv-retry-lineage/aisles/aisle-retry-lineage/status"
+        )
+        detail_resp = c.get(
+            "/api/v3/inventories/inv-retry-lineage/aisles/aisle-retry-lineage/jobs/job-retry-lineage"
+        )
         assert status_resp.status_code == 200
         assert detail_resp.status_code == 200
         assert status_resp.json()["latest_job"]["retry_of_job_id"] == "job-retry-parent"
@@ -1293,6 +1347,7 @@ def test_execution_log_returns_200_empty_events_when_run_dir_exists_but_file_mis
     finally:
         try:
             import shutil
+
             shutil.rmtree(base, ignore_errors=True)
         except Exception:
             pass
@@ -1326,7 +1381,7 @@ def test_execution_log_returns_events_for_canceled_job() -> None:
     run_dir = base / "job-cancel-log" / "run"
     run_dir.mkdir(parents=True)
     (run_dir / "execution_log.jsonl").write_text(
-        '\n'.join(
+        "\n".join(
             [
                 '{"ts":"2025-01-01T00:00:00+00:00","stage":"AnalysisStage","level":"info","message":"job.cancel_requested","payload":{"event":"job.cancel_requested"}}',
                 '{"ts":"2025-01-01T00:00:01+00:00","stage":"Pipeline","level":"info","message":"job.canceled","payload":{"event":"job.canceled"}}',
@@ -1349,7 +1404,9 @@ def test_execution_log_returns_events_for_canceled_job() -> None:
         app.dependency_overrides[get_aisle_repo] = lambda: aisle_repo
         app.dependency_overrides[get_job_repo] = lambda: job_repo
         app.dependency_overrides[get_artifact_storage] = lambda: store
-        with patch("src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings):
+        with patch(
+            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+        ):
             c = TestClient(app)
             response = c.get(
                 "/api/v3/inventories/inv-cancel-log/aisles/aisle-cancel-log/jobs/job-cancel-log/execution-log"
@@ -1373,7 +1430,10 @@ def test_execution_log_returns_events_for_canceled_job() -> None:
         assert "text/plain" in txt_resp.headers.get("content-type", "").lower()
         cd = txt_resp.headers.get("content-disposition", "")
         assert "attachment" in cd.lower()
-        assert "inventory_inv-cancel-log_aisle_aisle-cancel-log_job_job-cancel-log_execution_log.txt" in cd
+        assert (
+            "inventory_inv-cancel-log_aisle_aisle-cancel-log_job_job-cancel-log_execution_log.txt"
+            in cd
+        )
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         app.dependency_overrides.pop(get_inventory_repo, None)
@@ -1435,7 +1495,9 @@ def test_execution_log_json_lists_multiple_job_contexts_from_payload() -> None:
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
-        with patch("src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings):
+        with patch(
+            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+        ):
             c = TestClient(app)
             response = c.get(
                 "/api/v3/inventories/inv-mix/aisles/aisle-mix/jobs/job-main/execution-log",
@@ -1519,10 +1581,7 @@ def test_execution_log_job_wrong_aisle_returns_404() -> None:
             "/api/v3/inventories/inv-ela/aisles/aisle-ela/jobs/job-other-aisle/execution-log",
         )
         assert log_resp.status_code == 404
-        assert (
-            log_resp.json()["detail"]
-            == "Job not found or does not belong to this aisle"
-        )
+        assert log_resp.json()["detail"] == "Job not found or does not belong to this aisle"
     finally:
         app.dependency_overrides.clear()
 
@@ -1558,10 +1617,7 @@ def test_execution_log_aisle_wrong_inventory_returns_404() -> None:
             "/api/v3/inventories/wrong-inventory-id/aisles/aisle-eli/jobs/job-eli/execution-log",
         )
         assert log_resp.status_code == 404
-        assert (
-            log_resp.json()["detail"]
-            == "Aisle not found or does not belong to this inventory"
-        )
+        assert log_resp.json()["detail"] == "Aisle not found or does not belong to this inventory"
     finally:
         app.dependency_overrides.clear()
 
@@ -1663,9 +1719,7 @@ def test_phase6_inventory_job_read_routes_wrong_inventory_same_404_detail() -> N
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     try:
         c = TestClient(app)
-        base_wrong_inv = (
-            "/api/v3/inventories/wrong-inv-id/aisles/aisle-p6-wi/jobs/job-p6-wi"
-        )
+        base_wrong_inv = "/api/v3/inventories/wrong-inv-id/aisles/aisle-p6-wi/jobs/job-p6-wi"
         detail = "Aisle not found or does not belong to this inventory"
         for path in (
             base_wrong_inv,
@@ -1716,7 +1770,9 @@ def test_list_aisles_includes_latest_job_when_present() -> None:
     assert len(aisles2) == 1
     assert aisles2[0]["latest_job"] is not None
     assert aisles2[0]["latest_job"]["status"] == "starting"
-    assert "created_at" in aisles2[0]["latest_job"], "aisle list latest_job must expose created_at (Phase 2 Block 2)"
+    assert "created_at" in aisles2[0]["latest_job"], (
+        "aisle list latest_job must expose created_at (Phase 2 Block 2)"
+    )
     assert aisles2[0]["status"] == "queued"
 
 
@@ -1787,9 +1843,7 @@ def test_list_aisle_assets_aisle_not_found_returns_404() -> None:
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
-    response = client.get(
-        f"/api/v3/inventories/{inv_id}/aisles/nonexistent-aisle/assets"
-    )
+    response = client.get(f"/api/v3/inventories/{inv_id}/aisles/nonexistent-aisle/assets")
     assert response.status_code == 404
 
 
@@ -1808,9 +1862,7 @@ def test_list_aisle_positions_returns_200_and_empty_list() -> None:
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
 
-    response = client.get(
-        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/positions"
-    )
+    response = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/positions")
     assert response.status_code == 200
     data = response.json()
     assert "positions" in data
@@ -1819,9 +1871,7 @@ def test_list_aisle_positions_returns_200_and_empty_list() -> None:
 
 
 def test_list_aisle_positions_inventory_not_found_returns_404() -> None:
-    response = client.get(
-        "/api/v3/inventories/nonexistent-inv-id/aisles/some-aisle-id/positions"
-    )
+    response = client.get("/api/v3/inventories/nonexistent-inv-id/aisles/some-aisle-id/positions")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
@@ -1831,9 +1881,7 @@ def test_list_aisle_positions_aisle_not_found_returns_404() -> None:
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
-    response = client.get(
-        f"/api/v3/inventories/{inv_id}/aisles/nonexistent-aisle-id/positions"
-    )
+    response = client.get(f"/api/v3/inventories/{inv_id}/aisles/nonexistent-aisle-id/positions")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
@@ -1936,9 +1984,7 @@ def test_positions_list_and_detail_degrade_only_enrichment_when_hybrid_report_mi
             assert len(list_data["positions"]) == 1
             list_pos = list_data["positions"][0]
 
-            detail_resp = c.get(
-                "/api/v3/inventories/inv-p7/aisles/aisle-p7/positions/pos-p7"
-            )
+            detail_resp = c.get("/api/v3/inventories/inv-p7/aisles/aisle-p7/positions/pos-p7")
             assert detail_resp.status_code == 200, detail_resp.text
             detail_data = detail_resp.json()
             assert "position" in detail_data

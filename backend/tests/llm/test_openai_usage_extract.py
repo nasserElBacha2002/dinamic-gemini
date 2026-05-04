@@ -4,7 +4,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from openai.types.chat import ChatCompletion
-from openai.types.completion_usage import CompletionTokensDetails, CompletionUsage, PromptTokensDetails
+from openai.types.completion_usage import (
+    CompletionTokensDetails,
+    CompletionUsage,
+    PromptTokensDetails,
+)
 
 from src.llm.openai_sdk_adapter import _openai_completion_usage_dict
 

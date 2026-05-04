@@ -13,7 +13,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 from uuid import uuid4
 
 from src.application.dto.uploaded_file import UploadedFile
@@ -84,9 +84,9 @@ class AisleSourceAssetMaterializer:
         aisle_id: str,
         uploaded: UploadedFile,
         now: datetime,
-        metadata_json: Optional[Dict[str, Any]] = None,
-        capture_session_item_id: Optional[str] = None,
-    ) -> Tuple[SourceAsset, str]:
+        metadata_json: dict[str, Any] | None = None,
+        capture_session_item_id: str | None = None,
+    ) -> tuple[SourceAsset, str]:
         """Write bytes to final storage, save ``SourceAsset``, return (entity, rollback_delete_key).
 
         ``rollback_delete_key`` is the key passed to ``ArtifactStorage.delete_file`` on best-effort

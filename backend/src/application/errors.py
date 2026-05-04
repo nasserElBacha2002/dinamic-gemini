@@ -119,7 +119,9 @@ class BenchmarkCompareJobsMustDifferError(Exception):
 class BenchmarkRequiresTestInventoryError(Exception):
     """Raised when a benchmark / compare / promote feature is used on a production inventory."""
 
-    def __init__(self, message: str = "This feature is only available for test inventories.") -> None:
+    def __init__(
+        self, message: str = "This feature is only available for test inventories."
+    ) -> None:
         super().__init__(message)
 
 

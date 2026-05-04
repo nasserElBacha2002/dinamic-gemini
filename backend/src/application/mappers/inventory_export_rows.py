@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from src.application.mappers.position_canonical_view import (
     build_position_canonical_view,
@@ -23,7 +23,7 @@ from src.domain.products.entities import ProductRecord
 _DIGIT_CHUNKS = re.compile(r"(\d+)")
 
 
-def _summary_dict(p: Position) -> Dict[str, Any]:
+def _summary_dict(p: Position) -> dict[str, Any]:
     j = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
     return j
 
@@ -33,7 +33,7 @@ def export_position_code(p: Position) -> str:
     return resolve_effective_position_code(p)
 
 
-def _safe_int(value: Any) -> Optional[int]:
+def _safe_int(value: Any) -> int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -51,11 +51,11 @@ def _safe_str(value: Any) -> str:
     return str(value).strip()
 
 
-def _natural_text_sort_key(text: str) -> Tuple[Tuple[int, int, str], ...]:
+def _natural_text_sort_key(text: str) -> tuple[tuple[int, int, str], ...]:
     normalized = _safe_str(text).lower()
     if not normalized:
         return ()
-    parts: List[Tuple[int, int, str]] = []
+    parts: list[tuple[int, int, str]] = []
     for chunk in _DIGIT_CHUNKS.split(normalized):
         if not chunk:
             continue
@@ -66,7 +66,7 @@ def _natural_text_sort_key(text: str) -> Tuple[Tuple[int, int, str], ...]:
     return tuple(parts)
 
 
-def _field_sort_key(value: Any) -> Tuple[int, int, int, Tuple[Tuple[int, int, str], ...]]:
+def _field_sort_key(value: Any) -> tuple[int, int, int, tuple[tuple[int, int, str], ...]]:
     text = _safe_str(value)
     if not text:
         return (1, 1, 0, ())
@@ -92,8 +92,8 @@ def position_to_export_row_dict(
     aisle: Aisle,
     aisle_sequence: int,
     position: Position,
-    primary_product: Optional[ProductRecord],
-) -> Dict[str, Any]:
+    primary_product: ProductRecord | None,
+) -> dict[str, Any]:
     return position_to_operational_export_row_dict(
         inventory,
         aisle,
@@ -108,8 +108,8 @@ def position_to_operational_export_row_dict(
     aisle: Aisle,
     aisle_sequence: int,
     position: Position,
-    primary_product: Optional[ProductRecord],
-) -> Dict[str, Any]:
+    primary_product: ProductRecord | None,
+) -> dict[str, Any]:
     corrected = primary_product.corrected_quantity if primary_product is not None else None
     view = build_position_canonical_view(
         position,
@@ -147,7 +147,7 @@ def position_to_technical_export_row_dict(
     aisle: Aisle,
     aisle_sequence: int,
     position: Position,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     snap = _summary_dict(position)
     aggregated_raw = snap.get("aggregated_from_ids")
     aggregated_from_ids = (
@@ -156,7 +156,11 @@ def position_to_technical_export_row_dict(
         else ""
     )
     audit_raw = snap.get("_audit")
-    audit_json = json.dumps(audit_raw, sort_keys=True, ensure_ascii=True) if isinstance(audit_raw, dict) else ""
+    audit_json = (
+        json.dumps(audit_raw, sort_keys=True, ensure_ascii=True)
+        if isinstance(audit_raw, dict)
+        else ""
+    )
     return {
         "inventory_id": inventory.id,
         "inventory_name": inventory.name,
@@ -165,23 +169,41 @@ def position_to_technical_export_row_dict(
         "aisle_sequence": aisle_sequence,
         "position_id": position.id,
         "position_code": export_position_code(position),
-        "internal_code": (snap.get("internal_code") or "") if isinstance(snap.get("internal_code"), str) else "",
+        "internal_code": (snap.get("internal_code") or "")
+        if isinstance(snap.get("internal_code"), str)
+        else "",
         "review_display_label": (
-            (snap.get("review_display_label") or "") if isinstance(snap.get("review_display_label"), str) else ""
+            (snap.get("review_display_label") or "")
+            if isinstance(snap.get("review_display_label"), str)
+            else ""
         ),
         "position_barcode": (
-            (snap.get("position_barcode") or "") if isinstance(snap.get("position_barcode"), str) else ""
+            (snap.get("position_barcode") or "")
+            if isinstance(snap.get("position_barcode"), str)
+            else ""
         ),
-        "pallet_id": (snap.get("pallet_id") or "") if isinstance(snap.get("pallet_id"), str) else "",
-        "entity_uid": (snap.get("entity_uid") or "") if isinstance(snap.get("entity_uid"), str) else "",
-        "entity_type": (snap.get("entity_type") or "") if isinstance(snap.get("entity_type"), str) else "",
-        "count_status": (snap.get("count_status") or "") if isinstance(snap.get("count_status"), str) else "",
+        "pallet_id": (snap.get("pallet_id") or "")
+        if isinstance(snap.get("pallet_id"), str)
+        else "",
+        "entity_uid": (snap.get("entity_uid") or "")
+        if isinstance(snap.get("entity_uid"), str)
+        else "",
+        "entity_type": (snap.get("entity_type") or "")
+        if isinstance(snap.get("entity_type"), str)
+        else "",
+        "count_status": (snap.get("count_status") or "")
+        if isinstance(snap.get("count_status"), str)
+        else "",
         "raw_qty": "" if snap.get("raw_qty") is None else snap.get("raw_qty"),
         "qty_parse_status": (
-            (snap.get("qty_parse_status") or "") if isinstance(snap.get("qty_parse_status"), str) else ""
+            (snap.get("qty_parse_status") or "")
+            if isinstance(snap.get("qty_parse_status"), str)
+            else ""
         ),
         "qty_origin_field": (
-            (snap.get("qty_origin_field") or "") if isinstance(snap.get("qty_origin_field"), str) else ""
+            (snap.get("qty_origin_field") or "")
+            if isinstance(snap.get("qty_origin_field"), str)
+            else ""
         ),
         "aggregated_from_ids": aggregated_from_ids,
         "audit_json": audit_json,

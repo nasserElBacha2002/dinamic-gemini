@@ -13,9 +13,11 @@ from PIL import Image
 from src.application.errors import CaptureSessionGroupNotAssignedForMaterializationError
 from src.application.ports.clock import Clock
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.materialize_capture_session_group import MaterializeCaptureSessionGroupUseCase
-from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.application.use_cases.materialize_capture_session_group import (
+    MaterializeCaptureSessionGroupUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.capture.entities import (
     CaptureSession,
     CaptureSessionGroup,
@@ -27,11 +29,19 @@ from src.domain.capture.entities import (
 )
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
-from src.infrastructure.repositories.memory_capture_session_group_repository import MemoryCaptureSessionGroupRepository
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_group_repository import (
+    MemoryCaptureSessionGroupRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
-from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+from src.infrastructure.repositories.memory_source_asset_repository import (
+    MemorySourceAssetRepository,
+)
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 
 
@@ -186,7 +196,9 @@ def test_materialize_assigned_group_creates_assets_and_traceability(tmp_path) ->
         )
     )
 
-    out = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    out = uc.materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     assert out.created_assets == 2
     assert out.skipped_assets == 0
     assert out.failed_assets == 0
@@ -236,9 +248,13 @@ def test_materialize_idempotent_second_run_skips(tmp_path) -> None:
             assigned_at=now,
         )
     )
-    r1 = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    r1 = uc.materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     assert r1.created_assets == 1
-    r2 = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    r2 = uc.materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     assert r2.created_assets == 0
     assert r2.skipped_assets == 1
     assert len(c["asset_repo"].list_by_aisle(c["aisle_id"])) == 1
@@ -259,7 +275,9 @@ def test_unassigned_group_raises(tmp_path) -> None:
         )
     )
     with pytest.raises(CaptureSessionGroupNotAssignedForMaterializationError):
-        uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+        uc.materialize_one(
+            inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+        )
 
 
 def test_partial_failure_one_item_other_succeeds(tmp_path) -> None:
@@ -308,7 +326,9 @@ def test_partial_failure_one_item_other_succeeds(tmp_path) -> None:
             assigned_at=now,
         )
     )
-    out = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    out = uc.materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     assert out.created_assets == 1
     assert out.failed_assets == 1
     assert c["asset_repo"].get_by_capture_session_item_id(good_id) is not None
@@ -348,7 +368,9 @@ def test_stale_linked_source_asset_id_is_re_materialized(tmp_path) -> None:
             assigned_at=now,
         )
     )
-    out = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    out = uc.materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     assert out.created_assets == 1
     assert out.skipped_assets == 0
     asset = c["asset_repo"].get_by_capture_session_item_id(item_id)
@@ -403,7 +425,9 @@ def test_existing_asset_by_item_id_repairs_empty_item_link(tmp_path) -> None:
             assigned_at=now,
         )
     )
-    out = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    out = uc.materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     assert out.created_assets == 0
     assert out.skipped_assets == 1
     assert c["item_repo"].get_by_id(item_id).linked_source_asset_id == aid
@@ -444,7 +468,9 @@ def test_finalize_called_when_item_save_fails_after_asset_created(tmp_path) -> N
     )
     finalize = MagicMock()
     uc._materializer.finalize_aisle_after_source_assets_changed = finalize  # type: ignore[method-assign]
-    out = uc.materialize_one(inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"])
+    out = uc.materialize_one(
+        inventory_id=c["inv_id"], session_id=c["session_id"], group_id=c["group_id"]
+    )
     assert out.created_assets == 1
     assert out.failed_assets == 1
     assert c["asset_repo"].get_by_capture_session_item_id(item_id) is not None

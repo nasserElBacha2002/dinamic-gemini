@@ -8,8 +8,8 @@ from datetime import datetime
 
 from src.application.errors import (
     CaptureSessionGroupIntegrityError,
-    CaptureSessionGroupNotFoundError,
     CaptureSessionGroupNotAssignedForPreviewError,
+    CaptureSessionGroupNotFoundError,
     CaptureSessionGroupNotMaterializedForPreviewError,
     CaptureSessionNotFoundError,
 )
@@ -18,14 +18,18 @@ from src.application.ports.capture_repositories import (
     CaptureSessionItemRepository,
     CaptureSessionRepository,
 )
-from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository, SourceAssetRepository
+from src.application.ports.repositories import (
+    JOB_ID_FILTER_UNSET,
+    PositionRepository,
+    SourceAssetRepository,
+)
 from src.application.services.capture_assignment_preview import compute_item_preview_outcomes
 from src.application.services.capture_flow_observability import (
-    emit_capture_flow_event,
-    get_capture_flow_metrics,
     LOG_OP_G6_PREVIEW_GROUP,
     RESULT_FAILED,
     RESULT_SUCCESS,
+    emit_capture_flow_event,
+    get_capture_flow_metrics,
 )
 from src.application.services.capture_group_item_integrity import (
     validate_assets_belong_to_aisle,
@@ -225,11 +229,15 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
             raise CaptureSessionNotFoundError("Capture session not found for this inventory.")
-        ensure_group_aisle_assignment_allowed(session, group_repo=self._group_repo, session_id=session_id)
+        ensure_group_aisle_assignment_allowed(
+            session, group_repo=self._group_repo, session_id=session_id
+        )
 
         group = self._group_repo.get_by_id_and_session(group_id, session_id)
         if group is None:
-            raise CaptureSessionGroupNotFoundError("Capture session group not found for this session.")
+            raise CaptureSessionGroupNotFoundError(
+                "Capture session group not found for this session."
+            )
 
         if group.assignment_status == CaptureSessionGroupAisleAssignmentStatus.UNASSIGNED or not (
             (group.assigned_aisle_id or "").strip()
@@ -242,8 +250,12 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
         validate_group_items_coherent(group_items, session_id=session_id, group_id=group_id)
         group_item_ids = {i.id for i in group_items}
         item_by_id = {i.id: i for i in group_items}
-        imported_group = [i for i in group_items if i.import_status == CaptureSessionItemImportStatus.IMPORTED]
-        any_unlinked_imported = any(not (i.linked_source_asset_id or "").strip() for i in imported_group)
+        imported_group = [
+            i for i in group_items if i.import_status == CaptureSessionItemImportStatus.IMPORTED
+        ]
+        any_unlinked_imported = any(
+            not (i.linked_source_asset_id or "").strip() for i in imported_group
+        )
 
         aisle_assets = list(self._asset_repo.list_by_aisle(aisle_id))
         filtered = [
@@ -278,7 +290,11 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             item = item_by_id.get(iid) if iid else None
             if item is None and iid:
                 item = self._item_repo.get_by_id(iid)
-            if item is None or item.session_id != session_id or (item.group_id or "").strip() != group_id:
+            if (
+                item is None
+                or item.session_id != session_id
+                or (item.group_id or "").strip() != group_id
+            ):
                 continue
             rows.append((asset, item))
 

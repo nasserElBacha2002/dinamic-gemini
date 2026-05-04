@@ -7,9 +7,10 @@ Phase 4 corrective: resolved_path on VisualReferenceContext; analysis_context_fr
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Mapping, Optional, cast
+from typing import Any, cast
 
 
 @dataclass
@@ -30,22 +31,22 @@ class VisualReferenceContext:
     source_path: str
     mime_type: str
     role: str = "inventory_reference"
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
     # Phase 4: when set, provider uses this path instead of reconstructing from storage layout.
-    resolved_path: Optional[str] = None
+    resolved_path: str | None = None
 
 
 @dataclass
 class AnalysisContext:
     """Common analysis context shared across providers."""
 
-    primary_evidence: List[AnalysisImage]
-    visual_references: List[VisualReferenceContext]
-    instructions: List[str]
-    metadata: Optional[Mapping[str, Any]] = None
+    primary_evidence: list[AnalysisImage]
+    visual_references: list[VisualReferenceContext]
+    instructions: list[str]
+    metadata: Mapping[str, Any] | None = None
 
 
-def _parse_datetime(value: Any) -> Optional[datetime]:
+def _parse_datetime(value: Any) -> datetime | None:
     """Parse datetime from string (ISO) or return None."""
     if value is None:
         return None
@@ -59,12 +60,12 @@ def _parse_datetime(value: Any) -> Optional[datetime]:
     return None
 
 
-def analysis_context_from_dict(data: Optional[Dict[str, Any]]) -> Optional[AnalysisContext]:
+def analysis_context_from_dict(data: dict[str, Any] | None) -> AnalysisContext | None:
     """Deserialize AnalysisContext from dict (e.g. JobInput.metadata['analysis_context']). Single source of truth."""
     if not data or not isinstance(data, dict):
         return None
     primary_raw = data.get("primary_evidence")
-    primary: List[AnalysisImage] = []
+    primary: list[AnalysisImage] = []
     if isinstance(primary_raw, list):
         for p in primary_raw:
             if isinstance(p, dict) and p.get("id") is not None:
@@ -77,7 +78,7 @@ def analysis_context_from_dict(data: Optional[Dict[str, Any]]) -> Optional[Analy
                     )
                 )
     refs_raw = data.get("visual_references")
-    visual_references: List[VisualReferenceContext] = []
+    visual_references: list[VisualReferenceContext] = []
     if isinstance(refs_raw, list):
         for r in refs_raw:
             if isinstance(r, dict) and r.get("reference_id") is not None:
@@ -92,7 +93,7 @@ def analysis_context_from_dict(data: Optional[Dict[str, Any]]) -> Optional[Analy
                     )
                 )
     instructions_raw = data.get("instructions")
-    instructions: List[str] = []
+    instructions: list[str] = []
     if isinstance(instructions_raw, list):
         for s in instructions_raw:
             if s is not None and isinstance(s, str) and s.strip():
@@ -101,17 +102,21 @@ def analysis_context_from_dict(data: Optional[Dict[str, Any]]) -> Optional[Analy
         primary_evidence=primary,
         visual_references=visual_references,
         instructions=instructions,
-        metadata=data.get("metadata") if isinstance(data.get("metadata"), (dict, type(None))) else None,
+        metadata=data.get("metadata")
+        if isinstance(data.get("metadata"), (dict, type(None)))
+        else None,
     )
 
 
-def analysis_context_to_dict(ctx: AnalysisContext) -> Dict[str, Any]:
+def analysis_context_to_dict(ctx: AnalysisContext) -> dict[str, Any]:
     """Convert AnalysisContext to a JSON-serializable dict for JobInput.metadata."""
 
     def _serialize(obj: Any) -> Any:
         if isinstance(obj, datetime):
             return obj.isoformat()
-        if hasattr(obj, "__dict__") or isinstance(obj, (AnalysisImage, VisualReferenceContext, AnalysisContext)):
+        if hasattr(obj, "__dict__") or isinstance(
+            obj, (AnalysisImage, VisualReferenceContext, AnalysisContext)
+        ):
             return {k: _serialize(v) for k, v in asdict(obj).items()}
         if isinstance(obj, list):
             return [_serialize(v) for v in obj]
@@ -119,5 +124,4 @@ def analysis_context_to_dict(ctx: AnalysisContext) -> Dict[str, Any]:
             return {k: _serialize(v) for k, v in obj.items()}
         return obj
 
-    return cast(Dict[str, Any], _serialize(ctx))
-
+    return cast(dict[str, Any], _serialize(ctx))

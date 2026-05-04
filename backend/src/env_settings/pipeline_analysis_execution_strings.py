@@ -7,8 +7,6 @@ without importing the pipeline package (avoids circular imports via ``src.config
 
 from __future__ import annotations
 
-from typing import Optional
-
 STRATEGY_SINGLE = "single"
 STRATEGY_MULTI_PARALLEL = "multi_parallel"
 STRATEGY_MULTI_SEQUENTIAL = "multi_sequential"
@@ -18,7 +16,7 @@ _VALID_STRATEGIES_AFTER_NORMALIZE = frozenset(
 )
 
 
-def normalize_pipeline_analysis_strategy_value(raw: Optional[str]) -> str:
+def normalize_pipeline_analysis_strategy_value(raw: str | None) -> str:
     """
     Normalize user/job strategy labels.
 

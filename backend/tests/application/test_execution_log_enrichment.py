@@ -124,7 +124,13 @@ def test_merge_orders_by_ts_then_job_created_then_line() -> None:
         t0,
         [
             {"ts": same_ts, "stage": "S", "level": "info", "message": "a", "payload": None},
-            {"ts": "2024-06-01T11:00:00+00:00", "stage": "S", "level": "info", "message": "c", "payload": None},
+            {
+                "ts": "2024-06-01T11:00:00+00:00",
+                "stage": "S",
+                "level": "info",
+                "message": "c",
+                "payload": None,
+            },
         ],
     )
     job_new = (
@@ -158,7 +164,7 @@ def test_aisle_aggregate_suppresses_requested_flags_and_seeds_job_ids() -> None:
 
 def test_aisle_attachment_filename() -> None:
     assert (
-        aisle_execution_log_attachment_filename('inv/x', 'aisle"y')
+        aisle_execution_log_attachment_filename("inv/x", 'aisle"y')
         == "inventory_inv_x_aisle_aisle_y_execution_log.txt"
     )
 

@@ -8,21 +8,25 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_artifact_storage
-from src.api.server import app
 from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
     CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
-    CAPTURE_SESSION_NOT_FOUND,
     CAPTURE_SESSION_INVALID_STATE,
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    CAPTURE_SESSION_NOT_FOUND,
     CAPTURE_SESSION_STATUS_FILTER_INVALID,
     OPEN_CAPTURE_SESSION_EXISTS,
 )
+from src.api.server import app
 from src.infrastructure.repositories.memory_capture_session_group_repository import (
     MemoryCaptureSessionGroupRepository,
 )
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.runtime.app_container import reset_app_container_for_tests
 from src.runtime.v3_deps import (
@@ -126,7 +130,9 @@ def test_inventory_level_upload_close_cancel_flow(memory_capture: None) -> None:
     assert cancel_resp.json()["session"]["status"] == "cancelled"
 
     # Legacy aisle-scoped flow remains valid in mixed environment.
-    legacy_sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    legacy_sid = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions"
+    ).json()["id"]
     legacy_up = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{legacy_sid}/items",
         files=[("files", ("legacy.jpg", b"legacy-bytes", "image/jpeg"))],
@@ -142,7 +148,10 @@ def test_inventory_level_upload_close_cancel_flow(memory_capture: None) -> None:
 
 def test_open_session_conflict_returns_409(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    assert client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").status_code == 201
+    assert (
+        client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").status_code
+        == 201
+    )
     r2 = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions")
     assert r2.status_code == 409
     assert r2.json()["code"] == OPEN_CAPTURE_SESSION_EXISTS
@@ -150,7 +159,9 @@ def test_open_session_conflict_returns_409(memory_capture: None) -> None:
 
 def test_cancel_blocks_upload(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     assert (
         client.post(
             f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/cancel"
@@ -167,7 +178,9 @@ def test_cancel_blocks_upload(memory_capture: None) -> None:
 
 def test_duplicate_files_in_single_request_partial_success(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     body = b"dup-in-batch"
     r = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/items",
@@ -186,7 +199,9 @@ def test_duplicate_files_in_single_request_partial_success(memory_capture: None)
 
 def test_duplicate_upload_content_returns_per_file_error(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     body = b"same-payload"
     assert (
         client.post(
@@ -208,7 +223,9 @@ def test_duplicate_upload_content_returns_per_file_error(memory_capture: None) -
 
 def test_close_session_success(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     up = client.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/items",
         files=[("files", ("x.jpg", b"data", "image/jpeg"))],
@@ -224,7 +241,9 @@ def test_close_session_success(memory_capture: None) -> None:
 
 def test_close_empty_draft_returns_409(memory_capture: None) -> None:
     inv_id, aisle_id = _create_inv_aisle()
-    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()["id"]
+    sid = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions").json()[
+        "id"
+    ]
     r = client.post(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{sid}/close")
     assert r.status_code == 409
     assert r.json()["code"] == CAPTURE_SESSION_INVALID_STATE
@@ -283,7 +302,9 @@ def test_compute_groups_after_close_and_list_groups(memory_capture: None) -> Non
         files=[("files", ("a.jpg", b"a-bytes", "image/jpeg"))],
     )
     assert up.status_code == 201, up.text
-    assert client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+    assert (
+        client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+    )
 
     cg = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups")
     assert cg.status_code == 200, cg.text
@@ -322,7 +343,9 @@ def test_assign_group_to_existing_aisle_then_list(memory_capture: None) -> None:
         ).status_code
         == 201
     )
-    assert client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+    assert (
+        client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+    )
     cg = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups")
     assert cg.status_code == 200, cg.text
     gid = cg.json()["groups"][0]["group_id"]
@@ -352,10 +375,12 @@ def test_assign_group_twice_returns_409(memory_capture: None) -> None:
         ).status_code
         == 201
     )
-    assert client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
-    gid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups").json()["groups"][0][
-        "group_id"
-    ]
+    assert (
+        client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+    )
+    gid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups").json()[
+        "groups"
+    ][0]["group_id"]
     path = f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/groups/{gid}/assign-existing"
     assert client.post(path, json={"aisle_id": aisle_id}).status_code == 200
     r2 = client.post(path, json={"aisle_id": aisle_id})
@@ -373,10 +398,12 @@ def test_create_aisle_from_group_flow(memory_capture: None) -> None:
         ).status_code
         == 201
     )
-    assert client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
-    gid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups").json()["groups"][0][
-        "group_id"
-    ]
+    assert (
+        client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/close").status_code == 200
+    )
+    gid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/compute-groups").json()[
+        "groups"
+    ][0]["group_id"]
     r = client.post(
         f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/groups/{gid}/create-aisle",
         json={"code": "G4-NEW-AISLE"},

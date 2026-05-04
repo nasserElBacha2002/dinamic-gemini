@@ -55,4 +55,6 @@ def coerce_v21_product_label_quantities(data: dict[str, Any]) -> None:
         return
     for ent in entities:
         if isinstance(ent, dict):
-            ent["product_label_quantity"] = normalize_optional_int(ent.get("product_label_quantity"))
+            ent["product_label_quantity"] = normalize_optional_int(
+                ent.get("product_label_quantity")
+            )

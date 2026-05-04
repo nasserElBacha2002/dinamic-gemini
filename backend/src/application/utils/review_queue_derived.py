@@ -8,7 +8,6 @@ frontend `LOW_CONFIDENCE_THRESHOLD` (0.5) — single operational definition.
 from __future__ import annotations
 
 from datetime import timezone
-from typing import Optional, Tuple
 
 from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
 from src.application.mappers.position_canonical_view import build_position_canonical_view
@@ -22,8 +21,8 @@ def position_has_primary_evidence(position: Position) -> bool:
 
 def summary_sku_and_detected_quantity(
     position: Position,
-    primary_product: Optional[ProductRecord] = None,
-) -> Tuple[Optional[str], int]:
+    primary_product: ProductRecord | None = None,
+) -> tuple[str | None, int]:
     """Prefer canonical SKU/quantity; keep snapshot fallback for aggregated or legacy-only rows."""
     view = build_position_canonical_view(position, primary_product)
     sku = view.product.public_sku
@@ -33,7 +32,7 @@ def summary_sku_and_detected_quantity(
 
 def traceability_normalized(
     position: Position,
-    primary_product: Optional[ProductRecord] = None,
+    primary_product: ProductRecord | None = None,
 ) -> str:
     view = build_position_canonical_view(position, primary_product)
     return str(view.traceability.traceability_status or "").strip().lower()
@@ -41,7 +40,7 @@ def traceability_normalized(
 
 def priority_tier(
     position: Position,
-    primary_product: Optional[ProductRecord] = None,
+    primary_product: ProductRecord | None = None,
 ) -> int:
     """
     Explainable tiers (lower = review sooner), matching frontend deriveResultPriority:

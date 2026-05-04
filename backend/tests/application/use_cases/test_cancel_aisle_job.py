@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Dict, Optional, Sequence
 
 import pytest
 
-from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
 from src.application.errors import AisleNotFoundError
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, JobRepository
+from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.jobs.entities import Job, JobStatus
 
@@ -30,13 +30,13 @@ class InMemoryAisleRepo(AisleRepository):
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for a in self._store.values():
             if a.inventory_id == inventory_id and a.code == code:
                 return a
@@ -45,15 +45,15 @@ class InMemoryAisleRepo(AisleRepository):
 
 class InMemoryJobRepo(JobRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Job] = {}
+        self._store: dict[str, Job] = {}
 
     def save(self, job: Job) -> None:
         self._store[job.id] = job
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return self._store.get(job_id)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         candidates = [
             j
             for j in self._store.values()
@@ -64,9 +64,7 @@ class InMemoryJobRepo(JobRepository):
         candidates.sort(key=lambda j: (j.updated_at, j.created_at), reverse=True)
         return candidates[0]
 
-    def get_latest_by_targets(
-        self, target_type: str, target_ids: Sequence[str]
-    ) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         result = {}
         for tid in target_ids:
             j = self.get_latest_by_target(target_type, tid)
@@ -198,7 +196,12 @@ def test_cancel_terminal_job_raises() -> None:
     aisle_repo = InMemoryAisleRepo([aisle])
     clock = FixedClock(now)
 
-    for terminal in (JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELED, JobStatus.TIMED_OUT):
+    for terminal in (
+        JobStatus.SUCCEEDED,
+        JobStatus.FAILED,
+        JobStatus.CANCELED,
+        JobStatus.TIMED_OUT,
+    ):
         job_repo = InMemoryJobRepo()
         job = Job(
             id="job-1",
@@ -218,9 +221,7 @@ def test_cancel_terminal_job_raises() -> None:
         )
         with pytest.raises(ValueError, match="terminal state"):
             use_case.execute(
-                CancelAisleJobCommand(
-                    inventory_id="inv-1", aisle_id="aisle-1", job_id="job-1"
-                )
+                CancelAisleJobCommand(inventory_id="inv-1", aisle_id="aisle-1", job_id="job-1")
             )
         assert job_repo.get_by_id("job-1").status == terminal
 
@@ -307,7 +308,5 @@ def test_cancel_when_job_missing_raises_aisle_not_found() -> None:
         match=r"^Job nonexistent not found for aisle aisle-1$",
     ):
         use_case.execute(
-            CancelAisleJobCommand(
-                inventory_id="inv-1", aisle_id="aisle-1", job_id="nonexistent"
-            )
+            CancelAisleJobCommand(inventory_id="inv-1", aisle_id="aisle-1", job_id="nonexistent")
         )

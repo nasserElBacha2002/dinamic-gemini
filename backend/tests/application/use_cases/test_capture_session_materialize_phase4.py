@@ -16,27 +16,37 @@ from src.application.errors import (
     CaptureSessionMaterializationNotAllowedError,
 )
 from src.application.ports.clock import Clock
-from src.application.services.capture_staging_time_metadata import PillowCaptureStagingTimeMetadataExtractor
+from src.application.services.capture_staging_time_metadata import (
+    PillowCaptureStagingTimeMetadataExtractor,
+)
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase
 from src.application.use_cases.compute_capture_session_assignment_preview import (
     ComputeCaptureSessionAssignmentPreviewUseCase,
 )
 from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
 from src.application.use_cases.materialize_capture_session import MaterializeCaptureSessionUseCase
-from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
+from src.application.use_cases.upload_capture_session_staging_items import (
+    UploadCaptureSessionStagingItemsUseCase,
+)
 from src.domain.capture.entities import CaptureSessionItemAssignmentStatus, CaptureSessionStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_capture_session_confirm_idempotency_repository import (
     MemoryCaptureSessionConfirmIdempotencyRepository,
 )
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+from src.infrastructure.repositories.memory_source_asset_repository import (
+    MemorySourceAssetRepository,
+)
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 
 
 class _FixedClock(Clock):
@@ -173,7 +183,9 @@ def _materialize_uc(ctx) -> MaterializeCaptureSessionUseCase:
     )
 
 
-def test_materialize_success_creates_source_assets_links_items_and_sets_confirming(tmp_path) -> None:
+def test_materialize_success_creates_source_assets_links_items_and_sets_confirming(
+    tmp_path,
+) -> None:
     ctx = _prepare_assignment_proposed_session(tmp_path)
     out = _materialize_uc(ctx).execute(
         inventory_id=ctx["inv_id"],

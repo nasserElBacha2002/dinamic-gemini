@@ -8,13 +8,13 @@ and worker bootstrap without duplicating construction logic.
 
 from __future__ import annotations
 
-from src.application.ports.clock import Clock
 from src.application.ports.capture_repositories import (
     CaptureSessionConfirmIdempotencyRepository,
     CaptureSessionGroupRepository,
     CaptureSessionItemRepository,
     CaptureSessionRepository,
 )
+from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,

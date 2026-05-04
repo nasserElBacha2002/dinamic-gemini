@@ -2,8 +2,6 @@
 
 from datetime import datetime, timezone
 
-import pytest
-
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.domain.labels.entities import NormalizedLabel
 
@@ -80,4 +78,7 @@ def test_explanation_summary():
     records = builder.build(normalized)
     assert len(records) == 1
     assert records[0].explanation_summary is not None
-    assert "normalized" in records[0].explanation_summary.lower() or "1" in records[0].explanation_summary
+    assert (
+        "normalized" in records[0].explanation_summary.lower()
+        or "1" in records[0].explanation_summary
+    )

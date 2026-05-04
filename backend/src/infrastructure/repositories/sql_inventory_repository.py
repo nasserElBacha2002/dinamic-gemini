@@ -9,8 +9,8 @@ Timestamp policy: domain/use case owns timestamps; repository persists the value
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 from src.application.ports.repositories import InventoryRepository
 from src.database.sqlserver import SqlServerClient, now_utc
@@ -23,7 +23,7 @@ from src.domain.inventory.entities import (
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     """Return datetime as timezone-aware UTC (pyodbc may return naive)."""
     if dt is None:
         return None
@@ -101,7 +101,7 @@ class SqlInventoryRepository(InventoryRepository):
                     ),
                 )
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """

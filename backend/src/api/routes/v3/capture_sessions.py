@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
@@ -12,16 +11,16 @@ from src.api.dependencies import (
     get_assign_capture_session_group_to_existing_aisle_use_case,
     get_cancel_capture_session_use_case,
     get_close_capture_session_use_case,
-    get_create_aisle_and_assign_capture_session_group_use_case,
-    get_compute_materialized_capture_session_group_preview_use_case,
-    get_materialize_capture_session_group_use_case,
-    get_materialize_capture_session_use_case,
     get_compute_capture_session_assignment_preview_use_case,
     get_compute_capture_session_groups_use_case,
+    get_compute_materialized_capture_session_group_preview_use_case,
+    get_create_aisle_and_assign_capture_session_group_use_case,
     get_create_capture_session_use_case,
     get_get_capture_session_detail_use_case,
     get_get_capture_session_groups_use_case,
     get_list_capture_sessions_use_case,
+    get_materialize_capture_session_group_use_case,
+    get_materialize_capture_session_use_case,
     get_update_capture_session_clock_offset_use_case,
     get_upload_capture_session_staging_items_use_case,
 )
@@ -29,59 +28,67 @@ from src.api.errors import reraise_if_mapped
 from src.api.schemas.capture_schemas import (
     AssignCaptureSessionGroupToExistingAisleRequest,
     CaptureSessionClockOffsetUpdateRequest,
-    CreateAisleFromCaptureGroupRequest,
     CaptureSessionDetailResponse,
     CaptureSessionGroupsListResponse,
     CaptureSessionMaterializeRequest,
     CaptureSessionResponse,
     CaptureSessionStagingUploadFileError,
+    CreateAisleFromCaptureGroupRequest,
     MaterializeAllCaptureSessionGroupsResponse,
     MaterializeCaptureSessionGroupResponse,
     MaterializeCaptureSessionResponse,
     MaterializedCaptureSessionGroupPreviewResponse,
-    materialized_capture_session_group_preview_to_response,
     PaginatedCaptureSessionListResponse,
     UploadCaptureSessionItemsResponse,
     capture_session_groups_to_response,
     capture_session_item_to_response,
     capture_session_to_response,
+    materialized_capture_session_group_preview_to_response,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.dto.uploaded_file import UploadedFile
+from src.application.errors import CaptureSessionStatusFilterInvalidError
 from src.application.use_cases.assign_capture_session_group_to_existing_aisle import (
     AssignCaptureSessionGroupToExistingAisleUseCase,
 )
-from src.application.use_cases.create_aisle_and_assign_capture_session_group import (
-    CreateAisleAndAssignCaptureSessionGroupUseCase,
-)
-from src.application.errors import CaptureSessionStatusFilterInvalidError
 from src.application.use_cases.cancel_capture_session import CancelCaptureSessionUseCase
 from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase
 from src.application.use_cases.compute_capture_session_assignment_preview import (
     ComputeCaptureSessionAssignmentPreviewUseCase,
 )
-from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
-from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
-from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
-from src.application.use_cases.materialize_capture_session import MaterializeCaptureSessionUseCase
+from src.application.use_cases.compute_capture_session_groups import (
+    ComputeCaptureSessionGroupsUseCase,
+)
 from src.application.use_cases.compute_materialized_capture_session_group_preview import (
     ComputeMaterializedCaptureSessionGroupPreviewUseCase,
 )
-from src.application.use_cases.materialize_capture_session_group import MaterializeCaptureSessionGroupUseCase
-from src.application.use_cases.update_capture_session_clock_offset import UpdateCaptureSessionClockOffsetUseCase
-from src.application.use_cases.compute_capture_session_groups import ComputeCaptureSessionGroupsUseCase
+from src.application.use_cases.create_aisle_and_assign_capture_session_group import (
+    CreateAisleAndAssignCaptureSessionGroupUseCase,
+)
+from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
+from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
 from src.application.use_cases.get_capture_session_groups import GetCaptureSessionGroupsUseCase
-from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
+from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
+from src.application.use_cases.materialize_capture_session import MaterializeCaptureSessionUseCase
+from src.application.use_cases.materialize_capture_session_group import (
+    MaterializeCaptureSessionGroupUseCase,
+)
+from src.application.use_cases.update_capture_session_clock_offset import (
+    UpdateCaptureSessionClockOffsetUseCase,
+)
+from src.application.use_cases.upload_capture_session_staging_items import (
+    UploadCaptureSessionStagingItemsUseCase,
+)
 from src.domain.capture.entities import CaptureSessionStatus
 
 router = APIRouter()
 
 
-def _parse_status_filter(raw: Optional[str]) -> Optional[List[CaptureSessionStatus]]:
+def _parse_status_filter(raw: str | None) -> list[CaptureSessionStatus] | None:
     """Strict comma-separated ``CaptureSessionStatus`` values; rejects unknown or empty segments (422)."""
     if raw is None or not raw.strip():
         return None
-    out: List[CaptureSessionStatus] = []
+    out: list[CaptureSessionStatus] = []
     for part in raw.split(","):
         p = part.strip().lower()
         if not p:
@@ -228,15 +235,15 @@ def cancel_capture_session(
 )
 def list_capture_sessions(
     inventory_id: str,
-    aisle_id: Optional[str] = Query(None, description="Optional aisle id filter."),
-    status: Optional[str] = Query(
+    aisle_id: str | None = Query(None, description="Optional aisle id filter."),
+    status: str | None = Query(
         None,
         description="Comma-separated session statuses (e.g. draft,importing,cancelled).",
     ),
-    created_from: Optional[datetime] = Query(None),
-    created_to: Optional[datetime] = Query(None),
+    created_from: datetime | None = Query(None),
+    created_to: datetime | None = Query(None),
     page: int = Query(1, ge=1),
-    page_size: Optional[int] = Query(None, ge=1),
+    page_size: int | None = Query(None, ge=1),
     use_case: ListCaptureSessionsUseCase = Depends(get_list_capture_sessions_use_case),
 ) -> PaginatedCaptureSessionListResponse:
     try:
@@ -272,7 +279,9 @@ def patch_capture_session_clock_offset(
     aisle_id: str,
     session_id: str,
     body: CaptureSessionClockOffsetUpdateRequest,
-    use_case: UpdateCaptureSessionClockOffsetUseCase = Depends(get_update_capture_session_clock_offset_use_case),
+    use_case: UpdateCaptureSessionClockOffsetUseCase = Depends(
+        get_update_capture_session_clock_offset_use_case
+    ),
     detail_uc: GetCaptureSessionDetailUseCase = Depends(get_get_capture_session_detail_use_case),
 ) -> CaptureSessionDetailResponse:
     try:
@@ -375,7 +384,9 @@ def get_capture_session_detail(
 def compute_capture_session_groups_inventory_scope(
     inventory_id: str,
     session_id: str,
-    use_case: ComputeCaptureSessionGroupsUseCase = Depends(get_compute_capture_session_groups_use_case),
+    use_case: ComputeCaptureSessionGroupsUseCase = Depends(
+        get_compute_capture_session_groups_use_case
+    ),
 ) -> CaptureSessionGroupsListResponse:
     try:
         summaries = use_case.execute(inventory_id=inventory_id, session_id=session_id)
@@ -464,7 +475,9 @@ def create_aisle_and_assign_capture_session_group_inventory_scope(
 def post_materialize_all_assigned_capture_session_groups(
     inventory_id: str,
     session_id: str,
-    use_case: MaterializeCaptureSessionGroupUseCase = Depends(get_materialize_capture_session_group_use_case),
+    use_case: MaterializeCaptureSessionGroupUseCase = Depends(
+        get_materialize_capture_session_group_use_case
+    ),
 ) -> MaterializeAllCaptureSessionGroupsResponse:
     try:
         out = use_case.materialize_all_assigned(inventory_id=inventory_id, session_id=session_id)
@@ -490,10 +503,14 @@ def post_materialize_capture_session_group(
     inventory_id: str,
     session_id: str,
     group_id: str,
-    use_case: MaterializeCaptureSessionGroupUseCase = Depends(get_materialize_capture_session_group_use_case),
+    use_case: MaterializeCaptureSessionGroupUseCase = Depends(
+        get_materialize_capture_session_group_use_case
+    ),
 ) -> MaterializeCaptureSessionGroupResponse:
     try:
-        out = use_case.materialize_one(inventory_id=inventory_id, session_id=session_id, group_id=group_id)
+        out = use_case.materialize_one(
+            inventory_id=inventory_id, session_id=session_id, group_id=group_id
+        )
     except Exception as e:
         reraise_if_mapped(e)
         raise
@@ -521,7 +538,9 @@ def post_materialized_capture_session_group_preview(
     ),
 ) -> MaterializedCaptureSessionGroupPreviewResponse:
     try:
-        result = use_case.execute(inventory_id=inventory_id, session_id=session_id, group_id=group_id)
+        result = use_case.execute(
+            inventory_id=inventory_id, session_id=session_id, group_id=group_id
+        )
     except Exception as e:
         reraise_if_mapped(e)
         raise
@@ -536,10 +555,12 @@ def post_materialized_capture_session_group_preview(
 async def upload_capture_session_staging_items_inventory_scope(
     inventory_id: str,
     session_id: str,
-    files: List[UploadFile] = File(...),
-    use_case: UploadCaptureSessionStagingItemsUseCase = Depends(get_upload_capture_session_staging_items_use_case),
+    files: list[UploadFile] = File(...),
+    use_case: UploadCaptureSessionStagingItemsUseCase = Depends(
+        get_upload_capture_session_staging_items_use_case
+    ),
 ) -> UploadCaptureSessionItemsResponse:
-    uploaded: List[UploadedFile] = []
+    uploaded: list[UploadedFile] = []
     for u in files:
         content = await u.read()
         uploaded.append(
@@ -582,8 +603,10 @@ async def upload_capture_session_staging_items(
     inventory_id: str,
     aisle_id: str,
     session_id: str,
-    files: List[UploadFile] = File(...),
-    use_case: UploadCaptureSessionStagingItemsUseCase = Depends(get_upload_capture_session_staging_items_use_case),
+    files: list[UploadFile] = File(...),
+    use_case: UploadCaptureSessionStagingItemsUseCase = Depends(
+        get_upload_capture_session_staging_items_use_case
+    ),
 ) -> UploadCaptureSessionItemsResponse:
     """Stage files for a capture session.
 
@@ -591,7 +614,7 @@ async def upload_capture_session_staging_items(
     memory before invoking the use case (``BytesIO`` per file). Low-risk for typical capture
     batch sizes; very large files still hit ``max_upload_size_mb`` in the use case.
     """
-    uploaded: List[UploadedFile] = []
+    uploaded: list[UploadedFile] = []
     for u in files:
         content = await u.read()
         uploaded.append(

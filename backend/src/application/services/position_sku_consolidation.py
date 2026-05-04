@@ -11,7 +11,7 @@ It does not by itself establish a new persisted source of truth for aggregated r
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Tuple
+from collections.abc import Sequence
 
 from src.domain.positions.entities import Position
 
@@ -48,7 +48,7 @@ def consolidate_positions_by_sku(
     positions: Sequence[Position],
     *,
     enabled: bool = True,
-) -> List[Position]:
+) -> list[Position]:
     """Merge raw positions with the same aisle + SKU into one representative row (in-place summary update).
 
     When ``enabled`` is False, returns raw positions in list order (no merge) — used for photo-focused
@@ -56,8 +56,8 @@ def consolidate_positions_by_sku(
     """
     if not enabled:
         return list(positions)
-    by_key: Dict[Tuple[str, str], List[Position]] = {}
-    standalone: List[Position] = []
+    by_key: dict[tuple[str, str], list[Position]] = {}
+    standalone: list[Position] = []
     for p in positions:
         summary = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
         internal_code_raw = summary.get("internal_code")
@@ -68,7 +68,7 @@ def consolidate_positions_by_sku(
         key = (p.aisle_id, internal_code)
         by_key.setdefault(key, []).append(p)
 
-    consolidated: List[Position] = []
+    consolidated: list[Position] = []
 
     for (_aisle_id, _sku), group in by_key.items():
         if len(group) == 1:
@@ -77,9 +77,11 @@ def consolidate_positions_by_sku(
 
         total_qty = sum(position_quantity_from_summary(p) for p in group)
         representative = sorted(group, key=lambda p: (p.created_at, p.id))[0]
-        summary = representative.detected_summary_json if isinstance(
-            representative.detected_summary_json, dict
-        ) else {}
+        summary = (
+            representative.detected_summary_json
+            if isinstance(representative.detected_summary_json, dict)
+            else {}
+        )
         summary = dict(summary)
 
         image_ids: set[str] = set()

@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from src.infrastructure.repositories.sql_inventory_visual_reference_repository import _row_to_reference
+from src.infrastructure.repositories.sql_inventory_visual_reference_repository import (
+    _row_to_reference,
+)
 
 
 def test_row_to_reference_prefers_provider_metadata() -> None:

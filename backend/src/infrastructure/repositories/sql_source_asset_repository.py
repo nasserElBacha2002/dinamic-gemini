@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence
+from typing import Any
 
-from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.application.ports.repositories import SourceAssetRepository
+from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.database.sqlserver import SqlServerClient
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
@@ -19,7 +20,7 @@ from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_f
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -46,7 +47,7 @@ def _type_from_row(row, asset_id: str = "?") -> SourceAssetType:
         return SourceAssetType.PHOTO
 
 
-def _parse_metadata(raw: object) -> Optional[Dict[str, Any]]:
+def _parse_metadata(raw: object) -> dict[str, Any] | None:
     if raw is None:
         return None
     if isinstance(raw, str):
@@ -112,7 +113,9 @@ class SqlSourceAssetRepository(SourceAssetRepository):
         uploaded = _ensure_utc(asset.uploaded_at)
         if uploaded is None:
             raise ValueError("SourceAsset.uploaded_at is required")
-        meta_str = json.dumps(asset.metadata_json, ensure_ascii=False) if asset.metadata_json else None
+        meta_str = (
+            json.dumps(asset.metadata_json, ensure_ascii=False) if asset.metadata_json else None
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -171,7 +174,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     ),
                 )
 
-    def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
+    def get_by_id(self, asset_id: str) -> SourceAsset | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -192,7 +195,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
             cur.execute("DELETE FROM source_assets WHERE id = ?", (asset_id,))
             return cur.rowcount > 0
 
-    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
         cid = (capture_session_item_id or "").strip()
         if not cid:
             return None
@@ -225,7 +228,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
             rows = cur.fetchall()
         return [_row_to_asset(row) for row in rows]
 
-    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
         if not aisle_ids:
             return {}
         placeholders = ",".join("?" * len(aisle_ids))
@@ -240,7 +243,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 list(aisle_ids),
             )
             rows = cur.fetchall()
-        out: Dict[str, AisleAssetRollup] = {}
+        out: dict[str, AisleAssetRollup] = {}
         for row in rows:
             aid = row.aisle_id or ""
             if not aid:

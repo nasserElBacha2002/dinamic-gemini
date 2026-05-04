@@ -11,11 +11,10 @@ includes run metadata for dataset-safe clients.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Optional, Sequence
 
 from src.application.errors import PositionResultContextMismatchError
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import (
     AisleRepository,
@@ -26,6 +25,7 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     ReviewActionRepository,
 )
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.position_sku_consolidation import consolidate_positions_by_sku
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.review_validation import resolve_position
@@ -39,15 +39,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class PositionDetailRunContext:
-    job_id: Optional[str]
+    job_id: str | None
     """Storage job on the position row (``None`` = legacy)."""
     result_context_source: str
-    resolved_job_id: Optional[str]
+    resolved_job_id: str | None
     """Slice used for this response (same semantics as list/merge)."""
-    provider_name: Optional[str] = None
-    model_name: Optional[str] = None
-    prompt_key: Optional[str] = None
-    prompt_version: Optional[str] = None
+    provider_name: str | None = None
+    model_name: str | None = None
+    prompt_key: str | None = None
+    prompt_version: str | None = None
 
 
 @dataclass
@@ -99,14 +99,18 @@ class GetPositionDetailUseCase:
 
     @staticmethod
     def _is_group_member(position: Position, requested_position_id: str) -> bool:
-        summary = position.detected_summary_json if isinstance(position.detected_summary_json, dict) else {}
+        summary = (
+            position.detected_summary_json
+            if isinstance(position.detected_summary_json, dict)
+            else {}
+        )
         aggregated = summary.get("aggregated_from_ids")
         if not isinstance(aggregated, list):
             return False
         return requested_position_id in aggregated
 
     def _resolve_operator_facing_position(
-        self, position: Position, job_id_for_slice: Optional[str]
+        self, position: Position, job_id_for_slice: str | None
     ) -> Position:
         # Same resolved slice as list API; capped raw fetch — not an unscoped full-aisle scan.
         raw_positions = list(
@@ -145,7 +149,7 @@ class GetPositionDetailUseCase:
         aisle_id: str,
         position_id: str,
         *,
-        explicit_job_id: Optional[str] = None,
+        explicit_job_id: str | None = None,
         exact_position: bool = False,
     ) -> PositionDetailResult:
         """Load position detail scoped to the resolved result context.
@@ -185,9 +189,7 @@ class GetPositionDetailUseCase:
         review_actions = self._review_repo.list_by_position(operator_position.id)
 
         job = (
-            self._job_repo.get_by_id(operator_position.job_id)
-            if operator_position.job_id
-            else None
+            self._job_repo.get_by_id(operator_position.job_id) if operator_position.job_id else None
         )
         run_context = PositionDetailRunContext(
             job_id=operator_position.job_id,

@@ -5,15 +5,15 @@ SQL Server implementation of FinalCountRepository — v3.2.3.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 from src.application.ports.repositories import FinalCountRepository, LabelJobScope
 from src.database.sqlserver import SqlServerClient
 from src.domain.labels.entities import FinalCountRecord
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -215,4 +215,3 @@ class SqlFinalCountRepository(FinalCountRepository):
                 f"DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",
                 (inventory_id, aisle_id, *extra_params),
             )
-

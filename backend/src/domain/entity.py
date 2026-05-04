@@ -5,7 +5,7 @@ Replaces pallet-centric view with entity types: PALLET, EMPTY_PALLET, LOOSE_BOXE
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 # Allowed entity types and count statuses for validation
 ENTITY_TYPES = ("PALLET", "EMPTY_PALLET", "LOOSE_BOXES")
@@ -29,14 +29,14 @@ class Entity:
     # Position (no position_label_text: Gemini no lo devuelve para reducir coste/tokens)
     # Epic 3.1.D: position_barcode = position/pallet barcode only (location or pallet identifier).
     position_barcode: Optional[str] = None
-    position_label_bbox: Optional[List[float]] = None  # [x1, y1, x2, y2] normalized 0..1
+    position_label_bbox: Optional[list[float]] = None  # [x1, y1, x2, y2] normalized 0..1
     # Product (internal code replaces long product label text)
     # Epic 3.1.D: internal_code = product/SKU from product label only (not position barcode).
     internal_code: Optional[str] = None
     product_label_quantity: Optional[int] = None
-    product_label_bbox: Optional[List[float]] = None  # [x1, y1, x2, y2] normalized 0..1
+    product_label_bbox: Optional[list[float]] = None  # [x1, y1, x2, y2] normalized 0..1
     #: Normalized scene/pallet extent when the model only provides a generic ``bbox`` (OpenAI path).
-    extent_bbox: Optional[List[float]] = None
+    extent_bbox: Optional[list[float]] = None
     # Structure
     has_boxes: bool = False
     confidence: float = 0.0
@@ -58,8 +58,12 @@ class Entity:
     original_index: int = 0
     # Epic 3.1.B: image traceability (parsed from provider; validated against job images)
     source_image_id: Optional[str] = None
-    traceability_status: Optional[str] = None  # one of TraceabilityStatus (valid, missing, invalid, unvalidated)
-    traceability_warning: Optional[str] = None  # diagnostic only: report + API; not persisted to pallet_results
+    traceability_status: Optional[str] = (
+        None  # one of TraceabilityStatus (valid, missing, invalid, unvalidated)
+    )
+    traceability_warning: Optional[str] = (
+        None  # diagnostic only: report + API; not persisted to pallet_results
+    )
     #: Index into the job ``frames`` bundle for the frame that produced the **chosen** primary artifact
     #: (localized: best label crop frame; else best overview). Not merely the first scoped frame.
     evidence_primary_frame_index: Optional[int] = None

@@ -19,20 +19,20 @@ Epic 5 — CSV contract evolution: Additive column source_image_original_filenam
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from src.domain.pallet import Pallet
 from src.reporting.display_label import derive_review_display_label
 
 
-def write_json(path: Path, data: Dict[str, Any]) -> None:
+def write_json(path: Path, data: dict[str, Any]) -> None:
     """Write a dict as UTF-8 JSON to path."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
-def write_report_csv(path: Path, report: Dict[str, Any]) -> None:
+def write_report_csv(path: Path, report: dict[str, Any]) -> None:
     """Write report entities to CSV with traceability (Epic 3.1.C), review_display_label (Epic 3.1.D), and source_image_original_filename (Epic 5).
 
     Columns: entity_uid, pallet_id, entity_type, count_status, final_quantity,
@@ -47,39 +47,63 @@ def write_report_csv(path: Path, report: Dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8", newline="") as f:
             w = csv.writer(f)
-            w.writerow([
-                "entity_uid", "pallet_id", "entity_type", "count_status", "final_quantity",
-                "internal_code", "confidence", "source_image_id", "traceability_status", "traceability_warning",
-                "source_image_original_filename", "review_display_label",
-            ])
+            w.writerow(
+                [
+                    "entity_uid",
+                    "pallet_id",
+                    "entity_type",
+                    "count_status",
+                    "final_quantity",
+                    "internal_code",
+                    "confidence",
+                    "source_image_id",
+                    "traceability_status",
+                    "traceability_warning",
+                    "source_image_original_filename",
+                    "review_display_label",
+                ]
+            )
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
-        w.writerow([
-            "entity_uid", "pallet_id", "entity_type", "count_status", "final_quantity",
-            "internal_code", "confidence", "source_image_id", "traceability_status", "traceability_warning",
-            "source_image_original_filename", "review_display_label",
-        ])
+        w.writerow(
+            [
+                "entity_uid",
+                "pallet_id",
+                "entity_type",
+                "count_status",
+                "final_quantity",
+                "internal_code",
+                "confidence",
+                "source_image_id",
+                "traceability_status",
+                "traceability_warning",
+                "source_image_original_filename",
+                "review_display_label",
+            ]
+        )
         for e in entities:
             rdl = derive_review_display_label(e.get("internal_code"), e.get("position_barcode"))
-            w.writerow([
-                e.get("entity_uid") or "",
-                e.get("pallet_id") or "",
-                e.get("entity_type") or "",
-                e.get("count_status") or "",
-                e.get("final_quantity") if e.get("final_quantity") is not None else "",
-                e.get("internal_code") or "",
-                e.get("confidence") if e.get("confidence") is not None else "",
-                e.get("source_image_id") or "",
-                e.get("traceability_status") or "",
-                e.get("traceability_warning") or "",
-                e.get("source_image_original_filename") or "",
-                rdl if rdl is not None else "",
-            ])
+            w.writerow(
+                [
+                    e.get("entity_uid") or "",
+                    e.get("pallet_id") or "",
+                    e.get("entity_type") or "",
+                    e.get("count_status") or "",
+                    e.get("final_quantity") if e.get("final_quantity") is not None else "",
+                    e.get("internal_code") or "",
+                    e.get("confidence") if e.get("confidence") is not None else "",
+                    e.get("source_image_id") or "",
+                    e.get("traceability_status") or "",
+                    e.get("traceability_warning") or "",
+                    e.get("source_image_original_filename") or "",
+                    rdl if rdl is not None else "",
+                ]
+            )
 
 
-def write_csv(path: Path, pallets: List[Pallet]) -> None:
+def write_csv(path: Path, pallets: list[Pallet]) -> None:
     """Write pallets to a CSV with columns: pallet_id, internal_code, final_quantity, source, confidence, fallback_used.
 
     Uses comma (,) as delimiter by default. Note: some locales (e.g. Excel in certain regions)
@@ -88,13 +112,24 @@ def write_csv(path: Path, pallets: List[Pallet]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["pallet_id", "internal_code", "final_quantity", "source", "confidence", "fallback_used"])
+        w.writerow(
+            [
+                "pallet_id",
+                "internal_code",
+                "final_quantity",
+                "source",
+                "confidence",
+                "fallback_used",
+            ]
+        )
         for p in pallets:
-            w.writerow([
-                p.pallet_id,
-                p.internal_code if p.internal_code is not None else "",
-                p.final_quantity if p.final_quantity is not None else "",
-                p.source,
-                p.confidence,
-                p.fallback_used,
-            ])
+            w.writerow(
+                [
+                    p.pallet_id,
+                    p.internal_code if p.internal_code is not None else "",
+                    p.final_quantity if p.final_quantity is not None else "",
+                    p.source,
+                    p.confidence,
+                    p.fallback_used,
+                ]
+            )

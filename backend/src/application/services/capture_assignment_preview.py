@@ -17,9 +17,9 @@ then ``id``). That yields a **review seed** for operators and future confirm flo
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Sequence
 
 from src.domain.capture.entities import (
     CaptureSessionItem,
@@ -57,20 +57,20 @@ def compute_item_preview_outcomes(
     items: Sequence[CaptureSessionItem],
     positions: Sequence[Position],
     clock_offset_seconds: int,
-) -> Dict[str, ItemPreviewOutcome]:
+) -> dict[str, ItemPreviewOutcome]:
     """Map item id → preview row for **imported** items only (others left to caller).
 
     Uses the **ordinal pairing MVP heuristic** described in the module docstring: ``Position``
     is the correct *existing* persistence target for “which aisle slot”, not a claim of visual
     association from the staging file.
     """
-    out: Dict[str, ItemPreviewOutcome] = {}
+    out: dict[str, ItemPreviewOutcome] = {}
     eligible = [i for i in items if i.import_status == CaptureSessionItemImportStatus.IMPORTED]
     slots = sorted(
         (p for p in positions if p.status != PositionStatus.DELETED),
         key=lambda p: ((p.corrected_position_code or "").lower(), p.id),
     )
-    key_items: List[CaptureSessionItem] = []
+    key_items: list[CaptureSessionItem] = []
     for i in eligible:
         adj = adjusted_effective_time(i.effective_capture_time, clock_offset_seconds)
         if adj is None:
@@ -83,7 +83,7 @@ def compute_item_preview_outcomes(
         else:
             key_items.append(i)
 
-    by_adj: dict[datetime, List[CaptureSessionItem]] = defaultdict(list)
+    by_adj: dict[datetime, list[CaptureSessionItem]] = defaultdict(list)
     for i in key_items:
         adj = adjusted_effective_time(i.effective_capture_time, clock_offset_seconds)
         assert adj is not None
@@ -127,4 +127,3 @@ def compute_item_preview_outcomes(
                 preview_target_position_id=None,
             )
     return out
-

@@ -90,6 +90,7 @@ def photo_stored_filename(original_filename: str, index: int) -> str:
         Stored filename e.g. 0001_my_photo.jpg, 0002_image.jpg.
     """
     from src.evidence.paths import slug
+
     base = Path(original_filename or "").name.strip()
     if not base or ".." in base or "\\" in base or "/" in base:
         base = "image"

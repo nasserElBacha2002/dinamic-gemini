@@ -9,20 +9,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
+
 from typing_extensions import TypedDict
 
-from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
-
 
 # --- Analysis (AnalysisProvider.analyze_aisle) ---
 
 
 class ProductItemPayload(TypedDict, total=False):
     """Single product inside a position (pipeline output §9.4)."""
+
     sku: str
     description: str
     quantity: int
@@ -31,18 +31,20 @@ class ProductItemPayload(TypedDict, total=False):
 
 class MappedPositionPayload(TypedDict, total=False):
     """One position in pipeline output (§9.4). Used by ResultMapper."""
+
     id: str
     confidence: float
     needs_review: bool
-    primary_evidence_id: Optional[str]
-    products: List[ProductItemPayload]
-    detected_summary_json: Optional[Dict[str, Any]]
-    review_reason: Optional[str]
+    primary_evidence_id: str | None
+    products: list[ProductItemPayload]
+    detected_summary_json: dict[str, Any] | None
+    review_reason: str | None
 
 
 class AnalysisResultPayload(TypedDict, total=False):
     """Result of AnalysisProvider.analyze_aisle (§9.4)."""
-    positions: List[MappedPositionPayload]
+
+    positions: list[MappedPositionPayload]
     aisle_id: str
 
 
@@ -52,6 +54,7 @@ class AnalysisResultPayload(TypedDict, total=False):
 class InventoryMetricsResult(TypedDict, total=False):
     """Return type of MetricsCalculator.calculate_inventory_metrics (§9.6).
     Implementations must return all keys so the API layer can serialize without validation errors."""
+
     total_reviewed_positions: int
     total_positions: int
     auto_accepted_positions: int
@@ -67,6 +70,7 @@ class InventoryMetricsResult(TypedDict, total=False):
 
 class ProcessAislePayload(TypedDict):
     """Payload for process_aisle job type."""
+
     aisle_id: str
 
 
@@ -84,16 +88,16 @@ class InventoryListItem:
     inventory: Inventory
     aisles_count: int
     pending_review_count: int
-    last_activity_at: Optional[datetime]
+    last_activity_at: datetime | None
 
 
 @dataclass
 class InventoryTableQuery:
     """Query for GET /api/v3/inventories table (search, filter, sort, pagination)."""
 
-    search: Optional[str] = None
+    search: str | None = None
     """Case-insensitive substring on inventory name."""
-    status: Optional[str] = None
+    status: str | None = None
     """Exact wire status match (e.g. draft, in_progress)."""
     sort_by: str = "created_at"
     """One of: name, created_at, updated_at, status, last_activity_at, pending_review_count, aisles_count."""
@@ -107,9 +111,9 @@ class InventoryTableQuery:
 class AisleTableQuery:
     """Query for GET .../inventories/{id}/aisles table."""
 
-    search: Optional[str] = None
+    search: str | None = None
     """Case-insensitive substring on aisle code."""
-    status: Optional[str] = None
+    status: str | None = None
     sort_by: str = "code"
     """code | status | last_activity_at | pending_review_positions_count | positions_count | assets_count"""
     sort_dir: str = "asc"
@@ -131,16 +135,18 @@ class PositionListQuery:
     Pagination here limits **raw** rows fetched; list route applies **post-consolidation** page separately.
     """
 
-    status: Optional[str] = None
-    needs_review: Optional[bool] = None
-    min_confidence: Optional[float] = None
-    sku_filter: Optional[str] = None
+    status: str | None = None
+    needs_review: bool | None = None
+    min_confidence: float | None = None
+    sku_filter: str | None = None
     page: int = 1
     page_size: int = 25
     sort_by: str = "created_at"
     """SQL/order: created_at | updated_at | confidence | id"""
     sort_dir: str = "asc"
-    job_id: Union[str, None, _PositionListJobIdUnset] = field(default_factory=lambda: POSITION_LIST_JOB_ID_UNSET)
+    job_id: str | None | _PositionListJobIdUnset = field(
+        default_factory=lambda: POSITION_LIST_JOB_ID_UNSET
+    )
     """Unset = no job filter; ``None`` = legacy null job_id rows; ``str`` = one inventory job."""
 
 
@@ -148,16 +154,16 @@ class PositionListQuery:
 class ReviewQueueQuery:
     """Cross-inventory review queue list (Sprint 4.2 — filters + priority sort)."""
 
-    inventory_id: Optional[str] = None
-    aisle_id: Optional[str] = None
-    min_confidence: Optional[float] = None
-    max_confidence: Optional[float] = None
-    traceability: Optional[str] = None
+    inventory_id: str | None = None
+    aisle_id: str | None = None
+    min_confidence: float | None = None
+    max_confidence: float | None = None
+    traceability: str | None = None
     """API traceability wire value: valid | missing | invalid | unvalidated."""
-    has_evidence: Optional[bool] = None
-    qty_zero: Optional[bool] = None
-    sku_contains: Optional[str] = None
-    position_status: Optional[str] = None
+    has_evidence: bool | None = None
+    qty_zero: bool | None = None
+    sku_contains: str | None = None
+    position_status: str | None = None
     """detected | reviewed | corrected | deleted | confirmed (reviewed or corrected)."""
     sort_by: str = "priority"
     """priority | updated_at | created_at | confidence"""
@@ -186,4 +192,4 @@ class ReviewQueueListRow:
     inventory_name: str
     aisle_code: str
     #: Display-primary product for this position (same rule as review queue filters/sort).
-    primary_product: Optional[ProductRecord] = None
+    primary_product: ProductRecord | None = None

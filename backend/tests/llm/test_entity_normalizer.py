@@ -373,7 +373,10 @@ def test_openai_does_not_map_bbox_when_product_bbox_missing() -> None:
 
 
 def test_root_contract_version_and_total_alignment() -> None:
-    inp = {"total_entities_detected": 99, "entities": [{"entity_type": "PALLET", "model_entity_id": "a"}]}
+    inp = {
+        "total_entities_detected": 99,
+        "entities": [{"entity_type": "PALLET", "model_entity_id": "a"}],
+    }
     out = normalize_llm_response(inp, "openai")
     assert out["total_entities_detected"] == 1
     assert out[EXTRACTION_CONTRACT_VERSION_KEY] == EXTRACTION_CONTRACT_VERSION_VALUE

@@ -5,7 +5,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 from src.domain.capture.entities import CaptureTimeSource
 
@@ -29,7 +28,7 @@ class CaptureStagingTimeMetadataExtractor(ABC):
         raw_bytes: bytes,
         media_content_type: str,
         ingest_clock: datetime,
-        source_mtime_utc: Optional[datetime] = None,
+        source_mtime_utc: datetime | None = None,
     ) -> ExtractedCaptureStagingTime:
         """``ingest_clock`` must be timezone-aware UTC. ``source_mtime_utc`` optional client/storage mtime.
 
@@ -37,4 +36,3 @@ class CaptureStagingTimeMetadataExtractor(ABC):
         extraction (e.g. skip non-image branches without changing call sites). Implementations
         may ignore it when they probe ``raw_bytes`` directly (Sprint 3 Pillow path).
         """
-

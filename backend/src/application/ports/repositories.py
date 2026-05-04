@@ -7,7 +7,8 @@ Use cases depend on these abstractions; infrastructure provides SQL (or other) i
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Literal, Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Literal, Union
 
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.rollup_contracts import AisleAssetRollup
@@ -35,12 +36,10 @@ LabelJobScope = Union[str, Literal["all"], None]
 
 class InventoryRepository(ABC):
     @abstractmethod
-    def save(self, inventory: Inventory) -> None:
-        ...
+    def save(self, inventory: Inventory) -> None: ...
 
     @abstractmethod
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
-        ...
+    def get_by_id(self, inventory_id: str) -> Inventory | None: ...
 
     @abstractmethod
     def list_all(self) -> Sequence[Inventory]:
@@ -50,12 +49,10 @@ class InventoryRepository(ABC):
 
 class AisleRepository(ABC):
     @abstractmethod
-    def save(self, aisle: Aisle) -> None:
-        ...
+    def save(self, aisle: Aisle) -> None: ...
 
     @abstractmethod
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
-        ...
+    def get_by_id(self, aisle_id: str) -> Aisle | None: ...
 
     @abstractmethod
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
@@ -63,61 +60,56 @@ class AisleRepository(ABC):
         ...
 
     @abstractmethod
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         """Return the aisle with the given code in the given inventory, or None. Used for duplicate checks."""
         ...
 
 
 class SourceAssetRepository(ABC):
     @abstractmethod
-    def save(self, asset: SourceAsset) -> None:
-        ...
+    def save(self, asset: SourceAsset) -> None: ...
 
     @abstractmethod
-    def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
-        ...
+    def get_by_id(self, asset_id: str) -> SourceAsset | None: ...
 
     @abstractmethod
     def delete_by_id(self, asset_id: str) -> bool:
         """Delete the row by primary key. Returns True if a row was removed."""
 
     @abstractmethod
-    def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
-        ...
+    def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]: ...
 
     @abstractmethod
-    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
         """Return upload count and latest ``uploaded_at`` per aisle id (missing aisles omitted or zero)."""
         ...
 
     @abstractmethod
-    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
         """Return the asset linked to this capture item id, if any (G5 idempotency)."""
         ...
 
 
 class PositionRepository(ABC):
     @abstractmethod
-    def save(self, position: Position) -> None:
-        ...
+    def save(self, position: Position) -> None: ...
 
     @abstractmethod
-    def get_by_id(self, position_id: str) -> Optional[Position]:
-        ...
+    def get_by_id(self, position_id: str) -> Position | None: ...
 
     @abstractmethod
     def list_by_aisle(
         self,
         aisle_id: str,
-        status: Optional[str] = None,
-        needs_review: Optional[bool] = None,
-        min_confidence: Optional[float] = None,
-        sku_filter: Optional[str] = None,
+        status: str | None = None,
+        needs_review: bool | None = None,
+        min_confidence: float | None = None,
+        sku_filter: str | None = None,
         page: int = 1,
         page_size: int = 25,
         sort_by: str = "created_at",
         sort_dir: str = "asc",
-        job_id: Union[str, None, _JobIdFilterUnset] = JOB_ID_FILTER_UNSET,
+        job_id: str | None | _JobIdFilterUnset = JOB_ID_FILTER_UNSET,
     ) -> Sequence[Position]:
         """List positions for an aisle with optional filters and pagination (§9.7).
         sku_filter: when set, only positions that have at least one product_record with
@@ -129,7 +121,7 @@ class PositionRepository(ABC):
 
     @abstractmethod
     def list_by_aisle_query(
-        self, aisle_id: str, query: Optional[PositionListQuery] = None
+        self, aisle_id: str, query: PositionListQuery | None = None
     ) -> Sequence[Position]:
         """List positions for an aisle using optional PositionListQuery. Default query implies page=1, page_size=25."""
         ...
@@ -142,16 +134,13 @@ class PositionRepository(ABC):
 
 class ProductRecordRepository(ABC):
     @abstractmethod
-    def save(self, product: ProductRecord) -> None:
-        ...
+    def save(self, product: ProductRecord) -> None: ...
 
     @abstractmethod
-    def get_by_id(self, product_id: str) -> Optional[ProductRecord]:
-        ...
+    def get_by_id(self, product_id: str) -> ProductRecord | None: ...
 
     @abstractmethod
-    def list_by_position(self, position_id: str) -> Sequence[ProductRecord]:
-        ...
+    def list_by_position(self, position_id: str) -> Sequence[ProductRecord]: ...
 
     def list_by_position_ids(self, position_ids: Sequence[str]) -> Sequence[ProductRecord]:
         """Product rows for any ``position_id`` in ``position_ids`` (empty → empty).
@@ -161,7 +150,7 @@ class ProductRecordRepository(ABC):
         """
         if not position_ids:
             return []
-        out: List[ProductRecord] = []
+        out: list[ProductRecord] = []
         for pid in dict.fromkeys(position_ids):
             out.extend(self.list_by_position(pid))
         return out
@@ -169,46 +158,37 @@ class ProductRecordRepository(ABC):
 
 class EvidenceRepository(ABC):
     @abstractmethod
-    def save(self, evidence: Evidence) -> None:
-        ...
+    def save(self, evidence: Evidence) -> None: ...
 
     @abstractmethod
-    def get_by_id(self, evidence_id: str) -> Optional[Evidence]:
-        ...
+    def get_by_id(self, evidence_id: str) -> Evidence | None: ...
 
     @abstractmethod
-    def list_by_entity(self, entity_type: str, entity_id: str) -> Sequence[Evidence]:
-        ...
+    def list_by_entity(self, entity_type: str, entity_id: str) -> Sequence[Evidence]: ...
 
 
 class ReviewActionRepository(ABC):
     @abstractmethod
-    def save(self, review: ReviewAction) -> None:
-        ...
+    def save(self, review: ReviewAction) -> None: ...
 
     @abstractmethod
-    def list_by_position(self, position_id: str) -> Sequence[ReviewAction]:
-        ...
+    def list_by_position(self, position_id: str) -> Sequence[ReviewAction]: ...
 
 
 class JobRepository(ABC):
     @abstractmethod
-    def save(self, job: Job) -> None:
-        ...
+    def save(self, job: Job) -> None: ...
 
     @abstractmethod
-    def get_by_id(self, job_id: str) -> Optional[Job]:
-        ...
+    def get_by_id(self, job_id: str) -> Job | None: ...
 
     @abstractmethod
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         """Return the most recently updated (or created) job for the given target, or None."""
         ...
 
     @abstractmethod
-    def get_latest_by_targets(
-        self, target_type: str, target_ids: Sequence[str]
-    ) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         """Return the latest job per target_id for the given target_type. Keys are target_id; only one job per target (the latest by updated_at, then created_at). Missing targets are omitted from the dict."""
         ...
 
@@ -230,8 +210,7 @@ class RawLabelRepository(ABC):
     """Persist and read raw labels (original observations)."""
 
     @abstractmethod
-    def save_many(self, labels: List[RawLabel]) -> None:
-        ...
+    def save_many(self, labels: list[RawLabel]) -> None: ...
 
     @abstractmethod
     def list_for_scope(
@@ -249,8 +228,7 @@ class NormalizedLabelRepository(ABC):
     """Persist and read normalized labels (after merge)."""
 
     @abstractmethod
-    def save_many(self, labels: List[NormalizedLabel]) -> None:
-        ...
+    def save_many(self, labels: list[NormalizedLabel]) -> None: ...
 
     @abstractmethod
     def list_for_scope(
@@ -259,8 +237,7 @@ class NormalizedLabelRepository(ABC):
         aisle_id: str,
         *,
         job_id: LabelJobScope = "all",
-    ) -> Sequence[NormalizedLabel]:
-        ...
+    ) -> Sequence[NormalizedLabel]: ...
 
     @abstractmethod
     def replace_for_scope(
@@ -278,8 +255,7 @@ class FinalCountRepository(ABC):
     """Persist and read final count records (business output)."""
 
     @abstractmethod
-    def save_many(self, records: List[FinalCountRecord]) -> None:
-        ...
+    def save_many(self, records: list[FinalCountRecord]) -> None: ...
 
     @abstractmethod
     def list_for_scope(
@@ -288,8 +264,7 @@ class FinalCountRepository(ABC):
         aisle_id: str,
         *,
         job_id: LabelJobScope = "all",
-    ) -> Sequence[FinalCountRecord]:
-        ...
+    ) -> Sequence[FinalCountRecord]: ...
 
     @abstractmethod
     def list_by_position(self, position_id: str) -> Sequence[FinalCountRecord]:
@@ -314,7 +289,7 @@ class InventoryVisualReferenceRepository(ABC):
     """
 
     @abstractmethod
-    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
         """Return one reference by id, or None when it does not exist."""
         ...
 

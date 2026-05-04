@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Mapping, MutableMapping
 from uuid import uuid4
 
 from src.application.dto.uploaded_file import UploadedFile
@@ -32,13 +32,13 @@ from src.application.services.aisle_source_asset_materializer import (
     validate_staging_media_upload_file,
 )
 from src.application.services.capture_flow_observability import (
-    emit_capture_flow_event,
-    get_capture_flow_metrics,
     LOG_OP_G5_MATERIALIZE_ALL_GROUPS,
     LOG_OP_G5_MATERIALIZE_GROUP,
     RESULT_FAILED,
     RESULT_PARTIAL,
     RESULT_SUCCESS,
+    emit_capture_flow_event,
+    get_capture_flow_metrics,
 )
 from src.application.services.capture_group_item_integrity import validate_group_items_coherent
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
@@ -113,11 +113,15 @@ class MaterializeCaptureSessionGroupUseCase:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
             raise CaptureSessionNotFoundError("Capture session not found for this inventory.")
-        ensure_group_aisle_assignment_allowed(session, group_repo=self._group_repo, session_id=session_id)
+        ensure_group_aisle_assignment_allowed(
+            session, group_repo=self._group_repo, session_id=session_id
+        )
 
         group = self._group_repo.get_by_id_and_session(group_id, session_id)
         if group is None:
-            raise CaptureSessionGroupNotFoundError("Capture session group not found for this session.")
+            raise CaptureSessionGroupNotFoundError(
+                "Capture session group not found for this session."
+            )
 
         if group.assignment_status not in (
             CaptureSessionGroupAisleAssignmentStatus.ASSIGNED_EXISTING,
@@ -185,7 +189,9 @@ class MaterializeCaptureSessionGroupUseCase:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
             raise CaptureSessionNotFoundError("Capture session not found for this inventory.")
-        ensure_group_aisle_assignment_allowed(session, group_repo=self._group_repo, session_id=session_id)
+        ensure_group_aisle_assignment_allowed(
+            session, group_repo=self._group_repo, session_id=session_id
+        )
 
         summaries = list(self._group_repo.list_summaries(session_id))
         total = len(summaries)
@@ -198,7 +204,10 @@ class MaterializeCaptureSessionGroupUseCase:
 
         for s in summaries:
             st = (s.assignment_status or "").strip().lower()
-            if st == CaptureSessionGroupAisleAssignmentStatus.UNASSIGNED.value or not (s.assigned_aisle_id or "").strip():
+            if (
+                st == CaptureSessionGroupAisleAssignmentStatus.UNASSIGNED.value
+                or not (s.assigned_aisle_id or "").strip()
+            ):
                 skipped_groups += 1
                 continue
             aisle_id = (s.assigned_aisle_id or "").strip()
@@ -404,7 +413,9 @@ class MaterializeCaptureSessionGroupUseCase:
         if any_new_asset:
             aisle_entity = self._aisle_repo.get_by_id(aisle_id)
             if aisle_entity is None:
-                raise CaptureSessionMaterializationFailedError("Aisle disappeared during group materialization.")
+                raise CaptureSessionMaterializationFailedError(
+                    "Aisle disappeared during group materialization."
+                )
             self._materializer.finalize_aisle_after_source_assets_changed(
                 aisle=aisle_entity,
                 inventory_id=inventory_id,
@@ -423,7 +434,9 @@ class MaterializeCaptureSessionGroupUseCase:
         downloaded = get_object(key)
         raw = getattr(downloaded, "content", None)
         if not isinstance(raw, (bytes, bytearray)) or len(raw) == 0:
-            raise CaptureSessionMaterializationFailedError("Staging object is missing or empty for materialization.")
+            raise CaptureSessionMaterializationFailedError(
+                "Staging object is missing or empty for materialization."
+            )
         filename = (item.original_filename or Path(key).name or "file").strip()
         content_type = (getattr(downloaded, "content_type", None) or "").strip()
         if not content_type or content_type == "application/octet-stream":
@@ -453,7 +466,9 @@ class MaterializeCaptureSessionGroupUseCase:
             "capture_session_item_id": item.id,
             "materialized_at": materialized_at_iso,
             "materialization_operation_id": materialization_operation_id,
-            "effective_capture_time": item.effective_capture_time.isoformat() if item.effective_capture_time else None,
+            "effective_capture_time": item.effective_capture_time.isoformat()
+            if item.effective_capture_time
+            else None,
             "time_source": item.time_source.value if item.time_source else None,
             "time_confidence": item.time_confidence,
             "original_filename": item.original_filename,

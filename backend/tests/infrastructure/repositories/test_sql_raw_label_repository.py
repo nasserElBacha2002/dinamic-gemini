@@ -8,6 +8,7 @@ Skips when DB is not configured. Requires v3 schema to be applied (raw_labels ta
 from __future__ import annotations
 
 import os
+
 import pytest
 
 from src.database.sqlserver import now_utc
@@ -77,6 +78,5 @@ def test_sql_raw_label_repository_save_and_list_for_scope(repo: SqlRawLabelRepos
     ]
     repo.save_many(labels)
     loaded = list(repo.list_for_scope("inv-test", "aisle-test"))
-    ids = [l.id for l in loaded]
+    ids = [label.id for label in loaded]
     assert "test-raw-001" in ids
-

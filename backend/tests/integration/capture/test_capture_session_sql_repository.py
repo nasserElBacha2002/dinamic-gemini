@@ -8,8 +8,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.application.errors import CaptureSessionDuplicateItemContentError, OpenCaptureSessionExistsError
-from src.database.sqlserver import now_utc
+from src.application.errors import (
+    CaptureSessionDuplicateItemContentError,
+    OpenCaptureSessionExistsError,
+)
+from src.database.sqlserver import SqlServerClient, now_utc
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.capture.entities import (
     CaptureSession,
@@ -20,8 +23,12 @@ from src.domain.capture.entities import (
 )
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
-from src.infrastructure.repositories.sql_capture_session_item_repository import SqlCaptureSessionItemRepository
-from src.infrastructure.repositories.sql_capture_session_repository import SqlCaptureSessionRepository
+from src.infrastructure.repositories.sql_capture_session_item_repository import (
+    SqlCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.sql_capture_session_repository import (
+    SqlCaptureSessionRepository,
+)
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from tests.support.sql_integration import sql_server_client_or_skip
 

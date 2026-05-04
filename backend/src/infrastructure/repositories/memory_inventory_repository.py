@@ -7,7 +7,7 @@ State is process-local and not persisted across restarts.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence
+from collections.abc import Sequence
 
 from src.application.ports.repositories import InventoryRepository
 from src.domain.inventory.entities import Inventory
@@ -15,12 +15,12 @@ from src.domain.inventory.entities import Inventory
 
 class MemoryInventoryRepository(InventoryRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Inventory] = {}
+        self._store: dict[str, Inventory] = {}
 
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:

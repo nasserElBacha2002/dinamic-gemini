@@ -5,13 +5,13 @@ v2.1: :func:`validate_global_analysis_structure_v21` first coerces known LLM num
 (``product_label_quantity``) in place, then enforces types; v1 pallet schema is validate-only.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.normalization.numeric_coercion import coerce_v21_product_label_quantities
 
 
-def validate_global_analysis_structure(data: Dict[str, Any]) -> None:
+def validate_global_analysis_structure(data: dict[str, Any]) -> None:
     """Validate that data conforms to the global analysis response schema.
 
     Checks:
@@ -110,7 +110,7 @@ def _check_bbox(obj: Any, key: str, prefix: str) -> None:
         )
 
 
-def validate_global_analysis_structure_v21(data: Dict[str, Any]) -> None:
+def validate_global_analysis_structure_v21(data: dict[str, Any]) -> None:
     """Validate that data conforms to the v2.1 global analysis response schema.
 
     Checks:
@@ -176,9 +176,7 @@ def validate_global_analysis_structure_v21(data: Dict[str, Any]) -> None:
                 f"{prefix}.model_entity_id must be a string, got {type(mid).__name__!r}"
             )
         if mid in seen_model_ids:
-            raise GlobalAnalysisValidationError(
-                f"Duplicate model_entity_id: {mid!r}"
-            )
+            raise GlobalAnalysisValidationError(f"Duplicate model_entity_id: {mid!r}")
         seen_model_ids.add(mid)
 
         if "confidence" not in e:
@@ -190,9 +188,7 @@ def validate_global_analysis_structure_v21(data: Dict[str, Any]) -> None:
                 f"{prefix}.confidence must be a number, got {type(e['confidence']).__name__!r}"
             )
         if not (0 <= c <= 1):
-            raise GlobalAnalysisValidationError(
-                f"{prefix}.confidence must be in [0, 1], got {c}"
-            )
+            raise GlobalAnalysisValidationError(f"{prefix}.confidence must be in [0, 1], got {c}")
 
         qty = e.get("product_label_quantity")
         if qty is not None and not isinstance(qty, int):
@@ -203,9 +199,7 @@ def validate_global_analysis_structure_v21(data: Dict[str, Any]) -> None:
         if "has_boxes" not in e:
             raise GlobalAnalysisValidationError(f"{prefix} missing 'has_boxes'")
         if not isinstance(e["has_boxes"], bool):
-            raise GlobalAnalysisValidationError(
-                f"{prefix}.has_boxes must be a boolean"
-            )
+            raise GlobalAnalysisValidationError(f"{prefix}.has_boxes must be a boolean")
 
         _check_bbox(e, "position_label_bbox", prefix)
         _check_bbox(e, "product_label_bbox", prefix)

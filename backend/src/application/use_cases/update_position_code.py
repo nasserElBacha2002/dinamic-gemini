@@ -69,9 +69,7 @@ class UpdatePositionCodeUseCase:
         now = self._clock.now()
         before_code = position.corrected_position_code
         before_resolution = (
-            position.review_resolution.value
-            if position.review_resolution is not None
-            else None
+            position.review_resolution.value if position.review_resolution is not None else None
         )
 
         position.corrected_position_code = new_code
@@ -79,7 +77,7 @@ class UpdatePositionCodeUseCase:
         position.review_resolution = PositionReviewResolution.POSITION_CODE_CORRECTED
         position.needs_review = False
         position.updated_at = now
-        
+
         self._position_repo.save(position)
 
         review = ReviewAction(

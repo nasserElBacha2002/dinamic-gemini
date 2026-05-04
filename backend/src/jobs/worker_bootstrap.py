@@ -61,7 +61,11 @@ def checkpoint_v3_job_bootstrap(
 
         repo = get_job_repo()
         job = repo.get_by_id(job_id)
-        if job is None or job.status not in (JobStatus.STARTING, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
+        if job is None or job.status not in (
+            JobStatus.STARTING,
+            JobStatus.RUNNING,
+            JobStatus.CANCEL_REQUESTED,
+        ):
             return
         now = _utc_now()
         updated = replace(
@@ -127,5 +131,9 @@ def fail_v3_job_bootstrap(
             job_id=job_id,
             execution_id=execution_id,
             event="worker.bootstrap_fail_persist_failed",
-            details={"substep": substep, "error": error_message, "traceback": traceback.format_exc()},
+            details={
+                "substep": substep,
+                "error": error_message,
+                "traceback": traceback.format_exc(),
+            },
         )

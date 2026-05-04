@@ -7,10 +7,8 @@ Verifica:
 - Asociación por IoU entre frames
 """
 
-import pytest
-
 from src.models.schemas import BBox
-from src.tracking.tracker import MultiObjectTracker, TrackedBBox
+from src.tracking.tracker import MultiObjectTracker
 
 
 def test_tracker_update_two_frames_same_bbox_assigns_same_track_id():

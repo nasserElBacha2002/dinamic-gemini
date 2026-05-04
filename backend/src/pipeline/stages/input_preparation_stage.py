@@ -20,7 +20,6 @@ The pipeline must use context.run_dir as the canonical run directory.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from src.frames.normalize import normalize_photos_for_job, validate_relative_path
 from src.jobs.models import JobInput
@@ -89,7 +88,9 @@ class InputPreparationStage:
                             "manifest_exists": manifest_path.exists(),
                             "photos_dir": str(photos_dir),
                             "photos_dir_exists": photos_dir.exists(),
-                            "photos_dir_is_dir": photos_dir.is_dir() if photos_dir.exists() else False,
+                            "photos_dir_is_dir": photos_dir.is_dir()
+                            if photos_dir.exists()
+                            else False,
                         },
                     )
                 normalized_dir = run_dir / "input_photos_normalized"

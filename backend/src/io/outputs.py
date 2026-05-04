@@ -7,7 +7,7 @@ y guardarlos en diferentes formatos.
 
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from src.models.schemas import (
     ConsolidatedResult,
@@ -19,7 +19,7 @@ from src.models.schemas import (
 
 
 def frame_results_to_final_result(
-    frame_results: List[LLMFrameResult],
+    frame_results: list[LLMFrameResult],
     video_id: str,
     processing_summary: Optional[dict] = None,
 ) -> FinalResult:
@@ -28,7 +28,7 @@ def frame_results_to_final_result(
     Un pallet por frame (pallet_id = frame_N), con los productos que Gemini
     devolvió para ese frame. Útil con --raw-gemini para omitir consolidate.
     """
-    pallets: List[PalletEstimate] = []
+    pallets: list[PalletEstimate] = []
     for fr in frame_results:
         frame_idx = fr.frame.frame_idx
         products_flat = []
@@ -60,17 +60,17 @@ def to_final_result(
     processing_summary: Optional[dict] = None,
 ) -> FinalResult:
     """Convierte un ConsolidatedResult a FinalResult (formato de salida final).
-    
+
     Mapea los resultados consolidados (con estadísticas internas) a un formato
     simple y limpio para exportación.
-    
+
     Args:
         consolidated: Resultado consolidado con estadísticas.
         processing_summary: Resumen opcional del procesamiento (tiempos, frames, etc.).
-    
+
     Returns:
         FinalResult con formato simple para exportación.
-    
+
     Examples:
         >>> from src.models.schemas import ConsolidatedResult, ConsolidatedPallet, ConsolidatedProduct
         >>> consolidated = ConsolidatedResult(
@@ -101,7 +101,7 @@ def to_final_result(
             for cp in p.products
         ]
         pallets.append(PalletEstimate(pallet_id=p.pallet_id, products=products))
-    
+
     return FinalResult(
         video_id=consolidated.video_id,
         pallets=pallets,
@@ -111,43 +111,43 @@ def to_final_result(
 
 def save_result_json(result: FinalResult, output_path: str) -> Path:
     """Guarda un FinalResult como archivo JSON.
-    
+
     Args:
         result: Resultado final a guardar.
         output_path: Ruta donde guardar el archivo JSON.
-    
+
     Returns:
         Path al archivo guardado.
-    
+
     Raises:
         IOError: Si no se puede escribir el archivo.
-    
+
     Examples:
         >>> result = FinalResult(video_id="VID_001", pallets=[])
         >>> save_result_json(result, "output/result.json")
         PosixPath('output/result.json')
     """
     output_file = Path(output_path)
-    
+
     # Crear directorio si no existe
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Convertir a dict y guardar como JSON
     result_dict = result.model_dump(mode="json", exclude_none=True)
-    
+
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(result_dict, f, indent=2, ensure_ascii=False)
-    
+
     return output_file
 
 
 def save_result(result: FinalResult, output_path: str) -> Path:
     """Guarda un FinalResult (alias de save_result_json para compatibilidad).
-    
+
     Args:
         result: Resultado final a guardar.
         output_path: Ruta donde guardar el archivo JSON.
-    
+
     Returns:
         Path al archivo guardado.
     """
@@ -156,10 +156,10 @@ def save_result(result: FinalResult, output_path: str) -> Path:
 
 def print_summary(result: FinalResult) -> None:
     """Imprime un resumen legible del resultado en consola.
-    
+
     Args:
         result: Resultado final a resumir.
-    
+
     Examples:
         >>> result = FinalResult(video_id="VID_001", pallets=[])
         >>> print_summary(result)
@@ -170,10 +170,10 @@ def print_summary(result: FinalResult) -> None:
     print(f"📹 Video ID: {result.video_id}")
     print(f"📦 Pallets detectados: {len(result.pallets)}")
     print()
-    
+
     total_products = 0
     total_boxes = 0
-    
+
     for pallet in result.pallets:
         print(f"📦 Pallet: {pallet.pallet_id}")
         for product in pallet.products:
@@ -186,14 +186,14 @@ def print_summary(result: FinalResult) -> None:
                 f"(confianza: {product.confidence:.2f})"
             )
         print()
-    
+
     print("=" * 60)
     print("📈 Totales")
     print("=" * 60)
     print(f"   - Productos únicos: {total_products}")
     print(f"   - Total de cajas: {total_boxes}")
     print()
-    
+
     # Mostrar resumen de procesamiento si está disponible
     if result.processing_summary:
         print("=" * 60)

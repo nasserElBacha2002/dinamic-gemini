@@ -6,19 +6,18 @@ concatenadas, ordenadas por frame_idx/bbox y deduplicadas por (frame_idx, bbox).
 Track_id del merged = mínimo del componente; salida ordenada determinista.
 """
 
-from typing import Dict, List, Set, Tuple
 
 from src.models.schemas import PalletObservation, PalletTrack
 
 
-def _dsu_find(parent: Dict[str, str], x: str) -> str:
+def _dsu_find(parent: dict[str, str], x: str) -> str:
     """Find con path compression. Retorna el representante (root) del componente."""
     if parent[x] != x:
         parent[x] = _dsu_find(parent, parent[x])
     return parent[x]
 
 
-def _dsu_union(parent: Dict[str, str], x: str, y: str) -> None:
+def _dsu_union(parent: dict[str, str], x: str, y: str) -> None:
     """Union por rank implícito: el menor track_id siempre es el root."""
     rx = _dsu_find(parent, x)
     ry = _dsu_find(parent, y)
@@ -31,25 +30,25 @@ def _dsu_union(parent: Dict[str, str], x: str, y: str) -> None:
         parent[rx] = ry
 
 
-def _obs_key(o: PalletObservation) -> Tuple[int, Tuple[int, int, int, int]]:
+def _obs_key(o: PalletObservation) -> tuple[int, tuple[int, int, int, int]]:
     """Clave para deduplicación: (frame_idx, bbox)."""
     return (o.frame_idx, o.bbox)
 
 
 def _merge_observations(
-    observations: List[PalletObservation],
+    observations: list[PalletObservation],
     merged_track_id: str,
-) -> List[PalletObservation]:
+) -> list[PalletObservation]:
     """Concatena, deduplica por (frame_idx, bbox) y ordena. Prefiere obs con roi_path y blur_score."""
     if not observations:
         return []
     # Agrupar por clave (frame_idx, bbox)
-    by_key: Dict[Tuple[int, Tuple[int, int, int, int]], List[PalletObservation]] = {}
+    by_key: dict[tuple[int, tuple[int, int, int, int]], list[PalletObservation]] = {}
     for o in observations:
         k = _obs_key(o)
         by_key.setdefault(k, []).append(o)
     # Por cada clave quedarse con la "mejor": preferir roi_path y blur_score no None
-    best: List[PalletObservation] = []
+    best: list[PalletObservation] = []
     for group in by_key.values():
         chosen = max(
             group,
@@ -66,9 +65,9 @@ def _merge_observations(
 
 
 def merge_tracks_dsu(
-    tracks: List[PalletTrack],
-    confirmed_pairs: List[Tuple[str, str]],
-) -> List[PalletTrack]:
+    tracks: list[PalletTrack],
+    confirmed_pairs: list[tuple[str, str]],
+) -> list[PalletTrack]:
     """Fusiona tracks con Union-Find según pares confirmados (Re-ID).
 
     - Solo se consideran track_ids presentes en `tracks`. Pares con ids inexistentes se ignoran.
@@ -87,25 +86,25 @@ def merge_tracks_dsu(
     """
     if not tracks:
         return []
-    by_id: Dict[str, PalletTrack] = {t.track_id: t for t in tracks}
-    valid_ids: Set[str] = set(by_id.keys())
+    by_id: dict[str, PalletTrack] = {t.track_id: t for t in tracks}
+    valid_ids: set[str] = set(by_id.keys())
 
     # DSU: solo nodos que existen en tracks
-    parent: Dict[str, str] = {tid: tid for tid in valid_ids}
+    parent: dict[str, str] = {tid: tid for tid in valid_ids}
 
-    for (a, b) in confirmed_pairs:
+    for a, b in confirmed_pairs:
         if a not in valid_ids or b not in valid_ids:
             continue
         pa = (min(a, b), max(a, b))
         _dsu_union(parent, pa[0], pa[1])
 
     # Componentes: root -> set de track_ids
-    components: Dict[str, Set[str]] = {}
+    components: dict[str, set[str]] = {}
     for tid in valid_ids:
         root = _dsu_find(parent, tid)
         components.setdefault(root, set()).add(tid)
 
-    result: List[PalletTrack] = []
+    result: list[PalletTrack] = []
     for root in sorted(components.keys()):
         comp = components[root]
         if len(comp) == 1:
@@ -114,7 +113,7 @@ def merge_tracks_dsu(
         # Merge: merged_track_id = root (ya es el min del componente por nuestro union)
         merged_track_id = root
         base_track = by_id[merged_track_id]
-        all_obs: List[PalletObservation] = []
+        all_obs: list[PalletObservation] = []
         for tid in sorted(comp):
             all_obs.extend(by_id[tid].observations)
         merged_obs = _merge_observations(all_obs, merged_track_id)
@@ -140,22 +139,22 @@ def merge_tracks_dsu(
 
 
 def get_merge_map(
-    tracks: List[PalletTrack],
-    confirmed_pairs: List[Tuple[str, str]],
-) -> Dict[str, List[str]]:
+    tracks: list[PalletTrack],
+    confirmed_pairs: list[tuple[str, str]],
+) -> dict[str, list[str]]:
     """Construye mapa root_id -> [original track_ids] para componentes con más de un track.
 
     Útil para pipeline_debug/reid_merge_map sin modificar el schema de PalletTrack.
     """
     if not tracks:
         return {}
-    valid_ids: Set[str] = {t.track_id for t in tracks}
-    parent: Dict[str, str] = {tid: tid for tid in valid_ids}
-    for (a, b) in confirmed_pairs:
+    valid_ids: set[str] = {t.track_id for t in tracks}
+    parent: dict[str, str] = {tid: tid for tid in valid_ids}
+    for a, b in confirmed_pairs:
         if a not in valid_ids or b not in valid_ids:
             continue
         _dsu_union(parent, min(a, b), max(a, b))
-    components: Dict[str, Set[str]] = {}
+    components: dict[str, set[str]] = {}
     for tid in valid_ids:
         root = _dsu_find(parent, tid)
         components.setdefault(root, set()).add(tid)

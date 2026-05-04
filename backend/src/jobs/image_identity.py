@@ -16,7 +16,6 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -50,20 +49,16 @@ def generate_image_id(upload_order: int) -> str:
         ValueError: If upload_order is not a positive integer.
     """
     if not isinstance(upload_order, int):
-        raise ValueError(
-            f"upload_order must be an int, got {type(upload_order).__name__!r}"
-        )
+        raise ValueError(f"upload_order must be an int, got {type(upload_order).__name__!r}")
     if upload_order < 1:
-        raise ValueError(
-            f"upload_order must be >= 1 (1-based), got {upload_order!r}"
-        )
+        raise ValueError(f"upload_order must be >= 1 (1-based), got {upload_order!r}")
     return f"img_{upload_order:03d}"
 
 
 def load_job_images_from_manifest(
     manifest_path: Path,
     photos_dir_rel: str,
-) -> List[JobImage]:
+) -> list[JobImage]:
     """Load job image metadata from input_manifest.json for prompt enrichment.
 
     Epic A uses the manifest as the source of truth for image identity. Entries
@@ -88,7 +83,7 @@ def load_job_images_from_manifest(
     if manifest.get("input_type") != "photos":
         return []
     photos_list = manifest.get("photos") or []
-    result: List[JobImage] = []
+    result: list[JobImage] = []
     seen_ids: set[str] = set()
     for position_1based, entry in enumerate(
         sorted(photos_list, key=lambda x: x.get("index", 0)), start=1
@@ -124,9 +119,7 @@ def load_job_images_from_manifest(
             upload_order = position_1based
 
         original_filename = entry.get("original_filename") or stored
-        storage_path = (
-            f"{photos_dir_rel.rstrip('/')}/{stored}" if photos_dir_rel else stored
-        )
+        storage_path = f"{photos_dir_rel.rstrip('/')}/{stored}" if photos_dir_rel else stored
         result.append(
             JobImage(
                 image_id=image_id,

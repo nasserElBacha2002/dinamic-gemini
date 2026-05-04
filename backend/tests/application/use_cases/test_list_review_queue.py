@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Sequence
 
 from src.application.ports.contracts import ReviewQueueQuery
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
@@ -14,7 +14,9 @@ from src.domain.products.entities import ProductRecord
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 
 UTC = timezone.utc
 
@@ -104,9 +106,7 @@ def test_review_queue_out_of_range_page_returns_empty_slice() -> None:
     product_repo = MemoryProductRecordRepository()
     inv_repo.save(Inventory("inv-x", "X", InventoryStatus.DRAFT, now, now))
     aisle_repo.save(Aisle("aisle-x", "inv-x", "X1", AisleStatus.CREATED, now, now))
-    pos_repo.save(
-        Position("px", "aisle-x", PositionStatus.DETECTED, 0.5, True, None, now, now)
-    )
+    pos_repo.save(Position("px", "aisle-x", PositionStatus.DETECTED, 0.5, True, None, now, now))
     uc = ListReviewQueueUseCase(inv_repo, aisle_repo, pos_repo, product_repo)
     rows, total, summary = uc.execute(ReviewQueueQuery(page=99, page_size=10))
     assert total == 1

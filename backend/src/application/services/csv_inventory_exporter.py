@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 UTF8_BOM = "\ufeff"
 

@@ -24,19 +24,27 @@ from src.application.use_cases.close_capture_session import CloseCaptureSessionU
 from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
 from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
 from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
-from src.application.use_cases.upload_capture_session_staging_items import UploadCaptureSessionStagingItemsUseCase
+from src.application.use_cases.upload_capture_session_staging_items import (
+    UploadCaptureSessionStagingItemsUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.capture.entities import CaptureSessionStatus, CaptureTimeSource
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 
 
 def _pillow_time_extractor():
-    from src.application.services.capture_staging_time_metadata import PillowCaptureStagingTimeMetadataExtractor
+    from src.application.services.capture_staging_time_metadata import (
+        PillowCaptureStagingTimeMetadataExtractor,
+    )
 
     return PillowCaptureStagingTimeMetadataExtractor(
         confidence_exif=0.85,
@@ -84,7 +92,7 @@ def _seed_inv_aisle() -> tuple[MemoryInventoryRepository, MemoryAisleRepository,
 def test_create_session_success_and_list() -> None:
     inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
     session_repo = MemoryCaptureSessionRepository()
-    item_repo = MemoryCaptureSessionItemRepository()
+    MemoryCaptureSessionItemRepository()
     clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
     create_uc = CreateCaptureSessionUseCase(
         inventory_repo=inv_repo,
@@ -166,7 +174,9 @@ def test_inventory_level_session_upload_close_cancel_flow(tmp_path: Path) -> Non
     assert batch.items[0].import_status.value == "imported"
     assert batch.errors == ()
 
-    closed = CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock).execute(
+    closed = CloseCaptureSessionUseCase(
+        session_repo=session_repo, item_repo=item_repo, clock=clock
+    ).execute(
         inventory_id=inv_id,
         session_id=session.id,
         aisle_id=None,
@@ -275,7 +285,9 @@ def test_close_then_reopen_allowed(tmp_path: Path) -> None:
         session_id=s.id,
         files=[UploadedFile("a.jpg", BytesIO(b"x"), "image/jpeg")],
     )
-    close_uc = CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock)
+    close_uc = CloseCaptureSessionUseCase(
+        session_repo=session_repo, item_repo=item_repo, clock=clock
+    )
     closed = close_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id)
     assert closed.status == CaptureSessionStatus.READY_FOR_REVIEW
     assert closed.closed_at is not None
@@ -303,9 +315,9 @@ def test_close_rejects_cancelled(tmp_path: Path) -> None:
         clock=clock,
     ).execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id)
     with pytest.raises(CaptureSessionInvalidStateError):
-        CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock).execute(
-            inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id
-        )
+        CloseCaptureSessionUseCase(
+            session_repo=session_repo, item_repo=item_repo, clock=clock
+        ).execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id)
 
 
 def test_close_draft_without_imported_items_rejected() -> None:
@@ -320,7 +332,9 @@ def test_close_draft_without_imported_items_rejected() -> None:
         clock=clock,
         max_open_sessions_per_aisle=3,
     ).execute(inv_id, aisle_id)
-    close_uc = CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock)
+    close_uc = CloseCaptureSessionUseCase(
+        session_repo=session_repo, item_repo=item_repo, clock=clock
+    )
     with pytest.raises(CaptureSessionInvalidStateError):
         close_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id)
 

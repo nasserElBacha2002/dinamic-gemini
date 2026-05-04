@@ -89,9 +89,7 @@ class UpdateProductSkuUseCase:
         before_sku = product.sku
         before_description = product.description
         before_resolution = (
-            position.review_resolution.value
-            if position.review_resolution is not None
-            else None
+            position.review_resolution.value if position.review_resolution is not None else None
         )
         product.sku = sku
         if description is not None:

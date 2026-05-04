@@ -17,7 +17,9 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.application.use_cases.compute_materialized_capture_session_group_preview import (
     ComputeMaterializedCaptureSessionGroupPreviewUseCase,
 )
-from src.application.use_cases.materialize_capture_session_group import MaterializeCaptureSessionGroupUseCase
+from src.application.use_cases.materialize_capture_session_group import (
+    MaterializeCaptureSessionGroupUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.capture.entities import (
     CaptureSession,
@@ -31,12 +33,20 @@ from src.domain.capture.entities import (
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
-from src.infrastructure.repositories.memory_capture_session_group_repository import MemoryCaptureSessionGroupRepository
-from src.infrastructure.repositories.memory_capture_session_item_repository import MemoryCaptureSessionItemRepository
-from src.infrastructure.repositories.memory_capture_session_repository import MemoryCaptureSessionRepository
+from src.infrastructure.repositories.memory_capture_session_group_repository import (
+    MemoryCaptureSessionGroupRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_item_repository import (
+    MemoryCaptureSessionItemRepository,
+)
+from src.infrastructure.repositories.memory_capture_session_repository import (
+    MemoryCaptureSessionRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_source_asset_repository import MemorySourceAssetRepository
+from src.infrastructure.repositories.memory_source_asset_repository import (
+    MemorySourceAssetRepository,
+)
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 
 
@@ -71,7 +81,9 @@ def test_materialize_retry_stable_and_emits_structured_log(caplog, tmp_path) -> 
     asset_repo = MemorySourceAssetRepository()
     store = V3ArtifactStorageAdapter(tmp_path)
     clock = _FixedClock(datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc))
-    reconciler = InventoryStatusReconciler(inventory_repo=inv_repo, aisle_repo=aisle_repo, clock=clock)
+    reconciler = InventoryStatusReconciler(
+        inventory_repo=inv_repo, aisle_repo=aisle_repo, clock=clock
+    )
     uc = MaterializeCaptureSessionGroupUseCase(
         session_repo=session_repo,
         group_repo=group_repo,
@@ -151,7 +163,9 @@ def test_materialize_retry_stable_and_emits_structured_log(caplog, tmp_path) -> 
     assert len(g7_logs) >= 2
     payloads = [json.loads(r.getMessage()) for r in g7_logs]
     assert all(p.get("operation") == "G5_materialize_group" for p in payloads)
-    assert all(p.get("inventory_id") == inv_id and p.get("session_id") == session_id for p in payloads)
+    assert all(
+        p.get("inventory_id") == inv_id and p.get("session_id") == session_id for p in payloads
+    )
     assert get_capture_flow_metrics().materializations_total >= 2
 
 
@@ -165,7 +179,9 @@ def test_preview_partial_after_partial_materialization(tmp_path) -> None:
     position_repo = MemoryPositionRepository()
     store = V3ArtifactStorageAdapter(tmp_path)
     clock = _FixedClock(datetime(2026, 6, 2, 12, 0, 0, tzinfo=timezone.utc))
-    reconciler = InventoryStatusReconciler(inventory_repo=inv_repo, aisle_repo=aisle_repo, clock=clock)
+    reconciler = InventoryStatusReconciler(
+        inventory_repo=inv_repo, aisle_repo=aisle_repo, clock=clock
+    )
     mat = MaterializeCaptureSessionGroupUseCase(
         session_repo=session_repo,
         group_repo=group_repo,
@@ -290,7 +306,7 @@ def test_preview_partial_after_partial_materialization(tmp_path) -> None:
 def test_group_summary_materialization_state_partial() -> None:
     item_repo = MemoryCaptureSessionItemRepository()
     group_repo = MemoryCaptureSessionGroupRepository(item_repo)
-    inv_id, aisle_id, session_id, group_id = str(uuid4()), str(uuid4()), str(uuid4()), str(uuid4())
+    _inv_id, aisle_id, session_id, group_id = str(uuid4()), str(uuid4()), str(uuid4()), str(uuid4())
     now = datetime(2026, 6, 3, 12, 0, 0, tzinfo=timezone.utc)
     item_repo.save(
         CaptureSessionItem(

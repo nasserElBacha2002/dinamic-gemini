@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 def normalize_db_str(raw: object) -> str:
     """Strip whitespace from a DB cell; never assume the driver returns str."""
     if raw is None:

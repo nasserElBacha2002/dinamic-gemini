@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminAiConfigServerDefaults(BaseModel):
     llm_provider: str
     hybrid_prompt_key: str
-    prompt_version: Optional[str] = None
+    prompt_version: str | None = None
 
 
 class AdminAiConfigModelItem(BaseModel):
@@ -40,13 +38,13 @@ class AdminAiConfigResponseContract(BaseModel):
     normalization_family: str
     alias_promotion_policy: str
     claude_product_label_to_internal_code_when_valid: bool = False
-    required_root_keys: List[str] = Field(default_factory=list)
+    required_root_keys: list[str] = Field(default_factory=list)
     extra_root_keys_policy_short: str = ""
-    required_entity_keys: List[str] = Field(default_factory=list)
-    canonical_entity_keys: List[str] = Field(default_factory=list)
-    nullable_optional_entity_keys: List[str] = Field(default_factory=list)
+    required_entity_keys: list[str] = Field(default_factory=list)
+    canonical_entity_keys: list[str] = Field(default_factory=list)
+    nullable_optional_entity_keys: list[str] = Field(default_factory=list)
     canonical_example_json: str = ""
-    transport_notes: List[str] = Field(default_factory=list)
+    transport_notes: list[str] = Field(default_factory=list)
 
 
 class AdminAiConfigComposition(BaseModel):
@@ -60,7 +58,7 @@ class AdminAiConfigComposition(BaseModel):
 class AdminAiConfigPromptCatalogItem(BaseModel):
     key: str
     label: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class AdminAiConfigPromptVariantSummary(BaseModel):
@@ -81,22 +79,22 @@ class AdminAiComposedPromptResponse(BaseModel):
 class AdminAiConfigProviderDetail(BaseModel):
     key: str
     label: str
-    description: Optional[str] = None
+    description: str | None = None
     execution_mode: str = "native"
-    models: List[AdminAiConfigModelItem] = Field(default_factory=list)
-    default_model: Optional[str] = None
+    models: list[AdminAiConfigModelItem] = Field(default_factory=list)
+    default_model: str | None = None
     capabilities: AdminAiConfigProviderCapabilities
     instructions: AdminAiConfigProviderInstructions
     response_contract: AdminAiConfigResponseContract
     composition: AdminAiConfigComposition
-    prompt_variant_summaries: List[AdminAiConfigPromptVariantSummary] = Field(default_factory=list)
+    prompt_variant_summaries: list[AdminAiConfigPromptVariantSummary] = Field(default_factory=list)
 
 
 class AdminAiConfigResponse(BaseModel):
     generated_at: str
     server_defaults: AdminAiConfigServerDefaults
-    providers: List[AdminAiConfigProviderDetail]
-    prompt_catalog: List[AdminAiConfigPromptCatalogItem]
+    providers: list[AdminAiConfigProviderDetail]
+    prompt_catalog: list[AdminAiConfigPromptCatalogItem]
     global_instructions_note: str
 
     model_config = ConfigDict(extra="ignore")

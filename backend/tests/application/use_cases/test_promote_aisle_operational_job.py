@@ -44,7 +44,9 @@ def test_promote_only_succeeded_process_aisle_for_scoped_job() -> None:
             processing_mode=InventoryProcessingMode.TEST,
         )
     )
-    aisle_repo.save(Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now, operational_job_id=None))
+    aisle_repo.save(
+        Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now, operational_job_id=None)
+    )
     job_repo.save(
         Job(
             id="jok",

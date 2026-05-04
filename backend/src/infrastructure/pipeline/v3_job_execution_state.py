@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
@@ -17,7 +17,9 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import InventoryProcessingMode
 from src.domain.jobs.entities import Job, JobStatus
-from src.infrastructure.pipeline.worker_durable_artifact_publisher import merge_durable_into_result_json
+from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    merge_durable_into_result_json,
+)
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.run_metadata import (
@@ -78,8 +80,8 @@ class V3JobExecutionStateService:
         aisle: Aisle,
         report_path: Path,
         *,
-        run_metadata: Optional[dict] = None,
-        durable_artifacts: Optional[Dict[str, Dict[str, Any]]] = None,
+        run_metadata: dict | None = None,
+        durable_artifacts: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         # Completion wall time at true terminal persist (after durable upload), not job start.
         completion_now = self._clock.now()
@@ -151,7 +153,9 @@ class V3JobExecutionStateService:
             job.finished_at = now
             job.last_heartbeat_at = now
             job.failure_code = "PROCESSING_FAILED"
-            job.failure_message = error_message[:2048] if len(error_message) > 2048 else error_message
+            job.failure_message = (
+                error_message[:2048] if len(error_message) > 2048 else error_message
+            )
             job.error_message = error_message[:2048] if len(error_message) > 2048 else error_message
             self._job_repo.save(job)
 
@@ -167,9 +171,13 @@ class V3JobExecutionStateService:
         job.error_message = reason[:2048] if len(reason) > 2048 else reason
         self._job_repo.save(job)
 
-    def heartbeat(self, job_id: str) -> Optional[Job]:
+    def heartbeat(self, job_id: str) -> Job | None:
         job = self._job_repo.get_by_id(job_id)
-        if job is None or job.status not in (JobStatus.STARTING, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
+        if job is None or job.status not in (
+            JobStatus.STARTING,
+            JobStatus.RUNNING,
+            JobStatus.CANCEL_REQUESTED,
+        ):
             return None
         now = self._clock.now()
         job.last_heartbeat_at = now
@@ -177,7 +185,7 @@ class V3JobExecutionStateService:
         self._job_repo.save(job)
         return job
 
-    def update_runtime_status(self, job_id: str, *, stage: str, substep: Optional[str]) -> None:
+    def update_runtime_status(self, job_id: str, *, stage: str, substep: str | None) -> None:
         job = self._job_repo.get_by_id(job_id)
         if job is None or job.status in (JobStatus.FAILED, JobStatus.CANCELED, JobStatus.SUCCEEDED):
             return
@@ -211,7 +219,7 @@ class V3JobExecutionStateService:
         reason: str,
         *,
         exec_log: ExecutionLogWriter | None = None,
-        cancel_event_emitted: Optional[Dict[str, bool]] = None,
+        cancel_event_emitted: dict[str, bool] | None = None,
     ) -> None:
         """Cancel the job and mark the aisle as failed-with-CANCELED, optionally logging ``job.canceled``.
 
@@ -221,7 +229,9 @@ class V3JobExecutionStateService:
         now = self._clock.now()
         current_job = self._job_repo.get_by_id(job_id)
         if exec_log is not None:
-            should_emit_canceled = cancel_event_emitted is None or not cancel_event_emitted.get("cancelled", False)
+            should_emit_canceled = cancel_event_emitted is None or not cancel_event_emitted.get(
+                "cancelled", False
+            )
             if should_emit_canceled:
                 exec_log.structured_event(
                     job_id=job_id,
@@ -257,9 +267,9 @@ class V3JobExecutionStateService:
         inventory_id: str,
         aisle_id: str,
         stage: str,
-        substep: Optional[str],
+        substep: str | None,
         reason: str,
-        cancel_event_emitted: Dict[str, bool],
+        cancel_event_emitted: dict[str, bool],
     ) -> None:
         """If the job is ``CANCEL_REQUESTED``, emit cancel events to ``exec_log`` then raise.
 

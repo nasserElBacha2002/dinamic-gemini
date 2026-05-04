@@ -7,10 +7,10 @@ raises InventoryNotFoundError if not. Order is implementation-defined (SQL: crea
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.errors import InventoryNotFoundError
+from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.domain.aisle.entities import Aisle
 
 

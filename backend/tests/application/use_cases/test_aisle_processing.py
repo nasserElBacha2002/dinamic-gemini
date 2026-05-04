@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Dict, Optional, Sequence
 
 import pytest
 
+from src.application.errors import (
+    ActiveJobExistsError,
+    AisleNotFoundError,
+    InventoryNotFoundError,
+    NoSourceAssetsForAisleProcessingError,
+)
 from src.application.ports.contracts import AisleAssetRollup
 from src.application.ports.repositories import (
     AisleRepository,
@@ -14,19 +20,13 @@ from src.application.ports.repositories import (
     JobRepository,
     SourceAssetRepository,
 )
+from src.application.ports.services import WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import (
-    JobStaleReconciler,
     STALE_FAILURE_CODE,
     STALE_FAILURE_MESSAGE,
-)
-from src.application.ports.services import WorkerLaunchService
-from src.application.errors import (
-    ActiveJobExistsError,
-    AisleNotFoundError,
-    InventoryNotFoundError,
-    NoSourceAssetsForAisleProcessingError,
+    JobStaleReconciler,
 )
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.start_aisle_processing import (
@@ -55,7 +55,7 @@ class StubInventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
@@ -64,18 +64,18 @@ class StubInventoryRepo(InventoryRepository):
 
 class StubAisleRepo(AisleRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Aisle] = {}
+        self._store: dict[str, Aisle] = {}
 
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for a in self._store.values():
             if a.inventory_id == inventory_id and a.code == code.strip():
                 return a
@@ -84,12 +84,12 @@ class StubAisleRepo(AisleRepository):
 
 class StubAssetRepo(SourceAssetRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, SourceAsset] = {}
+        self._store: dict[str, SourceAsset] = {}
 
     def save(self, asset: SourceAsset) -> None:
         self._store[asset.id] = asset
 
-    def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
+    def get_by_id(self, asset_id: str) -> SourceAsset | None:
         return self._store.get(asset_id)
 
     def delete_by_id(self, asset_id: str) -> bool:
@@ -101,10 +101,10 @@ class StubAssetRepo(SourceAssetRepository):
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return [a for a in self._store.values() if a.aisle_id == aisle_id]
 
-    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
         return None
 
-    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
         return {}
 
 
@@ -127,15 +127,15 @@ def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
 
 class StubJobRepo(JobRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Job] = {}
+        self._store: dict[str, Job] = {}
 
     def save(self, job: Job) -> None:
         self._store[job.id] = job
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return self._store.get(job_id)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         candidates = [
             j
             for j in self._store.values()
@@ -146,10 +146,8 @@ class StubJobRepo(JobRepository):
         candidates.sort(key=lambda j: (j.updated_at, j.created_at), reverse=True)
         return candidates[0]
 
-    def get_latest_by_targets(
-        self, target_type: str, target_ids: Sequence[str]
-    ) -> Dict[str, Job]:
-        out: Dict[str, Job] = {}
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
+        out: dict[str, Job] = {}
         for tid in target_ids:
             latest = self.get_latest_by_target(target_type, tid)
             if latest is not None:
@@ -178,7 +176,9 @@ class StubWorkerLaunchService(WorkerLaunchService):
         return f"exec-{job_id}"
 
 
-def make_stale_reconciler(job_repo: JobRepository, clock: FixedClock, stale_after_seconds: int = 900) -> JobStaleReconciler:
+def make_stale_reconciler(
+    job_repo: JobRepository, clock: FixedClock, stale_after_seconds: int = 900
+) -> JobStaleReconciler:
     return JobStaleReconciler(
         job_repo=job_repo,
         clock=clock,

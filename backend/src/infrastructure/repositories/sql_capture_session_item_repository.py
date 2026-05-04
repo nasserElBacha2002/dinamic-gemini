@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 import pyodbc
 
@@ -22,7 +22,7 @@ from src.infrastructure.repositories.db_row_text import normalize_db_str, option
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -54,11 +54,13 @@ def _assignment_status_from_row(raw: object, item_id: str) -> CaptureSessionItem
     try:
         return CaptureSessionItemAssignmentStatus(s)
     except ValueError:
-        logger.warning("Invalid capture_session_items.assignment_status: %r for id=%s", raw, item_id)
+        logger.warning(
+            "Invalid capture_session_items.assignment_status: %r for id=%s", raw, item_id
+        )
         return CaptureSessionItemAssignmentStatus.PENDING
 
 
-def _time_source_from_row(raw: object) -> Optional[CaptureTimeSource]:
+def _time_source_from_row(raw: object) -> CaptureTimeSource | None:
     if raw is None or not str(raw).strip():
         return None
     try:
@@ -91,13 +93,17 @@ def _row_to_item(row) -> CaptureSessionItem:
         effective_capture_time=_ensure_utc(getattr(row, "effective_capture_time", None)),
         time_source=_time_source_from_row(getattr(row, "time_source", None)),
         time_confidence=getattr(row, "time_confidence", None),
-        linked_source_asset_id=optional_nonempty_db_str(getattr(row, "linked_source_asset_id", None)),
+        linked_source_asset_id=optional_nonempty_db_str(
+            getattr(row, "linked_source_asset_id", None)
+        ),
         last_error_code=optional_nonempty_db_str(getattr(row, "last_error_code", None)),
         last_error_detail=optional_nonempty_db_str(getattr(row, "last_error_detail", None)),
         original_filename=optional_nonempty_db_str(getattr(row, "original_filename", None)),
         adjusted_capture_time=_ensure_utc(getattr(row, "adjusted_capture_time", None)),
         assignment_reason=optional_nonempty_db_str(getattr(row, "assignment_reason", None)),
-        preview_target_position_id=optional_nonempty_db_str(getattr(row, "preview_target_position_id", None)),
+        preview_target_position_id=optional_nonempty_db_str(
+            getattr(row, "preview_target_position_id", None)
+        ),
         group_id=optional_nonempty_db_str(getattr(row, "group_id", None)),
     )
 
@@ -185,7 +191,7 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
                         ) from exc
                     raise
 
-    def get_by_id(self, item_id: str) -> Optional[CaptureSessionItem]:
+    def get_by_id(self, item_id: str) -> CaptureSessionItem | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -221,7 +227,9 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
             rows = cur.fetchall()
         return tuple(_row_to_item(r) for r in rows)
 
-    def list_by_session_and_group_id(self, session_id: str, group_id: str) -> Sequence[CaptureSessionItem]:
+    def list_by_session_and_group_id(
+        self, session_id: str, group_id: str
+    ) -> Sequence[CaptureSessionItem]:
         gid = (group_id or "").strip()
         with self._client.cursor() as cur:
             cur.execute(

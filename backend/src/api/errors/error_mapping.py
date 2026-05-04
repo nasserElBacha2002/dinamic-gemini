@@ -10,7 +10,7 @@ v3 API error **response contract** (normative for this package)
 Wire format stays FastAPI’s usual ``{"detail": ...}`` unless a dedicated exception handler
 returns a different body (e.g. :class:`src.auth.errors.AuthHttpError`).
 
-**Category A — stable fixed ``detail`` (preferred for *new* mappings)**  
+**Category A — stable fixed ``detail`` (preferred for *new* mappings)**
 Intentional public copy; do not change without an explicit API / client contract note:
 
 - ``Inventory not found``
@@ -19,7 +19,7 @@ Intentional public copy; do not change without an explicit API / client contract
 - ``Product not found or does not belong to this position``
 - ``Visual reference not found``
 
-**Additive ``code`` field (v3 rollout — partial, not universal)**  
+**Additive ``code`` field (v3 rollout — partial, not universal)**
 :func:`mapped_http_exception` returns :class:`src.api.errors.structured_api_http.StructuredApiHttpError`
 for:
 
@@ -52,31 +52,31 @@ Category B branches stay plain ``HTTPException`` until a later phase.
 are set by the artifact layer per failure reason (not raw stack traces). It remains
 ``detail``-only JSON (no ``code`` in this phase).
 
-**Category B — structured subset vs legacy branches**  
+**Category B — structured subset vs legacy branches**
 Most Category B types remain plain ``HTTPException`` with ``detail=str(exc)``. The **structured
 job/conflict subset** (see above) uses controlled ``detail`` strings built in the mapper
 (Phase 3). **Do not extend** structured Category B without: clear semantics, multi-route use,
 documented templates, tests, and API review.
 
-**``str(exc)`` deprecation (transitional):**  
+**``str(exc)`` deprecation (transitional):**
 Treating raw exception text as the HTTP contract is **legacy**. New domain errors should use
 fixed or templated ``detail`` plus ``code`` (Category A pattern) or a vetted Category B template.
 Remaining mapper branches still use ``str(exc)`` until a later phase migrates them.
 
-**Category C — route-local ``HTTPException`` only**  
+**Category C — route-local ``HTTPException`` only**
 Some routes **must not** use the mapper alone when a **different** fixed string is required
 for regression tests, UX, or reduced information disclosure (e.g. Phase 6 job read helpers
 that return ``"Job not found"`` without echoing the underlying ``JobNotFoundError`` message).
 Keep those translations in the route (or a small helper) and document *why* in that helper.
 
-**Known dual-shape (same ``detail`` string, different JSON):**  
+**Known dual-shape (same ``detail`` string, different JSON):**
 ``src.api.routes.v3.aisles._load_job_for_inventory_job_route`` catches ``AisleNotFoundError`` and
 raises plain ``HTTPException`` with the **same** fixed ``detail`` as the Category A aisle branch,
 but **without** ``code`` — intentional Category C behavior for job-scoped reads (see that
 helper's docstring). Do not “fix” by routing through :func:`reraise_if_mapped` without an
 explicit API contract change.
 
-**Known dual-shape (same *exception class*, different JSON — CRITICAL):**  
+**Known dual-shape (same *exception class*, different JSON — CRITICAL):**
 ``JobNotFoundError`` (and ``JobDoesNotBelongToAisleError``) raised inside use cases and handled
 via ``except Exception: reraise_if_mapped`` produce **structured** bodies (``code`` + controlled
 ``detail``). The **same** Python types caught earlier in ``_load_job_for_inventory_job_route``
@@ -84,12 +84,12 @@ never reach the mapper: that helper translates them into Category C ``HTTPExcept
 fixed phrases (e.g. ``"Job not found"``) and **no** ``code``. **Mapping path determines wire shape**
 — do not assume one ``JobNotFoundError`` always implies structured JSON.
 
-**Equivalence**  
+**Equivalence**
 Equivalent inventory/aisle/position/analytics flows should rely on the same mapper branch
 for the same exception class. If two endpoints diverge, treat it as a bug **unless** one
 side is intentionally **Category C**.
 
-**Unexpected failures**  
+**Unexpected failures**
 Never return arbitrary internal ``str(exc)`` for unhandled errors; use
 :func:`src.api.server.unhandled_exception_handler` or a fixed safe ``detail`` (see
 :func:`review_exception_to_http` for review POST).
@@ -158,32 +158,117 @@ from typing import Any, Callable, cast
 
 from fastapi import HTTPException
 
+from src.api.constants.error_wire import (
+    HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
+    HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
+    HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
+    HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION,
+    HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
+    HTTP_DETAIL_ASSET_NOT_FOUND,
+    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+    HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    HTTP_DETAIL_CAPTURE_SESSION_ALREADY_MATERIALIZED,
+    HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
+    HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_FOUND,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    HTTP_DETAIL_CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+    HTTP_DETAIL_CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
+    HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE,
+    HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_FAILED,
+    HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+    HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
+    HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
+    HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
+    HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+    HTTP_DETAIL_INVENTORY_NOT_FOUND,
+    HTTP_DETAIL_JOB_NOT_FOUND,
+    HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
+    HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
+    HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
+    HTTP_DETAIL_UNEXPECTED_ERROR,
+    HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
+)
+from src.api.errors.structured_api_http import (
+    ACTIVE_JOB_EXISTS,
+    AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
+    AISLE_NOT_FOUND,
+    AISLE_NOT_FOUND_FOR_ASSIGNMENT,
+    AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
+    ANALYTICS_SCOPE_VALIDATION_FAILED,
+    ASSET_NOT_FOUND,
+    BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
+    BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
+    CAPTURE_SESSION_ALREADY_MATERIALIZED,
+    CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
+    CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
+    CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
+    CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
+    CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
+    CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
+    CAPTURE_SESSION_GROUP_NOT_FOUND,
+    CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
+    CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
+    CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
+    CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
+    CAPTURE_SESSION_INVALID_STATE,
+    CAPTURE_SESSION_MATERIALIZATION_FAILED,
+    CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
+    CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
+    CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
+    CAPTURE_SESSION_NOT_FOUND,
+    CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
+    CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
+    CAPTURE_SESSION_STATUS_FILTER_INVALID,
+    CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    EMPTY_UPLOAD,
+    INTERNAL_SERVER_ERROR,
+    INVENTORY_NOT_FOUND,
+    JOB_NOT_FOUND,
+    JOB_NOT_IN_AISLE_SCOPE,
+    JOB_PROMOTION_NOT_ALLOWED,
+    OPEN_CAPTURE_SESSION_EXISTS,
+    POSITION_NOT_FOUND,
+    PRODUCT_NOT_FOUND,
+    UNSUPPORTED_ASSET_TYPE,
+    VISUAL_REFERENCE_NOT_FOUND,
+    ZERO_BYTE_FILE,
+    StructuredApiHttpError,
+)
+from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 from src.application.errors import (
     ActiveJobExistsError,
     AisleNotFoundError,
+    AisleNotFoundForAssignmentError,
     AisleSourceAssetMutationBlockedError,
     AnalyticsScopeValidationError,
     BenchmarkCompareJobsMustDifferError,
     BenchmarkCompareManyInvalidSelectionError,
     BenchmarkRequiresTestInventoryError,
+    CaptureSessionAlreadyMaterializedError,
     CaptureSessionDuplicateItemContentError,
-    AisleNotFoundForAssignmentError,
     CaptureSessionGroupAlreadyAssignedError,
     CaptureSessionGroupAssignmentNotAllowedError,
-    CaptureSessionGroupNotFoundError,
+    CaptureSessionGroupingNotAllowedError,
+    CaptureSessionGroupIntegrityError,
     CaptureSessionGroupNotAssignedForMaterializationError,
     CaptureSessionGroupNotAssignedForPreviewError,
+    CaptureSessionGroupNotFoundError,
     CaptureSessionGroupNotMaterializedForPreviewError,
-    CaptureSessionGroupIntegrityError,
-    CaptureSessionGroupingNotAllowedError,
-    CaptureSessionNoItemsForGroupingError,
     CaptureSessionInvalidClockOffsetError,
     CaptureSessionInvalidIdempotencyKeyError,
     CaptureSessionInvalidStateError,
     CaptureSessionMaterializationFailedError,
     CaptureSessionMaterializationNotAllowedError,
+    CaptureSessionNoItemsForGroupingError,
     CaptureSessionNotAcceptingUploadsError,
-    CaptureSessionAlreadyMaterializedError,
     CaptureSessionNotFoundError,
     CaptureSessionPreviewNotAllowedError,
     CaptureSessionStagingFileTooLargeError,
@@ -191,10 +276,10 @@ from src.application.errors import (
     CaptureSessionUploadBatchTooLargeError,
     DuplicateAisleCodeError,
     EmptyUploadError,
-    InventoryNotFoundError,
-    InventoryVisualReferenceNotFoundError,
     InvalidProcessingModelError,
     InvalidProcessingPromptKeyError,
+    InventoryNotFoundError,
+    InventoryVisualReferenceNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     JobPromotionNotAllowedError,
@@ -213,91 +298,6 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
-from src.api.constants.error_wire import (
-    HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION,
-    HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
-    HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED,
-    HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
-    HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
-    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
-    HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
-    HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
-    HTTP_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
-    HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
-    HTTP_DETAIL_CAPTURE_SESSION_INVALID_STATE,
-    HTTP_DETAIL_CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_FOUND,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
-    HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
-    HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
-    HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
-    HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
-    HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
-    HTTP_DETAIL_CAPTURE_SESSION_MATERIALIZATION_FAILED,
-    HTTP_DETAIL_CAPTURE_SESSION_ALREADY_MATERIALIZED,
-    HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
-    HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
-    HTTP_DETAIL_INVENTORY_NOT_FOUND,
-    HTTP_DETAIL_JOB_NOT_FOUND,
-    HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
-    HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
-    HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
-    HTTP_DETAIL_UNEXPECTED_ERROR,
-    HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
-    HTTP_DETAIL_ASSET_NOT_FOUND,
-)
-from src.api.errors.structured_api_http import (
-    ACTIVE_JOB_EXISTS,
-    AISLE_NOT_FOUND,
-    AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
-    ASSET_NOT_FOUND,
-    AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
-    ANALYTICS_SCOPE_VALIDATION_FAILED,
-    BENCHMARK_COMPARE_JOBS_MUST_DIFFER,
-    BENCHMARK_COMPARE_MANY_INVALID_SELECTION,
-    EMPTY_UPLOAD,
-    UNSUPPORTED_ASSET_TYPE,
-    ZERO_BYTE_FILE,
-    CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
-    AISLE_NOT_FOUND_FOR_ASSIGNMENT,
-    CAPTURE_SESSION_GROUP_ALREADY_ASSIGNED,
-    CAPTURE_SESSION_GROUP_ASSIGNMENT_NOT_ALLOWED,
-    CAPTURE_SESSION_GROUP_NOT_FOUND,
-    CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
-    CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
-    CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
-    CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION,
-    CAPTURE_SESSION_GROUPING_NOT_ALLOWED,
-    CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
-    CAPTURE_SESSION_INVALID_CLOCK_OFFSET,
-    CAPTURE_SESSION_INVALID_IDEMPOTENCY_KEY,
-    CAPTURE_SESSION_INVALID_STATE,
-    CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
-    CAPTURE_SESSION_NOT_FOUND,
-    CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
-    CAPTURE_SESSION_MATERIALIZATION_NOT_ALLOWED,
-    CAPTURE_SESSION_MATERIALIZATION_FAILED,
-    CAPTURE_SESSION_ALREADY_MATERIALIZED,
-    CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
-    CAPTURE_SESSION_STATUS_FILTER_INVALID,
-    CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
-    INTERNAL_SERVER_ERROR,
-    INVENTORY_NOT_FOUND,
-    JOB_NOT_FOUND,
-    JOB_NOT_IN_AISLE_SCOPE,
-    JOB_PROMOTION_NOT_ALLOWED,
-    OPEN_CAPTURE_SESSION_EXISTS,
-    POSITION_NOT_FOUND,
-    PRODUCT_NOT_FOUND,
-    VISUAL_REFERENCE_NOT_FOUND,
-    StructuredApiHttpError,
-)
-from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 
 logger = logging.getLogger(__name__)
 
@@ -308,6 +308,7 @@ _JOB_SCOPE_DOES_NOT_BELONG = re.compile(r"^Job (.+?) does not belong to aisle (.
 _ACTIVE_JOB_EXISTS = re.compile(r"^Aisle (.+?) already has an active job \(status=(.+)\)$")
 _JOB_PROMOTE_TYPE = re.compile(r"^Only process_aisle jobs can be promoted \(got (.+)\)$")
 _JOB_PROMOTE_STATUS = re.compile(r"^Only succeeded jobs can be promoted \(status=(.+)\)$")
+
 
 def _normalized_job_not_found_detail(exc: JobNotFoundError) -> str:
     """Phase 3 ``JobNotFoundError`` → HTTP ``detail`` (mapper-only; Category C routes unchanged).
@@ -437,7 +438,9 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     JobDoesNotBelongToAisleError: _structured_detail(
         404,
         error_code=JOB_NOT_IN_AISLE_SCOPE,
-        detail=lambda e: _normalized_job_does_not_belong_detail(cast(JobDoesNotBelongToAisleError, e)),
+        detail=lambda e: _normalized_job_does_not_belong_detail(
+            cast(JobDoesNotBelongToAisleError, e)
+        ),
     ),
     PositionResultContextMismatchError: _plain_http(409),
     PositionDeletedError: _plain_http(409),
@@ -461,7 +464,9 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     JobPromotionNotAllowedError: _structured_detail(
         409,
         error_code=JOB_PROMOTION_NOT_ALLOWED,
-        detail=lambda e: _normalized_job_promotion_not_allowed_detail(cast(JobPromotionNotAllowedError, e)),
+        detail=lambda e: _normalized_job_promotion_not_allowed_detail(
+            cast(JobPromotionNotAllowedError, e)
+        ),
     ),
     ReviewMutationNotAllowedError: _plain_http(409),
     EmptyUploadError: _structured_fixed(
@@ -526,7 +531,9 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     CaptureSessionGroupNotAssignedForMaterializationError: _structured_detail(
         422,
         error_code=CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
-        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION,
+        detail=lambda e: (
+            str(e) or HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_MATERIALIZATION
+        ),
     ),
     CaptureSessionGroupNotAssignedForPreviewError: _structured_detail(
         422,
@@ -679,7 +686,7 @@ def review_exception_to_http(exc: Exception, **log_context: Any) -> HTTPExceptio
     if isinstance(exc, ValueError):
         return HTTPException(status_code=422, detail=str(exc))
     ctx = {k: v for k, v in log_context.items() if v is not None}
-    suffix = (" context=%r" % (ctx,)) if ctx else ""
+    suffix = (f" context={ctx!r}") if ctx else ""
     logger.exception("Unhandled exception while mapping review error to HTTP%s", suffix)
     return StructuredApiHttpError(
         500,

@@ -1,6 +1,6 @@
 """Evidence scoring utilities: sharpness (Laplacian) and deduplication (dHash)."""
 
-from typing import Callable, List, TypeVar, Tuple
+from typing import Callable, TypeVar
 
 import cv2
 import numpy as np
@@ -9,16 +9,16 @@ T = TypeVar("T")
 
 
 def _dedupe_by_hash_set(
-    items: List[T],
+    items: list[T],
     get_hash: Callable[[T], int],
     threshold: int = 10,
-) -> List[T]:
+) -> list[T]:
     """Set-based dedupe: keep item only if its hash is > threshold Hamming distance from ALL already selected.
     Deterministic (order preserved; first occurrence wins). Single implementation for all callers."""
     if not items:
         return []
-    out: List[T] = [items[0]]
-    selected_hashes: List[int] = [get_hash(items[0])]
+    out: list[T] = [items[0]]
+    selected_hashes: list[int] = [get_hash(items[0])]
     for i in range(1, len(items)):
         h = get_hash(items[i])
         min_d = min(hamming_distance(h, sh) for sh in selected_hashes)
@@ -43,7 +43,7 @@ def score_frame_sharpness(frame: np.ndarray) -> float:
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
-def dhash_int(frame: np.ndarray, size: Tuple[int, int] = (9, 8)) -> int:
+def dhash_int(frame: np.ndarray, size: tuple[int, int] = (9, 8)) -> int:
     """64-bit dHash (left-right gradient). Deterministic. Public for reuse."""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     resized = cv2.resize(gray, size, interpolation=cv2.INTER_AREA)
@@ -58,9 +58,9 @@ def hamming_distance(h1: int, h2: int) -> int:
 
 
 def dedupe_by_hash(
-    images: List[np.ndarray],
+    images: list[np.ndarray],
     threshold: int = 10,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """Remove visually duplicate frames by dHash. Set-based: compare to ALL selected hashes.
 
     Args:
@@ -74,9 +74,9 @@ def dedupe_by_hash(
 
 
 def dedupe_indexed_by_hash(
-    items: List[Tuple[int, np.ndarray]],
+    items: list[tuple[int, np.ndarray]],
     threshold: int = 10,
-) -> List[Tuple[int, np.ndarray]]:
+) -> list[tuple[int, np.ndarray]]:
     """Dedupe list of (index, frame) by dHash; set-based (min distance to any selected). Deterministic.
 
     Args:

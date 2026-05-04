@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import pytest
-
-from src.pipeline.ports.analysis_provider import (
-    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
-    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
-    PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
-)
 from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
     AnalysisImage,
     VisualReferenceContext,
+)
+from src.pipeline.ports.analysis_provider import (
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
+    PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_PROMPT_COMPOSITION,
@@ -52,8 +50,16 @@ def test_build_visual_reference_context_unresolved_not_consumed() -> None:
     """When provider does not produce usable reference attachments, resolved must stay false."""
     analysis_context = {
         "visual_references": [
-            {"reference_id": "ref-1", "source_path": "inv/refs/ref-1.jpg", "mime_type": "image/jpeg"},
-            {"reference_id": "ref-2", "source_path": "inv/refs/ref-2.jpg", "mime_type": "image/jpeg"},
+            {
+                "reference_id": "ref-1",
+                "source_path": "inv/refs/ref-1.jpg",
+                "mime_type": "image/jpeg",
+            },
+            {
+                "reference_id": "ref-2",
+                "source_path": "inv/refs/ref-2.jpg",
+                "mime_type": "image/jpeg",
+            },
         ],
         "instructions": ["Use as context."],
     }

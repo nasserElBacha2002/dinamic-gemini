@@ -8,12 +8,12 @@ Responsabilidades:
 
 import logging
 import time
-from typing import Any, Dict, List, Optional, cast
-
-logger = logging.getLogger(__name__)
+from typing import Any, cast
 
 import google.genai as genai
 from google.genai import types
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiClient:
@@ -27,51 +27,53 @@ class GeminiClient:
         retry_delay: float = 1.0,
     ):
         """Inicializa el cliente de Gemini.
-        
+
         Args:
             api_key: API key de Gemini.
             model_name: Nombre del modelo a usar.
             max_retries: Número máximo de reintentos.
             retry_delay: Delay inicial entre reintentos (segundos).
-        
+
         Raises:
             RuntimeError: Si la API key está vacía.
         """
         if not api_key:
-            raise RuntimeError("Falta GEMINI_API_KEY. Configúrala en .env o como variable de entorno.")
-        
+            raise RuntimeError(
+                "Falta GEMINI_API_KEY. Configúrala en .env o como variable de entorno."
+            )
+
         self.api_key = api_key
         self.model_name = model_name
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.last_response_usage: Dict[str, Any] = {}
-        
+        self.last_response_usage: dict[str, Any] = {}
+
         # Inicializar cliente con el nuevo SDK
         self.client = genai.Client(api_key=api_key)
-        
+
         # Configuración de seguridad (nuevo SDK format - lista de objetos SafetySetting)
         self.safety_settings = [
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.BLOCK_NONE
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.BLOCK_NONE
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.BLOCK_NONE
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.BLOCK_NONE
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
             ),
         ]
 
-    def _extract_usage(self, response: Any) -> Dict[str, Any]:
+    def _extract_usage(self, response: Any) -> dict[str, Any]:
         """Best-effort usage extraction across Gemini SDK response variants."""
-        usage: Dict[str, Any] = {}
+        usage: dict[str, Any] = {}
         meta = getattr(response, "usage_metadata", None) or getattr(response, "usageMetadata", None)
         if meta is not None:
             candidates = {
@@ -103,18 +105,18 @@ class GeminiClient:
 
     def _get_safe_schema(self, model_class) -> dict:
         """Limpia el esquema de Pydantic para que Gemini no tire error 400.
-        
+
         Elimina campos que Gemini rechaza: anyOf, title, additionalProperties, etc.
-        
+
         Args:
             model_class: Clase Pydantic de la cual obtener el schema.
-        
+
         Returns:
             Schema JSON limpio compatible con Gemini.
         """
         schema = model_class.model_json_schema()
         defs = schema.pop("$defs", {})
-        
+
         def clean_node(obj):
             """Recursivamente limpia el schema."""
             if isinstance(obj, dict):
@@ -122,13 +124,13 @@ class GeminiClient:
                 obj.pop("title", None)
                 obj.pop("default", None)
                 obj.pop("additionalProperties", None)
-                
+
                 # Resolvemos referencias
                 if "$ref" in obj:
                     ref_name = obj["$ref"].split("/")[-1]
                     if ref_name in defs:
                         return clean_node(defs[ref_name].copy())
-                
+
                 # Arreglamos los Optional (anyOf -> nullable)
                 if "anyOf" in obj:
                     variants = [t for t in obj["anyOf"] if isinstance(t, dict)]
@@ -142,17 +144,17 @@ class GeminiClient:
                         if chosen.get("type") == "array" and "items" in chosen:
                             obj["items"] = clean_node(chosen["items"].copy())
                     del obj["anyOf"]
-                    
+
                 return {k: clean_node(v) for k, v in obj.items()}
             elif isinstance(obj, list):
                 return [clean_node(item) for item in obj]
             return obj
-            
-        return cast(Dict[Any, Any], clean_node(schema))
+
+        return cast(dict[Any, Any], clean_node(schema))
 
     def generate_global_analysis_raw(
         self,
-        images: List,
+        images: list,
         prompt: str,
     ) -> str:
         """Una llamada a Gemini con varias imágenes y un prompt; devuelve JSON en crudo (v2.0 hybrid).
@@ -190,7 +192,7 @@ class GeminiClient:
             except Exception as e:
                 last_error = str(e)
                 if "429" in str(e) or "rate limit" in str(e).lower():
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     time.sleep(self.retry_delay)
         raise RuntimeError(
@@ -199,7 +201,7 @@ class GeminiClient:
 
     def generate_global_analysis_structured(
         self,
-        images: List,
+        images: list,
         prompt: str,
         response_schema_model: type,
     ) -> str:
@@ -239,7 +241,7 @@ class GeminiClient:
             except Exception as e:
                 last_error = str(e)
                 if "429" in str(e) or "rate limit" in str(e).lower():
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     time.sleep(self.retry_delay)
         raise RuntimeError(

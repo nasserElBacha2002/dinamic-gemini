@@ -25,12 +25,8 @@ Primary product rows use ``select_display_primary_product`` — same rule as v3 
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import DefaultDict, List, Optional
 
 from src.application.errors import AisleNotFoundError, InventoryNotFoundError
-from src.application.services.result_context_resolver import ResultContextResolver
-from src.domain.aisle.entities import Aisle
-from src.domain.inventory.entities import Inventory
 from src.application.mappers.inventory_export_rows import (
     export_position_sort_key,
     position_to_operational_export_row_dict,
@@ -43,25 +39,28 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
 )
 from src.application.services.csv_inventory_exporter import (
-    CsvInventoryExporter,
     INVENTORY_RESULTS_CSV_FIELDS,
     INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS,
+    CsvInventoryExporter,
 )
 from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.position_sku_consolidation import consolidate_positions_by_sku
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.utils.natural_sort import natural_sort_key_parts
+from src.domain.aisle.entities import Aisle
+from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position, PositionStatus
 
 
 def append_inventory_csv_rows_for_aisle(
-    rows: List[dict],
+    rows: list[dict],
     *,
     inv: Inventory,
     aisle: Aisle,
     aisle_sequence: int,
     resolver: ResultContextResolver,
-    explicit_job_id: Optional[str],
-    aisle_positions: List[Position],
+    explicit_job_id: str | None,
+    aisle_positions: list[Position],
     product_record_repo: ProductRecordRepository,
     technical: bool,
 ) -> None:
@@ -81,7 +80,9 @@ def append_inventory_csv_rows_for_aisle(
         if technical:
             rows.append(position_to_technical_export_row_dict(inv, aisle, aisle_sequence, p))
         else:
-            rows.append(position_to_operational_export_row_dict(inv, aisle, aisle_sequence, p, primary))
+            rows.append(
+                position_to_operational_export_row_dict(inv, aisle, aisle_sequence, p, primary)
+            )
 
 
 class ExportInventoryResultsUseCase:
@@ -111,14 +112,18 @@ class ExportInventoryResultsUseCase:
         )
         aisle_ids = [a.id for a in sorted_aisles]
         if not aisle_ids:
-            fieldnames = INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS if technical else INVENTORY_RESULTS_CSV_FIELDS
+            fieldnames = (
+                INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS
+                if technical
+                else INVENTORY_RESULTS_CSV_FIELDS
+            )
             return CsvInventoryExporter.to_csv([], fieldnames=fieldnames)
         all_positions = list(self._position_repo.list_by_aisles(aisle_ids))
-        by_aisle: DefaultDict[str, List[Position]] = defaultdict(list)
+        by_aisle: defaultdict[str, list[Position]] = defaultdict(list)
         for p in all_positions:
             by_aisle[p.aisle_id].append(p)
 
-        rows: List[dict] = []
+        rows: list[dict] = []
         for seq, aisle in enumerate(sorted_aisles, start=1):
             append_inventory_csv_rows_for_aisle(
                 rows,
@@ -132,7 +137,9 @@ class ExportInventoryResultsUseCase:
                 technical=technical,
             )
 
-        fieldnames = INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS if technical else INVENTORY_RESULTS_CSV_FIELDS
+        fieldnames = (
+            INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS if technical else INVENTORY_RESULTS_CSV_FIELDS
+        )
         return CsvInventoryExporter.to_csv(rows, fieldnames=fieldnames)
 
 
@@ -162,7 +169,7 @@ class ExportAisleResultsCsvUseCase:
         inventory_id: str,
         aisle_id: str,
         *,
-        job_id: Optional[str] = None,
+        job_id: str | None = None,
         technical: bool = False,
     ) -> str:
         inv = self._inventory_repo.get_by_id(inventory_id)
@@ -175,7 +182,7 @@ class ExportAisleResultsCsvUseCase:
             )
         jid = str(job_id).strip() if job_id and str(job_id).strip() else None
         aisle_positions = list(self._position_repo.list_by_aisles([aisle_id]))
-        rows: List[dict] = []
+        rows: list[dict] = []
         append_inventory_csv_rows_for_aisle(
             rows,
             inv=inv,
@@ -187,5 +194,7 @@ class ExportAisleResultsCsvUseCase:
             product_record_repo=self._product_record_repo,
             technical=technical,
         )
-        fieldnames = INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS if technical else INVENTORY_RESULTS_CSV_FIELDS
+        fieldnames = (
+            INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS if technical else INVENTORY_RESULTS_CSV_FIELDS
+        )
         return CsvInventoryExporter.to_csv(rows, fieldnames=fieldnames)

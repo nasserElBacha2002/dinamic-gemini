@@ -2,21 +2,24 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from io import BytesIO
-from collections import defaultdict
-from typing import Dict, Optional, Sequence
 
 import pytest
 
 from src.application.errors import AisleNotFoundError, EmptyUploadError, UnsupportedAssetTypeError
 from src.application.ports.contracts import AisleAssetRollup
-from src.application.ports.repositories import AisleRepository, InventoryRepository, SourceAssetRepository
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    SourceAssetRepository,
+)
 from src.application.ports.services import ArtifactStorage
-from src.application.ports.clock import Clock
-from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
+from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -38,7 +41,7 @@ class StubInventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
@@ -47,18 +50,18 @@ class StubInventoryRepo(InventoryRepository):
 
 class StubAisleRepo(AisleRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Aisle] = {}
+        self._store: dict[str, Aisle] = {}
 
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for a in self._store.values():
             if a.inventory_id == inventory_id and a.code == code.strip():
                 return a
@@ -67,12 +70,12 @@ class StubAisleRepo(AisleRepository):
 
 class StubAssetRepo(SourceAssetRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, SourceAsset] = {}
+        self._store: dict[str, SourceAsset] = {}
 
     def save(self, asset: SourceAsset) -> None:
         self._store[asset.id] = asset
 
-    def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
+    def get_by_id(self, asset_id: str) -> SourceAsset | None:
         return self._store.get(asset_id)
 
     def delete_by_id(self, asset_id: str) -> bool:
@@ -81,19 +84,19 @@ class StubAssetRepo(SourceAssetRepository):
             return True
         return False
 
-    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> Optional[SourceAsset]:
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
         return None
 
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return [a for a in self._store.values() if a.aisle_id == aisle_id]
 
-    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
         wanted = set(aisle_ids)
-        by_aisle: Dict[str, list[SourceAsset]] = defaultdict(list)
+        by_aisle: dict[str, list[SourceAsset]] = defaultdict(list)
         for a in self._store.values():
             if a.aisle_id in wanted:
                 by_aisle[a.aisle_id].append(a)
-        out: Dict[str, AisleAssetRollup] = {}
+        out: dict[str, AisleAssetRollup] = {}
         for aid, assets in by_aisle.items():
             if not assets:
                 continue
@@ -365,9 +368,7 @@ def test_list_aisle_assets_returns_assets_for_aisle() -> None:
     aisle_repo.save(aisle)
     asset_repo = StubAssetRepo()
     asset_repo.save(
-        SourceAsset(
-            "x1", "a1", SourceAssetType.PHOTO, "f.jpg", "/path/f.jpg", "image/jpeg", now
-        )
+        SourceAsset("x1", "a1", SourceAssetType.PHOTO, "f.jpg", "/path/f.jpg", "image/jpeg", now)
     )
 
     use_case = ListAisleAssetsUseCase(aisle_repo=aisle_repo, asset_repo=asset_repo)

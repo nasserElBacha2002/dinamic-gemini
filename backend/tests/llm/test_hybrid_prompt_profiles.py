@@ -25,7 +25,9 @@ def test_openai_profile_uses_openai_variant_for_global_v21() -> None:
     assert gemini_text == get_hybrid_prompt("global_v21", None)
     assert openai_text != gemini_text
     assert "NEVER return quantity = 0" in openai_text
-    assert "Warehouse aisle images" in openai_text or "warehouse aisle images" in openai_text.lower()
+    assert (
+        "Warehouse aisle images" in openai_text or "warehouse aisle images" in openai_text.lower()
+    )
 
 
 def test_gemini_and_unknown_use_default_variant_claude_gets_supplement() -> None:

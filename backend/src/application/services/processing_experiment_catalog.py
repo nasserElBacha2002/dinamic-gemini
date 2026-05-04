@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Sequence, Tuple
+from typing import Any
 
 from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
 from src.pipeline.providers.definitions import pipeline_provider_spec
 
-_ModelPair = Tuple[str, str]
+_ModelPair = tuple[str, str]
 
 
-def _split_csv(raw: str) -> List[str]:
+def _split_csv(raw: str) -> list[str]:
     return [p.strip() for p in (raw or "").split(",") if p.strip()]
 
 
-def models_for_provider(provider_key: str, settings: Any) -> List[_ModelPair]:
+def models_for_provider(provider_key: str, settings: Any) -> list[_ModelPair]:
     """Return (model_id, short_label) pairs offered for the given pipeline provider."""
     spec = pipeline_provider_spec(provider_key)
     if spec is None:
@@ -51,7 +51,9 @@ def default_model_for_provider(provider_key: str, settings: Any) -> str | None:
     return dm if dm in allowed_ids else allowed_ids[0]
 
 
-def normalize_requested_model(provider_key: str, requested: str | None, settings: Any) -> str | None:
+def normalize_requested_model(
+    provider_key: str, requested: str | None, settings: Any
+) -> str | None:
     """Return canonical model id or None if invalid for provider."""
     allowed = {m for m, _ in models_for_provider(provider_key, settings)}
     if not allowed:
@@ -65,7 +67,7 @@ def normalize_requested_model(provider_key: str, requested: str | None, settings
     return None
 
 
-def prompt_profile_catalog() -> List[Tuple[str, str, str]]:
+def prompt_profile_catalog() -> list[tuple[str, str, str]]:
     """(key, label, description) for API options."""
     return [
         (

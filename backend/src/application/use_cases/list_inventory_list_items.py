@@ -11,11 +11,15 @@ For aggregate-based sorts, all matching inventories are materialized then sorted
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import List, Optional, Sequence, Tuple
 
 from src.application.ports.contracts import InventoryListItem, InventoryTableQuery
-from src.application.ports.repositories import AisleRepository, InventoryRepository, PositionRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    PositionRepository,
+)
 from src.domain.inventory.entities import Inventory
 
 
@@ -63,7 +67,7 @@ class ListInventoryListItemsUseCase:
         aisle_ids = [a.id for a in aisles]
         positions = self._position_repo.list_by_aisles(aisle_ids) if aisle_ids else []
         pending = sum(1 for p in positions if p.needs_review)
-        times: List[datetime] = [inv.updated_at, inv.created_at]
+        times: list[datetime] = [inv.updated_at, inv.created_at]
         for a in aisles:
             times.append(a.updated_at)
             times.append(a.created_at)
@@ -78,7 +82,9 @@ class ListInventoryListItemsUseCase:
             last_activity_at=last_activity,
         )
 
-    def execute(self, query: Optional[InventoryTableQuery] = None) -> Tuple[Sequence[InventoryListItem], int]:
+    def execute(
+        self, query: InventoryTableQuery | None = None
+    ) -> tuple[Sequence[InventoryListItem], int]:
         q = query or InventoryTableQuery()
         invs = list(self._inventory_repo.list_all())
         search = (q.search or "").strip().lower() if q.search else None

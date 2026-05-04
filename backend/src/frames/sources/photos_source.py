@@ -65,7 +65,9 @@ class PhotosFrameSource:
             sorted(photos_list, key=lambda x: x.get("index", 0)), start=1
         ):
             if use_normalized:
-                stored = entry.get("stored_normalized_filename") or entry.get("stored_filename") or ""
+                stored = (
+                    entry.get("stored_normalized_filename") or entry.get("stored_filename") or ""
+                )
             else:
                 stored = entry.get("stored_filename") or ""
             if not stored:

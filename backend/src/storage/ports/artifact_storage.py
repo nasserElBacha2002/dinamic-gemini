@@ -9,7 +9,7 @@ for artifact writes. Future stages may refactor pipeline/reporting to use Artifa
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Protocol
+from typing import Any, Protocol
 
 
 class ArtifactStorage(Protocol):
@@ -20,11 +20,13 @@ class ArtifactStorage(Protocol):
     reporting, and evidence flows do not use this port yet; artifact writes remain in existing modules.
     """
 
-    def write_json(self, relative_path: str, payload: Dict[str, Any]) -> Path:
+    def write_json(self, relative_path: str, payload: dict[str, Any]) -> Path:
         """Write payload as JSON at base_path / relative_path; return path written."""
         ...
 
-    def write_bytes(self, relative_path: str, content: bytes, content_type: str = "application/octet-stream") -> Path:
+    def write_bytes(
+        self, relative_path: str, content: bytes, content_type: str = "application/octet-stream"
+    ) -> Path:
         """Write raw bytes at relative_path; return path written."""
         ...
 
@@ -32,6 +34,6 @@ class ArtifactStorage(Protocol):
         """Return True if relative_path exists under base."""
         ...
 
-    def list_artifacts(self) -> List[str]:
+    def list_artifacts(self) -> list[str]:
         """List relative paths of artifacts under base (optional)."""
         ...

@@ -45,8 +45,12 @@ def test_mode_hybrid_runs_without_error():
 
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model=None, latency_ms=0,
-        parsed_json={"total_entities_detected": 0, "entities": []}, raw_text=None, usage=None,
+        provider="gemini",
+        model=None,
+        latency_ms=0,
+        parsed_json={"total_entities_detected": 0, "entities": []},
+        raw_text=None,
+        usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
@@ -83,8 +87,12 @@ def test_mode_hybrid_logs_global_analysis():
 
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model=None, latency_ms=0,
-        parsed_json={"total_entities_detected": 0, "entities": []}, raw_text=None, usage=None,
+        provider="gemini",
+        model=None,
+        latency_ms=0,
+        parsed_json={"total_entities_detected": 0, "entities": []},
+        raw_text=None,
+        usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
@@ -93,7 +101,10 @@ def test_mode_hybrid_logs_global_analysis():
             return_value=(mock_executor, "gemini"),
         ),
     ):
-        mock_extract.return_value = ([np.zeros((50, 50, 3), dtype=np.uint8)], {"fps": 30.0, "frame_indices": [0]})
+        mock_extract.return_value = (
+            [np.zeros((50, 50, 3), dtype=np.uint8)],
+            {"fps": 30.0, "frame_indices": [0]},
+        )
         with tempfile.TemporaryDirectory() as tmp:
             pipeline.process_video(
                 "video.mp4",

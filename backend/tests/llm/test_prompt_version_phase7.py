@@ -12,10 +12,14 @@ from src.llm.prompt_composer.prompt_traceability import (
 )
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.run_metadata import RUN_METADATA_KEY_PROMPT_COMPOSITION, build_run_metadata
-from src.pipeline.services.hybrid_analysis_prompt import build_hybrid_analysis_prompt_with_traceability
+from src.pipeline.services.hybrid_analysis_prompt import (
+    build_hybrid_analysis_prompt_with_traceability,
+)
 
 
-def _video_run_context(*, settings_prompt_version: str | None = None, job_prompt_version: str | None = None) -> RunContext:
+def _video_run_context(
+    *, settings_prompt_version: str | None = None, job_prompt_version: str | None = None
+) -> RunContext:
     job_input = MagicMock()
     job_input.input_type = "video"
     settings = MagicMock()
@@ -34,7 +38,9 @@ def _video_run_context(*, settings_prompt_version: str | None = None, job_prompt
 
 
 def test_prompt_version_from_settings_when_no_job_version() -> None:
-    _, meta = build_hybrid_analysis_prompt_with_traceability(_video_run_context(settings_prompt_version="v1"))
+    _, meta = build_hybrid_analysis_prompt_with_traceability(
+        _video_run_context(settings_prompt_version="v1")
+    )
     assert meta.get("prompt_version") == "v1"
     assert validate_prompt_composition_dict(meta) == []
 

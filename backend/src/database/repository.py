@@ -6,7 +6,8 @@ Structured access logs use logger ``dinamic.legacy_sql`` (see ``src/legacy/persi
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Optional, cast
+
 from typing_extensions import TypedDict
 
 from src.database.sqlserver import SqlServerClient, now_utc
@@ -33,17 +34,20 @@ def _legacy_stage8_writes_blocked(operation: str, table: str, **identifiers: Any
 
 class JobRecordDict(TypedDict, total=False):
     """Dict shape returned by JobsRepository.get_job. Compatible with JobRecord.model_validate()."""
+
     job_id: str
-    input: Dict[str, Any]
+    input: dict[str, Any]
     status: str
-    progress: Dict[str, Any]
-    output: Optional[Dict[str, Any]]
+    progress: dict[str, Any]
+    output: Optional[dict[str, Any]]
     error: Optional[str]
     created_at: str
     updated_at: str
 
 
-def _prefer_storage_value(provider_value: Optional[str], legacy_value: Optional[str]) -> Optional[str]:
+def _prefer_storage_value(
+    provider_value: Optional[str], legacy_value: Optional[str]
+) -> Optional[str]:
     pv = (provider_value or "").strip()
     if pv:
         return pv
@@ -51,13 +55,13 @@ def _prefer_storage_value(provider_value: Optional[str], legacy_value: Optional[
     return lv or None
 
 
-def _serialize_metadata(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
+def _serialize_metadata(metadata: Optional[dict[str, Any]]) -> Optional[str]:
     if metadata is None:
         return None
     return json.dumps(metadata, ensure_ascii=False)
 
 
-def _parse_metadata(raw: Optional[str]) -> Optional[Dict[str, Any]]:
+def _parse_metadata(raw: Optional[str]) -> Optional[dict[str, Any]]:
     if not raw or not raw.strip():
         return None
     try:
@@ -92,7 +96,7 @@ class JobsRepository:
         mode: str = "hybrid",
         confidence_threshold: float = 0.70,
         video_filename: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
         engine_version: str = "v2.0",
         input_type: str = "video",
         input_manifest_path: Optional[str] = None,
@@ -143,9 +147,7 @@ class JobsRepository:
         progress_stage: Optional[str] = None,
         progress_percent: Optional[int] = None,
     ) -> None:
-        if _legacy_stage8_writes_blocked(
-            "update_job_status", "jobs", job_id=job_id, status=status
-        ):
+        if _legacy_stage8_writes_blocked("update_job_status", "jobs", job_id=job_id, status=status):
             return
         log_stage8_sql_access(
             repository_class="JobsRepository",
@@ -448,7 +450,7 @@ class PalletResultsRepository:
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
 
-    def insert_pallet_results(self, job_id: str, pallets: List[Any]) -> None:
+    def insert_pallet_results(self, job_id: str, pallets: list[Any]) -> None:
         """Bulk insert. Each item: one entity result with pallet_id, internal_code, quantity/final_quantity, source, confidence, fallback_used, optional estimated_visible_boxes, source_image_id, traceability_status (Epic 3.1.B)."""
         if not pallets:
             return
@@ -494,10 +496,22 @@ class PalletResultsRepository:
                     INSERT INTO pallet_results (job_id, pallet_id, internal_code, quantity, source, confidence, fallback_used, raw_estimated_visible_boxes, source_image_id, traceability_status, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (job_id, pallet_id, internal_code, quantity_to_store, source, confidence, fallback_used, raw_estimated_visible_boxes, source_image_id, traceability_status, now),
+                    (
+                        job_id,
+                        pallet_id,
+                        internal_code,
+                        quantity_to_store,
+                        source,
+                        confidence,
+                        fallback_used,
+                        raw_estimated_visible_boxes,
+                        source_image_id,
+                        traceability_status,
+                        now,
+                    ),
                 )
 
-    def get_pallet_results(self, job_id: str) -> List[Dict[str, Any]]:
+    def get_pallet_results(self, job_id: str) -> list[dict[str, Any]]:
         log_stage8_sql_access(
             repository_class="PalletResultsRepository",
             operation="get_pallet_results",
@@ -515,18 +529,22 @@ class PalletResultsRepository:
             rows = cur.fetchall()
         out = []
         for row in rows:
-            out.append({
-                "pallet_id": row.pallet_id,
-                "internal_code": row.internal_code,
-                "quantity": row.quantity,
-                "source": row.source,
-                "confidence": row.confidence,
-                "fallback_used": bool(row.fallback_used),
-                "raw_estimated_visible_boxes": getattr(row, "raw_estimated_visible_boxes", None),
-                "source_image_id": getattr(row, "source_image_id", None),
-                "traceability_status": getattr(row, "traceability_status", None),
-                "created_at": _row_to_iso(row, "created_at"),
-            })
+            out.append(
+                {
+                    "pallet_id": row.pallet_id,
+                    "internal_code": row.internal_code,
+                    "quantity": row.quantity,
+                    "source": row.source,
+                    "confidence": row.confidence,
+                    "fallback_used": bool(row.fallback_used),
+                    "raw_estimated_visible_boxes": getattr(
+                        row, "raw_estimated_visible_boxes", None
+                    ),
+                    "source_image_id": getattr(row, "source_image_id", None),
+                    "traceability_status": getattr(row, "traceability_status", None),
+                    "created_at": _row_to_iso(row, "created_at"),
+                }
+            )
         return out
 
 
@@ -536,7 +554,9 @@ class JobEventsRepository:
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
 
-    def insert_event(self, job_id: str, event_type: str, payload_dict: Optional[Dict[str, Any]] = None) -> None:
+    def insert_event(
+        self, job_id: str, event_type: str, payload_dict: Optional[dict[str, Any]] = None
+    ) -> None:
         if _legacy_stage8_writes_blocked(
             "insert_event", "job_events", job_id=job_id, event_type=event_type
         ):
@@ -545,7 +565,11 @@ class JobEventsRepository:
             repository_class="JobEventsRepository",
             operation="insert_event",
             table="job_events",
-            identifiers={"job_id": job_id, "event_type": event_type, "has_payload": payload_dict is not None},
+            identifiers={
+                "job_id": job_id,
+                "event_type": event_type,
+                "has_payload": payload_dict is not None,
+            },
         )
         payload = json.dumps(payload_dict, ensure_ascii=False) if payload_dict else None
         with self._client.cursor() as cur:
@@ -554,7 +578,7 @@ class JobEventsRepository:
                 (job_id, now_utc(), event_type, payload),
             )
 
-    def get_events(self, job_id: str) -> List[Dict[str, Any]]:
+    def get_events(self, job_id: str) -> list[dict[str, Any]]:
         log_stage8_sql_access(
             repository_class="JobEventsRepository",
             operation="get_events",
@@ -570,11 +594,13 @@ class JobEventsRepository:
         out = []
         for row in rows:
             payload = _parse_metadata(row.payload) if getattr(row, "payload", None) else None
-            out.append({
-                "id": row.id,
-                "job_id": row.job_id,
-                "timestamp": _row_to_iso(row, "timestamp"),
-                "event_type": row.event_type,
-                "payload": payload,
-            })
+            out.append(
+                {
+                    "id": row.id,
+                    "job_id": row.job_id,
+                    "timestamp": _row_to_iso(row, "timestamp"),
+                    "event_type": row.event_type,
+                    "payload": payload,
+                }
+            )
         return out

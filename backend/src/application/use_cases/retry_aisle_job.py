@@ -6,8 +6,8 @@ from typing import cast
 
 from src.application.errors import ActiveJobExistsError
 from src.application.ports.contracts import ProcessAislePayload
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import AisleRepository, JobRepository
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.process_aisle_job_for_aisle import (
@@ -33,9 +33,7 @@ NON_RETRYABLE_JOB_STATUSES = (
 
 def _assert_job_retryable(original_job: Job, job_id: str) -> None:
     if original_job.status not in RETRYABLE_JOB_STATUSES:
-        raise ValueError(
-            f"Cannot retry job {job_id} with status {original_job.status.value!r}"
-        )
+        raise ValueError(f"Cannot retry job {job_id} with status {original_job.status.value!r}")
 
 
 def _assert_may_retry_as_latest_terminal_attempt(
@@ -46,9 +44,7 @@ def _assert_may_retry_as_latest_terminal_attempt(
     original_job: Job,
     job_id: str,
 ) -> None:
-    latest = stale_reconciler.reconcile(
-        job_repo.get_latest_by_target("aisle", aisle_id)
-    )
+    latest = stale_reconciler.reconcile(job_repo.get_latest_by_target("aisle", aisle_id))
     if latest is not None and latest.status in NON_RETRYABLE_JOB_STATUSES:
         raise ActiveJobExistsError(
             f"Aisle {aisle_id} already has an active job (status={latest.status.value})"

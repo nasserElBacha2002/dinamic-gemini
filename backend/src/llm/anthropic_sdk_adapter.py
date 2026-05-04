@@ -33,7 +33,7 @@ import logging
 import random
 import time
 from pathlib import Path
-from typing import Any, Dict, List, NoReturn, Tuple, cast
+from typing import Any, NoReturn, cast
 
 import cv2
 import numpy as np
@@ -114,10 +114,10 @@ def _coerce_claude_response_text_to_json_string(
     raw_text: str,
     *,
     model: str,
-    extraction_meta: Dict[str, Any],
+    extraction_meta: dict[str, Any],
 ) -> str:
     """Turn assistant text into a single JSON object string; raise ``INVALID_JSON`` on failure."""
-    base_details: Dict[str, Any] = {
+    base_details: dict[str, Any] = {
         "provider": "claude",
         "phase": "response_json_extract",
         "model": model,
@@ -135,7 +135,7 @@ def _coerce_claude_response_text_to_json_string(
             },
         )
 
-    candidates: List[str] = []
+    candidates: list[str] = []
     seen: set[str] = set()
 
     def _add(c: str) -> None:
@@ -171,11 +171,11 @@ def _coerce_claude_response_text_to_json_string(
     )
 
 
-def _extract_text_and_block_meta_from_anthropic_message(message: Any) -> tuple[str, Dict[str, Any]]:
+def _extract_text_and_block_meta_from_anthropic_message(message: Any) -> tuple[str, dict[str, Any]]:
     """Concatenate assistant ``text`` blocks only; summarize all block types for logs."""
     content = getattr(message, "content", None) or []
-    block_types: List[str] = []
-    parts: List[str] = []
+    block_types: list[str] = []
+    parts: list[str] = []
     for block in content:
         if isinstance(block, dict):
             btype = str(block.get("type") or "")
@@ -188,7 +188,7 @@ def _extract_text_and_block_meta_from_anthropic_message(message: Any) -> tuple[s
             if btype == "text":
                 parts.append(str(getattr(block, "text", "") or ""))
     raw_text = "".join(parts)
-    meta: Dict[str, Any] = {
+    meta: dict[str, Any] = {
         "message_object_type": type(message).__name__,
         "block_count": len(content),
         "block_types": ",".join(block_types) if block_types else "",
@@ -197,7 +197,7 @@ def _extract_text_and_block_meta_from_anthropic_message(message: Any) -> tuple[s
     return raw_text, meta
 
 
-def _anthropic_jpeg_content_block(jpeg_bytes: bytes) -> Dict[str, Any]:
+def _anthropic_jpeg_content_block(jpeg_bytes: bytes) -> dict[str, Any]:
     """One Claude Messages API image block from JPEG bytes (shared shape for context + primary frames)."""
     b64 = base64.standard_b64encode(jpeg_bytes).decode("ascii")
     return {
@@ -218,7 +218,7 @@ def _request_id_from_anthropic_body(body: Any) -> str | None:
     return None
 
 
-def classify_anthropic_messages_api_error(exc: BaseException) -> Tuple[str, Dict[str, Any]]:
+def classify_anthropic_messages_api_error(exc: BaseException) -> tuple[str, dict[str, Any]]:
     """Map Anthropic ``messages.create`` failures to ``LLMProviderError.code`` + detail dict.
 
     Preserves ``request_id`` from JSON body when present (e.g. 529 overload responses).
@@ -226,7 +226,7 @@ def classify_anthropic_messages_api_error(exc: BaseException) -> Tuple[str, Dict
     msg = str(exc)
     msg_l = msg.lower()
     et = type(exc).__name__
-    details: Dict[str, Any] = {
+    details: dict[str, Any] = {
         "provider": "claude",
         "provider_family": "anthropic",
         "exception_class": et,
@@ -287,9 +287,11 @@ def _raise_llm_error_from_messages_api_exception(
     raise LLMProviderError(code=code, message=str(exc), details=details) from exc
 
 
-def _parsed_v21_from_json_text(cleaned: str, *, error_context: Dict[str, Any] | None = None) -> dict:
+def _parsed_v21_from_json_text(
+    cleaned: str, *, error_context: dict[str, Any] | None = None
+) -> dict:
     """Parse model JSON text, align ``total_entities_detected`` with ``entities`` length, validate v2.1."""
-    ctx: Dict[str, Any] = {"provider": "claude", "phase": "response_parse"}
+    ctx: dict[str, Any] = {"provider": "claude", "phase": "response_parse"}
     if error_context:
         ctx.update(error_context)
     try:
@@ -332,7 +334,7 @@ def _parsed_v21_from_json_text(cleaned: str, *, error_context: Dict[str, Any] | 
             message=str(e),
             details={**ctx, "phase": "schema_validate"},
         ) from e
-    return cast(Dict[str, Any], data)
+    return cast(dict[str, Any], data)
 
 
 def _bgr_to_jpeg_bytes(arr: np.ndarray, max_side: int) -> bytes:
@@ -378,7 +380,7 @@ def _image_to_jpeg_bytes(obj: Any, max_side: int) -> bytes:
     return _pil_to_jpeg_bytes(obj, max_side)
 
 
-def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
+def _anthropic_message_usage_dict(message: Any) -> dict[str, Any]:
     """Serialize Anthropic message usage as a plain ``dict`` for ``normalize_usage``.
 
     Top-level ``usage.model_dump()`` must return a ``dict`` or the result is empty. For nested
@@ -391,8 +393,8 @@ def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
     model_dump = getattr(u, "model_dump", None)
     if callable(model_dump):
         dumped = model_dump(exclude_none=True)
-        return cast(Dict[str, Any], dumped) if isinstance(dumped, dict) else {}
-    out: Dict[str, Any] = {}
+        return cast(dict[str, Any], dumped) if isinstance(dumped, dict) else {}
+    out: dict[str, Any] = {}
     for key in (
         "input_tokens",
         "output_tokens",
@@ -457,7 +459,7 @@ class AnthropicSdkAdapter:
         base_delay = float(getattr(settings, "anthropic_retry_base_delay_sec", 1.0))
 
         if request.frames_nd and len(request.frames_nd) > 0:
-            frames_nd: List[np.ndarray] = [np.asarray(f) for f in request.frames_nd]
+            frames_nd: list[np.ndarray] = [np.asarray(f) for f in request.frames_nd]
         else:
             frames_nd = []
             for p in request.frames:
@@ -468,7 +470,11 @@ class AnthropicSdkAdapter:
             raise LLMProviderError(
                 code="NO_FRAMES",
                 message="No frames could be loaded",
-                details={"paths_count": len(request.frames), "provider": "claude", "phase": "input"},
+                details={
+                    "paths_count": len(request.frames),
+                    "provider": "claude",
+                    "phase": "input",
+                },
             )
 
         use_request_prompt = (
@@ -485,7 +491,7 @@ class AnthropicSdkAdapter:
             prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
         prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
 
-        content: List[Dict[str, Any]] = [{"type": "text", "text": prompt_text}]
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
         ctx_imgs = list(request.context_images) if request.context_images else []
         # TODO: overload mitigation — optional reduction of context image count or quality after
         # repeated PROVIDER_OVERLOADED (requires policy + metrics; high attachment counts stress API).

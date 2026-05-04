@@ -42,7 +42,9 @@ def _build_use_case():
 def _seed_base(inv_mode: InventoryProcessingMode = InventoryProcessingMode.TEST):
     inv_repo, aisle_repo, job_repo, pos_repo = _build_use_case()
     now = _now()
-    inv_repo.save(Inventory("inv1", "Inv", InventoryStatus.IN_REVIEW, now, now, processing_mode=inv_mode))
+    inv_repo.save(
+        Inventory("inv1", "Inv", InventoryStatus.IN_REVIEW, now, now, processing_mode=inv_mode)
+    )
     aisle_repo.save(Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now))
     for job_id in ("j1", "j2", "j3"):
         job_repo.save(
@@ -268,7 +270,9 @@ def test_compare_many_rejects_production_inventory() -> None:
 
 def test_compare_many_rejects_baseline_whitespace_after_trim() -> None:
     uc, _ = _seed_base()
-    with pytest.raises(BenchmarkCompareManyInvalidSelectionError, match="baseline_job_id is required"):
+    with pytest.raises(
+        BenchmarkCompareManyInvalidSelectionError, match="baseline_job_id is required"
+    ):
         uc.execute(
             CompareManyAisleRunsCommand(
                 inventory_id="inv1",
@@ -308,7 +312,16 @@ def test_compare_many_rejects_duplicate_job_ids_after_trim() -> None:
 def test_compare_many_truncation_flag_is_truthful() -> None:
     inv_repo, aisle_repo, job_repo, pos_repo = _build_use_case()
     now = _now()
-    inv_repo.save(Inventory("inv1", "Inv", InventoryStatus.IN_REVIEW, now, now, processing_mode=InventoryProcessingMode.TEST))
+    inv_repo.save(
+        Inventory(
+            "inv1",
+            "Inv",
+            InventoryStatus.IN_REVIEW,
+            now,
+            now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
     aisle_repo.save(Aisle("a1", "inv1", "A", AisleStatus.PROCESSED, now, now))
     for job_id in ("j1", "j2"):
         job_repo.save(

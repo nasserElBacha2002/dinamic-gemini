@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Dict, Optional, Sequence
 
 import pytest
 
 from src.application.errors import InventoryVisualReferenceNotFoundError
-from src.application.ports.repositories import InventoryRepository, InventoryVisualReferenceRepository
+from src.application.ports.repositories import (
+    InventoryRepository,
+    InventoryVisualReferenceRepository,
+)
 from src.application.ports.services import ArtifactStorage
 from src.application.use_cases.manage_inventory_visual_references import (
     DeleteInventoryVisualReferenceUseCase,
@@ -21,12 +24,12 @@ from src.infrastructure.storage.artifact_store import StoredArtifact
 
 class StubInventoryRepo(InventoryRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Inventory] = {}
+        self._store: dict[str, Inventory] = {}
 
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
@@ -35,9 +38,9 @@ class StubInventoryRepo(InventoryRepository):
 
 class StubVisualReferenceRepo(InventoryVisualReferenceRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, InventoryVisualReference] = {}
+        self._store: dict[str, InventoryVisualReference] = {}
 
-    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
         return self._store.get(reference_id)
 
     def create(self, reference: InventoryVisualReference) -> None:

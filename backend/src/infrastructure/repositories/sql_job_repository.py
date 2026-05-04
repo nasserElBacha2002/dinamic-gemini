@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 from src.application.ports.repositories import JobRepository
 from src.application.services.job_stale_reconciler import (
@@ -25,7 +26,7 @@ from src.infrastructure.repositories.db_row_text import normalize_db_str
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -52,7 +53,7 @@ def _status_from_row(row, job_id: str = "?") -> JobStatus:
         return JobStatus.QUEUED
 
 
-def _parse_json(raw: object) -> Dict[str, Any]:
+def _parse_json(raw: object) -> dict[str, Any]:
     if raw is None:
         return {}
     if isinstance(raw, str):
@@ -68,7 +69,7 @@ def _parse_json(raw: object) -> Dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _parse_optional_json(raw: object) -> Optional[Dict[str, Any]]:
+def _parse_optional_json(raw: object) -> dict[str, Any] | None:
     if raw is None:
         return None
     if isinstance(raw, str):
@@ -147,9 +148,7 @@ class SqlJobRepository(JobRepository):
         created = _ensure_utc(job.created_at)
         updated = _ensure_utc(job.updated_at)
         payload_str = json.dumps(job.payload_json, ensure_ascii=False) if job.payload_json else None
-        result_str = (
-            json.dumps(job.result_json, ensure_ascii=False) if job.result_json else None
-        )
+        result_str = json.dumps(job.result_json, ensure_ascii=False) if job.result_json else None
         engine_str = (
             json.dumps(job.engine_params_json, ensure_ascii=False)
             if job.engine_params_json
@@ -239,7 +238,7 @@ class SqlJobRepository(JobRepository):
                     ),
                 )
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         with self._client.cursor() as cur:
             cur.execute(
                 f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE id = ?",
@@ -250,7 +249,7 @@ class SqlJobRepository(JobRepository):
             return None
         return _row_to_job(row)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -285,17 +284,17 @@ class SqlJobRepository(JobRepository):
 
     def list_all_jobs(self) -> Sequence[Job]:
         with self._client.cursor() as cur:
-            cur.execute(f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC")
+            cur.execute(
+                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC"
+            )
             rows = cur.fetchall()
         return [_row_to_job(row) for row in rows]
 
-    def get_latest_by_targets(
-        self, target_type: str, target_ids: Sequence[str]
-    ) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         if not target_ids:
             return {}
         placeholders = ",".join("?" * len(target_ids))
-        params: List[Any] = [target_type, *target_ids]
+        params: list[Any] = [target_type, *target_ids]
         query = f"""
             SELECT {_JOB_SELECT_FIELDS}
             FROM (
@@ -312,13 +311,13 @@ class SqlJobRepository(JobRepository):
             rows = cur.fetchall()
         return {row.target_id: _row_to_job(row) for row in rows}
 
-    def claim_next_queued_job(self) -> Optional[Job]:
+    def claim_next_queued_job(self) -> Job | None:
         """Atomically claim next queued v3 job from `inventory_jobs`.
 
         This is used by the standalone worker flow so API and worker share
         the same persisted v3 job source.
         """
-        claimed_job_id: Optional[str] = None
+        claimed_job_id: str | None = None
         with self._client.cursor() as cur:
             cur.execute(
                 """

@@ -8,15 +8,13 @@ the configured S3 bucket prefix; see ``artifact_store`` module docstring).
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 def resolved_storage_key_for_row(
     *,
-    storage_provider: Optional[str],
-    storage_key_raw: Optional[str],
+    storage_provider: str | None,
+    storage_key_raw: str | None,
     storage_path: str,
-) -> Optional[str]:
+) -> str | None:
     """Resolve ``storage_key`` for domain entities loaded from SQL.
 
     When ``storage_provider`` is set, only ``storage_key_raw`` is used. ``storage_path`` must

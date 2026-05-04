@@ -5,15 +5,15 @@ SQL Server implementation of RawLabelRepository — v3.2.3.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 from src.application.ports.repositories import LabelJobScope, RawLabelRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.labels.entities import RawLabel
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -21,7 +21,7 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt.replace(tzinfo=timezone.utc)
 
 
-def _safe_dump_json(v: object) -> Optional[str]:
+def _safe_dump_json(v: object) -> str | None:
     if v is None:
         return None
     try:
@@ -70,7 +70,9 @@ def _row_to_raw_label(row) -> RawLabel:
         sku_candidate=getattr(row, "sku_candidate", None),
         product_name_raw=getattr(row, "product_name_raw", None),
         detected_text=getattr(row, "detected_text", None),
-        confidence=float(getattr(row, "confidence", 0)) if getattr(row, "confidence", None) is not None else None,
+        confidence=float(getattr(row, "confidence", 0))
+        if getattr(row, "confidence", None) is not None
+        else None,
         metadata=_safe_load_json(getattr(row, "metadata_json", None)),
         created_at=created,
         job_id=getattr(row, "job_id", None),
@@ -182,4 +184,3 @@ class SqlRawLabelRepository(RawLabelRepository):
             )
             rows = cur.fetchall()
         return [_row_to_raw_label(r) for r in rows]
-

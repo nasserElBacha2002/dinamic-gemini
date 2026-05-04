@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from src.application.ports.repositories import EvidenceRepository
 from src.database.sqlserver import SqlServerClient
@@ -17,7 +18,7 @@ from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_f
 logger = logging.getLogger(__name__)
 
 
-def _parse_json(raw: object, context: str = "") -> Optional[Dict[str, Any]]:
+def _parse_json(raw: object, context: str = "") -> dict[str, Any] | None:
     if raw is None:
         return None
     if isinstance(raw, str):
@@ -86,7 +87,9 @@ class SqlEvidenceRepository(EvidenceRepository):
         self._client = client
 
     def save(self, evidence: Evidence) -> None:
-        bbox_str = json.dumps(evidence.bbox_json, ensure_ascii=False) if evidence.bbox_json else None
+        bbox_str = (
+            json.dumps(evidence.bbox_json, ensure_ascii=False) if evidence.bbox_json else None
+        )
         source_asset_id = evidence.source_asset_id  # None stored as NULL
         with self._client.cursor() as cur:
             cur.execute(
@@ -148,7 +151,7 @@ class SqlEvidenceRepository(EvidenceRepository):
                     ),
                 )
 
-    def get_by_id(self, evidence_id: str) -> Optional[Evidence]:
+    def get_by_id(self, evidence_id: str) -> Evidence | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """

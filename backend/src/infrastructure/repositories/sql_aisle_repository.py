@@ -8,8 +8,8 @@ list_by_inventory ordering: created_at DESC (deterministic).
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 from src.application.ports.repositories import AisleRepository
 from src.database.sqlserver import SqlServerClient
@@ -18,7 +18,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -113,7 +113,7 @@ class SqlAisleRepository(AisleRepository):
                     ),
                 )
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -141,7 +141,7 @@ class SqlAisleRepository(AisleRepository):
             rows = cur.fetchall()
         return [_row_to_aisle(row) for row in rows]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """

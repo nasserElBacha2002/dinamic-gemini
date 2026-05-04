@@ -3,20 +3,19 @@ Recorte de ROI con padding y redimensionado (Sprint A).
 """
 
 from pathlib import Path
-from typing import Tuple
 
 import cv2
 import numpy as np
 
 
 def crop_roi(
-    bbox: Tuple[int, int, int, int],
+    bbox: tuple[int, int, int, int],
     frame: np.ndarray,
     padding_pct: float,
     max_side: int,
     quality: int,
     output_path: str | None = None,
-) -> Tuple[np.ndarray, str]:
+) -> tuple[np.ndarray, str]:
     """Recorta el ROI con padding, redimensiona y opcionalmente guarda como JPEG.
 
     Args:

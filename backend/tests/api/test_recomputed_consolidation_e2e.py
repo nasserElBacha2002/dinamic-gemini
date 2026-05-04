@@ -6,6 +6,7 @@ and consistency between FinalCountRepository, ProductRecord, and API.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import (
@@ -16,14 +17,10 @@ from src.api.dependencies import (
     get_product_record_repo,
     get_review_action_repo,
 )
-from src.auth.dependencies import get_current_admin
-from src.auth.schemas import AuthUser
 from src.api.server import app
 from src.application.ports.repositories import (
     FinalCountRepository,
-    PositionRepository,
     ProductRecordRepository,
-    RawLabelRepository,
 )
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
@@ -31,6 +28,8 @@ from src.application.use_cases.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
     RecomputeConsolidatedCountsUseCase,
 )
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.labels.entities import RawLabel
@@ -41,11 +40,17 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
-from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
+from src.infrastructure.repositories.memory_normalized_label_repository import (
+    MemoryNormalizedLabelRepository,
+)
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
-from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from src.infrastructure.repositories.memory_review_action_repository import (
+    MemoryReviewActionRepository,
+)
 
 
 def _raw(
@@ -121,11 +126,13 @@ def _seed_repos_duplicate_aisle() -> dict:
     position_repo.save(pos)
     product_repo.save(prod)
 
-    raw_repo.save_many([
-        _raw("r1", "pos-e2e-1", "g1", "ev1", "SKU-DUP"),
-        _raw("r2", "pos-e2e-1", "g1", "ev1", "SKU-DUP"),
-        _raw("r3", "pos-e2e-1", "g1", "ev1", "SKU-DUP"),
-    ])
+    raw_repo.save_many(
+        [
+            _raw("r1", "pos-e2e-1", "g1", "ev1", "SKU-DUP"),
+            _raw("r2", "pos-e2e-1", "g1", "ev1", "SKU-DUP"),
+            _raw("r3", "pos-e2e-1", "g1", "ev1", "SKU-DUP"),
+        ]
+    )
 
     uc = RecomputeConsolidatedCountsUseCase(
         raw_label_repo=raw_repo,
@@ -173,9 +180,7 @@ def test_list_aisle_positions_duplicate_raw_labels_shows_consolidated_quantity()
     app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
     try:
         client = TestClient(app)
-        resp = client.get(
-            "/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions"
-        )
+        resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions")
         assert resp.status_code == 200
         data = resp.json()
         assert "positions" in data
@@ -203,9 +208,7 @@ def test_get_position_detail_recomputed_shows_consolidated_quantity() -> None:
     app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
     try:
         client = TestClient(app)
-        resp = client.get(
-            "/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions/pos-e2e-1"
-        )
+        resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions/pos-e2e-1")
         assert resp.status_code == 200
         data = resp.json()
         assert "position" in data
@@ -288,7 +291,9 @@ def _seed_repos_normal_aisle() -> dict:
     aisle_repo.save(aisle)
     position_repo.save(pos)
     product_repo.save(prod)
-    raw_repo.save_many([_raw("r1", "pos-normal-1", "g1", "ev-n1", "SKU-SINGLE", "inv-normal", "aisle-normal")])
+    raw_repo.save_many(
+        [_raw("r1", "pos-normal-1", "g1", "ev-n1", "SKU-SINGLE", "inv-normal", "aisle-normal")]
+    )
 
     uc = RecomputeConsolidatedCountsUseCase(
         raw_label_repo=raw_repo,
@@ -331,9 +336,7 @@ def test_list_aisle_positions_normal_non_duplicate_aisle_no_regression() -> None
     app.dependency_overrides[get_product_record_repo] = lambda: repos["product_repo"]
     try:
         client = TestClient(app)
-        resp = client.get(
-            "/api/v3/inventories/inv-normal/aisles/aisle-normal/positions"
-        )
+        resp = client.get("/api/v3/inventories/inv-normal/aisles/aisle-normal/positions")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["positions"]) == 1
@@ -370,16 +373,12 @@ def test_consistency_final_count_product_record_api_aligned() -> None:
     app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
     try:
         client = TestClient(app)
-        list_resp = client.get(
-            "/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions"
-        )
+        list_resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions")
         assert list_resp.status_code == 200
         list_qty = list_resp.json()["positions"][0]["qty"]
         assert list_qty == final_qty
 
-        detail_resp = client.get(
-            "/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions/pos-e2e-1"
-        )
+        detail_resp = client.get("/api/v3/inventories/inv-e2e/aisles/aisle-e2e/positions/pos-e2e-1")
         assert detail_resp.status_code == 200
         detail_qty = detail_resp.json()["position"]["qty"]
         assert detail_qty == final_qty

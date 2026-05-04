@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 import pytest
 
-from src.application.services.process_aisle_execution_resolution import resolve_process_aisle_execution_keys
+from src.application.services.process_aisle_execution_resolution import (
+    resolve_process_aisle_execution_keys,
+)
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 
 _NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -34,7 +36,9 @@ def _inv(
     )
 
 
-@patch("src.application.services.process_aisle_execution_resolution.effective_production_processing_keys")
+@patch(
+    "src.application.services.process_aisle_execution_resolution.effective_production_processing_keys"
+)
 def test_production_delegates_to_effective_keys(mock_eff) -> None:
     mock_eff.return_value = ("gemini", "m1", "pk1")
     settings = object()
@@ -49,7 +53,9 @@ def test_production_delegates_to_effective_keys(mock_eff) -> None:
     mock_eff.assert_called_once()
 
 
-@patch("src.application.services.process_aisle_execution_resolution.resolve_start_processing_request")
+@patch(
+    "src.application.services.process_aisle_execution_resolution.resolve_start_processing_request"
+)
 def test_test_mode_delegates_to_resolve_start(mock_resolve) -> None:
     mock_resolve.return_value = ("openai", "gpt", "custom")
     settings = object()
@@ -64,8 +70,12 @@ def test_test_mode_delegates_to_resolve_start(mock_resolve) -> None:
     mock_resolve.assert_called_once()
 
 
-@patch("src.application.services.process_aisle_execution_resolution.effective_production_processing_keys")
-def test_production_logs_when_request_has_overrides(mock_eff, caplog: pytest.LogCaptureFixture) -> None:
+@patch(
+    "src.application.services.process_aisle_execution_resolution.effective_production_processing_keys"
+)
+def test_production_logs_when_request_has_overrides(
+    mock_eff, caplog: pytest.LogCaptureFixture
+) -> None:
     mock_eff.return_value = ("p", "m", "pk")
     caplog.set_level(logging.WARNING)
     resolve_process_aisle_execution_keys(

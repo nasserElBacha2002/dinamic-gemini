@@ -9,22 +9,21 @@ is actively queued or running. When the last asset is removed and the aisle was 
 from __future__ import annotations
 
 import logging
-from typing import Set
 
 from src.application.errors import (
     AisleSourceAssetMutationBlockedError,
     SourceAssetNotFoundForAisleError,
 )
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, JobRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.jobs.entities import JobStatus
 
 logger = logging.getLogger(__name__)
 
-_BLOCKED_JOB_STATUSES: Set[JobStatus] = {
+_BLOCKED_JOB_STATUSES: set[JobStatus] = {
     JobStatus.QUEUED,
     JobStatus.STARTING,
     JobStatus.RUNNING,

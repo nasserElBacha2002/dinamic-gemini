@@ -19,7 +19,9 @@ def _reset_config_cache() -> None:
 
 
 def test_settings_require_s3_bucket_when_provider_is_s3() -> None:
-    with patch.dict(os.environ, {"ARTIFACT_STORAGE_PROVIDER": "s3", "ARTIFACT_S3_BUCKET": ""}, clear=False):
+    with patch.dict(
+        os.environ, {"ARTIFACT_STORAGE_PROVIDER": "s3", "ARTIFACT_S3_BUCKET": ""}, clear=False
+    ):
         with pytest.raises(Exception):
             Settings()
 
@@ -42,6 +44,7 @@ def test_get_artifact_storage_local_provider() -> None:
 
 def test_get_artifact_storage_s3_provider_uses_s3_adapter() -> None:
     _reset_config_cache()
+
     class _FakeS3Adapter:
         def __init__(self, **kwargs):
             self.bucket = kwargs["bucket"]
@@ -59,7 +62,10 @@ def test_get_artifact_storage_s3_provider_uses_s3_adapter() -> None:
         clear=False,
     ):
         _ = load_settings()
-        with patch("src.infrastructure.storage.s3_artifact_storage_adapter.S3ArtifactStorageAdapter", _FakeS3Adapter):
+        with patch(
+            "src.infrastructure.storage.s3_artifact_storage_adapter.S3ArtifactStorageAdapter",
+            _FakeS3Adapter,
+        ):
             storage = deps.get_artifact_storage()
         assert isinstance(storage, _FakeS3Adapter)
         assert storage.bucket == "bucket-a"

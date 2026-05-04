@@ -39,7 +39,9 @@ class CreateCaptureSessionUseCase:
                 aisle_id=resolved_aisle_id,
                 detail_style="strict",
             )
-            open_count = self._session_repo.count_open_sessions_for_aisle(inventory_id, resolved_aisle_id)
+            open_count = self._session_repo.count_open_sessions_for_aisle(
+                inventory_id, resolved_aisle_id
+            )
             if open_count >= self._max_open:
                 raise OpenCaptureSessionExistsError(
                     "An open capture session already exists for this aisle; close or cancel it first."

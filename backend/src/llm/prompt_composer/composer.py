@@ -15,8 +15,6 @@ See ``hybrid_resolution`` for per-provider rules (OpenAI replacement, Claude sup
 
 from __future__ import annotations
 
-from typing import Optional
-
 from src.llm.prompt_composer.hybrid_profiles import PROMPTS
 from src.llm.prompt_composer.hybrid_resolution import resolve_hybrid_entry_for_provider
 
@@ -33,7 +31,7 @@ class HybridPromptComposer:
     def compose_base(
         self,
         profile_name: str,
-        provider_key: Optional[str] = None,
+        provider_key: str | None = None,
         *,
         prompt_parity_mode: bool = False,
     ) -> str:

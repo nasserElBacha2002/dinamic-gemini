@@ -4,7 +4,7 @@ Stage 6 — Fallback trigger rules.
 Determines whether a pallet should receive an additional visual counting pass.
 """
 
-from typing import List, TypeVar
+from typing import TypeVar
 
 from src.domain.pallet import Pallet
 
@@ -13,7 +13,7 @@ DEFAULT_CONFIDENCE_THRESHOLD = 0.70
 T = TypeVar("T")
 
 
-def select_fallback_frames(frames: List[T], k: int = 3) -> List[T]:
+def select_fallback_frames(frames: list[T], k: int = 3) -> list[T]:
     """Return a spread of up to k frames: first, mid, last. If len(frames) <= k, return all."""
     if not frames:
         return []

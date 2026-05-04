@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class PositionStatus(str, Enum):
@@ -48,12 +48,14 @@ class Position:
     status: PositionStatus
     confidence: float
     needs_review: bool
-    primary_evidence_id: Optional[str]
+    primary_evidence_id: str | None
     created_at: datetime
     updated_at: datetime
-    review_resolution: Optional[PositionReviewResolution] = None
-    detected_summary_json: Optional[Dict[str, Any]] = None
-    corrected_summary_json: Optional[Dict[str, Any]] = None  # legacy persisted blob; Sprint 4 audit tracks removal readiness
-    corrected_position_code: Optional[str] = None
+    review_resolution: PositionReviewResolution | None = None
+    detected_summary_json: dict[str, Any] | None = None
+    corrected_summary_json: dict[str, Any] | None = (
+        None  # legacy persisted blob; Sprint 4 audit tracks removal readiness
+    )
+    corrected_position_code: str | None = None
     #: FK to ``inventory_jobs`` when persisted from a pipeline run; ``None`` = legacy pre-multi-run row.
-    job_id: Optional[str] = None
+    job_id: str | None = None

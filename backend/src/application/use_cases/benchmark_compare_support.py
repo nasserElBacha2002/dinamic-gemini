@@ -12,8 +12,8 @@ key was derived.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.application.mappers.inventory_export_rows import export_position_code
 from src.application.services.position_sku_consolidation import (
@@ -68,8 +68,8 @@ class ConsolidatedRowSig:
 
 def signatures_for_consolidated(
     consolidated: Sequence[Position],
-) -> Dict[str, ConsolidatedRowSig]:
-    out: Dict[str, ConsolidatedRowSig] = {}
+) -> dict[str, ConsolidatedRowSig]:
+    out: dict[str, ConsolidatedRowSig] = {}
     for p in consolidated:
         key = cross_run_match_key(p)
         out[key] = ConsolidatedRowSig(
@@ -85,7 +85,7 @@ def signatures_for_consolidated(
 def load_consolidated_for_job_slice(
     *,
     positions: Sequence[Position],
-) -> List[Position]:
+) -> list[Position]:
     active = [p for p in positions if p.status != PositionStatus.DELETED]
     return consolidate_positions_by_sku(active)
 
@@ -169,8 +169,8 @@ def build_compare_diff_rows(
     sig_b: Mapping[str, ConsolidatedRowSig],
     *,
     max_rows: int,
-) -> Tuple[List[CompareDiffRow], bool]:
-    rows: List[CompareDiffRow] = []
+) -> tuple[list[CompareDiffRow], bool]:
+    rows: list[CompareDiffRow] = []
     keys_a = set(sig_a.keys())
     keys_b = set(sig_b.keys())
     for k in sorted(keys_a - keys_b):
@@ -231,7 +231,7 @@ def build_compare_diff_rows(
     return rows, False
 
 
-def job_execution_duration_seconds(job: Job) -> Optional[float]:
+def job_execution_duration_seconds(job: Job) -> float | None:
     """Wall-clock processing duration when both timestamps exist and are coherent."""
     if job.started_at is None or job.finished_at is None:
         return None
@@ -256,7 +256,7 @@ def format_execution_duration_human(seconds: float) -> str:
     return f"{minutes}m {sec:02d}s"
 
 
-def job_execution_duration_human(job: Job) -> Optional[str]:
+def job_execution_duration_human(job: Job) -> str | None:
     secs = job_execution_duration_seconds(job)
     if secs is None:
         return None

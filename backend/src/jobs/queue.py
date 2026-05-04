@@ -5,7 +5,6 @@ This module is kept for local compatibility and transitional paths.
 """
 
 import queue
-import threading
 from typing import Optional
 
 # Single global queue; worker consumes from it

@@ -2,8 +2,6 @@
 
 from datetime import datetime, timezone
 
-import pytest
-
 from src.domain.labels.entities import RawLabel
 from src.domain.labels.merge import MergeRule, MergeRuleEngine
 
@@ -48,7 +46,10 @@ def test_same_sku_same_group_merges():
     ]
     decision = engine.evaluate(partition)
     assert decision.should_merge is True
-    assert decision.rule_name in (MergeRule.SAME_SKU_SAME_GROUP.value, MergeRule.SAME_SKU_SAME_EVIDENCE.value)
+    assert decision.rule_name in (
+        MergeRule.SAME_SKU_SAME_GROUP.value,
+        MergeRule.SAME_SKU_SAME_EVIDENCE.value,
+    )
     assert decision.review_required is False
 
 
@@ -70,8 +71,11 @@ def test_same_sku_different_group_no_merge():
     So same partition = same group. For different groups we'd get two partitions and each would
     evaluate to merge (single group). So to test "no merge across groups" we need to test
     at the service level. Here we test missing_canonical_sku and ambiguous."""
-    engine = MergeRuleEngine()
-    partition = [_raw("r1", group_key="g1", sku_raw="SKU-C"), _raw("r2", group_key="g2", sku_raw="SKU-C")]
+    MergeRuleEngine()
+    [
+        _raw("r1", group_key="g1", sku_raw="SKU-C"),
+        _raw("r2", group_key="g2", sku_raw="SKU-C"),
+    ]
     # Partition is one list; in practice partition is built with same (inv, aisle, position, group_key, canonical).
     # So g1 and g2 would not be in the same partition. So this is an inconsistent partition (different groups).
     # Engine will still compare canonical; both have SKU-C so canonical match. But product_names and confidence

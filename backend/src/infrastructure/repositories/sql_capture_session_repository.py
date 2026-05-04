@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 import pyodbc
 
@@ -25,7 +25,7 @@ def _is_one_open_per_aisle_unique_violation(exc: pyodbc.IntegrityError) -> bool:
     )
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -130,7 +130,7 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
                         ) from exc
                     raise
 
-    def get_by_id(self, session_id: str) -> Optional[CaptureSession]:
+    def get_by_id(self, session_id: str) -> CaptureSession | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -143,7 +143,9 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
             row = cur.fetchone()
         return _row_to_session(row) if row else None
 
-    def get_by_id_for_inventory(self, session_id: str, inventory_id: str) -> Optional[CaptureSession]:
+    def get_by_id_for_inventory(
+        self, session_id: str, inventory_id: str
+    ) -> CaptureSession | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -175,10 +177,10 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
         self,
         inventory_id: str,
         *,
-        aisle_id: Optional[str] = None,
-        statuses: Optional[Sequence[CaptureSessionStatus]] = None,
-        created_from: Optional[datetime] = None,
-        created_to: Optional[datetime] = None,
+        aisle_id: str | None = None,
+        statuses: Sequence[CaptureSessionStatus] | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
         page: int = 1,
         page_size: int = 25,
     ) -> tuple[Sequence[CaptureSession], int]:

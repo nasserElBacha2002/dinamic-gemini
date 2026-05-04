@@ -5,7 +5,7 @@ FileSystemArtifactStorage — implements ArtifactStorage under a base path (Stag
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from src.reporting.artifacts import write_json as _write_json
 
@@ -21,7 +21,7 @@ class FileSystemArtifactStorage:
     def __init__(self, base_path: Path) -> None:
         self._base_path = Path(base_path)
 
-    def write_json(self, relative_path: str, payload: Dict[str, Any]) -> Path:
+    def write_json(self, relative_path: str, payload: dict[str, Any]) -> Path:
         path = self._base_path / relative_path
         _write_json(path, payload)
         return path
@@ -37,10 +37,10 @@ class FileSystemArtifactStorage:
     def exists(self, relative_path: str) -> bool:
         return (self._base_path / relative_path).exists()
 
-    def list_artifacts(self) -> List[str]:
+    def list_artifacts(self) -> list[str]:
         if not self._base_path.exists():
             return []
-        out: List[str] = []
+        out: list[str] = []
         for p in self._base_path.rglob("*"):
             if p.is_file():
                 try:

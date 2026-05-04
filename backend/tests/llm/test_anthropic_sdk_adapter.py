@@ -39,7 +39,9 @@ def _settings_claude() -> MagicMock:
     return s
 
 
-def _api_status_error(status: int, *, body: dict | None = None, message: str = "err") -> APIStatusError:
+def _api_status_error(
+    status: int, *, body: dict | None = None, message: str = "err"
+) -> APIStatusError:
     req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
     r = httpx.Response(status, request=req)
     return APIStatusError(message, response=r, body=body or {})
@@ -547,7 +549,9 @@ def test_anthropic_adapter_default_prompt_includes_claude_contract_and_json_suff
         client_inst.messages.create.return_value = mock_message
         client_cls.return_value = client_inst
         adapter.execute(req, settings)
-        user_text = client_inst.messages.create.call_args.kwargs["messages"][0]["content"][0]["text"]
+        user_text = client_inst.messages.create.call_args.kwargs["messages"][0]["content"][0][
+            "text"
+        ]
 
     assert CLAUDE_CONTRACT_MARKER in user_text
     assert CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX in user_text

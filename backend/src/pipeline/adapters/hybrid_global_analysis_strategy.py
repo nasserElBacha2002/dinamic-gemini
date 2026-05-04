@@ -18,20 +18,36 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 import numpy as np
 
+from src.llm.prompt_composer.prompt_traceability import (
+    LLM_IDENTITY_METADATA_KEY,
+    LLM_METADATA_KEY_PROMPT_COMPOSITION,
+    LLM_METADATA_KEY_PROMPT_PARITY_MODE,
+    apply_execution_layer_to_composition,
+    prompt_composition_summary_for_execution_log,
+    sha256_utf8,
+)
 from src.llm.types import ContextImageSequence, LLMRequest
-from src.pipeline.contracts.analysis_context import AnalysisContext
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.contracts.analysis_context import AnalysisContext
 from src.pipeline.ports.analysis_provider import (
-    AnalysisResult,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
+    AnalysisResult,
     ProviderCapabilities,
+)
+from src.pipeline.services.analysis_visual_reference_prep import (
+    build_primary_evidence_attachments,
+    prepare_visual_reference_inputs,
+)
+from src.pipeline.services.hybrid_analysis_prompt import (
+    build_hybrid_analysis_prompt_with_traceability,
+    resolve_analysis_context_for_run,
 )
 from src.pipeline.services.multi_provider_analysis_execution import (
     dispatch_multi_provider_analysis,
@@ -48,22 +64,6 @@ from src.pipeline.services.provider_analysis_result_normalization import (
 from src.pipeline.services.provider_llm_request_metadata import (
     apply_job_model_name_to_llm_request_metadata,
 )
-from src.pipeline.services.analysis_visual_reference_prep import (
-    build_primary_evidence_attachments,
-    prepare_visual_reference_inputs,
-)
-from src.llm.prompt_composer.prompt_traceability import (
-    LLM_IDENTITY_METADATA_KEY,
-    LLM_METADATA_KEY_PROMPT_COMPOSITION,
-    LLM_METADATA_KEY_PROMPT_PARITY_MODE,
-    apply_execution_layer_to_composition,
-    prompt_composition_summary_for_execution_log,
-    sha256_utf8,
-)
-from src.pipeline.services.hybrid_analysis_prompt import (
-    build_hybrid_analysis_prompt_with_traceability,
-    resolve_analysis_context_for_run,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -71,17 +71,17 @@ logger = logging.getLogger(__name__)
 class _HybridLlmVisualBundle(NamedTuple):
     """Visual-reference inputs and instruction text assembled before ``LLMRequest`` construction."""
 
-    context_instruction: Optional[str]
-    context_images: Optional[ContextImageSequence]
-    visual_reference_attachments: List[Dict[str, Any]]
-    resolved_reference_ids: List[str]
+    context_instruction: str | None
+    context_images: ContextImageSequence | None
+    visual_reference_attachments: list[dict[str, Any]]
+    resolved_reference_ids: list[str]
     consumed_count: int
 
 
 def _prepare_hybrid_llm_visual_bundle(
     *,
     supports_visual_reference_context: bool,
-    analysis_context: Optional[AnalysisContext],
+    analysis_context: AnalysisContext | None,
     job_id: str,
 ) -> _HybridLlmVisualBundle:
     """
@@ -90,17 +90,23 @@ def _prepare_hybrid_llm_visual_bundle(
     Keeps the supports-visual-reference vs attachment-only-for-logging split in one place so
     :meth:`HybridGlobalAnalysisStrategy._analyze_once` stays a coordinator.
     """
-    context_instruction: Optional[str] = None
-    context_images: Optional[ContextImageSequence] = None
-    visual_reference_attachments: List[Dict[str, Any]] = []
-    resolved_reference_ids: List[str] = []
+    context_instruction: str | None = None
+    context_images: ContextImageSequence | None = None
+    visual_reference_attachments: list[dict[str, Any]] = []
+    resolved_reference_ids: list[str] = []
     consumed_count = 0
     if analysis_context and analysis_context.instructions:
         context_instruction = "\n".join(analysis_context.instructions).strip() or None
-    if supports_visual_reference_context and analysis_context and analysis_context.visual_references:
-        loaded, visual_reference_attachments, resolved_reference_ids = prepare_visual_reference_inputs(
-            analysis_context,
-            job_id=job_id,
+    if (
+        supports_visual_reference_context
+        and analysis_context
+        and analysis_context.visual_references
+    ):
+        loaded, visual_reference_attachments, resolved_reference_ids = (
+            prepare_visual_reference_inputs(
+                analysis_context,
+                job_id=job_id,
+            )
         )
         if loaded:
             context_images = loaded
@@ -123,8 +129,8 @@ def _provider_metadata(
     visual_references_available: bool,
     visual_references_consumed: bool,
     visual_reference_count: int = 0,
-    visual_reference_ids: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    visual_reference_ids: list[str] | None = None,
+) -> dict[str, Any]:
     return {
         PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE: visual_references_available,
         PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED: visual_references_consumed,
@@ -158,10 +164,10 @@ class HybridGlobalAnalysisStrategy:
     def analyze(
         self,
         context: RunContext,
-        frames_nd: List[np.ndarray],
-        frame_paths: List[Path],
-        frame_refs: List[str],
-        metadata: Dict[str, Any],
+        frames_nd: list[np.ndarray],
+        frame_paths: list[Path],
+        frame_refs: list[str],
+        metadata: dict[str, Any],
     ) -> AnalysisResult:
         """
         Run global analysis. Default ``single`` strategy uses one ``_analyze_once`` on ``context``.
@@ -194,14 +200,14 @@ class HybridGlobalAnalysisStrategy:
     def _analyze_once(
         self,
         run_ctx: RunContext,
-        frames_nd: List[np.ndarray],
-        frame_paths: List[Path],
-        frame_refs: List[str],
-        metadata: Dict[str, Any],
+        frames_nd: list[np.ndarray],
+        frame_paths: list[Path],
+        frame_refs: list[str],
+        metadata: dict[str, Any],
     ) -> AnalysisResult:
         settings = run_ctx.settings
         job_id = run_ctx.job_id
-        pipeline_provider_name: Optional[str] = getattr(run_ctx, "pipeline_provider_name", None)
+        pipeline_provider_name: str | None = getattr(run_ctx, "pipeline_provider_name", None)
         resolved_exec = PipelineProviderResolver.resolve_for_run(
             pipeline_provider_name=pipeline_provider_name,
             settings=settings,
@@ -211,7 +217,7 @@ class HybridGlobalAnalysisStrategy:
 
         prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(run_ctx)
 
-        analysis_context: Optional[AnalysisContext] = resolve_analysis_context_for_run(run_ctx)
+        analysis_context: AnalysisContext | None = resolve_analysis_context_for_run(run_ctx)
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
         vb = _prepare_hybrid_llm_visual_bundle(
             supports_visual_reference_context=self.get_capabilities().supports_visual_reference_context,
@@ -224,7 +230,7 @@ class HybridGlobalAnalysisStrategy:
         resolved_reference_ids = vb.resolved_reference_ids
         consumed_count = vb.consumed_count
 
-        req_meta: Dict[str, Any] = {**metadata, "run_dir": str(run_ctx.run_dir)}
+        req_meta: dict[str, Any] = {**metadata, "run_dir": str(run_ctx.run_dir)}
         jm = getattr(run_ctx, "job_model_name", None)
         rk = (resolved_key or "").strip().lower()
         model_for_meta = apply_job_model_name_to_llm_request_metadata(
@@ -246,7 +252,9 @@ class HybridGlobalAnalysisStrategy:
                 job_id,
             )
         req_meta[LLM_METADATA_KEY_PROMPT_COMPOSITION] = prompt_composition
-        req_meta[LLM_METADATA_KEY_PROMPT_PARITY_MODE] = bool(prompt_composition.get("prompt_parity_mode"))
+        req_meta[LLM_METADATA_KEY_PROMPT_PARITY_MODE] = bool(
+            prompt_composition.get("prompt_parity_mode")
+        )
         _lid = prompt_composition.get("llm_identity")
         if isinstance(_lid, dict):
             req_meta[LLM_IDENTITY_METADATA_KEY] = dict(_lid)
@@ -288,7 +296,7 @@ class HybridGlobalAnalysisStrategy:
         debug_full_prompt = getattr(settings, "debug_log_full_analysis_prompt", None) is True
         if exec_log:
             primary_attachments = build_primary_evidence_attachments(frame_paths, frame_refs)
-            log_payload: Dict[str, Any] = {
+            log_payload: dict[str, Any] = {
                 "event_type": "analysis_request",
                 "pipeline_provider": resolved_key,
                 "context_instruction": context_instruction,
@@ -327,7 +335,9 @@ class HybridGlobalAnalysisStrategy:
                     "Analysis request finished",
                     payload={"provider": response.provider},
                 )
-            consumed = self.get_capabilities().supports_visual_reference_context and consumed_count > 0
+            consumed = (
+                self.get_capabilities().supports_visual_reference_context and consumed_count > 0
+            )
             return build_analysis_result_from_llm_response(
                 response=response,
                 prompt_composition=prompt_composition,

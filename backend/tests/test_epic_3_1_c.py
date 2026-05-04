@@ -5,11 +5,8 @@ traceability_summary semantics (full-job only), typed TraceabilitySummary,
 traceability_status filter validation (422 for invalid), backward compatibility.
 """
 
-import json
 import tempfile
 from pathlib import Path
-
-import pytest
 
 from src.domain.entity import Entity
 from src.domain.traceability import (
@@ -17,9 +14,8 @@ from src.domain.traceability import (
     compute_traceability_summary,
     compute_traceability_summary_from_entity_dicts,
 )
-from src.reporting.hybrid_report import build_hybrid_report
 from src.reporting.artifacts import write_report_csv
-
+from src.reporting.hybrid_report import build_hybrid_report
 
 # ---------- compute_traceability_summary ----------
 

@@ -105,7 +105,9 @@ def test_execution_log_prompt_hash_matches_request_metadata(
     req = captured["request"]
     ph = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]["prompt_hash"]
     prepared = next(
-        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+        c
+        for c in context.execution_log.info.call_args_list
+        if c.args[1] == "Analysis request prepared"
     )
     payload = prepared.kwargs["payload"]
     assert payload["prompt_composition"]["prompt_hash"] == ph
@@ -138,7 +140,9 @@ def test_phase7_prompt_version_propagates_to_request_and_execution_log(
     pc = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]
     assert pc.get("prompt_version") == "benchmark-v2"
     prepared = next(
-        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+        c
+        for c in context.execution_log.info.call_args_list
+        if c.args[1] == "Analysis request prepared"
     )
     log_pc = prepared.kwargs["payload"]["prompt_composition"]
     assert log_pc.get("prompt_version") == "benchmark-v2"
@@ -193,11 +197,15 @@ def test_claude_traceability_in_execution_log_and_run_metadata(
         metadata={"frame_count": 1},
     )
     prepared = next(
-        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+        c
+        for c in context.execution_log.info.call_args_list
+        if c.args[1] == "Analysis request prepared"
     )
     assert prepared.kwargs["payload"]["pipeline_provider"] == "claude"
     finished = next(
-        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request finished"
+        c
+        for c in context.execution_log.info.call_args_list
+        if c.args[1] == "Analysis request finished"
     )
     assert finished.kwargs["payload"]["provider"] == "claude"
 
@@ -255,11 +263,15 @@ def test_deepseek_traceability_in_execution_log_and_run_metadata(
         metadata={"frame_count": 1},
     )
     prepared = next(
-        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+        c
+        for c in context.execution_log.info.call_args_list
+        if c.args[1] == "Analysis request prepared"
     )
     assert prepared.kwargs["payload"]["pipeline_provider"] == "deepseek"
     finished = next(
-        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request finished"
+        c
+        for c in context.execution_log.info.call_args_list
+        if c.args[1] == "Analysis request finished"
     )
     assert finished.kwargs["payload"]["provider"] == "deepseek"
     rm = build_run_metadata(None, None, prompt_composition=result.prompt_composition)
@@ -287,11 +299,16 @@ def test_phase7_execution_log_omits_prompt_version_key_when_absent(
         metadata={"frame_count": 1},
     )
     prepared = next(
-        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+        c
+        for c in context.execution_log.info.call_args_list
+        if c.args[1] == "Analysis request prepared"
     )
     log_pc = prepared.kwargs["payload"]["prompt_composition"]
     assert "prompt_version" not in log_pc
-    assert captured["request"].metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION].get("prompt_version") is None
+    assert (
+        captured["request"].metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION].get("prompt_version")
+        is None
+    )
 
 
 def test_prompt_parity_mode_and_llm_identity_traceability(
@@ -329,7 +346,9 @@ def test_prompt_parity_mode_and_llm_identity_traceability(
     step_kinds = [s.get("step") for s in pc.get("composition_steps", []) if isinstance(s, dict)]
     assert COMPOSITION_STEP_PROMPT_PARITY_MODE in step_kinds
     prepared = next(
-        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+        c
+        for c in context.execution_log.info.call_args_list
+        if c.args[1] == "Analysis request prepared"
     )
     log_pc = prepared.kwargs["payload"]["prompt_composition"]
     assert log_pc.get("prompt_parity_mode") is True
@@ -358,9 +377,14 @@ def test_standard_mode_omits_parity_from_execution_log_summary(
         frame_refs=["f0"],
         metadata={"frame_count": 1},
     )
-    assert captured["request"].metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION].get("prompt_parity_mode") is False
+    assert (
+        captured["request"].metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION].get("prompt_parity_mode")
+        is False
+    )
     prepared = next(
-        c for c in context.execution_log.info.call_args_list if c.args[1] == "Analysis request prepared"
+        c
+        for c in context.execution_log.info.call_args_list
+        if c.args[1] == "Analysis request prepared"
     )
     log_pc = prepared.kwargs["payload"]["prompt_composition"]
     assert "prompt_parity_mode" not in log_pc

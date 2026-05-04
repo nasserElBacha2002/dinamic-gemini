@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from collections.abc import Sequence
 
 from src.application.errors import (
     CaptureSessionGroupAlreadyAssignedError,
@@ -16,14 +16,14 @@ from src.application.ports.capture_repositories import (
     CaptureSessionRepository,
 )
 from src.application.ports.clock import Clock
-from src.application.use_cases.capture_session_group_assignment_guard import (
-    ensure_group_aisle_assignment_allowed,
-)
 from src.application.services.capture_flow_observability import (
-    emit_capture_flow_event,
-    get_capture_flow_metrics,
     LOG_OP_G4_ASSIGN_GROUP_CREATE_AISLE,
     RESULT_SUCCESS,
+    emit_capture_flow_event,
+    get_capture_flow_metrics,
+)
+from src.application.use_cases.capture_session_group_assignment_guard import (
+    ensure_group_aisle_assignment_allowed,
 )
 from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.get_capture_session_groups import GetCaptureSessionGroupsUseCase
@@ -45,7 +45,9 @@ class CreateAisleAndAssignCaptureSessionGroupUseCase:
         self._group_repo = group_repo
         self._create_aisle = create_aisle
         self._clock = clock
-        self._list_groups = GetCaptureSessionGroupsUseCase(session_repo=session_repo, group_repo=group_repo)
+        self._list_groups = GetCaptureSessionGroupsUseCase(
+            session_repo=session_repo, group_repo=group_repo
+        )
 
     def execute(
         self, *, inventory_id: str, session_id: str, group_id: str, aisle_code: str
@@ -55,16 +57,24 @@ class CreateAisleAndAssignCaptureSessionGroupUseCase:
             raise CaptureSessionNotFoundError(
                 "Capture session not found for this inventory (session id does not match inventory scope)."
             )
-        ensure_group_aisle_assignment_allowed(session, group_repo=self._group_repo, session_id=session_id)
+        ensure_group_aisle_assignment_allowed(
+            session, group_repo=self._group_repo, session_id=session_id
+        )
 
         group = self._group_repo.get_by_id_and_session(group_id, session_id)
         if group is None:
-            raise CaptureSessionGroupNotFoundError("Capture session group not found for this session.")
+            raise CaptureSessionGroupNotFoundError(
+                "Capture session group not found for this session."
+            )
 
         if group.assignment_status != CaptureSessionGroupAisleAssignmentStatus.UNASSIGNED:
-            raise CaptureSessionGroupAlreadyAssignedError("This capture session group is already assigned to an aisle.")
+            raise CaptureSessionGroupAlreadyAssignedError(
+                "This capture session group is already assigned to an aisle."
+            )
 
-        aisle = self._create_aisle.execute(CreateAisleCommand(inventory_id=inventory_id, code=aisle_code))
+        aisle = self._create_aisle.execute(
+            CreateAisleCommand(inventory_id=inventory_id, code=aisle_code)
+        )
         now = self._clock.now()
         group.assigned_aisle_id = aisle.id
         group.assignment_status = CaptureSessionGroupAisleAssignmentStatus.ASSIGNED_NEW

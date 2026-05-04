@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import timezone
-from typing import DefaultDict, Dict, List, Optional, Tuple
 
 from src.application.ports.contracts import (
     ReviewQueueListRow,
@@ -39,7 +38,7 @@ def _sort_key(
     row: ReviewQueueListRow,
     sort_by: str,
     sort_dir: str,
-    primary_product: Optional[ProductRecord],
+    primary_product: ProductRecord | None,
 ) -> tuple:
     """Sort key with reverse=False on list.sort: negate numeric primary key when desc."""
     p = row.position
@@ -61,7 +60,7 @@ def _sort_key(
     return (-ts if desc else ts, p.id)
 
 
-def _position_status_matches(p: Position, raw: Optional[str]) -> bool:
+def _position_status_matches(p: Position, raw: str | None) -> bool:
     if raw is None or str(raw).strip() == "":
         return True
     fv = str(raw).strip().lower()
@@ -82,7 +81,7 @@ def _position_status_matches(p: Position, raw: Optional[str]) -> bool:
 def _row_matches_query(
     p: Position,
     q: ReviewQueueQuery,
-    primary_product: Optional[ProductRecord],
+    primary_product: ProductRecord | None,
 ) -> bool:
     if q.min_confidence is not None and p.confidence < q.min_confidence:
         return False
@@ -119,8 +118,8 @@ def _row_matches_query(
 
 
 def _build_summary(
-    rows: List[ReviewQueueListRow],
-    primary_by_position: Dict[str, Optional[ProductRecord]],
+    rows: list[ReviewQueueListRow],
+    primary_by_position: dict[str, ProductRecord | None],
 ) -> ReviewQueueSummary:
     pending = len(rows)
     low_conf = 0
@@ -162,12 +161,16 @@ class ListReviewQueueUseCase:
         self._product_record_repo = product_record_repo
 
     def execute(
-        self, query: Optional[ReviewQueueQuery] = None
-    ) -> Tuple[List[ReviewQueueListRow], int, ReviewQueueSummary]:
+        self, query: ReviewQueueQuery | None = None
+    ) -> tuple[list[ReviewQueueListRow], int, ReviewQueueSummary]:
         q = query or ReviewQueueQuery()
-        scope: List[tuple] = []
+        scope: list[tuple] = []
         for inv in self._inventory_repo.list_all():
-            if q.inventory_id is not None and str(q.inventory_id).strip() and inv.id != q.inventory_id:
+            if (
+                q.inventory_id is not None
+                and str(q.inventory_id).strip()
+                and inv.id != q.inventory_id
+            ):
                 continue
             for aisle in self._aisle_repo.list_by_inventory(inv.id):
                 if q.aisle_id is not None and str(q.aisle_id).strip() and aisle.id != q.aisle_id:
@@ -187,10 +190,10 @@ class ListReviewQueueUseCase:
         aisle_ids = [a.id for _, a in scope]
         by_aisle_id = {a.id: (inv, a) for inv, a in scope}
         positions = list(self._position_repo.list_by_aisles(aisle_ids))
-        primary_by_position: Dict[str, Optional[ProductRecord]] = {}
+        primary_by_position: dict[str, ProductRecord | None] = {}
         if positions:
             batch = self._product_record_repo.list_by_position_ids([p.id for p in positions])
-            by_pid: DefaultDict[str, List[ProductRecord]] = defaultdict(list)
+            by_pid: defaultdict[str, list[ProductRecord]] = defaultdict(list)
             for pr in batch:
                 by_pid[pr.position_id].append(pr)
             for p in positions:
@@ -198,7 +201,7 @@ class ListReviewQueueUseCase:
         pending = [p for p in positions if p.needs_review]
         pending = [p for p in pending if _row_matches_query(p, q, primary_by_position.get(p.id))]
 
-        rows: List[ReviewQueueListRow] = []
+        rows: list[ReviewQueueListRow] = []
         for p in pending:
             inv, aisle = by_aisle_id[p.aisle_id]
             rows.append(

@@ -33,9 +33,13 @@ def _make_job() -> Job:
     )
 
 
-def test_checkpoint_v3_job_bootstrap_updates_stage_and_heartbeat(monkeypatch, tmp_path: Path) -> None:
+def test_checkpoint_v3_job_bootstrap_updates_stage_and_heartbeat(
+    monkeypatch, tmp_path: Path
+) -> None:
     repo = StubJobRepo(_make_job())
-    monkeypatch.setattr(worker_bootstrap, "load_settings", lambda: type("S", (), {"output_dir": str(tmp_path)})())
+    monkeypatch.setattr(
+        worker_bootstrap, "load_settings", lambda: type("S", (), {"output_dir": str(tmp_path)})()
+    )
     monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: repo)
 
     worker_bootstrap.checkpoint_v3_job_bootstrap(
@@ -53,7 +57,9 @@ def test_checkpoint_v3_job_bootstrap_updates_stage_and_heartbeat(monkeypatch, tm
 
 def test_fail_v3_job_bootstrap_marks_job_failed(monkeypatch, tmp_path: Path) -> None:
     repo = StubJobRepo(_make_job())
-    monkeypatch.setattr(worker_bootstrap, "load_settings", lambda: type("S", (), {"output_dir": str(tmp_path)})())
+    monkeypatch.setattr(
+        worker_bootstrap, "load_settings", lambda: type("S", (), {"output_dir": str(tmp_path)})()
+    )
     monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: repo)
 
     worker_bootstrap.fail_v3_job_bootstrap(

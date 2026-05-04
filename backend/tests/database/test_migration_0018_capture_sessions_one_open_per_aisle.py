@@ -13,4 +13,6 @@ def test_migration_0018_exists_and_defines_filtered_unique_index() -> None:
     assert "capture_sessions" in text
     assert "uq_capture_sessions_one_open_per_aisle" in text
     assert "unique" in text
-    assert "open_ranked" in text, "migration should dedupe open sessions before creating unique index"
+    assert "open_ranked" in text, (
+        "migration should dedupe open sessions before creating unique index"
+    )

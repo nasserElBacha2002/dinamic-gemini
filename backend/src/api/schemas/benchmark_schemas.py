@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -25,78 +23,78 @@ class RunSliceMetricsResponse(BaseModel):
 
 
 class LlmUsageSnapshotResponse(BaseModel):
-    input_tokens: Optional[int] = None
-    output_tokens: Optional[int] = None
-    total_tokens: Optional[int] = None
-    cached_input_tokens: Optional[int] = None
-    cache_write_tokens: Optional[int] = None
-    thinking_tokens: Optional[int] = None
-    tool_requests: Optional[int] = None
-    image_input_count: Optional[int] = None
-    image_input_tokens: Optional[int] = None
-    audio_input_tokens: Optional[int] = None
-    video_input_tokens: Optional[int] = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    thinking_tokens: int | None = None
+    tool_requests: int | None = None
+    image_input_count: int | None = None
+    image_input_tokens: int | None = None
+    audio_input_tokens: int | None = None
+    video_input_tokens: int | None = None
 
 
 class LlmPricingSnapshotResponse(BaseModel):
-    pricing_source: Optional[str] = None
-    pricing_version: Optional[str] = None
-    captured_at: Optional[str] = None
-    pricing_catalog_entry_captured_at: Optional[str] = None
-    billing_currency: Optional[str] = None
-    input_cost_per_million: Optional[str] = None
-    output_cost_per_million: Optional[str] = None
-    cached_input_cost_per_million: Optional[str] = None
-    thinking_cost_per_million: Optional[str] = None
-    tool_request_unit_cost: Optional[str] = None
-    image_input_unit_cost: Optional[str] = None
-    audio_input_cost_per_million: Optional[str] = None
-    video_input_cost_per_million: Optional[str] = None
-    thinking_cost_rule: Optional[str] = None
+    pricing_source: str | None = None
+    pricing_version: str | None = None
+    captured_at: str | None = None
+    pricing_catalog_entry_captured_at: str | None = None
+    billing_currency: str | None = None
+    input_cost_per_million: str | None = None
+    output_cost_per_million: str | None = None
+    cached_input_cost_per_million: str | None = None
+    thinking_cost_per_million: str | None = None
+    tool_request_unit_cost: str | None = None
+    image_input_unit_cost: str | None = None
+    audio_input_cost_per_million: str | None = None
+    video_input_cost_per_million: str | None = None
+    thinking_cost_rule: str | None = None
 
 
 class LlmComputedCostResponse(BaseModel):
-    subtotal_input: Optional[str] = None
-    subtotal_output: Optional[str] = None
-    subtotal_cached: Optional[str] = None
-    subtotal_thinking: Optional[str] = None
-    subtotal_tools: Optional[str] = None
-    subtotal_image: Optional[str] = None
-    subtotal_audio: Optional[str] = None
-    subtotal_video: Optional[str] = None
-    total_cost: Optional[str] = None
-    currency: Optional[str] = None
-    total_cost_unavailable_reason: Optional[str] = None
+    subtotal_input: str | None = None
+    subtotal_output: str | None = None
+    subtotal_cached: str | None = None
+    subtotal_thinking: str | None = None
+    subtotal_tools: str | None = None
+    subtotal_image: str | None = None
+    subtotal_audio: str | None = None
+    subtotal_video: str | None = None
+    total_cost: str | None = None
+    currency: str | None = None
+    total_cost_unavailable_reason: str | None = None
 
 
 class LlmCostSnapshotResponse(BaseModel):
     provider: str
-    model: Optional[str] = None
-    pricing_available: Optional[bool] = None
-    billing_currency: Optional[str] = None
+    model: str | None = None
+    pricing_available: bool | None = None
+    billing_currency: str | None = None
     usage: LlmUsageSnapshotResponse
     pricing_snapshot: LlmPricingSnapshotResponse
     computed_cost: LlmComputedCostResponse
     capture_status: str
-    capture_notes: List[str] = Field(default_factory=list)
+    capture_notes: list[str] = Field(default_factory=list)
 
 
 class BenchmarkRunCompareSideResponse(BaseModel):
     job_id: str
     status: str
-    provider_name: Optional[str] = None
-    model_name: Optional[str] = None
-    prompt_key: Optional[str] = None
-    prompt_version: Optional[str] = None
+    provider_name: str | None = None
+    model_name: str | None = None
+    prompt_key: str | None = None
+    prompt_version: str | None = None
     created_at: str
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
+    started_at: str | None = None
+    finished_at: str | None = None
     #: Wall-clock duration ``finished_at - started_at`` when both are present and coherent.
-    execution_time_seconds: Optional[float] = None
+    execution_time_seconds: float | None = None
     #: Same duration as compact text (e.g. ``12.4s``, ``1m 02s``); null when duration unknown.
-    execution_time_human: Optional[str] = None
+    execution_time_human: str | None = None
     metrics: RunSliceMetricsResponse
-    llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
+    llm_cost_snapshot: LlmCostSnapshotResponse | None = None
 
 
 class CompareDiffSummaryResponse(BaseModel):
@@ -111,12 +109,12 @@ class CompareDiffSummaryResponse(BaseModel):
 class CompareDiffRowResponse(BaseModel):
     match_key: str
     side: str
-    quantity_a: Optional[int] = None
-    quantity_b: Optional[int] = None
-    sku_a: Optional[str] = None
-    sku_b: Optional[str] = None
-    position_code_a: Optional[str] = None
-    position_code_b: Optional[str] = None
+    quantity_a: int | None = None
+    quantity_b: int | None = None
+    sku_a: str | None = None
+    sku_b: str | None = None
+    position_code_a: str | None = None
+    position_code_b: str | None = None
 
 
 class RawFetchTruncatedFlags(BaseModel):
@@ -149,20 +147,20 @@ class AisleBenchmarkCompareResponse(BaseModel):
     run_a: BenchmarkRunCompareSideResponse
     run_b: BenchmarkRunCompareSideResponse
     diff_summary: CompareDiffSummaryResponse
-    diff_rows: List[CompareDiffRowResponse]
+    diff_rows: list[CompareDiffRowResponse]
     diff_rows_truncated: bool
 
 
 class AisleBenchmarkCompareManyRequest(BaseModel):
     """Phase 1 compare-many payload (baseline-centric, constrained to 2-3 job ids)."""
 
-    job_ids: List[str] = Field(..., min_length=2, max_length=3)
+    job_ids: list[str] = Field(..., min_length=2, max_length=3)
     baseline_job_id: str = Field(..., min_length=1)
     include_diff_rows: bool = Field(
         False,
         description="Phase 2: include lightweight baseline-vs-target diff rows.",
     )
-    max_diff_rows: Optional[int] = Field(
+    max_diff_rows: int | None = Field(
         None,
         ge=1,
         le=250,
@@ -180,7 +178,7 @@ class BenchmarkCompareManyDeltaResponse(BaseModel):
     unknown_internal_code_diff: int
     needs_review_diff: int
     #: ``target execution_time_seconds - baseline`` when both sides have a duration (seconds).
-    execution_time_delta: Optional[float] = None
+    execution_time_delta: float | None = None
 
 
 class BenchmarkCompareManySummaryResponse(BaseModel):
@@ -195,8 +193,8 @@ class BenchmarkCompareManySummaryResponse(BaseModel):
     max_unknown_internal_code_count: int
     min_unknown_internal_code_count: int
     #: Min/max duration across selected jobs, only when **every** job has ``execution_time_seconds``.
-    min_execution_time_seconds: Optional[float] = None
-    max_execution_time_seconds: Optional[float] = None
+    min_execution_time_seconds: float | None = None
+    max_execution_time_seconds: float | None = None
 
 
 class BenchmarkCompareManyDiffResponse(BaseModel):
@@ -204,7 +202,7 @@ class BenchmarkCompareManyDiffResponse(BaseModel):
     target_job_id: str
     diff_summary: CompareDiffSummaryResponse
     delta: BenchmarkCompareManyDeltaResponse
-    diff_rows: List[CompareDiffRowResponse] = Field(default_factory=list)
+    diff_rows: list[CompareDiffRowResponse] = Field(default_factory=list)
     diff_rows_truncated: bool = False
 
 
@@ -225,7 +223,9 @@ class AisleBenchmarkCompareManyResponse(BaseModel):
     workflow: str
     read_only: bool
     baseline_job_id: str
-    jobs: List[BenchmarkCompareRunResponse]
-    comparisons: List[BenchmarkCompareManyDiffResponse]
+    jobs: list[BenchmarkCompareRunResponse]
+    comparisons: list[BenchmarkCompareManyDiffResponse]
     summary: BenchmarkCompareManySummaryResponse
-    raw_fetch_truncated: List[BenchmarkCompareManyRawFetchFlagResponse] = Field(default_factory=list)
+    raw_fetch_truncated: list[BenchmarkCompareManyRawFetchFlagResponse] = Field(
+        default_factory=list
+    )

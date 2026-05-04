@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
-from src.application.ports.capture_repositories import CaptureSessionGroupRepository, CaptureSessionGroupSummary
-from src.application.services.capture_group_materialization_state import materialization_state_for_counts
+from src.application.ports.capture_repositories import (
+    CaptureSessionGroupRepository,
+    CaptureSessionGroupSummary,
+)
+from src.application.services.capture_group_materialization_state import (
+    materialization_state_for_counts,
+)
 from src.database.sqlserver import SqlServerClient
-from src.domain.capture.entities import CaptureSessionGroup, CaptureSessionGroupAisleAssignmentStatus
+from src.domain.capture.entities import (
+    CaptureSessionGroup,
+    CaptureSessionGroupAisleAssignmentStatus,
+)
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -62,7 +69,9 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
 
     def delete_all_for_session(self, session_id: str) -> None:
         with self._client.cursor() as cur:
-            cur.execute("DELETE FROM dbo.capture_session_groups WHERE session_id = ?", (session_id,))
+            cur.execute(
+                "DELETE FROM dbo.capture_session_groups WHERE session_id = ?", (session_id,)
+            )
 
     def count_groups_for_session(self, session_id: str) -> int:
         with self._client.cursor() as cur:
@@ -73,7 +82,9 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
             row = cur.fetchone()
         return int(getattr(row, "n", 0) or 0) if row is not None else 0
 
-    def get_by_id_and_session(self, group_id: str, session_id: str) -> Optional[CaptureSessionGroup]:
+    def get_by_id_and_session(
+        self, group_id: str, session_id: str
+    ) -> CaptureSessionGroup | None:
         gid = (group_id or "").strip()
         sid = (session_id or "").strip()
         if not gid or not sid:

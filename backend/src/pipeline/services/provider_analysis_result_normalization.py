@@ -11,7 +11,8 @@ metadata and prompt traceability).
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from src.llm.costing import build_llm_cost_snapshot
 from src.llm.types import LLMResponse

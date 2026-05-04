@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import Any, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ _PAYLOAD_STRING_MAX = 512
 _UNTRUNCATED_PAYLOAD_KEYS = frozenset({"prompt_text"})
 
 
-def _sanitize_payload_value(value: Any, *, key: Optional[str] = None) -> Any:
+def _sanitize_payload_value(value: Any, *, key: str | None = None) -> Any:
     """Convert a value to a JSON-serializable form. Recurses into dict/list; stringifies others."""
     if value is None or isinstance(value, (bool, int, float)):
         return value
@@ -40,7 +40,7 @@ def _sanitize_payload_value(value: Any, *, key: Optional[str] = None) -> Any:
         s = f"{type(value).__name__}: {value}"
         return s[:_PAYLOAD_STRING_MAX] if len(s) > _PAYLOAD_STRING_MAX else s
     if isinstance(value, dict):
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         for k, v in value.items():
             key_name = str(k)
             safe_key = key_name[:_PAYLOAD_STRING_MAX]
@@ -55,12 +55,12 @@ def _sanitize_payload_value(value: Any, *, key: Optional[str] = None) -> Any:
         return "<non-serializable>"
 
 
-def _sanitize_payload(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _sanitize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     """Return a JSON-serializable copy of payload, or None if empty/invalid."""
     if not payload or not isinstance(payload, dict):
         return None
     try:
-        return cast(Optional[Dict[str, Any]], _sanitize_payload_value(payload))
+        return cast(Optional[dict[str, Any]], _sanitize_payload_value(payload))
     except Exception:
         return None
 
@@ -68,19 +68,24 @@ def _sanitize_payload(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, A
 @dataclass
 class LogEvent:
     """Single execution log event (machine- and UI-friendly)."""
+
     ts: str  # ISO 8601
     stage: str
     level: str  # info | warning | error
     message: str
-    payload: Optional[Dict[str, Any]] = None
+    payload: dict[str, Any] | None = None
 
-    def to_json_line(self) -> Optional[str]:
+    def to_json_line(self) -> str | None:
         """Return JSON line or None if serialization fails (caller should fall back)."""
-        d: Dict[str, Any] = {
+        d: dict[str, Any] = {
             "ts": self.ts,
             "stage": self.stage,
             "level": self.level,
-            "message": (self.message[:_PAYLOAD_STRING_MAX * 2] if len(self.message) > _PAYLOAD_STRING_MAX * 2 else self.message),
+            "message": (
+                self.message[: _PAYLOAD_STRING_MAX * 2]
+                if len(self.message) > _PAYLOAD_STRING_MAX * 2
+                else self.message
+            ),
         }
         if self.payload:
             d["payload"] = self.payload
@@ -114,7 +119,7 @@ class ExecutionLogWriter:
         stage: str,
         level: str,
         message: str,
-        payload: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any] | None = None,
     ) -> None:
         """Append one event. level must be info, warning, or error. Payload is sanitized for JSON."""
         safe_payload = _sanitize_payload(payload)
@@ -132,42 +137,50 @@ class ExecutionLogWriter:
                 with open(self._path, "a", encoding="utf-8") as f:
                     f.write(line)
             else:
-                fallback = json.dumps({
-                    "ts": event.ts,
-                    "stage": event.stage,
-                    "level": event.level,
-                    "message": event.message[:500] if len(event.message) > 500 else event.message,
-                    "payload": {"_fallback": True},
-                }, ensure_ascii=False) + "\n"
+                fallback = (
+                    json.dumps(
+                        {
+                            "ts": event.ts,
+                            "stage": event.stage,
+                            "level": event.level,
+                            "message": event.message[:500]
+                            if len(event.message) > 500
+                            else event.message,
+                            "payload": {"_fallback": True},
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
                 with open(self._path, "a", encoding="utf-8") as f:
                     f.write(fallback)
         except (OSError, TypeError, ValueError) as e:
             logger.warning("Failed to write execution log %s: %s", self._path, e)
 
-    def info(self, stage: str, message: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    def info(self, stage: str, message: str, payload: dict[str, Any] | None = None) -> None:
         self.append(stage, "info", message, payload)
 
-    def warning(self, stage: str, message: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    def warning(self, stage: str, message: str, payload: dict[str, Any] | None = None) -> None:
         self.append(stage, "warning", message, payload)
 
-    def error(self, stage: str, message: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    def error(self, stage: str, message: str, payload: dict[str, Any] | None = None) -> None:
         self.append(stage, "error", message, payload)
 
     def structured_event(
         self,
         *,
         job_id: str,
-        inventory_id: Optional[str],
-        aisle_id: Optional[str],
+        inventory_id: str | None,
+        aisle_id: str | None,
         attempt: int,
         stage: str,
-        substep: Optional[str],
+        substep: str | None,
         event: str,
-        duration_ms: Optional[int] = None,
-        details: Optional[Dict[str, Any]] = None,
+        duration_ms: int | None = None,
+        details: dict[str, Any] | None = None,
         level: str = "info",
     ) -> None:
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "job_id": job_id,
             "inventory_id": inventory_id,
             "aisle_id": aisle_id,
@@ -201,8 +214,8 @@ class ExecutionLogWriter:
         return self._last_error_path
 
 
-def _parse_execution_log_lines(text: str) -> list[Dict[str, Any]]:
-    events: list[Dict[str, Any]] = []
+def _parse_execution_log_lines(text: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -214,7 +227,7 @@ def _parse_execution_log_lines(text: str) -> list[Dict[str, Any]]:
     return events
 
 
-def read_execution_log_bytes(content: bytes) -> list[Dict[str, Any]]:
+def read_execution_log_bytes(content: bytes) -> list[dict[str, Any]]:
     """Parse execution_log.jsonl from raw bytes (e.g. S3 GET body). Empty if invalid or empty.
 
     Prefer :func:`read_execution_log_file` when bytes already live on disk (large logs).
@@ -228,12 +241,12 @@ def read_execution_log_bytes(content: bytes) -> list[Dict[str, Any]]:
     return _parse_execution_log_lines(text)
 
 
-def read_execution_log_file(path: Path) -> list[Dict[str, Any]]:
+def read_execution_log_file(path: Path) -> list[dict[str, Any]]:
     """Parse JSONL execution log from a file path; line-oriented read (no full-file string for the raw blob)."""
     path = Path(path)
     if not path.is_file():
         return []
-    events: list[Dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
     try:
         with open(path, encoding="utf-8") as f:
             for line in f:
@@ -249,13 +262,13 @@ def read_execution_log_file(path: Path) -> list[Dict[str, Any]]:
     return events
 
 
-def read_execution_log(run_dir: Path) -> list[Dict[str, Any]]:
+def read_execution_log(run_dir: Path) -> list[dict[str, Any]]:
     """Read execution_log.jsonl and return list of event dicts. Empty if missing or invalid."""
     path = Path(run_dir) / EXECUTION_LOG_FILENAME
     return read_execution_log_file(path)
 
 
-def read_last_stage_error(run_dir: Path) -> Optional[str]:
+def read_last_stage_error(run_dir: Path) -> str | None:
     """Read last_stage_error.txt if present. Returns None if missing or empty."""
     path = Path(run_dir) / LAST_STAGE_ERROR_FILENAME
     if not path.is_file():

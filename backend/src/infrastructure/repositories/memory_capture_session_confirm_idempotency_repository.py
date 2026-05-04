@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
-
 from src.application.errors import CaptureSessionConfirmLedgerDuplicateError
 from src.application.ports.capture_repositories import CaptureSessionConfirmIdempotencyRepository
 from src.domain.capture.entities import CaptureSessionConfirmationLedgerEntry
@@ -11,11 +9,11 @@ from src.domain.capture.entities import CaptureSessionConfirmationLedgerEntry
 
 class MemoryCaptureSessionConfirmIdempotencyRepository(CaptureSessionConfirmIdempotencyRepository):
     def __init__(self) -> None:
-        self._store: Dict[Tuple[str, str], CaptureSessionConfirmationLedgerEntry] = {}
+        self._store: dict[tuple[str, str], CaptureSessionConfirmationLedgerEntry] = {}
 
     def get_by_session_and_key(
         self, session_id: str, idempotency_key: str
-    ) -> Optional[CaptureSessionConfirmationLedgerEntry]:
+    ) -> CaptureSessionConfirmationLedgerEntry | None:
         return self._store.get((session_id, idempotency_key))
 
     def insert(self, entry: CaptureSessionConfirmationLedgerEntry) -> None:

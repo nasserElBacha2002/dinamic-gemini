@@ -35,7 +35,9 @@ def _seed_inventory_with_positions():
     for p in positions:
         position_repo.save(p)
     metrics_calculator = InventoryMetricsService(aisle_repo=aisle_repo, position_repo=position_repo)
-    use_case = GetInventoryMetricsUseCase(inventory_repo=inv_repo, metrics_calculator=metrics_calculator)
+    use_case = GetInventoryMetricsUseCase(
+        inventory_repo=inv_repo, metrics_calculator=metrics_calculator
+    )
     return use_case, inv_repo
 
 

@@ -1,9 +1,10 @@
 """Stage 8 — SQL Server client using pyodbc (parameterized queries, context manager)."""
 
 import logging
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Generator, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 

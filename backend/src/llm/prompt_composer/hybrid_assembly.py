@@ -36,12 +36,12 @@ not rely on that heuristic; it will be replaced by explicit policy (see ``hybrid
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from src.llm.prompt_composer.composer import default_hybrid_composer
 
 
-def resolve_hybrid_profile_name(*, job_prompt_key: Optional[Any], settings: Any) -> str:
+def resolve_hybrid_profile_name(*, job_prompt_key: Any | None, settings: Any) -> str:
     """Effective hybrid profile key for a run (job override beats ``settings.hybrid_prompt``)."""
     if job_prompt_key is not None and str(job_prompt_key).strip():
         return str(job_prompt_key).strip()
@@ -50,7 +50,7 @@ def resolve_hybrid_profile_name(*, job_prompt_key: Optional[Any], settings: Any)
 
 def compose_hybrid_base(
     profile: str,
-    pipeline_provider_key: Optional[str],
+    pipeline_provider_key: str | None,
     *,
     prompt_parity_mode: bool = False,
 ) -> str:
@@ -67,8 +67,8 @@ def compose_hybrid_base(
 def compose_hybrid_base_from_settings(
     settings: Any,
     *,
-    pipeline_provider_key: Optional[str],
-    job_prompt_key: Optional[Any] = None,
+    pipeline_provider_key: str | None,
+    job_prompt_key: Any | None = None,
     prompt_parity_mode: bool = False,
 ) -> str:
     """

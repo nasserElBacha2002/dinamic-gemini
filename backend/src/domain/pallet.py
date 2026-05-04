@@ -7,6 +7,7 @@ from typing import Optional
 @dataclass
 class Pallet:
     """Pallet detectado en análisis global (una llamada por video)."""
+
     pallet_id: str
     has_label: bool
     internal_code: Optional[str]
@@ -17,4 +18,6 @@ class Pallet:
     # Stage 4: operational output
     final_quantity: Optional[int] = None
     fallback_used: bool = False
-    source: str = "unknown"  # "label" | "visual_fallback" after assign_processing_mode; "unknown" if skipped
+    source: str = (
+        "unknown"  # "label" | "visual_fallback" after assign_processing_mode; "unknown" if skipped
+    )

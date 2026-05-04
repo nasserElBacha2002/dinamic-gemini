@@ -27,7 +27,9 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 
 
 def _fake_admin() -> AuthUser:
@@ -86,7 +88,15 @@ def _seed() -> None:
             )
         )
     aisle_repo.save(
-        Aisle("aisle-b6-other", "inv-b6", "B", AisleStatus.PROCESSED, now, now, operational_job_id=None)
+        Aisle(
+            "aisle-b6-other",
+            "inv-b6",
+            "B",
+            AisleStatus.PROCESSED,
+            now,
+            now,
+            operational_job_id=None,
+        )
     )
     job_repo.save(
         Job(
