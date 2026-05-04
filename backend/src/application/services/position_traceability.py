@@ -29,14 +29,9 @@ def _maybe_evict_traceability_cache() -> None:
 
 
 def _load_hybrid_report_for_traceability(job_id: str) -> dict[str, object] | None:
-    from src.api.services.v3_stored_artifact_access import load_hybrid_report_json_for_job
-    from src.runtime.v3_deps import get_artifact_store, get_job_repo
+    from src.runtime.v3_deps import get_stored_artifact_reader
 
-    return load_hybrid_report_json_for_job(
-        job_id,
-        job_repo=get_job_repo(),
-        artifact_store=get_artifact_store(),
-    )
+    return get_stored_artifact_reader().load_hybrid_report_json_for_job(job_id)
 
 
 def enrich_position_traceability_from_report(
