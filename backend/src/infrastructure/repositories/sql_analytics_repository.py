@@ -250,7 +250,6 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             ) t
         """  # nosec B608
         sq_params = list(params)
-        list(params)
         rev_params = list(ra_params)
         job_proc_conditions = [
             "j.target_type = N'aisle'",
