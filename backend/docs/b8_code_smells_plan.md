@@ -426,6 +426,75 @@ Re-ejecutar localmente / en CI:
 
 - **Sin** refactor masivo de repositories en este slice (prioridad ejecutor + mapper + artifact reader).
 
-### Próximo paso sugerido (B8.5)
+---
 
-- Si el plan global lo define: **B8.5 — LLM / providers** (code smells en capa de llamadas a modelo, prompts ya acotados por contrato), o continuar infrastructure puntual si el mapa PLR marcará algún `Sql*Repository` en un slice menor dedicado.
+## B8.5 — LLM (`backend/src/llm/`)
+
+Refactor estructural **sin** cambiar textos de prompt, requests a proveedores, parsing semántico de respuestas, fórmulas de coste ni formas JSON de salida (`LLMRequest` / `LLMResponse` / snapshots de coste).
+
+### Validación B8.5
+
+- `ruff check backend/src/llm --select PLR0911,PLR0912,PLR0913,PLR0915`: sin hallazgos.
+- `pytest tests/llm/`: OK (desde `backend/` con `PYTHONPATH=.` — evita que el paquete local `src/io` sombree el módulo estándar `io`).
+
+### Por archivo
+
+#### `types.py`
+
+| Smell (antes) | Técnica | Cambios | Sin tocar / riesgos |
+|---------------|---------|---------|---------------------|
+| PLR0913 en `LLMRequest.__init__` / `LLMResponse.__init__` | `noqa: PLR0913` documentado | Supresión explícita: contrato estable del executor | No se agruparon campos en DTO para no tocar call sites del pipeline |
+
+#### `normalization/numeric_coercion.py`
+
+| Smell (antes) | Técnica | Cambios | Sin tocar / riesgos |
+|---------------|---------|---------|---------------------|
+| PLR0911 en `normalize_optional_int` | Flujo con variable `out` y un solo `return` | Misma semántica (None/bool, int, float entero finito, str) | — |
+
+#### `normalization/entity_normalizer.py`
+
+| Smell (antes) | Técnica | Cambios | Sin tocar / riesgos |
+|---------------|---------|---------|---------------------|
+| PLR0911 en `resolve_provider_family` | Reglas ordenadas en tupla `(pred, family)` | Mismo orden de prioridad que el `if/elif` original | Mapeo de familias sin cambios |
+
+#### `costing.py`
+
+| Smell (antes) | Técnica | Cambios | Sin tocar / riesgos |
+|---------------|---------|---------|---------------------|
+| PLR0911 en `_to_int` | Asignación a `out` + return único | Mismas ramas de conversión | — |
+| PLR0912 en `normalize_usage` | Helpers `_apply_openai_*`, `_apply_gemini_*`, `_apply_claude_*` | Convenciones por proveedor idénticas | — |
+| PLR0912/0915 en `build_llm_cost_snapshot` | `_apply_billable_dimensions_to_subtotals`; `_PricingSnapshotBuildContext` + `_build_pricing_snapshot_mutable`; `_format_pricing_snapshot_for_json`; `_format_computed_cost_block`; `_total_cost_unavailable_reason` | Sin cambio de fórmulas ni de claves del snapshot | Riesgo residual: cualquier error manual en el refactor del árbol `elif` de motivos de coste no disponible — mitigado por tests de `tests/llm/test_llm_costing.py` |
+
+#### `openai_sdk_adapter.py`
+
+| Smell (antes) | Técnica | Cambios | Sin tocar / riesgos |
+|---------------|---------|---------|---------------------|
+| PLR0912/0915 en `OpenAiSdkAdapter.execute` | Helpers de módulo: carga de frames, modelo efectivo, contenido user, `chat.completions.create`, parse/validación v2.1 | Mismas llamadas SDK, mismos suffixes y validación | Corrección: `raise` cuando la raíz JSON no es objeto **sin** `from e` (el `e` del `JSONDecodeError` no aplica) — alinea con excepción explícita |
+| — | — | — | `gemini_client.py` y otros: sin cambios en este slice |
+
+#### `anthropic_sdk_adapter.py`
+
+| Smell (antes) | Técnica | Cambios | Sin tocar / riesgos |
+|---------------|---------|---------|---------------------|
+| PLR0911 en `classify_anthropic_messages_api_error` | Una salida con cadena `if/elif` equivalente a los returns previos | Mismo orden de clasificación | — |
+| PLR0912/0915 en `AnthropicSdkAdapter.execute` | `_anthropic_load_frames_nd`, `_anthropic_build_message_content`, `_anthropic_invoke_messages_with_retries` + `_AnthropicMessagesInvokeParams` | Mismo `messages.create`, backoff y clasificación de errores | `except Exception` en el bucle de reintentos se mantiene (mapeo vía `classify_*`) |
+
+#### `prompt_composer/prompt_traceability.py`
+
+| Smell (antes) | Técnica | Cambios | Sin tocar / riesgos |
+|---------------|---------|---------|---------------------|
+| PLR0913 en `build_prompt_composition_dict` | `_PromptCompositionBuildArgs` + `_build_prompt_composition_dict_impl`; `noqa` en API pública | Dict JSON idéntico | — |
+| PLR0912 en `validate_prompt_composition_dict` | `_prompt_comp_validate_required`, `_prompt_comp_validate_hashes` | Mismas reglas y orden de validación | — |
+
+### Smells no abordados / fuera de alcance en B8.5
+
+- **`gemini_client.py`**: `except Exception` / complejidad PLR no refactorizada en este slice (riesgo SDK).
+- **Otro PLR** en `src/llm/` fuera del conjunto PLR091x anterior: revisar con `ruff` ampliado en **B9** si aplica.
+
+### Cierre fase B8
+
+Con **B8.5** cubierto según el mapa B8.0 (API, application, pipeline, infrastructure, LLM), la **fase B8** puede considerarse **cerrada** a nivel de plan por carpetas; trabajo adicional de calidad masiva queda para **B9** (Ruff global, tests ampliados, etc.).
+
+### Próximo paso sugerido (post-B8)
+
+- **B9** / refactors opcionales: `gemini_client.py`, gates Ruff más amplios, u otros módulos fuera de los cinco paquetes B8 si el roadmap lo define.

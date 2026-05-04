@@ -20,27 +20,28 @@ def normalize_optional_int(value: object) -> int | None:
     - ``str``: strip; empty → ``None``; digits → ``int``; non-numeric → ``None``
     - other types → ``None``
     """
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            return None
-        if value.is_integer():
-            return int(value)
-        return None
-    if isinstance(value, str):
+    out: int | None = None
+    if value is None or isinstance(value, bool):
+        out = None
+    elif isinstance(value, int):
+        out = value
+    elif isinstance(value, float):
+        if math.isfinite(value) and value.is_integer():
+            out = int(value)
+        else:
+            out = None
+    elif isinstance(value, str):
         text = value.strip()
-        if not text:
-            return None
-        try:
-            return int(text)
-        except ValueError:
-            return None
-    return None
+        if text:
+            try:
+                out = int(text)
+            except ValueError:
+                out = None
+        else:
+            out = None
+    else:
+        out = None
+    return out
 
 
 def coerce_v21_product_label_quantities(data: dict[str, Any]) -> None:
