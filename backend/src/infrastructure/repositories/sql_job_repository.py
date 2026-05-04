@@ -87,6 +87,7 @@ def _parse_optional_json(raw: object) -> dict[str, Any] | None:
     return {"value": v}
 
 
+# Fixed column projection for inventory_jobs reads (not user-controlled).
 _JOB_SELECT_FIELDS = (
     "id, target_type, target_id, job_type, status, "
     "payload_json, result_json, error_message, created_at, updated_at, "
@@ -241,7 +242,7 @@ class SqlJobRepository(JobRepository):
     def get_by_id(self, job_id: str) -> Job | None:
         with self._client.cursor() as cur:
             cur.execute(
-                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE id = ?",
+                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE id = ?",  # nosec B608
                 (job_id,),
             )
             row = cur.fetchone()
@@ -257,7 +258,7 @@ class SqlJobRepository(JobRepository):
                 FROM inventory_jobs
                 WHERE target_type = ? AND target_id = ?
                 ORDER BY updated_at DESC, created_at DESC
-                """,
+                """,  # nosec B608
                 (target_type, target_id),
             )
             row = cur.fetchone()
@@ -268,6 +269,7 @@ class SqlJobRepository(JobRepository):
     def list_jobs_for_target(
         self, target_type: str, target_id: str, *, limit: int = 50
     ) -> Sequence[Job]:
+        # TOP n: n clamped 1..500 in Python (not request text concatenation).
         n = max(1, min(int(limit), 500))
         with self._client.cursor() as cur:
             cur.execute(
@@ -276,7 +278,7 @@ class SqlJobRepository(JobRepository):
                 FROM inventory_jobs
                 WHERE target_type = ? AND target_id = ?
                 ORDER BY updated_at DESC, created_at DESC
-                """,
+                """,  # nosec B608
                 (target_type, target_id),
             )
             rows = cur.fetchall()
@@ -285,7 +287,7 @@ class SqlJobRepository(JobRepository):
     def list_all_jobs(self) -> Sequence[Job]:
         with self._client.cursor() as cur:
             cur.execute(
-                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC"
+                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC"  # nosec B608
             )
             rows = cur.fetchall()
         return [_row_to_job(row) for row in rows]
@@ -293,6 +295,7 @@ class SqlJobRepository(JobRepository):
     def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         if not target_ids:
             return {}
+        # IN clause placeholders only; target_ids bound as parameters (no raw concatenation).
         placeholders = ",".join("?" * len(target_ids))
         params: list[Any] = [target_type, *target_ids]
         query = f"""
@@ -305,7 +308,7 @@ class SqlJobRepository(JobRepository):
                 WHERE target_type = ? AND target_id IN ({placeholders})
             ) t
             WHERE t.rn = 1
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(query, params)
             rows = cur.fetchall()
@@ -352,10 +355,11 @@ class SqlJobRepository(JobRepository):
         """Fail stale active jobs using the shared stale-reconciliation contract."""
         if stale_after_seconds <= 0:
             return 0
-        stale_statuses = ", ".join(f"'{status.value}'" for status in STALE_RECONCILE_STATUSES)
+        # IN (?,?,?) must stay aligned with STALE_RECONCILE_STATUSES (three terminal states).
+        status_values = tuple(s.value for s in STALE_RECONCILE_STATUSES)
         with self._client.cursor() as cur:
             cur.execute(
-                f"""
+                """
                 UPDATE inventory_jobs
                 SET status = 'failed',
                     updated_at = ?,
@@ -363,7 +367,7 @@ class SqlJobRepository(JobRepository):
                     failure_code = ?,
                     failure_message = ?,
                     error_message = ?
-                WHERE status IN ({stale_statuses})
+                WHERE status IN (?, ?, ?)
                   AND DATEDIFF(SECOND, COALESCE(last_heartbeat_at, updated_at), ?) >= ?
                 """,
                 (
@@ -372,6 +376,7 @@ class SqlJobRepository(JobRepository):
                     STALE_FAILURE_CODE,
                     STALE_FAILURE_MESSAGE,
                     STALE_FAILURE_MESSAGE,
+                    *status_values,
                     datetime.now(timezone.utc),
                     stale_after_seconds,
                 ),

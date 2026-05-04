@@ -161,7 +161,13 @@ class HybridInventoryPipeline:
                 try:
                     progress_cb(stage, percent)
                 except Exception:
-                    pass
+                    logger.warning(
+                        "progress_callback failed (ignored): stage=%s percent=%s job_id=%s",
+                        stage,
+                        percent,
+                        context.job_id,
+                        exc_info=True,
+                    )
 
         def _fail(stage: str, e: BaseException) -> PipelineRunResult:
             msg = str(e).strip() or repr(e)

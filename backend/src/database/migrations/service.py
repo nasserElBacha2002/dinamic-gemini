@@ -13,7 +13,6 @@ from src.database.sqlserver import SqlServerClient, now_utc
 logger = logging.getLogger(__name__)
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parent / "versions"
-_MIGRATION_TABLE = "schema_migrations"
 
 
 class SchemaCompatibilityError(RuntimeError):
@@ -84,11 +83,12 @@ def _list_migration_files() -> list[MigrationFile]:
 
 def _ensure_migration_table(client: SqlServerClient) -> None:
     with client.cursor() as cur:
+        # Table name is fixed (not user input); literal SQL avoids B608 f-string noise.
         cur.execute(
-            f"""
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '{_MIGRATION_TABLE}')
+            """
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'schema_migrations')
             BEGIN
-                CREATE TABLE {_MIGRATION_TABLE} (
+                CREATE TABLE schema_migrations (
                     id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
                     service_name VARCHAR(128) NOT NULL,
                     version VARCHAR(64) NOT NULL,
@@ -99,9 +99,9 @@ def _ensure_migration_table(client: SqlServerClient) -> None:
                     UNIQUE (service_name, version)
                 );
                 CREATE INDEX IX_schema_migrations_service_version
-                    ON {_MIGRATION_TABLE}(service_name, version);
+                    ON schema_migrations(service_name, version);
                 CREATE INDEX IX_schema_migrations_service_applied
-                    ON {_MIGRATION_TABLE}(service_name, applied_at DESC);
+                    ON schema_migrations(service_name, applied_at DESC);
             END
             """
         )
@@ -132,9 +132,9 @@ def _acquire_migration_lock(client: SqlServerClient, service: str, timeout_ms: i
 def _fetch_applied_versions(client: SqlServerClient, service: str) -> list[str]:
     with client.cursor() as cur:
         cur.execute(
-            f"""
+            """
             SELECT version
-            FROM {_MIGRATION_TABLE}
+            FROM schema_migrations
             WHERE service_name = ?
             ORDER BY version ASC
             """,
@@ -147,9 +147,9 @@ def _fetch_applied_versions(client: SqlServerClient, service: str) -> list[str]:
 def _fetch_last_applied_version(client: SqlServerClient, service: str) -> str | None:
     with client.cursor() as cur:
         cur.execute(
-            f"""
+            """
             SELECT TOP 1 version
-            FROM {_MIGRATION_TABLE}
+            FROM schema_migrations
             WHERE service_name = ?
             ORDER BY version DESC
             """,
@@ -169,14 +169,14 @@ def _insert_migration_row(
 ) -> None:
     with client.cursor() as cur:
         cur.execute(
-            f"""
+            """
             IF NOT EXISTS (
                 SELECT 1
-                FROM {_MIGRATION_TABLE}
+                FROM schema_migrations
                 WHERE service_name = ? AND version = ?
             )
             BEGIN
-                INSERT INTO {_MIGRATION_TABLE}
+                INSERT INTO schema_migrations
                     (service_name, version, migration_name, checksum_sha256, deployment_id, applied_at)
                 VALUES (?, ?, ?, ?, ?, ?)
             END

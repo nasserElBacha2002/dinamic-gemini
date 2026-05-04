@@ -170,6 +170,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
         if not uniq:
             return []
         placeholders = ",".join("?" * len(uniq))
+        # IN clause: ? placeholders; position ids passed as params (deduped).
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -178,7 +179,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
                 FROM product_records
                 WHERE position_id IN ({placeholders})
                 ORDER BY position_id, created_at ASC, id ASC
-                """,
+                """,  # nosec B608
                 tuple(uniq),
             )
             rows = cur.fetchall()

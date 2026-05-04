@@ -232,6 +232,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
         if not aisle_ids:
             return {}
         placeholders = ",".join("?" * len(aisle_ids))
+        # IN clause: placeholders only; aisle_ids bound as parameters.
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -239,7 +240,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 FROM source_assets
                 WHERE aisle_id IN ({placeholders})
                 GROUP BY aisle_id
-                """,
+                """,  # nosec B608
                 list(aisle_ids),
             )
             rows = cur.fetchall()

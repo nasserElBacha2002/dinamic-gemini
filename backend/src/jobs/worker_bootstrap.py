@@ -79,6 +79,7 @@ def checkpoint_v3_job_bootstrap(
         )
         repo.save(updated)
     except Exception:
+        # Best-effort DB checkpoint; failure is recorded in worker-launch.log only.
         append_worker_bootstrap_event(
             job_id=job_id,
             execution_id=execution_id,
@@ -127,6 +128,7 @@ def fail_v3_job_bootstrap(
             )
         )
     except Exception:
+        # FAILED mutation failed — secondary append preserves diagnostics without crashing launcher.
         append_worker_bootstrap_event(
             job_id=job_id,
             execution_id=execution_id,

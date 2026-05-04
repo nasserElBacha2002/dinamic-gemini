@@ -328,7 +328,11 @@ def run_job(base_path: Path, job_id: str, execution_id: str | None = None) -> No
                 _, _, events_repo = repos
                 events_repo.insert_event(job_id, "ERROR", {"message": str(e)})
             except Exception:
-                pass
+                logger.warning(
+                    "Could not insert ERROR job_event after pipeline failure: job_id=%s",
+                    job_id,
+                    exc_info=True,
+                )
 
 
 def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> None:

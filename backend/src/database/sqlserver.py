@@ -46,7 +46,8 @@ class SqlServerClient:
             if conn:
                 try:
                     conn.rollback()
-                except Exception:
+                except Exception:  # nosec B110
+                    # Best-effort rollback after primary SQL failure (connection may be invalid).
                     pass
             logger.exception("SQL Server operation failed: %s", e)
             raise
@@ -54,5 +55,6 @@ class SqlServerClient:
             if conn:
                 try:
                     conn.close()
-                except Exception:
+                except Exception:  # nosec B110
+                    # Best-effort close so original error still propagates.
                     pass

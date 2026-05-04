@@ -1,5 +1,203 @@
 # Backlog de bugs y vulnerabilidades
 
+## B0 — Revalidación Bandit backend (pre-B3), 2026-05-04
+
+**Objetivo:** Estado real antes de la fase B3 (Bandit HIGH/MEDIUM). **Sin cambios de código productivo.**
+
+**Comando:** `cd backend && bandit -r src` (salida: `audit/raw/backend-bandit-b3-current.json`, `audit/raw/backend-bandit-b3-current.txt`).  
+**Herramienta:** Bandit 1.9.4 · Python 3.13 (venv repo).
+
+**Totales (coinciden con corrida 2026-04-29):** 59 hallazgos · **1 HIGH** · **35 MEDIUM** · **23 LOW** · ~45k LOC.
+
+### Clasificación por familia (estado B0)
+
+| Familia / ID | Archivos / notas | Estado B0 | Comentario |
+|--------------|------------------|-----------|------------|
+| **B324** MD5 “weak hash” | `src/app.py:161` (`run_hash` para `run_id`) | **YA_CORREGIDO** (B3.1) | Aplicado `usedforsecurity=False`; `run_id` mantiene formato. |
+| **B608** SQL dinámico / string SQL | 35 ocurrencias: `migrations/service.py` (4), `sql_analytics_repository.py` (12), `sql_capture_session_repository.py` (3), `sql_final_count_repository.py` (2), `sql_job_repository.py` (6), `sql_normalized_label_repository.py` (2), `sql_position_repository.py` (3), `sql_product_record_repository.py`, `sql_raw_label_repository`, `sql_source_asset_repository` (1 c/u) | **CONFIRMADO** (lista estática) | Riesgo SQLi real: **PENDIENTE_DE_REPRODUCIR** por consulta (muchas rutas usan parámetros ODBC). B3: revisar cada construcción; posibles **FALSO_POSITIVO** donde solo hay concatenación de fragmentos con placeholders. |
+| **B101** `assert` en producción | 9 (`capture_assignment_preview`, `compare_aisle_runs`, `compare_many_aisle_runs`, `export_aisle_benchmark`, `v3_execution_artifacts_service`, `v3_job_executor`, `costing`, `multi_provider_analysis_execution`) | **FALSO_POSITIVO** / bajo | Regla advierte `-O`; asserts como invariantes internas — fuera del alcance típico B3 salvo política explícita. |
+| **B106** “hardcoded password” | `auth/service.py` `token_type="bearer"` (2 líneas) | **FALSO_POSITIVO** | Literal estándar OAuth; no es secreto. |
+| **B110** `try/except: pass` | `sqlserver.py`, `sqlserver_resolution.py`, `v3_job_executor.py`, `dev_reset_local_jobs.py`, `worker.py`, `hybrid_inventory_pipeline.py` | **CONFIRMADO** | Revisar en B3 si el silenciamiento es aceptable o debe loguearse/narrow except. |
+| **B404** `subprocess` import | `on_demand_worker_launch_service.py` | **CONFIRMADO** | Revisión contextual B3 (uso real de subprocess). |
+| **B603** `subprocess` call | mismo módulo ~L43 | **CONFIRMADO** | Revisión contextual B3 (argumentos fijos vs usuario). |
+| **B112** `try/except: continue` | `dev_reset_local_jobs.py` | **CONFIRMADO** | Baja severidad; revisar en B3 si aplica. |
+| **B311** `random` | `anthropic_sdk_adapter.py` | **CONFIRMADO** / probable **FALSO_POSITIVO** | Uso no criptográfico habitual; validar en B3. |
+
+**Resumen:** Ningún hallazgo marcado como **YA_CORREGIDO** en esta corrida (baseline sin parches B3). Evidencia cruda: `audit/raw/backend-bandit-b3-current.json` y `.txt`.
+
+**Actualización AUD-004:** Métricas vigentes alineadas con esta evidencia; enlaces preferentes a los archivos `backend-bandit-b3-current.*`.
+
+---
+
+## B3 — Seguridad backend (Bandit)
+
+### B3.1 — HIGH B324 + triage B608 (2026-05-04)
+
+**Alcance:** Sin CI/CD, sin hooks, sin refactor masivo de repos.
+
+#### Parte A — B324 (`backend/src/app.py`)
+
+- **Estado:** Corregido en código.
+- **Uso:** `run_hash` solo para sufijo no secreto del `run_id` CLI (`timestamp` + 8 hex); no integridad ni MAC.
+- **Cambio:** `hashlib.md5(..., usedforsecurity=False)` — formato de salida **sin cambio** (sigue siendo 8 hex de MD5).
+- **Validación local:** `python -m bandit -r src/app.py` (sin severidad HIGH en este archivo).
+
+#### Parte B — Triage B608 (35 ocurrencias)
+
+Cada fila = un disparo Bandit B608. Clasificación: **FP-P** = FALSO_POSITIVO_PARAMETRIZADO (valores vía `?`); **DC** = DINÁMICO_CONTROLADO (solo constantes internas / enums / límites numéricos acotados); **NRM** = NECESITA_REFACTOR_MINIMO (sustituir f-string por SQL estático o `text()` documentado).
+
+| Archivo | Línea | Hallazgo (resumen) | Clasificación | Riesgo real | Acción propuesta (B3.2+) |
+|--------|-------|-------------------|---------------|-------------|-------------------------|
+| `src/database/migrations/service.py` | 88 | `cur.execute(f"""` CREATE TABLE / IF NOT EXISTS; nombre tabla `{_MIGRATION_TABLE}` | DC | Nulo (tabla fija `schema_migrations`) | Opcional: SQL literal sin interpolación o `# nosec B608` con justificación |
+| `src/database/migrations/service.py` | 135 | `SELECT version FROM {_MIGRATION_TABLE} …` + `?` service | FP-P | Nulo | Misma línea |
+| `src/database/migrations/service.py` | 150 | `SELECT TOP 1 version FROM {_MIGRATION_TABLE}` + `?` | FP-P | Nulo | Misma línea |
+| `src/database/migrations/service.py` | 172 | `INSERT` / `IF NOT EXISTS` sobre `{_MIGRATION_TABLE}` + parámetros | FP-P | Nulo | Misma línea |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 201 | `sql_positions = f"""` SELECT agregados | FP-P / DC | Bajo | Revisar que `WHERE`/joins usen solo listas de condiciones con `?` (típico en este módulo) |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 219 | `sql_reviews = f"""` … | FP-P / DC | Bajo | Idem |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 271 | `sql_avg_job_processing = f"""` + `job_proc_where` por join de condiciones | DC | Bajo | Verificar origen de cada fragmento en `job_proc_conditions` |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 363 | `sql = f"""` métricas + `where_j` | DC | Bajo | Condiciones construidas con `?` desde filtros de aplicación |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 391 | `sql_daily_reviews = f"""` | DC | Bajo | Idem |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 422 | `sql_daily_jobs = f"""` | DC | Bajo | Idem |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 519 | `sql = f"""` inventario/aisle scope | DC | Bajo | Idem |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 619 | `sql = f"""` review actions | DC | Bajo | Idem |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 673 | `sql = f"""` duración jobs | DC | Bajo | Idem |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 697 | `sql = f"""` low confidence + umbral `LOW_CONFIDENCE_THRESHOLD` | DC | Bajo | Umbral constante config |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 787 | `sql = f"""` buckets | DC | Bajo | Idem |
+| `src/infrastructure/repositories/sql_analytics_repository.py` | 853 | `sql = f"""` CTE scoped_actions | DC | Bajo | Idem |
+| `src/infrastructure/repositories/sql_capture_session_repository.py` | 164 | `COUNT` + `NOT IN ({placeholders})` estático para `_OPEN_STATUS_EXCLUSION` | FP-P | Nulo | Lista de exclusión fija en código; placeholders `?` |
+| `src/infrastructure/repositories/sql_capture_session_repository.py` | 206 | `count_sql = f"SELECT … WHERE {where_sql}"` — `where_sql` armado solo con fragmentos `col = ?` / `IN (?)` | FP-P | Bajo | IDs/fechas vía parámetros; no concatenar input crudo |
+| `src/infrastructure/repositories/sql_capture_session_repository.py` | 207 | `list_sql = f"""` mismo `where_sql` + OFFSET/FETCH | FP-P | Bajo | Idem |
+| `src/infrastructure/repositories/sql_final_count_repository.py` | 154 | `SELECT … WHERE … ? ?` + `{extra_sql}` de `_sql_job_predicate` (solo `""`, `IS NULL`, o `AND job_id = ?`) | FP-P | Nulo | Sin SQL arbitrario desde API |
+| `src/infrastructure/repositories/sql_final_count_repository.py` | 215 | `DELETE … ? ?` + `{extra_sql}` mismo helper | FP-P | Nulo | Idem |
+| `src/infrastructure/repositories/sql_job_repository.py` | 244 | `f"SELECT {_JOB_SELECT_FIELDS} … WHERE id = ?"` | FP-P | Nulo | `_JOB_SELECT_FIELDS` constante de columnas |
+| `src/infrastructure/repositories/sql_job_repository.py` | 255 | `f""" SELECT TOP 1 {_JOB_SELECT_FIELDS} … ? ?` | FP-P | Nulo | Idem |
+| `src/infrastructure/repositories/sql_job_repository.py` | 274 | `TOP ({n})` con `n` entero acotado 1–500 | DC | Nulo | No es cadena usuario |
+| `src/infrastructure/repositories/sql_job_repository.py` | 288 | `f"SELECT {_JOB_SELECT_FIELDS} ORDER BY …"` sin user input en texto | FP-P | Nulo | Lista columnas fija |
+| `src/infrastructure/repositories/sql_job_repository.py` | 298 | CTE + `IN ({placeholders})` + params | FP-P | Bajo | `target_ids` como `?` |
+| `src/infrastructure/repositories/sql_job_repository.py` | 358 | `UPDATE … WHERE status IN ({stale_statuses})` — valores desde enum Python | DC | Nulo | No es SQLi HTTP; opcional NRM: construir IN con `?` por status |
+| `src/infrastructure/repositories/sql_normalized_label_repository.py` | 179 | `f""" SELECT … WHERE inventory_id = ? AND aisle_id = ?` | FP-P | Nulo | Parámetros |
+| `src/infrastructure/repositories/sql_normalized_label_repository.py` | 203 | `f"DELETE … ? ?` | FP-P | Nulo | Parámetros |
+| `src/infrastructure/repositories/sql_position_repository.py` | 243 | Rama join: `sql = f"""` SELECT … | FP-P / DC | Bajo | Columnas/joins fijos; revisar rama |
+| `src/infrastructure/repositories/sql_position_repository.py` | 253 | Rama sin join: `sql = f"""` | FP-P / DC | Bajo | Idem |
+| `src/infrastructure/repositories/sql_position_repository.py` | 292 | `get_by_id` / fetch por id | FP-P | Bajo | Params |
+| `src/infrastructure/repositories/sql_product_record_repository.py` | 175 | `f""" SELECT … WHERE position_id = ?` | FP-P | Nulo | Param |
+| `src/infrastructure/repositories/sql_raw_label_repository.py` | 174 | `f""" SELECT … WHERE inventory_id = ? AND aisle_id = ?` | FP-P | Nulo | Params |
+| `src/infrastructure/repositories/sql_source_asset_repository.py` | 237 | `f"""` agregación por `aisle_id` + `?` | FP-P | Bajo | Params |
+
+**Resumen triage:** Ningún B608 clasificado como **RIESGO_REAL** explícito sin auditoría más profunda; la mayoría **FP-P** o **DC**. Prioridad B3.2: (1) `sql_job_repository` L358 si se desea eliminar f-string; (2) `sql_analytics_repository` revisión muestral de filtros; (3) migraciones con tabla constante — bajo impacto.
+
+**DoD B3.1:** B324 corregido; tabla anterior completa; tests/revalidación manual recomendada en el Python del proyecto.
+
+### B3.2 — Reducción mínima B608 (2026-05-04)
+
+**Objetivo:** Quitar B608 en los casos más seguros (`sql_job_repository` stale reclaim, migraciones) y documentar el resto sin refactor masivo ni `nosec` masivo en analytics.
+
+| Archivo | Cambio | Estado | Observación |
+|--------|--------|--------|-------------|
+| `backend/src/infrastructure/repositories/sql_job_repository.py` | `reclaim_stale_running_jobs`: `WHERE status IN (?, ?, ?)` + valores por parámetro (`STALE_RECONCILE_STATUSES`); sin literales de enum en el SQL | **Cerrado** | **1× B608 eliminado** en esta ruta; en el mismo archivo quedan **5× B608** (`_JOB_SELECT_FIELDS`, `TOP ({n})`, CTE `IN ({placeholders})`) — clasificación **FP-P / DC**; siguiente ola **B3.3** |
+| `backend/src/database/migrations/service.py` | SQL con tabla literal `schema_migrations`; eliminado `_MIGRATION_TABLE` y f-strings en DDL/DML del servicio | **Cerrado** | **4× B608 eliminados** · `bandit -r …/service.py` sin hallazgos |
+| `backend/src/infrastructure/repositories/sql_analytics_repository.py` | Sin cambio de código (solo revisión muestral) | **Revisado** | **12× B608** Bandit sin tocar: `where_pos` / `where_ra` / `where_j` / `job_proc_where` / filtros diarios — condiciones armadas con fragmentos internos y valores vía `?`; `_append_*_time_filters` usa `col` con default de columna fija (**DINÁMICO_CONTROLADO**). **FALSO_POSITIVO_PARAMETRIZADO** para el cuerpo `f"""` con expresiones CASE/JSON fijas. Sin `nosec` masivo — **B3.3** si se decide endurecer o extraer SQL estático |
+
+**Validación local:** `bandit -r` sobre las tres rutas → **17 MEDIUM** (0 HIGH): solo `sql_job_repository` + `sql_analytics_repository` (`migrations/service.py` limpio). **Pytest:** `tests/infrastructure/repositories/test_sql_job_repository.py`, `test_sql_job_scope_predicates.py`, `tests/database/test_migration_service.py` — OK (nota: `pytest tests/infrastructure tests/application` puede fallar en **collection** por errores previos no relacionados).
+
+**DoD B3.2:** job repo + migraciones ajustados; analytics revisado muestralmente; backlog actualizado; sin CI/hooks; sin cambio de semántica de negocio.
+
+### B3.3 — Refinamiento B608 + excepciones (2026-05-04)
+
+**Objetivo:** Documentar FP-P/DC en SQL dinámico seguro (`# nosec B608` solo en cierre de f-string, sin inyectar texto en SQL), revisar B110 en jobs/pipeline/sqlserver, sin refactor grande ni CI/hooks.
+
+| Tipo | Archivo | Acción | Resultado |
+|------|---------|--------|-----------|
+| B608 | `backend/src/infrastructure/repositories/sql_job_repository.py` | Constante `_JOB_SELECT_FIELDS` documentada; `# nosec B608` en cierre de literales f-string (listados/TOP/CTE) donde Bandit disparaba | **OK** · `bandit -r …/sql_job_repository.py` sin hallazgos |
+| B608 | `backend/src/infrastructure/repositories/sql_analytics_repository.py` | Comentarios FP-P/DC en `get_summary` / `_processing_success_rate_sql`; `# nosec B608` en cierre de **12** bloques `sql_*` / `f"""` | **OK** · `bandit -r …/sql_analytics_repository.py` sin hallazgos |
+| B110 | `backend/src/database/sqlserver.py` | `rollback`/`close`: comentario + `except Exception:  # nosec B110` (cierre best-effort; no enmascarar el error original) | **OK** |
+| B110 | `backend/src/jobs/worker.py` | Error al insertar evento `ERROR` tras fallo de job: `logger.warning(..., exc_info=True)` | **OK** |
+| B110 | `backend/src/jobs/job_store.py` | `get_job` FS: `except` acotado + log debug/warning según tipo | **OK** |
+| B110 | `backend/src/jobs/dev_reset_local_jobs.py` | Lectura JSON acotada; escritura `job.json`: log warning en fallo | **OK** |
+| B110 | `backend/src/jobs/worker_bootstrap.py` | Comentarios en checkpoints/fail persist (best-effort + archivo de diagnóstico) | **OK** |
+| B110 | `backend/src/pipeline/hybrid_inventory_pipeline.py` | Fallo en `progress_callback`: `logger.warning(..., exc_info=True)` | **OK** |
+| B110 | `backend/src/pipeline/execution_log.py` | Comentarios en sanitización que debe ser infalible | **OK** |
+
+**Bandit (alcance ampliado usuario + `sqlserver.py`):** sin B608/B110 en rutas tocadas; la corrida sobre `src/jobs`, `src/pipeline` y `sqlserver` puede seguir reportando otras reglas (p. ej. **B101** `assert` en `multi_provider_analysis_execution.py`) — fuera del alcance B3.3.
+
+**Pytest:** `test_sql_job_repository.py`, `test_sql_job_scope_predicates.py`, `test_migration_service.py`, `test_sql_analytics_repository.py` — OK.
+
+**DoD B3.3:** ruido B608 reducido en dos repos SQL principales; excepciones revisadas en puntos críticos; backlog actualizado; sin cambio funcional de negocio intencional.
+
+### B3.4 — Cierre B3 Seguridad Backend (Bandit + evidencia) (2026-05-04)
+
+**Comandos:** `cd backend && python -m bandit -r src -f json -o ../audit/raw/backend-bandit-b3-final.json` y `-f txt -o ../audit/raw/backend-bandit-b3-final.txt`. **Pytest:** `test_sql_analytics_repository`, `test_sql_job_repository`, `test_migration_service` → **8 passed**. Sin CI/CD ni hooks en esta pasada.
+
+#### Comparación B0 → B3.4 (Bandit `backend/src`)
+
+| Métrica | B0 (2026-05-04 pre-B3) | B3.4 final |
+|--------|-------------------------|------------|
+| Total | 59 | 30 |
+| HIGH | 1 (B324 MD5, **corregido** en B3.1) | **0** |
+| MEDIUM | 35 | 13 |
+| LOW | 23 | 17 |
+
+#### DoD B3.4
+
+| Criterio | Estado |
+|----------|--------|
+| HIGH = 0 | **Cumplido** |
+| B608 en rutas B3 trabajadas (`sql_job_repository`, `sql_analytics_repository`, `database/migrations/service`) | **0** hallazgos en corrida completa |
+| B110 en rutas críticas revisadas (jobs / pipeline / `sqlserver` cursor) | **Revisado en B3.3**; quedan **B110 LOW** fuera de ese alcance (ver tabla LOW) |
+| LOW restantes documentados | **Sí** (tabla inferior) |
+| Sin refactor masivo / sin CI | **Cumplido** |
+
+#### MEDIUM (13) — solo B608
+
+Archivos no intervenidos en B3.1–B3.3; mismo patrón FP-P/DC que el triage B3.1: candidatos a **B4 / refactor puntual** si se desea 0 MEDIUM.
+
+| Archivo | Líneas (aprox.) |
+|---------|-----------------|
+| `src/infrastructure/repositories/sql_capture_session_repository.py` | 164, 206, 207 |
+| `src/infrastructure/repositories/sql_final_count_repository.py` | 154, 215 |
+| `src/infrastructure/repositories/sql_normalized_label_repository.py` | 179, 203 |
+| `src/infrastructure/repositories/sql_position_repository.py` | 243, 253, 292 |
+| `src/infrastructure/repositories/sql_product_record_repository.py` | 175 |
+| `src/infrastructure/repositories/sql_raw_label_repository.py` | 174 |
+| `src/infrastructure/repositories/sql_source_asset_repository.py` | 237 |
+
+#### LOW (17) — documentados para backlog / política
+
+| ID | N | Clasificación sugerida | Notas |
+|----|---|---------------------------|-------|
+| **B101** | 9 | FP / invariantes internas | `assert` en preview/compare/export/pipeline/costing/multi_provider… — ya clasificado en B0 |
+| **B106** | 2 | **FP** | `token_type="bearer"` OAuth |
+| **B110** | 3 | Revisar siguiente | `env_settings/sqlserver_resolution.py` (2), `v3_job_executor.py` (1) — fuera del paquete jobs/pipeline revisado en B3.3 |
+| **B404** | 1 | Contextual | import `subprocess` en `on_demand_worker_launch_service.py` |
+| **B603** | 1 | Contextual | llamada `subprocess` misma ruta |
+| **B311** | 1 | FP probable | `random` no cripto en `anthropic_sdk_adapter.py` |
+
+**Nota tooling:** `skipped_tests: 19` en métricas Bandit — pragmas `# nosec` en líneas sin test fallido (Bandit avisa); no afecta recuento de hallazgos reportados.
+
+**Evidencia:** `audit/raw/backend-bandit-b3-final.json`, `audit/raw/backend-bandit-b3-final.txt`.
+
+### B3.5 — Cierre MEDIUM B608 restantes (2026-05-04)
+
+**Objetivo:** Eliminar los **13× MEDIUM (B608)** restantes (repos SQL no cubiertos en B3.1–B3.3) con comentario + `# nosec B608` en cierre de literal (o fin de línea `f"…"`), sin SQLi real — mismos criterios FP-P/DC que B3.3. **No** B4 (boundaries, `position_traceability`, `v3_stored_artifact_access`, ni imports `application`→`api`).
+
+| Archivo | B608 antes | Acción | B608 después | Observación |
+|---------|------------|--------|--------------|-------------|
+| `sql_capture_session_repository.py` | 3 | Comentarios FP-P/DC; `# nosec B608` en `execute`/`count_sql`/`list_sql` | **0** | NOT IN con tuple fija + `?`; `where_sql` solo fragmentos internos + params |
+| `sql_final_count_repository.py` | 2 | Idem; `_sql_job_predicate` documentado | **0** | `extra_sql` solo `""` / `AND job_id IS NULL` / `AND job_id = ?` |
+| `sql_normalized_label_repository.py` | 2 | Idem SELECT + DELETE | **0** | Mismo helper |
+| `sql_raw_label_repository.py` | 1 | Idem SELECT | **0** | Mismo helper |
+| `sql_position_repository.py` | 3 | Idem list + IN aisles | **0** | `where`/`params` parametrizados; ORDER BY whitelist `col_map`; `IN` solo `?` |
+| `sql_product_record_repository.py` | 1 | Idem IN position_ids | **0** | Placeholders + tuple params |
+| `sql_source_asset_repository.py` | 1 | Idem IN aisle_ids | **0** | Placeholders + list params |
+
+**Bandit post-B3.5:** `audit/raw/backend-bandit-b3-final-mediums.json` / `.txt` — **HIGH=0**, **MEDIUM=0**, **LOW=17** (sin cambio en familia LOW vs B3.4). Total hallazgos **17**.
+
+**Pytest:** `tests/infrastructure/repositories` completo falla en **collection** por error preexistente en `test_memory_capture_session_confirm_idempotency_repository.py`. Subconjunto acotado (repos tocados + job/analytics/scope): **14 passed**, **2 skipped**.
+
+**DoD B3.5:** MEDIUM B608 **0**; sin SQLi introducido; B4 **no** iniciado; evidencia y backlog actualizados.
+
+---
+
 ## Críticos
 
 ### AUD-001 - Fallos masivos en pruebas backend core (API/use-cases/pipeline)
@@ -44,13 +242,14 @@
 - Área: Backend
 - Herramienta: Bandit
 - Severidad: Alto
-- Archivo/Ruta: `backend/src/infrastructure/repositories/`, `backend/src/jobs/`, `backend/src/pipeline/`
-- Descripción: 59 hallazgos (1 HIGH, 35 MEDIUM, 23 LOW), destacando SQL dinámico y manejo de excepciones.
+- Archivo/Ruta: `backend/src/infrastructure/repositories/`, `backend/src/database/migrations/`, `backend/src/app.py`, otros (ver B0)
+- Descripción: 59 hallazgos (1 HIGH, 35 MEDIUM, 23 LOW), destacando SQL dinámico (B608) y manejo de excepciones (B110).
 - Riesgo: Superficie de ataque y ocultamiento de errores.
 - Evidencia:
-  - `audit/raw/backend-bandit.json`
-- Recomendación futura: Priorizar remediación de HIGH y MEDIUM por riesgo real.
-- Estado: Pendiente
+  - **Actual (pre-B3):** `audit/raw/backend-bandit-b3-current.json`, `audit/raw/backend-bandit-b3-current.txt`
+  - Histórico: `audit/raw/runs/20260429-190315/backend-bandit.json`
+- Recomendación futura: Fase B3 — HIGH (B324) y MEDIUM (B608) con triage; ver clasificación en sección **B0** arriba.
+- Estado: Pendiente (revalidado 2026-05-04)
 
 ### AUD-005 - Vulnerabilidades moderadas en dependencias frontend
 - Área: Frontend
