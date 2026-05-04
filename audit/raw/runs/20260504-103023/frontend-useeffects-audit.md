@@ -14,17 +14,17 @@
 - src/pages/InventoriesList.tsx
 - src/pages/AislePositionsPage.tsx
 - src/pages/ReviewQueuePage.tsx
+- src/hooks/useDebouncedValue.ts
+- src/hooks/useDebouncedSearchInput.ts
 - src/components/CreateInventoryDialog.tsx
 - src/components/imageAssets/ManagedImageAssetsDrawer.tsx
-- src/hooks/useDebouncedValue.ts
-- src/components/CreateAisleDialog.tsx
 - src/components/ui/ImageViewer.tsx
-- src/hooks/useDebouncedSearchInput.ts
 - src/components/ExecutionLogPanel.tsx
-- src/features/auth/AuthProvider.tsx
-- src/features/reviewQueue/components/QuickReviewDrawer.tsx
+- src/components/CreateAisleDialog.tsx
 - src/features/analytics/MetricsPage.tsx
 - src/features/inventories/hooks/useAisleProcessingFlow.ts
+- src/features/reviewQueue/components/QuickReviewDrawer.tsx
+- src/features/auth/AuthProvider.tsx
 - src/features/results/hooks/useEvidenceImageLoad.ts
 - src/features/results/components/detail/ResultReviewActions.tsx
 

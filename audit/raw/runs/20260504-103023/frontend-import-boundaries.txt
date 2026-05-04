@@ -1,6 +1,6 @@
 # Frontend import boundaries audit
 source_dir: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/frontend/src
-generated_at: 2026-04-29 19:03:13
+generated_at: 2026-05-04 10:30:22
 
 madge no instalado.
 dependency-cruiser no instalado.

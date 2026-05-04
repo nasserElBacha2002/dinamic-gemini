@@ -11,4 +11,4 @@
 ## Limitaciones
 
 - Auditoría heurística con posibles falsos positivos.
-- generated_at: 2026-04-29 19:03:15
+- generated_at: 2026-05-04 10:30:23

@@ -6,15 +6,15 @@ Evaluación heurística de arquitectura backend sobre capas `api`, `application`
 
 ## Señales automáticas analizadas
 
-- Complejidad ciclomática (radon): indicadores de riesgo alto detectados aprox=956
+- Complejidad ciclomática (radon): indicadores de riesgo alto detectados aprox=962
 - Code smells (pylint/vulture):
   - too-many-arguments: 117
   - too-many-branches: 24
-  - too-many-returns: 19
+  - too-many-returns: 21
   - clases/metodos voluminosos: 64
   - broad-exception: 0
-  - imports no usados: 41
-  - codigo potencialmente muerto (vulture): 0
+  - imports no usados: 7
+  - codigo potencialmente muerto (vulture): 758
 - Límites de imports entre capas: FAIL=1, REVIEW=2
 - Rutas API sospechosas de lógica pesada (heurística): 5
 
@@ -83,4 +83,4 @@ Evaluación heurística de arquitectura backend sobre capas `api`, `application`
 - Priorizar refactor en módulos con complejidad C/D/E/F y code smells recurrentes.
 - Revisar rutas API con señales de orquestación excesiva y mover lógica a application/use-cases.
 - Fortalecer test de arquitectura para prevenir regresiones de acoplamiento.
-- generated_at: 2026-04-29 19:03:07
+- generated_at: 2026-05-04 10:30:17

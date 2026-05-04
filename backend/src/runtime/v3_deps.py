@@ -30,6 +30,8 @@ from src.application.ports.repositories import (
     SourceAssetRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
+from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.infrastructure.artifacts.stored_artifact_reader import DefaultStoredArtifactReader
 from src.runtime.app_container import get_app_container
 
 
@@ -80,6 +82,11 @@ def get_clock() -> Clock:
 def get_artifact_store():
     """Runtime artifact store (alias of container artifact storage — worker compatibility name)."""
     return get_app_container().get_artifact_storage()
+
+
+def get_stored_artifact_reader() -> StoredArtifactReader:
+    """Best-effort hybrid report / stored JSON reads (application port; no API imports)."""
+    return DefaultStoredArtifactReader(get_job_repo(), get_artifact_store())
 
 
 def get_worker_launch_service() -> WorkerLaunchService:

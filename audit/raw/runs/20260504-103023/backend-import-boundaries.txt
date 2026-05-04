@@ -1,6 +1,6 @@
 # Backend import boundaries audit
 source_dir: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src
-generated_at: 2026-04-29 19:03:07
+generated_at: 2026-05-04 10:30:17
 
 Tooling:
 - import-linter: heuristic fallback used (sin contrato ini)
@@ -34,10 +34,10 @@ Tooling:
 - pipeline/stages/evidence_stage.py -> src.domain.entity
 
 ### R3 señales de lógica de negocio pesada en rutas API
-- api/routes/v3/aisles.py (lineas=862, branch_signals=52)
-- api/routes/v3/inventories.py (lineas=390, branch_signals=33)
-- api/routes/v3/shared.py (lineas=777, branch_signals=66)
-- api/routes/v3/assets.py (lineas=356, branch_signals=41)
-- api/routes/v3/capture_sessions.py (lineas=619, branch_signals=41)
+- api/routes/v3/aisles.py (lineas=890, branch_signals=52)
+- api/routes/v3/inventories.py (lineas=415, branch_signals=33)
+- api/routes/v3/shared.py (lineas=792, branch_signals=66)
+- api/routes/v3/assets.py (lineas=360, branch_signals=41)
+- api/routes/v3/capture_sessions.py (lineas=648, branch_signals=41)
 
 Observacion: auditoría heurística; validar manualmente antes de concluir violación arquitectónica.
