@@ -1,6 +1,6 @@
 # Resumen automático de auditoría
 
-Fecha: 2026-04-29T22:03:15+00:00
+Fecha: 2026-05-04T13:30:23+00:00
 Estado general: ERROR
 Severidad máxima: critical
 
@@ -17,11 +17,11 @@ Severidad máxima: critical
 
 | Herramienta | Estado | Severidad | Métricas | Reporte |
 |---|---|---|---|---|
-| Ruff | FINDINGS | medium | issues=3552, fixable=828 | audit/raw/backend-ruff.txt |
-| Mypy | FINDINGS | high | errors=80, files=35 | audit/raw/backend-mypy.txt |
-| Bandit | FINDINGS | low | total=17, high=0, medium=0, low=17 | audit/raw/backend-bandit-b3-final-mediums.json |
+| Ruff | ERROR | low | - | audit/raw/backend-ruff.txt |
+| Mypy | FINDINGS | high | errors=8, files=8 | audit/raw/backend-mypy.txt |
+| Bandit | FINDINGS | low | total=17, high=0, medium=0, low=17 | audit/raw/backend-bandit.json |
 | pip-audit | OK | none | total=0 | audit/raw/backend-pip-audit.json |
-| Pytest | ERROR | medium | collected=1785 | audit/raw/backend-pytest.txt |
+| Pytest | ERROR | medium | collected=1813 | audit/raw/backend-pytest.txt |
 
 ## Frontend
 
@@ -39,8 +39,8 @@ Severidad máxima: critical
 
 | Auditoría | Estado | Severidad | Métricas | Reporte |
 |---|---|---|---|---|
-| Code smells | FINDINGS | high | too_many_args=118, too_many_branches=25, too_many_returns=20, broad_exception=85, unused_import=42, signals=290 | audit/raw/backend-code-smells.txt |
-| Complejidad | FINDINGS | high | grade_c=124, grade_d=27, grade_e=8, grade_f=4 | audit/raw/backend-complexity.txt |
+| Code smells | FINDINGS | high | too_many_args=118, too_many_branches=25, too_many_returns=22, broad_exception=83, unused_import=8, signals=256 | audit/raw/backend-code-smells.txt |
+| Complejidad | FINDINGS | high | grade_c=122, grade_d=25, grade_e=9, grade_f=4 | audit/raw/backend-complexity.txt |
 | Límites de imports | FINDINGS | high | fail=1, review=2 | audit/raw/backend-import-boundaries.txt |
 | SOLID/GRASP | FINDINGS | medium | signals=12 | audit/raw/backend-solid-grasp-audit.md |
 
@@ -58,9 +58,9 @@ Severidad máxima: critical
 ## Hallazgos principales automáticos
 
 - Frontend vitest reporta 86 tests fallidos.
-- Bandit (B3.5): total=17, high=0, medium=0, low=17 (ver `backend-bandit-b3-final-mediums.json`).
+- Bandit: total=17, high=0, medium=0.
 - npm audit frontend: moderate=7, high=0, critical=0.
-- Mypy backend detecta 80 errores en 35 archivos.
+- Mypy backend detecta 8 errores en 8 archivos.
 - Complejidad frontend: files>300=19, files>1000=4.
 - Boundaries backend: fail=1, review=2.
 - Boundaries frontend: señales heurísticas=8.
@@ -68,7 +68,6 @@ Severidad máxima: critical
 - Duplicación frontend no cuantificada formalmente (jscpd no disponible).
 - useEffect audit: usos=46, archivos=20; revisar posibles falsos negativos.
 - Error handling audit: archivos=100, try=59, catch=25.
-- Ruff backend: issues=3552, fixable=828.
 
 ## Recomendación automática de prioridad
 
@@ -78,18 +77,6 @@ Severidad máxima: critical
 4. Arquitectura
 5. Code smells
 6. Limpieza/ruido
-
-## Actualización B0 — Bandit backend (2026-05-04)
-
-Revalidación manual pre-B3 sobre `backend/src` (Bandit 1.9.4): **59** hallazgos totales (**1 HIGH**, **35 MEDIUM**, **23 LOW**) — mismos totales que la corrida archivada en `audit/raw/runs/20260429-190315/`. Evidencia actual: `audit/raw/backend-bandit-b3-current.json` y `.txt`. Clasificación y priorización: `audit/audit-backlog.md` (sección **B0**).
-
-## Actualización B3.4 — Bandit cierre fase B3 (2026-05-04)
-
-Corrida completa `bandit -r src` (evidencia: `audit/raw/backend-bandit-b3-final.json` / `.txt`). **30** hallazgos (**0 HIGH**, **13 MEDIUM**, **17 LOW**). B608 **0** en rutas intervención B3 (`sql_job_repository`, `sql_analytics_repository`, `migrations/service`); **13** B608 MEDIUM restantes en otros repositorios SQL. **LOW** restantes: B101 (9), B106 (2, bearer), B110 (3, `env_settings/sqlserver_resolution`, `v3_job_executor`), B404/B603 (on_demand_worker), B311 (random no cripto). Pytest muestreo seguridad: 8 pass (repos + migración). Detalle: `audit/audit-backlog.md` sección **B3.4**.
-
-## Actualización B3.5 — Bandit MEDIUM B608 cerrados (2026-05-04)
-
-Post-B3.5: corrida `bandit -r src` → **17** hallazgos, todos **LOW** (**MEDIUM=0**). Evidencia: `audit/raw/backend-bandit-b3-final-mediums.json` / `.txt`. Los 13 B608 MEDIUM finales se cerraron con `# nosec B608` + comentarios en siete repos SQL (sin B4 / sin boundaries). Detalle tabla: `audit/audit-backlog.md` **B3.5**.
 
 ## Limitaciones
 

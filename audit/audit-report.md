@@ -152,7 +152,7 @@ Cierre de los **13 B608 MEDIUM** en siete repos SQL vía comentario + `# nosec B
 <!-- AUTO-AUDIT-SUMMARY:START -->
 ## Consolidación automática reproducible
 
-- Generado: 2026-04-29T22:03:15+00:00
+- Generado: 2026-05-04T13:30:23+00:00
 - Fuente automática: `audit/audit-summary.md`
 - Estado machine-readable: `audit/audit-status.json`
 

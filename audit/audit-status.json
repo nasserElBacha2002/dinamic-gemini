@@ -1,28 +1,25 @@
 {
   "overall_status": "error",
   "max_severity": "critical",
-  "generated_at": "2026-05-04T13:24:00+00:00",
+  "generated_at": "2026-05-04T13:30:23+00:00",
   "areas": {
     "backend": {
       "status": "ERROR",
       "max_severity": "high",
       "tools": {
         "ruff": {
-          "status": "FINDINGS",
-          "severity": "medium",
-          "metrics": {
-            "issues": 3552,
-            "fixable": 828
-          },
+          "status": "ERROR",
+          "severity": "low",
+          "metrics": {},
           "report": "audit/raw/backend-ruff.txt",
-          "observation": ""
+          "observation": "No se pudo extraer métrica de Ruff."
         },
         "mypy": {
           "status": "FINDINGS",
           "severity": "high",
           "metrics": {
-            "errors": 80,
-            "files": 35
+            "errors": 8,
+            "files": 8
           },
           "report": "audit/raw/backend-mypy.txt",
           "observation": ""
@@ -36,8 +33,8 @@
             "medium": 0,
             "low": 17
           },
-          "report": "audit/raw/backend-bandit-b3-final-mediums.json",
-          "observation": "B3.5 cierre 2026-05-04: MEDIUM=0 (B608 restantes suprimidos con nosec justificado); LOW=17 sin cambio de familia; evidencia backend-bandit-b3-final-mediums.{json,txt}; previos B3.4: backend-bandit-b3-final.json. skipped_tests≈32 (nosec redundante). Pytest repos: collection falla en test_memory_capture_* (preexistente); subset 14 pass 2 skip."
+          "report": "audit/raw/backend-bandit.json",
+          "observation": ""
         },
         "pip-audit": {
           "status": "OK",
@@ -52,7 +49,7 @@
           "status": "ERROR",
           "severity": "medium",
           "metrics": {
-            "collected": 1785
+            "collected": 1813
           },
           "report": "audit/raw/backend-pytest.txt",
           "observation": ""
@@ -60,7 +57,7 @@
       },
       "highlights": {
         "tool_count": 5,
-        "findings_count": 3,
+        "findings_count": 2,
         "not_run_count": 0
       }
     },
@@ -164,10 +161,10 @@
           "metrics": {
             "too_many_args": 118,
             "too_many_branches": 25,
-            "too_many_returns": 20,
-            "broad_exception": 85,
-            "unused_import": 42,
-            "signals": 290
+            "too_many_returns": 22,
+            "broad_exception": 83,
+            "unused_import": 8,
+            "signals": 256
           },
           "report": "audit/raw/backend-code-smells.txt",
           "observation": ""
@@ -176,9 +173,9 @@
           "status": "FINDINGS",
           "severity": "high",
           "metrics": {
-            "grade_c": 124,
-            "grade_d": 27,
-            "grade_e": 8,
+            "grade_c": 122,
+            "grade_d": 25,
+            "grade_e": 9,
             "grade_f": 4
           },
           "report": "audit/raw/backend-complexity.txt",
