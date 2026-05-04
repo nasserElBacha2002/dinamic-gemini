@@ -154,7 +154,7 @@ class _V3WorkerRuntimeHandles:
 class V3JobExecutor:
     """Execute v3 process_aisle jobs: load assets, run pipeline, persist results, update status."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         job_repo: JobRepository,
         aisle_repo: AisleRepository,

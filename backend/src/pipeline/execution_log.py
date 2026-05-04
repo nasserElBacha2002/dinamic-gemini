@@ -277,6 +277,6 @@ def read_last_stage_error(run_dir: Path) -> str | None:
         return None
     try:
         text = path.read_text(encoding="utf-8").strip()
-        return text if text else None
+        return text or None
     except OSError:
         return None

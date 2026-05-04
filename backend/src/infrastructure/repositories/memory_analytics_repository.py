@@ -111,7 +111,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                         continue
                     positions[pos.id] = pos
         actions: list = []
-        from src.infrastructure.repositories.memory_review_action_repository import (  # noqa: PLC0415
+        from src.infrastructure.repositories.memory_review_action_repository import (
             MemoryReviewActionRepository,
         )
 

@@ -399,7 +399,7 @@ def _map_single_hybrid_entity(
     return position, product, evidence, raw_label
 
 
-def map_hybrid_report_to_domain(  # noqa: PLR0913
+def map_hybrid_report_to_domain(
     aisle_id: str,
     report: dict[str, Any],
     run_dir: Path,
