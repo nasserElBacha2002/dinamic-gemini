@@ -47,7 +47,9 @@ from src.api.schemas.capture_schemas import (
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.dto.uploaded_file import UploadedFile
-from src.application.errors import CaptureSessionStatusFilterInvalidError
+from src.application.services.capture_session_status_filter import (
+    parse_capture_session_status_filter,
+)
 from src.application.use_cases.assign_capture_session_group_to_existing_aisle import (
     AssignCaptureSessionGroupToExistingAisleUseCase,
 )
@@ -66,10 +68,16 @@ from src.application.use_cases.create_aisle_and_assign_capture_session_group imp
     CreateAisleAndAssignCaptureSessionGroupUseCase,
 )
 from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
-from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
+from src.application.use_cases.get_capture_session_detail import (
+    CaptureSessionDetailResult,
+    GetCaptureSessionDetailUseCase,
+)
 from src.application.use_cases.get_capture_session_groups import GetCaptureSessionGroupsUseCase
 from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
-from src.application.use_cases.materialize_capture_session import MaterializeCaptureSessionUseCase
+from src.application.use_cases.materialize_capture_session import (
+    MaterializeCaptureSessionResult,
+    MaterializeCaptureSessionUseCase,
+)
 from src.application.use_cases.materialize_capture_session_group import (
     MaterializeCaptureSessionGroupUseCase,
 )
@@ -77,31 +85,58 @@ from src.application.use_cases.update_capture_session_clock_offset import (
     UpdateCaptureSessionClockOffsetUseCase,
 )
 from src.application.use_cases.upload_capture_session_staging_items import (
+    StagingUploadBatchResult,
     UploadCaptureSessionStagingItemsUseCase,
 )
-from src.domain.capture.entities import CaptureSessionStatus
 
 router = APIRouter()
 
 
-def _parse_status_filter(raw: str | None) -> list[CaptureSessionStatus] | None:
-    """Strict comma-separated ``CaptureSessionStatus`` values; rejects unknown or empty segments (422)."""
-    if raw is None or not raw.strip():
-        return None
-    out: list[CaptureSessionStatus] = []
-    for part in raw.split(","):
-        p = part.strip().lower()
-        if not p:
-            raise CaptureSessionStatusFilterInvalidError(
-                "status query parameter contains an empty segment between commas"
+def _capture_session_detail_response(detail: CaptureSessionDetailResult) -> CaptureSessionDetailResponse:
+    return CaptureSessionDetailResponse(
+        session=capture_session_to_response(detail.session),
+        items=[capture_session_item_to_response(i) for i in detail.items],
+    )
+
+
+def _materialize_capture_session_http_response(
+    detail: CaptureSessionDetailResult,
+    out: MaterializeCaptureSessionResult,
+) -> MaterializeCaptureSessionResponse:
+    return MaterializeCaptureSessionResponse(
+        session=capture_session_to_response(detail.session),
+        items=[capture_session_item_to_response(i) for i in detail.items],
+        created_assets_count=len(out.created_asset_ids),
+    )
+
+
+def _staging_upload_batch_response(batch: StagingUploadBatchResult) -> UploadCaptureSessionItemsResponse:
+    return UploadCaptureSessionItemsResponse(
+        items=[capture_session_item_to_response(i) for i in batch.items],
+        errors=[
+            CaptureSessionStagingUploadFileError(
+                filename=e.filename,
+                code=e.code,
+                detail=e.detail,
+                file_index=e.file_index,
             )
-        try:
-            out.append(CaptureSessionStatus(p))
-        except ValueError as exc:
-            raise CaptureSessionStatusFilterInvalidError(
-                f"Unknown capture session status in status filter: {part.strip()!r}"
-            ) from exc
-    return out
+            for e in batch.errors
+        ],
+    )
+
+
+async def _upload_files_to_staging_dtos(files: list[UploadFile]) -> list[UploadedFile]:
+    uploaded: list[UploadedFile] = []
+    for u in files:
+        content = await u.read()
+        uploaded.append(
+            UploadedFile(
+                original_filename=u.filename or "file",
+                file_obj=BytesIO(content),
+                content_type=u.content_type or "application/octet-stream",
+            )
+        )
+    return uploaded
 
 
 @router.post(
@@ -155,10 +190,7 @@ def close_capture_session_inventory_scope(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return CaptureSessionDetailResponse(
-        session=capture_session_to_response(detail.session),
-        items=[capture_session_item_to_response(i) for i in detail.items],
-    )
+    return _capture_session_detail_response(detail)
 
 
 @router.post(
@@ -178,10 +210,7 @@ def close_capture_session(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return CaptureSessionDetailResponse(
-        session=capture_session_to_response(detail.session),
-        items=[capture_session_item_to_response(i) for i in detail.items],
-    )
+    return _capture_session_detail_response(detail)
 
 
 @router.post(
@@ -200,10 +229,7 @@ def cancel_capture_session_inventory_scope(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return CaptureSessionDetailResponse(
-        session=capture_session_to_response(detail.session),
-        items=[capture_session_item_to_response(i) for i in detail.items],
-    )
+    return _capture_session_detail_response(detail)
 
 
 @router.post(
@@ -223,10 +249,7 @@ def cancel_capture_session(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return CaptureSessionDetailResponse(
-        session=capture_session_to_response(detail.session),
-        items=[capture_session_item_to_response(i) for i in detail.items],
-    )
+    return _capture_session_detail_response(detail)
 
 
 @router.get(
@@ -247,7 +270,7 @@ def list_capture_sessions(
     use_case: ListCaptureSessionsUseCase = Depends(get_list_capture_sessions_use_case),
 ) -> PaginatedCaptureSessionListResponse:
     try:
-        statuses = _parse_status_filter(status)
+        statuses = parse_capture_session_status_filter(status)
         result = use_case.execute(
             inventory_id,
             aisle_id=aisle_id,
@@ -295,10 +318,7 @@ def patch_capture_session_clock_offset(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return CaptureSessionDetailResponse(
-        session=capture_session_to_response(detail.session),
-        items=[capture_session_item_to_response(i) for i in detail.items],
-    )
+    return _capture_session_detail_response(detail)
 
 
 @router.post(
@@ -320,10 +340,7 @@ def post_capture_session_preview_assignment(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return CaptureSessionDetailResponse(
-        session=capture_session_to_response(detail.session),
-        items=[capture_session_item_to_response(i) for i in detail.items],
-    )
+    return _capture_session_detail_response(detail)
 
 
 @router.post(
@@ -349,11 +366,7 @@ def post_capture_session_materialize(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return MaterializeCaptureSessionResponse(
-        session=capture_session_to_response(detail.session),
-        items=[capture_session_item_to_response(i) for i in detail.items],
-        created_assets_count=len(out.created_asset_ids),
-    )
+    return _materialize_capture_session_http_response(detail, out)
 
 
 @router.get(
@@ -370,10 +383,7 @@ def get_capture_session_detail(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return CaptureSessionDetailResponse(
-        session=capture_session_to_response(detail.session),
-        items=[capture_session_item_to_response(i) for i in detail.items],
-    )
+    return _capture_session_detail_response(detail)
 
 
 @router.post(
@@ -560,16 +570,7 @@ async def upload_capture_session_staging_items_inventory_scope(
         get_upload_capture_session_staging_items_use_case
     ),
 ) -> UploadCaptureSessionItemsResponse:
-    uploaded: list[UploadedFile] = []
-    for u in files:
-        content = await u.read()
-        uploaded.append(
-            UploadedFile(
-                original_filename=u.filename or "file",
-                file_obj=BytesIO(content),
-                content_type=u.content_type or "application/octet-stream",
-            )
-        )
+    uploaded = await _upload_files_to_staging_dtos(files)
     try:
         batch = use_case.execute(
             inventory_id=inventory_id,
@@ -580,18 +581,7 @@ async def upload_capture_session_staging_items_inventory_scope(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return UploadCaptureSessionItemsResponse(
-        items=[capture_session_item_to_response(i) for i in batch.items],
-        errors=[
-            CaptureSessionStagingUploadFileError(
-                filename=e.filename,
-                code=e.code,
-                detail=e.detail,
-                file_index=e.file_index,
-            )
-            for e in batch.errors
-        ],
-    )
+    return _staging_upload_batch_response(batch)
 
 
 @router.post(
@@ -614,16 +604,7 @@ async def upload_capture_session_staging_items(
     memory before invoking the use case (``BytesIO`` per file). Low-risk for typical capture
     batch sizes; very large files still hit ``max_upload_size_mb`` in the use case.
     """
-    uploaded: list[UploadedFile] = []
-    for u in files:
-        content = await u.read()
-        uploaded.append(
-            UploadedFile(
-                original_filename=u.filename or "file",
-                file_obj=BytesIO(content),
-                content_type=u.content_type or "application/octet-stream",
-            )
-        )
+    uploaded = await _upload_files_to_staging_dtos(files)
     try:
         batch = use_case.execute(
             inventory_id=inventory_id,
@@ -634,15 +615,4 @@ async def upload_capture_session_staging_items(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return UploadCaptureSessionItemsResponse(
-        items=[capture_session_item_to_response(i) for i in batch.items],
-        errors=[
-            CaptureSessionStagingUploadFileError(
-                filename=e.filename,
-                code=e.code,
-                detail=e.detail,
-                file_index=e.file_index,
-            )
-            for e in batch.errors
-        ],
-    )
+    return _staging_upload_batch_response(batch)
