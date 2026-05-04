@@ -229,6 +229,45 @@ Re-ejecutar antes de B8.1 para números actualizados tras merges.
 
 ---
 
-## 11. Próximo paso (B8.2)
+## 11. Próximo paso (tras B8.2 slice actual)
 
-Continuar en `backend/src/application/` (use cases de capture materialization, `execution_log_enrichment`, etc.) según el mapa del §4, con PRs pequeños y tests de application.
+Continuar en `backend/src/application/` con los use cases pendientes del §4 (`materialize_capture_session`, `upload_capture_session_staging_items`, `list_review_queue`, `analytics_aggregation_core`, etc.), con PRs pequeños y tests de application en **Python ≥ 3.10** (el dominio usa `dataclass(kw_only=True)`).
+
+---
+
+## 12. B8.2 — Application (slice implementado)
+
+**Alcance de este slice:** `services/execution_log_enrichment.py` y `use_cases/compute_materialized_capture_session_group_preview.py`. **No** se modificó `application/ports/`. Contratos HTTP y de use case públicos se conservaron; solo se añadieron DTOs/helpers **privados** o se documentaron supresiones puntuales.
+
+### `services/execution_log_enrichment.py`
+
+| Smell detectado (antes) | Técnica aplicada | Cambios realizados | Sin tocar / riesgos |
+|---------------------------|------------------|--------------------|---------------------|
+| PLR0911 (`_as_attempt`) | Ramificación con acumulador `out` + `return` único final | `_non_negative_int_or_none`; `_as_attempt` delega sin múltiples salidas tempranas | — |
+| PLR0913 (`_available_job_attempt_execution_lists`) | DTO interno frozen | `_AvailableJobAttemptExecutionListsInputs` | — |
+| PLR0913 (`_build_enriched_execution_log_core`) | DTO interno frozen | `_EnrichedExecutionLogCoreParams`; núcleo recibe un solo objeto | Firmas públicas `build_enriched_execution_log` / `build_enriched_aisle_aggregated_execution_log` sin cambios |
+| PLR0913 (`build_enriched_aisle_aggregated_execution_log`) | `# noqa: PLR0913` | Parámetros del sobre multi-job explícitos para estabilidad de llamadores API | Riesgo bajo: supresión documentada en este plan |
+| `broad-except` en `_as_nonempty_str` (sesión previa) | `except (TypeError, ValueError, AttributeError)` | Ya aplicado; conversión a string defensiva | — |
+
+### `use_cases/compute_materialized_capture_session_group_preview.py`
+
+| Smell detectado (antes) | Técnica aplicada | Cambios realizados | Sin tocar / riesgos |
+|---------------------------|------------------|--------------------|---------------------|
+| PLR0913 (`_classify_g6_preview_status`) | DTO interno frozen | `_G6PreviewStatusInputs`; una sola entrada al clasificador | Semántica de estados `empty` / `partial` / `ready` inalterada |
+| PLR0913 (`__init__` del use case) | `# noqa: PLR0913` | Inyección de repos + `preview_max_positions` sin cambiar firma | Patrón DI estable; no agrupar repos en un “context” en este slice |
+| PLR0915 / responsabilidades mezcladas en `_execute_inner` (sesión previa) | Helpers `_g6_*`, `_G6WorkState` | Carga, join, distinción de ítems, conteos y resultado separados | — |
+| `except Exception` en `execute` | **REVISAR_NO_TOCAR** | `noqa: BLE001` + métricas/emisión en fallo inesperado | Cambiar tipos aquí podría ocultar fallos no instrumentados |
+| E501 | Ajuste de docstrings y tipo de retorno partido | Líneas ≤ 100 caracteres | Texto funcional de documentación ligeramente acortado en el docstring del módulo |
+
+### Validación B8.2 (slice)
+
+- `ruff check … --select PLR0911,PLR0912,PLR0913,PLR0915,E501` en los dos archivos: **OK**.
+- `mypy` en los dos archivos: **OK**.
+- `pytest tests/application/test_execution_log_enrichment.py`: **OK** (entorno local).
+- Tests que importan dominio con `dataclass(kw_only=True)`: requieren **Python ≥ 3.10**; si `python3` apunta a 3.9, la recolección falla antes de ejecutar aserciones (limitación de entorno, no del diff).
+
+### Archivos de application aún priorizados (no tocados en este slice)
+
+- `use_cases/materialize_capture_session.py`
+- `use_cases/upload_capture_session_staging_items.py`
+- `services/analytics_aggregation_core.py`, `use_cases/list_review_queue.py`, export/detail con deps altos, etc. (mapa §4 B8.2)

@@ -1,4 +1,4 @@
-"""G6 — deterministic preview from aisle ``SourceAsset`` rows materialized for one temporal group."""
+"""G6 — deterministic preview from aisle ``SourceAsset`` rows materialized for one group."""
 
 from __future__ import annotations
 
@@ -23,7 +23,10 @@ from src.application.ports.repositories import (
     PositionRepository,
     SourceAssetRepository,
 )
-from src.application.services.capture_assignment_preview import compute_item_preview_outcomes
+from src.application.services.capture_assignment_preview import (
+    ItemPreviewOutcome,
+    compute_item_preview_outcomes,
+)
 from src.application.services.capture_flow_observability import (
     LOG_OP_G6_PREVIEW_GROUP,
     RESULT_FAILED,
@@ -40,11 +43,13 @@ from src.application.use_cases.capture_session_group_assignment_guard import (
 )
 from src.domain.assets.entities import SourceAsset
 from src.domain.capture.entities import (
+    CaptureSession,
     CaptureSessionGroupAisleAssignmentStatus,
     CaptureSessionItem,
     CaptureSessionItemAssignmentStatus,
     CaptureSessionItemImportStatus,
 )
+from src.domain.positions.entities import Position
 
 logger = logging.getLogger(__name__)
 
@@ -83,16 +88,18 @@ def _asset_scopes_to_capture_session_group(
     return (it.group_id or "").strip() == group_id
 
 
-def _classify_g6_preview_status(
-    *,
-    filtered_asset_count: int,
-    resolved_row_count: int,
-    distinct_preview_imported_item_count: int,
-    has_any_unlinked_imported_in_group: bool,
-    proposed_outcome_count: int,
-    conflict_outcome_count: int,
-    unassigned_outcome_count: int,
-) -> str:
+@dataclass(frozen=True)
+class _G6PreviewStatusInputs:
+    filtered_asset_count: int
+    resolved_row_count: int
+    distinct_preview_imported_item_count: int
+    has_any_unlinked_imported_in_group: bool
+    proposed_outcome_count: int
+    conflict_outcome_count: int
+    unassigned_outcome_count: int
+
+
+def _classify_g6_preview_status(inp: _G6PreviewStatusInputs) -> str:
     """Return ``preview_status`` for G6 with explicit, auditable semantics.
 
     **empty** — No usable materialized input for the ordinal preview heuristic:
@@ -100,30 +107,35 @@ def _classify_g6_preview_status(
         (includes: zero scoped assets that resolve to a row; scoped assets only join to
         non-imported items; metadata-scoped assets with no resolvable ``CaptureSessionItem``).
 
-    **partial** — At least one usable imported item is previewed, but coverage or outcomes are mixed:
+    **partial** — At least one usable imported item is previewed, but coverage or outcomes are
+    mixed:
       - ``filtered_asset_count > resolved_row_count`` (orphan / unjoinable scoped assets),
-      - Some imported group items still lack ``linked_source_asset_id`` while any scoped asset exists,
+      - Some imported group items still lack ``linked_source_asset_id`` while any scoped asset
+        exists,
       - Any CONFLICT or UNASSIGNED outcome from ``compute_item_preview_outcomes``,
       - ``proposed_outcome_count < distinct_preview_imported_item_count``.
 
-    **ready** — All previewable imported items tied to resolved rows received PROPOSED, with no gaps:
+    **ready** — All previewable imported items tied to resolved rows received PROPOSED, with no
+    gaps:
       - ``distinct_preview_imported_item_count > 0``,
       - No join gap, no materialization gap, no conflict/unassigned outcomes,
       - ``proposed_outcome_count == distinct_preview_imported_item_count``.
     """
-    join_gap_count = filtered_asset_count - resolved_row_count
-    materialization_incomplete = bool(filtered_asset_count) and has_any_unlinked_imported_in_group
+    join_gap_count = inp.filtered_asset_count - inp.resolved_row_count
+    materialization_incomplete = bool(inp.filtered_asset_count) and (
+        inp.has_any_unlinked_imported_in_group
+    )
 
-    no_usable_preview_input = distinct_preview_imported_item_count == 0
+    no_usable_preview_input = inp.distinct_preview_imported_item_count == 0
     if no_usable_preview_input:
         return "empty"
 
     mixed_or_incomplete = (
         join_gap_count > 0
         or materialization_incomplete
-        or conflict_outcome_count > 0
-        or unassigned_outcome_count > 0
-        or proposed_outcome_count < distinct_preview_imported_item_count
+        or inp.conflict_outcome_count > 0
+        or inp.unassigned_outcome_count > 0
+        or inp.proposed_outcome_count < inp.distinct_preview_imported_item_count
     )
     if mixed_or_incomplete:
         return "partial"
@@ -149,6 +161,22 @@ class MaterializedGroupPreviewSummaryResult:
 
 
 @dataclass(frozen=True)
+class _G6WorkState:
+    """Internal snapshot after aisle assets + positions are loaded (G6 preview pipeline)."""
+
+    inventory_id: str
+    session_id: str
+    group_id: str
+    session: CaptureSession
+    aisle_id: str
+    item_by_id: dict[str, CaptureSessionItem]
+    imported_group: list[CaptureSessionItem]
+    any_unlinked_imported: bool
+    filtered: list[SourceAsset]
+    positions: list[Position]
+
+
+@dataclass(frozen=True)
 class ComputeMaterializedCaptureSessionGroupPreviewResult:
     capture_session_id: str
     group_id: str
@@ -156,20 +184,22 @@ class ComputeMaterializedCaptureSessionGroupPreviewResult:
     source_asset_count: int
     source_asset_ids: tuple[str, ...]
     preview_status: str
-    #: G7 operator-facing mirror of ``preview_status`` for successful responses (``empty`` \| ``partial`` \| ``ready``).
+    #: G7 operator-facing mirror of ``preview_status`` for successful responses
+    #: (``empty`` \| ``partial`` \| ``ready``).
     preview_operator_state: str
     items: tuple[MaterializedGroupPreviewItemResult, ...]
     summary: MaterializedGroupPreviewSummaryResult
 
 
 class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
-    """Read-only G6 preview: post-assignment, post-materialization, group-scoped ``SourceAsset`` → ordinal pairing.
+    """Read-only G6 preview: group-scoped ``SourceAsset`` → ordinal pairing.
 
-    Session gates match G4/G5 via :func:`ensure_group_aisle_assignment_allowed`. Preview does not mutate
-    ``CaptureSessionItem`` or session rows and does not invoke aisle processing.
+    Post-assignment and post-materialization. Session gates match G4/G5 via
+    :func:`ensure_group_aisle_assignment_allowed`. Preview does not mutate ``CaptureSessionItem`` or
+    session rows and does not invoke aisle processing.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         session_repo: CaptureSessionRepository,
@@ -201,7 +231,7 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             )
         except CaptureSessionGroupIntegrityError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001 — REVISAR_NO_TOCAR: metrics + observability on preview failure
             logger.exception(
                 "G6 preview failed inventory_id=%s session_id=%s group_id=%s",
                 inventory_id,
@@ -219,13 +249,13 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             )
             raise
 
-    def _execute_inner(
+    def _g6_load_work_state(
         self,
         *,
         inventory_id: str,
         session_id: str,
         group_id: str,
-    ) -> ComputeMaterializedCaptureSessionGroupPreviewResult:
+    ) -> _G6WorkState:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
             raise CaptureSessionNotFoundError("Capture session not found for this inventory.")
@@ -284,8 +314,27 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             )
         )
 
+        return _G6WorkState(
+            inventory_id=inventory_id,
+            session_id=session_id,
+            group_id=group_id,
+            session=session,
+            aisle_id=aisle_id,
+            item_by_id=item_by_id,
+            imported_group=imported_group,
+            any_unlinked_imported=any_unlinked_imported,
+            filtered=filtered,
+            positions=positions,
+        )
+
+    def _g6_join_asset_item_rows(
+        self, work: _G6WorkState
+    ) -> list[tuple[SourceAsset, CaptureSessionItem]]:
         rows: list[tuple[SourceAsset, CaptureSessionItem]] = []
-        for asset in filtered:
+        session_id = work.session_id
+        group_id = work.group_id
+        item_by_id = work.item_by_id
+        for asset in work.filtered:
             iid = _capture_session_item_id_from_asset(asset)
             item = item_by_id.get(iid) if iid else None
             if item is None and iid:
@@ -297,7 +346,12 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             ):
                 continue
             rows.append((asset, item))
+        return rows
 
+    @staticmethod
+    def _g6_distinct_imported_preview_items(
+        rows: list[tuple[SourceAsset, CaptureSessionItem]],
+    ) -> list[CaptureSessionItem]:
         preview_items: list[CaptureSessionItem] = []
         seen: set[str] = set()
         for _, item in rows:
@@ -307,13 +361,13 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
                 continue
             seen.add(item.id)
             preview_items.append(item)
+        return preview_items
 
-        outcomes = compute_item_preview_outcomes(
-            items=preview_items,
-            positions=positions,
-            clock_offset_seconds=session.clock_offset_seconds,
-        )
-
+    @staticmethod
+    def _g6_build_materialized_item_results(
+        rows: list[tuple[SourceAsset, CaptureSessionItem]],
+        outcomes: dict[str, ItemPreviewOutcome],
+    ) -> list[MaterializedGroupPreviewItemResult]:
         item_results: list[MaterializedGroupPreviewItemResult] = []
         for asset, item in rows:
             if item.import_status != CaptureSessionItemImportStatus.IMPORTED:
@@ -351,7 +405,13 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
                     preview_target_position_id=row.preview_target_position_id,
                 )
             )
+        return item_results
 
+    @staticmethod
+    def _g6_count_assignment_outcomes(
+        preview_items: list[CaptureSessionItem],
+        outcomes: dict[str, ItemPreviewOutcome],
+    ) -> tuple[int, int, int]:
         proposed = conflict = unassigned = 0
         for it in preview_items:
             row = outcomes.get(it.id)
@@ -363,6 +423,31 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
                 conflict += 1
             else:
                 unassigned += 1
+        return proposed, conflict, unassigned
+
+    def _execute_inner(
+        self,
+        *,
+        inventory_id: str,
+        session_id: str,
+        group_id: str,
+    ) -> ComputeMaterializedCaptureSessionGroupPreviewResult:
+        work = self._g6_load_work_state(
+            inventory_id=inventory_id,
+            session_id=session_id,
+            group_id=group_id,
+        )
+        rows = self._g6_join_asset_item_rows(work)
+        preview_items = self._g6_distinct_imported_preview_items(rows)
+
+        outcomes = compute_item_preview_outcomes(
+            items=preview_items,
+            positions=work.positions,
+            clock_offset_seconds=work.session.clock_offset_seconds,
+        )
+
+        item_results = self._g6_build_materialized_item_results(rows, outcomes)
+        proposed, conflict, unassigned = self._g6_count_assignment_outcomes(preview_items, outcomes)
 
         previewed_item_count = len(preview_items)
         summary = MaterializedGroupPreviewSummaryResult(
@@ -373,23 +458,25 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
         )
 
         preview_status = _classify_g6_preview_status(
-            filtered_asset_count=len(filtered),
-            resolved_row_count=len(rows),
-            distinct_preview_imported_item_count=len(preview_items),
-            has_any_unlinked_imported_in_group=any(
-                not (i.linked_source_asset_id or "").strip() for i in imported_group
-            ),
-            proposed_outcome_count=proposed,
-            conflict_outcome_count=conflict,
-            unassigned_outcome_count=unassigned,
+            _G6PreviewStatusInputs(
+                filtered_asset_count=len(work.filtered),
+                resolved_row_count=len(rows),
+                distinct_preview_imported_item_count=len(preview_items),
+                has_any_unlinked_imported_in_group=any(
+                    not (i.linked_source_asset_id or "").strip() for i in work.imported_group
+                ),
+                proposed_outcome_count=proposed,
+                conflict_outcome_count=conflict,
+                unassigned_outcome_count=unassigned,
+            )
         )
 
         out = ComputeMaterializedCaptureSessionGroupPreviewResult(
             capture_session_id=session_id,
             group_id=group_id,
-            aisle_id=aisle_id,
-            source_asset_count=len(filtered),
-            source_asset_ids=tuple(a.id for a in filtered),
+            aisle_id=work.aisle_id,
+            source_asset_count=len(work.filtered),
+            source_asset_ids=tuple(a.id for a in work.filtered),
             preview_status=preview_status,
             preview_operator_state=preview_status,
             items=tuple(item_results),
@@ -403,9 +490,9 @@ class ComputeMaterializedCaptureSessionGroupPreviewUseCase:
             operation=LOG_OP_G6_PREVIEW_GROUP,
             result_status=RESULT_SUCCESS,
             group_id=group_id,
-            aisle_id=aisle_id,
+            aisle_id=work.aisle_id,
             counts={
-                "source_asset_count": len(filtered),
+                "source_asset_count": len(work.filtered),
                 "preview_rows": len(rows),
                 "preview_items": previewed_item_count,
                 "proposed": proposed,
