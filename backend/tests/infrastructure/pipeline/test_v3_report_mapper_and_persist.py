@@ -6,17 +6,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import src.application.use_cases.persist_aisle_result as persist_aisle_result_module
+from src.application.dto.mapped_aisle_result import MappedAisleResult
 from src.application.use_cases.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
     should_persist_detected_position,
 )
 from src.domain.positions.entities import PositionStatus
-from src.infrastructure.pipeline.v3_report_mapper import (
-    MappedAisleResult,
-    map_hybrid_report_to_domain,
+from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
+    default_map_hybrid_report_to_domain,
 )
+from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
 
 
 def test_map_hybrid_report_to_domain_empty_entities():
@@ -393,6 +393,7 @@ def test_persist_aisle_result_use_case_saves_positions_products_evidences() -> N
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         clock=clock,
+        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
     )
     report = {
@@ -467,6 +468,7 @@ def test_persist_aisle_result_use_case_applies_unknown_zero_filter(
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         clock=clock,
+        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
     )
     report = {
@@ -496,7 +498,7 @@ def test_persist_aisle_result_use_case_applies_unknown_zero_filter(
     assert evidence_repo.save.call_count == expected_saves
 
 
-def test_persist_aisle_result_raises_on_mapped_length_mismatch(monkeypatch) -> None:
+def test_persist_aisle_result_raises_on_mapped_length_mismatch() -> None:
     position_repo = MagicMock()
     product_repo = MagicMock()
     evidence_repo = MagicMock()
@@ -507,14 +509,6 @@ def test_persist_aisle_result_raises_on_mapped_length_mismatch(monkeypatch) -> N
     clock = MagicMock()
     now = datetime.now(timezone.utc)
     clock.now.return_value = now
-
-    use_case = PersistAisleResultUseCase(
-        position_repo=position_repo,
-        product_record_repo=product_repo,
-        evidence_repo=evidence_repo,
-        clock=clock,
-        aisle_repo=aisle_repo,
-    )
 
     mapped = map_hybrid_report_to_domain(
         aisle_id="aisle-1",
@@ -536,10 +530,17 @@ def test_persist_aisle_result_raises_on_mapped_length_mismatch(monkeypatch) -> N
     )
     mapped.evidences = []
 
-    def _fake_mapper(**_kwargs):
+    def _fake_mapper(**_kwargs: object) -> MappedAisleResult:
         return mapped
 
-    monkeypatch.setattr(persist_aisle_result_module, "map_hybrid_report_to_domain", _fake_mapper)
+    use_case = PersistAisleResultUseCase(
+        position_repo=position_repo,
+        product_record_repo=product_repo,
+        evidence_repo=evidence_repo,
+        clock=clock,
+        hybrid_mapper=_fake_mapper,
+        aisle_repo=aisle_repo,
+    )
 
     with pytest.raises(
         ValueError,

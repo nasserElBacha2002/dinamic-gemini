@@ -44,6 +44,9 @@ from src.application.use_cases.recompute_consolidated_counts import (
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job, JobStatus
+from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
+    default_map_hybrid_report_to_domain,
+)
 from src.infrastructure.pipeline.v3_execution_artifacts_service import V3ExecutionArtifactsService
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
@@ -203,6 +206,7 @@ class V3JobExecutor:
             product_record_repo=product_record_repo,
             evidence_repo=evidence_repo,
             clock=clock,
+            hybrid_mapper=default_map_hybrid_report_to_domain,
             aisle_repo=aisle_repo,
             raw_label_repo=raw_label_repo,
             recompute_consolidated_uc=recompute_consolidated_uc,

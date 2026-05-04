@@ -19,6 +19,9 @@ from src.decision.count_status import assign_count_status
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
+from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
+    default_map_hybrid_report_to_domain,
+)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
@@ -90,6 +93,7 @@ def test_openai_normalize_persist_list_detail_job_metadata_and_slice_isolation()
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         clock=clock,
+        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
     )
 
@@ -279,6 +283,7 @@ def test_openai_pallet_unknown_sku_quantity_alias_hybrid_persist_list_explicit_j
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         clock=clock,
+        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
     )
     persist.execute(
