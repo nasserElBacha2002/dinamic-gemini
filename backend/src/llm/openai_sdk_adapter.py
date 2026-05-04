@@ -385,11 +385,7 @@ def _openai_parse_validate_global_analysis_json(
 
     total = data.get("total_entities_detected")
     entities = data.get("entities") or []
-    if (
-        isinstance(entities, list)
-        and isinstance(total, (int, float))
-        and total != len(entities)
-    ):
+    if isinstance(entities, list) and isinstance(total, (int, float)) and total != len(entities):
         logger.warning(
             "%s count mismatch: total_entities_detected=%s vs len(entities)=%d; normalizing",
             v.log_label,

@@ -66,9 +66,7 @@ class V3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             raise FileNotFoundError(f"local artifact not found: {key!r}")
         return int(full.stat().st_size)
 
-    def download_to_path(
-        self, key: str, target_path: Path, *, bucket: str | None = None
-    ) -> None:
+    def download_to_path(self, key: str, target_path: Path, *, bucket: str | None = None) -> None:
         src = self._resolve_safe(key)
         target_path.parent.mkdir(parents=True, exist_ok=True)
         if src != target_path:

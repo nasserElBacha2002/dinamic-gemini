@@ -74,10 +74,13 @@ def _select_best_rois(
     with_path = [o for o in observations if o.roi_path]
     if not with_path:
         return []
+
     def blur(o):
         return o.blur_score if o.blur_score is not None else 0.0
+
     def area(o):
         return _bbox_area(o.bbox)
+
     with_path.sort(key=lambda o: (-blur(o), -area(o), o.frame_idx))
     return with_path[:k]
 

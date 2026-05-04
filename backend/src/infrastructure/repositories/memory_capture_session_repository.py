@@ -55,9 +55,7 @@ class MemoryCaptureSessionRepository(CaptureSessionRepository):
     def get_by_id(self, session_id: str) -> CaptureSession | None:
         return self._store.get(session_id)
 
-    def get_by_id_for_inventory(
-        self, session_id: str, inventory_id: str
-    ) -> CaptureSession | None:
+    def get_by_id_for_inventory(self, session_id: str, inventory_id: str) -> CaptureSession | None:
         s = self._store.get(session_id)
         if s is None or s.inventory_id != inventory_id:
             return None

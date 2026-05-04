@@ -5,7 +5,6 @@ Asocia detecciones entre frames para obtener track_id estable.
 Implementación mínima con asociación por IoU; se puede sustituir por ByteTrack/SORT.
 """
 
-
 from src.models.schemas import BBox
 
 # Salida: (bbox, track_id)

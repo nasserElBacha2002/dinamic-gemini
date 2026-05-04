@@ -68,7 +68,11 @@ class GeminiGlobalAnalyzer:
         if not frames:
             raise ValueError("frames no puede estar vacía")
         run_logger = kwargs.get("logger")
-        if run_logger is not None and hasattr(run_logger, "info") and hasattr(run_logger, "warning"):
+        if (
+            run_logger is not None
+            and hasattr(run_logger, "info")
+            and hasattr(run_logger, "warning")
+        ):
             log = run_logger  # tests may pass MagicMock; production passes logging.Logger
         else:
             log = logger

@@ -158,9 +158,7 @@ def create_inventory(
 @router.get("/", response_model=PaginatedInventoryListResponse)
 def list_inventories(
     use_case: ListInventoryListItemsUseCase = Depends(get_list_inventory_list_items_use_case),
-    search: str | None = Query(
-        None, description="Case-insensitive substring on inventory name."
-    ),
+    search: str | None = Query(None, description="Case-insensitive substring on inventory name."),
     status: str | None = Query(
         None, description="Exact inventory status (wire value, e.g. draft)."
     ),

@@ -256,19 +256,9 @@ def classify_anthropic_messages_api_error(exc: BaseException) -> tuple[str, dict
         code = "PROVIDER_OVERLOADED"
     elif "overloaded_error" in msg_l or "error code: 529" in msg_l:
         code = "PROVIDER_OVERLOADED"
-    elif (
-        status_code == 429
-        or "429" in msg
-        or "rate_limit" in msg_l
-        or "rate limit" in msg_l
-    ):
+    elif status_code == 429 or "429" in msg or "rate_limit" in msg_l or "rate limit" in msg_l:
         code = "RATE_LIMIT"
-    elif (
-        status_code == 401
-        or "401" in msg
-        or "authentication" in msg_l
-        or "api_key" in msg_l
-    ):
+    elif status_code == 401 or "401" in msg or "authentication" in msg_l or "api_key" in msg_l:
         code = "NOT_CONFIGURED"
     elif "timeout" in msg_l or "timed out" in msg_l:
         code = "TIMEOUT"

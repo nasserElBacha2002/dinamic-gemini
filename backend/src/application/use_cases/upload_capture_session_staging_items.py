@@ -239,7 +239,9 @@ class UploadCaptureSessionStagingItemsUseCase:
         if len(raw) > self._max_upload_bytes:
             return None, self._error_too_large(fname, file_index)
         digest = hashlib.sha256(raw).hexdigest()
-        if digest in batch_digests or self._item_repo.has_item_with_content_hash(session_id, digest):
+        if digest in batch_digests or self._item_repo.has_item_with_content_hash(
+            session_id, digest
+        ):
             return None, self._error_duplicate_content(fname, file_index)
         return raw, None
 

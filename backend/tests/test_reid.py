@@ -284,8 +284,10 @@ def test_verify_with_clip_confirms_when_similarity_high():
             end_centroid=None,
         ),
     }
+
     def embedder(path):
         return [1.0, 0.0, 0.0]
+
     out = verify_with_clip([("a", "b")], sigs, min_sim=0.9, embedder=embedder)
     assert out == [("a", "b")]
 
@@ -296,8 +298,10 @@ def test_verify_with_clip_confirms_with_dict_signatures():
         "x": {"roi_paths": ["/img/x.jpg"], "roi_phashes": []},
         "y": {"roi_paths": ["/img/y.jpg"], "roi_phashes": []},
     }
+
     def embedder(path):
         return [1.0, 0.0, 0.0]
+
     out = verify_with_clip([("x", "y")], sigs, min_sim=0.92, embedder=embedder)
     assert out == [("x", "y")]
 
@@ -361,8 +365,10 @@ def test_verify_with_clip_skips_when_missing_roi_paths():
             end_centroid=None,
         ),
     }
+
     def embedder(path):
         return [1.0, 0.0, 0.0]
+
     out = verify_with_clip([("a", "b")], sigs, min_sim=0.9, embedder=embedder)
     assert out == []
 
@@ -411,8 +417,10 @@ def test_verify_with_clip_maintains_order():
             end_centroid=None,
         ),
     }
+
     def embedder(path):
         return [1.0, 0.0, 0.0]
+
     candidates = [("A", "B"), ("C", "D")]
     out = verify_with_clip(candidates, sigs, min_sim=0.9, embedder=embedder)
     assert out == [("A", "B"), ("C", "D")]
@@ -589,6 +597,7 @@ def test_run_reid_pipeline_with_merge():
         track_a = PalletTrack(track_id="A", observations=obs_a, start_frame=0, end_frame=10)
         track_b = PalletTrack(track_id="B", observations=obs_b, start_frame=20, end_frame=30)
         settings = load_settings()
+
         def embedder(path):
             return [1.0, 0.0, 0.0]
 

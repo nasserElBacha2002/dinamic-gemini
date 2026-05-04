@@ -189,9 +189,7 @@ def _available_job_attempt_execution_lists(
     inp: _AvailableJobAttemptExecutionListsInputs,
 ) -> tuple[list[str], list[int], list[str], bool]:
     """Aggregates available ids for UI filters and whether any raw line had job context."""
-    payload_only_job_ids = [
-        extract_event_context(ev.get("payload"))[0] for ev in inp.raw_events
-    ]
+    payload_only_job_ids = [extract_event_context(ev.get("payload"))[0] for ev in inp.raw_events]
     any_event_has_job_id = any(j is not None for j in payload_only_job_ids)
 
     acc_ids = set(j for j in inp.job_ids_seen if j is not None)

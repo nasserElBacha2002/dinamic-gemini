@@ -131,9 +131,7 @@ class PalletObservation(BaseModel):
     timestamp_seconds: float = Field(..., ge=0, description="Timestamp en segundos.")
     bbox: tuple[int, int, int, int] = Field(..., description="Bounding box (x1, y1, x2, y2).")
     det_conf: float = Field(..., ge=0, le=1, description="Confianza de la detección.")
-    blur_score: float | None = Field(
-        default=None, description="Nitidez del ROI (Laplacian var)."
-    )
+    blur_score: float | None = Field(default=None, description="Nitidez del ROI (Laplacian var).")
     roi_path: str | None = Field(default=None, description="Ruta al ROI guardado.")
     track_id: str = Field(..., description="ID estable del track.")
 
@@ -299,9 +297,7 @@ class LLMFrameResult(BaseModel):
     raw_text: str | None = Field(
         default=None, description="Respuesta cruda del LLM (útil para debug)."
     )
-    model_name: str | None = Field(
-        default=None, description="Nombre del modelo de Gemini usado."
-    )
+    model_name: str | None = Field(default=None, description="Nombre del modelo de Gemini usado.")
 
 
 # ----------------------------

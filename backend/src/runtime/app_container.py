@@ -90,9 +90,7 @@ class AppContainer:
         self._analytics_repo: AnalyticsRepository | None = None
         self._capture_session_repo: CaptureSessionRepository | None = None
         self._capture_session_item_repo: CaptureSessionItemRepository | None = None
-        self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = (
-            None
-        )
+        self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = None
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
 
     @property

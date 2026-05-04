@@ -2,7 +2,6 @@
 Construcción de PalletTrack a partir de la salida del tracker (Sprint A).
 """
 
-
 from src.models.schemas import BBox, PalletObservation, PalletTrack
 from src.tracking.tracker import TrackedBBox
 

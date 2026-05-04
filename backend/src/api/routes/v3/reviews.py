@@ -101,7 +101,9 @@ def _dispatch_review_action(
         handle_update_sku(inventory_id, aisle_id, position_id, body, deps.update_sku_uc)
         return
     if action == ReviewActionType.UPDATE_POSITION_CODE:
-        handle_update_position_code(inventory_id, aisle_id, position_id, body, deps.update_pos_code_uc)
+        handle_update_position_code(
+            inventory_id, aisle_id, position_id, body, deps.update_pos_code_uc
+        )
         return
     if action == ReviewActionType.DELETE_POSITION:
         handle_delete_position(inventory_id, aisle_id, position_id, body.job_id, deps.delete_uc)

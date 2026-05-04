@@ -194,9 +194,7 @@ class _FakeArtifactStore:
             raise RuntimeError(f"missing key: {key}")
         return len(self._objects[key])
 
-    def download_to_path(
-        self, key: str, target_path: Path, *, bucket: str | None = None
-    ) -> None:
+    def download_to_path(self, key: str, target_path: Path, *, bucket: str | None = None) -> None:
         if key not in self._objects:
             raise RuntimeError(f"missing key: {key}")
         self.download_calls.append((bucket or "", key, str(target_path)))

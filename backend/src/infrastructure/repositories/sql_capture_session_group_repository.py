@@ -82,9 +82,7 @@ class SqlCaptureSessionGroupRepository(CaptureSessionGroupRepository):
             row = cur.fetchone()
         return int(getattr(row, "n", 0) or 0) if row is not None else 0
 
-    def get_by_id_and_session(
-        self, group_id: str, session_id: str
-    ) -> CaptureSessionGroup | None:
+    def get_by_id_and_session(self, group_id: str, session_id: str) -> CaptureSessionGroup | None:
         gid = (group_id or "").strip()
         sid = (session_id or "").strip()
         if not gid or not sid:

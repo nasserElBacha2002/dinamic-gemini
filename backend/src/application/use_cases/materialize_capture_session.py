@@ -169,7 +169,9 @@ class MaterializeCaptureSessionUseCase:
             )
         return eligible
 
-    def _run_materialize_commit(self, ctx: _MaterializeCommitContext) -> MaterializeCaptureSessionResult:
+    def _run_materialize_commit(
+        self, ctx: _MaterializeCommitContext
+    ) -> MaterializeCaptureSessionResult:
         session = ctx.session
         session_id = ctx.session_id
         idem = ctx.idem
