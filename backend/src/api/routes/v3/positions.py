@@ -53,7 +53,7 @@ class _ListAislePositionsQuery:
     include_technical: bool
 
 
-def _list_aisle_positions_query_dep(  # noqa: PLR0913
+def _list_aisle_positions_query_dep(
     status: str | None = Query(
         None, description="Filter by position status (e.g. detected, reviewed)."
     ),

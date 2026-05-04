@@ -10,8 +10,8 @@ from src.api.errors.error_mapping import (
 from src.api.errors.structured_api_http import StructuredApiHttpError
 
 __all__ = [
+    "StructuredApiHttpError",
     "mapped_http_exception",
     "reraise_if_mapped",
     "review_exception_to_http",
-    "StructuredApiHttpError",
 ]
