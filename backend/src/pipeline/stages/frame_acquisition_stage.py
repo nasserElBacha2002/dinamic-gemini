@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -28,14 +29,14 @@ class AcquiredFrames:
 
     frames_nd: list[np.ndarray]
     frame_paths: list[Path]
-    metadata: dict
+    metadata: dict[str, Any]
     frame_refs: list[str]
 
 
 class FrameAcquisitionStage:
     """Stage: select FrameSource, acquire frames, load into RAM, validate availability."""
 
-    def _read_image(self, path: Path):  # type: ignore[no-untyped-def]
+    def _read_image(self, path: Path) -> np.ndarray | None:
         """Isolated native image-read boundary for future timeout/process guarding."""
         return cv2.imread(str(path))
 
