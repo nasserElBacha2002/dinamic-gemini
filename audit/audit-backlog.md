@@ -88,6 +88,20 @@ Cada fila = un disparo Bandit B608. Clasificación: **FP-P** = FALSO_POSITIVO_PA
 
 **DoD B3.1:** B324 corregido; tabla anterior completa; tests/revalidación manual recomendada en el Python del proyecto.
 
+### B3.2 — Reducción mínima B608 (2026-05-04)
+
+**Objetivo:** Quitar B608 en los casos más seguros (`sql_job_repository` stale reclaim, migraciones) y documentar el resto sin refactor masivo ni `nosec` masivo en analytics.
+
+| Archivo | Cambio | Estado | Observación |
+|--------|--------|--------|-------------|
+| `backend/src/infrastructure/repositories/sql_job_repository.py` | `reclaim_stale_running_jobs`: `WHERE status IN (?, ?, ?)` + valores por parámetro (`STALE_RECONCILE_STATUSES`); sin literales de enum en el SQL | **Cerrado** | **1× B608 eliminado** en esta ruta; en el mismo archivo quedan **5× B608** (`_JOB_SELECT_FIELDS`, `TOP ({n})`, CTE `IN ({placeholders})`) — clasificación **FP-P / DC**; siguiente ola **B3.3** |
+| `backend/src/database/migrations/service.py` | SQL con tabla literal `schema_migrations`; eliminado `_MIGRATION_TABLE` y f-strings en DDL/DML del servicio | **Cerrado** | **4× B608 eliminados** · `bandit -r …/service.py` sin hallazgos |
+| `backend/src/infrastructure/repositories/sql_analytics_repository.py` | Sin cambio de código (solo revisión muestral) | **Revisado** | **12× B608** Bandit sin tocar: `where_pos` / `where_ra` / `where_j` / `job_proc_where` / filtros diarios — condiciones armadas con fragmentos internos y valores vía `?`; `_append_*_time_filters` usa `col` con default de columna fija (**DINÁMICO_CONTROLADO**). **FALSO_POSITIVO_PARAMETRIZADO** para el cuerpo `f"""` con expresiones CASE/JSON fijas. Sin `nosec` masivo — **B3.3** si se decide endurecer o extraer SQL estático |
+
+**Validación local:** `bandit -r` sobre las tres rutas → **17 MEDIUM** (0 HIGH): solo `sql_job_repository` + `sql_analytics_repository` (`migrations/service.py` limpio). **Pytest:** `tests/infrastructure/repositories/test_sql_job_repository.py`, `test_sql_job_scope_predicates.py`, `tests/database/test_migration_service.py` — OK (nota: `pytest tests/infrastructure tests/application` puede fallar en **collection** por errores previos no relacionados).
+
+**DoD B3.2:** job repo + migraciones ajustados; analytics revisado muestralmente; backlog actualizado; sin CI/hooks; sin cambio de semántica de negocio.
+
 ---
 
 ## Críticos

@@ -352,10 +352,11 @@ class SqlJobRepository(JobRepository):
         """Fail stale active jobs using the shared stale-reconciliation contract."""
         if stale_after_seconds <= 0:
             return 0
-        stale_statuses = ", ".join(f"'{status.value}'" for status in STALE_RECONCILE_STATUSES)
+        # IN (?,?,?) must stay aligned with STALE_RECONCILE_STATUSES (three terminal states).
+        status_values = tuple(s.value for s in STALE_RECONCILE_STATUSES)
         with self._client.cursor() as cur:
             cur.execute(
-                f"""
+                """
                 UPDATE inventory_jobs
                 SET status = 'failed',
                     updated_at = ?,
@@ -363,7 +364,7 @@ class SqlJobRepository(JobRepository):
                     failure_code = ?,
                     failure_message = ?,
                     error_message = ?
-                WHERE status IN ({stale_statuses})
+                WHERE status IN (?, ?, ?)
                   AND DATEDIFF(SECOND, COALESCE(last_heartbeat_at, updated_at), ?) >= ?
                 """,
                 (
@@ -372,6 +373,7 @@ class SqlJobRepository(JobRepository):
                     STALE_FAILURE_CODE,
                     STALE_FAILURE_MESSAGE,
                     STALE_FAILURE_MESSAGE,
+                    *status_values,
                     datetime.now(timezone.utc),
                     stale_after_seconds,
                 ),
