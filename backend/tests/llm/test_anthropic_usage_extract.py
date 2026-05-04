@@ -36,6 +36,14 @@ def test_anthropic_message_usage_dict_empty_when_no_usage() -> None:
     assert _anthropic_message_usage_dict(message) == {}
 
 
+def test_anthropic_message_usage_top_level_model_dump_non_dict_returns_empty() -> None:
+    """B2.5: top-level model_dump must return a dict or usage map is empty."""
+    usage = MagicMock()
+    usage.model_dump = MagicMock(return_value=[])
+    message = SimpleNamespace(usage=usage)
+    assert _anthropic_message_usage_dict(message) == {}
+
+
 def test_anthropic_message_usage_nested_model_dump_non_dict_omitted() -> None:
     """B2.5: non-dict nested dump omits the key; scalar tokens still recorded."""
     nested = MagicMock()

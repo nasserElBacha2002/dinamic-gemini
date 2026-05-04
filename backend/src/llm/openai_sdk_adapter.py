@@ -170,7 +170,7 @@ def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
 
     Top-level ``usage.model_dump()`` must return a ``dict`` or the result is empty. For nested
     fields (e.g. token details), only ``dict`` results from ``model_dump`` are stored; non-dict
-    dumps are omitted so snapshots stay JSON-serializable (no raw SDK objects).
+    dumps are omitted so usage snapshots remain JSON-serializable (no raw SDK objects).
     """
     u = getattr(completion, "usage", None)
     if u is None:

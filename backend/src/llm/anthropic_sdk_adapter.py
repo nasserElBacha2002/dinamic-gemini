@@ -381,8 +381,9 @@ def _image_to_jpeg_bytes(obj: Any, max_side: int) -> bytes:
 def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
     """Serialize Anthropic message usage as a plain ``dict`` for ``normalize_usage``.
 
-    Top-level ``usage.model_dump()`` must return a ``dict`` or the result is empty. Nested
-    ``model_dump`` values are stored only when ``dict``; otherwise the nested key is omitted.
+    Top-level ``usage.model_dump()`` must return a ``dict`` or the result is empty. For nested
+    fields, only ``dict`` results from ``model_dump`` are stored; non-dict dumps are omitted so
+    usage snapshots remain JSON-serializable (no raw SDK objects).
     """
     u = getattr(message, "usage", None)
     if u is None:

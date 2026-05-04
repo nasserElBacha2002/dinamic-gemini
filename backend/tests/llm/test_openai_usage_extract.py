@@ -38,6 +38,14 @@ def test_openai_completion_usage_dict_empty_when_no_usage() -> None:
     assert _openai_completion_usage_dict(completion) == {}
 
 
+def test_openai_completion_usage_top_level_model_dump_non_dict_returns_empty() -> None:
+    """B2.5: top-level model_dump must return a dict or usage map is empty."""
+    usage = MagicMock()
+    usage.model_dump = MagicMock(return_value=[])
+    completion = SimpleNamespace(usage=usage)
+    assert _openai_completion_usage_dict(completion) == {}
+
+
 def test_openai_completion_usage_nested_model_dump_non_dict_omitted() -> None:
     """B2.5: if nested model_dump is not a dict, omit that key (avoid non-JSON usage blobs)."""
     nested = MagicMock()
