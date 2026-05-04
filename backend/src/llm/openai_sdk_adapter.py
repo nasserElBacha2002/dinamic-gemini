@@ -166,10 +166,11 @@ def _image_to_data_url(obj: Any, max_side: int) -> str:
 
 
 def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
-    """Best-effort ``CompletionUsage`` extraction for ``normalize_usage`` (nested details included).
+    """Extract OpenAI completion usage as a plain ``dict`` for ``normalize_usage``.
 
-    B2.5: only trust ``model_dump`` results that are ``dict``; otherwise keep the raw nested object
-    so we never put lists/scalars into the usage map by mistake.
+    Top-level ``usage.model_dump()`` must return a ``dict`` or the result is empty. For nested
+    fields (e.g. token details), only ``dict`` results from ``model_dump`` are stored; non-dict
+    dumps are omitted so snapshots stay JSON-serializable (no raw SDK objects).
     """
     u = getattr(completion, "usage", None)
     if u is None:
@@ -192,7 +193,8 @@ def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
         nested_dump = getattr(val, "model_dump", None)
         if callable(nested_dump):
             nd = nested_dump(exclude_none=True)
-            out[key] = nd if isinstance(nd, dict) else val
+            if isinstance(nd, dict):
+                out[key] = nd
         else:
             out[key] = val
     return out

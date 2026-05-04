@@ -379,9 +379,10 @@ def _image_to_jpeg_bytes(obj: Any, max_side: int) -> bytes:
 
 
 def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
-    """Serialize Anthropic ``Usage`` (cache read/create, server tools) for costing normalization.
+    """Serialize Anthropic message usage as a plain ``dict`` for ``normalize_usage``.
 
-    B2.5: nested ``model_dump`` must return a ``dict`` to be stored; otherwise the raw value is kept.
+    Top-level ``usage.model_dump()`` must return a ``dict`` or the result is empty. Nested
+    ``model_dump`` values are stored only when ``dict``; otherwise the nested key is omitted.
     """
     u = getattr(message, "usage", None)
     if u is None:
@@ -406,7 +407,8 @@ def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
         nested_dump = getattr(val, "model_dump", None)
         if callable(nested_dump):
             nd = nested_dump(exclude_none=True)
-            out[key] = nd if isinstance(nd, dict) else val
+            if isinstance(nd, dict):
+                out[key] = nd
         else:
             out[key] = val
     return out

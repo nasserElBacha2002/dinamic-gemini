@@ -38,8 +38,8 @@ def test_openai_completion_usage_dict_empty_when_no_usage() -> None:
     assert _openai_completion_usage_dict(completion) == {}
 
 
-def test_openai_completion_usage_nested_model_dump_non_dict_falls_back() -> None:
-    """B2.5: nested SDK objects may return non-dict from model_dump; keep raw object for costing."""
+def test_openai_completion_usage_nested_model_dump_non_dict_omitted() -> None:
+    """B2.5: if nested model_dump is not a dict, omit that key (avoid non-JSON usage blobs)."""
     nested = MagicMock()
     nested.model_dump = MagicMock(return_value=[])
     u = SimpleNamespace(
@@ -53,4 +53,4 @@ def test_openai_completion_usage_nested_model_dump_non_dict_falls_back() -> None
     completion = SimpleNamespace(usage=u)
     d = _openai_completion_usage_dict(completion)
     assert d["prompt_tokens"] == 10
-    assert d["prompt_tokens_details"] is nested
+    assert "prompt_tokens_details" not in d

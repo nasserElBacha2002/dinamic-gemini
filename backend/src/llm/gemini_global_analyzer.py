@@ -2,6 +2,8 @@
 Análisis global de video con una sola llamada a Gemini (hybrid v2.1, Structured Output).
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
