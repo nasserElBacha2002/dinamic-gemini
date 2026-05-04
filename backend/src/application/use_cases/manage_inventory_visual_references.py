@@ -26,10 +26,8 @@ from src.application.use_cases.upload_inventory_visual_references import (
     UploadedVisualReferenceFile,
     _normalize_mime,
 )
+from src.application.utils.inventory_visual_reference_paths import visual_reference_storage_path
 from src.domain.inventory.visual_reference import InventoryVisualReference
-from src.infrastructure.storage.inventory_visual_reference_paths import (
-    visual_reference_storage_path,
-)
 
 logger = logging.getLogger(__name__)
 

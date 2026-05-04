@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-05-04T13:29:05Z",
+  "generated_at": "2026-05-04T20:13:09Z",
   "metrics": {
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/__init__.py": {
       "CONFIDENCE.HIGH": 0,
@@ -180,7 +180,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 826,
+      "loc": 814,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -206,7 +206,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 330,
+      "loc": 311,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -219,7 +219,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 600,
+      "loc": 568,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -232,7 +232,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 380,
+      "loc": 368,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -245,7 +245,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 200,
+      "loc": 255,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -258,7 +258,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 104,
+      "loc": 143,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -271,7 +271,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 77,
+      "loc": 109,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -297,7 +297,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 728,
+      "loc": 687,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -531,7 +531,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 245,
+      "loc": 250,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -548,6 +548,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/services/multipart_aisle_uploads.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 27,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/services/v3_stored_artifact_access.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -557,7 +570,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 718,
+      "loc": 465,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -587,6 +600,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/constants/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 0,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/constants/review_quality.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -600,6 +626,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/dto/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 0,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/dto/analytics_dto.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -610,6 +649,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 115,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/dto/mapped_aisle_result.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 14,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -636,6 +688,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 121,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/mappers/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 0,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -700,7 +765,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 111,
+      "loc": 107,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -743,6 +808,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/hybrid_report_to_domain_mapper.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 18,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/repositories.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -782,6 +860,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/stored_artifact_reader.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 7,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/__init__.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -804,7 +895,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 260,
+      "loc": 282,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_aggregated_execution_log.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 54,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -856,7 +960,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 51,
+      "loc": 50,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -873,6 +977,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_table_query_params.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 20,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/analytics_aggregation_core.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -882,7 +999,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 426,
+      "loc": 428,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -951,6 +1068,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/capture_session_status_filter.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 22,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/capture_staging_time_metadata.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -999,7 +1129,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 280,
+      "loc": 350,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1013,6 +1143,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 72,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_primary_execution_config.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 26,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1038,7 +1181,33 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 44,
+      "loc": 43,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_table_query_params.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 20,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_visual_reference_lookup.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 13,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1129,7 +1298,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 81,
+      "loc": 93,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1198,6 +1367,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/reference_usage_from_job_result.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 63,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/result_context_resolver.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1207,7 +1389,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 51,
+      "loc": 49,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/source_asset_heic.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 28,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1389,7 +1584,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 374,
+      "loc": 452,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1714,7 +1909,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 207,
+      "loc": 224,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1727,7 +1922,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 153,
+      "loc": 151,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1766,7 +1961,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 285,
+      "loc": 336,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1792,7 +1987,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 184,
+      "loc": 213,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1961,7 +2156,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 300,
+      "loc": 403,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1974,7 +2169,33 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 206,
+      "loc": 204,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/utils/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 0,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/utils/inventory_visual_reference_paths.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 31,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3122,6 +3343,32 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/artifacts/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 1,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/artifacts/stored_artifact_reader.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 313,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/__init__.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -3131,7 +3378,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 9,
+      "loc": 7,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/hybrid_report_to_domain_adapter.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 25,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3183,7 +3443,7 @@
       "SEVERITY.LOW": 2,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 509,
+      "loc": 679,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3209,7 +3469,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 350,
+      "loc": 369,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3223,6 +3483,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 143,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/queue/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 0,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3339,7 +3612,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 92,
+      "loc": 90,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3534,7 +3807,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 197,
+      "loc": 195,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3560,7 +3833,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 200,
+      "loc": 198,
       "nosec": 0,
       "skipped_tests": 3
     },
@@ -3746,6 +4019,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 0,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/artifact_store.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -3755,20 +4041,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 70,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/inventory_visual_reference_paths.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 31,
+      "loc": 68,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3781,7 +4054,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 219,
+      "loc": 217,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3807,7 +4080,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 80,
+      "loc": 78,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4132,7 +4405,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 534,
+      "loc": 584,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4145,7 +4418,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 518,
+      "loc": 589,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4197,7 +4470,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 116,
+      "loc": 120,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4236,7 +4509,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 277,
+      "loc": 278,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4249,7 +4522,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 51,
+      "loc": 52,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4262,7 +4535,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 385,
+      "loc": 425,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4353,7 +4626,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 246,
+      "loc": 297,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4470,7 +4743,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 255,
+      "loc": 251,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4678,7 +4951,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 336,
+      "loc": 490,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4769,7 +5042,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 67,
+      "loc": 79,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4860,7 +5133,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 96,
+      "loc": 92,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4925,7 +5198,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 110,
+      "loc": 127,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4964,7 +5237,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 227,
+      "loc": 228,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -5276,7 +5549,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 542,
+      "loc": 552,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -5289,7 +5562,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 75,
+      "loc": 79,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -5523,7 +5796,7 @@
       "SEVERITY.LOW": 17,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 45048,
+      "loc": 46416,
       "nosec": 0,
       "skipped_tests": 32
     }
@@ -5746,7 +6019,7 @@
       "test_name": "assert_used"
     },
     {
-      "code": "272 \n273         assert analysis_context is not None\n274 \n",
+      "code": "367 \n368         assert analysis_context is not None\n369         return analysis_context, job_input, video_path\n",
       "col_offset": 8,
       "end_col_offset": 43,
       "filename": "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/v3_job_executor.py",
@@ -5757,16 +6030,16 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.",
-      "line_number": 273,
+      "line_number": 368,
       "line_range": [
-        273
+        368
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html",
       "test_id": "B101",
       "test_name": "assert_used"
     },
     {
-      "code": "543                     exec_log.error(\"Pipeline\", f\"Job failed: {e}\", payload={\"error\": str(e)[:500]})\n544                 except Exception:\n545                     pass\n546             self._state.fail_job_and_aisle(job_id, aisle, str(e))\n",
+      "code": "733                     err_log.error(\"Pipeline\", f\"Job failed: {e}\", payload={\"error\": str(e)[:500]})\n734                 except Exception:\n735                     pass\n736             self._state.fail_job_and_aisle(job_id, aisle, str(e))\n",
       "col_offset": 16,
       "end_col_offset": 24,
       "filename": "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/v3_job_executor.py",
@@ -5777,10 +6050,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 544,
+      "line_number": 734,
       "line_range": [
-        544,
-        545
+        734,
+        735
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -5834,9 +6107,9 @@
       "test_name": "subprocess_without_shell_equals_true"
     },
     {
-      "code": "553                     )\n554                 delay = base_delay * (2**attempt) + random.uniform(0.0, _RETRY_JITTER_SEC)\n555                 logger.info(\n",
-      "col_offset": 52,
-      "end_col_offset": 90,
+      "code": "400                 )\n401             delay = params.base_delay * (2**attempt) + random.uniform(0.0, _RETRY_JITTER_SEC)\n402             logger.info(\n",
+      "col_offset": 55,
+      "end_col_offset": 93,
       "filename": "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/anthropic_sdk_adapter.py",
       "issue_confidence": "HIGH",
       "issue_cwe": {
@@ -5845,16 +6118,16 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Standard pseudo-random generators are not suitable for security/cryptographic purposes.",
-      "line_number": 554,
+      "line_number": 401,
       "line_range": [
-        554
+        401
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random",
       "test_id": "B311",
       "test_name": "blacklist"
     },
     {
-      "code": "492 \n493         assert isinstance(price, Decimal)\n494         if dim.mode == \"per_million\":\n",
+      "code": "410 \n411         assert isinstance(price, Decimal)\n412         if dim.mode == \"per_million\":\n",
       "col_offset": 8,
       "end_col_offset": 41,
       "filename": "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/costing.py",
@@ -5865,9 +6138,9 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.",
-      "line_number": 493,
+      "line_number": 411,
       "line_range": [
-        493
+        411
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html",
       "test_id": "B101",

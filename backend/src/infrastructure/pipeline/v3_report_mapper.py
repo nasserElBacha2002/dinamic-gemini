@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from src.application.dto.mapped_aisle_result import MappedAisleResult
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.labels.entities import RawLabel
 from src.domain.positions.entities import Position, PositionStatus
@@ -38,16 +39,6 @@ EVIDENCE_PATH_NO_ARTIFACT = "no_artifact"
 _ACCEPTED_COUNT_STATUSES = frozenset({"COU2NTED", "COUNTED_MANUAL"})
 # Normalized bbox lists from the hybrid report (x1,y1,x2,y2).
 _BBOX_COORD_COUNT = 4
-
-
-@dataclass
-class MappedAisleResult:
-    """Result of mapping a hybrid report to v3 domain for one aisle. v3.2.3: includes raw_labels."""
-
-    positions: list[Position]
-    product_records: list[ProductRecord]
-    evidences: list[Evidence]
-    raw_labels: list[RawLabel]
 
 
 def _needs_review_from_entity(entity: dict[str, Any]) -> bool:

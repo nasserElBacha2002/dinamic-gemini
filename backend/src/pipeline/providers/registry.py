@@ -30,6 +30,7 @@ constructed without injection. The LLM vendor is chosen at execute time via the 
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Final
 
 from src.pipeline.ports.analysis_provider import AnalysisProvider
@@ -42,6 +43,40 @@ class UnknownPipelineProviderError(LookupError):
 
 
 _KNOWN_KEYS: Final[frozenset[str]] = registered_pipeline_provider_keys_from_definitions()
+
+
+def _build_gemini_executor() -> LlmGlobalAnalysisExecutor:
+    from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
+
+    return GeminiSdkAdapter()
+
+
+def _build_openai_executor() -> LlmGlobalAnalysisExecutor:
+    from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
+
+    return OpenAiSdkAdapter()
+
+
+def _build_claude_executor() -> LlmGlobalAnalysisExecutor:
+    from src.llm.anthropic_sdk_adapter import AnthropicSdkAdapter
+
+    return AnthropicSdkAdapter()
+
+
+def _build_deepseek_executor() -> LlmGlobalAnalysisExecutor:
+    from src.llm.deepseek_sdk_adapter import DeepSeekSdkAdapter
+
+    return DeepSeekSdkAdapter()
+
+
+_EXECUTOR_BUILDERS: Final[
+    dict[str, Callable[[], LlmGlobalAnalysisExecutor]]
+] = {
+    "gemini": _build_gemini_executor,
+    "openai": _build_openai_executor,
+    "claude": _build_claude_executor,
+    "deepseek": _build_deepseek_executor,
+}
 
 
 def registered_pipeline_provider_keys() -> frozenset[str]:
@@ -60,25 +95,12 @@ def resolve_llm_executor(provider_key: str, settings: Any) -> LlmGlobalAnalysisE
     """
     _ = settings
     key = (provider_key or "").strip().lower()
-    if key == "gemini":
-        from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
-
-        return GeminiSdkAdapter()
-    if key == "openai":
-        from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
-
-        return OpenAiSdkAdapter()
-    if key == "claude":
-        from src.llm.anthropic_sdk_adapter import AnthropicSdkAdapter
-
-        return AnthropicSdkAdapter()
-    if key == "deepseek":
-        from src.llm.deepseek_sdk_adapter import DeepSeekSdkAdapter
-
-        return DeepSeekSdkAdapter()
-    raise UnknownPipelineProviderError(
-        f"Unknown pipeline provider {provider_key!r}. Known: {sorted(_KNOWN_KEYS)}"
-    )
+    builder = _EXECUTOR_BUILDERS.get(key)
+    if builder is None:
+        raise UnknownPipelineProviderError(
+            f"Unknown pipeline provider {provider_key!r}. Known: {sorted(_KNOWN_KEYS)}"
+        )
+    return builder()
 
 
 def default_analysis_provider() -> AnalysisProvider:

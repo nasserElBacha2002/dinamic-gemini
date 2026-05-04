@@ -7,9 +7,9 @@ labels. Adding a provider should start here, then wire ``resolve_llm_executor`` 
 This is **not** a plugin framework — only declarative metadata to reduce drift between registry,
 ``processing_experiment_catalog``, ``processing_provider_resolution``, and API option text.
 
-**Checklist when adding a provider:** (1) append a ``PipelineProviderSpec`` here; (2) add a branch in
-``resolve_llm_executor`` in ``registry.py``; (3) run tests that assert definition keys match the
-registry — ``registered_pipeline_provider_keys()`` is derived from this module.
+**Checklist when adding a provider:** (1) append a ``PipelineProviderSpec`` here; (2) register an
+adapter factory in ``_EXECUTOR_BUILDERS`` in ``registry.py``; (3) run tests that assert definition
+keys match the registry — ``registered_pipeline_provider_keys()`` is derived from this module.
 """
 
 from __future__ import annotations

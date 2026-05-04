@@ -19,6 +19,9 @@ from src.domain.labels.entities import RawLabel
 from src.domain.labels.merge import MergeRuleEngine
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
+from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
+    default_map_hybrid_report_to_domain,
+)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
@@ -91,6 +94,7 @@ def test_explicit_qty_preserved_after_persist_flow() -> None:
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         clock=_FixedClock(now),
+        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
         raw_label_repo=raw_repo,
         recompute_consolidated_uc=recompute,
