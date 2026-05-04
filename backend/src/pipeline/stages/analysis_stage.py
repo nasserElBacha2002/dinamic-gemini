@@ -27,6 +27,81 @@ _OPENAI_CANONICAL_ENTITY_KEYS: tuple[str, ...] = (
 )
 
 
+def _log_analysis_analyze_failure(context: RunContext, exc: LLMProviderError) -> None:
+    """Structured warning when ``analyze`` raises (same keys/previews as previous inline block)."""
+    log = getattr(context, "logger", None)
+    if log is None:
+        return
+    d = dict(exc.details) if exc.details else {}
+    log.warning(
+        "analysis_stage analyze_failed job_id=%s code=%s message=%s "
+        "provider_details_keys=%s text_preview=%r",
+        context.job_id,
+        exc.code,
+        (exc.message or str(exc))[:400],
+        sorted(d.keys()),
+        (d.get("text_preview") or d.get("parse_failure") or "")[:240],
+    )
+
+
+def _count_product_label_quantity_set(entities: list[Any]) -> int:
+    return sum(
+        1
+        for ent in entities
+        if isinstance(ent, dict) and ent.get("product_label_quantity") is not None
+    )
+
+
+def _openai_canonical_key_presence_counts(entities: list[Any]) -> dict[str, int]:
+    """Per-key counts of non-empty canonical entity fields (OpenAI debug diagnostics)."""
+    presence: dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
+    for ent in entities:
+        if not isinstance(ent, dict):
+            continue
+        for key in _OPENAI_CANONICAL_ENTITY_KEYS:
+            val = ent.get(key)
+            if val is None:
+                continue
+            if isinstance(val, str) and not val.strip():
+                continue
+            presence[key] += 1
+    return presence
+
+
+def _log_analysis_post_normalize(
+    context: RunContext, provider_name: str, parsed: dict[str, Any]
+) -> None:
+    """Info log + optional DEBUG diagnostics for normalized entities (unchanged behavior)."""
+    log = getattr(context, "logger", None)
+    if log is None:
+        return
+    ents = parsed.get("entities")
+    n_ent = len(ents) if isinstance(ents, list) else 0
+    log.info(
+        "analysis_stage ok job_id=%s provider=%s normalized_entities=%d",
+        context.job_id,
+        provider_name,
+        n_ent,
+    )
+    if not log.isEnabledFor(logging.DEBUG) or not isinstance(ents, list):
+        return
+    with_plq = _count_product_label_quantity_set(ents)
+    log.debug(
+        "analysis_stage post_normalize: provider=%s entities=%d product_label_quantity_set=%d",
+        provider_name,
+        len(ents),
+        with_plq,
+    )
+    provider_norm = (provider_name or "").strip().lower()
+    if provider_norm == "openai":
+        after_presence = _openai_canonical_key_presence_counts(ents)
+        log.debug(
+            "analysis_stage openai_canonical_key_presence_after_normalize entities=%d presence=%s",
+            len(ents),
+            after_presence,
+        )
+
+
 @dataclass
 class AnalysisStageResult:
     """Output of AnalysisStage: parsed analysis payload for entity resolution."""
@@ -62,61 +137,12 @@ class AnalysisStage:
                 data.metadata,
             )
         except LLMProviderError as e:
-            log = getattr(context, "logger", None)
-            if log is not None:
-                d = dict(e.details) if e.details else {}
-                log.warning(
-                    "analysis_stage analyze_failed job_id=%s code=%s message=%s "
-                    "provider_details_keys=%s text_preview=%r",
-                    context.job_id,
-                    e.code,
-                    (e.message or str(e))[:400],
-                    sorted(d.keys()),
-                    (d.get("text_preview") or d.get("parse_failure") or "")[:240],
-                )
+            _log_analysis_analyze_failure(context, e)
             raise
 
         parsed = normalize_llm_response(result.parsed_json, result.provider_name)
-        log = getattr(context, "logger", None)
-        if log is not None:
-            ents = parsed.get("entities")
-            n_ent = len(ents) if isinstance(ents, list) else 0
-            log.info(
-                "analysis_stage ok job_id=%s provider=%s normalized_entities=%d",
-                context.job_id,
-                result.provider_name,
-                n_ent,
-            )
-            if log.isEnabledFor(logging.DEBUG) and isinstance(ents, list):
-                with_plq = sum(
-                    1
-                    for ent in ents
-                    if isinstance(ent, dict) and ent.get("product_label_quantity") is not None
-                )
-                log.debug(
-                    "analysis_stage post_normalize: provider=%s entities=%d product_label_quantity_set=%d",
-                    result.provider_name,
-                    len(ents),
-                    with_plq,
-                )
-                provider_norm = (result.provider_name or "").strip().lower()
-                if provider_norm == "openai":
-                    after_presence: dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
-                    for ent in ents:
-                        if not isinstance(ent, dict):
-                            continue
-                        for key in _OPENAI_CANONICAL_ENTITY_KEYS:
-                            val = ent.get(key)
-                            if val is None:
-                                continue
-                            if isinstance(val, str) and not val.strip():
-                                continue
-                            after_presence[key] += 1
-                    log.debug(
-                        "analysis_stage openai_canonical_key_presence_after_normalize entities=%d presence=%s",
-                        len(ents),
-                        after_presence,
-                    )
+        _log_analysis_post_normalize(context, result.provider_name, parsed)
+
         return AnalysisStageResult(
             parsed_json=parsed,
             provider_name=result.provider_name,
