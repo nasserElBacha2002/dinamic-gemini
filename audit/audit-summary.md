@@ -1,6 +1,6 @@
 # Resumen automático de auditoría
 
-Fecha: 2026-05-04T13:30:23+00:00
+Fecha: 2026-05-04T20:14:21+00:00
 Estado general: ERROR
 Severidad máxima: critical
 
@@ -8,9 +8,9 @@ Severidad máxima: critical
 
 | Área | Estado | Severidad máxima | Observación |
 |---|---|---|---|
-| Backend | ERROR | high | Sin fallos críticos detectados |
+| Backend | ERROR | critical | Tests fallidos backend=3 |
 | Frontend | FINDINGS | critical | Tests fallidos frontend=86 |
-| Arquitectura backend | FINDINGS | high | Boundary FAIL=1 |
+| Arquitectura backend | FINDINGS | high | Sin FAIL de boundaries |
 | Arquitectura frontend | FINDINGS | high | Import signals=8 |
 
 ## Backend
@@ -21,7 +21,7 @@ Severidad máxima: critical
 | Mypy | FINDINGS | high | errors=8, files=8 | audit/raw/backend-mypy.txt |
 | Bandit | FINDINGS | low | total=17, high=0, medium=0, low=17 | audit/raw/backend-bandit.json |
 | pip-audit | OK | none | total=0 | audit/raw/backend-pip-audit.json |
-| Pytest | ERROR | medium | collected=1813 | audit/raw/backend-pytest.txt |
+| Pytest | FINDINGS | critical | collected=1842, failed=3, passed=1826, skipped=13 | audit/raw/backend-pytest.txt |
 
 ## Frontend
 
@@ -39,9 +39,9 @@ Severidad máxima: critical
 
 | Auditoría | Estado | Severidad | Métricas | Reporte |
 |---|---|---|---|---|
-| Code smells | FINDINGS | high | too_many_args=118, too_many_branches=25, too_many_returns=22, broad_exception=83, unused_import=8, signals=256 | audit/raw/backend-code-smells.txt |
-| Complejidad | FINDINGS | high | grade_c=122, grade_d=25, grade_e=9, grade_f=4 | audit/raw/backend-complexity.txt |
-| Límites de imports | FINDINGS | high | fail=1, review=2 | audit/raw/backend-import-boundaries.txt |
+| Code smells | FINDINGS | high | too_many_args=122, too_many_branches=13, too_many_returns=12, broad_exception=85, unused_import=8, signals=240 | audit/raw/backend-code-smells.txt |
+| Complejidad | FINDINGS | high | grade_c=124, grade_d=18, grade_e=3, grade_f=2 | audit/raw/backend-complexity.txt |
+| Límites de imports | FINDINGS | medium | fail=0, review=2 | audit/raw/backend-import-boundaries.txt |
 | SOLID/GRASP | FINDINGS | medium | signals=12 | audit/raw/backend-solid-grasp-audit.md |
 
 ## Arquitectura frontend
@@ -57,12 +57,13 @@ Severidad máxima: critical
 
 ## Hallazgos principales automáticos
 
+- Backend pytest reporta 3 tests fallidos.
 - Frontend vitest reporta 86 tests fallidos.
 - Bandit: total=17, high=0, medium=0.
 - npm audit frontend: moderate=7, high=0, critical=0.
 - Mypy backend detecta 8 errores en 8 archivos.
 - Complejidad frontend: files>300=19, files>1000=4.
-- Boundaries backend: fail=1, review=2.
+- Boundaries backend: fail=0, review=2.
 - Boundaries frontend: señales heurísticas=8.
 - Código muerto frontend: señales=470 (requiere validación manual).
 - Duplicación frontend no cuantificada formalmente (jscpd no disponible).

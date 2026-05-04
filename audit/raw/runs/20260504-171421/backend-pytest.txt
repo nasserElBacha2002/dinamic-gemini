@@ -3,7 +3,7 @@ platform darwin -- Python 3.13.12, pytest-9.0.2, pluggy-1.6.0
 rootdir: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend
 configfile: pyproject.toml
 plugins: anyio-4.12.1, cov-7.0.0
-collected 1813 items
+collected 1842 items
 
 ../../backend/tests/api/test_admin_ai_config_api.py .........            [  0%]
 ../../backend/tests/api/test_aisle_aggregate_execution_log_api.py ...    [  0%]
@@ -21,39 +21,41 @@ collected 1813 items
 .............................................                            [  9%]
 ../../backend/tests/api/test_heic_asset_preview.py ........              [ 10%]
 ../../backend/tests/api/test_inventories_v3_wiring.py ........           [ 10%]
-../../backend/tests/api/test_inventory_export_api.py .......             [ 11%]
+../../backend/tests/api/test_inventory_export_api.py .......             [ 10%]
 ../../backend/tests/api/test_inventory_metrics_api.py ..                 [ 11%]
 ../../backend/tests/api/test_inventory_response_mapping.py ...           [ 11%]
 ../../backend/tests/api/test_inventory_visual_references_api.py ssssssss [ 11%]
-ssss                                                                     [ 12%]
-../../backend/tests/api/test_merge_dependencies_di.py ..                 [ 12%]
-../../backend/tests/api/test_phase6_benchmark_api.py ................... [ 13%]
+ssss                                                                     [ 11%]
+../../backend/tests/api/test_merge_dependencies_di.py ..                 [ 11%]
+../../backend/tests/api/test_phase6_benchmark_api.py ................... [ 12%]
 ...                                                                      [ 13%]
-../../backend/tests/api/test_position_summary_mapping.py ............... [ 14%]
-...............                                                          [ 15%]
+../../backend/tests/api/test_position_summary_mapping.py ............... [ 13%]
+...............                                                          [ 14%]
 ../../backend/tests/api/test_position_summary_sprint2_contract.py ...... [ 15%]
 ....                                                                     [ 15%]
 ../../backend/tests/api/test_positions_deduplication_v3_2_3.py ....      [ 15%]
-../../backend/tests/api/test_recomputed_consolidation_e2e.py .....       [ 16%]
+../../backend/tests/api/test_recomputed_consolidation_e2e.py .....       [ 15%]
 ../../backend/tests/api/test_review_actions_api.py .................     [ 16%]
-../../backend/tests/api/test_schema_guard_readiness.py ..                [ 17%]
+../../backend/tests/api/test_schema_guard_readiness.py ..                [ 16%]
 ../../backend/tests/api/test_sprint_1_4_list_routes.py ....              [ 17%]
 ../../backend/tests/api/test_v3_stored_artifact_access_unit.py ......... [ 17%]
-........                                                                 [ 18%]
+...FF...                                                                 [ 17%]
 ../../backend/tests/application/mappers/test_inventory_export_rows.py .. [ 18%]
 ..                                                                       [ 18%]
 ../../backend/tests/application/mappers/test_position_canonical_view.py . [ 18%]
-...........                                                              [ 19%]
+...........                                                              [ 18%]
 ../../backend/tests/application/ports/test_ports_contract.py .......     [ 19%]
 ../../backend/tests/application/ports/test_rollup_contracts_import.py .. [ 19%]
                                                                          [ 19%]
 ../../backend/tests/application/services/test_aisle_analysis_context_builder.py . [ 19%]
 .                                                                        [ 19%]
 ../../backend/tests/application/services/test_aisle_inventory_scope.py . [ 19%]
-....                                                                     [ 20%]
-../../backend/tests/application/services/test_aisle_source_asset_materializer.py . [ 20%]
-                                                                         [ 20%]
-../../backend/tests/application/services/test_analytics_query_service.py . [ 20%]
+....                                                                     [ 19%]
+../../backend/tests/application/services/test_aisle_source_asset_materializer.py . [ 19%]
+                                                                         [ 19%]
+../../backend/tests/application/services/test_aisle_table_query_params.py . [ 19%]
+.                                                                        [ 19%]
+../../backend/tests/application/services/test_analytics_query_service.py . [ 19%]
 ..                                                                       [ 20%]
 ../../backend/tests/application/services/test_capture_assignment_preview.py . [ 20%]
 ....                                                                     [ 20%]
@@ -63,8 +65,14 @@ ssss                                                                     [ 12%]
                                                                          [ 20%]
 ../../backend/tests/application/services/test_display_primary_product.py . [ 20%]
 ..                                                                       [ 20%]
-../../backend/tests/application/services/test_final_count_builder.py ... [ 21%]
+../../backend/tests/application/services/test_final_count_builder.py ... [ 20%]
+.                                                                        [ 20%]
+../../backend/tests/application/services/test_inventory_primary_execution_config.py . [ 21%]
+..                                                                       [ 21%]
+../../backend/tests/application/services/test_inventory_table_query_params.py . [ 21%]
 .                                                                        [ 21%]
+../../backend/tests/application/services/test_inventory_visual_reference_lookup.py . [ 21%]
+                                                                         [ 21%]
 ../../backend/tests/application/services/test_inventory_visual_reference_resolver.py . [ 21%]
 ..                                                                       [ 21%]
 ../../backend/tests/application/services/test_label_normalization_service.py . [ 21%]
@@ -72,248 +80,251 @@ ssss                                                                     [ 12%]
 ../../backend/tests/application/services/test_process_aisle_execution_resolution.py . [ 21%]
 ..                                                                       [ 21%]
 ../../backend/tests/application/services/test_process_aisle_job_for_aisle.py . [ 21%]
-...                                                                      [ 21%]
+...                                                                      [ 22%]
 ../../backend/tests/application/services/test_processing_experiment_catalog_models.py . [ 22%]
 .......                                                                  [ 22%]
 ../../backend/tests/application/services/test_processing_provider_resolution.py . [ 22%]
 ..........                                                               [ 23%]
 ../../backend/tests/application/services/test_production_inventory_processing.py . [ 23%]
 .                                                                        [ 23%]
+../../backend/tests/application/services/test_reference_usage_from_job_result.py . [ 23%]
+..                                                                       [ 23%]
 ../../backend/tests/application/services/test_result_context_resolver.py . [ 23%]
 ..........                                                               [ 23%]
-../../backend/tests/application/test_admin_ai_config_inspection.py ..... [ 23%]
-                                                                         [ 23%]
-../../backend/tests/application/test_analytics_phase51.py .............  [ 24%]
+../../backend/tests/application/services/test_source_asset_heic.py ....  [ 24%]
+../../backend/tests/application/test_admin_ai_config_inspection.py ..... [ 24%]
+                                                                         [ 24%]
+../../backend/tests/application/test_analytics_phase51.py .............  [ 25%]
 ../../backend/tests/application/test_execution_log_enrichment.py ....... [ 25%]
-.....                                                                    [ 25%]
-../../backend/tests/application/test_job_engine_params.py .............  [ 26%]
-../../backend/tests/application/use_cases/test_aisle_processing.py ..... [ 26%]
-...........                                                              [ 26%]
-../../backend/tests/application/use_cases/test_backfill_legacy_aisles.py . [ 27%]
-......                                                                   [ 27%]
-../../backend/tests/application/use_cases/test_benchmark_execution_time.py . [ 27%]
-.....                                                                    [ 27%]
-../../backend/tests/application/use_cases/test_cancel_aisle_job.py ..... [ 27%]
-..                                                                       [ 28%]
-../../backend/tests/application/use_cases/test_capture_g7_operational_hardening.py . [ 28%]
-...                                                                      [ 28%]
-../../backend/tests/application/use_cases/test_capture_session_group_g4.py . [ 28%]
+...................                                                      [ 26%]
+../../backend/tests/application/test_job_engine_params.py .............  [ 27%]
+../../backend/tests/application/use_cases/test_aisle_processing.py ..... [ 27%]
+...........                                                              [ 28%]
+../../backend/tests/application/use_cases/test_backfill_legacy_aisles.py . [ 28%]
 ......                                                                   [ 28%]
-../../backend/tests/application/use_cases/test_capture_session_materialize_phase4.py . [ 28%]
+../../backend/tests/application/use_cases/test_benchmark_execution_time.py . [ 28%]
+.....                                                                    [ 28%]
+../../backend/tests/application/use_cases/test_cancel_aisle_job.py ..... [ 29%]
+..                                                                       [ 29%]
+../../backend/tests/application/use_cases/test_capture_g7_operational_hardening.py . [ 29%]
+...                                                                      [ 29%]
+../../backend/tests/application/use_cases/test_capture_session_group_g4.py . [ 29%]
 ......                                                                   [ 29%]
-../../backend/tests/application/use_cases/test_capture_sessions_sprint2.py . [ 29%]
-...............                                                          [ 29%]
-../../backend/tests/application/use_cases/test_capture_sessions_sprint3.py . [ 30%]
-.....                                                                    [ 30%]
-../../backend/tests/application/use_cases/test_compare_aisle_runs.py ... [ 30%]
-.                                                                        [ 30%]
-../../backend/tests/application/use_cases/test_compare_many_aisle_runs.py . [ 30%]
-....................                                                     [ 31%]
-../../backend/tests/application/use_cases/test_compute_capture_session_groups.py . [ 31%]
-.........                                                                [ 32%]
-../../backend/tests/application/use_cases/test_compute_materialized_capture_session_group_preview_g6.py . [ 32%]
-.......                                                                  [ 32%]
-../../backend/tests/application/use_cases/test_confirm_position.py ..... [ 32%]
-.....                                                                    [ 33%]
-../../backend/tests/application/use_cases/test_create_aisle.py ....      [ 33%]
-../../backend/tests/application/use_cases/test_create_inventory.py ..    [ 33%]
-../../backend/tests/application/use_cases/test_delete_aisle_source_asset.py . [ 33%]
-...                                                                      [ 33%]
-../../backend/tests/application/use_cases/test_delete_position.py ..     [ 33%]
-../../backend/tests/application/use_cases/test_export_inventory_results.py . [ 33%]
-............                                                             [ 34%]
-../../backend/tests/application/use_cases/test_get_aisle_merge_results_phase2.py . [ 34%]
-                                                                         [ 34%]
-../../backend/tests/application/use_cases/test_get_inventory.py ..       [ 34%]
-../../backend/tests/application/use_cases/test_get_inventory_metrics.py . [ 34%]
-.                                                                        [ 34%]
-../../backend/tests/application/use_cases/test_get_position_detail.py .. [ 34%]
-...                                                                      [ 35%]
-../../backend/tests/application/use_cases/test_inventory_status_lifecycle_and_backfill.py . [ 35%]
-..                                                                       [ 35%]
-../../backend/tests/application/use_cases/test_list_aisle_positions_query.py . [ 35%]
-.....                                                                    [ 35%]
-../../backend/tests/application/use_cases/test_list_aisles_by_inventory.py . [ 35%]
-..                                                                       [ 35%]
-../../backend/tests/application/use_cases/test_list_aisles_with_status.py . [ 35%]
-....                                                                     [ 36%]
-../../backend/tests/application/use_cases/test_list_inventories.py ..    [ 36%]
-../../backend/tests/application/use_cases/test_list_inventory_list_items.py . [ 36%]
+../../backend/tests/application/use_cases/test_capture_session_materialize_phase4.py . [ 29%]
+......                                                                   [ 30%]
+../../backend/tests/application/use_cases/test_capture_sessions_sprint2.py . [ 30%]
+...............                                                          [ 31%]
+../../backend/tests/application/use_cases/test_capture_sessions_sprint3.py . [ 31%]
+.....                                                                    [ 31%]
+../../backend/tests/application/use_cases/test_compare_aisle_runs.py ... [ 31%]
+.                                                                        [ 31%]
+../../backend/tests/application/use_cases/test_compare_many_aisle_runs.py . [ 31%]
+....................                                                     [ 32%]
+../../backend/tests/application/use_cases/test_compute_capture_session_groups.py . [ 32%]
+.........                                                                [ 33%]
+../../backend/tests/application/use_cases/test_compute_materialized_capture_session_group_preview_g6.py F [ 33%]
+.......                                                                  [ 33%]
+../../backend/tests/application/use_cases/test_confirm_position.py ..... [ 33%]
+.....                                                                    [ 34%]
+../../backend/tests/application/use_cases/test_create_aisle.py ....      [ 34%]
+../../backend/tests/application/use_cases/test_create_inventory.py ..    [ 34%]
+../../backend/tests/application/use_cases/test_delete_aisle_source_asset.py . [ 34%]
+...                                                                      [ 34%]
+../../backend/tests/application/use_cases/test_delete_position.py ..     [ 34%]
+../../backend/tests/application/use_cases/test_export_inventory_results.py . [ 34%]
+............                                                             [ 35%]
+../../backend/tests/application/use_cases/test_get_aisle_merge_results_phase2.py . [ 35%]
+                                                                         [ 35%]
+../../backend/tests/application/use_cases/test_get_inventory.py ..       [ 35%]
+../../backend/tests/application/use_cases/test_get_inventory_metrics.py . [ 35%]
+.                                                                        [ 35%]
+../../backend/tests/application/use_cases/test_get_position_detail.py .. [ 35%]
 ...                                                                      [ 36%]
-../../backend/tests/application/use_cases/test_list_review_queue.py .... [ 36%]
-                                                                         [ 36%]
-../../backend/tests/application/use_cases/test_manage_inventory_visual_references.py . [ 36%]
+../../backend/tests/application/use_cases/test_inventory_status_lifecycle_and_backfill.py . [ 36%]
 ..                                                                       [ 36%]
-../../backend/tests/application/use_cases/test_mark_position_image_mismatch.py . [ 36%]
-.                                                                        [ 36%]
-../../backend/tests/application/use_cases/test_mark_position_unknown.py . [ 36%]
-.                                                                        [ 37%]
-../../backend/tests/application/use_cases/test_materialize_capture_session_group_g5.py . [ 37%]
-.......                                                                  [ 37%]
-../../backend/tests/application/use_cases/test_multi_run_job_scoping_phase1.py . [ 37%]
+../../backend/tests/application/use_cases/test_list_aisle_positions_query.py . [ 36%]
+.....                                                                    [ 36%]
+../../backend/tests/application/use_cases/test_list_aisles_by_inventory.py . [ 36%]
+..                                                                       [ 36%]
+../../backend/tests/application/use_cases/test_list_aisles_with_status.py . [ 36%]
 ....                                                                     [ 37%]
-../../backend/tests/application/use_cases/test_phase2_list_positions_result_context.py . [ 37%]
+../../backend/tests/application/use_cases/test_list_inventories.py ..    [ 37%]
+../../backend/tests/application/use_cases/test_list_inventory_list_items.py . [ 37%]
+...                                                                      [ 37%]
+../../backend/tests/application/use_cases/test_list_review_queue.py .... [ 37%]
+                                                                         [ 37%]
+../../backend/tests/application/use_cases/test_manage_inventory_visual_references.py . [ 37%]
 ..                                                                       [ 37%]
-../../backend/tests/application/use_cases/test_phase5_openai_persist_list_e2e.py . [ 37%]
+../../backend/tests/application/use_cases/test_mark_position_image_mismatch.py . [ 37%]
+.                                                                        [ 37%]
+../../backend/tests/application/use_cases/test_mark_position_unknown.py . [ 37%]
 .                                                                        [ 38%]
-../../backend/tests/application/use_cases/test_promote_aisle_operational_job.py . [ 38%]
+../../backend/tests/application/use_cases/test_materialize_capture_session_group_g5.py . [ 38%]
+.......                                                                  [ 38%]
+../../backend/tests/application/use_cases/test_multi_run_job_scoping_phase1.py . [ 38%]
+....                                                                     [ 38%]
+../../backend/tests/application/use_cases/test_phase2_list_positions_result_context.py . [ 38%]
+..                                                                       [ 38%]
+../../backend/tests/application/use_cases/test_phase5_openai_persist_list_e2e.py . [ 38%]
 .                                                                        [ 38%]
-../../backend/tests/application/use_cases/test_quantity_authoritative_priority.py . [ 38%]
-....                                                                     [ 38%]
-../../backend/tests/application/use_cases/test_recompute_consolidated_counts.py . [ 38%]
-...                                                                      [ 38%]
-../../backend/tests/application/use_cases/test_resolve_aisle_job_for_inventory_read.py . [ 38%]
-....                                                                     [ 38%]
-../../backend/tests/application/use_cases/test_retry_aisle_job.py ...... [ 39%]
-.......                                                                  [ 39%]
-../../backend/tests/application/use_cases/test_run_aisle_merge.py ...... [ 39%]
-...                                                                      [ 40%]
-../../backend/tests/application/use_cases/test_update_product_quantity.py . [ 40%]
-...                                                                      [ 40%]
-../../backend/tests/application/use_cases/test_update_product_sku.py ... [ 40%]
-                                                                         [ 40%]
-../../backend/tests/application/use_cases/test_upload_aisle_assets.py .. [ 40%]
-.........                                                                [ 41%]
-../../backend/tests/application/use_cases/test_upload_inventory_visual_references.py . [ 41%]
-...........                                                              [ 41%]
-../../backend/tests/application/utils/test_natural_sort.py ..            [ 41%]
-../../backend/tests/auth/test_auth_api.py ..............                 [ 42%]
-../../backend/tests/auth/test_auth_security.py ..                        [ 42%]
-../../backend/tests/auth/test_jairo_v3_integration.py ....               [ 42%]
-../../backend/tests/auth/test_route_protection.py ........               [ 43%]
-../../backend/tests/database/test_jobs_repository_storage_metadata.py .. [ 43%]
-                                                                         [ 43%]
-../../backend/tests/database/test_legacy_stage8_sql_freeze.py .......    [ 43%]
-../../backend/tests/database/test_migration_0016_capture_sessions.py .   [ 43%]
+../../backend/tests/application/use_cases/test_promote_aisle_operational_job.py . [ 39%]
+.                                                                        [ 39%]
+../../backend/tests/application/use_cases/test_quantity_authoritative_priority.py . [ 39%]
+....                                                                     [ 39%]
+../../backend/tests/application/use_cases/test_recompute_consolidated_counts.py . [ 39%]
+...                                                                      [ 39%]
+../../backend/tests/application/use_cases/test_resolve_aisle_job_for_inventory_read.py . [ 39%]
+....                                                                     [ 39%]
+../../backend/tests/application/use_cases/test_retry_aisle_job.py ...... [ 40%]
+.......                                                                  [ 40%]
+../../backend/tests/application/use_cases/test_run_aisle_merge.py ...... [ 40%]
+...                                                                      [ 41%]
+../../backend/tests/application/use_cases/test_update_product_quantity.py . [ 41%]
+...                                                                      [ 41%]
+../../backend/tests/application/use_cases/test_update_product_sku.py ... [ 41%]
+                                                                         [ 41%]
+../../backend/tests/application/use_cases/test_upload_aisle_assets.py .. [ 41%]
+.........                                                                [ 42%]
+../../backend/tests/application/use_cases/test_upload_inventory_visual_references.py . [ 42%]
+...........                                                              [ 42%]
+../../backend/tests/application/utils/test_natural_sort.py ..            [ 42%]
+../../backend/tests/auth/test_auth_api.py ..............                 [ 43%]
+../../backend/tests/auth/test_auth_security.py ..                        [ 43%]
+../../backend/tests/auth/test_jairo_v3_integration.py ....               [ 43%]
+../../backend/tests/auth/test_route_protection.py ........               [ 44%]
+../../backend/tests/database/test_jobs_repository_storage_metadata.py .. [ 44%]
+                                                                         [ 44%]
+../../backend/tests/database/test_legacy_stage8_sql_freeze.py .......    [ 44%]
+../../backend/tests/database/test_migration_0016_capture_sessions.py .   [ 44%]
 ../../backend/tests/database/test_migration_0017_capture_session_items_filename.py . [ 44%]
                                                                          [ 44%]
 ../../backend/tests/database/test_migration_0018_capture_sessions_one_open_per_aisle.py . [ 44%]
                                                                          [ 44%]
-../../backend/tests/database/test_migration_0019_capture_session_sprint3_preview.py . [ 44%]
-                                                                         [ 44%]
-../../backend/tests/database/test_migration_service.py ...               [ 44%]
-../../backend/tests/domain/capture/test_capture_entities.py ...          [ 44%]
-../../backend/tests/domain/labels/test_canonicalization.py ......        [ 44%]
-../../backend/tests/domain/labels/test_merge_engine.py ........          [ 45%]
-../../backend/tests/domain/test_derive_inventory_status.py ......        [ 45%]
-../../backend/tests/domain/test_inventory_visual_reference_entity.py ... [ 45%]
+../../backend/tests/database/test_migration_0019_capture_session_sprint3_preview.py . [ 45%]
+                                                                         [ 45%]
+../../backend/tests/database/test_migration_service.py ...               [ 45%]
+../../backend/tests/domain/capture/test_capture_entities.py ...          [ 45%]
+../../backend/tests/domain/labels/test_canonicalization.py ......        [ 45%]
+../../backend/tests/domain/labels/test_merge_engine.py ........          [ 46%]
+../../backend/tests/domain/test_derive_inventory_status.py ......        [ 46%]
+../../backend/tests/domain/test_inventory_visual_reference_entity.py ... [ 46%]
 .....                                                                    [ 46%]
-../../backend/tests/domain/test_qty_resolution_v3_2_2.py ........        [ 46%]
-../../backend/tests/domain/test_review_sql_literals.py ....              [ 46%]
-../../backend/tests/domain/v3/test_entities.py ......                    [ 46%]
+../../backend/tests/domain/test_qty_resolution_v3_2_2.py ........        [ 47%]
+../../backend/tests/domain/test_review_sql_literals.py ....              [ 47%]
+../../backend/tests/domain/v3/test_entities.py ......                    [ 47%]
 ../../backend/tests/infrastructure/pipeline/test_v3_execution_artifacts_service.py . [ 47%]
 .                                                                        [ 47%]
 ../../backend/tests/infrastructure/pipeline/test_v3_job_execution_state.py . [ 47%]
-...                                                                      [ 47%]
-../../backend/tests/infrastructure/pipeline/test_v3_job_executor_analysis_context.py s [ 47%]
-                                                                         [ 47%]
-../../backend/tests/infrastructure/pipeline/test_v3_job_executor_coordination.py . [ 47%]
-.                                                                        [ 47%]
-../../backend/tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py . [ 47%]
+...                                                                      [ 48%]
+../../backend/tests/infrastructure/pipeline/test_v3_job_executor_analysis_context.py s [ 48%]
+                                                                         [ 48%]
+../../backend/tests/infrastructure/pipeline/test_v3_job_executor_coordination.py . [ 48%]
+.                                                                        [ 48%]
+../../backend/tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py . [ 48%]
 .........                                                                [ 48%]
 ../../backend/tests/infrastructure/pipeline/test_v3_job_executor_phase5.py . [ 48%]
-....................                                                     [ 49%]
-../../backend/tests/infrastructure/pipeline/test_v3_process_aisle_pipeline_runner.py . [ 49%]
-...                                                                      [ 49%]
-../../backend/tests/infrastructure/pipeline/test_v3_report_mapper_and_persist.py . [ 49%]
-.........................                                                [ 50%]
-../../backend/tests/infrastructure/pipeline/test_worker_durable_artifact_publisher.py . [ 50%]
+....................                                                     [ 50%]
+../../backend/tests/infrastructure/pipeline/test_v3_process_aisle_pipeline_runner.py . [ 50%]
+...                                                                      [ 50%]
+../../backend/tests/infrastructure/pipeline/test_v3_report_mapper_and_persist.py . [ 50%]
+.........................                                                [ 51%]
+../../backend/tests/infrastructure/pipeline/test_worker_durable_artifact_publisher.py . [ 51%]
 .....                                                                    [ 51%]
-../../backend/tests/infrastructure/repositories/test_memory_capture_session_confirm_idempotency_repository.py . [ 51%]
-.                                                                        [ 51%]
-../../backend/tests/infrastructure/repositories/test_memory_inventory_visual_reference_repository.py . [ 51%]
-....                                                                     [ 51%]
-../../backend/tests/infrastructure/repositories/test_memory_review_action_repository.py . [ 51%]
-                                                                         [ 51%]
-../../backend/tests/infrastructure/repositories/test_memory_source_asset_repository.py . [ 51%]
-.                                                                        [ 51%]
-../../backend/tests/infrastructure/repositories/test_product_record_qty_round_trip.py . [ 51%]
+../../backend/tests/infrastructure/repositories/test_memory_capture_session_confirm_idempotency_repository.py . [ 52%]
+.                                                                        [ 52%]
+../../backend/tests/infrastructure/repositories/test_memory_inventory_visual_reference_repository.py . [ 52%]
+....                                                                     [ 52%]
+../../backend/tests/infrastructure/repositories/test_memory_review_action_repository.py . [ 52%]
+                                                                         [ 52%]
+../../backend/tests/infrastructure/repositories/test_memory_source_asset_repository.py . [ 52%]
+.                                                                        [ 52%]
+../../backend/tests/infrastructure/repositories/test_product_record_qty_round_trip.py . [ 52%]
 .....                                                                    [ 52%]
 ../../backend/tests/infrastructure/repositories/test_sql_aisle_repository.py . [ 52%]
-...                                                                      [ 52%]
-../../backend/tests/infrastructure/repositories/test_sql_analytics_repository.py . [ 52%]
-..                                                                       [ 52%]
-../../backend/tests/infrastructure/repositories/test_sql_evidence_repository.py . [ 52%]
-.                                                                        [ 52%]
-../../backend/tests/infrastructure/repositories/test_sql_inventory_repository.py . [ 52%]
-...                                                                      [ 52%]
-../../backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py . [ 52%]
-..                                                                       [ 52%]
+...                                                                      [ 53%]
+../../backend/tests/infrastructure/repositories/test_sql_analytics_repository.py . [ 53%]
+..                                                                       [ 53%]
+../../backend/tests/infrastructure/repositories/test_sql_evidence_repository.py . [ 53%]
+.                                                                        [ 53%]
+../../backend/tests/infrastructure/repositories/test_sql_inventory_repository.py . [ 53%]
+...                                                                      [ 53%]
+../../backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository.py . [ 53%]
+..                                                                       [ 53%]
 ../../backend/tests/infrastructure/repositories/test_sql_inventory_visual_reference_repository_unit.py . [ 53%]
 .                                                                        [ 53%]
 ../../backend/tests/infrastructure/repositories/test_sql_job_repository.py . [ 53%]
 .                                                                        [ 53%]
 ../../backend/tests/infrastructure/repositories/test_sql_job_scope_predicates.py . [ 53%]
-.....                                                                    [ 53%]
-../../backend/tests/infrastructure/repositories/test_sql_normalized_label_repository.py . [ 53%]
-                                                                         [ 53%]
-../../backend/tests/infrastructure/repositories/test_sql_raw_label_repository.py . [ 53%]
-                                                                         [ 53%]
-../../backend/tests/infrastructure/repositories/test_sql_source_asset_repository.py . [ 53%]
-..                                                                       [ 53%]
-../../backend/tests/infrastructure/services/test_inventory_metrics_service.py . [ 53%]
+.....                                                                    [ 54%]
+../../backend/tests/infrastructure/repositories/test_sql_normalized_label_repository.py . [ 54%]
+                                                                         [ 54%]
+../../backend/tests/infrastructure/repositories/test_sql_raw_label_repository.py . [ 54%]
+                                                                         [ 54%]
+../../backend/tests/infrastructure/repositories/test_sql_source_asset_repository.py . [ 54%]
+..                                                                       [ 54%]
+../../backend/tests/infrastructure/services/test_inventory_metrics_service.py . [ 54%]
 ....                                                                     [ 54%]
 ../../backend/tests/infrastructure/services/test_on_demand_worker_launch_service.py . [ 54%]
-....                                                                     [ 54%]
-../../backend/tests/infrastructure/storage/test_inventory_visual_reference_paths.py . [ 54%]
-......                                                                   [ 54%]
-../../backend/tests/infrastructure/storage/test_s3_artifact_storage_adapter.py . [ 54%]
+....                                                                     [ 55%]
+../../backend/tests/infrastructure/storage/test_inventory_visual_reference_paths.py . [ 55%]
+......                                                                   [ 55%]
+../../backend/tests/infrastructure/storage/test_s3_artifact_storage_adapter.py . [ 55%]
 .....                                                                    [ 55%]
 ../../backend/tests/integration/capture/test_capture_session_sql_repository.py . [ 55%]
-.....                                                                    [ 55%]
-../../backend/tests/jobs/test_run_worker_dev.py ...                      [ 55%]
-../../backend/tests/jobs/test_run_worker_entrypoint.py .....             [ 55%]
-../../backend/tests/jobs/test_worker_bootstrap.py ..                     [ 55%]
-../../backend/tests/jobs/test_worker_db_claim.py .......                 [ 56%]
-../../backend/tests/legacy/test_legacy_database_repository_import_guard.py . [ 56%]
-                                                                         [ 56%]
-../../backend/tests/legacy/test_persistence_observability.py .....       [ 56%]
-../../backend/tests/llm/test_anthropic_sdk_adapter.py .................. [ 57%]
+.....                                                                    [ 56%]
+../../backend/tests/jobs/test_run_worker_dev.py ...                      [ 56%]
+../../backend/tests/jobs/test_run_worker_entrypoint.py .....             [ 56%]
+../../backend/tests/jobs/test_worker_bootstrap.py ..                     [ 56%]
+../../backend/tests/jobs/test_worker_db_claim.py .......                 [ 57%]
+../../backend/tests/legacy/test_legacy_database_repository_import_guard.py . [ 57%]
+                                                                         [ 57%]
+../../backend/tests/legacy/test_persistence_observability.py .....       [ 57%]
+../../backend/tests/llm/test_anthropic_sdk_adapter.py .................. [ 58%]
 .......                                                                  [ 58%]
 ../../backend/tests/llm/test_anthropic_usage_extract.py ....             [ 58%]
 ../../backend/tests/llm/test_claude_prompt_contract.py ...............   [ 59%]
-../../backend/tests/llm/test_deepseek_sdk_adapter.py .......             [ 59%]
-../../backend/tests/llm/test_entity_normalizer.py ...................... [ 60%]
+../../backend/tests/llm/test_deepseek_sdk_adapter.py .......             [ 60%]
+../../backend/tests/llm/test_entity_normalizer.py ...................... [ 61%]
 ...............................                                          [ 62%]
-../../backend/tests/llm/test_gemini_global_analyzer_json_root.py ..      [ 62%]
-../../backend/tests/llm/test_hybrid_prompt_profiles.py .....             [ 62%]
+../../backend/tests/llm/test_gemini_global_analyzer_json_root.py ..      [ 63%]
+../../backend/tests/llm/test_hybrid_prompt_profiles.py .....             [ 63%]
 ../../backend/tests/llm/test_hybrid_resolution_provider_policy.py ...... [ 63%]
 .                                                                        [ 63%]
 ../../backend/tests/llm/test_llm_costing.py ..................           [ 64%]
 ../../backend/tests/llm/test_llm_provider_factory.py ..                  [ 64%]
 ../../backend/tests/llm/test_numeric_coercion.py ..................      [ 65%]
-../../backend/tests/llm/test_openai_json_text_extraction.py .....        [ 65%]
+../../backend/tests/llm/test_openai_json_text_extraction.py .....        [ 66%]
 ../../backend/tests/llm/test_openai_sdk_adapter.py ..........            [ 66%]
 ../../backend/tests/llm/test_openai_usage_extract.py ....                [ 66%]
-../../backend/tests/llm/test_phase5_prompt_unification.py .....          [ 66%]
+../../backend/tests/llm/test_phase5_prompt_unification.py .....          [ 67%]
 ../../backend/tests/llm/test_prompt_composer_parity.py .........         [ 67%]
 ../../backend/tests/llm/test_prompt_traceability.py ....                 [ 67%]
-../../backend/tests/llm/test_prompt_version_phase7.py .........          [ 67%]
-../../backend/tests/pipeline/test_gemini_sdk_adapter.py ..               [ 67%]
+../../backend/tests/llm/test_prompt_version_phase7.py .........          [ 68%]
+../../backend/tests/pipeline/test_gemini_sdk_adapter.py ..               [ 68%]
 ../../backend/tests/pipeline/test_hybrid_analysis_prompt_service.py .... [ 68%]
 ...                                                                      [ 68%]
 ../../backend/tests/pipeline/test_llm_executor_harness.py .............  [ 69%]
 ../../backend/tests/pipeline/test_multi_provider_analysis_execution.py . [ 69%]
 .......                                                                  [ 69%]
-../../backend/tests/pipeline/test_phase4_architecture_boundaries.py .... [ 69%]
-..                                                                       [ 69%]
-../../backend/tests/pipeline/test_pipeline_provider_resolver.py ....     [ 69%]
+../../backend/tests/pipeline/test_phase4_architecture_boundaries.py .... [ 70%]
+..                                                                       [ 70%]
+../../backend/tests/pipeline/test_pipeline_provider_resolver.py ....     [ 70%]
 ../../backend/tests/pipeline/test_prompt_composition_propagation.py .... [ 70%]
-.......                                                                  [ 70%]
-../../backend/tests/pipeline/test_provider_analysis_execution_config.py . [ 70%]
-......                                                                   [ 70%]
+.......                                                                  [ 71%]
+../../backend/tests/pipeline/test_provider_analysis_execution_config.py . [ 71%]
+......                                                                   [ 71%]
 ../../backend/tests/pipeline/test_provider_analysis_result_normalization.py . [ 71%]
                                                                          [ 71%]
 ../../backend/tests/pipeline/test_provider_definitions.py ..             [ 71%]
 ../../backend/tests/pipeline/test_provider_keys.py ..                    [ 71%]
 ../../backend/tests/pipeline/test_provider_llm_request_metadata.py ...   [ 71%]
-../../backend/tests/pipeline/test_provider_registry.py .......           [ 71%]
-../../backend/tests/pipeline/test_provider_result_aggregator.py ...      [ 71%]
-../../backend/tests/pipeline/test_run_metadata.py ...........            [ 72%]
-../../backend/tests/runtime/test_app_container.py .....                  [ 72%]
+../../backend/tests/pipeline/test_provider_registry.py .......           [ 72%]
+../../backend/tests/pipeline/test_provider_result_aggregator.py ...      [ 72%]
+../../backend/tests/pipeline/test_run_metadata.py ...........            [ 73%]
+../../backend/tests/runtime/test_app_container.py .....                  [ 73%]
 ../../backend/tests/scripts/test_check_migration_presence.py ........... [ 73%]
-.......                                                                  [ 73%]
-../../backend/tests/scripts/test_report_v3_route_repository_usage.py .   [ 73%]
+.......                                                                  [ 74%]
+../../backend/tests/scripts/test_report_v3_route_repository_usage.py .   [ 74%]
 ../../backend/tests/test_artifact_storage_config.py ...                  [ 74%]
 ../../backend/tests/test_baseline_pipeline_smoke.py .                    [ 74%]
 ../../backend/tests/test_config.py .......................               [ 75%]
@@ -322,7 +333,7 @@ ssss                                                                     [ 12%]
 ../../backend/tests/test_e2e_v2_2.py ....                                [ 77%]
 ../../backend/tests/test_epic_3_1_a.py .................                 [ 78%]
 ../../backend/tests/test_epic_3_1_b.py .................                 [ 79%]
-../../backend/tests/test_epic_3_1_c.py ..........                        [ 79%]
+../../backend/tests/test_epic_3_1_c.py ..........                        [ 80%]
 ../../backend/tests/test_epic_3_1_d.py .............                     [ 80%]
 ../../backend/tests/test_epic_5.py ............                          [ 81%]
 ../../backend/tests/test_evidence.py ......................              [ 82%]
@@ -339,7 +350,7 @@ ssss                                                                     [ 12%]
 ../../backend/tests/test_stage1_core_refactor.py ......                  [ 91%]
 ../../backend/tests/test_stage2_single_call_hybrid.py ........           [ 92%]
 ../../backend/tests/test_stage3_validation.py ...........                [ 92%]
-../../backend/tests/test_stage4_operational_integration.py .....         [ 92%]
+../../backend/tests/test_stage4_operational_integration.py .....         [ 93%]
 ../../backend/tests/test_stage5_frame_selection.py .........             [ 93%]
 ../../backend/tests/test_stage6_fallback.py ............                 [ 94%]
 ../../backend/tests/test_stage8_db.py .....                              [ 94%]
@@ -355,6 +366,143 @@ ssss                                                                     [ 12%]
 ../../backend/tests/test_validation.py .....                             [ 99%]
 ../../backend/tests/test_video.py ..............                         [100%]
 
+=================================== FAILURES ===================================
+___________ test_fetch_json_rejects_from_head_before_get_or_download ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1177b48a0>
+
+    def test_fetch_json_rejects_from_head_before_get_or_download(monkeypatch) -> None:
+        """``object_size_bytes`` over max → 413; no get_object / download_to_path."""
+        from src.api.services.v3_stored_artifact_access import fetch_json_from_durable_meta
+    
+        meta = {
+            "storage_provider": "local",
+            "storage_bucket": None,
+            "storage_key": "jobs/j1/run/hybrid_report.json",
+            "content_type": "application/json",
+            "file_size_bytes": 1024,
+            "etag": None,
+        }
+    
+        class _Store:
+            def __init__(self) -> None:
+                self.get_calls = 0
+                self.download_calls = 0
+    
+            def object_size_bytes(self, key: str, *, bucket=None) -> int:
+                return 10_000
+    
+            def get_object(self, key: str) -> None:
+                self.get_calls += 1
+                raise AssertionError("get_object should not run when head size exceeds cap")
+    
+            def download_to_path(self, key: str, target_path, *, bucket=None) -> None:
+                self.download_calls += 1
+                raise AssertionError("download_to_path should not run when head size exceeds cap")
+    
+        store = _Store()
+        monkeypatch.setattr(
+            "src.api.services.v3_stored_artifact_access.load_settings",
+            lambda: type(
+                "S",
+                (),
+                {
+                    **_DEFAULT_STORE_ACCESS_SETTINGS,
+                    "artifact_store_max_json_load_bytes": 64,
+                },
+            )(),
+        )
+        with pytest.raises(StoredArtifactAccessError) as ei:
+            fetch_json_from_durable_meta(meta, artifact_store=store, label="Hybrid report")
+>       assert ei.value.reason_code == "payload_too_large"
+E       AssertionError: assert 'durable_fetch_failed' == 'payload_too_large'
+E         
+E         - payload_too_large
+E         + durable_fetch_failed
+
+../../backend/tests/api/test_v3_stored_artifact_access_unit.py:490: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    src.infrastructure.artifacts.stored_artifact_reader:stored_artifact_reader.py:78 Hybrid report durable_fetch_failed mode=get_object provider=local bucket= storage_key=jobs/j1/run/hybrid_report.json
+Traceback (most recent call last):
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/artifacts/stored_artifact_reader.py", line 76, in _artifact_get_object_bytes
+    downloaded = p.artifact_store.get_object(p.key)
+  File "/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_v3_stored_artifact_access_unit.py", line 470, in get_object
+    raise AssertionError("get_object should not run when head size exceeds cap")
+AssertionError: get_object should not run when head size exceeds cap
+__________ test_fetch_json_when_head_fails_rejects_from_on_disk_stat ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x117e93850>
+
+    def test_fetch_json_when_head_fails_rejects_from_on_disk_stat(monkeypatch) -> None:
+        """Size unknown: stream to tempfile, reject when on-disk size exceeds cap (no full read)."""
+        from src.api.services.v3_stored_artifact_access import fetch_json_from_durable_meta
+    
+        meta = {
+            "storage_provider": "local",
+            "storage_bucket": None,
+            "storage_key": "jobs/j1/run/hybrid_report.json",
+            "content_type": "application/json",
+            "file_size_bytes": 1,
+            "etag": None,
+        }
+    
+        class _Store:
+            def __init__(self) -> None:
+                self.download_calls = 0
+    
+            def object_size_bytes(self, key: str, *, bucket=None) -> int:
+                raise RuntimeError("head unavailable")
+    
+            def get_object(self, key: str) -> None:
+                raise AssertionError("get_object must not run for unknown-size JSON load")
+    
+            def download_to_path(self, key: str, target_path: Path, *, bucket=None) -> None:
+                self.download_calls += 1
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_bytes(b"x" * 500)
+    
+        store = _Store()
+        monkeypatch.setattr(
+            "src.api.services.v3_stored_artifact_access.load_settings",
+            lambda: type(
+                "S",
+                (),
+                {
+                    **_DEFAULT_STORE_ACCESS_SETTINGS,
+                    "artifact_store_max_json_load_bytes": 100,
+                    "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
+                },
+            )(),
+        )
+        with pytest.raises(StoredArtifactAccessError) as ei:
+            fetch_json_from_durable_meta(meta, artifact_store=store, label="Hybrid report")
+>       assert ei.value.reason_code == "payload_too_large"
+E       AssertionError: assert 'invalid_json' == 'payload_too_large'
+E         
+E         - payload_too_large
+E         + invalid_json
+
+../../backend/tests/api/test_v3_stored_artifact_access_unit.py:538: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  src.infrastructure.artifacts.stored_artifact_reader:stored_artifact_reader.py:218 Hybrid report object_size_bytes failed storage_key=jobs/j1/run/hybrid_report.json provider=local: head unavailable
+______________ test_classify_g6_preview_status_explicit_contract _______________
+
+    def test_classify_g6_preview_status_explicit_contract() -> None:
+        assert (
+>           _classify_g6_preview_status(
+                filtered_asset_count=0,
+                resolved_row_count=0,
+                distinct_preview_imported_item_count=0,
+                has_any_unlinked_imported_in_group=False,
+                proposed_outcome_count=0,
+                conflict_outcome_count=0,
+                unassigned_outcome_count=0,
+            )
+            == "empty"
+        )
+E       TypeError: _classify_g6_preview_status() got an unexpected keyword argument 'filtered_asset_count'
+
+../../backend/tests/application/use_cases/test_compute_materialized_capture_session_group_preview_g6.py:176: TypeError
 =============================== warnings summary ===============================
 ../../backend/src/api/server.py:194
   /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/server.py:194: DeprecationWarning: 
@@ -784,16 +932,16 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/__init__.py                                                                     0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/__init__.py                                                                  2      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/admin_ai_config.py                                                          19      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/aisles.py                                                                  261     51    80%   162-164, 178, 186-189, 249, 304, 337, 351, 377-379, 455-459, 483, 504, 533, 560-568, 600-608, 646-650, 693-695, 722, 730-732, 770, 802, 829, 852, 871-885
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/aisles.py                                                                  254     52    80%   153-155, 166, 175-179, 233, 288, 321, 335, 361-363, 439-443, 467, 488, 517, 544-552, 584-592, 630-634, 677-679, 706, 714-716, 754, 786, 813, 836, 855-869
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/analytics_api.py                                                            81     16    80%   53, 56, 58, 90, 150-164, 218-220, 251-253, 330
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/assets.py                                                                  150     38    75%   95, 99, 109, 115, 130, 157-166, 184, 186, 193-195, 240, 262-269, 283, 285, 287, 291-323, 356-360
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/capture_sessions.py                                                        217     51    76%   118-120, 138, 155-157, 180, 200-202, 223-225, 262, 297, 322, 351, 370-372, 395, 410-412, 439, 464-466, 482-487, 510-517, 540-547, 580-582, 636
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/inventories.py                                                             150     53    65%   98-125, 234, 255, 269, 285-303, 314-318, 333-346, 360-377, 392-394, 404-415
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/positions.py                                                                41      2    95%   136, 214
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/review_queue.py                                                             27      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/reviews.py                                                                  38      2    95%   81-82
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/assets.py                                                                  123     28    77%   124, 139, 166-175, 205-207, 237, 259-266, 278-304, 337-341
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/capture_sessions.py                                                        209     51    76%   157-159, 177, 194-196, 216, 233-235, 253-255, 289, 324, 346, 372, 387-389, 409, 424-426, 453, 478-480, 496-501, 524-531, 554-561, 585-587, 621
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/inventories.py                                                             154     54    65%   103, 117-144, 251, 272, 286, 302-310, 321-325, 340-346, 360-367, 382-384, 394-405
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/positions.py                                                                69      2    97%   189, 284
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/review_queue.py                                                             49      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/reviews.py                                                                  51      2    96%   104-107
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/router.py                                                                   11      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/shared.py                                                                  235     34    86%   85, 89-91, 95, 149, 152, 156-157, 161, 164, 175-176, 200-206, 284, 323, 334-342, 358-379, 397-404, 422-429, 447-454, 757, 792
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/routes/v3/shared.py                                                                  191     29    85%   113, 116, 120-121, 125, 128, 139-140, 164-170, 248, 287, 298-306, 322-343, 361-368, 386-393, 411-418, 713, 743
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/schema_guard.py                                                                       11      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/schemas/__init__.py                                                                    0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/schemas/admin_ai_config_schemas.py                                                    70      0   100%
@@ -811,15 +959,20 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/schemas/requests.py                                                                   11     11     0%   3-22
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/schemas/responses.py                                                                  68      1    99%   21
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/schemas/review_queue_schemas.py                                                       18      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/server.py                                                                            115     46    60%   51, 79, 144-149, 183, 187-191, 197-278
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/server.py                                                                            118     49    58%   51, 79, 144-149, 183, 187-191, 197-285
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/services/__init__.py                                                                   0      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/services/v3_stored_artifact_access.py                                                300     81    73%   80, 92, 102-103, 128, 138-139, 162, 176, 184-189, 215, 241-254, 348, 363, 398-407, 432, 476-484, 491, 512-521, 559, 568-578, 615-624, 666-667, 691-729, 747, 764-793
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/services/multipart_aisle_uploads.py                                                   17      3    82%   18, 22, 32
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/services/v3_stored_artifact_access.py                                                181     40    78%   66, 76-77, 102, 112-113, 136, 150, 158-163, 189, 215-228, 322, 337, 372-381, 422-431, 468, 485-514
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/app.py                                                                                    80     41    49%   134-136, 140-192, 196
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/__init__.py                                                                    0      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/constants/__init__.py                                                          0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/constants/review_quality.py                                                    1      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/dto/__init__.py                                                                0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/dto/analytics_dto.py                                                          99      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/dto/mapped_aisle_result.py                                                    12      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/dto/uploaded_file.py                                                          10      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/errors.py                                                                     57      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/mappers/__init__.py                                                            0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/mappers/inventory_export_rows.py                                              67      3    96%   38, 57, 97
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/mappers/position_canonical_view.py                                           243     26    89%   49-50, 57, 93, 95, 97, 132-133, 182-185, 189-192, 326, 392, 396-399, 401-404
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/__init__.py                                                              5      0   100%
@@ -828,42 +981,52 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/capture_staging_time.py                                                 13      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/clock.py                                                                 5      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/contracts.py                                                           111      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/hybrid_report_to_domain_mapper.py                                        7      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/repositories.py                                                         85      7    92%   151-156, 203
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/rollup_contracts.py                                                      7      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/services.py                                                             18      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/ports/stored_artifact_reader.py                                                5      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/__init__.py                                                           3      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/admin_ai_config_inspection.py                                       100      6    94%   125-128, 216-217
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/admin_ai_config_inspection.py                                        91      2    98%   247-248
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_aggregated_execution_log.py                                    22      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_analysis_context_builder.py                                    14      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_inventory_scope.py                                             17      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_job_launch_service.py                                          51      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_review_lifecycle_sync.py                                       33      5    85%   38-43, 51-53
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_source_asset_materializer.py                                   79      2    97%   50, 56
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/analytics_aggregation_core.py                                       255     44    83%   97, 101, 114, 116, 129, 174-186, 213, 292, 340, 406, 408, 410, 412, 414, 418, 436, 438, 440, 443-446, 462, 466-467, 471, 474, 478-492
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/aisle_table_query_params.py                                           4      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/analytics_aggregation_core.py                                       256     43    83%   97, 101, 114, 116, 129, 174-186, 213, 292, 340, 406, 408, 410, 412, 414, 418, 436, 438, 440, 443-446, 460-461, 472, 477, 482-496
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/analytics_query_service.py                                           28      6    79%   40, 43, 46, 49, 52, 57
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/capture_assignment_preview.py                                        52      3    94%   35, 43, 77
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/capture_flow_observability.py                                        83      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/capture_group_item_integrity.py                                      19      2    89%   23, 38
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/capture_group_materialization_state.py                               12      2    83%   21, 25
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/capture_session_status_filter.py                                     16      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/capture_staging_time_metadata.py                                     61     10    84%   37, 43, 47, 52-53, 61-62, 64, 74-75
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/csv_inventory_exporter.py                                            25      1    96%   89
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/display_primary_product.py                                            7      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/execution_log_enrichment.py                                         174     23    87%   35-41, 48, 52-53, 57, 61-63, 68, 108, 111, 142, 158, 189, 317, 324-325
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/execution_log_enrichment.py                                         201     16    92%   36-42, 69, 109, 112, 143, 203, 270, 400, 407-408
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/final_count_builder.py                                               35      1    97%   25
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_primary_execution_config.py                                18      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_processing_mode.py                                          7      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_status_reconciler.py                                       32      1    97%   53
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_status_reconciler.py                                       32      1    97%   52
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_table_query_params.py                                       4      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_visual_reference_lookup.py                                  8      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/inventory_visual_reference_resolver.py                               14      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/job_engine_params.py                                                 15      1    93%   26
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/job_stale_reconciler.py                                              30      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/label_normalization.py                                               39      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/operational_execution_config_resolver.py                             16      1    94%   32
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/position_sku_consolidation.py                                        70     12    83%   23, 25, 28-36, 44
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/position_traceability.py                                             56     25    55%   23-28, 56, 59, 62, 67-91
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/position_traceability.py                                             65     27    58%   30, 39-44, 58, 75, 78, 81, 86-110
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/process_aisle_execution_resolution.py                                25      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/process_aisle_job_for_aisle.py                                       13      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/processing_experiment_catalog.py                                     44      6    86%   21, 24-30, 43, 60
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/processing_provider_resolution.py                                    36      2    94%   75, 85
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/production_inventory_processing.py                                   29      2    93%   49, 52
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/reference_usage_from_job_result.py                                   52      3    94%   14, 19, 24
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/result_context_resolver.py                                           31      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/services/source_asset_heic.py                                                 20      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/__init__.py                                                          3      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/assign_capture_session_group_to_existing_aisle.py                   44      1    98%   78
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/backfill_inventory_statuses.py                                      20      0   100%
@@ -877,7 +1040,7 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/compare_many_aisle_runs.py                                         129      4    97%   131, 134, 143, 184
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/compute_capture_session_assignment_preview.py                       41      2    95%   56, 77
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/compute_capture_session_groups.py                                   90      6    93%   75, 120, 158, 166, 175-176
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/compute_materialized_capture_session_group_preview.py              160     14    91%   60-61, 80-83, 203, 231, 238, 292, 307, 333-343, 359
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/compute_materialized_capture_session_group_preview.py              203     14    93%   65-66, 85-88, 233, 261, 268, 341, 361, 387-397, 419
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/confirm_position.py                                                 31      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/create_aisle.py                                                     31      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/create_aisle_and_assign_capture_session_group.py                    39      3    92%   57, 66, 71
@@ -902,13 +1065,13 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/list_capture_sessions.py                                            28      1    96%   49
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/list_inventories.py                                                  9      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/list_inventory_list_items.py                                        63      9    86%   38, 40, 42, 44-45, 47, 49, 94-95
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/list_review_queue.py                                               133     33    75%   53-55, 59-60, 66-78, 87, 89, 91, 94-97, 100-102, 108, 115, 133, 135, 177
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/manage_inventory_visual_references.py                               82     19    77%   51, 54, 63-64, 90, 97, 101, 128-130, 148-158, 163-164
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/list_review_queue.py                                               131     22    83%   53-55, 59-60, 66-79, 84, 86, 95-97, 103-104, 156, 158, 200
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/manage_inventory_visual_references.py                               82     19    77%   49, 52, 61-62, 88, 95, 99, 126-128, 146-156, 161-162
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/mark_position_image_mismatch.py                                     31      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/mark_position_unknown.py                                            31      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/materialize_capture_session.py                                     141     18    87%   106, 138, 148, 202, 204, 206-208, 218-219, 241, 247, 270-271, 277-278, 288-289
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/materialize_capture_session.py                                     173     18    90%   117, 157, 167, 231, 233, 235-237, 247-248, 297, 303, 326-327, 333-334, 344-345
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/materialize_capture_session_group.py                               184     12    93%   115, 122, 133, 191, 211-212, 362-370, 416, 431, 437
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/persist_aisle_result.py                                             76      5    93%   73, 78, 185-192
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/persist_aisle_result.py                                             88      5    94%   83, 88, 215-222
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/promote_aisle_operational_job.py                                    35      1    97%   59
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/recompute_consolidated_counts.py                                    94      2    98%   144, 155
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/resolve_aisle_job_for_inventory_read.py                             17      0   100%
@@ -921,8 +1084,10 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/update_product_quantity.py                                          42      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/update_product_sku.py                                               52      2    96%   79-83
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/upload_aisle_assets.py                                              48      5    90%   96, 103-106
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/upload_capture_session_staging_items.py                            140     32    77%   89, 128, 135, 139, 156-165, 226-250, 267-322
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/upload_inventory_visual_references.py                               98      5    95%   166-171, 208-209
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/upload_capture_session_staging_items.py                            201     36    82%   138, 173, 177, 188, 234-235, 251-267, 275-317, 342, 359-377, 394-410, 427
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/use_cases/upload_inventory_visual_references.py                               98      5    95%   164-169, 206-207
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/utils/__init__.py                                                              0      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/utils/inventory_visual_reference_paths.py                                     11      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/utils/natural_sort.py                                                         16      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/application/utils/review_queue_derived.py                                                 35      4    89%   62-64, 70
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/auth/__init__.py                                                                           0      0   100%
@@ -1011,14 +1176,19 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/__init__.py                                                                 0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/adapters/__init__.py                                                        2      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/adapters/clock.py                                                           5      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/__init__.py                                                        2      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/artifacts/__init__.py                                                       0      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/artifacts/stored_artifact_reader.py                                       152     47    69%   54, 92, 114-123, 131-139, 169, 178-188, 200, 227-236, 295-337, 344-345, 348
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/__init__.py                                                        3      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/hybrid_report_to_domain_adapter.py                                 8      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/input_artifact_resolver.py                                        97     23    76%   25, 29-30, 43, 78-89, 97, 102, 106, 125-130, 132, 137, 161, 170, 189-194, 198
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/v3_execution_artifacts_service.py                                 16      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/v3_job_execution_state.py                                        157      3    98%   119, 181, 191
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/v3_job_executor.py                                               201     37    82%   135, 152-153, 155-157, 167-168, 172-173, 190-191, 303-306, 324, 391, 406-409, 463-468, 537-547
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/v3_job_executor.py                                               294     36    88%   229-230, 232-234, 248, 270-271, 275-276, 293-294, 423, 437-440, 482-487, 577-580, 652, 728-737
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/v3_process_aisle_pipeline_runner.py                               79      9    89%   118-120, 165-170
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/v3_report_mapper.py                                              169     22    87%   60, 64-65, 107, 110-113, 116-119, 154-156, 159, 196, 294, 338-341
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/v3_report_mapper.py                                              172     18    90%   53, 57-58, 86, 93-96, 154-156, 159, 196, 294, 336-339
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/pipeline/worker_durable_artifact_publisher.py                              42      1    98%   173
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/queue/__init__.py                                                           0      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/queue/v3_job_queue_adapter.py                                              13     13     0%   9-40
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/__init__.py                                                    3      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/db_row_text.py                                                10      1    90%   12
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/memory_aisle_repository.py                                    20      2    90%   33-34
@@ -1026,7 +1196,7 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/memory_capture_session_confirm_idempotency_repository.py      14      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/memory_capture_session_group_repository.py                    43      3    93%   48, 63, 66
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/memory_capture_session_item_repository.py                     50      6    88%   30, 55, 65, 67, 69, 77
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/memory_capture_session_repository.py                          64      6    91%   34, 50, 74, 93, 98, 100
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/memory_capture_session_repository.py                          64      6    91%   34, 50, 72, 91, 96, 98
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/memory_evidence_repository.py                                 13      1    92%   21
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/memory_final_count_repository.py                              24      1    96%   43
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/memory_inventory_repository.py                                13      0   100%
@@ -1041,9 +1211,9 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_aisle_repository.py                                       63      9    86%   23, 33-39, 47-48, 50-51, 72
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_analytics_repository.py                                  331    289    13%   53-57, 62, 67, 76, 88-93, 102-107, 117-122, 179, 182-328, 348-381, 384-502, 511-608, 613-656, 661-688, 691-780, 783-845, 850-900
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_capture_session_confirm_idempotency_repository.py         59     59     0%   3-109
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_capture_session_group_repository.py                       92     92     0%   3-214
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_capture_session_group_repository.py                       92     92     0%   3-212
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_capture_session_item_repository.py                       105     61    42%   30, 34-44, 48-60, 64-69, 81-85, 118, 192, 195-209, 212-228, 233-250, 253-270, 273-285, 290-300
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_capture_session_repository.py                            106     23    78%   38, 42, 45-47, 55, 59-60, 84, 131, 149-159, 194-195, 197-199, 201-202, 204-205
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_capture_session_repository.py                            106     23    78%   38, 42, 45-47, 55, 59-60, 84, 131, 147-157, 192-193, 195-197, 199-200, 202-203
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_evidence_repository.py                                    67     33    51%   24-38, 45, 48-49, 90-124, 155-168, 171-183
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_final_count_repository.py                                 63     40    37%   17-21, 26, 28, 33-46, 68-77, 151-177, 180-204
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/repositories/sql_inventory_repository.py                                   63      9    86%   44-50, 121-127, 160-166
@@ -1058,11 +1228,11 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/services/__init__.py                                                        2      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/services/inventory_metrics_service.py                                      28      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/services/on_demand_worker_launch_service.py                                60     10    83%   51-58, 65-77, 101-102, 110
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/__init__.py                                                         0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/artifact_store.py                                                  24      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/inventory_visual_reference_paths.py                                11      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/s3_artifact_storage_adapter.py                                    135     38    72%   45, 47-56, 61, 65, 71, 77, 89, 101-102, 110-117, 122, 128-131, 146-148, 160, 167-169, 177, 185-192, 200-202, 218, 226-233
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/s3_artifact_storage_adapter.py                                    135     38    72%   45, 47-56, 61, 65, 71, 77, 89, 101-102, 110-117, 122, 128-131, 146-148, 160, 167-169, 175, 183-190, 198-200, 216, 224-231
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/sql_storage_fields.py                                              10      1    90%   33
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/v3_artifact_storage_adapter.py                                     56      9    84%   32-33, 66, 81-83, 86-87, 90
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/infrastructure/storage/v3_artifact_storage_adapter.py                                     56      9    84%   32-33, 66, 79-81, 84-85, 88
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/io/__init__.py                                                                             0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/io/logging.py                                                                             25      4    84%   65-68
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/io/outputs.py                                                                             59      9    85%   31-51
@@ -1087,24 +1257,24 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/legacy/__init__.py                                                                         2      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/legacy/persistence_observability.py                                                       77      9    88%   41, 54, 56, 58, 70, 75, 104, 129, 154
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/__init__.py                                                                            0      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/anthropic_sdk_adapter.py                                                             309     47    85%   63, 91-92, 95, 108, 253, 255, 266, 299-306, 322-327, 342, 347-348, 355, 360-374, 378-380, 414, 433-434, 453, 464-468, 470, 491, 499, 564, 592-594
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/costing.py                                                                           268     44    84%   55, 58-70, 87-88, 144, 146, 202, 209, 213, 226-228, 230, 265, 271, 281, 292, 362, 441, 454, 487, 496-497, 520, 545-552
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/anthropic_sdk_adapter.py                                                             328     47    86%   64, 92-93, 96, 109, 256, 258, 294-299, 323, 329, 411, 434-441, 457-462, 477, 482-483, 490, 495-509, 513-515, 549, 568-569, 587, 597, 648-650
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/costing.py                                                                           300     44    85%   57, 60-75, 93-94, 199, 201, 217, 224, 228, 241-243, 245, 280, 286, 296, 307, 377, 405, 414-415, 480, 493, 551-558, 641
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/deepseek_sdk_adapter.py                                                               30      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/errors.py                                                                              7      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/gemini_client.py                                                                      93     17    82%   93-103, 192-198, 241-247
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/gemini_global_analyzer.py                                                             68     10    85%   33-34, 69, 83, 85-86, 102-105
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/gemini_global_analyzer.py                                                             68     10    85%   33-34, 69, 87, 89-90, 106-109
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/gemini_sdk_adapter.py                                                                 51     17    67%   43-47, 49, 92-118
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/normalization/__init__.py                                                              3      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/normalization/entity_normalizer.py                                                   168     10    94%   123, 132, 179, 182-183, 222, 239, 250-251, 312
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/normalization/numeric_coercion.py                                                     32      1    97%   31
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/openai_sdk_adapter.py                                                                215     47    78%   125, 130-131, 138, 147, 151-152, 164, 197, 236-238, 290-291, 294, 309, 320-347, 358-360, 382-395, 409-415
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/normalization/entity_normalizer.py                                                   163     10    94%   125, 134, 181, 184-185, 224, 241, 252-253, 314
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/normalization/numeric_coercion.py                                                     30      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/openai_sdk_adapter.py                                                                232     47    80%   125, 130-131, 138, 147, 151-152, 164, 197, 209-211, 292, 303-330, 366-379, 389-395, 451-452, 455, 469-471
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/prompt_composer/__init__.py                                                            3      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/prompt_composer/composer.py                                                           10      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/prompt_composer/enrichments.py                                                        15      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/prompt_composer/hybrid_assembly.py                                                    12      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/prompt_composer/hybrid_profiles.py                                                    25      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/prompt_composer/hybrid_resolution.py                                                  34      4    88%   42, 84, 87, 107
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/prompt_composer/prompt_traceability.py                                               103      6    94%   194, 202, 214-215, 227, 257
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/prompt_composer/prompt_traceability.py                                               131      7    95%   234, 242, 254-255, 271, 283, 317
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/prompts.py                                                                             7      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/providers/__init__.py                                                                  7      4    43%   9-13
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/providers/base.py                                                                      6      0   100%
@@ -1113,7 +1283,7 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/providers/openai_provider.py                                                          15      2    87%   18, 23
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/llm/types.py                                                                              23      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/models/__init__.py                                                                         0      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/models/schemas.py                                                                        151      6    96%   153-160, 164-165
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/models/schemas.py                                                                        151      6    96%   151-158, 162-163
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/parsing/__init__.py                                                                        2      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/parsing/global_analysis_parser.py                                                        111     27    76%   43, 47, 49, 51, 60, 63, 69, 72-73, 79, 82, 87-88, 94-95, 124-125, 133, 136-137, 160, 163, 168, 172, 177, 184-185
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/__init__.py                                                                       6      4    33%   7-11
@@ -1129,29 +1299,29 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/contracts/stage.py                                                                5      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/errors.py                                                                         4      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/execution_log.py                                                                166     29    83%   51-56, 65-67, 96-101, 142-160, 166, 207-208, 212, 216, 224, 257, 262-263, 281-282
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/hybrid_inventory_pipeline.py                                                    189     34    82%   55, 66-67, 161-164, 203, 228-231, 245-259, 276-279, 301-304, 333-336, 364-365
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/hybrid_inventory_pipeline.py                                                    264     37    86%   83, 128, 142-145, 180-191, 225-226, 237, 248-249, 451, 458-461, 468-471, 475-478, 506-509, 527-530
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/ports/__init__.py                                                                 2      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/ports/analysis_provider.py                                                       24      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/ports/llm_execution.py                                                            5      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/provider_keys.py                                                                  8      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/providers/__init__.py                                                             4      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/providers/definitions.py                                                         21      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/providers/registry.py                                                            28      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/providers/registry.py                                                            33      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/run_metadata.py                                                                  76     10    87%   45-54
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/__init__.py                                                              0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/analysis_visual_reference_prep.py                                       47      4    91%   47-48, 53, 64
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/hybrid_analysis_prompt.py                                               56      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/multi_provider_analysis_execution.py                                    77      7    91%   57, 79, 165, 190, 266-273
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/pipeline_provider_resolver.py                                           21      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/provider_analysis_execution_config.py                                   47      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/provider_analysis_execution_config.py                                   45      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/provider_analysis_result_normalization.py                               11      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/provider_llm_request_metadata.py                                        16      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/services/provider_result_aggregator.py                                           24      1    96%   48
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/stages/__init__.py                                                                7      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/stages/analysis_stage.py                                                         53     18    66%   64-77, 104-115
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/stages/analysis_stage.py                                                         65     23    65%   32-36, 57-68, 87, 97-98, 139-141
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/stages/entity_resolution_stage.py                                                38      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/stages/evidence_stage.py                                                         26      2    92%   46-51
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/stages/frame_acquisition_stage.py                                                80      0   100%
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/stages/frame_acquisition_stage.py                                                81      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/stages/input_preparation_stage.py                                                37      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/pipeline/stages/reporting_stage.py                                                        41      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/preprocess/__init__.py                                                                     0      0   100%
@@ -1161,9 +1331,9 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reid/__init__.py                                                                          47      8    83%   101-108
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reid/clip_embedder.py                                                                     48      8    83%   18, 23, 30, 69, 81, 85-87
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reid/gating.py                                                                            72     32    56%   76-107
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reid/merge.py                                                                             78      8    90%   25, 30, 44, 88, 122-123, 150, 155
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reid/merge.py                                                                             78      8    90%   24, 29, 43, 87, 121-122, 149, 154
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reid/phash.py                                                                             46     11    76%   18, 20, 53, 65-66, 70-71, 73, 77-79
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reid/signature.py                                                                         75      5    93%   64-66, 108, 118
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reid/signature.py                                                                         75      5    93%   64-66, 111, 121
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reporting/__init__.py                                                                      3      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reporting/artifacts.py                                                                    32      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/reporting/display_label.py                                                                 9      0   100%
@@ -1175,16 +1345,16 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/roi/cropper.py                                                                            32     32     0%   5-68
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/roi/quality.py                                                                             8      8     0%   7-27
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/runtime/__init__.py                                                                        2      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/runtime/app_container.py                                                                 304     87    71%   104-105, 138-151, 237-241, 253, 263-267, 289-293, 315-319, 331, 341-345, 357, 367-371, 382-390, 409, 462-466, 478, 488-492, 504, 514-518, 529-556, 559-581, 584-606, 609-631, 634-656
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/runtime/v3_deps.py                                                                        50      8    84%   73, 94, 98, 102, 106, 110, 114, 118
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/runtime/app_container.py                                                                 312     92    71%   104-105, 138-151, 237-241, 253, 263-267, 289-293, 315-319, 331, 341-345, 357, 367-371, 382-390, 409, 442-450, 474-478, 490, 500-504, 516, 526-530, 541-568, 571-593, 596-618, 621-643, 646-668
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/runtime/v3_deps.py                                                                        53      9    83%   74, 88, 100, 104, 108, 112, 116, 120, 124
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/storage/__init__.py                                                                        0      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/storage/adapters/__init__.py                                                               2      2     0%   3-5
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/storage/adapters/filesystem_artifact_storage.py                                           31     31     0%   5-52
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/storage/ports/__init__.py                                                                  2      2     0%   3-5
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/storage/ports/artifact_storage.py                                                          8      8     0%   9-37
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/tracking/__init__.py                                                                       3      0   100%
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/tracking/track_builder.py                                                                 19     16    16%   23-58
-/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/tracking/tracker.py                                                                       56      4    93%   59, 62-63, 76
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/tracking/track_builder.py                                                                 19     16    16%   22-57
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/tracking/tracker.py                                                                       56      4    93%   58, 61-62, 75
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/utils/__init__.py                                                                          2      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/utils/validation.py                                                                       34      3    91%   40, 47, 57
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/validation/__init__.py                                                                     2      0   100%
@@ -1195,6 +1365,10 @@ Name                                                                            
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/view_selection/__init__.py                                                                 2      0   100%
 /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/view_selection/selector.py                                                               237     58    76%   39, 50, 52, 66-69, 75, 81-82, 101, 120, 124, 134, 137, 147-156, 194, 207, 213, 237, 283, 300-306, 314, 336-350, 354-358, 371-372, 382-408
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-TOTAL                                                                                                                                                            21251   3764    82%
+TOTAL                                                                                                                                                            21936   3771    83%
 Coverage HTML written to dir htmlcov
-=============== 1800 passed, 13 skipped, 120 warnings in 35.18s ================
+=========================== short test summary info ============================
+FAILED ../../backend/tests/api/test_v3_stored_artifact_access_unit.py::test_fetch_json_rejects_from_head_before_get_or_download
+FAILED ../../backend/tests/api/test_v3_stored_artifact_access_unit.py::test_fetch_json_when_head_fails_rejects_from_on_disk_stat
+FAILED ../../backend/tests/application/use_cases/test_compute_materialized_capture_session_group_preview_g6.py::test_classify_g6_preview_status_explicit_contract
+========== 3 failed, 1826 passed, 13 skipped, 120 warnings in 26.68s ===========
