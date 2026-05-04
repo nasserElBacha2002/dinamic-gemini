@@ -6,7 +6,10 @@ from src.pipeline.providers.definitions import (
     PIPELINE_PROVIDER_SPECS,
     registered_pipeline_provider_keys_from_definitions,
 )
-from src.pipeline.providers.registry import registered_pipeline_provider_keys
+from src.pipeline.providers.registry import (
+    _EXECUTOR_BUILDERS,
+    registered_pipeline_provider_keys,
+)
 
 
 def test_definition_keys_match_registry() -> None:
@@ -14,6 +17,7 @@ def test_definition_keys_match_registry() -> None:
     keys = registered_pipeline_provider_keys_from_definitions()
     assert keys == registered_pipeline_provider_keys()
     assert keys == frozenset(s.key for s in PIPELINE_PROVIDER_SPECS)
+    assert frozenset(_EXECUTOR_BUILDERS) == keys
 
 
 def test_specs_have_distinct_keys() -> None:
