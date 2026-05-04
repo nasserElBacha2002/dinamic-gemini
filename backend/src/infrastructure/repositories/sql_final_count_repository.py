@@ -149,6 +149,7 @@ class SqlFinalCountRepository(FinalCountRepository):
         job_id: LabelJobScope = "all",
     ) -> Sequence[FinalCountRecord]:
         extra_sql, extra_params = _sql_job_predicate(job_id)
+        # extra_sql is only "", " AND job_id IS NULL", or " AND job_id = ?" (_sql_job_predicate).
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -169,7 +170,7 @@ class SqlFinalCountRepository(FinalCountRepository):
                 FROM final_count_records
                 WHERE inventory_id = ? AND aisle_id = ?{extra_sql}
                 ORDER BY created_at ASC, id ASC
-                """,
+                """,  # nosec B608
                 (inventory_id, aisle_id, *extra_params),
             )
             rows = cur.fetchall()
@@ -212,6 +213,6 @@ class SqlFinalCountRepository(FinalCountRepository):
         extra_sql, extra_params = _sql_job_predicate(job_id)
         with self._client.cursor() as cur:
             cur.execute(
-                f"DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",
+                f"DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",  # nosec B608
                 (inventory_id, aisle_id, *extra_params),
             )

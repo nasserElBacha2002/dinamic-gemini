@@ -176,6 +176,26 @@ Archivos no intervenidos en B3.1–B3.3; mismo patrón FP-P/DC que el triage B3.
 
 **Evidencia:** `audit/raw/backend-bandit-b3-final.json`, `audit/raw/backend-bandit-b3-final.txt`.
 
+### B3.5 — Cierre MEDIUM B608 restantes (2026-05-04)
+
+**Objetivo:** Eliminar los **13× MEDIUM (B608)** restantes (repos SQL no cubiertos en B3.1–B3.3) con comentario + `# nosec B608` en cierre de literal (o fin de línea `f"…"`), sin SQLi real — mismos criterios FP-P/DC que B3.3. **No** B4 (boundaries, `position_traceability`, `v3_stored_artifact_access`, ni imports `application`→`api`).
+
+| Archivo | B608 antes | Acción | B608 después | Observación |
+|---------|------------|--------|--------------|-------------|
+| `sql_capture_session_repository.py` | 3 | Comentarios FP-P/DC; `# nosec B608` en `execute`/`count_sql`/`list_sql` | **0** | NOT IN con tuple fija + `?`; `where_sql` solo fragmentos internos + params |
+| `sql_final_count_repository.py` | 2 | Idem; `_sql_job_predicate` documentado | **0** | `extra_sql` solo `""` / `AND job_id IS NULL` / `AND job_id = ?` |
+| `sql_normalized_label_repository.py` | 2 | Idem SELECT + DELETE | **0** | Mismo helper |
+| `sql_raw_label_repository.py` | 1 | Idem SELECT | **0** | Mismo helper |
+| `sql_position_repository.py` | 3 | Idem list + IN aisles | **0** | `where`/`params` parametrizados; ORDER BY whitelist `col_map`; `IN` solo `?` |
+| `sql_product_record_repository.py` | 1 | Idem IN position_ids | **0** | Placeholders + tuple params |
+| `sql_source_asset_repository.py` | 1 | Idem IN aisle_ids | **0** | Placeholders + list params |
+
+**Bandit post-B3.5:** `audit/raw/backend-bandit-b3-final-mediums.json` / `.txt` — **HIGH=0**, **MEDIUM=0**, **LOW=17** (sin cambio en familia LOW vs B3.4). Total hallazgos **17**.
+
+**Pytest:** `tests/infrastructure/repositories` completo falla en **collection** por error preexistente en `test_memory_capture_session_confirm_idempotency_repository.py`. Subconjunto acotado (repos tocados + job/analytics/scope): **14 passed**, **2 skipped**.
+
+**DoD B3.5:** MEDIUM B608 **0**; sin SQLi introducido; B4 **no** iniciado; evidencia y backlog actualizados.
+
 ---
 
 ## Críticos

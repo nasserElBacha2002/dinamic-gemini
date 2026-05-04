@@ -159,6 +159,7 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
         return _row_to_session(row) if row else None
 
     def count_open_sessions_for_aisle(self, inventory_id: str, aisle_id: str) -> int:
+        # B608 FP-P: NOT IN expands fixed _OPEN_STATUS_EXCLUSION with ? placeholders; ids bound as params.
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -167,7 +168,7 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
                 WHERE inventory_id = ? AND aisle_id = ?
                   AND closed_at IS NULL
                   AND status NOT IN ({",".join("?" for _ in _OPEN_STATUS_EXCLUSION)})
-                """,
+                """,  # nosec B608
                 (inventory_id, aisle_id, *_OPEN_STATUS_EXCLUSION),
             )
             row = cur.fetchone()
@@ -203,7 +204,8 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
             where_parts.append("created_at <= ?")
             params.append(_ensure_utc(created_to))
         where_sql = " AND ".join(where_parts)
-        count_sql = f"SELECT COUNT(1) AS c FROM capture_sessions WHERE {where_sql}"
+        # B608 DC: filters built from internal fragments (col = ?, IN (?…)); values only via params.
+        count_sql = f"SELECT COUNT(1) AS c FROM capture_sessions WHERE {where_sql}"  # nosec B608
         list_sql = f"""
             SELECT id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at,
                    clock_offset_seconds
@@ -211,7 +213,7 @@ class SqlCaptureSessionRepository(CaptureSessionRepository):
             WHERE {where_sql}
             ORDER BY created_at DESC, id DESC
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(count_sql, tuple(params))
             crow = cur.fetchone()

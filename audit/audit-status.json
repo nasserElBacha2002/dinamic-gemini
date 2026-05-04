@@ -1,7 +1,7 @@
 {
   "overall_status": "error",
   "max_severity": "critical",
-  "generated_at": "2026-05-04T13:12:00+00:00",
+  "generated_at": "2026-05-04T13:24:00+00:00",
   "areas": {
     "backend": {
       "status": "ERROR",
@@ -29,15 +29,15 @@
         },
         "bandit": {
           "status": "FINDINGS",
-          "severity": "medium",
+          "severity": "low",
           "metrics": {
-            "total": 30,
+            "total": 17,
             "high": 0,
-            "medium": 13,
+            "medium": 0,
             "low": 17
           },
-          "report": "audit/raw/backend-bandit-b3-final.json",
-          "observation": "B3.4 cierre 2026-05-04: sin HIGH; 13× MEDIUM (B608 en repos no cubiertos por B3.1–B3.3); 17× LOW; evidencia .txt; pytest B3.4 (3 módulos)=8 pass. skipped_tests=19 (nosec sin matching line). histórico B0: backend-bandit-b3-current.json"
+          "report": "audit/raw/backend-bandit-b3-final-mediums.json",
+          "observation": "B3.5 cierre 2026-05-04: MEDIUM=0 (B608 restantes suprimidos con nosec justificado); LOW=17 sin cambio de familia; evidencia backend-bandit-b3-final-mediums.{json,txt}; previos B3.4: backend-bandit-b3-final.json. skipped_tests≈32 (nosec redundante). Pytest repos: collection falla en test_memory_capture_* (preexistente); subset 14 pass 2 skip."
         },
         "pip-audit": {
           "status": "OK",

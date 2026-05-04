@@ -238,6 +238,7 @@ class SqlPositionRepository(PositionRepository):
         }
         order_col = col_map.get((sort_by or "created_at").strip().lower(), "p.created_at")
         order_dir = "DESC" if (sort_dir or "asc").strip().lower() == "desc" else "ASC"
+        # ORDER BY: order_col from col_map whitelist; ASC/DESC only; where uses ? params throughout.
         order_clause = f"ORDER BY {order_col} {order_dir}, p.id ASC"
         if join_product_records:
             sql = f"""
@@ -248,7 +249,7 @@ class SqlPositionRepository(PositionRepository):
                 WHERE {where}
                 {order_clause}
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-                """
+                """  # nosec B608
         else:
             sql = f"""
                 SELECT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
@@ -257,7 +258,7 @@ class SqlPositionRepository(PositionRepository):
                 WHERE {where}
                 {order_clause}
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-                """
+                """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
@@ -287,6 +288,7 @@ class SqlPositionRepository(PositionRepository):
         if not aisle_ids:
             return []
         placeholders = ",".join("?" * len(aisle_ids))
+        # IN clause: placeholders only; aisle_ids bound as parameters.
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -295,7 +297,7 @@ class SqlPositionRepository(PositionRepository):
                 FROM positions
                 WHERE aisle_id IN ({placeholders})
                 ORDER BY created_at ASC, id ASC
-                """,
+                """,  # nosec B608
                 list(aisle_ids),
             )
             rows = cur.fetchall()

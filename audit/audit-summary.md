@@ -19,7 +19,7 @@ Severidad máxima: critical
 |---|---|---|---|---|
 | Ruff | FINDINGS | medium | issues=3552, fixable=828 | audit/raw/backend-ruff.txt |
 | Mypy | FINDINGS | high | errors=80, files=35 | audit/raw/backend-mypy.txt |
-| Bandit | FINDINGS | medium | total=30, high=0, medium=13, low=17 | audit/raw/backend-bandit-b3-final.json |
+| Bandit | FINDINGS | low | total=17, high=0, medium=0, low=17 | audit/raw/backend-bandit-b3-final-mediums.json |
 | pip-audit | OK | none | total=0 | audit/raw/backend-pip-audit.json |
 | Pytest | ERROR | medium | collected=1785 | audit/raw/backend-pytest.txt |
 
@@ -58,7 +58,7 @@ Severidad máxima: critical
 ## Hallazgos principales automáticos
 
 - Frontend vitest reporta 86 tests fallidos.
-- Bandit (B3.4): total=30, high=0, medium=13, low=17 (ver `backend-bandit-b3-final.json`).
+- Bandit (B3.5): total=17, high=0, medium=0, low=17 (ver `backend-bandit-b3-final-mediums.json`).
 - npm audit frontend: moderate=7, high=0, critical=0.
 - Mypy backend detecta 80 errores en 35 archivos.
 - Complejidad frontend: files>300=19, files>1000=4.
@@ -86,6 +86,10 @@ Revalidación manual pre-B3 sobre `backend/src` (Bandit 1.9.4): **59** hallazgos
 ## Actualización B3.4 — Bandit cierre fase B3 (2026-05-04)
 
 Corrida completa `bandit -r src` (evidencia: `audit/raw/backend-bandit-b3-final.json` / `.txt`). **30** hallazgos (**0 HIGH**, **13 MEDIUM**, **17 LOW**). B608 **0** en rutas intervención B3 (`sql_job_repository`, `sql_analytics_repository`, `migrations/service`); **13** B608 MEDIUM restantes en otros repositorios SQL. **LOW** restantes: B101 (9), B106 (2, bearer), B110 (3, `env_settings/sqlserver_resolution`, `v3_job_executor`), B404/B603 (on_demand_worker), B311 (random no cripto). Pytest muestreo seguridad: 8 pass (repos + migración). Detalle: `audit/audit-backlog.md` sección **B3.4**.
+
+## Actualización B3.5 — Bandit MEDIUM B608 cerrados (2026-05-04)
+
+Post-B3.5: corrida `bandit -r src` → **17** hallazgos, todos **LOW** (**MEDIUM=0**). Evidencia: `audit/raw/backend-bandit-b3-final-mediums.json` / `.txt`. Los 13 B608 MEDIUM finales se cerraron con `# nosec B608` + comentarios en siete repos SQL (sin B4 / sin boundaries). Detalle tabla: `audit/audit-backlog.md` **B3.5**.
 
 ## Limitaciones
 

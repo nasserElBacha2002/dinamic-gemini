@@ -174,6 +174,7 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
         job_id: LabelJobScope = "all",
     ) -> Sequence[NormalizedLabel]:
         extra_sql, extra_params = _sql_job_predicate(job_id)
+        # extra_sql from _sql_job_predicate only (see module helper).
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -184,7 +185,7 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
                 FROM normalized_labels
                 WHERE inventory_id = ? AND aisle_id = ?{extra_sql}
                 ORDER BY created_at ASC, id ASC
-                """,
+                """,  # nosec B608
                 (inventory_id, aisle_id, *extra_params),
             )
             rows = cur.fetchall()
@@ -200,6 +201,6 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
         extra_sql, extra_params = _sql_job_predicate(job_id)
         with self._client.cursor() as cur:
             cur.execute(
-                f"DELETE FROM normalized_labels WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",
+                f"DELETE FROM normalized_labels WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",  # nosec B608
                 (inventory_id, aisle_id, *extra_params),
             )

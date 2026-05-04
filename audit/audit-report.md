@@ -34,7 +34,7 @@ Se analizaron reportes de `audit/raw/` para:
 |---|---|---|---|---:|---|
 | Ruff | `audit/raw/backend-ruff.txt` | Detectado | Medio | 3545 | Alto volumen de deuda de estilo/calidad; 829 fixables directos |
 | Mypy | `audit/raw/backend-mypy.txt` | Detectado | Alto | 80 | Errores en 35 archivos, incluyendo contratos y stubs faltantes |
-| Bandit | `audit/raw/backend-bandit-b3-final.json` | Detectado | Medio | 30 | 0 HIGH, 13 MEDIUM, 17 LOW (B3.4, 2026-05-04) |
+| Bandit | `audit/raw/backend-bandit-b3-final-mediums.json` | Detectado | Bajo | 17 | 0 HIGH, 0 MEDIUM, 17 LOW (B3.5, 2026-05-04) |
 | pip-audit | `audit/raw/backend-pip-audit.json` | Detectado | Informativo | 0 CVE | Sin vulnerabilidades conocidas; paquete local no auditable en PyPI |
 | Pytest | `audit/raw/backend-pytest.txt` | Detectado | Crítico | 94 fallos | 1785 tests corridos (1678 pass, 13 skip) |
 
@@ -74,7 +74,7 @@ Se analizaron reportes de `audit/raw/` para:
 
 - Backend presenta **94 tests fallidos** en áreas core de operación de inventario/pipeline.
 - Frontend presenta **86 tests fallidos** en suites clave (`ExecutionLogPanel`, `CompareRunsPage`, `MetricsPage`, `InventoryDetailPage`).
-- Tras fase B3 (B3.4): Bandit `backend/src` = **0 HIGH**, **13 MEDIUM** (B608 en repos aún no tratados), **17 LOW** (assert, bearer, except pass residual, subprocess, random); evidencia `backend-bandit-b3-final.*`. Histórico pre-B3: 1 HIGH, 35 MEDIUM, 23 LOW.
+- Tras fase B3 (B3.5 cierre): Bandit `backend/src` = **0 HIGH**, **0 MEDIUM**, **17 LOW**; sin B608 en resultados; evidencia `backend-bandit-b3-final-mediums.*`. B3.4 intermedio: 30 hallazgos (13 MEDIUM B608 + 17 LOW). Histórico pre-B3: 1 HIGH, 35 MEDIUM, 23 LOW.
 - Mypy reporta **80 errores en 35 archivos**, con riesgo de contratos inconsistentes.
 - Ruff reporta **3545 issues**, indicando deuda técnica estructural.
 - npm audit frontend reporta **7 vulnerabilidades moderadas** en toolchain.
@@ -144,6 +144,10 @@ Post-parches B3.1–B3.3: corrida completa **Bandit** sobre `backend/src` (`audi
 **LOW (17):** principalmente **B101** (asserts internos), **B106** (literal `bearer`), **B110** (`except: pass` en resolución ODBC y una ruta en `v3_job_executor`), **B404/B603** (`on_demand_worker_launch_service`), **B311** (`anthropic_sdk_adapter`). Clasificación extendida en `audit/audit-backlog.md` **B3.4**.
 
 Pruebas de regresión acotadas (seguridad): `pytest` sobre `test_sql_analytics_repository`, `test_sql_job_repository`, `test_migration_service` → **8 passed**.
+
+### Actualización B3.5 — MEDIUM B608 cerrados (2026-05-04)
+
+Cierre de los **13 B608 MEDIUM** en siete repos SQL vía comentario + `# nosec B608` (FP-P/DC, sin riesgo SQLi). Corrida actual: `audit/raw/backend-bandit-b3-final-mediums.json` / `.txt` — **0 MEDIUM**, **17 LOW**. **B4 (architecture boundary) no iniciado**.
 
 <!-- AUTO-AUDIT-SUMMARY:START -->
 ## Consolidación automática reproducible
