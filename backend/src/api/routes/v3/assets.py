@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from io import BytesIO
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
@@ -14,7 +13,6 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
     HTTP_DETAIL_AISLE_NOT_FOUND_SHORT,
     HTTP_DETAIL_ASSET_NOT_FOUND,
-    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
     HTTP_DETAIL_PREVIEW_NOT_AVAILABLE_FOR_IMAGE,
 )
 from src.api.dependencies import (
@@ -30,12 +28,12 @@ from src.api.schemas.asset_schemas import (
     SourceAssetResponse,
     UploadAisleAssetsResponse,
 )
+from src.api.services.multipart_aisle_uploads import read_uploaded_files_for_aisle_asset_upload
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     resolve_source_asset_file_response,
     resolve_source_asset_image_display,
 )
-from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import AisleNotFoundError
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.services.source_asset_heic import (
@@ -51,6 +49,29 @@ from .shared import asset_to_response, resolve_normalized_asset_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _normalized_heic_jpeg_path_for_asset(
+    *,
+    inventory_id: str,
+    aisle_id: str,
+    asset_id: str,
+    job_id: str | None,
+    use_case: ListAisleAssetsUseCase,
+    resolver: ResultContextResolver,
+) -> Path | None:
+    """Resolve pipeline normalized JPEG for a HEIC asset (operational or explicit job slice)."""
+    aisle_row = use_case.get_validated_aisle(inventory_id, aisle_id)
+    output_dir = Path(load_settings().output_dir)
+    request_job_id = job_id.strip() if job_id and job_id.strip() else None
+    return resolve_normalized_asset_path(
+        output_dir,
+        inventory_id=inventory_id,
+        aisle=aisle_row,
+        asset_id=asset_id,
+        explicit_job_id=request_job_id,
+        resolver=resolver,
+    )
 
 
 def _source_asset_image_display_response(
@@ -94,22 +115,7 @@ async def upload_aisle_assets(
     use_case: UploadAisleAssetsUseCase = Depends(get_upload_aisle_assets_use_case),
 ) -> UploadAisleAssetsResponse:
     """Upload one or more assets (photos/videos) to an aisle. Aisle transitions to assets_uploaded."""
-    if not files:
-        raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
-    uploaded: list[UploadedFile] = []
-    for u in files:
-        if not u.filename and not getattr(u, "content_type", None):
-            continue
-        content = await u.read()
-        uploaded.append(
-            UploadedFile(
-                original_filename=u.filename or "file",
-                file_obj=BytesIO(content),
-                content_type=u.content_type or "application/octet-stream",
-            )
-        )
-    if not uploaded:
-        raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
+    uploaded = await read_uploaded_files_for_aisle_asset_upload(files)
     try:
         created = use_case.execute(inventory_id, aisle_id, uploaded)
         return UploadAisleAssetsResponse(assets=[asset_to_response(a) for a in created])
@@ -181,26 +187,24 @@ def get_aisle_asset_file(
 
     # HEIC/HEIF: serve normalized JPEG from local pipeline output when available (unchanged contract).
     if source_asset_is_heic(asset):
-        try:
-            aisle_row = use_case.get_validated_aisle(inventory_id, aisle_id)
-        except AisleNotFoundError:
-            failure_reason = AssetFileFailureReason.AISLE_NOT_FOUND
-            raise HTTPException(status_code=404, detail=HTTP_DETAIL_AISLE_NOT_FOUND_SHORT) from None
-        output_dir = Path(load_settings().output_dir)
         request_job_id = job_id.strip() if job_id and job_id.strip() else None
         logger.debug(
             "Asset file: HEIC resolving normalized path asset_id=%s job_id=%s",
             asset_id,
             request_job_id,
         )
-        normalized_path = resolve_normalized_asset_path(
-            output_dir,
-            inventory_id=inventory_id,
-            aisle=aisle_row,
-            asset_id=asset_id,
-            explicit_job_id=request_job_id,
-            resolver=resolver,
-        )
+        try:
+            normalized_path = _normalized_heic_jpeg_path_for_asset(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                asset_id=asset_id,
+                job_id=job_id,
+                use_case=use_case,
+                resolver=resolver,
+            )
+        except AisleNotFoundError:
+            failure_reason = AssetFileFailureReason.AISLE_NOT_FOUND
+            raise HTTPException(status_code=404, detail=HTTP_DETAIL_AISLE_NOT_FOUND_SHORT) from None
         if normalized_path is not None:
             preview_filename = (asset.original_filename or "preview").rsplit(".", 1)[0] + ".jpg"
             return FileResponse(
@@ -271,8 +275,16 @@ def get_aisle_asset_image_display_url(
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_ASSET_NOT_FOUND)
 
     if source_asset_is_heic(asset):
+        request_job_id = job_id.strip() if job_id and job_id.strip() else None
         try:
-            aisle_row = use_case.get_validated_aisle(inventory_id, aisle_id)
+            normalized_path = _normalized_heic_jpeg_path_for_asset(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                asset_id=asset_id,
+                job_id=job_id,
+                use_case=use_case,
+                resolver=resolver,
+            )
         except AisleNotFoundError:
             logger.warning(
                 "Asset image-display-url: aisle_not_found inventory_id=%s aisle_id=%s asset_id=%s",
@@ -281,16 +293,6 @@ def get_aisle_asset_image_display_url(
                 asset_id,
             )
             raise HTTPException(status_code=404, detail=HTTP_DETAIL_AISLE_NOT_FOUND_SHORT) from None
-        output_dir = Path(load_settings().output_dir)
-        request_job_id = job_id.strip() if job_id and job_id.strip() else None
-        normalized_path = resolve_normalized_asset_path(
-            output_dir,
-            inventory_id=inventory_id,
-            aisle=aisle_row,
-            asset_id=asset_id,
-            explicit_job_id=request_job_id,
-            resolver=resolver,
-        )
         if normalized_path is not None:
             # Same strategy as local/legacy: client must GET /file, which serves the normalized JPEG.
             return _source_asset_image_display_response(image_url=None, need_fetch=True)
