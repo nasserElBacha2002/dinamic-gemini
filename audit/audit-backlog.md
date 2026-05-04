@@ -124,6 +124,58 @@ Cada fila = un disparo Bandit B608. Clasificación: **FP-P** = FALSO_POSITIVO_PA
 
 **DoD B3.3:** ruido B608 reducido en dos repos SQL principales; excepciones revisadas en puntos críticos; backlog actualizado; sin cambio funcional de negocio intencional.
 
+### B3.4 — Cierre B3 Seguridad Backend (Bandit + evidencia) (2026-05-04)
+
+**Comandos:** `cd backend && python -m bandit -r src -f json -o ../audit/raw/backend-bandit-b3-final.json` y `-f txt -o ../audit/raw/backend-bandit-b3-final.txt`. **Pytest:** `test_sql_analytics_repository`, `test_sql_job_repository`, `test_migration_service` → **8 passed**. Sin CI/CD ni hooks en esta pasada.
+
+#### Comparación B0 → B3.4 (Bandit `backend/src`)
+
+| Métrica | B0 (2026-05-04 pre-B3) | B3.4 final |
+|--------|-------------------------|------------|
+| Total | 59 | 30 |
+| HIGH | 1 (B324 MD5, **corregido** en B3.1) | **0** |
+| MEDIUM | 35 | 13 |
+| LOW | 23 | 17 |
+
+#### DoD B3.4
+
+| Criterio | Estado |
+|----------|--------|
+| HIGH = 0 | **Cumplido** |
+| B608 en rutas B3 trabajadas (`sql_job_repository`, `sql_analytics_repository`, `database/migrations/service`) | **0** hallazgos en corrida completa |
+| B110 en rutas críticas revisadas (jobs / pipeline / `sqlserver` cursor) | **Revisado en B3.3**; quedan **B110 LOW** fuera de ese alcance (ver tabla LOW) |
+| LOW restantes documentados | **Sí** (tabla inferior) |
+| Sin refactor masivo / sin CI | **Cumplido** |
+
+#### MEDIUM (13) — solo B608
+
+Archivos no intervenidos en B3.1–B3.3; mismo patrón FP-P/DC que el triage B3.1: candidatos a **B4 / refactor puntual** si se desea 0 MEDIUM.
+
+| Archivo | Líneas (aprox.) |
+|---------|-----------------|
+| `src/infrastructure/repositories/sql_capture_session_repository.py` | 164, 206, 207 |
+| `src/infrastructure/repositories/sql_final_count_repository.py` | 154, 215 |
+| `src/infrastructure/repositories/sql_normalized_label_repository.py` | 179, 203 |
+| `src/infrastructure/repositories/sql_position_repository.py` | 243, 253, 292 |
+| `src/infrastructure/repositories/sql_product_record_repository.py` | 175 |
+| `src/infrastructure/repositories/sql_raw_label_repository.py` | 174 |
+| `src/infrastructure/repositories/sql_source_asset_repository.py` | 237 |
+
+#### LOW (17) — documentados para backlog / política
+
+| ID | N | Clasificación sugerida | Notas |
+|----|---|---------------------------|-------|
+| **B101** | 9 | FP / invariantes internas | `assert` en preview/compare/export/pipeline/costing/multi_provider… — ya clasificado en B0 |
+| **B106** | 2 | **FP** | `token_type="bearer"` OAuth |
+| **B110** | 3 | Revisar siguiente | `env_settings/sqlserver_resolution.py` (2), `v3_job_executor.py` (1) — fuera del paquete jobs/pipeline revisado en B3.3 |
+| **B404** | 1 | Contextual | import `subprocess` en `on_demand_worker_launch_service.py` |
+| **B603** | 1 | Contextual | llamada `subprocess` misma ruta |
+| **B311** | 1 | FP probable | `random` no cripto en `anthropic_sdk_adapter.py` |
+
+**Nota tooling:** `skipped_tests: 19` en métricas Bandit — pragmas `# nosec` en líneas sin test fallido (Bandit avisa); no afecta recuento de hallazgos reportados.
+
+**Evidencia:** `audit/raw/backend-bandit-b3-final.json`, `audit/raw/backend-bandit-b3-final.txt`.
+
 ---
 
 ## Críticos

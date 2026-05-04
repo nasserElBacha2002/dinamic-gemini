@@ -1,7 +1,7 @@
 {
   "overall_status": "error",
   "max_severity": "critical",
-  "generated_at": "2026-04-29T22:03:15+00:00",
+  "generated_at": "2026-05-04T13:12:00+00:00",
   "areas": {
     "backend": {
       "status": "ERROR",
@@ -29,15 +29,15 @@
         },
         "bandit": {
           "status": "FINDINGS",
-          "severity": "high",
+          "severity": "medium",
           "metrics": {
-            "total": 59,
-            "high": 1,
-            "medium": 35,
-            "low": 23
+            "total": 30,
+            "high": 0,
+            "medium": 13,
+            "low": 17
           },
-          "report": "audit/raw/backend-bandit-b3-current.json",
-          "observation": "B0 revalidación 2026-05-04; TXT en audit/raw/backend-bandit-b3-current.txt; histórico audit/raw/runs/20260429-190315/backend-bandit.json"
+          "report": "audit/raw/backend-bandit-b3-final.json",
+          "observation": "B3.4 cierre 2026-05-04: sin HIGH; 13× MEDIUM (B608 en repos no cubiertos por B3.1–B3.3); 17× LOW; evidencia .txt; pytest B3.4 (3 módulos)=8 pass. skipped_tests=19 (nosec sin matching line). histórico B0: backend-bandit-b3-current.json"
         },
         "pip-audit": {
           "status": "OK",
