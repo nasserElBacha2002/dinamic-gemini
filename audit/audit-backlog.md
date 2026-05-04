@@ -1,5 +1,34 @@
 # Backlog de bugs y vulnerabilidades
 
+## B0 — Revalidación Bandit backend (pre-B3), 2026-05-04
+
+**Objetivo:** Estado real antes de la fase B3 (Bandit HIGH/MEDIUM). **Sin cambios de código productivo.**
+
+**Comando:** `cd backend && bandit -r src` (salida: `audit/raw/backend-bandit-b3-current.json`, `audit/raw/backend-bandit-b3-current.txt`).  
+**Herramienta:** Bandit 1.9.4 · Python 3.13 (venv repo).
+
+**Totales (coinciden con corrida 2026-04-29):** 59 hallazgos · **1 HIGH** · **35 MEDIUM** · **23 LOW** · ~45k LOC.
+
+### Clasificación por familia (estado B0)
+
+| Familia / ID | Archivos / notas | Estado B0 | Comentario |
+|--------------|------------------|-----------|------------|
+| **B324** MD5 “weak hash” | `src/app.py:161` (`run_hash` para `run_id`) | **CONFIRMADO** | Hallazgo reproducido. Uso no criptográfico (identificador); remedio B3 típico: `hashlib.md5(..., usedforsecurity=False)` o sustituto. |
+| **B608** SQL dinámico / string SQL | 35 ocurrencias: `migrations/service.py` (4), `sql_analytics_repository.py` (12), `sql_capture_session_repository.py` (3), `sql_final_count_repository.py` (2), `sql_job_repository.py` (6), `sql_normalized_label_repository.py` (2), `sql_position_repository.py` (3), `sql_product_record_repository.py`, `sql_raw_label_repository`, `sql_source_asset_repository` (1 c/u) | **CONFIRMADO** (lista estática) | Riesgo SQLi real: **PENDIENTE_DE_REPRODUCIR** por consulta (muchas rutas usan parámetros ODBC). B3: revisar cada construcción; posibles **FALSO_POSITIVO** donde solo hay concatenación de fragmentos con placeholders. |
+| **B101** `assert` en producción | 9 (`capture_assignment_preview`, `compare_aisle_runs`, `compare_many_aisle_runs`, `export_aisle_benchmark`, `v3_execution_artifacts_service`, `v3_job_executor`, `costing`, `multi_provider_analysis_execution`) | **FALSO_POSITIVO** / bajo | Regla advierte `-O`; asserts como invariantes internas — fuera del alcance típico B3 salvo política explícita. |
+| **B106** “hardcoded password” | `auth/service.py` `token_type="bearer"` (2 líneas) | **FALSO_POSITIVO** | Literal estándar OAuth; no es secreto. |
+| **B110** `try/except: pass` | `sqlserver.py`, `sqlserver_resolution.py`, `v3_job_executor.py`, `dev_reset_local_jobs.py`, `worker.py`, `hybrid_inventory_pipeline.py` | **CONFIRMADO** | Revisar en B3 si el silenciamiento es aceptable o debe loguearse/narrow except. |
+| **B404** `subprocess` import | `on_demand_worker_launch_service.py` | **CONFIRMADO** | Revisión contextual B3 (uso real de subprocess). |
+| **B603** `subprocess` call | mismo módulo ~L43 | **CONFIRMADO** | Revisión contextual B3 (argumentos fijos vs usuario). |
+| **B112** `try/except: continue` | `dev_reset_local_jobs.py` | **CONFIRMADO** | Baja severidad; revisar en B3 si aplica. |
+| **B311** `random` | `anthropic_sdk_adapter.py` | **CONFIRMADO** / probable **FALSO_POSITIVO** | Uso no criptográfico habitual; validar en B3. |
+
+**Resumen:** Ningún hallazgo marcado como **YA_CORREGIDO** en esta corrida (baseline sin parches B3). Evidencia cruda: `audit/raw/backend-bandit-b3-current.json` y `.txt`.
+
+**Actualización AUD-004:** Métricas vigentes alineadas con esta evidencia; enlaces preferentes a los archivos `backend-bandit-b3-current.*`.
+
+---
+
 ## Críticos
 
 ### AUD-001 - Fallos masivos en pruebas backend core (API/use-cases/pipeline)
@@ -44,13 +73,14 @@
 - Área: Backend
 - Herramienta: Bandit
 - Severidad: Alto
-- Archivo/Ruta: `backend/src/infrastructure/repositories/`, `backend/src/jobs/`, `backend/src/pipeline/`
-- Descripción: 59 hallazgos (1 HIGH, 35 MEDIUM, 23 LOW), destacando SQL dinámico y manejo de excepciones.
+- Archivo/Ruta: `backend/src/infrastructure/repositories/`, `backend/src/database/migrations/`, `backend/src/app.py`, otros (ver B0)
+- Descripción: 59 hallazgos (1 HIGH, 35 MEDIUM, 23 LOW), destacando SQL dinámico (B608) y manejo de excepciones (B110).
 - Riesgo: Superficie de ataque y ocultamiento de errores.
 - Evidencia:
-  - `audit/raw/backend-bandit.json`
-- Recomendación futura: Priorizar remediación de HIGH y MEDIUM por riesgo real.
-- Estado: Pendiente
+  - **Actual (pre-B3):** `audit/raw/backend-bandit-b3-current.json`, `audit/raw/backend-bandit-b3-current.txt`
+  - Histórico: `audit/raw/runs/20260429-190315/backend-bandit.json`
+- Recomendación futura: Fase B3 — HIGH (B324) y MEDIUM (B608) con triage; ver clasificación en sección **B0** arriba.
+- Estado: Pendiente (revalidado 2026-05-04)
 
 ### AUD-005 - Vulnerabilidades moderadas en dependencias frontend
 - Área: Frontend

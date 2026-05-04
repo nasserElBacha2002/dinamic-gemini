@@ -79,6 +79,10 @@ Severidad máxima: critical
 5. Code smells
 6. Limpieza/ruido
 
+## Actualización B0 — Bandit backend (2026-05-04)
+
+Revalidación manual pre-B3 sobre `backend/src` (Bandit 1.9.4): **59** hallazgos totales (**1 HIGH**, **35 MEDIUM**, **23 LOW**) — mismos totales que la corrida archivada en `audit/raw/runs/20260429-190315/`. Evidencia actual: `audit/raw/backend-bandit-b3-current.json` y `.txt`. Clasificación y priorización: `audit/audit-backlog.md` (sección **B0**).
+
 ## Limitaciones
 
 - Esta consolidación es automática y puede requerir revisión humana.

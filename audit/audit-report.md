@@ -133,6 +133,10 @@ Se analizaron reportes de `audit/raw/` para:
 - Modo: no bloqueante (Fase 5).
 - Fuente: `audit/audit-status.json` evaluado por `scripts/audit/enforce_quality_gate.py`.
 
+### Actualización B0 — Bandit (2026-05-04)
+
+Revalidación estática **Bandit** sobre `backend/src` antes de la fase B3 (seguridad). Totales: 59 hallazgos (1 HIGH, 35 MEDIUM, 23 LOW), coherentes con el snapshot de abril. Evidencia: `audit/raw/backend-bandit-b3-current.json` / `.txt`. Clasificación por familia (CONFIRMADO / FALSO_POSITIVO / PENDIENTE_DE_REPRODUCIR): `audit/audit-backlog.md` sección **B0**. Sin cambios de código en esta pasada.
+
 <!-- AUTO-AUDIT-SUMMARY:START -->
 ## Consolidación automática reproducible
 

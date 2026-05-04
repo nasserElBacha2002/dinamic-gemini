@@ -36,8 +36,8 @@
             "medium": 35,
             "low": 23
           },
-          "report": "audit/raw/backend-bandit.json",
-          "observation": ""
+          "report": "audit/raw/backend-bandit-b3-current.json",
+          "observation": "B0 revalidación 2026-05-04; TXT en audit/raw/backend-bandit-b3-current.txt; histórico audit/raw/runs/20260429-190315/backend-bandit.json"
         },
         "pip-audit": {
           "status": "OK",
