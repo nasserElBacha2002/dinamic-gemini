@@ -33,7 +33,10 @@ export default function PositionDetailPage() {
     if (!invQ.data?.name || !aislesQ.isFetched) return;
 
     const aisleCode = aislesQ.data?.items?.find((a) => a.id === aisleId)?.code ?? t('common.em_dash');
-    const resultIds = navState?.resultIds ?? [positionId];
+    const rawIds = navState?.resultIds;
+    const resultIds =
+      Array.isArray(rawIds) && rawIds.length > 0 ? rawIds : [positionId];
+
     redirected.current = true;
 
     if (navState?.returnTo === 'review_queue') {
@@ -69,6 +72,7 @@ export default function PositionDetailPage() {
         },
       },
     });
+    // One-shot redirect: `redirected` prevents duplicate navigations if aisle list refetches.
   }, [
     inventoryId,
     aisleId,

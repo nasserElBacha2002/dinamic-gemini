@@ -269,6 +269,7 @@ export default function AislePositionsPage() {
     if (routeIdentityRef.current !== '' && routeIdentityRef.current !== key) {
       setSearchParams(
         (prev) => {
+          if (!prev.has('jobId')) return prev;
           const p = new URLSearchParams(prev);
           p.delete('jobId');
           return p;
@@ -396,6 +397,7 @@ export default function AislePositionsPage() {
     const raw = location.state as { openReviewDrawer?: OpenReviewDrawerPayload } | null;
     const p = raw?.openReviewDrawer;
     if (!p || p.kind !== 'aisle' || !inventoryId || !aisleId || !inventory) return;
+    if (!p.positionId?.trim() || !Array.isArray(p.resultIds) || p.resultIds.length === 0) return;
     const key = `${p.positionId}-${inventoryId}-${aisleId}`;
     if (consumedAisleRedirectKey.current === key) return;
     consumedAisleRedirectKey.current = key;
@@ -411,10 +413,12 @@ export default function AislePositionsPage() {
       jobId: p.jobId,
       exactPositionDetail: p.exactPositionDetail ?? true,
     });
-    navigate(location.pathname, { replace: true, state: {} });
+    // Strip one-shot drawer payload from history; preserve query string (e.g. jobId) on this route.
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: {} });
   }, [
     location.state,
     location.pathname,
+    location.search,
     inventory,
     inventoryId,
     aisleId,
