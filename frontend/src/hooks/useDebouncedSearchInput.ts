@@ -18,18 +18,13 @@ export function useDebouncedSearchInput(debounceMs: number, initialInput = ''): 
   const [input, setInput] = useState(initialInput);
   const [appliedNonEmpty, setAppliedNonEmpty] = useState(() => initialInput.trim());
   const trimmedInput = input.trim();
+  const applied = trimmedInput === '' ? '' : debounceMs <= 0 ? trimmedInput : appliedNonEmpty;
 
   useEffect(() => {
-    if (trimmedInput === '') return;
-    if (debounceMs <= 0) {
-      queueMicrotask(() => setAppliedNonEmpty(trimmedInput));
-      return;
-    }
+    if (trimmedInput === '' || debounceMs <= 0) return;
     const id = window.setTimeout(() => setAppliedNonEmpty(trimmedInput), debounceMs);
     return () => window.clearTimeout(id);
   }, [trimmedInput, debounceMs]);
-
-  const applied = trimmedInput === '' ? '' : appliedNonEmpty;
 
   return { input, setInput, applied };
 }

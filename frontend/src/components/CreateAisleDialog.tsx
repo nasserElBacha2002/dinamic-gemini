@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -53,15 +53,6 @@ export default function CreateAisleDialog({
     setValidationError('');
     setCreatedCode(null);
   };
-
-  useEffect(() => {
-    if (!open) return;
-    queueMicrotask(() => {
-      reset();
-      onError?.(null);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
   const handleClose = () => {
     if (!submitting) {
@@ -133,10 +124,9 @@ export default function CreateAisleDialog({
           <>
             <Button
               onClick={() => {
-                setCreatedCode(null);
-                setCode('');
-                setValidationError('');
+                reset();
                 onError?.(null);
+                setCreatedCode(null);
                 requestAnimationFrame(() => {
                   codeInputRef.current?.focus();
                 });

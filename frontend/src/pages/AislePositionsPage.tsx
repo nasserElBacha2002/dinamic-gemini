@@ -138,6 +138,7 @@ export default function AislePositionsPage() {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
+  const [lastMergeContextKey, setLastMergeContextKey] = useState<string | null>(null);
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [promoteJobId, setPromoteJobId] = useState('');
   /** `photo` keeps API order; `priority` applies client-side review ranking on top of loaded rows. */
@@ -328,23 +329,15 @@ export default function AislePositionsPage() {
     [filteredBySku, tableSort]
   );
 
-  useEffect(() => {
-    if (sortedForTable.length === 0) return;
-    const pages = Math.max(1, Math.ceil(sortedForTable.length / pageSize));
-    if (page > pages) queueMicrotask(() => setPage(pages));
-  }, [sortedForTable.length, pageSize, page]);
-
-  useEffect(() => {
-    queueMicrotask(() => {
-      setLastMergeResponse(null);
-      setLastMergeSummary(null);
-    });
-  }, [inventoryId, aisleId, jobIdParam]);
+  const maxPage = Math.max(1, Math.ceil(Math.max(sortedForTable.length, 1) / pageSize));
+  const effectivePage = Math.min(page, maxPage);
+  const mergeContextKey = `${inventoryId ?? ''}|${aisleId ?? ''}|${jobIdParam ?? ''}`;
+  const mergeFeedbackIsCurrentContext = lastMergeContextKey === mergeContextKey;
 
   const tableRows = useMemo(() => {
-    const start = (page - 1) * pageSize;
+    const start = (effectivePage - 1) * pageSize;
     return sortedForTable.slice(start, start + pageSize);
-  }, [sortedForTable, page, pageSize]);
+  }, [sortedForTable, effectivePage, pageSize]);
 
   const handleResetFilters = useCallback(() => {
     setFilter('all');
@@ -449,7 +442,7 @@ export default function AislePositionsPage() {
   const mergeDisabledReason =
     mergeCandidates.groupCount === 0 ? t('positions.merge_no_skus') : '';
   const mergeFeedback = useMemo(() => {
-    if (lastMergeResponse != null) {
+    if (lastMergeResponse != null && mergeFeedbackIsCurrentContext) {
       if (lastMergeResponse.product_records_updated > 0) {
         const detailExtra = lastMergeSummary
           ? t('positions.merge_visible_detail_space', { detail: mergeConsolidatedDetail(t, lastMergeSummary) })
@@ -473,7 +466,7 @@ export default function AislePositionsPage() {
       };
     }
     return null;
-  }, [lastMergeResponse, lastMergeSummary, mergeResultsSummary, t]);
+  }, [lastMergeResponse, lastMergeSummary, mergeResultsSummary, t, mergeFeedbackIsCurrentContext]);
 
   const handleRunMerge = useCallback(async () => {
     if (!inventoryId || !aisleId) return;
@@ -498,6 +491,7 @@ export default function AislePositionsPage() {
       });
       setLastMergeResponse(result);
       setLastMergeSummary(summarizeMergeResults(mergePayload.results));
+      setLastMergeContextKey(mergeContextKey);
       showSnackbar(
         result.product_records_updated > 0 ? t('positions.merge_started') : t('positions.merge_no_change'),
         'success'
@@ -823,7 +817,7 @@ export default function AislePositionsPage() {
                   results={tableRows}
                   onOpenReview={handleOpenReview}
                   pagination={{
-                    page,
+                    page: effectivePage,
                     pageSize,
                     totalItems: sortedForTable.length,
                     onPageChange: setPage,

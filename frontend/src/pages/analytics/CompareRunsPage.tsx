@@ -146,8 +146,11 @@ export default function CompareRunsPage() {
   const jobAId = searchParams.get('jobAId')?.trim() || '';
   const jobBId = searchParams.get('jobBId')?.trim() || '';
 
-  const [draftJobA, setDraftJobA] = useState('');
-  const [draftJobB, setDraftJobB] = useState('');
+  const [draftOverride, setDraftOverride] = useState<{
+    sourceKey: string;
+    jobA: string;
+    jobB: string;
+  } | null>(null);
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
@@ -190,24 +193,22 @@ export default function CompareRunsPage() {
     }
   }, [inventory, inventoryId, inventoryQuery.isSuccess, navigate]);
 
-  useEffect(() => {
-    queueMicrotask(() => {
-      setDraftJobA(jobAId);
-      setDraftJobB(jobBId);
-    });
-  }, [jobAId, jobBId]);
-
-  useEffect(() => {
-    if (jobAId || jobBId || jobs.length < 2) return;
-    const a = jobs[0]?.id ?? '';
-    const b = jobs.find((j) => j.id !== a)?.id ?? '';
-    if (a && b && a !== b) {
-      queueMicrotask(() => {
-        setDraftJobA(a);
-        setDraftJobB(b);
-      });
+  const draftSourceKey = `${aisleId}|${jobAId}|${jobBId}`;
+  const defaultDraftJobs = useMemo(() => {
+    if (jobAId || jobBId) {
+      return { jobA: jobAId, jobB: jobBId };
     }
+    if (jobs.length < 2) {
+      return { jobA: '', jobB: '' };
+    }
+    const jobA = jobs[0]?.id ?? '';
+    const jobB = jobs.find((j) => j.id !== jobA)?.id ?? '';
+    return { jobA, jobB };
   }, [jobAId, jobBId, jobs]);
+  const draftJobA =
+    draftOverride?.sourceKey === draftSourceKey ? draftOverride.jobA : defaultDraftJobs.jobA;
+  const draftJobB =
+    draftOverride?.sourceKey === draftSourceKey ? draftOverride.jobB : defaultDraftJobs.jobB;
 
   const applyAisleToUrl = useCallback(
     (nextAisleId: string) => {
@@ -370,8 +371,20 @@ export default function CompareRunsPage() {
             jobs={jobs}
             jobA={draftJobA}
             jobB={draftJobB}
-            onJobAChange={setDraftJobA}
-            onJobBChange={setDraftJobB}
+            onJobAChange={(jobA) =>
+              setDraftOverride({
+                sourceKey: draftSourceKey,
+                jobA,
+                jobB: draftJobB,
+              })
+            }
+            onJobBChange={(jobB) =>
+              setDraftOverride({
+                sourceKey: draftSourceKey,
+                jobA: draftJobA,
+                jobB,
+              })
+            }
             description={t('benchmark.compare_readonly_explain')}
           />
           <Box sx={{ mt: 2 }}>

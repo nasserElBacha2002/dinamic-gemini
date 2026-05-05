@@ -169,9 +169,12 @@ export default function CompareManyRunsPage() {
   const [showBaselineAdjustedNotice, setShowBaselineAdjustedNotice] = useState(false);
   const [expandedTargetJobId, setExpandedTargetJobId] = useState<string | null>(null);
 
-  const [draftAisleId, setDraftAisleId] = useState(applied.aisleId);
-  const [draftJobIds, setDraftJobIds] = useState<string[]>(applied.jobIds);
-  const [draftBaseline, setDraftBaseline] = useState(applied.baseline);
+  const [draftOverride, setDraftOverride] = useState<{
+    sourceKey: string;
+    aisleId: string;
+    jobIds: string[];
+    baseline: string;
+  } | null>(null);
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
@@ -227,14 +230,13 @@ export default function CompareManyRunsPage() {
     }
   }, [inventoryId, inventoryQuery.data, inventoryQuery.isSuccess, navigate]);
 
-  useEffect(() => {
-    queueMicrotask(() => {
-      setDraftAisleId(applied.aisleId);
-      setDraftJobIds(applied.jobIds);
-      setDraftBaseline(applied.baseline);
-      setExpandedTargetJobId(null);
-    });
-  }, [applied.aisleId, applied.baseline, applied.jobIds]);
+  const draftSourceKey = `${applied.aisleId}|${applied.jobIds.join(',')}|${applied.baseline}`;
+  const draftAisleId =
+    draftOverride?.sourceKey === draftSourceKey ? draftOverride.aisleId : applied.aisleId;
+  const draftJobIds =
+    draftOverride?.sourceKey === draftSourceKey ? draftOverride.jobIds : applied.jobIds;
+  const draftBaseline =
+    draftOverride?.sourceKey === draftSourceKey ? draftOverride.baseline : applied.baseline;
 
   useEffect(() => {
     // URL correction policy: only baseline is auto-corrected, and only when the rest of applied state is already valid.
@@ -333,9 +335,13 @@ export default function CompareManyRunsPage() {
               value={aisleSelectValue}
               label={t('common.aisle')}
               onChange={(e) => {
-                setDraftAisleId(String(e.target.value));
-                setDraftJobIds([]);
-                setDraftBaseline('');
+                const nextAisleId = String(e.target.value);
+                setDraftOverride({
+                  sourceKey: draftSourceKey,
+                  aisleId: nextAisleId,
+                  jobIds: [],
+                  baseline: '',
+                });
               }}
             >
               {aisles.map((aisle) => (
@@ -355,10 +361,13 @@ export default function CompareManyRunsPage() {
               label={t('compare_many.job_ids_label')}
               onChange={(e) => {
                 const next = (e.target.value as string[]).slice(0, MAX_COMPARE_JOBS);
-                setDraftJobIds(next);
-                if (!next.includes(draftBaseline)) {
-                  setDraftBaseline(next[0] ?? '');
-                }
+                const nextBaseline = next.includes(draftBaseline) ? draftBaseline : (next[0] ?? '');
+                setDraftOverride({
+                  sourceKey: draftSourceKey,
+                  aisleId: draftAisleId,
+                  jobIds: next,
+                  baseline: nextBaseline,
+                });
               }}
               renderValue={(selected) =>
                 (selected as string[])
@@ -382,7 +391,14 @@ export default function CompareManyRunsPage() {
               labelId="compare-many-baseline-label"
               value={baselineSelectValue}
               label={t('compare_many.baseline_label')}
-              onChange={(e) => setDraftBaseline(String(e.target.value))}
+              onChange={(e) =>
+                setDraftOverride({
+                  sourceKey: draftSourceKey,
+                  aisleId: draftAisleId,
+                  jobIds: draftJobIds,
+                  baseline: String(e.target.value),
+                })
+              }
             >
               {draftJobIds.map((id) => (
                 <MenuItem key={id} value={id}>

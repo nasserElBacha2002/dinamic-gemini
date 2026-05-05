@@ -59,14 +59,6 @@ export default function ResultReviewActions({
 
   const isDeleted = result.reviewStatus === 'INVALID';
 
-  // Collapse editor on success (if actionLoading flips back to false and we have a result change)
-  // But we rely on the parent updating the 'result' prop which triggers a re-render.
-  useEffect(() => {
-    if (!actionLoading) {
-      queueMicrotask(() => setActiveEditor(null));
-    }
-  }, [result.correctedQty, result.sku, result.positionCode]);
-
   if (isDeleted) return null;
 
   if (readOnly) {
@@ -150,7 +142,10 @@ export default function ResultReviewActions({
            {activeEditor === 'qty' ? (
              <QuantityEditor 
                initialValue={result.correctedQty ?? result.detectedQty ?? 0}
-               onSave={onUpdateQuantity}
+               onSave={(value) => {
+                 setActiveEditor(null);
+                 onUpdateQuantity(value);
+               }}
                onCancel={() => setActiveEditor(null)}
                loading={actionLoading}
              />
@@ -179,7 +174,10 @@ export default function ResultReviewActions({
            {activeEditor === 'sku' ? (
              <SkuEditor 
                initialValue={result.sku ?? ''}
-               onSave={onUpdateSku}
+               onSave={(value) => {
+                 setActiveEditor(null);
+                 onUpdateSku(value);
+               }}
                onCancel={() => setActiveEditor(null)}
                loading={actionLoading}
              />
@@ -208,7 +206,10 @@ export default function ResultReviewActions({
            {activeEditor === 'pos' ? (
              <PositionCodeEditor 
                initialValue={result.positionCode ?? ''}
-               onSave={onUpdatePositionCode}
+               onSave={(value) => {
+                 setActiveEditor(null);
+                 onUpdatePositionCode(value);
+               }}
                onCancel={() => setActiveEditor(null)}
                loading={actionLoading}
              />

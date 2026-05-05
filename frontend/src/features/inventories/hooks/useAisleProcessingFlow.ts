@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
@@ -53,10 +53,6 @@ export function useAisleProcessingFlow({
     [providerOptsQuery.data?.providers, effectiveProvider]
   );
 
-  useEffect(() => {
-    queueMicrotask(() => setModelKey(''));
-  }, [providerKey]);
-
   const openDialogForAisle = useCallback(
     (aisleId: string, aisleCode: string) => {
       setProcessError(null);
@@ -70,6 +66,11 @@ export function useAisleProcessingFlow({
 
   const closeDialog = useCallback(() => {
     setDialogTarget(null);
+  }, []);
+
+  const handleProviderKeyChange = useCallback((nextProviderKey: string) => {
+    setProviderKey(nextProviderKey);
+    setModelKey('');
   }, []);
 
   const startProductionProcess = useCallback(
@@ -150,7 +151,7 @@ export function useAisleProcessingFlow({
     closeDialog,
     confirmDialog,
     providerKey,
-    setProviderKey,
+    setProviderKey: handleProviderKeyChange,
     modelKey,
     setModelKey,
     promptKey,

@@ -5,15 +5,13 @@ import { useEffect, useState } from 'react';
  */
 export function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
+  const immediate = delayMs <= 0;
 
   useEffect(() => {
-    if (delayMs <= 0) {
-      queueMicrotask(() => setDebounced(value));
-      return;
-    }
+    if (immediate) return;
     const id = window.setTimeout(() => setDebounced(value), delayMs);
     return () => window.clearTimeout(id);
-  }, [value, delayMs]);
+  }, [value, delayMs, immediate]);
 
-  return debounced;
+  return immediate ? value : debounced;
 }

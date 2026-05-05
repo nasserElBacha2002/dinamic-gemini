@@ -17,15 +17,15 @@ interface AuthProviderProps {
  * via stored token + GET /auth/me. Login/logout persist or clear token.
  */
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [state, setState] = useState(() => createInitialAuthState());
-
-  useEffect(() => {
+  const [state, setState] = useState(() => {
     const session = getStoredSession();
     const token = session?.accessToken ?? null;
-    if (!token) {
-      queueMicrotask(() => setState((s) => ({ ...s, initialized: true })));
-      return;
-    }
+    return token ? { ...createInitialAuthState(), token } : createInitialAuthState(true);
+  });
+
+  useEffect(() => {
+    const token = state.token;
+    if (!token) return;
     // Fail-closed: any /auth/me failure (401, network, etc.) clears token and treats as unauthenticated.
     // We do not distinguish invalid/expired token from temporary backend failure; both result in logout.
     getCurrentUser(token)
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         clearStoredSession();
         setState(createInitialAuthState(true));
       });
-  }, []);
+  }, [state.token]);
 
   const value: AuthContextValue = useMemo(
     () => ({

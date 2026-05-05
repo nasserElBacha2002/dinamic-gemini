@@ -2,7 +2,7 @@
  * Execution log panel — operator-facing processing log with optional enriched filters.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -244,39 +244,19 @@ export default function ExecutionLogPanel({
   const [attemptKey, setAttemptKey] = useState<string>('all');
   const [executionKey, setExecutionKey] = useState<string>('all');
 
-  const logIdentity = log
-    ? `${log.inventory_id}|${log.aisle_id}|${aisleMode ? 'aisle-agg' : log.requested_job_id}`
-    : '';
-  useEffect(() => {
-    queueMicrotask(() => {
-      if (log && isAisleAggregateLog(log)) {
-        setJobFilter(JOB_FILTER_ALL);
-      } else {
-        setJobFilter(JOB_FILTER_REQUESTED);
-      }
-      setAttemptKey('all');
-      setExecutionKey('all');
-    });
-  }, [logIdentity]);
+  const defaultJobFilter = log && isAisleAggregateLog(log) ? JOB_FILTER_ALL : JOB_FILTER_REQUESTED;
 
   const resolvedJobFilter = useMemo(() => {
     if (haveEnvelope && log && isAisleAggregateLog(log) && jobFilter === JOB_FILTER_REQUESTED) {
       return JOB_FILTER_ALL;
     }
-    return jobFilter;
-  }, [haveEnvelope, log, jobFilter]);
-
-  useEffect(() => {
-    if (!haveEnvelope || !log || !hasPayloadJobIds) return;
-    if (jobFilter === JOB_FILTER_REQUESTED || jobFilter === JOB_FILTER_ALL) return;
-    if (!log.available_job_ids.includes(jobFilter)) {
-      queueMicrotask(() => {
-        setJobFilter(isAisleAggregateLog(log) ? JOB_FILTER_ALL : JOB_FILTER_REQUESTED);
-        setAttemptKey('all');
-        setExecutionKey('all');
-      });
+    if (jobFilter !== JOB_FILTER_REQUESTED && jobFilter !== JOB_FILTER_ALL) {
+      if (!haveEnvelope || !log || !hasPayloadJobIds || !log.available_job_ids.includes(jobFilter)) {
+        return defaultJobFilter;
+      }
     }
-  }, [haveEnvelope, log, hasPayloadJobIds, jobFilter]);
+    return jobFilter;
+  }, [haveEnvelope, log, jobFilter, hasPayloadJobIds, defaultJobFilter]);
 
   const eventsAfterJobFilter = useMemo(() => {
     if (!haveEnvelope || !log) return allEvents;
@@ -307,37 +287,22 @@ export default function ExecutionLogPanel({
     };
   }, [eventsAfterJobFilter]);
 
-  useEffect(() => {
-    let needsAttemptReset = false;
-    let needsExecutionReset = false;
-    if (attemptKey !== 'all') {
-      const n = Number(attemptKey);
-      if (!Number.isFinite(n) || !contextualAttempts.includes(n)) {
-        needsAttemptReset = true;
-      }
-    }
-    if (executionKey !== 'all' && !contextualExecutionIds.includes(executionKey)) {
-      needsExecutionReset = true;
-    }
-    if (needsAttemptReset || needsExecutionReset) {
-      queueMicrotask(() => {
-        if (needsAttemptReset) setAttemptKey('all');
-        if (needsExecutionReset) setExecutionKey('all');
-      });
-    }
-  }, [contextualAttempts, contextualExecutionIds, attemptKey, executionKey]);
+  const resolvedAttemptKey =
+    attemptKey !== 'all' && !contextualAttempts.includes(Number(attemptKey)) ? 'all' : attemptKey;
+  const resolvedExecutionKey =
+    executionKey !== 'all' && !contextualExecutionIds.includes(executionKey) ? 'all' : executionKey;
 
   const filteredEvents = useMemo(() => {
     let rows = eventsAfterJobFilter;
-    if (attemptKey !== 'all') {
-      const n = Number(attemptKey);
+    if (resolvedAttemptKey !== 'all') {
+      const n = Number(resolvedAttemptKey);
       rows = rows.filter((e) => e.event_attempt === n);
     }
-    if (executionKey !== 'all') {
-      rows = rows.filter((e) => e.event_execution_id === executionKey);
+    if (resolvedExecutionKey !== 'all') {
+      rows = rows.filter((e) => e.event_execution_id === resolvedExecutionKey);
     }
     return rows;
-  }, [eventsAfterJobFilter, attemptKey, executionKey]);
+  }, [eventsAfterJobFilter, resolvedAttemptKey, resolvedExecutionKey]);
 
   const attemptSelectDisabled = contextualAttempts.length <= 1;
   const showExecutionFilter = contextualExecutionIds.length > 1;
@@ -408,9 +373,10 @@ export default function ExecutionLogPanel({
       else if (resolvedJobFilter === JOB_FILTER_ALL) summaryParts.push(t('execution_log.filter_all'));
       else summaryParts.push(t('execution_log.filter_job', { label: jobMenuItemLabel(resolvedJobFilter, log) }));
     }
-    if (attemptKey !== 'all') summaryParts.push(t('execution_log.attempt_summary', { attempt: attemptKey }));
-    if (executionKey !== 'all')
-      summaryParts.push(t('execution_log.execution_summary', { id: shortJobLabel(executionKey) }));
+    if (resolvedAttemptKey !== 'all')
+      summaryParts.push(t('execution_log.attempt_summary', { attempt: resolvedAttemptKey }));
+    if (resolvedExecutionKey !== 'all')
+      summaryParts.push(t('execution_log.execution_summary', { id: shortJobLabel(resolvedExecutionKey) }));
   }
 
   const requestedJobId = log && !isAisleAggregateLog(log) ? log.requested_job_id : null;
@@ -473,7 +439,7 @@ export default function ExecutionLogPanel({
               <Select
                 labelId="exec-log-attempt-label"
                 label={t('execution_log.attempt')}
-                value={attemptSelectDisabled ? 'all' : attemptKey}
+                value={attemptSelectDisabled ? 'all' : resolvedAttemptKey}
                 onChange={(e) => setAttemptKey(e.target.value)}
               >
                 <MenuItem value="all">{t('execution_log.all_attempts')}</MenuItem>
@@ -490,7 +456,7 @@ export default function ExecutionLogPanel({
                 <Select
                   labelId="exec-log-exec-label"
                   label={t('execution_log.execution_id')}
-                  value={executionKey}
+                  value={resolvedExecutionKey}
                   onChange={(e) => setExecutionKey(e.target.value)}
                 >
                   <MenuItem value="all">{t('results.filters.all')}</MenuItem>
