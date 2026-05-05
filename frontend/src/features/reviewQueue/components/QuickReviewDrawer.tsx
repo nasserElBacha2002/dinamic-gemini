@@ -80,19 +80,29 @@ export default function QuickReviewDrawer({
   const [invalidConfirmOpen, setInvalidConfirmOpen] = useState(false);
   const [invalidConfirmLoading, setInvalidConfirmLoading] = useState(false);
   const [invalidConfirmError, setInvalidConfirmError] = useState<string | null>(null);
+  const syncedRepresentativeRef = useRef<string | null>(null);
+  const syncedContextRef = useRef<string | null>(null);
   /** Prevents double-submits (e.g. rapid double-clicks) before React flips `isPending`. */
   const reviewMutationInFlightRef = useRef(false);
 
   useEffect(() => {
-    if (context?.positionId) setActivePositionId(context.positionId);
-  }, [context?.positionId, context?.inventoryId, context?.aisleId]);
+    if (!context?.positionId) return;
+    if (!context?.exactPositionDetail) return;
+    const contextKey = `${context.inventoryId}|${context.aisleId}|${context.positionId}`;
+    if (syncedContextRef.current === contextKey) return;
+    syncedContextRef.current = contextKey;
+    syncedRepresentativeRef.current = null;
+    queueMicrotask(() => setActivePositionId(context.positionId));
+  }, [context?.positionId, context?.inventoryId, context?.aisleId, context?.exactPositionDetail]);
 
   useEffect(() => {
     if (!open) {
-      setActionError(null);
-      setInvalidConfirmOpen(false);
-      setInvalidConfirmLoading(false);
-      setInvalidConfirmError(null);
+      queueMicrotask(() => {
+        setActionError(null);
+        setInvalidConfirmOpen(false);
+        setInvalidConfirmLoading(false);
+        setInvalidConfirmError(null);
+      });
       reviewMutationInFlightRef.current = false;
     }
   }, [open]);
@@ -107,12 +117,13 @@ export default function QuickReviewDrawer({
     activePositionId,
     { enabled, jobId: context?.jobId, exactPosition: context?.exactPositionDetail }
   );
-
   useEffect(() => {
     if (context?.exactPositionDetail) return;
-    if (result?.id && result.id !== activePositionId) {
-      setActivePositionId(result.id);
-    }
+    if (!result?.id) return;
+    if (result.id === activePositionId) return;
+    if (syncedRepresentativeRef.current === result.id) return;
+    syncedRepresentativeRef.current = result.id;
+    queueMicrotask(() => setActivePositionId(result.id));
   }, [result?.id, activePositionId, context?.exactPositionDetail]);
 
   // Production strategies: queue vs aisle results. (`detail` is reserved — see `ReviewMutationStrategy`.)

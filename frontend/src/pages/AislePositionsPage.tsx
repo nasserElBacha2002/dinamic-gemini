@@ -331,12 +331,14 @@ export default function AislePositionsPage() {
   useEffect(() => {
     if (sortedForTable.length === 0) return;
     const pages = Math.max(1, Math.ceil(sortedForTable.length / pageSize));
-    if (page > pages) setPage(pages);
+    if (page > pages) queueMicrotask(() => setPage(pages));
   }, [sortedForTable.length, pageSize, page]);
 
   useEffect(() => {
-    setLastMergeResponse(null);
-    setLastMergeSummary(null);
+    queueMicrotask(() => {
+      setLastMergeResponse(null);
+      setLastMergeSummary(null);
+    });
   }, [inventoryId, aisleId, jobIdParam]);
 
   const tableRows = useMemo(() => {

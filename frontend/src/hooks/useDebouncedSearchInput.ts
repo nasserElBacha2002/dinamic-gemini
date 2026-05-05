@@ -16,21 +16,20 @@ export type DebouncedSearchInput = {
  */
 export function useDebouncedSearchInput(debounceMs: number, initialInput = ''): DebouncedSearchInput {
   const [input, setInput] = useState(initialInput);
-  const [applied, setApplied] = useState(() => initialInput.trim());
+  const [appliedNonEmpty, setAppliedNonEmpty] = useState(() => initialInput.trim());
+  const trimmedInput = input.trim();
 
   useEffect(() => {
-    const t = input.trim();
-    if (t === '') {
-      setApplied('');
-      return;
-    }
+    if (trimmedInput === '') return;
     if (debounceMs <= 0) {
-      setApplied(t);
+      queueMicrotask(() => setAppliedNonEmpty(trimmedInput));
       return;
     }
-    const id = window.setTimeout(() => setApplied(t), debounceMs);
+    const id = window.setTimeout(() => setAppliedNonEmpty(trimmedInput), debounceMs);
     return () => window.clearTimeout(id);
-  }, [input, debounceMs]);
+  }, [trimmedInput, debounceMs]);
+
+  const applied = trimmedInput === '' ? '' : appliedNonEmpty;
 
   return { input, setInput, applied };
 }

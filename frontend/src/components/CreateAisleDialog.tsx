@@ -56,8 +56,10 @@ export default function CreateAisleDialog({
 
   useEffect(() => {
     if (!open) return;
-    reset();
-    onError?.(null);
+    queueMicrotask(() => {
+      reset();
+      onError?.(null);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 

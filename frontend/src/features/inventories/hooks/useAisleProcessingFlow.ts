@@ -54,7 +54,7 @@ export function useAisleProcessingFlow({
   );
 
   useEffect(() => {
-    setModelKey('');
+    queueMicrotask(() => setModelKey(''));
   }, [providerKey]);
 
   const openDialogForAisle = useCallback(

@@ -252,7 +252,7 @@ export default function MetricsPage() {
 
   useEffect(() => {
     if (aisleId && !aisles.some((aisle) => aisle.id === aisleId)) {
-      setAisleId('');
+      queueMicrotask(() => setAisleId(''));
     }
   }, [aisleId, aisles]);
 
@@ -339,11 +339,11 @@ export default function MetricsPage() {
   );
 
   useEffect(() => {
-    setInventoryPage(1);
+    queueMicrotask(() => setInventoryPage(1));
   }, [perfTableSearch]);
 
   useEffect(() => {
-    setAislePage(1);
+    queueMicrotask(() => setAislePage(1));
   }, [aisleMetricsTableSearch]);
 
   const qualityRowsOrdered = useMemo(

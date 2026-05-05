@@ -138,13 +138,6 @@ export default function ManagedImageAssetsDrawer({
         previewRevokeRef.current();
         previewRevokeRef.current = null;
       }
-      setPreviewTarget(null);
-      setPreviewSrc(null);
-      setPreviewLoading(false);
-      setPreviewError(null);
-      setDeleteTarget(null);
-      setReplaceTarget(null);
-      setReplacingAssetId(null);
     }
   }, [open]);
 
@@ -386,7 +379,7 @@ export default function ManagedImageAssetsDrawer({
       </Box>
 
       <ImagePreviewDialog
-        open={Boolean(previewTarget)}
+        open={open && Boolean(previewTarget)}
         onClose={clearPreview}
         title={previewTarget?.filename ?? copy.imagePreviewTitle}
         src={previewSrc}
@@ -395,22 +388,24 @@ export default function ManagedImageAssetsDrawer({
         error={previewError}
       />
 
-      <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>{copy.deleteTitle}</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            {formatDeleteConfirm(deleteTarget?.filename ?? copy.deleteFallbackName)}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
-            {t('common.cancel')}
-          </Button>
-          <Button color="error" variant="contained" onClick={() => void handleDeleteConfirm()} disabled={isDeleting}>
-            {isDeleting ? t('common.deleting') : copy.delete}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {open ? (
+        <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
+          <DialogTitle>{copy.deleteTitle}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2">
+              {formatDeleteConfirm(deleteTarget?.filename ?? copy.deleteFallbackName)}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
+              {t('common.cancel')}
+            </Button>
+            <Button color="error" variant="contained" onClick={() => void handleDeleteConfirm()} disabled={isDeleting}>
+              {isDeleting ? t('common.deleting') : copy.delete}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      ) : null}
     </Drawer>
   );
 }

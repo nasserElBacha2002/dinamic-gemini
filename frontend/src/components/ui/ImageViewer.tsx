@@ -67,7 +67,7 @@ export default function ImageViewer({
 
   /** Reset zoom when image source changes. */
   useEffect(() => {
-    setZoom(1);
+    queueMicrotask(() => setZoom(1));
   }, [src]);
 
   const onZoomOut = useCallback(() => {

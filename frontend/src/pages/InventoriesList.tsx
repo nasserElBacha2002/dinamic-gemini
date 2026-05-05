@@ -53,7 +53,7 @@ export default function InventoriesList() {
   );
 
   useEffect(() => {
-    setPage(1);
+    queueMicrotask(() => setPage(1));
   }, [searchApplied]);
 
   const { data, isLoading, isError, error, refetch } = useInventoriesList(listQuery);

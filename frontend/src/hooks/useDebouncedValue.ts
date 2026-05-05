@@ -8,7 +8,7 @@ export function useDebouncedValue<T>(value: T, delayMs: number): T {
 
   useEffect(() => {
     if (delayMs <= 0) {
-      setDebounced(value);
+      queueMicrotask(() => setDebounced(value));
       return;
     }
     const id = window.setTimeout(() => setDebounced(value), delayMs);

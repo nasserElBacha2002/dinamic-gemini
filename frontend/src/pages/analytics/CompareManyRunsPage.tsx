@@ -228,10 +228,12 @@ export default function CompareManyRunsPage() {
   }, [inventoryId, inventoryQuery.data, inventoryQuery.isSuccess, navigate]);
 
   useEffect(() => {
-    setDraftAisleId(applied.aisleId);
-    setDraftJobIds(applied.jobIds);
-    setDraftBaseline(applied.baseline);
-    setExpandedTargetJobId(null);
+    queueMicrotask(() => {
+      setDraftAisleId(applied.aisleId);
+      setDraftJobIds(applied.jobIds);
+      setDraftBaseline(applied.baseline);
+      setExpandedTargetJobId(null);
+    });
   }, [applied.aisleId, applied.baseline, applied.jobIds]);
 
   useEffect(() => {

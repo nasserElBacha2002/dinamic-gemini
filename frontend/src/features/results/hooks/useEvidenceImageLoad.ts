@@ -58,7 +58,7 @@ export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): Eviden
 
   useEffect(() => {
     if (!inventoryId.trim() || !aisleId.trim() || !assetId.trim()) {
-      setState({ status: 'idle' });
+      queueMicrotask(() => setState({ status: 'idle' }));
       if (revokeRef.current) {
         revokeRef.current();
         revokeRef.current = null;
@@ -66,7 +66,7 @@ export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): Eviden
       return;
     }
     let cancelled = false;
-    setState({ status: 'loading' });
+    queueMicrotask(() => setState({ status: 'loading' }));
     if (revokeRef.current) {
       revokeRef.current();
       revokeRef.current = null;

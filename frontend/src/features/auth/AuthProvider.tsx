@@ -23,7 +23,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const session = getStoredSession();
     const token = session?.accessToken ?? null;
     if (!token) {
-      setState((s) => ({ ...s, initialized: true }));
+      queueMicrotask(() => setState((s) => ({ ...s, initialized: true })));
       return;
     }
     // Fail-closed: any /auth/me failure (401, network, etc.) clears token and treats as unauthenticated.

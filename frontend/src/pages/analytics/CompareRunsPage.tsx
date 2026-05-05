@@ -191,8 +191,10 @@ export default function CompareRunsPage() {
   }, [inventory, inventoryId, inventoryQuery.isSuccess, navigate]);
 
   useEffect(() => {
-    setDraftJobA(jobAId);
-    setDraftJobB(jobBId);
+    queueMicrotask(() => {
+      setDraftJobA(jobAId);
+      setDraftJobB(jobBId);
+    });
   }, [jobAId, jobBId]);
 
   useEffect(() => {
@@ -200,8 +202,10 @@ export default function CompareRunsPage() {
     const a = jobs[0]?.id ?? '';
     const b = jobs.find((j) => j.id !== a)?.id ?? '';
     if (a && b && a !== b) {
-      setDraftJobA(a);
-      setDraftJobB(b);
+      queueMicrotask(() => {
+        setDraftJobA(a);
+        setDraftJobB(b);
+      });
     }
   }, [jobAId, jobBId, jobs]);
 

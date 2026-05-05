@@ -248,13 +248,15 @@ export default function ExecutionLogPanel({
     ? `${log.inventory_id}|${log.aisle_id}|${aisleMode ? 'aisle-agg' : log.requested_job_id}`
     : '';
   useEffect(() => {
-    if (log && isAisleAggregateLog(log)) {
-      setJobFilter(JOB_FILTER_ALL);
-    } else {
-      setJobFilter(JOB_FILTER_REQUESTED);
-    }
-    setAttemptKey('all');
-    setExecutionKey('all');
+    queueMicrotask(() => {
+      if (log && isAisleAggregateLog(log)) {
+        setJobFilter(JOB_FILTER_ALL);
+      } else {
+        setJobFilter(JOB_FILTER_REQUESTED);
+      }
+      setAttemptKey('all');
+      setExecutionKey('all');
+    });
   }, [logIdentity]);
 
   const resolvedJobFilter = useMemo(() => {
@@ -268,9 +270,11 @@ export default function ExecutionLogPanel({
     if (!haveEnvelope || !log || !hasPayloadJobIds) return;
     if (jobFilter === JOB_FILTER_REQUESTED || jobFilter === JOB_FILTER_ALL) return;
     if (!log.available_job_ids.includes(jobFilter)) {
-      setJobFilter(isAisleAggregateLog(log) ? JOB_FILTER_ALL : JOB_FILTER_REQUESTED);
-      setAttemptKey('all');
-      setExecutionKey('all');
+      queueMicrotask(() => {
+        setJobFilter(isAisleAggregateLog(log) ? JOB_FILTER_ALL : JOB_FILTER_REQUESTED);
+        setAttemptKey('all');
+        setExecutionKey('all');
+      });
     }
   }, [haveEnvelope, log, hasPayloadJobIds, jobFilter]);
 
@@ -304,14 +308,22 @@ export default function ExecutionLogPanel({
   }, [eventsAfterJobFilter]);
 
   useEffect(() => {
+    let needsAttemptReset = false;
+    let needsExecutionReset = false;
     if (attemptKey !== 'all') {
       const n = Number(attemptKey);
       if (!Number.isFinite(n) || !contextualAttempts.includes(n)) {
-        setAttemptKey('all');
+        needsAttemptReset = true;
       }
     }
     if (executionKey !== 'all' && !contextualExecutionIds.includes(executionKey)) {
-      setExecutionKey('all');
+      needsExecutionReset = true;
+    }
+    if (needsAttemptReset || needsExecutionReset) {
+      queueMicrotask(() => {
+        if (needsAttemptReset) setAttemptKey('all');
+        if (needsExecutionReset) setExecutionKey('all');
+      });
     }
   }, [contextualAttempts, contextualExecutionIds, attemptKey, executionKey]);
 

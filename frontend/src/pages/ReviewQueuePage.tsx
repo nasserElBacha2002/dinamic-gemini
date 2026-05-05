@@ -134,7 +134,7 @@ export default function ReviewQueuePage() {
   const queueQuery = useReviewQueue(listQuery);
 
   useEffect(() => {
-    setAisleId('');
+    queueMicrotask(() => setAisleId(''));
   }, [inventoryId]);
 
   const handleResetFilters = useCallback(() => {
@@ -154,7 +154,7 @@ export default function ReviewQueuePage() {
   }, [skuSearch.setInput]);
 
   useEffect(() => {
-    setPage(1);
+    queueMicrotask(() => setPage(1));
   }, [skuSearch.applied]);
 
   const resetDisabled =
@@ -215,7 +215,7 @@ export default function ReviewQueuePage() {
   useEffect(() => {
     if (totalItems === 0) return;
     const pages = Math.max(1, Math.ceil(totalItems / pageSize));
-    if (page > pages) setPage(pages);
+    if (page > pages) queueMicrotask(() => setPage(pages));
   }, [totalItems, pageSize, page]);
 
   return (

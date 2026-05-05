@@ -63,7 +63,7 @@ export default function ResultReviewActions({
   // But we rely on the parent updating the 'result' prop which triggers a re-render.
   useEffect(() => {
     if (!actionLoading) {
-      setActiveEditor(null);
+      queueMicrotask(() => setActiveEditor(null));
     }
   }, [result.correctedQty, result.sku, result.positionCode]);
 
