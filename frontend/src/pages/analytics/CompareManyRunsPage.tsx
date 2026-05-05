@@ -243,15 +243,19 @@ export default function CompareManyRunsPage() {
     if (!nextBaseline) return;
     const baselineInUrl = searchParams.get('baseline')?.trim() ?? '';
     if (baselineInUrl === nextBaseline) return;
+
     const correctionKey = `${applied.aisleId}|${applied.jobIds.join(',')}|${nextBaseline}`;
-    if (correctionNoticeRef.current === correctionKey) return;
-    correctionNoticeRef.current = correctionKey;
-    setShowBaselineAdjustedNotice(true);
+    // Always keep the URL canonical when baseline is wrong; the ref only gates repeating the notice.
     setSearchParams((prev) => {
       const p = new URLSearchParams(prev);
       p.set('baseline', nextBaseline);
       return p;
     }, { replace: true });
+
+    if (correctionNoticeRef.current !== correctionKey) {
+      correctionNoticeRef.current = correctionKey;
+      setShowBaselineAdjustedNotice(true);
+    }
   }, [applied.aisleId, applied.baseline, applied.jobIds, searchParams, setSearchParams]);
 
   const applyDraftToUrl = () => {
