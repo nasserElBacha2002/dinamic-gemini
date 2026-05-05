@@ -128,8 +128,9 @@ export default function QuickReviewDrawer({
     if (id) {
       return { ...body, job_id: id };
     }
-    const { job_id: _omit, ...rest } = body;
-    return rest;
+    const stripped: ReviewActionRequest = { ...body };
+    delete stripped.job_id;
+    return stripped;
   }, [storageJobIdForReview]);
 
   /**

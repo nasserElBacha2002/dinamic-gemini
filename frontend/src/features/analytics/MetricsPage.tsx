@@ -242,7 +242,7 @@ export default function MetricsPage() {
   const selectedInventory = inventories.find((inv) => inv.id === inventoryId) ?? null;
   const selectedAisle = aisles.find((aisle) => aisle.id === effectiveAisleId) ?? null;
   const compareRunsHref =
-    Boolean(inventoryId && selectedInventory && selectedInventory.processing_mode === 'test')
+    inventoryId && selectedInventory && selectedInventory.processing_mode === 'test'
       ? pathToInventoryAnalyticsCompare(inventoryId)
       : null;
   const compareRunsDisabledReason = compareRunsHref

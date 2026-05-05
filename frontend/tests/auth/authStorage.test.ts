@@ -2,7 +2,7 @@
  * v3.2.1 Phase 4 — auth storage and API helpers.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import * as storage from '../../src/features/auth/storage';
 import { AuthApiError, isAuthError, getAuthErrorMessage } from '../../src/features/auth/api';
 

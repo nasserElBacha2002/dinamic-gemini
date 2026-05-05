@@ -30,7 +30,7 @@ function kindFromResponse(status: number, detail?: string): EvidenceImageErrorKi
   return 'network';
 }
 
-function messageForKind(kind: EvidenceImageErrorKind, _detail?: string): string {
+function messageForKind(kind: EvidenceImageErrorKind): string {
   switch (kind) {
     case 'not_found':
       return i18n.t('results.evidence_image_load.source_unavailable');
@@ -95,7 +95,7 @@ export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): Eviden
         dispatchState({
           status: 'error',
           kind,
-          message: messageForKind(kind, result.detail),
+          message: messageForKind(kind),
         });
       }
     });
