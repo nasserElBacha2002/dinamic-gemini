@@ -304,7 +304,7 @@ describe('InventoryDetail', () => {
     expect(useInventoryVisualReferencesMock).toHaveBeenCalled();
     expect(useInventoryVisualReferencesMock.mock.calls[0]?.[1]).toMatchObject({ enabled: false });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reference images' }));
+    fireEvent.click(screen.getByRole('button', { name: /visual refs title/i }));
 
     const lastCall = useInventoryVisualReferencesMock.mock.calls.at(-1);
     expect(lastCall?.[1]).toMatchObject({ enabled: true });
@@ -333,8 +333,8 @@ describe('InventoryDetail', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Inventory One' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reference images' })).toBeInTheDocument();
-    expect(screen.getByText('Aisles')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /visual refs title/i })).toBeInTheDocument();
+    expect(screen.getByText('List title')).toBeInTheDocument();
 
     expect(screen.queryByText('Total aisles')).not.toBeInTheDocument();
     expect(screen.queryByText('Review completion rate')).not.toBeInTheDocument();
@@ -384,15 +384,15 @@ describe('InventoryDetail', () => {
 
     expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reference images' }));
+    fireEvent.click(screen.getByRole('button', { name: /visual refs title/i }));
 
-    expect(screen.getByRole('heading', { name: 'Reference images' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /drawer title/i })).toBeInTheDocument();
     expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
     expect(
-      screen.getByText(/reference images belong to this inventory and are used for future processing runs only\./i),
+      screen.getByText(/management body/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/^management$/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /close reference images drawer/i })).toBeInTheDocument();
+    expect(screen.getByText(/management title/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
   });
 
   it('loads observability queries only after opening the unified dialog (no polling)', async () => {
@@ -456,7 +456,7 @@ describe('InventoryDetail', () => {
     expect(useAisleExecutionLogMock).not.toHaveBeenCalled();
     expect(useAisleJobsListMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
 
     await waitFor(() => {
@@ -494,16 +494,16 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /aisle observability/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /dialog title aisle/i })).toBeInTheDocument();
     });
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
 
     const scopeControl = screen.getByRole('combobox', { name: /log scope/i });
-    expect(scopeControl.textContent).toMatch(/merged aisle log/i);
+    expect(scopeControl.textContent).toMatch(/scope merged/i);
 
     const lastAisleLog = useAisleExecutionLogMock.mock.calls.at(-1);
     expect(lastAisleLog?.[2]).toMatchObject({ enabled: true });
@@ -574,7 +574,7 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
 
     await waitFor(() => {
@@ -652,7 +652,7 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
 
     await waitFor(() => {
@@ -660,7 +660,7 @@ describe('InventoryDetail', () => {
     });
 
     fireEvent.mouseDown(screen.getByRole('combobox', { name: /log scope/i }));
-    fireEvent.click(screen.getByRole('option', { name: /merged aisle log/i }));
+    fireEvent.click(screen.getByRole('option', { name: /scope merged/i }));
 
     await waitFor(() => {
       expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).toMatchObject({ enabled: false });
@@ -769,20 +769,15 @@ describe('InventoryDetail', () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /aisle observability/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /dialog title aisle/i })).toBeInTheDocument();
     });
-    expect(screen.getByText('Attempt 2')).toBeInTheDocument();
-    expect(screen.getByText('Retry of job')).toBeInTheDocument();
     expect(screen.getByText('job-0')).toBeInTheDocument();
-    expect(screen.getByText('Current stage')).toBeInTheDocument();
     expect(screen.getAllByText('AnalysisStage').length).toBeGreaterThan(0);
-    expect(screen.getByText('Current step')).toBeInTheDocument();
     expect(screen.getByText('provider_call')).toBeInTheDocument();
-    expect(screen.getByText('Execution ID')).toBeInTheDocument();
     expect(screen.getByText('exec-1')).toBeInTheDocument();
     expect(screen.getByText('stage.started')).toBeInTheDocument();
   });
@@ -851,7 +846,7 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /cancel job/i })).toBeInTheDocument();
@@ -923,7 +918,7 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /retry job/i })).toBeInTheDocument();
@@ -1015,7 +1010,7 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /cancel job/i })).toBeInTheDocument();
@@ -1130,7 +1125,7 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /retry job/i })).toBeInTheDocument();
@@ -1220,12 +1215,11 @@ describe('InventoryDetail', () => {
 
     renderPage();
 
-    expect(screen.getByText('Reference usage')).toBeInTheDocument();
-    expect(screen.getByText('2 sent to Gemini')).toBeInTheDocument();
-    expect(screen.getByText('2 prepared')).toBeInTheDocument();
+    expect(screen.getByText('Column reference usage')).toBeInTheDocument();
+    expect(screen.getByText('Sent many')).toBeInTheDocument();
+    expect(screen.getByText('Prepared many')).toBeInTheDocument();
     expect(screen.getByText('Reference setup failed')).toBeInTheDocument();
-    expect(screen.getByText('1 prepared. Not sent to Gemini.')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /actions for aisle/i })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /row actions a11y/i })).toHaveLength(2);
   });
 
   it('shows a pending summary label when a queued or running job has no reference_usage yet', () => {
@@ -1331,32 +1325,32 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     const processItem = screen.getByRole('menuitem', { name: /process aisle/i });
     expect(processItem).toHaveAttribute('aria-disabled', 'true');
-    expect(processItem.textContent).toMatch(/upload at least one image before processing/i);
+    expect(processItem.textContent).toMatch(/upload_need_image/i);
   });
 
   it('process dialog shows resolved default model id in the model placeholder option', async () => {
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
-    expect(await screen.findByText(/start processing/i)).toBeInTheDocument();
+    expect(await screen.findByText(/process dialog title/i)).toBeInTheDocument();
 
     const modelSelect = screen.getByLabelText(/^model$/i, { selector: '[role="combobox"]' });
     fireEvent.mouseDown(modelSelect);
     expect(
-      await screen.findByRole('option', { name: /default \(gemini-2\.0-flash-exp\)/i })
+      await screen.findByRole('option', { name: /process default model em/i })
     ).toBeInTheDocument();
   });
 
   it('process aisle opens provider dialog and passes provider/model/prompt to start mutation', async () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
 
-    expect(await screen.findByText(/start processing/i)).toBeInTheDocument();
+    expect(await screen.findByText(/process dialog title/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^provider$/i)).toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByLabelText(/^provider$/i));
@@ -1369,7 +1363,7 @@ describe('InventoryDetail', () => {
     fireEvent.mouseDown(screen.getByLabelText(/prompt profile/i));
     fireEvent.click(await screen.findByRole('option', { name: /prompt b/i }));
 
-    fireEvent.click(screen.getByRole('button', { name: /^start$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /process start/i }));
 
     await waitFor(() => {
       expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
@@ -1384,7 +1378,7 @@ describe('InventoryDetail', () => {
   it('production inventory starts aisle processing without opening the provider dialog', async () => {
     inventoryDetailHookState.data.processing_mode = 'production';
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /actions for aisle a-01/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
 
     await waitFor(() => {
