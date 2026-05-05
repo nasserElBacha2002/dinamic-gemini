@@ -187,6 +187,17 @@ export default function ReviewQueuePage() {
     const raw = location.state as { openReviewDrawer?: OpenReviewDrawerPayload } | null;
     const p = raw?.openReviewDrawer;
     if (!p || p.kind !== 'queue') return;
+    if (
+      !p.inventoryId?.trim() ||
+      !p.aisleId?.trim() ||
+      !p.positionId?.trim() ||
+      !p.inventoryName?.trim() ||
+      !p.aisleCode?.trim() ||
+      !Array.isArray(p.resultIds) ||
+      p.resultIds.length === 0
+    ) {
+      return;
+    }
     const key = `${p.positionId}-${p.inventoryId}-${p.aisleId}`;
     if (consumedRedirectKey.current === key) return;
     consumedRedirectKey.current = key;
@@ -202,8 +213,8 @@ export default function ReviewQueuePage() {
       returnTo: 'review_queue',
       jobId: p.jobId,
     });
-    navigate(location.pathname, { replace: true, state: {} });
-  }, [location.state, location.pathname, navigate]);
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: {} });
+  }, [location.state, location.pathname, location.search, navigate]);
 
   return (
     <Box

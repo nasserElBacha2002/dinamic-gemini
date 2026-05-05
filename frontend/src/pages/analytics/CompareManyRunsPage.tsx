@@ -220,11 +220,15 @@ export default function CompareManyRunsPage() {
   const dirty =
     draftAisleId !== applied.aisleId || draftBaseline !== applied.baseline || !sameSelection(draftJobIds, applied.jobIds);
 
+  /** Avoid repeated replace navigations when inventory refetches but stays non-test. */
+  const nonTestRedirectInventoryRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!inventoryId || !inventoryQuery.isSuccess || !inventoryQuery.data) return;
-    if (inventoryQuery.data.processing_mode !== 'test') {
-      navigate(pathToInventory(inventoryId), { replace: true });
-    }
+    if (inventoryQuery.data.processing_mode === 'test') return;
+    if (nonTestRedirectInventoryRef.current === inventoryId) return;
+    nonTestRedirectInventoryRef.current = inventoryId;
+    navigate(pathToInventory(inventoryId), { replace: true });
   }, [inventoryId, inventoryQuery.data, inventoryQuery.isSuccess, navigate]);
 
   useEffect(() => {
@@ -237,6 +241,8 @@ export default function CompareManyRunsPage() {
     if (applied.baseline && applied.jobIds.includes(applied.baseline)) return;
     const nextBaseline = applied.jobIds[0];
     if (!nextBaseline) return;
+    const baselineInUrl = searchParams.get('baseline')?.trim() ?? '';
+    if (baselineInUrl === nextBaseline) return;
     const correctionKey = `${applied.aisleId}|${applied.jobIds.join(',')}|${nextBaseline}`;
     if (correctionNoticeRef.current === correctionKey) return;
     correctionNoticeRef.current = correctionKey;
@@ -246,7 +252,7 @@ export default function CompareManyRunsPage() {
       p.set('baseline', nextBaseline);
       return p;
     }, { replace: true });
-  }, [applied.aisleId, applied.baseline, applied.jobIds, setSearchParams]);
+  }, [applied.aisleId, applied.baseline, applied.jobIds, searchParams, setSearchParams]);
 
   const applyDraftToUrl = () => {
     if (draftError) return;

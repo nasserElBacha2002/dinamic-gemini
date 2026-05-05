@@ -2,7 +2,7 @@
  * Analytics — benchmark compare (read-only two-run diff). Query: aisleId, jobAId, jobBId.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -184,13 +184,17 @@ export default function CompareRunsPage() {
   const aisleSelectValue =
     aisleId && aislesQuery.isFetched && aislesItems.some((a) => a.id === aisleId) ? aisleId : '';
 
+  /** Avoid repeated replace navigations when inventory refetches but stays non-test. */
+  const nonTestRedirectInventoryRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!inventoryId) return;
     if (!inventoryQuery.isSuccess) return;
     if (!inventory) return;
-    if (inventory.processing_mode !== 'test') {
-      navigate(pathToInventory(inventoryId), { replace: true });
-    }
+    if (inventory.processing_mode === 'test') return;
+    if (nonTestRedirectInventoryRef.current === inventoryId) return;
+    nonTestRedirectInventoryRef.current = inventoryId;
+    navigate(pathToInventory(inventoryId), { replace: true });
   }, [inventory, inventoryId, inventoryQuery.isSuccess, navigate]);
 
   const draftSourceKey = `${aisleId}|${jobAId}|${jobBId}`;
