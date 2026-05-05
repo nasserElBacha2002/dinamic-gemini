@@ -60,5 +60,6 @@ export type {
   DataTableSortModel,
 } from './DataTable';
 
-export { AppSnackbarProvider, useAppSnackbar } from './AppSnackbarProvider';
-export type { AppSnackbarSeverity } from './AppSnackbarProvider';
+export { AppSnackbarProvider } from './AppSnackbarProvider';
+export { useAppSnackbar } from './useAppSnackbar';
+export type { AppSnackbarSeverity } from './appSnackbarContext';

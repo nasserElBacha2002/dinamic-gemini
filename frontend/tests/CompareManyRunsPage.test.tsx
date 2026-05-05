@@ -6,7 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material';
 import * as client from '../src/api/client';
-import CompareManyRunsPage, { __testables } from '../src/pages/analytics/CompareManyRunsPage';
+import CompareManyRunsPage from '../src/pages/analytics/CompareManyRunsPage';
+import { buildDraftError } from '../src/pages/analytics/compareManyRunsDraft';
 import { AppSnackbarProvider } from '../src/components/ui';
 import theme from '../src/theme';
 import type { AisleBenchmarkCompareManyResponse, Inventory, Aisle, JobSummary } from '../src/api/types';
@@ -349,13 +350,13 @@ describe('CompareManyRunsPage', () => {
   });
 
   it('helper validation flags duplicate and baseline-outside-selection drafts', () => {
-    expect(__testables.buildDraftError('aisle-1', ['job-1', 'job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.duplicate_jobs');
-    expect(__testables.buildDraftError('aisle-1', ['job-1', 'job-2'], 'job-3', (k) => k)).toBe(
+    expect(buildDraftError('aisle-1', ['job-1', 'job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.duplicate_jobs');
+    expect(buildDraftError('aisle-1', ['job-1', 'job-2'], 'job-3', (k) => k)).toBe(
       'compare_many.errors.pick_valid_baseline'
     );
   });
 
   it('helper validation flags too-few selections for draft apply', () => {
-    expect(__testables.buildDraftError('aisle-1', ['job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.pick_two_jobs');
+    expect(buildDraftError('aisle-1', ['job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.pick_two_jobs');
   });
 });

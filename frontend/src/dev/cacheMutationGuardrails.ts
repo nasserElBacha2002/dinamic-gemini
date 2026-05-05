@@ -40,7 +40,6 @@ function warnOnce(key: string, message: string, detail: unknown): void {
   if (!isCacheMutationGuardrailsActive()) return;
   if (warnedKeys.has(key)) return;
   warnedKeys.add(key);
-  // eslint-disable-next-line no-console -- Phase 9 dev diagnostics
   console.warn(`[dinamic:cache-guard] ${message}`, detail);
 }
 

@@ -35,9 +35,11 @@ import {
   formatSignedDurationHuman,
   wallClockSecondsFromJobTimestamps,
 } from '../../utils/benchmarkExecutionTime';
-
-const MIN_COMPARE_JOBS = 2;
-const MAX_COMPARE_JOBS = 3;
+import {
+  MAX_COMPARE_JOBS,
+  MIN_COMPARE_JOBS,
+  buildDraftError,
+} from './compareManyRunsDraft';
 
 type AppliedState = {
   aisleId: string;
@@ -90,15 +92,6 @@ function semanticColor(value: number, higherIsWorse: boolean): 'success.main' | 
   if (value === 0) return 'text.primary';
   if (higherIsWorse) return value > 0 ? 'error.main' : 'success.main';
   return value > 0 ? 'success.main' : 'error.main';
-}
-
-function buildDraftError(aisleId: string, jobIds: string[], baseline: string, t: (key: string) => string): string | null {
-  if (new Set(jobIds).size !== jobIds.length) return t('compare_many.errors.duplicate_jobs');
-  if (!aisleId) return t('compare_many.errors.select_aisle');
-  if (jobIds.length < MIN_COMPARE_JOBS) return t('compare_many.errors.pick_two_jobs');
-  if (jobIds.length > MAX_COMPARE_JOBS) return t('compare_many.errors.pick_max_three_jobs');
-  if (!baseline || !jobIds.includes(baseline)) return t('compare_many.errors.pick_valid_baseline');
-  return null;
 }
 
 function orderJobsForDisplay(jobIds: string[], baseline: string): string[] {
@@ -155,10 +148,6 @@ function compareManyExecutionInsight(t: TFunction, comp: BenchmarkCompareManyDif
   return null;
 }
 
-export const __testables = {
-  buildDraftError,
-};
-
 export default function CompareManyRunsPage() {
   const { t } = useTranslation();
   const { inventoryId } = useParams<{ inventoryId: string }>();
@@ -175,6 +164,14 @@ export default function CompareManyRunsPage() {
     jobIds: string[];
     baseline: string;
   } | null>(null);
+
+  const draftSourceKey = `${applied.aisleId}|${applied.jobIds.join(',')}|${applied.baseline}`;
+  const draftAisleId =
+    draftOverride?.sourceKey === draftSourceKey ? draftOverride.aisleId : applied.aisleId;
+  const draftJobIds =
+    draftOverride?.sourceKey === draftSourceKey ? draftOverride.jobIds : applied.jobIds;
+  const draftBaseline =
+    draftOverride?.sourceKey === draftSourceKey ? draftOverride.baseline : applied.baseline;
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
@@ -229,14 +226,6 @@ export default function CompareManyRunsPage() {
       navigate(pathToInventory(inventoryId), { replace: true });
     }
   }, [inventoryId, inventoryQuery.data, inventoryQuery.isSuccess, navigate]);
-
-  const draftSourceKey = `${applied.aisleId}|${applied.jobIds.join(',')}|${applied.baseline}`;
-  const draftAisleId =
-    draftOverride?.sourceKey === draftSourceKey ? draftOverride.aisleId : applied.aisleId;
-  const draftJobIds =
-    draftOverride?.sourceKey === draftSourceKey ? draftOverride.jobIds : applied.jobIds;
-  const draftBaseline =
-    draftOverride?.sourceKey === draftSourceKey ? draftOverride.baseline : applied.baseline;
 
   useEffect(() => {
     // URL correction policy: only baseline is auto-corrected, and only when the rest of applied state is already valid.

@@ -3,10 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import IngestionSessionDetailPage, {
-  hasRequiredDetailParams,
-} from '../src/features/ingestionSessions/pages/IngestionSessionDetailPage';
-import { buildSessionsListParams } from '../src/features/ingestionSessions/pages/IngestionSessionsPage';
+import IngestionSessionDetailPage from '../src/features/ingestionSessions/pages/IngestionSessionDetailPage';
+import { hasRequiredDetailParams } from '../src/features/ingestionSessions/utils/ingestionSessionDetailParams';
+import { buildSessionsListParams } from '../src/features/ingestionSessions/utils/ingestionSessionsListParams';
 
 const mockUseCaptureSessionDetail = vi.fn();
 const mockUseCloseCaptureSession = vi.fn();
