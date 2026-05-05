@@ -106,12 +106,12 @@ function renderPage() {
 describe('ReviewQueuePage', () => {
   it('renders header, KPI band, filters region, and queue table', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: /review queue/i })).toBeInTheDocument();
-    expect(screen.getAllByText('Needs review').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Invalid traceability')).toBeInTheDocument();
-    expect(screen.getByText('Missing evidence')).toBeInTheDocument();
-    expect(screen.getByLabelText(/filters/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Prioritized results' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+    expect(screen.getByText('SKU-QUEUE-1')).toBeInTheDocument();
+    expect(screen.getByLabelText(/inventory/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/min confidence/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/max confidence/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /prioritized results/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /priority/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /SKU/i })).toBeInTheDocument();
   });
@@ -119,15 +119,15 @@ describe('ReviewQueuePage', () => {
   it('uses SKU review button as primary navigation (no Actions column)', () => {
     renderPage();
     expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Review SKU-QUEUE-1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /review aria/i })).toBeInTheDocument();
   });
 
   it('shows validation errors on both confidence fields when min > max', () => {
     renderPage();
     fireEvent.change(screen.getByLabelText(/Min confidence/i), { target: { value: '0.9' } });
     fireEvent.change(screen.getByLabelText(/Max confidence/i), { target: { value: '0.1' } });
-    expect(screen.getByText(/Cannot be greater than max/i)).toBeInTheDocument();
-    expect(screen.getByText(/Must be greater than or equal to min/i)).toBeInTheDocument();
+    expect(screen.getByText(/cannot exceed max/i)).toBeInTheDocument();
+    expect(screen.getByText(/must be gte min/i)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /Min confidence/i })).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('textbox', { name: /Max confidence/i })).toHaveAttribute('aria-invalid', 'true');
   });

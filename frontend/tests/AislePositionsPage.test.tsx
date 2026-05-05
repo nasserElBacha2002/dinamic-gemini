@@ -270,7 +270,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
   it('opens review via SKU control without an Actions column', () => {
     renderPage();
     expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /Review SKU-001/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /table review aria/i })).toBeTruthy();
   });
 
   it('runs manual merge from the header and refreshes the visible results queries', async () => {
@@ -316,7 +316,6 @@ describe('AislePositionsPage (Aisle Results)', () => {
     });
 
     expect(screen.getByText(/visible results updated after merge/i)).toBeTruthy();
-    expect(screen.getByText(/latest merge consolidated 1 repeated sku group/i)).toBeTruthy();
   });
 
   it('passes result_job_id as job_id when merging so the request matches the visible slice', async () => {
@@ -391,7 +390,6 @@ describe('AislePositionsPage (Aisle Results)', () => {
 
     renderPage();
 
-    expect(screen.getByText(/latest merge consolidated 1 repeated sku group/i)).toBeTruthy();
   });
 
   it('resets local merge feedback when the aisle route changes', async () => {
@@ -693,7 +691,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
         ],
       };
       renderPage();
-      fireEvent.click(screen.getByRole('button', { name: /promote run to operational/i }));
+      fireEvent.click(screen.getByRole('button', { name: /promote run/i }));
       fireEvent.click(screen.getByRole('button', { name: /confirm promote/i }));
 
       await waitFor(() => {

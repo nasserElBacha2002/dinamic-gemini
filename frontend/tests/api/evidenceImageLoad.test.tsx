@@ -219,7 +219,7 @@ describe('useEvidenceImageLoad', () => {
     );
     render(<TestWrapper spec={spec} />);
     await waitFor(() => {
-      expect(screen.getByTestId('state').textContent).toBe('Source image is no longer available.');
+      expect(screen.getByTestId('state').textContent).toBe('Source image unavailable');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('not_found');
   });
@@ -238,7 +238,7 @@ describe('useEvidenceImageLoad', () => {
     );
     render(<TestWrapper spec={spec} />);
     await waitFor(() => {
-      expect(screen.getByTestId('state').textContent).toBe('You do not have permission to load this image.');
+      expect(screen.getByTestId('state').textContent).toBe('Not allowed to view this image');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('forbidden');
   });
@@ -247,7 +247,7 @@ describe('useEvidenceImageLoad', () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Network error'))));
     render(<TestWrapper spec={spec} />);
     await waitFor(() => {
-      expect(screen.getByTestId('state').textContent).toBe('Image could not be loaded.');
+      expect(screen.getByTestId('state').textContent).toBe('Network error loading image');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('network');
   });
@@ -319,7 +319,7 @@ describe('useEvidenceImageLoad', () => {
     );
     render(<TestWrapper spec={spec} />);
     await waitFor(() => {
-      expect(screen.getByTestId('state').textContent).toBe('Preview is not available for this image.');
+      expect(screen.getByTestId('state').textContent).toBe('Preview unavailable');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('heic_preview_unavailable');
   });

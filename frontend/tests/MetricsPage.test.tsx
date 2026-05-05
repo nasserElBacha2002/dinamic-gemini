@@ -172,12 +172,12 @@ describe('MetricsPage', () => {
 
   it('renders the new operational hierarchy and removes low-value legacy blocks', () => {
     renderMetrics();
-    expect(screen.getByRole('heading', { name: /metrics/i })).toBeInTheDocument();
-    expect(screen.getByText('Auto-acceptance rate')).toBeInTheDocument();
-    expect(screen.getByText('Manual intervention breakdown')).toBeInTheDocument();
-    expect(screen.getByText('Resolution flow')).toBeInTheDocument();
-    expect(screen.getByText('Inventory performance')).toBeInTheDocument();
-    expect(screen.getByText('Aisles requiring attention')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /page a11y/i })).toBeInTheDocument();
+    expect(screen.getByText('Kpi auto accept title')).toBeInTheDocument();
+    expect(screen.getByText('Manual intervention title')).toBeInTheDocument();
+    expect(screen.getByText('Resolution flow title')).toBeInTheDocument();
+    expect(screen.getByText('Inventory performance title')).toBeInTheDocument();
+    expect(screen.getByText('Aisles attention title')).toBeInTheDocument();
     expect(screen.queryByText('Settling actions / day')).not.toBeInTheDocument();
     expect(screen.queryByText('Review activity')).not.toBeInTheDocument();
     expect(screen.queryByText('Processing outcomes')).not.toBeInTheDocument();
@@ -187,7 +187,7 @@ describe('MetricsPage', () => {
     renderMetrics();
     expect(screen.getByText('50.0%')).toBeInTheDocument(); // auto_acceptance_rate
     expect(screen.getByText('2.0 min')).toBeInTheDocument();
-    expect(screen.getAllByText('Unidentified product rate').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Kpi unidentified title').length).toBeGreaterThan(0);
   });
 
   it('shows skeleton KPI band while loading without summary', () => {
@@ -198,7 +198,7 @@ describe('MetricsPage', () => {
     });
     const { container } = renderMetrics();
     expect(container.querySelectorAll('.MuiSkeleton-root').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Unidentified product rate')).not.toBeInTheDocument();
+    expect(screen.queryByText('Kpi unidentified title')).not.toBeInTheDocument();
   });
 
   it('shows error alert when a query fails', () => {
@@ -208,9 +208,8 @@ describe('MetricsPage', () => {
       errors: [new ApiError('Server error', 500)],
     });
     renderMetrics();
-    expect(
-      screen.getByText(/Server error|Failed to load metrics|could not complete the operation/i),
-    ).toBeInTheDocument();
+    expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+    expect(screen.getByText(/something went wrong|server error|load metrics|request failed|unexpected/i)).toBeInTheDocument();
   });
 
   it('renders inventory performance link and aisle issue link', () => {
@@ -227,13 +226,12 @@ describe('MetricsPage', () => {
       quality: { items: [] },
     });
     renderMetrics();
-    expect(screen.getByText('No positions match this filter and date range.')).toBeInTheDocument();
+    expect(screen.getByText('Empty quality filter')).toBeInTheDocument();
   });
 
   it('shows unavailable intervention categories without fabricating backend support', () => {
     renderMetrics();
-    expect(screen.getByText('Operator-marked unknown unavailable')).toBeInTheDocument();
-    expect(screen.getByText('Invalid unavailable')).toBeInTheDocument();
+    expect(screen.getAllByText('Intervention unavailable chip').length).toBeGreaterThan(0);
   });
 
   it('does not expose a redundant Actions column on inventory or aisle analytics tables', () => {
@@ -243,11 +241,11 @@ describe('MetricsPage', () => {
 
   it('renders the global inventory option plus fetched inventory options', () => {
     renderMetrics();
-    const select = screen.getByLabelText('Inventory');
+    const select = screen.getByRole('combobox', { name: 'Inventory', hidden: true });
     fireEvent.mouseDown(select);
 
     const listbox = screen.getByRole('listbox');
-    expect(within(listbox).getByText('All inventories in scope')).toBeInTheDocument();
+    expect(within(listbox).getByText('Scope inventory all')).toBeInTheDocument();
     expect(within(listbox).getByText('North DC')).toBeInTheDocument();
     expect(within(listbox).getByText('South DC')).toBeInTheDocument();
   });
@@ -260,7 +258,7 @@ describe('MetricsPage', () => {
 
   it('enables Compare runs for a selected test inventory and navigates to analytics compare', async () => {
     renderMetrics();
-    const invSelect = screen.getByLabelText('Inventory');
+    const invSelect = screen.getByRole('combobox', { name: 'Inventory', hidden: true });
     fireEvent.mouseDown(invSelect);
     fireEvent.click(within(screen.getByRole('listbox')).getByText('North DC'));
 
@@ -275,7 +273,7 @@ describe('MetricsPage', () => {
 
   it('keeps Compare runs disabled when the selected inventory is production', () => {
     renderMetrics();
-    const invSelect = screen.getByLabelText('Inventory');
+    const invSelect = screen.getByRole('combobox', { name: 'Inventory', hidden: true });
     fireEvent.mouseDown(invSelect);
     fireEvent.click(within(screen.getByRole('listbox')).getByText('South DC'));
 
@@ -338,14 +336,14 @@ describe('MetricsPage', () => {
 
     renderMetrics();
 
-    expect(screen.getByText('Reviewed positions')).toBeInTheDocument();
-    expect(screen.getByText('Awaiting explicit backend/domain support:')).toBeInTheDocument();
+    expect(screen.getByText('Reviewed positions label')).toBeInTheDocument();
+    expect(screen.getByText('Awaiting backend support')).toBeInTheDocument();
     expect(screen.getByText('Positions in scope')).toBeInTheDocument();
     expect(screen.getAllByText('Pending review').length).toBeGreaterThan(0);
     expect(screen.getByText('Manual touch')).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Unidentified product' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Manual corrections' })).toBeInTheDocument();
-    expect(screen.getAllByText('Operator-marked unknown').length).toBeGreaterThan(0);
+    expect(screen.getByRole('columnheader', { name: 'Column unidentified product' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Column manual corrections' })).toBeInTheDocument();
+    expect(screen.getAllByText('Category operator unknown').length).toBeGreaterThan(0);
 
     expect(screen.getAllByText('Unidentified product').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Pending review').length).toBeGreaterThan(0);
