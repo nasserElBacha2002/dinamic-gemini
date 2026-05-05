@@ -204,7 +204,7 @@ export default function CompareManyRunsPage() {
   // Expanding one block enriches the full compare-many payload (all comparisons), then each block renders its own slice.
   const effectiveData = enrichedCompareManyQuery.data ?? compareQuery.data;
   const aisles = aislesQuery.data?.items ?? [];
-  const jobs = jobsQuery.data?.jobs ?? [];
+  const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data?.jobs]);
   const sortedJobsForPicker = useMemo(() => {
     const list = [...jobs];
     list.sort((a, b) => {

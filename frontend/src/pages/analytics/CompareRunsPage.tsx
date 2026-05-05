@@ -179,7 +179,7 @@ export default function CompareRunsPage() {
   const inventory = inventoryQuery.data;
   const aislesItems = aislesQuery.data?.items ?? [];
   const aisle = aislesItems.find((a) => a.id === aisleId);
-  const jobs = jobsQuery.data?.jobs ?? [];
+  const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data?.jobs]);
   /** Avoid MUI out-of-range Select when URL aisle is ahead of the aisles list query. */
   const aisleSelectValue =
     aisleId && aislesQuery.isFetched && aislesItems.some((a) => a.id === aisleId) ? aisleId : '';

@@ -226,7 +226,7 @@ export default function QuickReviewDrawer({
       reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);
     }
-  }, [reviewMutation, showSnackbar, t, withReviewJobId]);
+  }, [onClose, reviewMutation, showSnackbar, t, withReviewJobId]);
 
   const handleNavigateToResult = useCallback((resultId: string) => {
     setActivePositionId(resultId);

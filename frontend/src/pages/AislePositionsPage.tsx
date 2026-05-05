@@ -158,7 +158,7 @@ export default function AislePositionsPage() {
   const aisleJobsQuery = useAisleJobsList(inventoryId, aisleId, {
     enabled: Boolean(inventoryId && aisleId && inventoryQuery.data),
   });
-  const jobs = aisleJobsQuery.data?.jobs ?? [];
+  const jobs = useMemo(() => aisleJobsQuery.data?.jobs ?? [], [aisleJobsQuery.data?.jobs]);
   const operationalJobId = aisleJobsQuery.data?.operational_job_id?.trim() || null;
   const inventory = inventoryQuery.data ?? null;
   const isTestInventory = inventory?.processing_mode === 'test';
@@ -212,7 +212,7 @@ export default function AislePositionsPage() {
     listQuery: positionsListQuery,
     enabled: positionsQueryEnabled,
   });
-  const positions = positionsFromQuery ?? [];
+  const positions = useMemo(() => positionsFromQuery ?? [], [positionsFromQuery]);
   const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId, {
     enabled: Boolean(inventoryId && aisleId && results.length > 0),
     jobId: resultJobId,
@@ -421,6 +421,7 @@ export default function AislePositionsPage() {
     aisle,
     filter,
     navigate,
+    t,
   ]);
 
   const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
@@ -500,7 +501,7 @@ export default function AislePositionsPage() {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       showSnackbar(resolveApiErrorMessage(err, 'errors.merge_failed'), 'error');
     }
-  }, [aisleId, inventoryId, mergeMutation, queryClient, showSnackbar, t, visibleJobId]);
+  }, [aisleId, inventoryId, mergeContextKey, mergeMutation, queryClient, showSnackbar, t, visibleJobId]);
 
   if (!inventoryId || !aisleId) {
     return (

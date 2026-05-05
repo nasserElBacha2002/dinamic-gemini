@@ -227,7 +227,7 @@ export default function ExecutionLogPanel({
 }: ExecutionLogPanelProps) {
   const { t } = useTranslation();
   const emptyMessage = emptyMessageProp ?? t('execution_log.empty_default');
-  const allEvents = log?.events ?? eventsProp ?? [];
+  const allEvents = useMemo(() => log?.events ?? eventsProp ?? [], [log?.events, eventsProp]);
   const haveEnvelope = Boolean(log);
   const aisleMode = Boolean(log && isAisleAggregateLog(log));
 

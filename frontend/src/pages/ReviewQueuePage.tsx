@@ -115,8 +115,6 @@ export default function ReviewQueuePage() {
   }, [
     inventoryId,
     aisleId,
-    minConfidenceStr,
-    maxConfidenceStr,
     confidenceFiltersInvalid,
     minConfParsedRQ,
     maxConfParsedRQ,
@@ -150,7 +148,7 @@ export default function ReviewQueuePage() {
     setApiSortBy('priority');
     setApiSortDir('desc');
     setActiveSortColumnId('priority');
-  }, [skuSearch.setInput]);
+  }, [skuSearch]);
 
 
   const resetDisabled =
@@ -176,7 +174,7 @@ export default function ReviewQueuePage() {
       : null;
 
   const summary = queueQuery.data?.summary;
-  const items = queueQuery.data?.items ?? [];
+  const items = useMemo(() => queueQuery.data?.items ?? [], [queueQuery.data?.items]);
 
   const openReviewDrawer = useCallback(
     (item: ReviewQueueItem) => {
