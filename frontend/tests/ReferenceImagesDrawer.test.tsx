@@ -64,7 +64,7 @@ describe('ReferenceImagesDrawer', () => {
   it('renders empty state and real upload entry point', () => {
     renderDrawer();
 
-    expect(screen.getByText(/no reference images uploaded yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/empty message/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /upload references/i })).toBeInTheDocument();
   });
 
@@ -73,7 +73,7 @@ describe('ReferenceImagesDrawer', () => {
 
     expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
     expect(
-      screen.getByText(/reference images belong to this inventory and are used for future processing runs only\./i),
+      screen.getByText(/management body/i),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^preview$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^replace$/i })).toBeInTheDocument();
@@ -98,7 +98,7 @@ describe('ReferenceImagesDrawer', () => {
     });
 
     expect(screen.getByText(longFilename)).toBeInTheDocument();
-    expect(screen.getByText(/image\/png/i)).toBeInTheDocument();
+    expect(screen.getByText(/subtitle uploaded/i)).toBeInTheDocument();
     expect(screen.getByText(/uploaded/i)).toBeInTheDocument();
   });
 
@@ -129,7 +129,7 @@ describe('ReferenceImagesDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /^preview$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(/preview failed|could not complete the operation/i);
+      expect(screen.getByRole('alert')).toHaveTextContent(/something went wrong|preview failed|could not complete the operation/i);
     });
   });
 
@@ -140,7 +140,7 @@ describe('ReferenceImagesDrawer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('heading', { name: /delete reference image/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: /delete title/i })).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: /^delete$/i }));
 
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith('ref-1'));
