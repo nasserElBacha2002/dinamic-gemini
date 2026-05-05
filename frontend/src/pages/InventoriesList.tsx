@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Link } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -51,10 +51,6 @@ export default function InventoriesList() {
     }),
     [page, pageSize, sortBy, sortDir, searchApplied]
   );
-
-  useEffect(() => {
-    setPage(1);
-  }, [searchApplied]);
 
   const { data, isLoading, isError, error, refetch } = useInventoriesList(listQuery);
   const inventories: InventoryListItem[] = data?.items ?? [];
@@ -182,7 +178,10 @@ export default function InventoriesList() {
         >
           <TableSearchField
             value={searchInput}
-            onChange={setSearchInput}
+            onChange={(value) => {
+              setSearchInput(value);
+              setPage(1);
+            }}
             data-testid="inventories-list-search"
           />
         </FilterToolbar>

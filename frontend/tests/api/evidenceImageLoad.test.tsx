@@ -33,15 +33,12 @@ describe('fetchEvidenceImageDisplay', () => {
   beforeEach(() => {
     ensureBlobUrlSupport();
     vi.mocked(authStorage.getStoredToken).mockReturnValue(null);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_input: string) => Promise.reject(new Error('network error')))
-    );
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('network error'))));
   });
 
   it('requests image-display-url with Authorization when token is set', async () => {
     vi.mocked(authStorage.getStoredToken).mockReturnValue('test-jwt-token');
-    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn((_url: string) => {
       if (typeof _url === 'string' && _url.includes('image-display-url')) {
         return Promise.resolve(
           new Response(

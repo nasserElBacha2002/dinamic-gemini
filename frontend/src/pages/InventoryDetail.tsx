@@ -55,7 +55,7 @@ export default function InventoryDetail() {
     onBeforeProcessMutation: () => setUploadError(null),
   });
 
-  const aisles = aislesQuery.data?.items ?? [];
+  const aisles = useMemo(() => aislesQuery.data?.items ?? [], [aislesQuery.data?.items]);
   const emptyDash = t('common.em_dash');
   const tableRows = useMemo(() => toAisleInventoryTableRows(aisles, emptyDash), [aisles, emptyDash]);
   const filteredTableRows = useMemo(() => {

@@ -211,9 +211,11 @@ export function deriveQualityAlignmentSignals(
   const threshold = options?.lowConfidenceThreshold ?? LOW_CONFIDENCE_THRESHOLD;
   const lowConfidence = confidence != null && confidence < threshold;
   const t = norm(apiTraceability);
-  let traceabilityTarget: TraceabilityPlanLabel | null = null;
-  if (t === 'valid') traceabilityTarget = 'valid_traceability';
-  else if (t === 'invalid' || t === 'missing') traceabilityTarget = 'invalid_traceability';
-  else traceabilityTarget = null;
+  const traceabilityTarget: TraceabilityPlanLabel | null =
+    t === 'valid'
+      ? 'valid_traceability'
+      : t === 'invalid' || t === 'missing'
+        ? 'invalid_traceability'
+        : null;
   return { traceabilityTarget, lowConfidence };
 }

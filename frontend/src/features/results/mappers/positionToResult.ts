@@ -120,10 +120,7 @@ export function mapPositionSummaryToResultSummary(
 }
 
 /** Map evidence (API) to ResultEvidence. imageUrl/thumbnailUrl left null; UI can set from route context. */
-export function mapEvidenceToResultEvidence(
-  e: EvidenceSummary,
-  _index: number
-): ResultEvidence {
+export function mapEvidenceToResultEvidence(e: EvidenceSummary): ResultEvidence {
   return {
     id: e.id,
     role: e.is_primary ? 'PRIMARY' : 'SUPPORTING',

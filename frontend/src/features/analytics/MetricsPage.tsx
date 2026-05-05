@@ -2,7 +2,7 @@
  * Operational analytics dashboard focused on efficiency, manual effort, and quality hotspots.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
@@ -238,10 +238,11 @@ export default function MetricsPage() {
 
   const aislesQuery = useAislesList(inventoryId || undefined, { enabled: Boolean(inventoryId) });
   const aisles = aislesQuery.data?.items ?? [];
+  const effectiveAisleId = aisleId && aisles.some((aisle) => aisle.id === aisleId) ? aisleId : '';
   const selectedInventory = inventories.find((inv) => inv.id === inventoryId) ?? null;
-  const selectedAisle = aisles.find((aisle) => aisle.id === aisleId) ?? null;
+  const selectedAisle = aisles.find((aisle) => aisle.id === effectiveAisleId) ?? null;
   const compareRunsHref =
-    Boolean(inventoryId && selectedInventory && selectedInventory.processing_mode === 'test')
+    inventoryId && selectedInventory && selectedInventory.processing_mode === 'test'
       ? pathToInventoryAnalyticsCompare(inventoryId)
       : null;
   const compareRunsDisabledReason = compareRunsHref
@@ -249,12 +250,6 @@ export default function MetricsPage() {
     : !inventoryId
       ? t('analytics.compare_runs_metrics_select_inventory')
       : t('analytics.compare_runs_metrics_test_only');
-
-  useEffect(() => {
-    if (aisleId && !aisles.some((aisle) => aisle.id === aisleId)) {
-      setAisleId('');
-    }
-  }, [aisleId, aisles]);
 
   const [inventoryPage, setInventoryPage] = useState(1);
   const [inventoryPageSize, setInventoryPageSize] = useState(10);
@@ -300,9 +295,11 @@ export default function MetricsPage() {
     () => sortInventoryRows(inventoryRowsFiltered, inventorySortBy, inventorySortDir),
     [inventoryRowsFiltered, inventorySortBy, inventorySortDir]
   );
+  const maxInventoryPage = Math.max(1, Math.ceil(Math.max(inventoryRowsSorted.length, 1) / inventoryPageSize));
+  const effectiveInventoryPage = Math.min(inventoryPage, maxInventoryPage);
   const inventoryRowsPaged = useMemo(
-    () => paginateRows(inventoryRowsSorted, inventoryPage, inventoryPageSize),
-    [inventoryRowsSorted, inventoryPage, inventoryPageSize]
+    () => paginateRows(inventoryRowsSorted, effectiveInventoryPage, inventoryPageSize),
+    [inventoryRowsSorted, effectiveInventoryPage, inventoryPageSize]
   );
   const aisleRowsFiltered = useMemo(() => {
     const items = aisleIssues?.items ?? [];
@@ -333,18 +330,12 @@ export default function MetricsPage() {
       ),
     [aisleRowsFiltered]
   );
+  const maxAislePage = Math.max(1, Math.ceil(Math.max(aisleRowsSorted.length, 1) / aislePageSize));
+  const effectiveAislePage = Math.min(aislePage, maxAislePage);
   const aisleRowsPaged = useMemo(
-    () => paginateRows(aisleRowsSorted, aislePage, aislePageSize),
-    [aisleRowsSorted, aislePage, aislePageSize]
+    () => paginateRows(aisleRowsSorted, effectiveAislePage, aislePageSize),
+    [aisleRowsSorted, effectiveAislePage, aislePageSize]
   );
-
-  useEffect(() => {
-    setInventoryPage(1);
-  }, [perfTableSearch]);
-
-  useEffect(() => {
-    setAislePage(1);
-  }, [aisleMetricsTableSearch]);
 
   const qualityRowsOrdered = useMemo(
     () =>
@@ -762,7 +753,7 @@ export default function MetricsPage() {
           <Select
             labelId="metrics-aisle-label"
             label={t('common.aisle')}
-            value={aisleId}
+            value={effectiveAisleId}
             onChange={(e) => setAisleId(e.target.value)}
           >
             <MenuItem value="">{t('analytics.all_aisles_option')}</MenuItem>
@@ -1017,14 +1008,20 @@ export default function MetricsPage() {
         subtitle={t('analytics.inventory_performance_subtitle')}
       >
         <FilterToolbar
-          onReset={() => setPerfTableSearch('')}
+          onReset={() => {
+            setPerfTableSearch('');
+            setInventoryPage(1);
+          }}
           resetDisabled={!perfTableSearch.trim()}
         >
           <TableSearchField
             label={t('table.search_label')}
             placeholder={t('analytics.search_inventory_performance_placeholder')}
             value={perfTableSearch}
-            onChange={setPerfTableSearch}
+            onChange={(value) => {
+              setPerfTableSearch(value);
+              setInventoryPage(1);
+            }}
             data-testid="metrics-inventory-performance-search"
           />
         </FilterToolbar>
@@ -1043,7 +1040,7 @@ export default function MetricsPage() {
             },
           }}
           pagination={{
-            page: inventoryPage,
+            page: effectiveInventoryPage,
             pageSize: inventoryPageSize,
             totalItems: inventoryRowsSorted.length,
             onPageChange: setInventoryPage,
@@ -1126,14 +1123,20 @@ export default function MetricsPage() {
             subtitle={t('analytics.aisles_attention_subtitle')}
           >
             <FilterToolbar
-              onReset={() => setAisleMetricsTableSearch('')}
+              onReset={() => {
+                setAisleMetricsTableSearch('');
+                setAislePage(1);
+              }}
               resetDisabled={!aisleMetricsTableSearch.trim()}
             >
               <TableSearchField
                 label={t('table.search_label')}
                 placeholder={t('analytics.search_aisle_metrics_placeholder')}
                 value={aisleMetricsTableSearch}
-                onChange={setAisleMetricsTableSearch}
+                onChange={(value) => {
+                  setAisleMetricsTableSearch(value);
+                  setAislePage(1);
+                }}
                 data-testid="metrics-aisle-issues-search"
               />
             </FilterToolbar>
@@ -1144,7 +1147,7 @@ export default function MetricsPage() {
               loading={isLoading}
               size="small"
               pagination={{
-                page: aislePage,
+                page: effectiveAislePage,
                 pageSize: aislePageSize,
                 totalItems: aisleRowsSorted.length,
                 onPageChange: setAislePage,

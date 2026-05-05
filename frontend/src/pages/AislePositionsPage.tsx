@@ -138,6 +138,7 @@ export default function AislePositionsPage() {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
+  const [lastMergeContextKey, setLastMergeContextKey] = useState<string | null>(null);
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [promoteJobId, setPromoteJobId] = useState('');
   /** `photo` keeps API order; `priority` applies client-side review ranking on top of loaded rows. */
@@ -157,7 +158,7 @@ export default function AislePositionsPage() {
   const aisleJobsQuery = useAisleJobsList(inventoryId, aisleId, {
     enabled: Boolean(inventoryId && aisleId && inventoryQuery.data),
   });
-  const jobs = aisleJobsQuery.data?.jobs ?? [];
+  const jobs = useMemo(() => aisleJobsQuery.data?.jobs ?? [], [aisleJobsQuery.data?.jobs]);
   const operationalJobId = aisleJobsQuery.data?.operational_job_id?.trim() || null;
   const inventory = inventoryQuery.data ?? null;
   const isTestInventory = inventory?.processing_mode === 'test';
@@ -211,7 +212,7 @@ export default function AislePositionsPage() {
     listQuery: positionsListQuery,
     enabled: positionsQueryEnabled,
   });
-  const positions = positionsFromQuery ?? [];
+  const positions = useMemo(() => positionsFromQuery ?? [], [positionsFromQuery]);
   const mergeResultsQuery = useAisleMergeResults(inventoryId, aisleId, {
     enabled: Boolean(inventoryId && aisleId && results.length > 0),
     jobId: resultJobId,
@@ -328,21 +329,15 @@ export default function AislePositionsPage() {
     [filteredBySku, tableSort]
   );
 
-  useEffect(() => {
-    if (sortedForTable.length === 0) return;
-    const pages = Math.max(1, Math.ceil(sortedForTable.length / pageSize));
-    if (page > pages) setPage(pages);
-  }, [sortedForTable.length, pageSize, page]);
-
-  useEffect(() => {
-    setLastMergeResponse(null);
-    setLastMergeSummary(null);
-  }, [inventoryId, aisleId, jobIdParam]);
+  const maxPage = Math.max(1, Math.ceil(Math.max(sortedForTable.length, 1) / pageSize));
+  const effectivePage = Math.min(page, maxPage);
+  const mergeContextKey = `${inventoryId ?? ''}|${aisleId ?? ''}|${jobIdParam ?? ''}`;
+  const mergeFeedbackIsCurrentContext = lastMergeContextKey === mergeContextKey;
 
   const tableRows = useMemo(() => {
-    const start = (page - 1) * pageSize;
+    const start = (effectivePage - 1) * pageSize;
     return sortedForTable.slice(start, start + pageSize);
-  }, [sortedForTable, page, pageSize]);
+  }, [sortedForTable, effectivePage, pageSize]);
 
   const handleResetFilters = useCallback(() => {
     setFilter('all');
@@ -426,6 +421,7 @@ export default function AislePositionsPage() {
     aisle,
     filter,
     navigate,
+    t,
   ]);
 
   const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
@@ -447,7 +443,7 @@ export default function AislePositionsPage() {
   const mergeDisabledReason =
     mergeCandidates.groupCount === 0 ? t('positions.merge_no_skus') : '';
   const mergeFeedback = useMemo(() => {
-    if (lastMergeResponse != null) {
+    if (lastMergeResponse != null && mergeFeedbackIsCurrentContext) {
       if (lastMergeResponse.product_records_updated > 0) {
         const detailExtra = lastMergeSummary
           ? t('positions.merge_visible_detail_space', { detail: mergeConsolidatedDetail(t, lastMergeSummary) })
@@ -471,7 +467,7 @@ export default function AislePositionsPage() {
       };
     }
     return null;
-  }, [lastMergeResponse, lastMergeSummary, mergeResultsSummary, t]);
+  }, [lastMergeResponse, lastMergeSummary, mergeResultsSummary, t, mergeFeedbackIsCurrentContext]);
 
   const handleRunMerge = useCallback(async () => {
     if (!inventoryId || !aisleId) return;
@@ -496,6 +492,7 @@ export default function AislePositionsPage() {
       });
       setLastMergeResponse(result);
       setLastMergeSummary(summarizeMergeResults(mergePayload.results));
+      setLastMergeContextKey(mergeContextKey);
       showSnackbar(
         result.product_records_updated > 0 ? t('positions.merge_started') : t('positions.merge_no_change'),
         'success'
@@ -504,7 +501,7 @@ export default function AislePositionsPage() {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
       showSnackbar(resolveApiErrorMessage(err, 'errors.merge_failed'), 'error');
     }
-  }, [aisleId, inventoryId, mergeMutation, queryClient, showSnackbar, t, visibleJobId]);
+  }, [aisleId, inventoryId, mergeContextKey, mergeMutation, queryClient, showSnackbar, t, visibleJobId]);
 
   if (!inventoryId || !aisleId) {
     return (
@@ -821,7 +818,7 @@ export default function AislePositionsPage() {
                   results={tableRows}
                   onOpenReview={handleOpenReview}
                   pagination={{
-                    page,
+                    page: effectivePage,
                     pageSize,
                     totalItems: sortedForTable.length,
                     onPageChange: setPage,

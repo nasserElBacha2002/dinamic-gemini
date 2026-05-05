@@ -15,15 +15,7 @@ import {
   useInventoryOptions,
 } from '../hooks/useCaptureSessions';
 import type { DataTableSortDirection } from '../../../components/ui';
-
-export function buildSessionsListParams(inventoryId: string, selectedAisleId: string) {
-  return {
-    inventoryId,
-    aisleId: selectedAisleId.trim() ? selectedAisleId : undefined,
-    page: 1,
-    pageSize: 100,
-  };
-}
+import { buildSessionsListParams } from '../utils/ingestionSessionsListParams';
 
 export default function IngestionSessionsPage() {
   const { t } = useTranslation();

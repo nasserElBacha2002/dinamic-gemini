@@ -10,6 +10,7 @@ import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import ImportSessionDetail from '../components/ImportSessionDetail';
 import { useCancelCaptureSession, useCaptureSessionDetail, useCloseCaptureSession } from '../hooks/useCaptureSessions';
 import type { CaptureSessionStatus } from '../../../types/captureSession';
+import { hasRequiredDetailParams } from '../utils/ingestionSessionDetailParams';
 
 function computeGuards(status: CaptureSessionStatus, itemCount: number, closedAt: string | null | undefined) {
   const isClosed = Boolean(closedAt);
@@ -23,10 +24,6 @@ function computeGuards(status: CaptureSessionStatus, itemCount: number, closedAt
   const canClose = itemCount > 0 && !isClosed && !closeBlockedByState;
   const canCancel = status !== 'cancelled' && status !== 'confirmed';
   return { canUpload, canClose, canCancel };
-}
-
-export function hasRequiredDetailParams(inventoryId: string, sessionId: string | undefined): boolean {
-  return Boolean(inventoryId.trim() && sessionId);
 }
 
 export default function IngestionSessionDetailPage() {

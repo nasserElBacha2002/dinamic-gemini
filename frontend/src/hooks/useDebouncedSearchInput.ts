@@ -16,21 +16,15 @@ export type DebouncedSearchInput = {
  */
 export function useDebouncedSearchInput(debounceMs: number, initialInput = ''): DebouncedSearchInput {
   const [input, setInput] = useState(initialInput);
-  const [applied, setApplied] = useState(() => initialInput.trim());
+  const [appliedNonEmpty, setAppliedNonEmpty] = useState(() => initialInput.trim());
+  const trimmedInput = input.trim();
+  const applied = trimmedInput === '' ? '' : debounceMs <= 0 ? trimmedInput : appliedNonEmpty;
 
   useEffect(() => {
-    const t = input.trim();
-    if (t === '') {
-      setApplied('');
-      return;
-    }
-    if (debounceMs <= 0) {
-      setApplied(t);
-      return;
-    }
-    const id = window.setTimeout(() => setApplied(t), debounceMs);
+    if (trimmedInput === '' || debounceMs <= 0) return;
+    const id = window.setTimeout(() => setAppliedNonEmpty(trimmedInput), debounceMs);
     return () => window.clearTimeout(id);
-  }, [input, debounceMs]);
+  }, [trimmedInput, debounceMs]);
 
   return { input, setInput, applied };
 }

@@ -32,7 +32,7 @@ function getErrorMessage(detail: unknown, statusText: string): string {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   const raw = await response.text();
-  let data: Record<string, unknown> = {};
+  let data: Record<string, unknown>;
   try {
     data = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
   } catch {
@@ -246,7 +246,7 @@ export async function uploadCaptureSessionStagingFiles(
       reject(new ApiError(i18n.t('errors.request_failed')));
     };
     xhr.onload = () => {
-      let body: Record<string, unknown> = {};
+      let body: Record<string, unknown>;
       try {
         body = xhr.responseText ? (JSON.parse(xhr.responseText) as Record<string, unknown>) : {};
       } catch {

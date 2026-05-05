@@ -2,7 +2,7 @@
  * Canonical review surface (Sprint v3.3) — drawer with detail fetch, evidence viewer, actions, prev/next, audit.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography, Stack } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
@@ -83,37 +83,19 @@ export default function QuickReviewDrawer({
   /** Prevents double-submits (e.g. rapid double-clicks) before React flips `isPending`. */
   const reviewMutationInFlightRef = useRef(false);
 
-  useEffect(() => {
-    if (context?.positionId) setActivePositionId(context.positionId);
-  }, [context?.positionId, context?.inventoryId, context?.aisleId]);
-
-  useEffect(() => {
-    if (!open) {
-      setActionError(null);
-      setInvalidConfirmOpen(false);
-      setInvalidConfirmLoading(false);
-      setInvalidConfirmError(null);
-      reviewMutationInFlightRef.current = false;
-    }
-  }, [open]);
-
   const inventoryId = context?.inventoryId ?? '';
   const aisleId = context?.aisleId ?? '';
-  const enabled = open && Boolean(context && activePositionId && inventoryId && aisleId);
+  const initialPositionId = activePositionId || context?.positionId || '';
+  const enabled = open && Boolean(context && initialPositionId && inventoryId && aisleId);
 
   const { result, isLoading, isError, error, refetch } = useResultDetail(
     inventoryId,
     aisleId,
-    activePositionId,
+    initialPositionId,
     { enabled, jobId: context?.jobId, exactPosition: context?.exactPositionDetail }
   );
-
-  useEffect(() => {
-    if (context?.exactPositionDetail) return;
-    if (result?.id && result.id !== activePositionId) {
-      setActivePositionId(result.id);
-    }
-  }, [result?.id, activePositionId, context?.exactPositionDetail]);
+  const canonicalPositionId =
+    !context?.exactPositionDetail && result?.id ? result.id : initialPositionId;
 
   // Production strategies: queue vs aisle results. (`detail` is reserved — see `ReviewMutationStrategy`.)
   const reviewStrategy =
@@ -122,14 +104,14 @@ export default function QuickReviewDrawer({
       : context?.returnTo === 'aisle_results'
         ? 'aisleResults'
         : undefined;
-  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId, {
+  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, canonicalPositionId, {
     strategy: reviewStrategy,
   });
   const actionLoading = reviewMutation.isPending;
 
   const navContext = useMemo(
-    () => (context && activePositionId ? getResultNavigationContext(context.resultIds, activePositionId) : null),
-    [context, activePositionId]
+    () => (context && canonicalPositionId ? getResultNavigationContext(context.resultIds, canonicalPositionId) : null),
+    [context, canonicalPositionId]
   );
 
   /** POST ``job_id`` must match ``positions.job_id`` from loaded detail only (never URL/run_context). */
@@ -146,8 +128,9 @@ export default function QuickReviewDrawer({
     if (id) {
       return { ...body, job_id: id };
     }
-    const { job_id: _omit, ...rest } = body;
-    return rest;
+    const stripped: ReviewActionRequest = { ...body };
+    delete stripped.job_id;
+    return stripped;
   }, [storageJobIdForReview]);
 
   /**
@@ -244,7 +227,7 @@ export default function QuickReviewDrawer({
       reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);
     }
-  }, [reviewMutation, showSnackbar, t, withReviewJobId]);
+  }, [onClose, reviewMutation, showSnackbar, t, withReviewJobId]);
 
   const handleNavigateToResult = useCallback((resultId: string) => {
     setActivePositionId(resultId);
@@ -393,7 +376,7 @@ export default function QuickReviewDrawer({
       </Drawer>
 
       <ConfirmDialog
-        open={invalidConfirmOpen}
+        open={open && invalidConfirmOpen}
         onClose={() => {
           setInvalidConfirmOpen(false);
           setInvalidConfirmError(null);

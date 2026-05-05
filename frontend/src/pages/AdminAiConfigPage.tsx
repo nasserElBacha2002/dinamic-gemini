@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
@@ -89,25 +89,23 @@ export default function AdminAiConfigPage() {
 
   const data = q.data;
 
-  useEffect(() => {
-    if (!data) return;
-    setSelectedProviderKey((cur) => {
-      if (cur) return cur;
-      const def = data.server_defaults.llm_provider;
-      const match = data.providers.find((p) => p.key === def);
-      return match?.key ?? data.providers[0]?.key ?? null;
-    });
-    setSelectedPromptKey((k) => k ?? data.server_defaults.hybrid_prompt_key);
-  }, [data]);
-
-  const provider: AdminAiConfigProviderDetail | undefined = useMemo(() => {
-    if (!data || !selectedProviderKey) return undefined;
-    return data.providers.find((p) => p.key === selectedProviderKey);
+  const effectiveProviderKey = useMemo(() => {
+    if (selectedProviderKey) return selectedProviderKey;
+    if (!data) return null;
+    const def = data.server_defaults.llm_provider;
+    const match = data.providers.find((p) => p.key === def);
+    return match?.key ?? data.providers[0]?.key ?? null;
   }, [data, selectedProviderKey]);
 
-  useEffect(() => {
-    setComposeTarget(null);
-  }, [provider?.key, selectedPromptKey]);
+  const effectivePromptKey = useMemo(() => {
+    if (selectedPromptKey) return selectedPromptKey;
+    return data?.server_defaults.hybrid_prompt_key ?? null;
+  }, [data, selectedPromptKey]);
+
+  const provider: AdminAiConfigProviderDetail | undefined = useMemo(() => {
+    if (!data || !effectiveProviderKey) return undefined;
+    return data.providers.find((p) => p.key === effectiveProviderKey);
+  }, [data, effectiveProviderKey]);
 
   const composedQ = useQuery({
     queryKey: queryKeys.admin.aiComposedPrompt(
@@ -121,7 +119,7 @@ export default function AdminAiConfigPage() {
         prompt_key: composeTarget!.prompt_key,
         prompt_parity_mode: composeTarget!.prompt_parity_mode,
       }),
-    enabled: Boolean(provider && composeTarget && tab === 'prompts'),
+    enabled: Boolean(provider && composeTarget && composeTarget.prompt_key === effectivePromptKey && tab === 'prompts'),
   });
 
   const onRefresh = useCallback(() => {
@@ -129,9 +127,9 @@ export default function AdminAiConfigPage() {
   }, [q]);
 
   const filteredSummaries: AdminAiConfigPromptVariantSummary[] = useMemo(() => {
-    if (!provider || !selectedPromptKey) return [];
-    return provider.prompt_variant_summaries.filter((v) => v.prompt_key === selectedPromptKey);
-  }, [provider, selectedPromptKey]);
+    if (!provider || !effectivePromptKey) return [];
+    return provider.prompt_variant_summaries.filter((v) => v.prompt_key === effectivePromptKey);
+  }, [provider, effectivePromptKey]);
 
   const generatedDisplay = data ? formatGeneratedAtDisplay(data.generated_at, i18n.language) : '';
 
@@ -208,10 +206,11 @@ export default function AdminAiConfigPage() {
             {data.providers.map((p) => (
               <SelectableOutlineCard
                 key={p.key}
-                selected={p.key === selectedProviderKey}
+                selected={p.key === effectiveProviderKey}
                 onClick={() => {
                   setSelectedProviderKey(p.key);
                   setTab('overview');
+                  setComposeTarget(null);
                 }}
                 title={p.label}
                 subtitle={p.key}
@@ -497,17 +496,20 @@ export default function AdminAiConfigPage() {
                           key={row.key}
                           size="small"
                           label={row.key}
-                          color={row.key === selectedPromptKey ? 'primary' : 'default'}
-                          variant={row.key === selectedPromptKey ? 'filled' : 'outlined'}
-                          onClick={() => setSelectedPromptKey(row.key)}
+                          color={row.key === effectivePromptKey ? 'primary' : 'default'}
+                          variant={row.key === effectivePromptKey ? 'filled' : 'outlined'}
+                          onClick={() => {
+                            setSelectedPromptKey(row.key);
+                            setComposeTarget(null);
+                          }}
                           sx={{ cursor: 'pointer' }}
                         />
                       ))
                     )}
                   </Stack>
-                  {selectedPromptKey ? (
+                  {effectivePromptKey ? (
                     <Typography variant="caption" color="text.secondary">
-                      {data.prompt_catalog.find((c) => c.key === selectedPromptKey)?.description ?? ''}
+                      {data.prompt_catalog.find((c) => c.key === effectivePromptKey)?.description ?? ''}
                     </Typography>
                   ) : null}
                   {filteredSummaries.length === 0 ? (

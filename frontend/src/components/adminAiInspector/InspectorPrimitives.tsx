@@ -18,7 +18,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { useAppSnackbar } from '../ui/AppSnackbarProvider';
+import { useAppSnackbar } from '../ui/useAppSnackbar';
 
 export function CopyIconButton({ text, ariaLabel }: { text: string; ariaLabel: string }) {
   const { showSnackbar } = useAppSnackbar();

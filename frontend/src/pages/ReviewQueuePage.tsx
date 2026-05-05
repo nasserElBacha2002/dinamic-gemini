@@ -115,8 +115,6 @@ export default function ReviewQueuePage() {
   }, [
     inventoryId,
     aisleId,
-    minConfidenceStr,
-    maxConfidenceStr,
     confidenceFiltersInvalid,
     minConfParsedRQ,
     maxConfParsedRQ,
@@ -132,10 +130,9 @@ export default function ReviewQueuePage() {
   ]);
 
   const queueQuery = useReviewQueue(listQuery);
-
-  useEffect(() => {
-    setAisleId('');
-  }, [inventoryId]);
+  const totalItems = queueQuery.data?.total_items ?? 0;
+  const maxPage = Math.max(1, Math.ceil(Math.max(totalItems, 1) / pageSize));
+  const effectivePage = Math.min(page, maxPage);
 
   const handleResetFilters = useCallback(() => {
     setInventoryId('');
@@ -151,11 +148,8 @@ export default function ReviewQueuePage() {
     setApiSortBy('priority');
     setApiSortDir('desc');
     setActiveSortColumnId('priority');
-  }, [skuSearch.setInput]);
+  }, [skuSearch]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [skuSearch.applied]);
 
   const resetDisabled =
     inventoryId === '' &&
@@ -180,8 +174,7 @@ export default function ReviewQueuePage() {
       : null;
 
   const summary = queueQuery.data?.summary;
-  const items = queueQuery.data?.items ?? [];
-  const totalItems = queueQuery.data?.total_items ?? 0;
+  const items = useMemo(() => queueQuery.data?.items ?? [], [queueQuery.data?.items]);
 
   const openReviewDrawer = useCallback(
     (item: ReviewQueueItem) => {
@@ -211,12 +204,6 @@ export default function ReviewQueuePage() {
     });
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.state, location.pathname, navigate]);
-
-  useEffect(() => {
-    if (totalItems === 0) return;
-    const pages = Math.max(1, Math.ceil(totalItems / pageSize));
-    if (page > pages) setPage(pages);
-  }, [totalItems, pageSize, page]);
 
   return (
     <Box
@@ -282,6 +269,7 @@ export default function ReviewQueuePage() {
                 value={inventoryId}
                 onChange={(e) => {
                   setInventoryId(String(e.target.value));
+                  setAisleId('');
                   setPage(1);
                 }}
               >
@@ -452,7 +440,10 @@ export default function ReviewQueuePage() {
               label={t('results.search_sku')}
               placeholder={t('common.contains_placeholder')}
               value={skuSearch.input}
-              onChange={(v) => skuSearch.setInput(v)}
+              onChange={(v) => {
+                skuSearch.setInput(v);
+                setPage(1);
+              }}
               data-testid="review-queue-sku-search"
             />
           </Box>
@@ -506,7 +497,7 @@ export default function ReviewQueuePage() {
               },
             }}
             pagination={{
-              page,
+              page: effectivePage,
               pageSize,
               totalItems,
               onPageChange: setPage,

@@ -143,7 +143,6 @@ function pushEvent(event: CacheMutationObservabilityEvent): void {
   if (buffer.length > MAX_EVENTS) buffer.splice(0, buffer.length - MAX_EVENTS);
   installWindowHook();
   if (isConsoleLoggingEnabled()) {
-    // eslint-disable-next-line no-console -- Phase 8 dev-only diagnostics
     console.debug('[dinamic:cache-obs]', row.kind, row);
   }
   reportGuardrailsForNewEvent(row, buffer);
