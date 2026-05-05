@@ -99,6 +99,7 @@ export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): Eviden
         });
       }
     });
+    // Runs on dependency change and on unmount — same revoke lifecycle previously duplicated in a second effect.
     return () => {
       cancelled = true;
       if (revokeRef.current) {
@@ -107,15 +108,6 @@ export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): Eviden
       }
     };
   }, [inventoryId, aisleId, assetId, jobId]);
-
-  useEffect(() => {
-    return () => {
-      if (revokeRef.current) {
-        revokeRef.current();
-        revokeRef.current = null;
-      }
-    };
-  }, []);
 
   return state;
 }

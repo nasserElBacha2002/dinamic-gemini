@@ -88,6 +88,7 @@ export default function CreateInventoryDialog({
 
   const reset = () => {
     revokeAllPreviews(pendingFiles);
+    pendingFilesRef.current = [];
     setActiveStep(0);
     setName('');
     setValidationError('');
