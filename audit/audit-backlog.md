@@ -463,6 +463,14 @@ Archivos no intervenidos en B3.1–B3.3; mismo patrón FP-P/DC que el triage B3.
 - Recomendación futura: mantener SBOM y control de dependencias directas/transitivas en CI.
 - Estado: Pendiente
 
+## F3 — Auditoría conceptual `useEffect` frontend (2026-05-05)
+
+- **Estado:** Cerrada (F3.0–F3.5).
+- **Documentación:** `audit/frontend-f3-closeout.md` (cierre consolidado), `audit/frontend-useeffect-f3-audit.md` (inventario F3.0).
+- **Alcance:** Subconjunto de 20 archivos; 21 `useEffect` auditados; correcciones quirúrgicas en 9 archivos productivos (F3.1–F3.4).
+- **Pendientes futuros:** ver sección “Pendientes para fases futuras” en el closeout (F4/F5/F6/F7/F10).
+- **Validación global:** `npm run typecheck` y `npm run lint` OK en cierre; suite vitest completa con fallos preexistentes no atribuibles a F3.
+
 ## Informativos
 
 ### AUD-022 - Typecheck frontend sin errores en corrida auditada
