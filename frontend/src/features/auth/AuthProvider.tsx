@@ -54,11 +54,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
       })
       .catch(() => {
         if (cancelled) return;
+        let invalidateSession = false;
         setState((prev) => {
           if (prev.token !== bootstrapToken) return prev;
-          clearStoredSession();
+          invalidateSession = true;
           return createInitialAuthState(true);
         });
+        // Keep I/O out of the updater when possible; clear storage only when state transition logged out this bootstrap.
+        if (invalidateSession) {
+          clearStoredSession();
+        }
       });
 
     return () => {
