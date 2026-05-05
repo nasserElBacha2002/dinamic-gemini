@@ -3,7 +3,7 @@
  * Revised in Phase 3 for a focused decision-oriented workflow.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box, Button, Stack, TextField, IconButton, Typography } from '@mui/material';
 import EditIcon from '@mui/icons-material/EditOutlined';
@@ -41,8 +41,8 @@ export default function ResultReviewActions({
   const posButtonRef = useRef<HTMLButtonElement>(null);
   const lastActiveEditor = useRef<'qty' | 'sku' | 'pos' | null>(null);
 
-  // Focus management: when editor closes, return focus to the trigger
-  useEffect(() => {
+  // Focus management: run before paint so focus moves back to the trigger without a visible flash.
+  useLayoutEffect(() => {
     if (activeEditor !== null) {
       lastActiveEditor.current = activeEditor;
     } else {
@@ -292,7 +292,7 @@ function QuantityEditor({
   const [val, setVal] = useState(String(initialValue));
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
@@ -357,7 +357,7 @@ function SkuEditor({
   const [val, setVal] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
@@ -421,7 +421,7 @@ function PositionCodeEditor({
   const [val, setVal] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
