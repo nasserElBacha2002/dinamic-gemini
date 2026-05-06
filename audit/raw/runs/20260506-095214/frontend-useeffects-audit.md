@@ -2,35 +2,27 @@
 
 ## Resumen
 
-- Cantidad aproximada de usos de `useEffect`: 46
-- Cantidad aproximada de archivos con `useEffect`: 20
+- Cantidad aproximada de usos de `useEffect`: 17
+- Cantidad aproximada de archivos con `useEffect`: 12
 
 ## Archivos detectados
 
 - src/pages/analytics/CompareManyRunsPage.tsx
 - src/pages/analytics/CompareRunsPage.tsx
-- src/pages/AdminAiConfigPage.tsx
 - src/pages/PositionDetailPage.tsx
-- src/pages/InventoriesList.tsx
 - src/pages/AislePositionsPage.tsx
 - src/pages/ReviewQueuePage.tsx
 - src/hooks/useDebouncedValue.ts
 - src/hooks/useDebouncedSearchInput.ts
 - src/components/CreateInventoryDialog.tsx
-- src/components/CreateAisleDialog.tsx
 - src/components/imageAssets/ManagedImageAssetsDrawer.tsx
 - src/components/ui/ImageViewer.tsx
-- src/components/ExecutionLogPanel.tsx
-- src/features/analytics/MetricsPage.tsx
-- src/features/inventories/hooks/useAisleProcessingFlow.ts
-- src/features/auth/AuthProvider.tsx
 - src/features/results/hooks/useEvidenceImageLoad.ts
-- src/features/reviewQueue/components/QuickReviewDrawer.tsx
-- src/features/results/components/detail/ResultReviewActions.tsx
+- src/features/auth/AuthProvider.tsx
 
 ## Patrones a revisar
 
-- useEffect sin dependency array (aprox): 46
+- useEffect sin dependency array (aprox): 17
 - useEffect con dependency array vacio [] (aprox): 0
 - useEffect con fetch (aprox): 0
 - useEffect con setInterval/setTimeout (aprox): 0

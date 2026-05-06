@@ -6,9 +6,9 @@
 - Señales de imports sospechosos entre capas frontend: 16
 - Señales de duplicación potencial: 23
 - Señales de código muerto potencial: 471
-- Señales de hooks/efectos a revisar: 77
+- Señales de hooks/efectos a revisar: 0
 
 ## Limitaciones
 
 - Auditoría heurística con posibles falsos positivos.
-- generated_at: 2026-05-04 17:14:21
+- generated_at: 2026-05-06 09:52:14

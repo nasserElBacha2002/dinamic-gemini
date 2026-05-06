@@ -369,7 +369,7 @@ ssss                                                                     [ 11%]
 =================================== FAILURES ===================================
 ___________ test_fetch_json_rejects_from_head_before_get_or_download ___________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1177b48a0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x116f855c0>
 
     def test_fetch_json_rejects_from_head_before_get_or_download(monkeypatch) -> None:
         """``object_size_bytes`` over max → 413; no get_object / download_to_path."""
@@ -431,7 +431,7 @@ Traceback (most recent call last):
 AssertionError: get_object should not run when head size exceeds cap
 __________ test_fetch_json_when_head_fails_rejects_from_on_disk_stat ___________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x117e93850>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11724ac10>
 
     def test_fetch_json_when_head_fails_rejects_from_on_disk_stat(monkeypatch) -> None:
         """Size unknown: stream to tempfile, reject when on-disk size exceeds cap (no full read)."""
@@ -1371,4 +1371,4 @@ Coverage HTML written to dir htmlcov
 FAILED ../../backend/tests/api/test_v3_stored_artifact_access_unit.py::test_fetch_json_rejects_from_head_before_get_or_download
 FAILED ../../backend/tests/api/test_v3_stored_artifact_access_unit.py::test_fetch_json_when_head_fails_rejects_from_on_disk_stat
 FAILED ../../backend/tests/application/use_cases/test_compute_materialized_capture_session_group_preview_g6.py::test_classify_g6_preview_status_explicit_contract
-========== 3 failed, 1826 passed, 13 skipped, 120 warnings in 26.68s ===========
+========== 3 failed, 1826 passed, 13 skipped, 120 warnings in 30.66s ===========

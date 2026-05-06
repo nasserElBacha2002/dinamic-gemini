@@ -1,7 +1,7 @@
 {
   "overall_status": "error",
   "max_severity": "critical",
-  "generated_at": "2026-05-04T20:14:21+00:00",
+  "generated_at": "2026-05-06T12:52:14+00:00",
   "areas": {
     "backend": {
       "status": "ERROR",
@@ -65,19 +65,15 @@
       }
     },
     "frontend": {
-      "status": "FINDINGS",
+      "status": "ERROR",
       "max_severity": "critical",
       "tools": {
         "eslint": {
-          "status": "FINDINGS",
-          "severity": "high",
-          "metrics": {
-            "problems": 66,
-            "errors": 40,
-            "warnings": 26
-          },
+          "status": "ERROR",
+          "severity": "low",
+          "metrics": {},
           "report": "audit/raw/frontend-eslint.txt",
-          "observation": ""
+          "observation": "No se pudo extraer resumen ESLint."
         },
         "typecheck": {
           "status": "OK",
@@ -106,11 +102,11 @@
           "status": "FINDINGS",
           "severity": "critical",
           "metrics": {
-            "failed_files": 19,
-            "passed_files": 49,
+            "failed_files": 7,
+            "passed_files": 61,
             "total_files": 68,
-            "failed_tests": 86,
-            "passed_tests": 340,
+            "failed_tests": 17,
+            "passed_tests": 409,
             "total_tests": 426
           },
           "report": "audit/raw/frontend-vitest.txt",
@@ -120,8 +116,8 @@
           "status": "FINDINGS",
           "severity": "medium",
           "metrics": {
-            "uses": 46,
-            "files": 20
+            "uses": 17,
+            "files": 12
           },
           "report": "audit/raw/frontend-useeffects-audit.md",
           "observation": ""
@@ -130,9 +126,9 @@
           "status": "FINDINGS",
           "severity": "medium",
           "metrics": {
-            "files": 100,
-            "try_blocks": 59,
-            "catch_blocks": 25
+            "files": 107,
+            "try_blocks": 65,
+            "catch_blocks": 31
           },
           "report": "audit/raw/frontend-error-handling-audit.md",
           "observation": ""
@@ -150,7 +146,7 @@
       },
       "highlights": {
         "tool_count": 7,
-        "findings_count": 6,
+        "findings_count": 5,
         "not_run_count": 0
       }
     },
@@ -215,13 +211,9 @@
       "max_severity": "high",
       "tools": {
         "code_smells": {
-          "status": "FINDINGS",
-          "severity": "high",
-          "metrics": {
-            "problems": 66,
-            "errors": 40,
-            "warnings": 26
-          },
+          "status": "SKIPPED",
+          "severity": "info",
+          "metrics": {},
           "report": "audit/raw/frontend-code-smells.txt",
           "observation": ""
         },
@@ -229,9 +221,9 @@
           "status": "FINDINGS",
           "severity": "high",
           "metrics": {
-            "files_scanned": 183,
-            "functions_approx": 1513,
-            "conditional_tokens": 808,
+            "files_scanned": 192,
+            "functions_approx": 1529,
+            "conditional_tokens": 800,
             "files_gt_300": 19,
             "files_gt_1000": 4
           },
@@ -275,8 +267,8 @@
       },
       "highlights": {
         "tool_count": 6,
-        "findings_count": 5,
-        "not_run_count": 1
+        "findings_count": 4,
+        "not_run_count": 2
       }
     }
   }
