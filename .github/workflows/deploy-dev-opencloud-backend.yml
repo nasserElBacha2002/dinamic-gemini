@@ -17,9 +17,9 @@
 #
 # SSH: port is set explicitly below (non-default; not port 22).
 #
-# CI-1.3.2: After git reset, patch backend/docker-compose.yml in place (host port→8001:8000 by default).
-# Removes docker-compose.override.yml so Compose does not merge duplicate port mappings. Export
-# BACKEND_HOST_PORT on the server to override (container stays on 8000).
+# CI-1.3.3: Host bind uses backend/scripts/patch_compose_host_port.py (no inline Python/heredoc in SSH —
+# appleboy/ssh-action wraps lines and breaks heredocs). Default host port 8001→container 8000;
+# BACKEND_HOST_PORT on the server overrides.
 #
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
 #   cd backend && docker-compose down ... && docker-compose up -d --build
@@ -184,41 +184,18 @@ jobs:
               echo "ERROR: docker-compose not found on PATH (install docker-compose v1 standalone)" >&2
               exit 1
             fi
-            cd "${REPO_ROOT}/backend"
-            rm -f docker-compose.override.yml
+            rm -f "${REPO_ROOT}/backend/docker-compose.override.yml"
 
-            export BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8001}"
-
-            python3 - <<'PY'
-            from pathlib import Path
-            import os
-            import re
-
-            compose_path = Path("docker-compose.yml")
-            text = compose_path.read_text()
-
-            backend_host_port = os.environ.get("BACKEND_HOST_PORT", "8001")
-
-            patterns = [
-                (r'"\d+:8000"', f'"{backend_host_port}:8000"'),
-                (r"'\d+:8000'", f"'{backend_host_port}:8000'"),
-            ]
-
-            new_text = text
-            for pattern, replacement in patterns:
-                new_text = re.sub(pattern, replacement, new_text)
-
-            if new_text == text:
-                raise SystemExit("ERROR: Could not replace backend host port mapping in docker-compose.yml")
-
-            compose_path.write_text(new_text)
-            print("Patched docker-compose.yml port mapping:")
-            for line in new_text.splitlines():
-                if "8000" in line or backend_host_port in line:
-                    print(line)
-            PY
+            BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8001}"
+            export BACKEND_HOST_PORT
 
             echo "Using backend host port: ${BACKEND_HOST_PORT}"
+
+            python3 "${REPO_ROOT}/backend/scripts/patch_compose_host_port.py" \
+              --compose "${REPO_ROOT}/backend/docker-compose.yml" \
+              --host-port "${BACKEND_HOST_PORT}"
+
+            cd "${REPO_ROOT}/backend"
 
             docker-compose down --remove-orphans || true
             docker-compose up -d --build
