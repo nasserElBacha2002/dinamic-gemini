@@ -5,8 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../../../components/shell';
 import { ErrorAlert, SectionCard } from '../../../components/ui';
 import { pathToIngestionSessionDetail } from '../../../constants/appRoutes';
-import { resolveApiErrorMessage } from '../../../utils/apiErrors';
-import { ApiError } from '../../../api/types';
+import { getVisibleErrorMessage } from '../../../utils/apiErrors';
 import ImportSessionList from '../components/ImportSessionList';
 import {
   useAisleOptions,
@@ -39,13 +38,12 @@ export default function IngestionSessionsPage() {
   const loadErrorMessage = useMemo(() => {
     const err = inventoriesQuery.error || aislesQuery.error || sessionsQuery.error;
     if (!err) return null;
-    return resolveApiErrorMessage(err, 'errors.request_failed');
+    return getVisibleErrorMessage(err, 'ingestionSession');
   }, [aislesQuery.error, inventoriesQuery.error, sessionsQuery.error]);
 
   const createErrorMessage = useMemo(() => {
     if (!createMutation.error) return null;
-    if (createMutation.error instanceof ApiError) return resolveApiErrorMessage(createMutation.error, 'errors.request_failed');
-    return resolveApiErrorMessage(createMutation.error, 'errors.request_failed');
+    return getVisibleErrorMessage(createMutation.error, 'ingestionSession');
   }, [createMutation.error]);
 
   return (
@@ -71,8 +69,8 @@ export default function IngestionSessionsPage() {
         }
       />
 
-      {loadErrorMessage ? <ErrorAlert message={loadErrorMessage} onRetry={() => sessionsQuery.refetch()} /> : null}
-      {createErrorMessage ? <ErrorAlert message={createErrorMessage} onClose={() => createMutation.reset()} /> : null}
+      {loadErrorMessage ? <ErrorAlert error={inventoriesQuery.error || aislesQuery.error || sessionsQuery.error} context="ingestionSession" onRetry={() => sessionsQuery.refetch()} /> : null}
+      {createErrorMessage ? <ErrorAlert error={createMutation.error} context="ingestionSession" onClose={() => createMutation.reset()} /> : null}
 
       <SectionCard title={t('ingestion_sessions.filters.title')}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>

@@ -6,11 +6,10 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography, Stack } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
-import { ApiError } from '../../../api/types';
 import { REVIEW_ACTION_WIRE, type ReviewActionRequest } from '../../../api/types';
 import { useResultDetail, getResultNavigationContext } from '../../results';
 import { useSubmitReviewAction } from '../../../hooks';
-import { resolveApiErrorMessage } from '../../../utils/apiErrors';
+import { getVisibleErrorMessage } from '../../../utils/apiErrors';
 import {
   ResultEvidenceViewer,
   ResultSummaryCard,
@@ -23,7 +22,7 @@ import {
   ResultDetailEmptyState,
 } from '../../results/components/detail';
 import type { QuickReviewContext } from '../quickReviewContext';
-import { ConfirmDialog, useAppSnackbar } from '../../../components/ui';
+import { ConfirmDialog, useAppSnackbar, useErrorSnackbar } from '../../../components/ui';
 
 function DrawerCollapsibleSection({
   titleKey,
@@ -75,6 +74,7 @@ export default function QuickReviewDrawer({
 }: QuickReviewDrawerProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
+  const { showErrorSnackbar } = useErrorSnackbar();
   const [activePositionId, setActivePositionId] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [invalidConfirmOpen, setInvalidConfirmOpen] = useState(false);
@@ -150,8 +150,7 @@ export default function QuickReviewDrawer({
           showSnackbar(options.successMessage, 'success');
         }
       } catch (e) {
-        const err = e instanceof ApiError ? e : new ApiError(String(e));
-        setActionError(resolveApiErrorMessage(err, 'errors.review_action_failed'));
+        setActionError(getVisibleErrorMessage(e, 'reviewQueue'));
       } finally {
         reviewMutationInFlightRef.current = false;
       }
@@ -221,8 +220,8 @@ export default function QuickReviewDrawer({
       setInvalidConfirmOpen(false);
       onClose(); // Automatically close after invalidation
     } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setInvalidConfirmError(resolveApiErrorMessage(err, 'errors.invalidate_result'));
+      setInvalidConfirmError(getVisibleErrorMessage(e, 'reviewQueue'));
+      showErrorSnackbar(e, 'reviewQueue');
     } finally {
       reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);
@@ -235,9 +234,7 @@ export default function QuickReviewDrawer({
 
   const errorMessage =
     isError && error
-      ? error instanceof ApiError
-        ? resolveApiErrorMessage(error, 'errors.load_result_detail')
-        : String(error)
+      ? getVisibleErrorMessage(error, 'reviewQueue')
       : null;
 
   const detailTitle = result?.sku?.trim() ? result.sku.trim() : t('review.detail_title_fallback');

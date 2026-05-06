@@ -19,7 +19,7 @@ import {
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getApiErrorMessage, resolveApiErrorMessage } from '../../../utils/apiErrors';
+import { getVisibleErrorMessage, resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { formatDate } from '../../../utils/formatDate';
 import type {
   CaptureSessionGroupSummaryResponse,
@@ -281,10 +281,7 @@ export default function ImportSessionGroupingPanel({
                                 setPreviewGroupId(g.group_id);
                               })
                               .catch((e: unknown) => {
-                                const raw = getApiErrorMessage(e, '').trim();
-                                setPreviewActionError(
-                                  raw || resolveApiErrorMessage(e, 'errors.request_failed')
-                                );
+                                setPreviewActionError(getVisibleErrorMessage(e, 'ingestionSession'));
                               });
                           }}
                         >

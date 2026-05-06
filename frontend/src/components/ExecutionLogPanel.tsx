@@ -26,24 +26,14 @@ import type {
   ExecutionLogPanelLog,
 } from '../api/types';
 import i18n from '../i18n';
+import { getVisibleErrorMessage } from '../utils/apiErrors';
 
 const JOB_FILTER_REQUESTED = '__job_filter_requested__';
 const JOB_FILTER_ALL = '__job_filter_all__';
 
 /** Derive a readable error message from unknown query/API error shape. */
 function getReadableErrorMessage(error: unknown): string {
-  if (error == null) return i18n.t('execution_log.unknown_error');
-  if (typeof error === 'string') return error;
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const m = (error as { message?: unknown }).message;
-    if (typeof m === 'string') return m;
-  }
-  try {
-    return String(error);
-  } catch {
-    return i18n.t('execution_log.unknown_error');
-  }
+  return getVisibleErrorMessage(error, 'results');
 }
 
 function formatTs(ts: string): string {

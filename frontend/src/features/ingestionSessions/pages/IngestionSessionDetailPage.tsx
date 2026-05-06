@@ -6,7 +6,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../../../components/shell';
 import { ErrorAlert, SectionCard } from '../../../components/ui';
 import { ROUTE_INGESTION_SESSIONS } from '../../../constants/appRoutes';
-import { resolveApiErrorMessage } from '../../../utils/apiErrors';
+import { getVisibleErrorMessage } from '../../../utils/apiErrors';
 import ImportSessionDetail from '../components/ImportSessionDetail';
 import { useCancelCaptureSession, useCaptureSessionDetail, useCloseCaptureSession } from '../hooks/useCaptureSessions';
 import type { CaptureSessionStatus } from '../../../types/captureSession';
@@ -42,7 +42,7 @@ export default function IngestionSessionDetailPage() {
   const errorMessage = useMemo(() => {
     const err = detailQuery.error || closeMutation.error || cancelMutation.error;
     if (!err) return null;
-    return resolveApiErrorMessage(err, 'errors.request_failed');
+    return getVisibleErrorMessage(err, 'ingestionSession');
   }, [cancelMutation.error, closeMutation.error, detailQuery.error]);
 
   if (!hasRequiredDetailParams(inventoryId, sessionId)) {
@@ -70,7 +70,7 @@ export default function IngestionSessionDetailPage() {
         }
       />
 
-      {errorMessage ? <ErrorAlert message={errorMessage} onRetry={() => detailQuery.refetch()} /> : null}
+      {errorMessage ? <ErrorAlert error={detailQuery.error || closeMutation.error || cancelMutation.error} context="ingestionSession" onRetry={() => detailQuery.refetch()} /> : null}
 
       <SectionCard title={t('ingestion_sessions.detail.section_title')}>
         {detailQuery.data ? (

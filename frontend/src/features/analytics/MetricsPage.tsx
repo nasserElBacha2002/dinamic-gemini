@@ -32,8 +32,7 @@ import { useInventoriesList } from '../../hooks/useInventories';
 import { useAislesList } from '../../hooks/useAisles';
 import { formatDate } from '../../utils/formatDate';
 import { rowMatchesSearchQuery } from '../../utils/tableSearch';
-import { resolveApiErrorMessage } from '../../utils/apiErrors';
-import { ApiError } from '../../api/types';
+import { getVisibleErrorMessage } from '../../utils/apiErrors';
 import i18n from '../../i18n';
 import { useAnalyticsDashboard } from './hooks';
 import { MetricsAislesAttentionSection } from './components/MetricsAislesAttentionSection';
@@ -124,12 +123,7 @@ export default function MetricsPage() {
   } =
     useAnalyticsDashboard(params);
 
-  const errMsg =
-    isError && errors[0]
-      ? errors[0] instanceof ApiError
-        ? resolveApiErrorMessage(errors[0], 'errors.load_metrics')
-        : String(errors[0])
-      : null;
+  const errMsg = isError && errors[0] ? getVisibleErrorMessage(errors[0], 'analytics') : null;
 
   const inventoryRowsFiltered = useMemo(() => {
     const items = inventoryPerformance?.items ?? [];
@@ -394,7 +388,7 @@ export default function MetricsPage() {
 
   return (
     <Box sx={{ pb: 4, width: '100%', minWidth: 0, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
-      {errMsg ? <ErrorAlert message={errMsg} onRetry={() => refetchAll()} /> : null}
+      {errMsg ? <ErrorAlert error={errors[0]} context="analytics" onRetry={() => refetchAll()} /> : null}
 
       <PageHeader a11yTitle={t('analytics.page_a11y')} />
 

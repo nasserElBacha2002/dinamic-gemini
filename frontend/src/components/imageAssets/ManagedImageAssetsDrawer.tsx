@@ -13,8 +13,7 @@ import {
   Typography,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
-import { ApiError } from '../../api/types';
-import { resolveApiErrorMessage } from '../../utils/apiErrors';
+import { getVisibleErrorMessage } from '../../utils/apiErrors';
 import { EmptyState, ErrorAlert, LoadingBlock, ImageAssetCard, ImagePreviewDialog } from '../ui';
 import type { ManagedImageAssetItem } from './types';
 
@@ -217,8 +216,8 @@ export default function ManagedImageAssetsDrawer({
       if (!mountedRef.current || previewRequestIdRef.current !== requestId || !open) {
         return;
       }
-      const apiError = error instanceof ApiError ? error : new ApiError(String(error));
-      setPreviewError(resolveApiErrorMessage(apiError, previewErrorMessageKey));
+      const normalized = getVisibleErrorMessage(error, 'results');
+      setPreviewError(normalized || t(previewErrorMessageKey));
     } finally {
       if (mountedRef.current && previewRequestIdRef.current === requestId && open) {
         setPreviewLoading(false);

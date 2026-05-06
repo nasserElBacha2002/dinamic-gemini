@@ -12,10 +12,10 @@ import { exportAisleResultsCsv, getAisleMergeResults, type AislePositionsListQue
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
 import { recordExplicitRefreshObs, summarizeQueryKey } from '../dev/cacheMutationObservability';
-import { resolveApiErrorMessage } from '../utils/apiErrors';
+import { getVisibleErrorMessage } from '../utils/apiErrors';
 import type { RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
-import { FilterToolbar, TableSearchField, useAppSnackbar } from '../components/ui';
+import { FilterToolbar, TableSearchField, useAppSnackbar, useErrorSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../constants/appRoutes';
 import {
@@ -72,6 +72,7 @@ export default function AislePositionsPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { showSnackbar } = useAppSnackbar();
+  const { showErrorSnackbar } = useErrorSnackbar();
   const [filter, setFilter] = useState<ResultsFilterKind>(() =>
     getInitialFilterFromReturnState(location.state)
   );
@@ -376,9 +377,7 @@ export default function AislePositionsPage() {
 
   const errorMessage =
     isError && error
-      ? error instanceof ApiError
-        ? resolveApiErrorMessage(error, 'errors.load_results')
-        : String(error)
+      ? getVisibleErrorMessage(error, 'results')
       : null;
   const hasResults = !resultsLoading && results.length > 0;
   const mergeCandidates = useMemo(() => summarizeLikelyMergeCandidates(positions), [positions]);
@@ -446,10 +445,9 @@ export default function AislePositionsPage() {
         'success'
       );
     } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
-      showSnackbar(resolveApiErrorMessage(err, 'errors.merge_failed'), 'error');
+      showErrorSnackbar(e, 'results');
     }
-  }, [aisleId, inventoryId, mergeContextKey, mergeMutation, queryClient, showSnackbar, t, visibleJobId]);
+  }, [aisleId, inventoryId, mergeContextKey, mergeMutation, queryClient, showErrorSnackbar, showSnackbar, t, visibleJobId]);
 
   if (!inventoryId || !aisleId) {
     return (
@@ -533,8 +531,7 @@ export default function AislePositionsPage() {
                 jobId: pickedRunJobId ?? jobIdParam,
               });
             } catch (e) {
-              const err = e instanceof ApiError ? e : new ApiError(String(e));
-              showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
+              showErrorSnackbar(e, 'results');
             } finally {
               setExportingCsv(false);
             }
@@ -673,8 +670,7 @@ export default function AislePositionsPage() {
               setPromoteDialogOpen(false);
               showSnackbar(t('aisle.operational_updated_snackbar'), 'success');
             } catch (e) {
-              const err = e instanceof ApiError ? e : new ApiError(String(e));
-              showSnackbar(resolveApiErrorMessage(err, 'errors.promotion_failed'), 'error');
+              showErrorSnackbar(e, 'results');
             }
           })();
         }}

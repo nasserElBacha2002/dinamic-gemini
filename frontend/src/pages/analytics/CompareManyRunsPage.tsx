@@ -8,8 +8,7 @@ import {
 } from '@mui/material';
 import { PageHeader } from '../../components/shell';
 import { useAisleBenchmarkCompareMany, useAisleJobsList, useAislesList, useInventoryDetail } from '../../hooks';
-import { ApiError } from '../../api/types';
-import { resolveApiErrorMessage } from '../../utils/apiErrors';
+import { getVisibleErrorMessage } from '../../utils/apiErrors';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../../constants/appRoutes';
 import { formatExecutionDurationHuman, formatSignedDurationHuman } from '../../utils/benchmarkExecutionTime';
 import {
@@ -161,12 +160,7 @@ export default function CompareManyRunsPage() {
 
   const compareErrorMessage =
     (compareQuery.isError || enrichedCompareManyQuery.isError) && (compareQuery.error || enrichedCompareManyQuery.error)
-      ? resolveApiErrorMessage(
-          (compareQuery.error || enrichedCompareManyQuery.error) instanceof ApiError
-            ? (compareQuery.error || enrichedCompareManyQuery.error)
-            : new ApiError(String(compareQuery.error || enrichedCompareManyQuery.error)),
-          'errors.load_compare'
-        )
+      ? getVisibleErrorMessage(compareQuery.error || enrichedCompareManyQuery.error, 'analytics')
       : null;
 
   if (!inventoryId) {

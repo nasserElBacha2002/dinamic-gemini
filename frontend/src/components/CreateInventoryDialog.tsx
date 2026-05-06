@@ -18,8 +18,7 @@ import {
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import type { CreateInventoryRequest, Inventory, InventoryProcessingMode } from '../api/types';
-import { ApiError } from '../api/types';
-import { resolveApiErrorMessage } from '../utils/apiErrors';
+import { getVisibleErrorMessage } from '../utils/apiErrors';
 import { useCreateInventoryFlow } from '../features/inventories/hooks/useCreateInventoryFlow';
 import WizardModal from './ui/WizardModal';
 
@@ -33,10 +32,6 @@ export interface CreateInventoryDialogProps {
   onError: (message: string | null) => void;
   /** If provided, used instead of direct createInventory (e.g. TanStack Query mutation). */
   createInventoryFn?: (body: CreateInventoryRequest) => Promise<Inventory>;
-}
-
-function normalizeApiError(error: unknown): ApiError {
-  return error instanceof ApiError ? error : new ApiError(String(error));
 }
 
 export default function CreateInventoryDialog({
@@ -206,9 +201,8 @@ export default function CreateInventoryDialog({
       onSuccess(created);
       handleClose();
     } catch (e) {
-      const err = normalizeApiError(e);
-      const msg = resolveApiErrorMessage(err, 'errors.create_inventory');
-      setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const msg = getVisibleErrorMessage(e, 'inventory');
+      setValidationError(msg);
       onError(msg);
     }
   };
@@ -235,19 +229,15 @@ export default function CreateInventoryDialog({
       } catch (e) {
         // Important: inventory exists now. Do not call onError (parent would show "create failed").
         // Keep the dialog open in "retry upload" mode.
-        const err = normalizeApiError(e);
-        const msg = resolveApiErrorMessage(err, 'errors.reference_upload_failed');
+        const msg = getVisibleErrorMessage(e, 'inventory');
         setUploadState('failed');
         setUploadError(
-          typeof msg === 'string'
-            ? t('dialogs.inventory.partial_failure_detail', { message: msg })
-            : t('dialogs.inventory.partial_failure_generic'),
+          t('dialogs.inventory.partial_failure_detail', { message: msg })
         );
       }
     } catch (e) {
-      const err = normalizeApiError(e);
-      const msg = resolveApiErrorMessage(err, 'errors.create_inventory');
-      setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const msg = getVisibleErrorMessage(e, 'inventory');
+      setValidationError(msg);
       onError(msg);
     }
   };
@@ -262,13 +252,10 @@ export default function CreateInventoryDialog({
       onSuccess(createdInventory);
       handleClose();
     } catch (e) {
-      const err = normalizeApiError(e);
-      const msg = resolveApiErrorMessage(err, 'errors.reference_upload_failed');
+      const msg = getVisibleErrorMessage(e, 'inventory');
       setUploadState('failed');
       setUploadError(
-        typeof msg === 'string'
-          ? t('dialogs.inventory.partial_failure_detail', { message: msg })
-          : t('dialogs.inventory.partial_failure_generic'),
+        t('dialogs.inventory.partial_failure_detail', { message: msg })
       );
     }
   };

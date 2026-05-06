@@ -20,7 +20,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { ReviewQueueListQuery } from '../api/client';
-import { ApiError, type ReviewQueueItem } from '../api/types';
+import type { ReviewQueueItem } from '../api/types';
 import { PageHeader } from '../components/shell';
 import {
   ErrorAlert,
@@ -40,7 +40,7 @@ import {
 } from '../features/reviewQueue/quickReviewContext';
 import ReviewQueueTable from '../features/reviewQueue/components/ReviewQueueTable';
 import { useAislesList, useDebouncedSearchInput, useInventoriesList, useReviewQueue } from '../hooks';
-import { resolveApiErrorMessage } from '../utils/apiErrors';
+import { getVisibleErrorMessage } from '../utils/apiErrors';
 function parseOptional01(raw: string): number | null {
   const t = raw.trim();
   if (t === '') return null;
@@ -166,12 +166,9 @@ export default function ReviewQueuePage() {
     activeSortColumnId === 'priority' &&
     page === 1;
 
-  const errorMessage =
-    queueQuery.isError && queueQuery.error
-      ? queueQuery.error instanceof ApiError
-        ? resolveApiErrorMessage(queueQuery.error, 'errors.load_review_queue')
-        : String(queueQuery.error)
-      : null;
+  const errorMessage = queueQuery.isError && queueQuery.error
+    ? getVisibleErrorMessage(queueQuery.error, 'reviewQueue')
+    : null;
 
   const summary = queueQuery.data?.summary;
   const items = useMemo(() => queueQuery.data?.items ?? [], [queueQuery.data?.items]);
@@ -236,7 +233,7 @@ export default function ReviewQueuePage() {
       />
 
       {errorMessage ? (
-        <ErrorAlert message={errorMessage} onRetry={() => queueQuery.refetch()} />
+        <ErrorAlert error={queueQuery.error} context="reviewQueue" onRetry={() => queueQuery.refetch()} />
       ) : null}
 
       {queueQuery.isLoading && !queueQuery.data ? (
