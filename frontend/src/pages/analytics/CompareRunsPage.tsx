@@ -9,21 +9,8 @@ import {
   Alert,
   Box,
   Button,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Paper,
-  Select,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Typography,
-  Tooltip,
 } from '@mui/material';
 import { PageHeader } from '../../components/shell';
-import CompareRunJobPickers from '../../components/compare/CompareRunJobPickers';
 import { useInventoryDetail, useAisleBenchmarkCompare, useAisleJobsList, useAislesList } from '../../hooks';
 import { downloadAisleBenchmarkExportCsv } from '../../api/client';
 import { ApiError } from '../../api/types';
@@ -36,7 +23,6 @@ import {
   pathToInventoryAnalyticsCompareMany,
 } from '../../constants/appRoutes';
 import { formatSignedDurationHuman } from '../../utils/benchmarkExecutionTime';
-import { formatCostDisplay, runExecutionDisplay } from '../../features/analytics/adapters/compareFormatters';
 import {
   buildCompareRunsDefaultDraftJobs,
   buildCompareRunsDraftSourceKey,
@@ -44,9 +30,14 @@ import {
   computeBenchmarkWallClockDelta,
 } from '../../features/analytics/adapters/compareRunsViewModel';
 import CompareErrorState from '../../features/analytics/components/compare/CompareErrorState';
+import CompareDiffTable from '../../features/analytics/components/compare/CompareDiffTable';
 import CompareExecutionDeltaPanel from '../../features/analytics/components/compare/CompareExecutionDeltaPanel';
 import CompareLoadingState from '../../features/analytics/components/compare/CompareLoadingState';
 import CompareNotice from '../../features/analytics/components/compare/CompareNotice';
+import CompareRunJobPickerSection from '../../features/analytics/components/compare/CompareRunJobPickerSection';
+import CompareScopeContextCard from '../../features/analytics/components/compare/CompareScopeContextCard';
+import CompareScopeSelector from '../../features/analytics/components/compare/CompareScopeSelector';
+import CompareSummaryCards from '../../features/analytics/components/compare/CompareSummaryCards';
 
 export default function CompareRunsPage() {
   const { t } = useTranslation();
@@ -195,118 +186,66 @@ export default function CompareRunsPage() {
         }
       />
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-        <Typography variant="overline" color="text.secondary" display="block">
-          {t('analytics.benchmark_context_label')}
-        </Typography>
-        <Typography variant="body1" sx={{ fontWeight: 600 }}>
-          {t('analytics.context_inventory_label')}: {inventory?.name ?? t('common.loading')}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {aisleId
+      <CompareScopeContextCard
+        contextLabel={t('analytics.benchmark_context_label')}
+        inventoryLabel={t('analytics.context_inventory_label')}
+        inventoryValue={inventory?.name ?? t('common.loading')}
+        aisleValue={
+          aisleId
             ? t('analytics.context_aisle_label', { code: aisle?.code ?? aisleId.slice(0, 8) })
-            : t('analytics.context_aisle_not_selected')}
-        </Typography>
-        {jobAId && jobBId ? (
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1, fontFamily: 'monospace' }}>
-            {t('analytics.context_runs_label')}: {jobAId.slice(0, 12)}… ↔ {jobBId.slice(0, 12)}…
-          </Typography>
-        ) : null}
-      </Paper>
+            : t('analytics.context_aisle_not_selected')
+        }
+        runsLabel={
+          jobAId && jobBId
+            ? `${t('analytics.context_runs_label')}: ${jobAId.slice(0, 12)}… ↔ ${jobBId.slice(0, 12)}…`
+            : undefined
+        }
+      />
 
       <CompareNotice severity="info" sx={{ mb: 2 }} message={t('compare.info_benchmark')} />
 
-      {!aisleId ? (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }} data-testid="compare-runs-aisle-scope">
-          <Typography variant="subtitle2" gutterBottom>
-            {t('analytics.select_aisle_title')}
-          </Typography>
-          <FormControl fullWidth size="small" sx={{ maxWidth: 360 }}>
-            <InputLabel id="analytics-aisle-label">{t('common.aisle')}</InputLabel>
-            <Select
-              labelId="analytics-aisle-label"
-              label={t('common.aisle')}
-              value=""
-              displayEmpty
-              onChange={(e) => applyAisleToUrl(String(e.target.value))}
-            >
-              <MenuItem value="" disabled>
-                <em>{t('analytics.select_aisle_placeholder')}</em>
-              </MenuItem>
-              {aislesItems.map((a) => (
-                <MenuItem key={a.id} value={a.id}>
-                  {a.code}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Paper>
-      ) : (
-        <Box
-          data-testid="compare-runs-change-aisle"
-          sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}
-        >
-          <FormControl size="small" sx={{ minWidth: 200 }}>
-            <InputLabel id="switch-aisle-label">{t('analytics.change_aisle')}</InputLabel>
-            <Select
-              labelId="switch-aisle-label"
-              label={t('analytics.change_aisle')}
-              value={aisleSelectValue}
-              onChange={(e) => applyAisleToUrl(String(e.target.value))}
-            >
-              {aislesItems.map((a) => (
-                <MenuItem key={a.id} value={a.id}>
-                  {a.code}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
-      )}
+      <CompareScopeSelector
+        isAisleSelected={Boolean(aisleId)}
+        aisles={aislesItems}
+        aisleSelectValue={aisleSelectValue}
+        onAisleChange={applyAisleToUrl}
+        selectAisleTitle={t('analytics.select_aisle_title')}
+        aisleLabel={t('common.aisle')}
+        placeholderLabel={t('analytics.select_aisle_placeholder')}
+        changeAisleLabel={t('analytics.change_aisle')}
+      />
 
-      {aisleId && (!jobAId || !jobBId) ? (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }} data-testid="compare-runs-job-scope">
-          <Typography variant="subtitle2" gutterBottom>
-            {t('benchmark.compare_two_runs_title')}
-          </Typography>
-          <CompareRunJobPickers
-            jobs={jobs}
-            jobA={draftJobA}
-            jobB={draftJobB}
-            onJobAChange={(jobA) =>
-              setDraftOverride({
-                sourceKey: draftSourceKey,
-                jobA,
-                jobB: draftJobB,
-              })
-            }
-            onJobBChange={(jobB) =>
-              setDraftOverride({
-                sourceKey: draftSourceKey,
-                jobA: draftJobA,
-                jobB,
-              })
-            }
-            description={t('benchmark.compare_readonly_explain')}
-          />
-          <Box sx={{ mt: 2 }}>
-            <Button
-              variant="contained"
-              disabled={!draftJobA || !draftJobB || draftJobA === draftJobB}
-              onClick={applyJobsToUrl}
-            >
-              {t('analytics.load_comparison')}
-            </Button>
-          </Box>
-          {jobs.length ? (
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
-              {t('compare.recent_runs', {
+      <CompareRunJobPickerSection
+        visible={Boolean(aisleId && (!jobAId || !jobBId))}
+        jobs={jobs}
+        draftJobA={draftJobA}
+        draftJobB={draftJobB}
+        onDraftJobAChange={(jobA) =>
+          setDraftOverride({
+            sourceKey: draftSourceKey,
+            jobA,
+            jobB: draftJobB,
+          })
+        }
+        onDraftJobBChange={(jobB) =>
+          setDraftOverride({
+            sourceKey: draftSourceKey,
+            jobA: draftJobA,
+            jobB,
+          })
+        }
+        onApplyJobs={applyJobsToUrl}
+        sectionTitle={t('benchmark.compare_two_runs_title')}
+        description={t('benchmark.compare_readonly_explain')}
+        applyLabel={t('analytics.load_comparison')}
+        recentRunsLabel={
+          jobs.length
+            ? t('compare.recent_runs', {
                 ids: jobs.map((j) => j.id.slice(0, 8)).join(', '),
-              })}
-            </Typography>
-          ) : null}
-        </Paper>
-      ) : null}
+              })
+            : undefined
+        }
+      />
 
       {aisleId && (!jobAId || !jobBId) && !jobs.length && jobsQuery.isFetched ? (
         <Alert severity="warning" sx={{ mb: 2 }}>
@@ -340,65 +279,7 @@ export default function CompareRunsPage() {
             <Alert severity="warning">{t('compare.truncation_warning')}</Alert>
           )}
 
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-            {(['run_a', 'run_b'] as const).map((side) => {
-              const r = compareQuery.data![side];
-              const cost = formatCostDisplay(r, t);
-              return (
-                <Paper key={side} sx={{ p: 2, flex: '1 1 320px' }} variant="outlined">
-                  <Typography variant="subtitle2" color="text.secondary">
-                    {side === 'run_a' ? t('results.run_a_label') : t('results.run_b_label')}
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    {r.job_id}
-                  </Typography>
-                  <Typography variant="caption" display="block" color="text.secondary">
-                    {r.status} · {r.provider_name ?? t('common.em_dash')} · {r.model_name ?? t('common.em_dash')} ·{' '}
-                    {r.prompt_key ?? t('common.em_dash')} · {r.prompt_version ?? t('common.em_dash')}
-                  </Typography>
-                  <Typography variant="caption" display="block" color="text.secondary">
-                    {t('compare.created_at', { date: r.created_at })}
-                  </Typography>
-                  <Table size="small" sx={{ mt: 1 }}>
-                    <TableBody>
-                      <TableRow>
-                        <TableCell>{t('compare.metric_execution_time')}</TableCell>
-                        <TableCell align="right">{runExecutionDisplay(r, t)}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>{t('compare.metric_consolidated')}</TableCell>
-                        <TableCell align="right">{r.metrics.consolidated_positions}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>{t('compare.metric_total_qty')}</TableCell>
-                        <TableCell align="right">{r.metrics.total_quantity}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>{t('compare.metric_unknown_code')}</TableCell>
-                        <TableCell align="right">{r.metrics.unknown_internal_code_count}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>{t('compare.metric_needs_review')}</TableCell>
-                        <TableCell align="right">{r.metrics.needs_review_count}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>{t('compare.metric_total_cost')}</TableCell>
-                        <TableCell align="right">
-                          {cost.details ? (
-                            <Tooltip title={cost.details}>
-                              <span>{cost.value}</span>
-                            </Tooltip>
-                          ) : (
-                            cost.value
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </Paper>
-              );
-            })}
-          </Box>
+          <CompareSummaryCards runA={compareQuery.data.run_a} runB={compareQuery.data.run_b} />
 
           {benchmarkWallClockDelta != null ? (
             <CompareExecutionDeltaPanel
@@ -416,64 +297,11 @@ export default function CompareRunsPage() {
             />
           ) : null}
 
-          <Paper sx={{ p: 2 }} variant="outlined">
-            <Typography variant="subtitle1" gutterBottom>
-              {t('compare.diff_summary_title')}
-            </Typography>
-            <Typography variant="body2">
-              {t('compare.diff_summary_stats', {
-                onlyA: compareQuery.data.diff_summary.keys_only_in_a,
-                onlyB: compareQuery.data.diff_summary.keys_only_in_b,
-                both: compareQuery.data.diff_summary.keys_in_both,
-                qty: compareQuery.data.diff_summary.quantity_changed,
-                sku: compareQuery.data.diff_summary.sku_changed,
-                pos: compareQuery.data.diff_summary.position_code_changed,
-              })}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-              {t('compare.diff_summary_note')}
-            </Typography>
-          </Paper>
-
-          <Paper sx={{ p: 2 }} variant="outlined">
-            <Typography variant="subtitle1" gutterBottom>
-              {t('compare.diff_rows_title')}{' '}
-              {compareQuery.data.diff_rows_truncated ? t('compare.diff_rows_truncated') : ''}
-            </Typography>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>{t('compare.col_key')}</TableCell>
-                  <TableCell>{t('compare.col_side')}</TableCell>
-                  <TableCell align="right">{t('compare.col_qty_a')}</TableCell>
-                  <TableCell align="right">{t('compare.col_qty_b')}</TableCell>
-                  <TableCell>{t('compare.col_sku_a')}</TableCell>
-                  <TableCell>{t('compare.col_sku_b')}</TableCell>
-                  <TableCell>{t('compare.col_pos_a')}</TableCell>
-                  <TableCell>{t('compare.col_pos_b')}</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {compareQuery.data.diff_rows.map((row) => (
-                  <TableRow key={`${row.match_key}-${row.side}`}>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{row.match_key}</TableCell>
-                    <TableCell>{row.side}</TableCell>
-                    <TableCell align="right">{row.quantity_a ?? t('common.em_dash')}</TableCell>
-                    <TableCell align="right">{row.quantity_b ?? t('common.em_dash')}</TableCell>
-                    <TableCell>{row.sku_a ?? t('common.em_dash')}</TableCell>
-                    <TableCell>{row.sku_b ?? t('common.em_dash')}</TableCell>
-                    <TableCell>{row.position_code_a ?? t('common.em_dash')}</TableCell>
-                    <TableCell>{row.position_code_b ?? t('common.em_dash')}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {compareQuery.data.diff_rows.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                {t('compare.no_diff_rows')}
-              </Typography>
-            ) : null}
-          </Paper>
+          <CompareDiffTable
+            summary={compareQuery.data.diff_summary}
+            rows={compareQuery.data.diff_rows}
+            rowsTruncated={compareQuery.data.diff_rows_truncated}
+          />
         </Box>
       ) : null}
     </>
